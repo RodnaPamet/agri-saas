@@ -28,6 +28,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Map, { Layer, Marker, Source, type MapLayerMouseEvent, type MapRef } from 'react-map-gl/maplibre';
 import type { Feature, FeatureCollection, Geometry, LineString, Polygon } from 'geojson';
 import { validatePolygonGeometry, type PolygonValidity } from '@/lib/geo/polygon-validity';
+import { SOIL_TILE_MAX_ZOOM } from '@/lib/geo/soil-tiles';
 import bbox from '@turf/bbox';
 import { Crosshairs3, MapPosition, Minus, Plus } from '@/components/ui/icons/nucleo';
 import { useReducedMotion } from '@/components/ui/hooks';
@@ -61,13 +62,11 @@ const BULGARIA_VIEW = { longitude: 25.49, latitude: 42.73, zoom: 6.4 } as const;
 // fetches tiles directly — no proxy). Drawn UNDER the parcels so a field's own
 // classified fill + outline still read on top. `{bbox-epsg-3857}` is the
 // MapLibre placeholder MapLibre substitutes per raster tile.
-const SOIL_WRB_WMS_TILE =
-    'https://maps.isric.org/mapserv?map=/map/wrb.map&SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap' +
-    '&LAYERS=MostProbable&STYLES=&FORMAT=image/png&TRANSPARENT=true&SRS=EPSG:3857' +
-    '&WIDTH=256&HEIGHT=256&BBOX={bbox-epsg-3857}';
-const SOIL_WRB_LEGEND =
-    'https://maps.isric.org/mapserv?map=/map/wrb.map&SERVICE=WMS&VERSION=1.1.1' +
-    '&REQUEST=GetLegendGraphic&LAYER=MostProbable&FORMAT=image/png';
+// Both URLs now arrive on `soilOverlay`, built by the host page as
+// SAME-ORIGIN proxy templates (#782). They used to be hard-coded
+// `maps.isric.org` URLs here, justified by the upstream being CORS-open —
+// which is precisely the property that made it a third-party dependency of
+// the rendering path. See `src/lib/geo/soil-tiles.ts`.
 // Data-source citation for the ISRIC WRB soil raster. The "ISRIC SoilGrids
 // — WRB (CC-BY 4.0)" portion is a brand/licence token kept verbatim; only
 // the localisable "Soil:" prefix is threaded through i18n at the call site.
@@ -211,6 +210,16 @@ export interface MapCanvasProps {
      * host page owns the toggle. Selection still works (for the click panel).
      */
     soilMode?: boolean;
+    /**
+     * Same-origin proxy templates for the ISRIC WRB soil raster + its legend
+     * (#782). `tileUrl` keeps `{z}/{x}/{y}` literal for MapLibre to
+     * substitute. Absent ⇒ the soil RASTER and its legend do not render at
+     * all; `soilMode`'s per-parcel colouring is unaffected.
+     *
+     * Deliberately not defaulted to the upstream: a fallback would restore
+     * the third-party origin on exactly the paths that forgot to pass it.
+     */
+    soilOverlay?: { tileUrl: string; legendUrl: string } | null;
     /** parcelId → soil fill colour (only read when `soilMode`). */
     soilColorById?: Record<string, string>;
     /**
@@ -280,6 +289,7 @@ export function MapCanvas({
     vectorTileUrl,
     offlineBasemapTileUrl,
     soilMode = false,
+    soilOverlay = null,
     soilColorById,
     cropById,
     className,
@@ -833,12 +843,22 @@ export function MapCanvas({
                 {/* Soil-region area surface — ISRIC WRB soil-class WMS raster,
                     shown in Soil view UNDER the parcels so the whole landscape
                     reads as coloured soil regions with your fields on top. */}
-                {soilMode && (
+                {soilMode && soilOverlay && (
                     <Source
                         id="soil-wrb"
                         type="raster"
-                        tiles={[SOIL_WRB_WMS_TILE]}
+                        tiles={[soilOverlay.tileUrl]}
                         tileSize={256}
+                        /* MapLibre resolves a raster source's tile zoom as
+                           round(map.zoom + log2(512 / tileSize)) — with
+                           tileSize 256 that is map zoom + 1. Parcel fits go to
+                           maxZoom 16, so without this the source would request
+                           z17 tiles that the proxy refuses and the overlay
+                           would go BLANK at exactly the zoom operators work
+                           at. Declaring maxzoom makes MapLibre overzoom the
+                           z16 tile instead. Keep in lockstep with the route's
+                           ceiling — both read SOIL_TILE_MAX_ZOOM. */
+                        maxzoom={SOIL_TILE_MAX_ZOOM}
                         attribution={t('soilAttribution')}
                     >
                         <Layer id="soil-wrb-raster" type="raster" paint={{ 'raster-opacity': 0.55 }} />
@@ -1142,14 +1162,14 @@ export function MapCanvas({
                     {/* Soil-region legend — the WRB soil-class colour key for
                         the area overlay. Scrollable so the ~30-class ISRIC key
                         never dominates the (short, mobile) map pane. */}
-                    {soilMode && (
+                    {soilMode && soilOverlay && (
                         <div className="pointer-events-auto absolute bottom-3 left-3 z-10 flex max-h-[45%] w-24 flex-col overflow-hidden rounded-lg border border-border-subtle bg-bg-default/95 shadow-md">
                             <p className="flex-shrink-0 border-b border-border-subtle px-2 py-1 text-[10px] font-medium text-content-secondary">
                                 {t('soilRegions')}
                             </p>
                             <div className="min-h-0 overflow-y-auto p-1">
-                                {/* eslint-disable-next-line @next/next/no-img-element -- external WMS legend, not a local asset */}
-                                <img src={SOIL_WRB_LEGEND} alt={t('soilLegendAlt')} className="w-full" loading="lazy" />
+                                {/* eslint-disable-next-line @next/next/no-img-element -- proxied WMS legend image, not a local asset */}
+                                <img src={soilOverlay.legendUrl} alt={t('soilLegendAlt')} className="w-full" loading="lazy" />
                             </div>
                         </div>
                     )}
