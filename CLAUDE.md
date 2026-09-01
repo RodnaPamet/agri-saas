@@ -1447,7 +1447,19 @@ duplicating the limits table).
       mean something is that the spec RENDERS the map and toggles Soil view,
       so the requests whose absence it asserts are requests the page would
       have made. **Never delete an entry without a phase that exercises it.**
-    - **Web fonts are SELF-HOSTED** (#779) — vendored byte-identical from
+    - **Which basemap production resolves is WATCHED, not gated** (#781).
+  `/api/readyz` reports `capabilities.basemap` by scanning the shipped bundle's
+  inlined env (#790), and `.github/workflows/basemap-provenance.yml` probes it
+  daily; a red run becomes an issue via `ci-failure-issue.yml`. A publish-time
+  gate was designed and REJECTED on proportionality — the failure is "map
+  served by the wrong provider", not data loss, while gating would restructure
+  the publish pipeline, and that design's own review found a flaw
+  (`--push --load` redefines `steps.build.outputs.digest` from the index to
+  the platform manifest) that would have stopped GHCR publishing on the first
+  merge. **`blind` is treated as RED, not as a pass** — a scanner that cannot
+  classify the build does not know which basemap ships, and reporting unknown
+  as fine is the defect its positive controls exist to prevent.
+- **Web fonts are SELF-HOSTED** (#779) — vendored byte-identical from
       Google under `public/fonts/`, declared by the generated
       `src/styles/fonts.css`, pinned by `src/styles/fonts.lock.json`. Re-vendor
       with `npm run fonts:vendor -- --write-lock`; the default mode VERIFIES
