@@ -45,6 +45,13 @@ import { Eye, EyeSlash } from "./icons";
 // border + hover-border + focus-shadow + transition; the cva here
 // adds Input-specific surface chrome (bg, text colour, disabled /
 // read-only states) and the size scale.
+/**
+ * The one rung every Input size resolves to (#776), matched to the button
+ * rung's height so the two line up in a shared row. Text-entry surfaces keep
+ * their own horizontal padding — a 0.7rem inset is tight for typing.
+ */
+const INPUT_RUNG = "h-7 min-h-[44px] md:min-h-7 px-2.5 text-[0.76rem]";
+
 export const inputVariants = cva(
     [
         // R22-PR-A — radius mirror of button-variants.ts (12→10px).
@@ -60,16 +67,29 @@ export const inputVariants = cva(
     ],
     {
         variants: {
+            // Single-rung ladder (#776). The button family collapsed to one
+            // 28px rung and `controlSize` collapsed with it; this map is what
+            // `<Input>` ACTUALLY reads, so until it collapsed too a
+            // `<Button size="md">` sat 28px beside a 36px field in the rows
+            // they share. The lockstep with `button-variants.ts::size` was
+            // documented and asserted long before it was wired — this is the
+            // wiring.
+            //
+            // Roadmap-6 P4's mobile thumb-target floor is PRESERVED and now
+            // applies to EVERY size rather than only `md`. That is a widening,
+            // not a carry-over: `sm` had no floor and would have gone from
+            // 32px to 28px on a phone. Every field is now ≥44px on mobile
+            // (WCAG 2.5.5 / Apple HIG) and 28px on desktop.
+            //
+            // The floor stays VIEWPORT-based (`md:` breakpoint) rather than
+            // pointer-based like the button's `pointer-coarse:min-h-11`.
+            // Changing that mechanism is a separate decision; matching heights
+            // did not require matching the way each family reaches them.
+            // Measured by `tests/e2e/mobile/forms.spec.ts`.
             size: {
-                sm: "h-8 px-2.5 text-xs",
-                // Roadmap-6 P4 — mobile thumb-target floor. `md` is the
-                // DEFAULT Input size; its mobile min-height rises to 44px
-                // (WCAG 2.5.5 / Apple HIG) so tapping a field is comfortable
-                // on phones. Desktop pins back to h-9 (36px) via `md:min-h-9`
-                // so form density is unchanged on larger screens. Kept in
-                // lockstep with the Button `md` variant (R20-PR-A parity).
-                md: "h-9 min-h-[44px] md:min-h-9 px-3",
-                lg: "h-10 px-3.5",
+                sm: INPUT_RUNG,
+                md: INPUT_RUNG,
+                lg: INPUT_RUNG,
             },
             invalid: {
                 true: "border-border-error text-content-error placeholder-content-error/60 focus-visible:border-border-error focus-visible:shadow-[0_0_0_3px_rgb(220_38_38_/_0.20)] hover:border-border-error",
