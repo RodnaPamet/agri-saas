@@ -175,6 +175,7 @@ jobs:
         uses: google-github-actions/setup-gcloud@v3
 
       - name: Run the restore drill
+        id: drill
         env:
           GCP_PROJECT: ${{ vars.GCP_PROJECT || 'hazel-design-419410' }}
           GCP_ZONE: ${{ vars.GCP_ZONE || 'europe-west1-b' }}
@@ -183,7 +184,24 @@ jobs:
           PGDATA_VOLUME: ${{ matrix.pgdata_volume }}
           STACK_DIR: ${{ matrix.stack_dir }}
           PG_IMAGE: ${{ matrix.pg_image }}
-        run: ./infra/scripts/restore-test-gcp.sh
+        # The exit code is CAPTURED and re-raised rather than left implicit,
+        # because 75 (EX_TEMPFAIL) has to reach the summary below: it means
+        # every zone in the region was out of capacity, so the drill never got
+        # to test the backup. That is a different fact from "the backup did
+        # not restore", and reporting the first as the second is a false alarm
+        # that costs someone a night.
+        #
+        # `exit $code` is load-bearing. Dropping it turns EVERY drill failure
+        # green while `job.status` still reads success — the worst possible
+        # regression in this file, and the reason
+        # tests/guards/oi-3-backup-restore.test.ts asserts on these lines.
+        run: |
+          set +e
+          ./infra/scripts/restore-test-gcp.sh
+          code=$?
+          set -e
+          echo "exit_code=${code}" >> "$GITHUB_OUTPUT"
+          exit $code
 
       - name: Workflow summary
         if: always()
@@ -193,11 +211,30 @@ jobs:
             echo ""
             echo "- **Triggered by:** ${{ github.event_name }}"
             echo "- **Reason:** ${{ github.event.inputs.reason || 'scheduled' }}"
-            echo "- **Target:** ${{ matrix.target }} — disk \`${{ matrix.disk }}\`, schedule \`${{ matrix.schedule }}\` (${{ vars.GCP_ZONE || 'europe-west1-b' }})"
+            echo "- **Target:** ${{ matrix.target }} — disk \`${{ matrix.disk }}\`, schedule \`${{ matrix.schedule }}\`"
+            echo "- **Region:** ${{ vars.GCP_ZONE || 'europe-west1-b' }} and its sibling zones — the drill provisions in the first with room, so the zone it used is in the step log above, not here"
             echo "- **Result:** ${{ job.status }}"
             echo "- **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo ""
-            if [ "${{ job.status }}" != "success" ]; then
+            if [ "${{ steps.drill.outputs.exit_code }}" = "75" ]; then
+              echo "### ⚠ NOT TESTED — no capacity, not a bad backup"
+              echo ""
+              echo "Every zone in the region was out of capacity, so the drill could not"
+              echo "provision a disk and VM and never reached the restore. **This is not"
+              echo "evidence that the backup is broken** — the schedule-attached and"
+              echo "snapshot-freshness checks both PASSED before it stopped."
+              echo ""
+              echo "What it does mean: the restore path is UNVERIFIED for this cycle."
+              echo "Re-run the workflow manually; capacity is usually transient."
+              echo ""
+              echo "The cleanup trap deletes the throwaway VM and disk on every exit"
+              echo "path, including this one. If it was killed hard, check for leaks:"
+              echo ""
+              echo '```'
+              echo "gcloud compute instances list --filter='name~restore-test-'"
+              echo "gcloud compute disks list --filter='name~restore-test-'"
+              echo '```'
+            elif [ "${{ job.status }}" != "success" ]; then
               echo "### ⚠ Action required"
               echo ""
               echo "The production backup did not restore cleanly. Investigate before"

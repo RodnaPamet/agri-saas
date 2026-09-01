@@ -112,14 +112,22 @@ It takes ~10 minutes and costs a few cents. What it does:
 1. Asserts the snapshot **schedule is still attached** to the disk —
    a detached resource policy stops all backups with no error anywhere.
 2. Asserts the newest snapshot is **< 26h old** (`MAX_SNAPSHOT_AGE_HOURS`).
-3. Creates a disk from that snapshot.
-4. Boots a throwaway VM with **no service account and no scopes** — it
-   briefly holds a copy of production data, so it gets no GCP identity.
-5. Mounts the disk and starts a real Postgres over the recovered data
+3. Creates a disk from that snapshot **and** boots a throwaway VM with
+   **no service account and no scopes** — it briefly holds a copy of
+   production data, so it gets no GCP identity. Both are provisioned in
+   the first zone of the region that has room: a persistent disk is
+   zonal, a snapshot is not, and a single pinned zone is what made
+   2026-09-01 fail with `ZONE_RESOURCE_POOL_EXHAUSTED` before the drill
+   could test anything. Disk and VM move together because either can be
+   the exhausted half, and a disk holding production data must never be
+   left in a zone the VM could not boot in. If **every** zone in the
+   region is full the drill exits **75**, which means *not tested* —
+   not *broken* (see below).
+4. Mounts the disk and starts a real Postgres over the recovered data
    directory so WAL recovery actually runs — building agrent's
    `postgis` + `pgvector` image, or pulling whatever `PG_IMAGE` names,
    so the restored cluster's extensions resolve.
-6. Runs the validation battery: `SELECT 1`; `Tenant` and `User`
+5. Runs the validation battery: `SELECT 1`; `Tenant` and `User`
    readable; `_prisma_migrations` non-empty; recent `AuditLog` rows;
    `tenant_isolation` policies present in `pg_policies`; `app_user`
    role present.
@@ -147,6 +155,32 @@ the same as executed"). A red that says *nobody checked the backup* is
 correct; a green that means the same thing is not.
 
 ---
+
+## Drill history
+
+`tests/guards/oi-3-backup-restore.test.ts` points readers here for the drill's
+last-run record, so it lives here rather than only in the Actions tab.
+
+| date | trigger | outcome |
+|---|---|---|
+| 2026-07-01 | schedule | **failed — different workflow.** The old AWS RDS drill, dead at `Configure AWS credentials (OIDC)`. It tested infrastructure neither product runs; replaced 2026-08-01. |
+| 2026-08-01 | schedule | **failed — same old workflow**, same AWS credential step. |
+| 2026-08-21 | manual ×3 | first two failed while the GCP drill was being brought up; **the third PASSED — the first genuine restore verification either stack has ever had.** |
+| 2026-09-01 | schedule | **exit 75 — NOT TESTED.** Both targets hit `ZONE_RESOURCE_POOL_EXHAUSTED` for a pd-balanced disk in `europe-west1-b`. The backups were fine: schedule attached and newest snapshot 6h old on both, verified before it stopped. This was the FIRST scheduled run of the current drill, and it is what the zone fallback above exists for. |
+
+Two things that table is here to stop being misread:
+
+- **Do not read the 07-01 and 08-01 rows as this drill failing.** They are a
+  different workflow against different infrastructure. `gh run list --workflow
+  restore-test.yml` returns both systems under one name, because the file was
+  replaced rather than renamed — so a raw conclusion column reads as three
+  consecutive failures of one thing when it is two failures of a dead thing and
+  one of a new thing.
+- **Exit 75 is not a failed restore.** It means every zone in the region was
+  out of capacity, so the drill never got to test anything. The job still goes
+  red — an unverified restore path deserves attention — but the summary says
+  `NOT TESTED`, and the correct response is to re-run it, not to start an
+  incident.
 
 ## Recovering for real
 
