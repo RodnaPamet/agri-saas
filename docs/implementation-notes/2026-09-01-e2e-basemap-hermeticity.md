@@ -146,11 +146,25 @@ labelled as such in both the workflow and CLAUDE.md.
   passed**. The dependency is real and has already failed in CI; the cited
   causation was adjacency in a scrolled log. The localhost hang belongs to #748.
 - **The demotiles fallback is untouched.** It is a product feature (the map
-  renders without a MapTiler signup) and — verified against the running
-  container — a live **production** path: the published image is built with
-  `ARG NEXT_PUBLIC_MAPTILER_KEY=""` and `deploy.yml` passes no `build-args`, so
-  the deployed map renders from demotiles. That is now tracked as #781, along
-  with the signal CI gives up by going hermetic.
+  renders without a MapTiler signup). I first reported it as a live production
+  path and **that was wrong** — corrected on #781. `ghcr-publish.yml:83` passes
+  `NEXT_PUBLIC_MAPTILER_KEY` as a build-arg from a repo variable that is set,
+  and the key is a populated literal in the deployed bundle's env object, so
+  production renders from MapTiler.
+
+  The mistake is worth recording because it is a shape this file warns about
+  elsewhere. I read `deploy.yml` (which deploys) instead of `ghcr-publish.yml`
+  (which BUILDS), then confirmed the deployed bundle *reads*
+  `NEXT_PUBLIC_MAPTILER_KEY` — an observation satisfied on **both** branches,
+  so it could not distinguish them. Counting URL literals is equally inert:
+  `demotiles` and `api.maptiler.com` are both in the source unconditionally.
+  Only the populated literal inside the env object that call site imports
+  settles it. Same failure mode as the CSP-nonce positive control.
+
+  The residual is real and stays open on #781: nothing ASSERTS which branch
+  production took, so clearing the repo variable or a fork build falls back to
+  demotiles silently — a working map served by a third party, no error, no
+  alert. `X-Basemap-Source` is the right primitive for that guard.
 
 ## Deliberately out of scope
 
@@ -161,7 +175,8 @@ Filed rather than folded in, per "a merged PR body is not a tracker":
   still reached. Blocking the fonts moves font metrics, which several
   responsive assertions depend on, so it needs its own measurement.
 - **#780** — the offline-map success toast fires over an empty pack.
-- **#781** — nothing watches whether demotiles is still a valid style, and
-  production renders from it.
+- **#781** — nothing asserts which basemap branch the production build took,
+  so a silent fallback to demotiles is undetectable; and nothing watches
+  whether that style is still valid.
 - **#782** — `maps.isric.org` is a second hard-coded third-party map origin,
   dormant only because no spec enables Soil view.

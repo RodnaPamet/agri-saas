@@ -17,10 +17,16 @@ import { env } from '@/env';
  * MapTiler key is configured, so the map renders without a signup.
  *
  * Do NOT remove it: #764 is about CI determinism, not about this fallback.
- * Note it is a live PRODUCTION path, not merely a dev convenience — the
- * published image is built with `ARG NEXT_PUBLIC_MAPTILER_KEY=""` and
- * `deploy.yml` passes no `build-args`, so the deployed map renders from
- * demotiles. See #781.
+ *
+ * Production does NOT currently take this branch — `ghcr-publish.yml` passes
+ * `NEXT_PUBLIC_MAPTILER_KEY` as a build-arg from a repo variable, and the key
+ * is a populated literal in the deployed bundle's env object, so the deployed
+ * map renders from MapTiler. But nothing ASSERTS that: clearing the repo
+ * variable, building from a fork, or dropping that one workflow line falls
+ * back here silently — a working map quietly served by a third party. See
+ * #781. (`Dockerfile`'s `ARG NEXT_PUBLIC_MAPTILER_KEY=""` is the default when
+ * nothing supplies one, not the effective value — and note that observing the
+ * bundle READ this var proves nothing, since it is read on both branches.)
  */
 export const DEMO_STYLE = 'https://demotiles.maplibre.org/style.json';
 
