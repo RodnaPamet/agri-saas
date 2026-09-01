@@ -69,6 +69,27 @@ const defaultOptions = {
     async headers() {
         return [
             {
+                // Self-hosted web fonts (#779). Content-hashed by the vendor
+                // script's lock rather than by filename, so `immutable` is a
+                // claim about the FILE not the URL — a font swap changes the
+                // lock, which changes the bytes under the same path. That is
+                // acceptable because a swap is a deliberate, reviewed act (the
+                // lock refuses to move without `--write-lock`) and a stale
+                // cached face renders correctly, just as the previous version.
+                //
+                // Cross-origin Google Fonts got their caching from Google.
+                // Same-origin means we own it — and it is what makes the files
+                // cacheable by `public/sw.js` at all, which is the offline win
+                // this change is really for.
+                source: '/fonts/:path*',
+                headers: [
+                    {
+                        key: 'Cache-Control',
+                        value: 'public, max-age=31536000, immutable',
+                    },
+                ],
+            },
+            {
                 // Apply these headers to all routes globally.
                 // NOTE: Content-Security-Policy is set dynamically in middleware.ts
                 // (per-request nonce) and is NOT included here.

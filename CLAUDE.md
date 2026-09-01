@@ -1440,9 +1440,30 @@ duplicating the limits table).
       siblings of `<Map>`, and nothing asserts on console output. Both
       runner-up designs proposed that blackhole AS the ratchet; it was
       measured inert.
-    - The suite is **demotiles-hermetic, not hermetic**: `fonts.googleapis.com`
-      (#779) and `maps.isric.org` (#782) are allowlisted with written reasons.
-      A NEW external origin fails the spec until somebody decides otherwise.
+    - **The suite is now fully hermetic and `ALLOWED_EXTERNAL` is EMPTY** —
+      basemap (#764), ISRIC soil (#782) and the web fonts (#779) are all
+      same-origin. An empty allowlist is NOT the proof: `expect(external)
+      .toEqual([])` is satisfied by a page that never loaded. What makes it
+      mean something is that the spec RENDERS the map and toggles Soil view,
+      so the requests whose absence it asserts are requests the page would
+      have made. **Never delete an entry without a phase that exercises it.**
+    - **Web fonts are SELF-HOSTED** (#779) — vendored byte-identical from
+      Google under `public/fonts/`, declared by the generated
+      `src/styles/fonts.css`, pinned by `src/styles/fonts.lock.json`. Re-vendor
+      with `npm run fonts:vendor -- --write-lock`; the default mode VERIFIES
+      and exits 1 on drift, because regenerating both the files and their
+      hashes in one step would make a changed font program a green diff.
+      A lock change is a FONT PROGRAM change: keep the whole weight set, since
+      trimming Onest's unused weights swaps a variable font for a static
+      instance (measured) and moves metrics.
+      This is not only CI hygiene. `public/sw.js` passes cross-origin requests
+      through untouched, so the Google-hosted files were never cacheable — an
+      operator with no signal fell back to system-ui for every string.
+      It also retired an ordering hazard rather than working around it: a
+      remote `@import` cannot be inlined, so it had to be the FIRST statement
+      in `globals.css`, and on 2026-05-21 it drifted below
+      `@import "tailwindcss"` and 500'd every page. A relative import is
+      inlined; there is no ordering left to get wrong.
 - `SKIP_ENV_VALIDATION=1` is set in `jest.setup.js` to prevent env loader crash in unit tests.
 - Coverage thresholds live in `jest.thresholds.json`, NOT in `jest.config.js`:
   jest 29.7's per-project (and multi-project top-level) `coverageThreshold` is

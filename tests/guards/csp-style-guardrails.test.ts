@@ -224,7 +224,7 @@ describe('CSP Production style-src', () => {
         expect(styleSrc).not.toContain(`'nonce-${nonce}'`);
     });
 
-    it('style-src allows Google Fonts stylesheet origin', () => {
+    it('style-src allows NO third-party origin — fonts are self-hosted (#779)', () => {
         const { buildCspHeader, generateNonce } = require('../../src/lib/security/csp');
         const nonce = generateNonce();
         const csp: string = buildCspHeader(nonce, false);
@@ -234,7 +234,11 @@ describe('CSP Production style-src', () => {
             .map((d: string) => d.trim())
             .find((d: string) => d.startsWith('style-src'));
 
-        expect(styleSrc).toContain('https://fonts.googleapis.com');
+        expect(styleSrc).toBeDefined();
+        expect(styleSrc).not.toContain('https://');
+        // Positive half — `not.toContain` would also pass over a missing or
+        // empty directive, which would block the app's own stylesheets.
+        expect(styleSrc).toContain("'self'");
     });
 
     it('dev style-src allows unsafe-inline for HMR style injection', () => {

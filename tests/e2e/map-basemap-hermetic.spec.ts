@@ -55,8 +55,16 @@ const SQUARE = {
  * demotiles-hermetic; it is not hermetic.
  */
 const ALLOWED_EXTERNAL = new Map<string, string>([
-    ['fonts.googleapis.com', 'src/app/globals.css:6 remote @import — must stay an @import (#779)'],
-    ['fonts.gstatic.com', 'font files pulled by the above (#779)'],
+    // EMPTY. The map surface reaches no third-party origin at all: the basemap
+    // since #764, ISRIC soil since #782, and the web fonts since #779.
+    //
+    // An empty allowlist is NOT the proof, and deleting the last entry proved
+    // nothing on its own — `expect(external).toEqual([])` is satisfied by a
+    // page that never loaded. What makes it mean something is that this spec
+    // RENDERS the map, toggles Soil view and waits for the legend, so the
+    // requests it is asserting the absence of are requests the page would
+    // actually have made. Keep it that way: an origin removed from here
+    // without a phase that exercises it is a green check over an untested path.
 ]);
 
 test.describe('basemap hermeticity', () => {

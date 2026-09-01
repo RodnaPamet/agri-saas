@@ -155,11 +155,13 @@ export function buildCspHeader(nonce: string, isDev = false): string {
             // tags and CSS-in-JS out of the codebase, and script-src
             // remains strict (nonce + strict-dynamic).
             "'unsafe-inline'",
-            // Google Fonts stylesheet
-            'https://fonts.googleapis.com',
+            // No third-party stylesheet origin: fonts are self-hosted (#779),
+            // so `style-src` is now 'self' + 'unsafe-inline' only.
         ],
         'img-src': ["'self'", 'data:', 'https:'],
-        'font-src': ["'self'", 'data:', 'https://fonts.gstatic.com'],
+        // Self-hosted woff2 under /fonts/ (#779) — no third-party font
+        // origin. `data:` stays for inline icon fonts.
+        'font-src': ["'self'", 'data:'],
         'connect-src': [
             "'self'",
             'blob:',

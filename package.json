@@ -17,6 +17,7 @@
         "start": "cross-env NEXT_IGNORE_INCORRECT_LOCKFILE=1 next start",
         "migrate:deploy": "prisma migrate deploy",
         "prod:local": "npm run migrate:deploy && npm run build && npm start",
+        "fonts:vendor": "node scripts/fonts/vendor-fonts.mjs",
         "db:generate": "prisma generate",
         "db:push": "prisma db push",
         "db:seed": "tsx prisma/seed.ts",

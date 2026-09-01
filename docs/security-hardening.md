@@ -124,10 +124,26 @@ Set `mfaFailClosed: true` in the tenant's `TenantSecuritySettings` record via ad
 ### Current Policy (production)
 ```
 script-src  'self' 'nonce-X' 'strict-dynamic'
-style-src   'self' 'nonce-X' https://fonts.googleapis.com
+style-src   'self' 'unsafe-inline'
+font-src    'self' data:
 ```
 
-**No `unsafe-inline`** in production for either scripts or styles.
+**No `unsafe-inline` in `script-src`** — scripts are nonce + `strict-dynamic`,
+and the `patches/next+<version>.patch` CSP-nonce work exists to keep it that
+way.
+
+`style-src` DOES carry `'unsafe-inline'`, and deliberately: a nonce cannot
+match a `style=` attribute, and the app emits many SSR inline styles
+(progress-bar widths, status colours). The nonce is therefore dropped from
+`style-src` rather than kept alongside a permission that overrides it. What
+holds the line instead is `tests/guards/csp-style-guardrails.test.ts`, which
+keeps `<style>` tags and CSS-in-JS out of the codebase. (This block previously
+claimed no `unsafe-inline` for styles either — that was never true of the
+shipped policy.)
+
+**No third-party origin** in `style-src` or `font-src` since #779: the web
+fonts are self-hosted under `/fonts/`, so neither `fonts.googleapis.com` nor
+`fonts.gstatic.com` is reachable from the app.
 
 ### Rollout
 ```bash
