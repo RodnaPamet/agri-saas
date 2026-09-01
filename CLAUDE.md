@@ -520,8 +520,8 @@ to evict. Three rules, all load-bearing — see
   open at a LOWER version, so reverting it deletes nothing but freezes sync
   on every upgraded device. Roll the client forward, not back.
 
-- **Queued MUTATIONS are bound to the operator who queued them; queued
-  PHOTOS are not.** A replay uses `fetch`, which sends whatever session
+- **Queued work is bound to the operator who queued it — mutations and
+  photos alike.** A replay uses `fetch`, which sends whatever session
   cookie is CURRENT — not the one that queued the item. On a shared device
   that means A's work lands attributed to B in a hash-chained audit trail,
   or (different tenant) earns a 403. So `enqueue` stamps `queuedByUserId`
@@ -534,16 +534,27 @@ to evict. Three rules, all load-bearing — see
   unskipped foreign item would park as auth-blocked and stop the drain for
   the operator who IS signed in, and nothing in the codebase ever clears a
   `blocked` flag, so the park is permanent rather than a deferral.
-  **`enqueuePhoto` does NOT stamp `queuedByUserId`** (#786) — the item it
-  builds has no such field and `EnqueuePhotoInput` has nowhere to pass one — even
-  though the field lives on the SHARED `OutboxItemBase` and both kinds drain
-  from the one store. Both read sites (`sync.ts`, `outbox-state.ts`) gate on
-  the field being PRESENT, so a photo queued offline on a shared device is
-  never skipped and never counted as foreign: it replays under whoever is
-  signed in at flush time (live path: `JournalPhotosTab` → `submitPhoto` →
-  `enqueuePhoto`). Items with no attribution still flush, and that set is
-  NOT just pre-#611 legacy rows — every photo queued since is in it. A drain
-  with no known user (the service worker) still drains everything.
+  **BOTH enqueue paths stamp it, from the ONE `attribution()` helper in
+  `outbox.ts`** — and that helper exists because #786 was precisely those two
+  paths drifting. `enqueue` and `enqueuePhoto` build two item literals over
+  the same `OutboxItemBase`, and only the first ever stamped; both read sites
+  gate on the field being PRESENT, so every photo queued since the kind
+  shipped was neither skipped nor counted as foreign and replayed under
+  whoever was signed in at flush time. The carve-out below read as a
+  shrinking set of legacy rows and was in fact every photo, permanently. **A
+  third enqueue path uses `attribution()` or it is the same bug again** — and
+  a test that exercises one path cannot catch it, which is why
+  `tests/unit/offline/outbox-user-binding.test.ts` drives the enqueue cases
+  from one table. Legacy items with no attribution still flush, and a drain
+  with no known user still drains everything. **The service worker is a
+  separate case, and the rule above structurally cannot reach it:**
+  `public/sw.js` cannot import from `src/`, so its Background Sync drain is a
+  parallel REIMPLEMENTATION of the flush (`public/sw.js`'s own
+  `flushOutbox`, not the one in `sync.ts`) with no attribution concept at all
+  — zero occurrences of `queuedByUserId`, `foreign` or `owner`. So the
+  binding is enforced on the PAGE drain only, and `attribution()` living in
+  `src/` is exactly why: two implementations drifting is the same shape as
+  #786, one level up.
 
 New offline surfaces subscribe to the shared state; they do not add another
 `useState` count or another flush loop.

@@ -19,9 +19,23 @@
  *    this one.
  *
  * So: never send another operator's item, and never drop it either.
+ *
+ * ## The half that was missed for the whole life of the photo kind (#786)
+ *
+ * `enqueue` and `enqueuePhoto` build TWO item literals over the same
+ * `OutboxItemBase`, and only the first ever stamped `queuedByUserId`. Both
+ * read sites gate on the field being PRESENT, so an unstamped photo was
+ * neither skipped by `flushOutbox` nor counted in `snapshot.foreign` — it
+ * simply replayed under whoever was signed in at flush time.
+ *
+ * The carve-out "legacy items with no attribution still flush" read as a
+ * shrinking set of pre-#611 rows. It was in fact EVERY photo, permanently.
+ *
+ * That is why the enqueue cases below are driven from ONE table: the defect
+ * was two paths drifting, so a test that exercises one path cannot catch it.
  */
 import { flushOutbox } from '@/lib/offline/sync';
-import { InMemoryOutboxStore, enqueue, type OutboxItem } from '@/lib/offline/outbox';
+import { InMemoryOutboxStore, enqueue, enqueuePhoto, type OutboxItem } from '@/lib/offline/outbox';
 import { setCurrentUserId, getCurrentUserId } from '@/lib/offline/current-user';
 
 const OK = { ok: true, status: 200 };
@@ -41,35 +55,68 @@ function seed(store: InMemoryOutboxStore, over: Partial<OutboxItem> = {}) {
     return item;
 }
 
+function photoBlob(): Blob {
+    return new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'image/jpeg' });
+}
+
+function photoInput() {
+    return {
+        url: '/api/t/acme/journal/e1/files',
+        blob: photoBlob(),
+        fileName: 'north.jpg',
+        fileType: 'image/jpeg',
+        label: 'Photo of north 40',
+    };
+}
+
+/**
+ * BOTH enqueue paths, driven from ONE table.
+ *
+ * A third enqueue path adds a row here. Asserting on a single path is what
+ * let #786 sit undetected for the whole life of the photo kind.
+ */
+const ENQUEUE_PATHS: Array<[string, (s: InMemoryOutboxStore) => Promise<OutboxItem>]> = [
+    [
+        'enqueue (mutation)',
+        (s) =>
+            enqueue(s, {
+                url: '/api/t/acme/journal',
+                method: 'POST',
+                body: { title: 'Aphids' },
+                label: 'Log entry',
+            }),
+    ],
+    ['enqueuePhoto (photo)', (s) => enqueuePhoto(s, photoInput())],
+];
+
 afterEach(() => setCurrentUserId(null));
 
-describe('attribution at enqueue', () => {
-    it('stamps the signed-in operator onto a queued item', async () => {
+describe.each(ENQUEUE_PATHS)('attribution at enqueue — %s', (_label, run) => {
+    it('stamps the signed-in operator, and persists it', async () => {
         setCurrentUserId('usr_a');
         const store = new InMemoryOutboxStore();
-        const item = await enqueue(store, {
-            url: '/api/t/acme/journal',
-            method: 'POST',
-            body: { title: 'Aphids' },
-            label: 'Log entry',
-        });
+
+        const item = await run(store);
+
         expect(item.queuedByUserId).toBe('usr_a');
+        // Read back from the STORE, not just off the return value — the stamp
+        // has to be on the record the flush and the snapshot actually see.
+        expect((await store.all())[0].queuedByUserId).toBe('usr_a');
     });
 
     it('omits the field entirely when nobody is signed in', async () => {
         setCurrentUserId(null);
         const store = new InMemoryOutboxStore();
-        const item = await enqueue(store, {
-            url: '/api/t/acme/journal',
-            method: 'POST',
-            body: {},
-            label: 'Log entry',
-        });
+
+        const item = await run(store);
+
         // Absent, not `undefined` — the record shape stays clean for the
         // service worker, which reads these raw from IndexedDB.
         expect('queuedByUserId' in item).toBe(false);
     });
+});
 
+describe('the current-user helper itself', () => {
     it('reads back what was set', () => {
         setCurrentUserId('usr_b');
         expect(getCurrentUserId()).toBe('usr_b');
@@ -156,5 +203,36 @@ describe('back-compat and the no-owner case', () => {
         seed(store, { id: 'a-item', queuedByUserId: 'usr_a' });
         const res = await flushOutbox(store, async () => OK, null);
         expect(res.sent).toBe(1);
+    });
+});
+
+describe("another operator's PHOTO on this device", () => {
+    it('is neither sent nor dropped, and is reported as foreign', async () => {
+        setCurrentUserId('usr_a');
+        const store = new InMemoryOutboxStore();
+        const photo = await enqueuePhoto(store, photoInput());
+
+        setCurrentUserId('usr_b');
+        const send = jest.fn(async () => OK);
+        const res = await flushOutbox(store, send, 'usr_b');
+
+        // Sending would file A's photo as B in a hash-chained audit trail.
+        expect(send).not.toHaveBeenCalled();
+        expect(res.foreign).toBe(1);
+        // And it must still be on the device when A signs back in.
+        expect((await store.all()).map((i) => i.id)).toEqual([photo.id]);
+    });
+
+    it('flushes normally once its owner signs back in', async () => {
+        setCurrentUserId('usr_a');
+        const store = new InMemoryOutboxStore();
+        await enqueuePhoto(store, photoInput());
+
+        const send = jest.fn(async () => OK);
+        const res = await flushOutbox(store, send, 'usr_a');
+
+        expect(send).toHaveBeenCalledTimes(1);
+        expect(res.foreign).toBe(0);
+        expect(await store.all()).toEqual([]);
     });
 });
