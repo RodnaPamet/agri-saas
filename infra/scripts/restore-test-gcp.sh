@@ -100,6 +100,55 @@ TIMESTAMP="$(date -u +%Y%m%d%H%M%S)"
 RESTORE_DISK_ID="restore-test-disk-${TIMESTAMP}"
 RESTORE_VM_ID="restore-test-vm-${TIMESTAMP}"
 
+# ── Zone candidates ────────────────────────────────────────────
+# A persistent disk is ZONAL, but a snapshot is not bound to a zone, so a
+# restore can land in any zone of the same region. Pinning one zone is what
+# made 2026-09-01 (run 33491345028) fail: BOTH targets got
+# ZONE_RESOURCE_POOL_EXHAUSTED for a pd-balanced disk in europe-west1-b, on
+# the FIRST scheduled run of this drill. Nothing was wrong with the backups —
+# the drill had already proved the schedule was attached and the newest
+# snapshot 6h old — and there was no second zone to try.
+#
+# Every candidate must share GCP_ZONE's region: snapshots here carry an `eu`
+# storage location, and a cross-region restore would either fail or quietly
+# cost egress. A wrong entry is a loud failure, not a silent one.
+GCP_REGION="${GCP_ZONE%-*}"
+if [ -z "${RESTORE_ZONES:-}" ]; then
+    # Derive siblings only from a zone that actually looks like `region-x`.
+    # A zone name without a suffix (tests pass a placeholder) yields itself and
+    # nothing else, rather than three fabricated names.
+    case "${GCP_ZONE}" in
+        *-*) RESTORE_ZONES="${GCP_ZONE} ${GCP_REGION}-b ${GCP_REGION}-c ${GCP_REGION}-d" ;;
+        *)   RESTORE_ZONES="${GCP_ZONE}" ;;
+    esac
+fi
+_ZONES=""
+for _z in ${RESTORE_ZONES}; do
+    # The configured zone is authoritative — it is in its own region by
+    # definition. Only ADDITIONAL candidates are checked, because a
+    # cross-region restore would either fail on the snapshot's `eu` storage
+    # location or quietly cost egress.
+    if [ "${_z}" != "${GCP_ZONE}" ]; then
+        case "${_z}" in
+            "${GCP_REGION}"-*) ;;
+            *)
+                printf '\n\033[31m✗ RESTORE_ZONES entry %s is not in region %s\033[0m\n' \
+                    "${_z}" "${GCP_REGION}" >&2
+                exit 1
+                ;;
+        esac
+    fi
+    case " ${_ZONES} " in *" ${_z} "*) continue ;; esac
+    _ZONES="${_ZONES}${_z} "
+done
+RESTORE_ZONES="${_ZONES% }"
+
+# The zone the throwaway resources actually live in. Starts as the configured
+# one and moves if a zone is exhausted; cleanup and every later step read THIS
+# rather than GCP_ZONE, or a fallback would leak a disk holding production
+# data in a zone nothing deletes from.
+ACTIVE_ZONE="${GCP_ZONE}"
+
 GC="gcloud --project=${GCP_PROJECT} --quiet"
 
 log() { printf '\n\033[1m▸ %s\033[0m\n' "$*"; }
@@ -112,9 +161,9 @@ fail() { printf '\n\033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 cleanup() {
     local rc=$?
     log "cleanup — removing throwaway VM + restored disk"
-    ${GC} compute instances delete "${RESTORE_VM_ID}" --zone "${GCP_ZONE}" 2>/dev/null \
+    ${GC} compute instances delete "${RESTORE_VM_ID}" --zone "${ACTIVE_ZONE}" 2>/dev/null \
         || echo "  (no VM ${RESTORE_VM_ID} to delete)"
-    ${GC} compute disks delete "${RESTORE_DISK_ID}" --zone "${GCP_ZONE}" 2>/dev/null \
+    ${GC} compute disks delete "${RESTORE_DISK_ID}" --zone "${ACTIVE_ZONE}" 2>/dev/null \
         || echo "  (no disk ${RESTORE_DISK_ID} to delete)"
     exit $rc
 }
@@ -124,7 +173,7 @@ trap cleanup EXIT INT TERM
 # A snapshot schedule is a resource POLICY attached to a disk. Detach
 # it and backups stop with no error anywhere — the failure mode this
 # whole drill exists to catch early.
-log "1/6  asserting snapshot schedule '${SNAPSHOT_SCHEDULE}' is attached to disk '${SOURCE_DISK}'"
+log "1/5  asserting snapshot schedule '${SNAPSHOT_SCHEDULE}' is attached to disk '${SOURCE_DISK}'"
 # A failed API call and a genuinely detached schedule are DIFFERENT
 # ANSWERS and must not collapse into one. `2>/dev/null || true` used to
 # turn a permission error, an IAM propagation delay or a wrong zone into
@@ -150,7 +199,7 @@ fi
 echo "  ✓ attached"
 
 # ── 2. The newest snapshot is fresh ────────────────────────────
-log "2/6  finding newest READY snapshot of '${SOURCE_DISK}'"
+log "2/5  finding newest READY snapshot of '${SOURCE_DISK}'"
 # Same distinction as step 1: "the list came back empty" and "the list
 # call failed" are different facts, and only the first one means there is
 # nothing to restore.
@@ -175,29 +224,60 @@ fi
 echo "  ✓ fresh"
 
 # ── 3. Disk from snapshot ──────────────────────────────────────
-log "3/6  creating disk '${RESTORE_DISK_ID}' from '${SNAPSHOT_NAME}'"
-${GC} compute disks create "${RESTORE_DISK_ID}" \
-    --zone "${GCP_ZONE}" \
-    --source-snapshot "${SNAPSHOT_NAME}" \
-    --type pd-balanced >/dev/null
-echo "  ✓ created"
+# The 09-01 stderr is pasted verbatim into
+# tests/unit/restore-drill-error-reporting.test.ts. Read these patterns
+# against it rather than against a paraphrase: gcloud prints BOTH a machine
+# `code:` line and a human `localizedMessage`, and only the first carries
+# ZONE_RESOURCE_POOL_EXHAUSTED. A classifier matching only the code works
+# until gcloud reformats — and the fall-through is the exact misreport this
+# change exists to prevent: a capacity abort announced as "the production
+# backup did not restore cleanly".
+is_capacity_error() {
+    case "$1" in
+        *ZONE_RESOURCE_POOL_EXHAUSTED*|*RESOURCE_POOL_EXHAUSTED*) return 0 ;;
+        *"does not have enough resources"*)                       return 0 ;;
+        *"is currently unavailable in"*)                          return 0 ;;
+        *"currently unavailable"*)                                return 0 ;;
+        *)                                                        return 1 ;;
+    esac
+}
 
-# ── 4. Throwaway VM ────────────────────────────────────────────
-# --no-service-account --no-scopes: the drill VM briefly holds a copy
-# of production data, so it gets NO GCP identity — it cannot read a
-# secret, write a bucket, or touch another instance even if something
-# on it were compromised. It needs egress (image pulls) but nothing
-# opens ingress to it, and the trap deletes it either way.
-log "4/6  booting throwaway VM '${RESTORE_VM_ID}' (${RESTORE_MACHINE_TYPE})"
-${GC} compute instances create "${RESTORE_VM_ID}" \
-    --zone "${GCP_ZONE}" \
-    --machine-type "${RESTORE_MACHINE_TYPE}" \
-    --image-family ubuntu-2404-lts-amd64 \
-    --image-project ubuntu-os-cloud \
-    --boot-disk-size 20GB \
-    --no-service-account --no-scopes \
-    --disk "name=${RESTORE_DISK_ID},device-name=restored,mode=rw,auto-delete=no" \
-    --metadata-from-file startup-script=/dev/stdin <<'STARTUP' >/dev/null
+# Provision the restored disk AND the throwaway VM in one zone.
+#
+# They move together on purpose. `e2-medium` can be the exhausted half while
+# pd-balanced is fine, and looping only the disk create would strand a
+# restored disk — holding a copy of production data — in a zone the VM could
+# not boot in.
+#
+# Returns 0 on success, 75 when THIS zone is out of capacity (try the next),
+# and fails hard on anything else: an IAM error or a missing snapshot is a
+# real problem and must not be retried into a confusing multi-zone trace.
+provision_in_zone() {
+    local zone="$1" err rc
+
+    if ! err="$(${GC} compute disks create "${RESTORE_DISK_ID}" \
+        --zone "${zone}" \
+        --source-snapshot "${SNAPSHOT_NAME}" \
+        --type pd-balanced 2>&1 >/dev/null)"; then
+        if is_capacity_error "${err}"; then
+            echo "  ○ ${zone}: no pd-balanced capacity"
+            return 75
+        fi
+        printf '%s\n' "${err}" >&2
+        fail "could not create the restore disk in ${zone}, and it is not a capacity problem."
+    fi
+    # The disk exists from here, so the cleanup trap must be able to find it.
+    ACTIVE_ZONE="${zone}"
+
+    if ! err="$(${GC} compute instances create "${RESTORE_VM_ID}" \
+        --zone "${zone}" \
+        --machine-type "${RESTORE_MACHINE_TYPE}" \
+        --image-family ubuntu-2404-lts-amd64 \
+        --image-project ubuntu-os-cloud \
+        --boot-disk-size 20GB \
+        --no-service-account --no-scopes \
+        --disk "name=${RESTORE_DISK_ID},device-name=restored,mode=rw,auto-delete=no" \
+        --metadata-from-file startup-script=/dev/stdin 2>&1 >/dev/null <<'STARTUP'
 #!/usr/bin/env bash
 # Install docker up-front so the SSH step below doesn't race apt.
 set -eux
@@ -206,10 +286,59 @@ apt-get update -qq
 apt-get install -y -qq docker.io
 touch /var/log/restore-drill-ready
 STARTUP
+    )"; then
+        rc=1
+        if is_capacity_error "${err}"; then rc=75; fi
+        # The disk landed but the VM did not. Remove it before trying the next
+        # zone, or every exhausted zone leaks one.
+        ${GC} compute disks delete "${RESTORE_DISK_ID}" --zone "${zone}" 2>/dev/null || true
+        ACTIVE_ZONE="${GCP_ZONE}"
+        if [ "${rc}" -eq 75 ]; then
+            echo "  ○ ${zone}: no ${RESTORE_MACHINE_TYPE} capacity"
+            return 75
+        fi
+        printf '%s\n' "${err}" >&2
+        fail "could not boot the drill VM in ${zone}, and it is not a capacity problem."
+    fi
+    return 0
+}
+
+# ── 3+4. Disk from snapshot + throwaway VM, in the first zone with room ──
+# --no-service-account --no-scopes: the drill VM briefly holds a copy of
+# production data, so it gets NO GCP identity — it cannot read a secret, write
+# a bucket, or touch another instance even if something on it were
+# compromised. It needs egress (image pulls) but nothing opens ingress to it,
+# and the trap deletes it either way.
+log "3/5  restoring '${SNAPSHOT_NAME}' into a throwaway disk + VM"
+echo "  zones to try: ${RESTORE_ZONES}"
+PROVISIONED=0
+for zone in ${RESTORE_ZONES}; do
+    set +e
+    provision_in_zone "${zone}"
+    prc=$?
+    set -e
+    if [ "${prc}" -eq 0 ]; then
+        PROVISIONED=1
+        echo "  ✓ provisioned in ${zone}"
+        break
+    fi
+done
+
+if [ "${PROVISIONED}" -ne 1 ]; then
+    # EX_TEMPFAIL, and the distinction is the whole point: every zone in the
+    # region was out of capacity, so the drill never got to test anything.
+    # Calling that a broken backup is a false alarm that costs someone a
+    # night. Calling it success would be worse.
+    printf '\n\033[33m⚠ every zone in %s is out of capacity (%s)\033[0m\n' \
+        "${GCP_REGION}" "${RESTORE_ZONES}" >&2
+    printf '\033[33m  The backup was NOT tested. That is not evidence it is broken:\033[0m\n' >&2
+    printf '\033[33m  the schedule and snapshot-freshness checks above both passed.\033[0m\n' >&2
+    exit 75
+fi
 echo "  ✓ created — waiting for startup script"
 
 # ── 5. Mount + boot Postgres over the restored data directory ──
-log "5/6  mounting restored disk and starting Postgres over the recovered data dir"
+log "4/5  mounting restored disk and starting Postgres over the recovered data dir"
 
 # The restored disk is a byte copy of the production BOOT disk, so the
 # Postgres data lives at the Docker volume path inside its filesystem.
@@ -350,11 +479,11 @@ REMOTE
 SSH_FLAGS=()
 log "      waiting for sshd on '${RESTORE_VM_ID}'"
 for attempt in $(seq 1 30); do
-    if ${GC} compute ssh "${RESTORE_VM_ID}" --zone "${GCP_ZONE}" --tunnel-through-iap \
+    if ${GC} compute ssh "${RESTORE_VM_ID}" --zone "${ACTIVE_ZONE}" --tunnel-through-iap \
             --command 'true' >/dev/null 2>&1; then
         SSH_FLAGS=(--tunnel-through-iap); echo "  ✓ reachable over IAP (${attempt} attempts)"; break
     fi
-    if ${GC} compute ssh "${RESTORE_VM_ID}" --zone "${GCP_ZONE}" \
+    if ${GC} compute ssh "${RESTORE_VM_ID}" --zone "${ACTIVE_ZONE}" \
             --command 'true' >/dev/null 2>&1; then
         SSH_FLAGS=(); echo "  ✓ reachable over direct SSH (${attempt} attempts)"; break
     fi
@@ -362,11 +491,11 @@ for attempt in $(seq 1 30); do
     sleep 10
 done
 
-${GC} compute ssh "${RESTORE_VM_ID}" --zone "${GCP_ZONE}" "${SSH_FLAGS[@]}" \
+${GC} compute ssh "${RESTORE_VM_ID}" --zone "${ACTIVE_ZONE}" "${SSH_FLAGS[@]}" \
     --command "${REMOTE_SCRIPT}" \
     || fail "restore validation FAILED — the newest snapshot did not yield a working database."
 
 # ── 6. Done (cleanup runs from the trap) ───────────────────────
-log "6/6  restore drill PASSED"
+log "5/5  restore drill PASSED"
 echo "  snapshot ${SNAPSHOT_NAME} (${SNAPSHOT_AGE_HOURS}h old) restored to a working,"
 echo "  WAL-recovered Postgres with migrations, RLS policies and app_user intact."

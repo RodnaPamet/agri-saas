@@ -267,4 +267,40 @@ describe('OI-3 — restore-test.yml wiring', () => {
         // indistinguishable from a passing one.
         expect(src).toMatch(/exit 1/);
     });
+
+    it('re-raises the drill exit code instead of swallowing it', () => {
+        // THE worst regression available in this file. The drill step runs
+        // under `set +e` so it can capture 75 (EX_TEMPFAIL = "no capacity, so
+        // the backup was never tested") and tell the summary apart from a
+        // genuine restore failure. Delete the final `exit $code` and every
+        // drill failure — including a real one — goes GREEN while
+        // `job.status` still reads success. Nothing else here would notice:
+        // the executing test never reads this YAML.
+        const wf = yaml.load(read(WORKFLOW)) as any;
+        const steps: any[] = Object.values(wf.jobs).flatMap((j: any) => j.steps ?? []);
+        const drill = steps.find((st) => st?.id === 'drill');
+
+        // `id: drill` is what lets the summary read the exit code.
+        expect(drill).toBeDefined();
+        expect(drill.run).toMatch(/exit_code=\$\{code\}"?\s*>>\s*"\$GITHUB_OUTPUT"/);
+        // The run block must END by re-raising the captured code.
+        expect(drill.run.trim().split('\n').pop()!.trim()).toBe('exit $code');
+    });
+
+    it('reports a capacity abort as NOT TESTED rather than as a bad backup', () => {
+        // The 2026-09-01 failure: both targets got
+        // ZONE_RESOURCE_POOL_EXHAUSTED and the summary announced "The
+        // production backup did not restore cleanly" — a false alarm about
+        // the one control that stands between a snapshot schedule and an
+        // unrecoverable database. The 75 arm must exist AND must still carry
+        // the leaked-resource sweep, since a capacity abort can happen after
+        // a disk holding production data has been created.
+        const src = read(WORKFLOW);
+        expect(src).toMatch(/steps\.drill\.outputs\.exit_code.*==?\s*"75"|"75"/);
+        expect(src).toMatch(/NOT TESTED/);
+        const armIdx = src.indexOf('NOT TESTED');
+        const arm = src.slice(armIdx, src.indexOf('elif', armIdx));
+        expect(arm).toMatch(/compute disks list --filter='name~restore-test-'/);
+        expect(arm).toMatch(/compute instances list --filter='name~restore-test-'/);
+    });
 });
