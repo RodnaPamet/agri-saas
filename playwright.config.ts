@@ -124,6 +124,11 @@ export default defineConfig({
         //     webserver hash `admin@acme.com` under different keys.
         // NOT a real secret; visible in source so no operator confuses it
         // for prod.
+        // E2E_SOIL_FIXTURE_TILES=1 is the same idea for the ISRIC soil WMS
+        // (#782) — the SECOND third-party map origin, which #764's survey
+        // missed. It needs no client half: unlike the basemap style, the soil
+        // tile URL is already built by the host page as a same-origin proxy
+        // template, so only the server end can reach ISRIC.
         // E2E_BASEMAP_FIXTURE_TILES=1 is the SERVER half of #764: the
         // per-location basemap proxy serves a fixture tile rather than
         // fetching demotiles. It is a plain server var read at RUNTIME, so
@@ -132,7 +137,7 @@ export default defineConfig({
         // The CLIENT half is NEXT_PUBLIC_MAP_BASEMAP_FIXTURE and must live on
         // the BUILD step (Next inlines NEXT_PUBLIC_* at build time) —
         // deliberately NOT repeated here, where it would be inert.
-        command: `DATA_ENCRYPTION_KEY=\${DATA_ENCRYPTION_KEY:-e2e-deterministic-test-encryption-key-32+-chars} npx cross-env NODE_ENV=test NODE_OPTIONS="--max-old-space-size=4096" NEXT_IGNORE_INCORRECT_LOCKFILE=1 AUTH_TEST_MODE=1 NEXT_TEST_MODE=1 NEXT_PUBLIC_TEST_MODE=1 E2E_BASEMAP_FIXTURE_TILES=1 AUTH_URL=http://localhost:${port} NEXTAUTH_URL=http://localhost:${port} PORT=${port} npx next start -p ${port}`,
+        command: `DATA_ENCRYPTION_KEY=\${DATA_ENCRYPTION_KEY:-e2e-deterministic-test-encryption-key-32+-chars} npx cross-env NODE_ENV=test NODE_OPTIONS="--max-old-space-size=4096" NEXT_IGNORE_INCORRECT_LOCKFILE=1 AUTH_TEST_MODE=1 NEXT_TEST_MODE=1 NEXT_PUBLIC_TEST_MODE=1 E2E_BASEMAP_FIXTURE_TILES=1 E2E_SOIL_FIXTURE_TILES=1 AUTH_URL=http://localhost:${port} NEXTAUTH_URL=http://localhost:${port} PORT=${port} npx next start -p ${port}`,
         port,
         reuseExistingServer: !isCI,
         timeout: 120_000,

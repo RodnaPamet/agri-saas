@@ -119,6 +119,11 @@ export const env = createEnv({
         // in the NODE process — Playwright route interception cannot see it —
         // so it must be a RUNTIME var, not a build-time inlined one (#764).
         E2E_BASEMAP_FIXTURE_TILES: z.enum(["0", "1"]).optional(),
+        // Sibling of the above for the ISRIC soil WMS proxy (#782). Server-only
+        // and separate because the soil overlay is a different upstream with a
+        // different licence — one flag would make "which third party did this
+        // run reach" unanswerable, which is the question #781 was about.
+        E2E_SOIL_FIXTURE_TILES: z.enum(["0", "1"]).optional(),
         // When "1", the Credentials provider rejects sign-ins whose User row
         // has `emailVerified = null`. See src/lib/auth/credentials.ts. Default
         // is OFF so existing deployments behave unchanged until verification
@@ -611,6 +616,7 @@ export const env = createEnv({
         RATE_LIMIT_MODE: process.env.RATE_LIMIT_MODE,
         AUTH_TEST_MODE: process.env.AUTH_TEST_MODE,
         E2E_BASEMAP_FIXTURE_TILES: process.env.E2E_BASEMAP_FIXTURE_TILES,
+        E2E_SOIL_FIXTURE_TILES: process.env.E2E_SOIL_FIXTURE_TILES,
         AUTH_REQUIRE_EMAIL_VERIFICATION: process.env.AUTH_REQUIRE_EMAIL_VERIFICATION,
         UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL,
         UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN,

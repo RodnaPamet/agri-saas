@@ -57,7 +57,6 @@ const SQUARE = {
 const ALLOWED_EXTERNAL = new Map<string, string>([
     ['fonts.googleapis.com', 'src/app/globals.css:6 remote @import — must stay an @import (#779)'],
     ['fonts.gstatic.com', 'font files pulled by the above (#779)'],
-    ['maps.isric.org', 'ISRIC soil WMS, MapCanvas.tsx:62-68 — unreached unless Soil view is on (#782)'],
 ]);
 
 test.describe('basemap hermeticity', () => {
@@ -127,6 +126,37 @@ test.describe('basemap hermeticity', () => {
         expect(
             styleErrors,
             'the basemap style must load without a maplibre AJAXError',
+        ).toEqual([]);
+
+        // ── Soil view: the SECOND origin (#782) ──────────────────────────
+        //
+        // Dropping `maps.isric.org` from ALLOWED_EXTERNAL proves nothing on
+        // its own — the entry's own comment said the origin was "unreached
+        // unless Soil view is on", and no spec turned it on. So the removal is
+        // only meaningful together with this: turn it on, and assert the
+        // request list is STILL empty.
+        //
+        // `exact: true` because Playwright matches an accessible name as a
+        // case-insensitive substring by default, and a bare 'Soil' would also
+        // match any other control whose name merely contains it.
+        await main.getByRole('button', { name: 'Soil', exact: true }).click();
+
+        // The soil raster and its legend are both same-origin proxies now, so
+        // wait for the legend image to actually load rather than for a fixed
+        // delay — otherwise the assertion below could pass because nothing had
+        // been requested yet, which is the failure mode this whole spec exists
+        // to avoid.
+        // Pinned to the legend's own alt text (`ag.map.canvas.soilLegendAlt`),
+        // not a bare `img` — the page carries other images, and `.first()` on
+        // a loose locator would resolve to one of those and wait for nothing.
+        // Safe to spell in English: this suite runs in the default locale.
+        await expect(
+            page.locator('img[alt="Soil class legend"]'),
+        ).toBeVisible({ timeout: 30_000 });
+
+        expect(
+            external,
+            'Soil view must reach no third-party origin either — #782 removed maps.isric.org',
         ).toEqual([]);
     });
 });

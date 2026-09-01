@@ -1056,6 +1056,20 @@ function LocationDetailBody() {
                             // bars — this is the offline fallback.
                             offlineBasemapTileUrl={buildUrl(`/locations/${locationId}/basemap/{z}/{x}/{y}`)}
                             soilMode={soilView}
+                            // ISRIC WRB soil raster + legend, same-origin
+                            // proxy templates ({z}/{x}/{y} kept literal for
+                            // MapLibre). Gated on `online` for the same reason
+                            // the cadastre WMS is: neither is part of the
+                            // offline pack, and a raster that 204s offline is
+                            // better skipped than requested.
+                            soilOverlay={
+                                soilView && online
+                                    ? {
+                                          tileUrl: buildUrl(`/soil/wms/{z}/{x}/{y}`),
+                                          legendUrl: buildUrl(`/soil/legend`),
+                                      }
+                                    : null
+                            }
                             soilColorById={soilColorById}
                             cropById={cropById}
                         />
