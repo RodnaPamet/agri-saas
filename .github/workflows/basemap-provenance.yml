@@ -1,0 +1,113 @@
+name: Basemap Provenance
+
+# Watch which basemap the DEPLOYED build actually resolves (#781).
+#
+# ## Why this is a scheduled probe and not a publish gate
+#
+# `resolveBasemapStyle` renders MapTiler only if NEXT_PUBLIC_MAPTILER_KEY was
+# inlined at `next build`. That key reaches the image through ONE line —
+# `ghcr-publish.yml`'s build-args, from a repo variable. Clear the variable,
+# build from a fork, or drop that line, and the app falls back to the
+# demotiles demo CDN SILENTLY: a working map, quietly served by a third party,
+# with no error and no alert. The failure is invisible precisely because the
+# fallback works.
+#
+# A publish-time gate was designed and rejected on proportionality. The failure
+# being prevented is "map renders from the wrong provider" — not data loss, not
+# a breach, not an outage. Against that, gating would restructure the pipeline
+# that ships to production, and the design review of that restructure found a
+# flaw (`--push --load` silently redefines `steps.build.outputs.digest` from
+# the index to the platform manifest) that would have STOPPED GHCR publishing
+# on the first merge. High blast radius protecting a benign outcome.
+#
+# So: detection moves from "at publish" to "within a day", which is adequate
+# for a benign, non-accelerating failure — and this workflow touches nothing
+# that ships. The gate design is preserved on #781 if the failure mode ever
+# turns out to be worse than we think.
+#
+# ## What it reads
+#
+# `/api/readyz` exposes `capabilities.basemap` (#790), computed by scanning the
+# SHIPPED bundle's inlined env rather than by asking the workflow what it
+# intended. `capabilities` is documented as "reported for operator
+# observability, never part of checks/failed", so this probe cannot 503 the
+# app it is probing.
+#
+# A red run here becomes a GitHub issue automatically: this workflow is in
+# `ci-failure-issue.yml`'s watched list.
+
+on:
+    schedule:
+        # Daily, offset from the 02:00 UTC snapshot schedules so a failure here
+        # is not competing for attention with a backup failure.
+        - cron: "0 7 * * *"
+    workflow_dispatch:
+        inputs:
+            reason:
+                description: "Why this run was dispatched"
+                required: false
+
+permissions:
+    contents: read
+
+jobs:
+    probe:
+        name: Basemap provenance (production)
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        steps:
+            - name: Read capabilities.basemap from /api/readyz
+              env:
+                  ORIGIN: ${{ vars.HEALTH_ORIGIN || 'https://35-187-80-26.sslip.io' }}
+              run: |
+                  set -euo pipefail
+
+                  echo "▸ probing ${ORIGIN}/api/readyz"
+                  # --fail-with-body so a 503 still prints what it said; the
+                  # probe must distinguish "app is unhealthy" from "app says
+                  # the wrong basemap", and those need different responses.
+                  body="$(curl -sS --max-time 20 --retry 3 --retry-delay 5 \
+                      "${ORIGIN}/api/readyz" || true)"
+
+                  if [ -z "$body" ]; then
+                      echo "::error::No response from ${ORIGIN}/api/readyz."
+                      echo "This is an AVAILABILITY failure, not a basemap failure."
+                      exit 1
+                  fi
+
+                  branch="$(printf '%s' "$body" | jq -r '.capabilities.basemap.branch // "absent"')"
+                  reason="$(printf '%s' "$body" | jq -r '.capabilities.basemap.blindReason // ""')"
+                  echo "▸ capabilities.basemap.branch = ${branch}${reason:+ (${reason})}"
+
+                  case "$branch" in
+                    maptiler)
+                        echo "✔ The deployed build resolves MapTiler, as intended."
+                        ;;
+                    demotiles)
+                        echo "::error::The deployed build resolves DEMOTILES."
+                        echo "The map is being served by a third-party demo CDN."
+                        echo "NEXT_PUBLIC_MAPTILER_KEY was not inlined at build time —"
+                        echo "check the repo variable and ghcr-publish.yml's build-args."
+                        exit 1
+                        ;;
+                    blind)
+                        # NOT a pass. The scanner could not classify the build,
+                        # so we do not know which basemap ships — and a check
+                        # that reports "unknown" as "fine" is the exact defect
+                        # the scanner's positive controls exist to prevent.
+                        echo "::error::The scanner is BLIND (${reason:-unknown}) — provenance unknown."
+                        echo "Its fingerprint no longer matches the build; do NOT"
+                        echo "'fix' this by relaxing the expectation. See"
+                        echo "src/lib/geo/basemap-bundle-scan.ts."
+                        exit 1
+                        ;;
+                    absent)
+                        echo "::error::/api/readyz returned no capabilities.basemap."
+                        echo "Either the deploy predates #790 or the field was removed."
+                        exit 1
+                        ;;
+                    *)
+                        echo "::error::Unrecognised branch value: ${branch}"
+                        exit 1
+                        ;;
+                  esac

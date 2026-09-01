@@ -84,14 +84,22 @@ describe('CSP Module', () => {
             expect(csp).toContain("form-action 'self'");
         });
 
-        it('allows Google Fonts in style-src', () => {
+        it('allows NO third-party stylesheet origin — fonts are self-hosted (#779)', () => {
             const csp = buildCspHeader(nonce);
-            expect(csp).toContain('https://fonts.googleapis.com');
+            expect(csp).not.toContain('https://fonts.googleapis.com');
         });
 
-        it('allows Google Fonts static in font-src', () => {
+        it('allows NO third-party font origin — fonts are self-hosted (#779)', () => {
             const csp = buildCspHeader(nonce);
-            expect(csp).toContain('https://fonts.gstatic.com');
+            expect(csp).not.toContain('https://fonts.gstatic.com');
+        });
+
+        it("font-src is 'self' + data: only", () => {
+            // The positive half. `not.toContain` alone would also pass if
+            // font-src vanished entirely, which would break every face.
+            const csp = buildCspHeader(nonce);
+            const fontSrc = csp.split(';').map((d) => d.trim()).find((d) => d.startsWith('font-src'));
+            expect(fontSrc).toBe("font-src 'self' data:");
         });
 
         it('allows blob: in connect-src for PDF downloads', () => {

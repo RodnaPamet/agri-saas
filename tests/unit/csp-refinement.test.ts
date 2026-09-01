@@ -141,8 +141,9 @@ describe('buildCspHeader', () => {
             expect(styleSrc).not.toContain(`'nonce-${nonce}'`);
         });
 
-        test('includes Google Fonts in style-src', () => {
-            expect(header).toContain('https://fonts.googleapis.com');
+        test('includes NO Google Fonts origin — self-hosted since #779', () => {
+            expect(header).not.toContain('https://fonts.googleapis.com');
+            expect(header).not.toContain('https://fonts.gstatic.com');
         });
 
         test('includes object-src none', () => {
