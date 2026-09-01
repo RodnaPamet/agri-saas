@@ -1428,8 +1428,12 @@ duplicating the limits table).
       absence-of-`AJAXError` assertion) **and the `X-Basemap-Source: fixture`
       header** asserted in `offline-basemap.spec.ts` — the only observable
       that separates "server half wired" from "server half unwired but the CDN
-      was up", because the proxy soft-fails to 204 and the download button
-      counts a 204 as success (#780). The `/etc/hosts` blackhole in `ci.yml`
+      was up", because a 200 looks identical either way. The 204 paths carry
+      the same header for the same reason: an unreachable upstream and a
+      genuinely empty tile are BOTH 204 and mean opposite things, and until
+      #780 the download button counted both as a cached tile — so an outage
+      produced a full sweep of 204s and a confident "Offline map ready" over
+      an empty pack. The `/etc/hosts` blackhole in `ci.yml`
       is belt-and-braces only: **blocking the CDN does not turn the suite
       red** — `maplibregl-canvas` is created synchronously in the Map
       constructor before any style fetch, the map specs' controls are React

@@ -5009,6 +5009,7 @@
             "offlineMapDownloading": "Downloading… {done}/{total}",
             "offlineMapDownloaded": "Offline map ready",
             "offlineMapReady": "Offline map saved — this field's map now works with no signal.",
+            "offlineMapPartial": "Offline map incomplete — {stored} saved, {missing} missing. Tap to try again.",
             "offlineMapFailed": "Couldn't save the offline map. Try again with a connection.",
             "dnevnikBtn": "Дневник (PDF)",
             "coachTitle": "Plan a field job",
