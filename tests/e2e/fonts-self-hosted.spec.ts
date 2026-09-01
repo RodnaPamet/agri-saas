@@ -45,6 +45,7 @@
  * Probes here are therefore SINGLE-SCRIPT and SPACE-FREE by construction.
  */
 import { test, expect } from '@playwright/test';
+import { safeGoto } from './e2e-utils';
 
 /** Families the app declares, and a probe string inside each one's script. */
 const PROBES = [
@@ -74,8 +75,17 @@ test.describe('self-hosted web fonts', () => {
             external.push(`${req.method()} ${req.url()}`);
         });
 
-        await page.goto('/login');
-        await page.waitForLoadState('domcontentloaded');
+        await safeGoto(page, '/login', { timeout: 90_000 });
+        // `/login` is CLIENT-rendered and its credentials form is gated on a
+        // post-hydration provider fetch, so `domcontentloaded` is too early:
+        // the page navigates out from under `page.evaluate` and the execution
+        // context is destroyed mid-probe. Waiting on the form's email input is
+        // what `loginAndGetTenant` uses as its hydration anchor — by the time
+        // it is visible the page has settled and the fonts have been
+        // requested.
+        await expect(
+            page.locator('#credentials-form input[type="email"][name="email"]'),
+        ).toBeVisible({ timeout: 60_000 });
 
         // ── 1. Each (family, script) pair resolves to at least one face ────
         // `load()` REJECTS on a 404, so a rejection here is the 404 surfacing
