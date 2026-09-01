@@ -1,5 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { DEMO_STYLE, MAPTILER_STYLE_PREFIX } from '@/lib/geo/basemap-style';
 
 /**
  * Which basemap branch did THIS build actually take? (#781)
@@ -119,8 +120,7 @@ const NOT_INLINED = /NEXT_PUBLIC_MAPTILER_KEY:[A-Za-z_$][\w$]*\.env\.NEXT_PUBLIC
  *     the resolver still exists is the exact URL it emits. Pinning the full
  *     literal makes the control specific to the thing it is controlling for.
  */
-const DEMOTILES_STYLE_URL = /https:\/\/demotiles\.maplibre\.org\/style\.json/;
-const MAPTILER_STYLE_URL = /https:\/\/api\.maptiler\.com\/maps\//;
+const BRANCH_LITERALS = [DEMO_STYLE, MAPTILER_STYLE_PREFIX] as const;
 
 async function collectJsFiles(dir: string): Promise<string[]> {
     const out: string[] = [];
@@ -170,8 +170,8 @@ export async function scanChunkDir(dir: string): Promise<BasemapScanResult> {
         } catch {
             continue;
         }
-        if (DEMOTILES_STYLE_URL.test(text)) sawDemotilesLiteral = true;
-        if (MAPTILER_STYLE_URL.test(text)) sawMaptilerLiteral = true;
+        if (text.indexOf(BRANCH_LITERALS[0]) !== -1) sawDemotilesLiteral = true;
+        if (text.indexOf(BRANCH_LITERALS[1]) !== -1) sawMaptilerLiteral = true;
 
         // Order matters: INLINED_NON_EMPTY must be tested before INLINED_EMPTY,
         // since `""` would also satisfy a laxer non-empty pattern.

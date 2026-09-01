@@ -30,6 +30,15 @@ import { env } from '@/env';
  */
 export const DEMO_STYLE = 'https://demotiles.maplibre.org/style.json';
 
+/**
+ * The MapTiler style URL's invariant prefix — everything before the
+ * caller-chosen style id. Exported so the bundle scanner's positive control
+ * (`@/lib/geo/basemap-bundle-scan`) can be DERIVED from the resolver rather
+ * than hardcoding a second copy: a control that drifts from the constant it
+ * controls for stops proving anything, silently.
+ */
+export const MAPTILER_STYLE_PREFIX = 'https://api.maptiler.com/maps/';
+
 /** Land tone — the same value `offline-land` paints in offline-basemap-style.ts. */
 const FIXTURE_LAND = '#e8ece4';
 
@@ -90,5 +99,5 @@ export function resolveBasemapStyle(): string | StyleSpecification {
     const key = env.NEXT_PUBLIC_MAPTILER_KEY;
     if (!key) return DEMO_STYLE;
     const style = env.NEXT_PUBLIC_MAP_BASEMAP_STYLE ?? 'hybrid';
-    return `https://api.maptiler.com/maps/${style}/style.json?key=${key}`;
+    return `${MAPTILER_STYLE_PREFIX}${style}/style.json?key=${key}`;
 }
