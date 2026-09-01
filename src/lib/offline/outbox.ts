@@ -245,9 +245,28 @@ export interface EnqueueInput {
     ifMatch?: number;
 }
 
+/**
+ * The attribution stamp SHARED by every enqueue path.
+ *
+ * Returned as a spreadable object rather than a bare value so the field is
+ * ABSENT — not `undefined` — when nobody is signed in: the record is read raw
+ * from IndexedDB by `public/sw.js`, the localStorage store JSON-round-trips
+ * it, and both read sites gate on PRESENCE
+ * (`sync.ts` skip, `outbox-state.ts` foreign count).
+ *
+ * It lives in one place because #786 was exactly two item literals over the
+ * same `OutboxItemBase` drifting apart: `enqueue` stamped, `enqueuePhoto`
+ * never had, so every photo queued since the kind shipped replayed under
+ * whoever was signed in at flush time — unskipped and uncounted. A third
+ * enqueue path uses this helper, or it is the same bug again.
+ */
+function attribution(): { queuedByUserId?: string } {
+    const queuedByUserId = getCurrentUserId();
+    return queuedByUserId ? { queuedByUserId } : {};
+}
+
 /** Append a mutation to the outbox; returns the created item. */
 export async function enqueue(store: OutboxStore, input: EnqueueInput): Promise<MutationOutboxItem> {
-    const queuedByUserId = getCurrentUserId();
     const item: MutationOutboxItem = {
         id: newOutboxId(),
         url: input.url,
@@ -256,7 +275,7 @@ export async function enqueue(store: OutboxStore, input: EnqueueInput): Promise<
         label: input.label,
         createdAt: Date.now(),
         attempts: 0,
-        ...(queuedByUserId ? { queuedByUserId } : {}),
+        ...attribution(),
         ...(input.ifMatch !== undefined ? { ifMatch: input.ifMatch } : {}),
     };
     await store.add(item);
@@ -299,6 +318,11 @@ export async function enqueuePhoto(
         label: input.label,
         createdAt: Date.now(),
         attempts: 0,
+        // Same binding as a mutation. A replay uses whatever session cookie is
+        // CURRENT, so an unattributed photo lands as whoever is signed in at
+        // flush time — and a photo is the artefact most likely to be queued
+        // offline in the first place.
+        ...attribution(),
     };
     await store.add(item);
     return item;
