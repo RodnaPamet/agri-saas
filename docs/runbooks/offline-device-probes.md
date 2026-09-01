@@ -95,13 +95,54 @@ a hardcoded inline **green "Offline" page** (`public/sw.js:334-357`).
 7. **Airplane mode ON before launching** (trap 1).
 8. Launch from the Home Screen icon → diagnostics page → **Copy as text**. This is the "after".
 
-**Reading it**
+**Reading it — two observations, not one**
 
-| after | means |
-|---|---|
-| cache entry counts and outbox counts unchanged | survived — installation is the mitigation for #744 |
-| `lost work` non-empty | the detector fired: queue went, manifest survived |
-| everything zero **and** `lost work: none` | the class-wide sweep — **the #744 blind spot, live** |
+This is the part worth getting right, because the interesting outcome looks
+like a null result.
+
+The queue lives in **IndexedDB**; the manifest and the lost-work record live
+in **localStorage**. Loss is made visible by reconciling one against the
+other, so **whether localStorage survived is a separate question from whether
+IndexedDB did**, and the answer decides whether a silent morning means
+"nothing happened" or "the detector cannot see this".
+
+Record both. You can read them straight off the page:
+
+- **Did localStorage survive?** The `probe 6 · storage` section shows the
+  durability verdict, which is *read* from `agri.offline.durability.v1` in
+  localStorage. A verdict present in the morning means localStorage survived.
+  **`NONE STORED` means it did not.** `manifest entries` is the same signal.
+- **Did IndexedDB survive?** The outbox counts under `probes 4 · 6`.
+
+| IndexedDB | localStorage | reading |
+|---|---|---|
+| kept | kept | no eviction — probe 6 is **inconclusive**, not negative. Try a longer idle. |
+| **gone** | kept | **selective** eviction. The detector fires: expect `lost work` non-empty and the sticky banner. |
+| **gone** | **gone** | the **class-wide** sweep — expect **silence**, and *the silence is the finding* (#744). |
+
+> **A silent morning is only meaningful once you know which of the last two
+> rows you are in.** If the durability verdict is absent *and* the queue is
+> empty, that is the class-wide case, and the absence of a banner is the
+> result — not a failed measurement.
+
+**Why the manifest, and not `wasRecreated`.** CLAUDE.md and #744 both describe
+the blind spot as `wasRecreated()` being unable to arm. That is imprecise, and
+it points at the wrong fix. In `refreshOutboxState`
+(`outbox-state.ts:189-196`) **both** branches call `reconcileManifest` and
+**both** gate on `missing.length > 0`; `wasRecreated` only selects the reason
+*label* (`storage-evicted` vs `queue-vanished-while-closed`). What actually
+defeats detection is `reconcileManifest` returning `[]` the moment the
+manifest is empty (`durability.ts:257`) — which is a **localStorage**
+dependency, not an IndexedDB one. There is even a second arming path for
+`wasRecreated` already (`markRecreated()` at `idb-outbox.ts:186-188`, via the
+SW's `OUTBOX_RECREATED` message), and it does not help, which is the clearest
+evidence the framing is off.
+
+> One nuance that does **not** apply on an iPhone but would elsewhere: the
+> cross-session branch passes `backgroundSyncPossible()`, and
+> `reconcileManifest` also returns `[]` when that is true. iOS Safari does not
+> implement Background Sync, so it is `false` on your device and the two
+> branches converge. On Android the distinction is live.
 
 Repeat the whole sequence in **mobile Safari, not installed**. That comparison
 is what actually answers #744.
