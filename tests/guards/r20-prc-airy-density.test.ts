@@ -1,40 +1,61 @@
 /**
- * R20-PR-C — Airy density + typography ratchet.
+ * R20-PR-C — density + typography ratchet.
  *
- * PR-A laid the language; PR-B applied liquid edges. PR-C is the
- * typographic-rhythm round. Three felt characteristics of
- * "expensive type" land in lockstep:
+ * ── WHAT THIS FILE USED TO LOCK (2026-05) ───────────────────────
+ * PR-A laid the language; PR-B applied liquid edges. PR-C was the
+ * typographic-rhythm round, and this ratchet held a GRADED ladder
+ * across four axes at once, each axis a separate product decision:
  *
- *   1. Padding scale revision — md/lg gain horizontal breathing
- *      room. xs/sm stay compact by intent (small buttons want
- *      density, large buttons want air).
+ *   1. Padding — md/lg gained horizontal breathing room; xs/sm
+ *      stayed compact by intent (small buttons want density, large
+ *      buttons want air). R20-PR-F then REVERSED that half of it
+ *      (md px-4→px-3, lg px-6→px-4) because on dense toolbars the
+ *      air read as idle space around the label, and
+ *      button-density-tighter took a second pass on top
+ *      (xs px-2 / sm px-2.5 / md px-2.5 / lg px-3).
+ *   2. Heights — xs/sm/md/lg = h-7/h-8/h-9/h-10, deliberately
+ *      LOCKED out of the padding work so a density tweak could
+ *      never silently break filter-toolbar alignment with <Input>.
+ *   3. Per-size tracking — the R19 flat `tracking-[-0.01em]`
+ *      baseline replaced by a size-conditional scale (xs +0.005em,
+ *      sm +0.01em, md -0.005em, lg -0.01em): small text opens up to
+ *      stay legible, large text tightens to feel deliberate.
+ *   4. Gap rhythm — xs gap-1, sm gap-1.5, md/lg gap-tight.
  *
- *   2. Per-size tracking — the R19-PR-C flat `tracking-[-0.01em]`
- *      baseline is replaced by a size-conditional scale: xs/sm
- *      open up positive (small text wants OPEN tracking to stay
- *      legible — classic small-caps confidence), md tightens
- *      slightly, lg holds the deepest negative the R19 design
- *      intended (-0.01em headline tracking).
+ * Plus R20-PR-E's graded weight ladder (medium → semibold → bold)
+ * riding the same size variant, and form-control parity: <Label>
+ * carried button-md's tracking so a focused input and its label
+ * shared one typographic rhythm.
  *
- *   3. Gap rhythm — lg's icon↔label gap widens from 8px to 10px
- *      so the airy-padded lg button doesn't look icon-cramped.
+ * ── WHAT #776 DID (2026-09-01) ──────────────────────────────────
+ * The graded ladder was ADOPTED AWAY. Every button size now
+ * resolves to ONE 28px rung — identical padding, type size,
+ * tracking, weight, gap and icon size at xs/sm/md/lg — matching the
+ * sibling compliance product's flat scale. `controlSize` in
+ * `control-variants.ts` collapsed with it. The `size` prop is kept
+ * on purpose so call sites still record INTENT and a reversal stays
+ * a one-file edit.
  *
- * Plus form-control parity: `<Label>` carries the same md-tracking
- * as buttons so a focused input + its label share typographic
- * rhythm — the "expensive type" effect lands on the whole form row,
- * not just the buttons.
+ * So axes 1-4 no longer describe the code: there is no scale left
+ * to be monotonic about, and an assertion per size over four
+ * byte-identical strings is four checks that cannot fail
+ * independently. Each of those describe blocks is replaced below by
+ * a note recording what it asserted and why it went, and the whole
+ * of it collapses into two relational assertions: the four sizes
+ * are IDENTICAL, and the rung they share is the expected shape.
  *
- * Heights are LOCKED out of this PR. The R20-PR-A ratchet asserts
- * controlSize + button size scales agree at xs/sm/md/lg = h-7/h-8/
- * h-9/h-10, so any size-shift here would have to be paired with a
- * matching control-variants.ts shift — exactly the over-reach this
- * ratchet exists to prevent.
+ * What survives unchanged is the LOCKSTEP claim, which is the half
+ * that was never about grading: the loading + disabled fallback
+ * paths in `button.tsx` render a hand-rolled <button>/<div> that
+ * does NOT route through the cva variant, so their geometry has to
+ * track the rung by hand. Drift there manifests as a button that
+ * changes dimensions on disable. Those assertions are now DERIVED
+ * from the live cva rung rather than pinned to literals, so editing
+ * `button-variants.ts` alone fails them.
  *
- * Also locks the disabled-state mirror in `button.tsx` — the
- * loading + disabled fallback paths don't route through the cva
- * variant, so their sizes must move in lockstep with
- * button-variants.ts. Drift would manifest as a button that
- * changed dimensions on disable.
+ * This is a guard: it reads source TEXT and executes none of the
+ * button code, so it contributes zero runtime coverage. It proves
+ * the classes are written, never that a button renders at 28px.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -53,6 +74,17 @@ const LABEL_TSX = fs.readFileSync(
     'utf8',
 );
 
+const SIZES = ['xs', 'sm', 'md', 'lg'] as const;
+type Size = (typeof SIZES)[number];
+
+/**
+ * The single rung every text size resolves to after #776. Pinned as
+ * a literal so a change to any one axis — padding, type size,
+ * tracking, weight, icon size — has to be written down here too.
+ */
+const EXPECTED_RUNG =
+    'h-7 px-[0.7rem] text-[0.76rem] gap-tight tracking-[0.005em] font-[560] [&_svg]:size-[15px]';
+
 /** Slice the size: { ... } object from the cva config. */
 function sizeBlock(): string {
     return VARIANTS.match(/size:\s*\{([\s\S]*?)\},?\s*\}/)?.[1] ?? '';
@@ -63,140 +95,160 @@ function sizeBlock(): string {
  * `xs: "..."` or `xs: ["...", "..."]` shape, though today the
  * sizes are plain strings.
  */
-function sizeClasses(size: 'xs' | 'sm' | 'md' | 'lg'): string {
+function sizeClasses(size: Size): string {
     const re = new RegExp(`${size}:\\s*["']([^"']+)["']`);
     return sizeBlock().match(re)?.[1] ?? '';
 }
 
-describe('R20-PR-C — Airy density + typography', () => {
-    // R20-PR-F (2026-05-15) — density correction. PR-C had pushed
-    // md/lg padding up for "airy density"; on dense toolbars the
-    // air read as idle space around the label. PR-F tightens
-    // md (px-4→px-3) and lg (px-6→px-4), bringing them BELOW
-    // pre-PR-C levels. xs/sm stay where PR-C left them. The
-    // ratchet below reflects the corrected scale; the original
-    // PR-C "px-4 / px-6" assertions are intentionally inverted
-    // (they now assert px-4 and px-6 are NOT present on md/lg)
-    // so a future revert to the wider scale fires this test
-    // first.
-    // button-density-tighter (2026-05-15) — second tightening
-    // pass on top of PR-F. Even at PR-F levels the buttons read
-    // as carrying too much chrome. New scale: xs px-2, sm/md
-    // px-2.5, lg px-3.
-    describe('padding scale — tightened (PR-F + button-density-tighter)', () => {
-        it('md horizontal padding is `px-2.5`', () => {
-            expect(sizeClasses('md')).toMatch(/\bpx-2\.5\b/);
-            expect(sizeClasses('md')).not.toMatch(/\bpx-3\b/);
-            expect(sizeClasses('md')).not.toMatch(/\bpx-4\b/);
+/**
+ * Split a class string (or a slice of JSX) into bare class tokens.
+ * Quotes and commas are delimiters so `"h-7 px-[0.7rem]",` yields
+ * `h-7` and `px-[0.7rem]` rather than quote-glued neighbours.
+ */
+function classTokens(source: string): Set<string> {
+    return new Set(source.split(/[\s"'`,]+/).filter(Boolean));
+}
+
+/**
+ * The rung's token for one axis, read from the LIVE cva source.
+ * Deriving instead of hard-coding is what makes the `button.tsx`
+ * mirror assertions relational: change the rung in
+ * `button-variants.ts` and forget the mirrors, and they fail.
+ */
+function rungToken(prefix: string): string {
+    const token = [...classTokens(sizeClasses('md'))].find((c) =>
+        c.startsWith(prefix),
+    );
+    if (!token) {
+        throw new Error(
+            `no \`${prefix}…\` token in the button size rung — the rung shape moved`,
+        );
+    }
+    return token;
+}
+
+/** The `if (disabledTooltip)` early-return branch of button.tsx. */
+function disabledTooltipBranch(): string {
+    const start = BUTTON_TSX.indexOf('if (disabledTooltip)');
+    const end = BUTTON_TSX.indexOf('</Tooltip>', start);
+    return start === -1 || end === -1 ? '' : BUTTON_TSX.slice(start, end);
+}
+
+/** The `props.disabled || loading ? cn(...)` fallback branch. */
+function disabledFallbackBranch(): string {
+    const start = BUTTON_TSX.indexOf('props.disabled || loading');
+    const end = BUTTON_TSX.indexOf('buttonVariants({', start);
+    return start === -1 || end === -1 ? '' : BUTTON_TSX.slice(start, end);
+}
+
+describe('R20-PR-C — density + typography (single-rung ladder, #776)', () => {
+    describe('the four text sizes are ONE rung', () => {
+        it('xs / sm / md / lg resolve to a byte-identical class string', () => {
+            const [xs, ...rest] = SIZES.map(sizeClasses);
+            // Fail-open guard: an empty parse would make every size
+            // "equal" and turn the comparison below into a no-op.
+            expect(xs).toMatch(/\S/);
+            expect(rest).toEqual([xs, xs, xs]);
         });
 
-        it('lg horizontal padding is `px-3`', () => {
-            expect(sizeClasses('lg')).toMatch(/\bpx-3\b/);
-            expect(sizeClasses('lg')).not.toMatch(/\bpx-4\b/);
-            expect(sizeClasses('lg')).not.toMatch(/\bpx-6\b/);
-        });
-
-        it('xs is `px-2`', () => {
-            expect(sizeClasses('xs')).toMatch(/\bpx-2\b/);
-            expect(sizeClasses('xs')).not.toMatch(/\bpx-2\.5\b/);
-        });
-
-        it('sm is `px-2.5`', () => {
-            expect(sizeClasses('sm')).toMatch(/\bpx-2\.5\b/);
-            expect(sizeClasses('sm')).not.toMatch(/\bpx-3\b/);
+        it('the shared rung carries the expected 28px density shape', () => {
+            // Exact equality, not a bag of `toContain`s: every axis the
+            // graded ladder used to grade (height, padding, type size,
+            // gap, tracking, weight, icon size) is present here, and a
+            // change to any one of them has to be written down.
+            expect(sizeClasses('md')).toBe(EXPECTED_RUNG);
         });
     });
 
-    describe('heights stay — the input-parity lockstep from PR-A holds', () => {
-        const expected: Record<string, string> = {
-            xs: 'h-7',
-            sm: 'h-8',
-            md: 'h-9',
-            lg: 'h-10',
-        };
-        for (const [size, height] of Object.entries(expected)) {
-            it(`${size} height stays at ${height}`, () => {
-                expect(sizeClasses(size as 'xs' | 'sm' | 'md' | 'lg')).toMatch(
-                    new RegExp(`\\b${height}\\b`),
-                );
-            });
-        }
-    });
+    // ── SUPERSEDED (#776) — `padding scale — tightened (PR-F +
+    // button-density-tighter)`. Asserted a four-step horizontal scale
+    // (xs px-2, sm px-2.5, md px-2.5, lg px-3), with md/lg carrying
+    // inverted assertions (`not.toMatch(px-4)` / `not.toMatch(px-6)`)
+    // so a revert to PR-C's airy padding would fire here first. There
+    // is no scale to step through any more — all four sizes share
+    // `px-[0.7rem]`, which the rung-shape assertion above pins
+    // exactly. Retargeting it per size would have produced four
+    // checks over one string that cannot fail independently.
 
-    describe('per-size tracking — replaces the R19 flat baseline', () => {
-        // The R19-PR-C flat tracking on the cva BASE is gone — PR-C
-        // pushes tracking to per-size so small text opens up and
-        // large text confidently tightens.
-        it('the cva base no longer carries flat tracking', () => {
+    // ── SUPERSEDED (#776) — `heights stay — the input-parity lockstep
+    // from PR-A holds`. Asserted xs/sm/md/lg = h-7/h-8/h-9/h-10, the
+    // ladder R20-PR-A deliberately held still while PR-C/E/F moved
+    // padding, tracking and weight around it. All four are h-7 now,
+    // and `controlSize` collapsed in the same change, so the pairing
+    // this block protected no longer has two sides. The height is
+    // still pinned — as the `h-7` inside the rung-shape assertion.
+
+    // ── SUPERSEDED (#776) — the per-size half of `per-size tracking`.
+    // Asserted a monotonic tracking scale (xs +0.005em, sm +0.01em,
+    // md -0.005em, lg -0.01em): small labels open up, large labels
+    // tighten. The rung holds ONE value (+0.005em, the old xs
+    // setting), so there is no direction left to assert. The base-level
+    // assertion from that block survives immediately below — it was
+    // never about grading.
+
+    // ── SUPERSEDED (#776) — `gap rhythm — uniform gap-tight at md and
+    // lg after PR-F`. Asserted xs gap-1 / sm gap-1.5 / md,lg gap-tight,
+    // and that lg had NOT drifted back to PR-C's gap-2.5. Every size is
+    // `gap-tight` now; the rung-shape assertion pins it once.
+
+    describe('tracking stays off the cva base', () => {
+        // Kept verbatim from PR-C, and it is not trivially true: the
+        // base is a separate class array that could re-acquire a flat
+        // letter-spacing at any time. It records that the R19 flat
+        // `-0.01em` baseline was replaced by a value declared on the
+        // size variant — which is still where the rung declares it,
+        // even though there is now only one rung to declare it for.
+        it('the cva base carries no flat `tracking-[-0.01em]`', () => {
             const base =
                 VARIANTS.match(/cva\(\s*\[([\s\S]*?)\]\s*,/)?.[1] ?? '';
+            expect(base).toMatch(/\S/);
             expect(base).not.toMatch(/tracking-\[-0\.01em\]/);
         });
+    });
 
-        it('xs opens up to +0.005em — tiny labels breathe', () => {
-            expect(sizeClasses('xs')).toMatch(/tracking-\[0\.005em\]/);
+    describe('disabled-state mirrors in button.tsx move in lockstep', () => {
+        // The loading + disabled fallback paths render hand-rolled
+        // classes, NOT the cva variant, so they do not pick up a rung
+        // change for free. Both assertions read the required tokens out
+        // of the live cva rung, so editing `button-variants.ts` without
+        // touching `button.tsx` fails here — which is the whole point
+        // of the mirror. (Before #776 these pinned `h-9 px-2.5` and
+        // `h-10 px-3` as literals, one `it` per size arm; the arms are
+        // identical now, so the pinning moved to the relational form.)
+        it('the disabledTooltip branch mirrors the rung geometry', () => {
+            const branch = disabledTooltipBranch();
+            expect(branch).toContain('cn(');
+            const present = classTokens(branch);
+            const required = ['h-', 'px-', 'text-[', 'font-'].map(rungToken);
+            expect(required.filter((t) => !present.has(t))).toEqual([]);
         });
 
-        it('sm opens up to +0.01em — confident small-caps feel', () => {
-            expect(sizeClasses('sm')).toMatch(/tracking-\[0\.01em\]/);
-        });
-
-        it('md tightens to -0.005em — subtle default-size confidence', () => {
-            expect(sizeClasses('md')).toMatch(/tracking-\[-0\.005em\]/);
-        });
-
-        it('lg holds the deepest tightening at -0.01em — headline rhythm', () => {
-            expect(sizeClasses('lg')).toMatch(/tracking-\[-0\.01em\]/);
+        it('the disabled/loading fallback branch mirrors the rung geometry', () => {
+            const branch = disabledFallbackBranch();
+            expect(branch).toContain('cn(');
+            const present = classTokens(branch);
+            // This branch renders a real <button> with icon + label, so
+            // it mirrors the rung's gap as well as its box geometry.
+            const required = ['h-', 'px-', 'text-[', 'font-', 'gap-'].map(
+                rungToken,
+            );
+            expect(required.filter((t) => !present.has(t))).toEqual([]);
         });
     });
 
-    // R20-PR-F also collapsed lg's gap back to `gap-tight` (PR-C
-    // had bumped it to gap-2.5 to compensate for the airy padding;
-    // with tightened padding the icon↔label rhythm wants to tighten
-    // back too).
-    describe('gap rhythm — uniform gap-tight at md and lg after PR-F', () => {
-        it('lg gap is `gap-tight` (R20-PR-F collapsed from gap-2.5)', () => {
-            expect(sizeClasses('lg')).toMatch(/\bgap-tight\b/);
-            expect(sizeClasses('lg')).not.toMatch(/\bgap-2\.5\b/);
-        });
-
-        it('md gap stays at `gap-tight` (8px is right for default)', () => {
-            expect(sizeClasses('md')).toMatch(/\bgap-tight\b/);
-        });
-
-        it('xs/sm gaps stay at gap-1 / gap-1.5 — compact by intent', () => {
-            expect(sizeClasses('xs')).toMatch(/\bgap-1\b/);
-            expect(sizeClasses('sm')).toMatch(/\bgap-1\.5\b/);
-        });
-    });
-
-    describe('disabled-state mirror in button.tsx moves in lockstep', () => {
-        // The loading + disabled fallback paths render a <button>
-        // styled via hand-rolled classes (not the cva variant) so
-        // they don't pick up the variant-level changes for free.
-        // The size mirrors must match the cva scale exactly.
-        // R20-PR-E (2026-05-15) appended per-size `font-*` classes
-        // to each fallback branch, so the assertions match the
-        // size/padding/gap prefix WITHOUT pinning the closing quote.
-        // R20-PR-F + button-density-tighter (2026-05-15) — md is
-        // now px-2.5 and lg is now px-3.
-        it('disabled-fallback md (no size) uses `px-2.5`', () => {
-            expect(BUTTON_TSX).toMatch(/!size && "h-9 px-2\.5 gap-tight\b/);
-        });
-        it('disabled-fallback lg uses `px-3` + `gap-tight`', () => {
-            expect(BUTTON_TSX).toMatch(/size === "lg" && "h-10 px-3 gap-tight\b/);
-        });
-        it('disabledTooltip md (no size) uses `px-2.5`', () => {
-            expect(BUTTON_TSX).toMatch(/!size && "h-9 px-2\.5\b/);
-        });
-        it('disabledTooltip lg uses `px-3`', () => {
-            expect(BUTTON_TSX).toMatch(/size === "lg" && "h-10 px-3\b/);
-        });
-    });
-
-    describe('form-control typographic parity — <Label> rhymes with button-md', () => {
-        it('<Label> carries the same `tracking-[-0.005em]` as button md', () => {
+    describe('<Label> keeps its own tracking', () => {
+        // RETARGETED (#776). This assertion used to mean "Label rhymes
+        // with button-md" — both sat at `-0.005em`, so a focused input
+        // and its label shared the button family's typographic rhythm.
+        // That rhyme is GONE: the rung tracks +0.005em, the opposite
+        // direction. The pin stays because the VALUE is still a
+        // deliberate choice on a form-control surface that the button
+        // collapse deliberately did not touch; what it no longer
+        // claims is parity. If Label is ever re-aligned to the rung,
+        // that is a decision to make on purpose, not a drift.
+        it('<Label> declares `tracking-[-0.005em]`, independent of the button rung', () => {
             expect(LABEL_TSX).toMatch(/tracking-\[-0\.005em\]/);
+            expect(sizeClasses('md')).not.toMatch(/tracking-\[-0\.005em\]/);
         });
     });
 });

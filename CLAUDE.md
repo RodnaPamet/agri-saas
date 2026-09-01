@@ -1984,6 +1984,30 @@ recovery.
   Forward enforcement at `tests/guards/border-tone-budget.test.ts`
   (budget ratchet that locks the current count and only ratchets
   down).
+- **The button size ladder is a SINGLE RUNG** (#776, 2026-09-01). `xs`, `sm`,
+  `md` and `lg` all resolve to the same 28px rung —
+  `h-7 px-[0.7rem] text-[0.76rem] gap-tight tracking-[0.005em] font-[560]
+  [&_svg]:size-[15px]` — in `button-variants.ts`, in BOTH mirrors in
+  `button.tsx`, and in `controlSize`. Adopted from the sibling product,
+  reversing four deliberate density passes (R20-PR-A/C/E/F, R22-PR-C,
+  R24-PR-C); those guards now assert UNIFORMITY where they used to assert a
+  gradation, and each records what it dropped and why.
+    - **The `size` prop is kept on purpose.** Call sites still record intent,
+      and reversal stays a one-file edit. `r20-pra-foundation.test.ts` pins
+      the four keys existing, so a collapse cannot quietly become an
+      amputation.
+    - **The #765 coarse-pointer floor is untouched** — `pointer-coarse:min-h-11`
+      on the base and `min-w-11` on `icon`. On a phone every button is still
+      44px; the collapse is desktop-only. `button-touch-target-floor.test.ts`
+      passed through the change unmodified.
+    - **Buttons no longer align with `<Input>`, and that is a known, open
+      consequence.** `<Input size="md">` is still `h-9`, and the two share
+      rows. `controlSize` collapsed WITH the buttons to keep the documented
+      lockstep, but it has **zero importers** — `<Input>` declares its own
+      size map — so that collapse changes nothing on screen. The sibling
+      ships the same mismatch for the same reason. Aligning them for real
+      means collapsing `input.tsx`'s map, which is a separate decision about
+      typing surfaces. Do NOT "fix" the lockstep by re-grading the buttons.
 - **Action button vocabulary** (revised 2026-05-28). The label on a
   primary "create" header button is JUST the entity noun. The `+`
   glyph rides the `icon` slot — never as text. So an entity list page's

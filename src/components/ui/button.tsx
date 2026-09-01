@@ -58,10 +58,11 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
               // R20-PR-F density correction: md px-4→px-3, lg px-6→px-4.
               // button-density-tighter (2026-05-15) second pass:
               // xs → px-2, sm/md → px-2.5, lg → px-3.
-              size === "xs" && "h-7 px-2 text-[11px] font-medium",
-              size === "sm" && "h-8 px-2.5 text-xs font-medium",
-              size === "lg" && "h-10 px-3 font-bold",
-              !size && "h-9 px-2.5 font-semibold",
+              // Single-rung ladder (#776): every size resolves to the same
+              // 28px rung, so these four arms are deliberately identical.
+              // The `size` prop is kept so call sites still record INTENT and
+              // reversal stays a one-file edit.
+              "h-7 px-[0.7rem] text-[0.76rem] font-[560]",
               className,
             )}
           >
@@ -131,10 +132,8 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
                 //
                 // button-density-tighter (2026-05-15) — second
                 // tightening pass; mirrors the cva size scale.
-                size === "xs" && "h-7 px-2 text-[11px] gap-1 rounded-md font-medium",
-                size === "sm" && "h-8 px-2.5 text-xs gap-1.5 font-medium",
-                size === "lg" && "h-10 px-3 gap-tight font-bold",
-                !size && "h-9 px-2.5 gap-tight font-semibold",
+                // Single-rung ladder (#776) — mirrors the cva scale above.
+                "h-7 px-[0.7rem] text-[0.76rem] gap-tight rounded-md font-[560]",
               )
             : buttonVariants({ variant, size }),
           className,

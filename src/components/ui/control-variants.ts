@@ -73,21 +73,40 @@ export const controlEdge = [
     "motion-reduce:transition-none",
 ];
 
+/** The one rung every control size resolves to (#776). */
+const CONTROL_RUNG = "h-7 px-2.5 text-[0.76rem] rounded-md";
+
 /**
  * R20 — control sizing scale, mirrored from the button size scale.
  *
  * Same heights and horizontal padding as the button family so an
- * `<Input size="md">` and a `<Button size="md">` line up perfectly
- * when they share a row (the canonical filter-toolbar shape).
- * Kept in lockstep with `button-variants.ts::size` — if one
- * shifts, the other shifts too; the R20-PR-A ratchet asserts the
- * heights match.
+ * `<Input size="md">` and a `<Button size="md">` line up when they
+ * share a row (the canonical filter-toolbar shape). Kept in
+ * lockstep with `button-variants.ts::size` — if one shifts, the
+ * other shifts too; the R20-PR-A ratchet asserts the heights match.
+ *
+ * Single-rung collapse (#776). The button ladder collapsed to one
+ * 28px rung, so this scale collapses WITH it — the lockstep is the
+ * whole reason it exists. Controls keep `rounded-md`: text-entry
+ * surfaces stay rectangular, and only the button family took the
+ * pill.
+ *
+ * ⚠️ THIS SCALE HAS NO CONSUMERS, so collapsing it changes nothing
+ * on screen. `<Input>` declares its OWN `size` map (`input.tsx`) and
+ * does not import this one — measured, zero importers across `src/`.
+ * So the lockstep this docblock describes is real in source and NOT
+ * wired to the component it names: a `<Button size="md">` is now
+ * 28px while an `<Input size="md">` is still 36px, and they do share
+ * rows (`NewTaskFields`, `LeasePaymentsPanel`, `PrescriptionPanel`,
+ * …). The sibling product ships that same mismatch for the same
+ * reason. Aligning them for real means collapsing `input.tsx`'s map,
+ * which is a separate decision about typing surfaces — see #776.
  */
 export const controlSize = {
-    xs: "h-7 px-2.5 text-[11px] rounded-md",
-    sm: "h-8 px-3 text-xs",
-    md: "h-9 px-3 text-sm",
-    lg: "h-10 px-3.5 text-sm",
+    xs: CONTROL_RUNG,
+    sm: CONTROL_RUNG,
+    md: CONTROL_RUNG,
+    lg: CONTROL_RUNG,
 } as const;
 
 /**

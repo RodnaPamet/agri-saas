@@ -19,6 +19,8 @@
  *     by R20-PR-A; dropping the button to h-8 would break Input
  *     alignment in filter toolbars. A later roadmap can drop the
  *     whole control family to h-8 in lockstep.
+ *     ⚠️ SUPERSEDED by #776 — see the note above the (removed)
+ *     height describe block below.
  *   - `gap-tight` token (8px). 287 consumers across the codebase
  *     would ripple if changed. Out of R24's scope.
  *   - Tracking + weight ladder (R20-PR-C / R20-PR-E). Glass
@@ -66,15 +68,43 @@ describe('R24-PR-C — Slim radius re-tune', () => {
         });
     }
 
-    describe('Heights NOT touched (form-control parity preserved)', () => {
-        const src = read('src/components/ui/button-variants.ts');
-
-        it('default size (md) still uses h-9 (parity with <Input>)', () => {
-            // R20-PR-A locked the button md height at h-9 in lockstep
-            // with <Input>. R24-PR-C does not change heights — a
-            // future roadmap can drop the whole control family to
-            // h-8 together, but R24's scope is radius-only.
-            expect(src).toMatch(/md:\s*"h-9\s/);
-        });
-    });
+    /*
+     * REMOVED (#776) — describe('Heights NOT touched (form-control
+     * parity preserved)').
+     *
+     * It held ONE assertion:
+     *
+     *     it('default size (md) still uses h-9 (parity with <Input>)', …)
+     *       expect(read('src/components/ui/button-variants.ts'))
+     *           .toMatch(/md:\s*"h-9\s/);
+     *
+     * What it meant. R24-PR-C was a radius-only pass, and the
+     * assertion was the receipt for that scope line: the button `md`
+     * height was pinned to `h-9` in lockstep with `<Input size="md">`
+     * (the R20-PR-A form-control parity lock), so a filter-toolbar row
+     * of buttons and inputs sat on one baseline. The comment inside it
+     * even named the sanctioned way out — "a future roadmap can drop
+     * the whole control family to h-8 together".
+     *
+     * Why it is gone rather than retargeted. #776 adopted the sibling
+     * product's single-rung ladder: every `size` on `button-variants.ts`
+     * now resolves to the SAME 28px rung, and `controlSize` collapsed
+     * with it. So both halves of the assertion are false BY DESIGN —
+     * the button `md` is `h-7`, and the parity it was named for is
+     * broken in the one direction that matters, because `input.tsx`
+     * keeps its own `md: "h-9 …"` map and was deliberately left alone
+     * (collapsing typing surfaces is a separate decision; see the
+     * docblock on `controlSize`). Retargeting it to `/md:\s*"h-7\s/`
+     * would keep the words and drop the meaning: it would no longer be
+     * a parity lock, just a fourth restatement of a rung that four
+     * identical size strings already state, and that the ladder guards
+     * assert at their source. The uniform-rung invariant — the four
+     * sizes are IDENTICAL — is owned there, not here; this file is the
+     * radius ratchet.
+     *
+     * The history is the point: the h-9 lock was deliberate for four
+     * roadmap passes, and it was reversed deliberately, not eroded.
+     * Restoring a graded height ladder means reopening #776, not
+     * un-deleting this block.
+     */
 });
