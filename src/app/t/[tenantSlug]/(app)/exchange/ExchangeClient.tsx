@@ -63,7 +63,8 @@ import { CreateOfferModal } from './CreateOfferModal';
 import { InquiryModal } from './InquiryModal';
 import { ExchangeNav } from './ExchangeNav';
 
-// The map uses browser-only APIs (maplibre-gl) — keep it off the SSR graph.
+// The map uses browser-only APIs (a 2D <canvas> — NOT maplibre; see
+// ExchangeMap's docblock) — keep it off the SSR graph.
 const ExchangeMap = dynamic(
     () => import('@/components/exchange/ExchangeMap').then((m) => m.ExchangeMap),
     { ssr: false },
