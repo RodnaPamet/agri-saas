@@ -131,6 +131,11 @@ run('npx next build --webpack', '4/6  Build Next.js (production)', {
     // Driver.js onboarding-tour auto-trigger so the tour overlay
     // doesn't cover every authenticated page in E2E sessions.
     NEXT_PUBLIC_TEST_MODE: '1',
+    // Hermetic basemap (#764) — the CLIENT half, inlined at build time, so
+    // MapCanvas renders an inline network-free fixture style instead of
+    // demotiles. The SERVER half (E2E_BASEMAP_FIXTURE_TILES) rides
+    // playwright.config.ts's webServer.command, which this script invokes.
+    NEXT_PUBLIC_MAP_BASEMAP_FIXTURE: '1',
 });
 
 // ── 5. Install Playwright browsers ──

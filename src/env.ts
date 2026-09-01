@@ -113,6 +113,12 @@ export const env = createEnv({
         RATE_LIMIT_ENABLED: z.enum(["0", "1"]).optional(),
         RATE_LIMIT_MODE: z.enum(["upstash", "memory"]).default("upstash"),
         AUTH_TEST_MODE: z.enum(["0", "1"]).optional(),
+        // E2E ONLY. "1" makes the per-location basemap tile proxy serve a
+        // fixture tile instead of fetching the public demotiles upstream.
+        // SEPARATE from NEXT_PUBLIC_MAP_BASEMAP_FIXTURE because this half runs
+        // in the NODE process — Playwright route interception cannot see it —
+        // so it must be a RUNTIME var, not a build-time inlined one (#764).
+        E2E_BASEMAP_FIXTURE_TILES: z.enum(["0", "1"]).optional(),
         // When "1", the Credentials provider rejects sign-ins whose User row
         // has `emailVerified = null`. See src/lib/auth/credentials.ts. Default
         // is OFF so existing deployments behave unchanged until verification
@@ -554,6 +560,18 @@ export const env = createEnv({
             .enum(['hybrid', 'satellite', 'streets-v2', 'outdoor-v2', 'basic-v2'])
             .default('hybrid'),
 
+        // E2E ONLY. '1' makes MapCanvas render an INLINE, network-free
+        // fixture basemap instead of MapTiler/demotiles, so a Playwright run
+        // never depends on a third-party CDN being up (#764). Never set in
+        // dev/staging/production — the keyless demotiles fallback is a PRODUCT
+        // feature (the map renders without a MapTiler signup); this flag does
+        // not remove it, it steps in front of it under test.
+        // Deliberately NOT `.default('0')`: every E2E build sets
+        // SKIP_ENV_VALIDATION=1, and @t3-oss/env-core returns `runtimeEnv`
+        // verbatim in that case, so a zod default NEVER fires under E2E. The
+        // off-state is `undefined`, handled in code.
+        NEXT_PUBLIC_MAP_BASEMAP_FIXTURE: z.enum(['0', '1']).optional(),
+
         // ── Sentry (browser error reporting) ──
         // The client Sentry SDK is gated on this DSN: absent ⇒ no-op (a
         // self-hosted deploy stays clean), mirroring how VAPID gates web push.
@@ -592,6 +610,7 @@ export const env = createEnv({
         RATE_LIMIT_ENABLED: process.env.RATE_LIMIT_ENABLED,
         RATE_LIMIT_MODE: process.env.RATE_LIMIT_MODE,
         AUTH_TEST_MODE: process.env.AUTH_TEST_MODE,
+        E2E_BASEMAP_FIXTURE_TILES: process.env.E2E_BASEMAP_FIXTURE_TILES,
         AUTH_REQUIRE_EMAIL_VERIFICATION: process.env.AUTH_REQUIRE_EMAIL_VERIFICATION,
         UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL,
         UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN,
@@ -689,6 +708,7 @@ export const env = createEnv({
         NEXT_PUBLIC_VAPID_PUBLIC_KEY: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
         NEXT_PUBLIC_MAPTILER_KEY: process.env.NEXT_PUBLIC_MAPTILER_KEY,
         NEXT_PUBLIC_MAP_BASEMAP_STYLE: process.env.NEXT_PUBLIC_MAP_BASEMAP_STYLE,
+        NEXT_PUBLIC_MAP_BASEMAP_FIXTURE: process.env.NEXT_PUBLIC_MAP_BASEMAP_FIXTURE,
         NEXT_PUBLIC_PRIVACY_URL: process.env.NEXT_PUBLIC_PRIVACY_URL,
         NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
         NEXT_PUBLIC_SENTRY_RELEASE: process.env.NEXT_PUBLIC_SENTRY_RELEASE,

@@ -12,8 +12,9 @@
  *   1. Load the field's Map tab online (the service worker registers +
  *      practices the page after a reload).
  *   2. Tap "Download offline map" → the bounded, same-origin basemap tiles
- *      are fetched and the SW stores them in its dedicated basemap cache; the
- *      success toast confirms.
+ *      are fetched and the SW stores them in its dedicated basemap cache. The
+ *      toast confirms only that the requests COMPLETED, not that anything was
+ *      cached (#780); the tile assertion below is what proves that.
  *   3. Go OFFLINE. A basemap tile fetched in-page still resolves (served from
  *      the SW's basemap cache), the MapLibre canvas is visible, and the
  *      parcel label renders — the map is NOT a blank void offline.
@@ -77,10 +78,31 @@ test.describe('mobile offline basemap pack @mobile', () => {
         const download = page.locator('#download-offline-map-btn');
         await expect(download).toBeVisible({ timeout: 15_000 });
         await download.click();
-        // The success toast confirms at least one tile was cached.
+        // The toast confirms the requests completed — NOT that a tile was
+        // cached. The button counts a 204 as success
+        // (DownloadBasemapButton.tsx:68-69, #780) and the proxy soft-fails to
+        // 204 when its upstream is unreachable, so an all-204 pack still
+        // shows this toast over an empty cache.
         await expect(page.getByText('Offline map saved', { exact: false })).toBeVisible({
             timeout: 30_000,
         });
+
+        // ── The SERVER half of #764, observed ─────────────────────────────
+        // `page.request` bypasses the service worker, so this reaches the Next
+        // server directly. `X-Basemap-Source` is the ONLY signal that tells
+        // "the fixture is wired" apart from "the fixture is NOT wired but the
+        // CDN happened to be up" — from the client the two are identical.
+        // Playwright cannot intercept that fetch (it runs in the Node
+        // process), so this header is how the server half is proven at all.
+        const tileRes = await api.get(
+            `/api/t/${slug}/locations/${locationId}/basemap/0/0/0`,
+        );
+        expect(tileRes.status(), 'z0 pack tile').toBe(200);
+        expect(
+            tileRes.headers()['x-basemap-source'],
+            'served from the E2E fixture, not a third-party CDN',
+        ).toBe('fixture');
+        expect((await tileRes.body()).byteLength).toBeGreaterThan(0);
 
         // ── Go OFFLINE and prove the pack is served from the SW cache ─────
         await page.context().setOffline(true);
@@ -88,15 +110,21 @@ test.describe('mobile offline basemap pack @mobile', () => {
         // A basemap tile fetched in-page must STILL resolve offline — it is
         // served from the SW's dedicated basemap cache. This is the direct
         // proof the pack works with no signal (z0 always covers any bbox).
-        const tileOk = await page.evaluate(async (u) => {
+        // Asserts BYTES, not merely a resolved response. `res.ok` accepted a
+        // 204 — which carries no body and which `public/sw.js:285` refuses to
+        // cache — so this probe used to pass against a completely EMPTY pack.
+        // A deterministic upstream is what finally makes the strict form
+        // possible.
+        const tileBytes = await page.evaluate(async (u) => {
             try {
                 const res = await fetch(u, { credentials: 'same-origin' });
-                return res.ok || res.status === 204;
+                if (res.status !== 200) return -1;
+                return (await res.arrayBuffer()).byteLength;
             } catch {
-                return false;
+                return -1;
             }
         }, `/api/t/${slug}/locations/${locationId}/basemap/0/0/0`);
-        expect(tileOk, 'basemap tile served from SW cache while offline').toBe(true);
+        expect(tileBytes, 'basemap tile served from SW cache while offline').toBeGreaterThan(0);
 
         // The map is not a blank void: the canvas is still there and the
         // parcel label renders (parcels come from the field-data cache).

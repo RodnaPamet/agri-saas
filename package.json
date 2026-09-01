@@ -192,6 +192,7 @@
     },
     "devDependencies": {
         "@axe-core/playwright": "^4.13.0",
+        "@maplibre/maplibre-gl-style-spec": "^26.4.1",
         "@playwright/test": "^1.62.1",
         "@semantic-release/changelog": "^7.0.0",
         "@semantic-release/commit-analyzer": "^13.0.0",
