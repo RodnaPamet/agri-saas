@@ -1,6 +1,6 @@
 # 2026-09-01 — single-rung button ladder (#776)
 
-**Commit:** `b11577192` feat(ui): collapse the button size ladder to a single rung
+**Commit:** `ff22f782a` feat(ui): collapse the button size ladder to a single rung
 
 ## Design
 
