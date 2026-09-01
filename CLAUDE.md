@@ -2004,14 +2004,22 @@ recovery.
       on the base and `min-w-11` on `icon`. On a phone every button is still
       44px; the collapse is desktop-only. `button-touch-target-floor.test.ts`
       passed through the change unmodified.
-    - **Buttons no longer align with `<Input>`, and that is a known, open
-      consequence.** `<Input size="md">` is still `h-9`, and the two share
-      rows. `controlSize` collapsed WITH the buttons to keep the documented
-      lockstep, but it has **zero importers** — `<Input>` declares its own
-      size map — so that collapse changes nothing on screen. The sibling
-      ships the same mismatch for the same reason. Aligning them for real
-      means collapsing `input.tsx`'s map, which is a separate decision about
-      typing surfaces. Do NOT "fix" the lockstep by re-grading the buttons.
+    - **`<Input>` collapsed too, so the row actually lines up.** The lockstep
+      between the button scale and `controlSize` was documented and asserted
+      long before it was WIRED: `controlSize` has zero importers, `<Input>`
+      declares its own size map, so collapsing it changed nothing on screen
+      and a 28px button sat beside a 36px field. `input.tsx`'s map is now the
+      same rung. The sibling product still ships that mismatch, for exactly
+      this reason — its `controlSize` has no consumers either.
+      Do NOT "fix" a future misalignment by re-grading the buttons.
+    - **Every field is ≥44px on a phone**, and that floor WIDENED rather than
+      carried over: Roadmap-6 P4 put `min-h-[44px]` on `md` alone, so a
+      collapsed `sm` would have gone from 32px to 28px on mobile. It is on
+      the rung now. The floor stays VIEWPORT-based (`md:` breakpoint) while
+      the button's is POINTER-based (`pointer-coarse:min-h-11`) — matching
+      heights did not require matching the mechanism, and
+      `tests/e2e/mobile/forms.spec.ts` measures the result rather than the
+      mechanism.
 - **Action button vocabulary** (revised 2026-05-28). The label on a
   primary "create" header button is JUST the entity noun. The `+`
   glyph rides the `icon` slot — never as text. So an entity list page's
