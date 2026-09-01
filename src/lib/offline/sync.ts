@@ -27,10 +27,11 @@
  * legitimate single-user pattern; the queue drains across a few windows
  * instead of losing data.
  *
- * Items past `MAX_ATTEMPTS` (genuine transient failures only) are dropped so a
- * poison item can't block the queue forever. The same item id rides every
- * retry, so a server that dedupes on it sees at-least-once delivery as
- * exactly-once.
+ * Items past `MAX_ATTEMPTS` (genuine transient failures only) are PARKED, not
+ * dropped: they take `blocked: 'exhausted'` and stop being retried, so a
+ * poison item can't block the queue forever without the work being destroyed
+ * to achieve it. The same item id rides every retry, so a server that dedupes
+ * on it sees at-least-once delivery as exactly-once.
  */
 import { isPhotoItem, type OutboxItem, type OutboxStore } from './outbox';
 import { noteDelivered } from './delivery-receipts';
