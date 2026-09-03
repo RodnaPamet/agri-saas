@@ -78,12 +78,48 @@ RUN npm run build:worker
 RUN npm run build:seed
 
 # Prune dev dependencies before the runner stage copies node_modules.
-# Without this, the runtime image carries ts-jest, semantic-release,
-# playwright, and friends — including their transitive CVEs (e.g.
-# handlebars@4.7.8 via ts-jest) — which Trivy then reports as
-# production vulnerabilities even though the runtime never executes
-# those modules.
+# Without this, the runtime image carries ts-jest, semantic-release and
+# friends — including their transitive CVEs (e.g. handlebars@4.7.8 via
+# ts-jest) — which Trivy then reports as production vulnerabilities even
+# though the runtime never executes those modules.
 RUN npm prune --omit=dev
+
+# Playwright is the exception the prune CANNOT remove, and this comment
+# used to claim the opposite — it listed `playwright` among the things
+# above, which is why nobody looked for two releases.
+#
+# `@playwright/test` is in our devDependencies, but `next` declares it as
+# an OPTIONAL peerDependency. npm therefore resolves the chain through a
+# PRODUCTION edge and marks every node `dev: false`:
+#
+#   npm ls playwright-core --omit=dev
+#   └─┬ next@16.3.3
+#     └─┬ @playwright/test@1.62.1
+#       └─┬ playwright@1.62.1
+#         └── playwright-core@1.62.1
+#
+# `npm prune --omit=dev` is correct to keep it — by the lockfile's own
+# graph it is a production dependency. So the removal has to be explicit.
+#
+# It is ~19 MB, and `playwright-core/lib/utilsBundle.js` inlines a copy of
+# `fast-uri` verbatim (esbuild keeps the original path comments). That copy
+# is invisible to BOTH gates: npm audit reads the lockfile, where the
+# bundled copy has no entry, and Trivy walks package manifests, where
+# `playwright-core` declares no dependencies at all. So a future advisory
+# on a bundled library ships silently.
+#
+# Safe to delete: `next start` never touches it. Every reference inside
+# `next/dist` is under `docs/`, `cli/next-test.js` or
+# `experimental/testmode/` — zero hits in `dist/server/` or `dist/shared/`.
+# Same instrument as the npm-CLI removal in the runner stage below:
+# delete at the source rather than suppress in `.trivyignore`.
+#
+# Enforced in the built image by `scripts/verify-image-deps.mjs` — a
+# Dockerfile-shape assertion would be a proxy; that is not.
+RUN rm -rf node_modules/playwright \
+           node_modules/playwright-core \
+           node_modules/@playwright \
+           node_modules/@axe-core/playwright
 
 # Drop the Next.js webpack build cache before the runner stage copies
 # `.next`. `.next/cache` holds incremental-compilation artefacts used

@@ -1539,6 +1539,32 @@ jobs:
             -v "$PWD/scripts/verify-image-patches.mjs:/verify.mjs:ro" \
             inflect-compliance:ci-${{ github.sha }} /verify.mjs
 
+      # ── No test tooling in the runtime image (#801) ──
+      # Same instrument, same reason as the gate above: this runs INSIDE the
+      # built image, because a Dockerfile-shape assertion is a proxy for what
+      # shipped and this is not.
+      #
+      # `npm prune --omit=dev` CANNOT remove playwright. `next` declares
+      # `@playwright/test` as an OPTIONAL peerDependency, so npm resolves the
+      # chain through a production edge and marks every node `dev: false` —
+      # the prune is correct to keep it. The Dockerfile removes it explicitly
+      # instead, and an explicit `rm` is exactly the line a later refactor
+      # drops silently.
+      #
+      # It shipped for two releases while the prune's own comment claimed it
+      # did not, carrying ~19 MB and a `fast-uri` copy inlined into
+      # `playwright-core/lib/utilsBundle.js` that BOTH gates are blind to:
+      # npm audit reads the lockfile (no entry for a bundled copy) and Trivy
+      # walks manifests (playwright-core declares no dependencies at all).
+      #
+      # The script asserts a POSITIVE CONTROL before the absence, so a run
+      # that resolves the wrong tree fails instead of certifying it.
+      - name: "Gate: no test tooling in the runtime image"
+        run: |
+          docker run --rm --entrypoint node \
+            -v "$PWD/scripts/verify-image-deps.mjs:/verify-deps.mjs:ro" \
+            inflect-compliance:ci-${{ github.sha }} /verify-deps.mjs /app
+
       # ── Trivy scan: BLOCKING on CRITICAL,HIGH ──
       # Runs in the SAME job as the build above — the image is already
       # loaded into the local daemon (`load: true`), so there is NO
