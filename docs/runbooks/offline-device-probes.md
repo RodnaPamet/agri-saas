@@ -84,16 +84,23 @@ a hardcoded inline **green "Offline" page** (`public/sw.js:334-357`).
 **Evening**
 
 1. Install to the Home Screen (Share → Add to Home Screen). Launch from the icon.
-2. Open `/t/<slug>/diagnostics/offline`. Confirm `displayMode: standalone (installed PWA)`.
+2. Open the diagnostics page: **avatar (top right) → Offline diagnostics**.
+   Confirm `displayMode: standalone (installed PWA)`.
+   > The installed app is `display: standalone` — **there is no address bar**,
+   > so the menu row is the only way in. Before #648's reachability fix nothing
+   > in the app linked this page, which made this step impossible as written.
+   > If you do not see the row, you are signed in as a MECHANISATOR: that role
+   > is still locked out of the route (#812), so run the probe as an
+   > OWNER/ADMIN account.
 3. **Airplane mode on.**
 4. Create one journal entry **with a photo** — this is what arms `persist()` and puts work in the outbox.
-5. Back to the diagnostics page → **Re-collect** → **Copy as text**. Paste it somewhere you will still have in the morning. This is the "before".
+5. Back to the diagnostics page (avatar → Offline diagnostics) → **Re-collect** → **Copy as text**. Paste it somewhere you will still have in the morning. This is the "before".
 6. Close the app. Leave the phone overnight, untouched. Radio state does not matter overnight.
 
 **Morning**
 
 7. **Airplane mode ON before launching** (trap 1).
-8. Launch from the Home Screen icon → diagnostics page → **Copy as text**. This is the "after".
+8. Launch from the Home Screen icon → avatar → **Offline diagnostics** → **Copy as text**. This is the "after".
 
 **Reading it — two observations, not one**
 

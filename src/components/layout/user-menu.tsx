@@ -37,6 +37,10 @@ import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { signOutAndPurge } from '@/lib/auth/sign-out';
 import { LogOut, ShieldCheck } from 'lucide-react';
+// Nucleo is the canonical icon family; `no-lucide.test.ts` allowlists this
+// file's EXISTING lucide imports as migration debt, so a NEW icon takes the
+// canonical family rather than growing the residue.
+import { Gauge6 } from '@/components/ui/icons/nucleo/gauge6';
 
 import { Popover } from '@/components/ui/popover';
 import { InitialsAvatar } from '@/components/ui/initials-avatar';
@@ -64,6 +68,27 @@ export interface UserMenuProps {
      * immediately.
      */
     displayImage: string | null;
+    /**
+     * Absolute href of this tenant's offline-diagnostics instrument, or
+     * `null` to omit the row.
+     *
+     * The row exists because the instrument was URL-addressable and
+     * nothing linked it (#648). That is survivable in a browser — you can
+     * type a URL — and fatal in the INSTALLED PWA, which is `display:
+     * standalone` and therefore has no address bar. The installed context
+     * is also the only one where iOS grants `navigator.storage.persist()`,
+     * so the page was unreachable in precisely the context whose answer
+     * differs. A menu row is the smallest affordance that survives
+     * standalone.
+     *
+     * `null` (not a boolean) so the caller owns BOTH reasons to omit —
+     * no tenant in scope (the org chrome mounts this menu too), and the
+     * MECHANISATOR lockdown, which redirects `/diagnostics/*` to
+     * `/my-work`. Rendering a row that redirects would be worse than no
+     * row: the operator would conclude the instrument is broken rather
+     * than out of reach.
+     */
+    diagnosticsHref: string | null;
 }
 
 // ─── Recipe ────────────────────────────────────────────────────────
@@ -83,6 +108,7 @@ export function UserMenu({
     displayName,
     displayEmail,
     displayImage,
+    diagnosticsHref,
 }: UserMenuProps) {
     const t = useTranslations('userMenu');
     const [open, setOpen] = useState(false);
@@ -168,6 +194,27 @@ export function UserMenu({
                         <ShieldCheck className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
                         <span>{t('accountSecurity')}</span>
                     </Link>
+
+                    {/* Offline diagnostics — the device-state
+                        instrument (#760/#763/#777). Deliberately NOT in
+                        the product nav: it is a support surface, not a
+                        feature. Omitted entirely when the caller passes
+                        null. */}
+                    {diagnosticsHref && (
+                        <Link
+                            href={diagnosticsHref}
+                            role="menuitem"
+                            data-testid="user-menu-offline-diagnostics"
+                            onClick={close}
+                            className={MENU_ROW_CLASS}
+                        >
+                            <Gauge6
+                                className="h-4 w-4 flex-shrink-0"
+                                aria-hidden="true"
+                            />
+                            <span>{t('offlineDiagnostics')}</span>
+                        </Link>
+                    )}
 
                     <Popover.Separator />
 
