@@ -2925,6 +2925,7 @@
         "theme": "Тема",
         "language": "Език",
         "accountSecurity": "Сигурност на профила",
+        "offlineDiagnostics": "Офлайн диагностика",
         "signOut": "Изход",
         "accountMenuFor": "Меню на профила за {name}"
     },

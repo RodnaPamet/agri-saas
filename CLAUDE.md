@@ -458,7 +458,9 @@ to evict. Three rules, all load-bearing — see
   verdict — never a fresh measurement — is how the answer gets read back off
   a real device. The instrument is `/t/<slug>/diagnostics/offline`
   (`src/app/t/[tenantSlug]/(app)/diagnostics/offline/page.tsx`, #760): a
-  URL-addressable route, deliberately unlinked from navigation, that renders
+  URL-addressable route, reachable from ONE affordance — the user menu's
+  "Offline diagnostics" row, whose href `TopChrome` supplies and passes as
+  `null` on org chrome and in operator mode (#812) — that renders
   the stored verdict in EVERY state INCLUDING ABSENT — the pre-existing
   signals are negative-only (`OfflineSyncBar` renders only when `pending > 0
   && storagePersisted === false`), so on screen "granted", "never measured"
