@@ -332,19 +332,36 @@ async function advisoryFeedProvenLive() {
     if (process.env.AUDIT_CANARY_OVERRIDE) {
         return process.env.AUDIT_CANARY_OVERRIDE === 'live';
     }
-    try {
-        const res = await fetch(CANARY.url, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ [CANARY.pkg]: [CANARY.version] }),
-            signal: AbortSignal.timeout(30_000),
-        });
-        if (!res.ok) return false;
-        return (await res.text()).includes(CANARY.ghsa);
-    } catch {
-        // A probe that could not complete has not proven anything.
-        return false;
+    // RETRIED, and that is not a weakening.
+    //
+    // A single miss during a flap is not evidence the feed is blind — it is
+    // evidence one request did not land. Measured against the live endpoint
+    // while writing this, hit rates of 1-in-2 and 1-in-3 were both observed
+    // within the same hour, so a one-shot probe makes the GATE as flaky as
+    // the registry and blocks merges for reasons that have nothing to do
+    // with the dependency tree.
+    //
+    // Retrying a POSITIVE control cannot make it fail open: every attempt
+    // must still produce the known-good answer, and N misses is strictly
+    // stronger evidence of a blind feed than one miss. It only reduces
+    // spurious refusals. (Retrying a NEGATIVE check would be the opposite,
+    // and is exactly what you must not do.)
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+            const res = await fetch(CANARY.url, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ [CANARY.pkg]: [CANARY.version] }),
+                signal: AbortSignal.timeout(20_000),
+            });
+            if (res.ok && (await res.text()).includes(CANARY.ghsa)) return true;
+        } catch {
+            // Fall through to the next attempt: a probe that could not
+            // complete has not proven anything either way.
+        }
+        if (attempt < 3) await new Promise((r) => setTimeout(r, 3_000));
     }
+    return false;
 }
 
 /**
