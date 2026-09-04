@@ -1327,8 +1327,16 @@ jobs:
     # backstop, it is a flaky gate. Normal runtime is still 1.4-1.7 min, so
     # the larger bound costs nothing on a healthy run.
     #
-    # NOTE: `Info: npm audit (all deps)` is NOT bounded (max 422s observed).
-    # Bounding it belongs with the audit-step work in #818, not with budgets.
+    # UPDATE (#824): `Info: npm audit (all deps)` IS bounded now, at 150s.
+    # The note above said it was not, and that was true when written — the
+    # boundary held (budgets here, step bounds with the audit work), and the
+    # step half landed second. So the worst case is no longer 496 + 180 + 422
+    # but 496 + 180 + 150 = 826s, still comfortably inside 20 min.
+    #
+    # Bounding it mattered for a reason the budget alone could not fix:
+    # `continue-on-error: true` stops a FAILING step from failing the job and
+    # does nothing about a HANGING one, so an INFORMATIONAL step could burn
+    # the budget and cancel a job whose real gate had already passed.
     timeout-minutes: 20
 
     steps:
