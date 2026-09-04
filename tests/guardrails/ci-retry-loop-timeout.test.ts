@@ -39,6 +39,22 @@ import * as path from 'path';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const WORKFLOW_DIR = path.join(REPO_ROOT, '.github/workflows');
+/**
+ * Composite actions were OUTSIDE this guard until 2026-09-04, and that gap is
+ * the reason it is worth naming rather than quietly widening.
+ *
+ * This file exists because a `npm ci` hang ate a job budget in `release.yml`
+ * on 2026-07-31 — attempts 2 and 3 never ran. The fix bounded the loop in the
+ * workflow, and the guard was scoped to `.github/workflows`. But the SAME
+ * unbounded loop lived in `.github/actions/setup-node-prisma`, which eight
+ * jobs install through, and no scan ever looked there. The hazard the guard
+ * was written for went on existing in the path most jobs actually take, while
+ * the guard stayed green.
+ *
+ * A directory is not a boundary of behaviour. Scope a guard to where the
+ * PATTERN can occur, not to where an instance of it was first found.
+ */
+const ACTION_DIR = path.join(REPO_ROOT, '.github/actions');
 
 /**
  * Normal `npm ci` on these runners is 41-60s (measured across five
@@ -56,13 +72,29 @@ interface RetryLoop {
     body: string;
 }
 
+/** Every YAML that can carry a shell retry loop: workflows AND composite actions. */
+function candidateFiles(): Array<{ rel: string; abs: string }> {
+    const out: Array<{ rel: string; abs: string }> = [];
+    for (const name of fs.readdirSync(WORKFLOW_DIR)) {
+        if (!/\.ya?ml$/.test(name)) continue;
+        out.push({ rel: `.github/workflows/${name}`, abs: path.join(WORKFLOW_DIR, name) });
+    }
+    if (fs.existsSync(ACTION_DIR)) {
+        for (const dir of fs.readdirSync(ACTION_DIR)) {
+            for (const f of ['action.yml', 'action.yaml']) {
+                const abs = path.join(ACTION_DIR, dir, f);
+                if (fs.existsSync(abs)) out.push({ rel: `.github/actions/${dir}/${f}`, abs });
+            }
+        }
+    }
+    return out;
+}
+
 function findRetryLoops(): RetryLoop[] {
     const loops: RetryLoop[] = [];
 
-    for (const name of fs.readdirSync(WORKFLOW_DIR)) {
-        if (!/\.ya?ml$/.test(name)) continue;
-        const rel = `.github/workflows/${name}`;
-        const lines = fs.readFileSync(path.join(WORKFLOW_DIR, name), 'utf-8').split('\n');
+    for (const { rel, abs } of candidateFiles()) {
+        const lines = fs.readFileSync(abs, 'utf-8').split('\n');
 
         lines.forEach((text, i) => {
             if (!/^\s*for\s+attempt\s+in\b/.test(text)) return;
@@ -121,9 +153,22 @@ describe('CI retry loops bound each attempt', () => {
             const upTo = source.split('\n').slice(0, loop.line).join('\n');
             const budgets = [...upTo.matchAll(/^\s*timeout-minutes:\s*(\d+)/gm)];
 
-            expect(budgets.length).toBeGreaterThan(0);
+            // A COMPOSITE ACTION has no budget of its own — GitHub does not
+            // allow `timeout-minutes` on a step inside one, which is precisely
+            // why its loops had no ceiling and why they were worth pulling
+            // into this guard. The budget that constrains them belongs to the
+            // JOBS that use the action, and
+            // `tests/guards/setup-job-budget-floor.test.ts` holds those at a
+            // floor of 10 minutes. Compose against that floor rather than
+            // skipping the file: the two guards together say "the loop fits
+            // inside the smallest budget any caller is allowed to declare".
+            const COMPOSITE_CALLER_FLOOR_SECONDS = 10 * 60;
+            const isCompositeAction = loop.file.startsWith('.github/actions/');
+            if (!isCompositeAction) expect(budgets.length).toBeGreaterThan(0);
 
-            const budgetSeconds = Number(budgets[budgets.length - 1][1]) * 60;
+            const budgetSeconds = isCompositeAction
+                ? COMPOSITE_CALLER_FLOOR_SECONDS
+                : Number(budgets[budgets.length - 1][1]) * 60;
             const capped = loop.body.match(/\btimeout\s+(?:-k\s+\d+\s+)?(\d+)\b/);
 
             // Reported as a plain assertion rather than an inherited

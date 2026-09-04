@@ -91,9 +91,20 @@ runs:
       # crash never fails an otherwise-green job. The `if` form is
       # errexit-safe — a failed attempt does not abort the step.
       run: |
+        # Bounded for the same reason `npm ci` above is: an unbounded retry
+        # loop only re-enters when the command RETURNS, so it defends against
+        # a fast crash and not against a hang. The SIGILL this retries is a
+        # crash, but nothing guarantees the next failure mode will be. 120s is
+        # ~10x a normal generate (10-12s observed).
         for attempt in 1 2 3; do
-          if ./node_modules/.bin/prisma generate; then exit 0; fi
-          echo "::warning::prisma generate failed (attempt ${attempt}/3) — retrying"
+          status=0
+          timeout -k 10 120 ./node_modules/.bin/prisma generate || status=$?
+          if [ "$status" -eq 0 ]; then exit 0; fi
+          if [ "$status" -eq 124 ]; then
+            echo "::warning::prisma generate TIMED OUT after 120s (attempt ${attempt}/3) — retrying"
+          else
+            echo "::warning::prisma generate failed with exit ${status} (attempt ${attempt}/3) — retrying"
+          fi
           sleep 5
         done
         exit 1
