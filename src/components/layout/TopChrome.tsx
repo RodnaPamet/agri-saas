@@ -153,20 +153,19 @@ export function TopChrome({ variant, operator = false, user, onMobileMenuClick }
                   : `/t/${params.tenantSlug}/dashboard`
               : '/';
 
-    // Offline diagnostics (#648). Two independent reasons to omit it, and
-    // BOTH have to be checked here rather than inside the menu:
+    // Offline diagnostics (#648, opened to the operator in #812).
     //
-    //   • no tenant in scope — this chrome also mounts on org pages, where
-    //     the route does not exist;
-    //   • operator mode — `isOperatorAllowedPath` does not list
-    //     `/diagnostics/*`, so a MECHANISATOR tapping it is redirected to
-    //     `/my-work`. A row that silently bounces reads as a broken
-    //     instrument, which is worse than an absent one. That the field
-    //     operator is locked out of the instrument measuring their own
-    //     phone is a real gap, tracked separately — not something to paper
-    //     over with a link that does not work.
+    // ONE reason to omit it now: no tenant in scope — this chrome also mounts
+    // on org pages, where the route does not exist.
+    //
+    // The second reason is gone. Until #812 this also required `!operator`,
+    // because `isOperatorAllowedPath` did not list `/diagnostics/*` and a
+    // MECHANISATOR tapping the row would have been redirected to `/my-work` —
+    // a row that silently bounces reads as a broken instrument, which is worse
+    // than an absent one. The route is now reachable for that persona, so the
+    // row is shown to them: they are the ones whose phone it measures.
     const diagnosticsHref =
-        variant === 'tenant' && !operator && params?.tenantSlug
+        variant === 'tenant' && params?.tenantSlug
             ? `/t/${params.tenantSlug}/diagnostics/offline`
             : null;
 

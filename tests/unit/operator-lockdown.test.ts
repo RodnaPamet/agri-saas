@@ -16,6 +16,11 @@ describe('isOperatorAllowedPath — allowed surfaces', () => {
         expect(isOperatorAllowedPath('/t/acme/field/task-1/anything', slug)).toBe(true);
         expect(isOperatorAllowedPath('/t/acme/locations', slug)).toBe(true);
         expect(isOperatorAllowedPath('/t/acme/locations/loc-1', slug)).toBe(true);
+        // #812 — the offline-diagnostics instrument. The operator's phone is
+        // the one it measures, so locking the operator out put the instrument
+        // out of reach of its own subject.
+        expect(isOperatorAllowedPath('/t/acme/diagnostics/offline', slug)).toBe(true);
+        expect(isOperatorAllowedPath('/t/acme/diagnostics/offline/', slug)).toBe(true);
     });
 
     it('allows the queue, field-op, task-status, locations, and agro-tile APIs', () => {
@@ -67,5 +72,12 @@ describe('isOperatorAllowedPath — blocked surfaces', () => {
         expect(isOperatorAllowedPath('/t/acme/my-workshop', slug)).toBe(false);
         expect(isOperatorAllowedPath('/t/acme/fieldwork', slug)).toBe(false);
         expect(isOperatorAllowedPath('/t/acme/locationsX', slug)).toBe(false);
+        // #812 is an EXACT match, not a `/diagnostics/` prefix. These three
+        // separate the two implementations: a `startsWith` would let all of
+        // them through, and `diagnostics` is a namespace whose future siblings
+        // inherit nothing from that decision.
+        expect(isOperatorAllowedPath('/t/acme/diagnostics', slug)).toBe(false);
+        expect(isOperatorAllowedPath('/t/acme/diagnostics/offline/secrets', slug)).toBe(false);
+        expect(isOperatorAllowedPath('/t/acme/diagnostics/tenant-data', slug)).toBe(false);
     });
 });

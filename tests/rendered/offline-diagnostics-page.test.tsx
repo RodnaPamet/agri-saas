@@ -50,6 +50,16 @@ const snapshot = {
     blocked: 0,
     blockedAuth: 0,
 };
+// #812 — the page now reads `role` from the tenant context to decide where its
+// breadcrumb root points (the dashboard is denied to a MECHANISATOR, and this
+// page has no nav entry, so a bouncing trail would strand them). Mutable so the
+// persona test below can flip it; `useTenantContext` deliberately THROWS outside
+// a provider, which is why this mock is required rather than optional.
+const tenantCtx = { role: 'ADMIN' as string, tenantSlug: 'acme' };
+jest.mock('@/lib/tenant-context-provider', () => ({
+    useTenantContext: () => tenantCtx,
+}));
+
 jest.mock('@/lib/offline/outbox-state', () => ({
     getOutboxSnapshot: () => snapshot,
     refreshOutboxState: jest.fn().mockResolvedValue(undefined),
@@ -260,5 +270,29 @@ describe('offline diagnostics — the PASTED record, not just the screen', () =>
         ]) {
             expect(outboxLine).toContain(`${field}=`);
         }
+    });
+});
+
+
+describe('offline diagnostics — the breadcrumb must not strand the operator (#812)', () => {
+    afterEach(() => {
+        tenantCtx.role = 'ADMIN';
+    });
+
+    it('points an ADMIN at the dashboard', async () => {
+        tenantCtx.role = 'ADMIN';
+        render(<OfflineDiagnosticsPage />);
+        const link = await screen.findByRole('link', { name: /dashboard|табло/i });
+        expect(link).toHaveAttribute('href', '/t/acme/dashboard');
+    });
+
+    it('points a MECHANISATOR at My work instead — the dashboard bounces them', async () => {
+        // The decisive pair: same page, same render path, different destination.
+        // Asserting only the ADMIN case would pass over a hard-coded href.
+        tenantCtx.role = 'MECHANISATOR';
+        render(<OfflineDiagnosticsPage />);
+        const link = await screen.findByRole('link', { name: /my work|моята работа/i });
+        expect(link).toHaveAttribute('href', '/t/acme/my-work');
+        expect(screen.queryByRole('link', { name: /dashboard|табло/i })).toBeNull();
     });
 });

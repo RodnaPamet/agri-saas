@@ -371,8 +371,12 @@ export function checkTenantAccess(
  * fifteen unenforced seams went unnoticed.
  *
  * Allowed:
- *   - Pages: the "My work" screen, the field-operation completion flow, and
- *     the fields/locations map (where the sprayer sees where to spray).
+ *   - Pages: the "My work" screen, the field-operation completion flow, the
+ *     fields/locations map (where the sprayer sees where to spray), and the
+ *     offline-diagnostics instrument at `/diagnostics/offline` (#812) — the
+ *     operator's own phone is the one this page measures, so locking them out
+ *     of it put the instrument out of reach of its subject. Matched EXACTLY,
+ *     not by `/diagnostics/` prefix.
  *   - APIs: the queue (`farm-tasks`), the field-operation data + parcel
  *     marking (`field-operations`), task status changes (`tasks`), the
  *     locations data + map tiles (`locations`), and vegetation-index tile
@@ -395,7 +399,20 @@ export function isOperatorAllowedPath(pathname: string, slug: string): boolean {
         pathname.startsWith(`/t/${slug}/field/`) ||
         // The fields/locations page — where the sprayer sees where to spray.
         pathname === `/t/${slug}/locations` ||
-        pathname.startsWith(`/t/${slug}/locations/`)
+        pathname.startsWith(`/t/${slug}/locations/`) ||
+        // The offline-diagnostics instrument (#812). EXACT match, deliberately
+        // NOT `startsWith('/t/<slug>/diagnostics/')`: `diagnostics` is a
+        // namespace, and a future sibling under it inherits nothing from this
+        // decision. Widening a lockdown by prefix grants access to routes that
+        // do not exist yet and were never considered.
+        //
+        // Why the operator of all personas: MECHANISATOR is the FIELD user —
+        // the one who works with no signal, queues journal entries and photos
+        // into the IndexedDB outbox, and therefore actually suffers the storage
+        // eviction this page measures. Everyone who could already open it is an
+        // admin somewhere with a connection.
+        pathname === `/t/${slug}/diagnostics/offline` ||
+        pathname === `/t/${slug}/diagnostics/offline/`
     );
 }
 
