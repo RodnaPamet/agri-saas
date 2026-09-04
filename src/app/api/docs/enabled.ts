@@ -1,3 +1,5 @@
+import { env } from '@/env';
+
 /**
  * Is the interactive API-docs surface allowed to render?
  *
@@ -13,11 +15,16 @@
  *
  * Operators who need to read the spec in a deployed environment should
  * fetch `/openapi.json`, which is served statically and is not gated.
+ *
+ * Reads the VALIDATED `env`, not `process.env`. The old inline route was
+ * allowlisted in `tests/unit/no-fallbacks.test.ts` by path
+ * (`docs/route.ts`); moving the gate into its own module meant that carve-out
+ * no longer applied, and CLAUDE.md's rule is to reach for `@/env` rather than
+ * widen the exemption list.
  */
 export function isDocsEnabled(): boolean {
-    const nodeEnv = process.env.NODE_ENV;
-    if (nodeEnv === 'production') return false;
-    if (nodeEnv === 'test') return false;
+    if (env.NODE_ENV === 'production') return false;
+    if (env.NODE_ENV === 'test') return false;
     return true;
 }
 

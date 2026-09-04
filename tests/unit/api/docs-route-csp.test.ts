@@ -39,14 +39,23 @@ async function getPage(): Promise<Response> {
     )) as unknown as Response;
 }
 
-/** Every `<script>` tag in the markup, with its nonce (or null). */
+/**
+ * Every `<script>` tag in the markup, with its nonce (or null).
+ *
+ * Case-INSENSITIVE deliberately. A case-sensitive matcher would find zero
+ * tags against `<SCRIPT>` markup, and "every script carries the nonce" is
+ * vacuously true of an empty list — the loop below would simply not run. The
+ * `expect(found.length).toBe(3)` guard already catches that, but a matcher
+ * that cannot see a tag it is meant to audit is the wrong primitive to build
+ * on. (CodeQL flags the case-sensitive form as `js/bad-tag-filter`.)
+ */
 function scripts(html: string): Array<{ tag: string; nonce: string | null; src: string | null }> {
-    return [...html.matchAll(/<script\b([^>]*)>/g)].map((m) => {
+    return [...html.matchAll(/<script\b([^>]*)>/gi)].map((m) => {
         const attrs = m[1];
         return {
             tag: m[0],
-            nonce: /\bnonce="([^"]+)"/.exec(attrs)?.[1] ?? null,
-            src: /\bsrc="([^"]+)"/.exec(attrs)?.[1] ?? null,
+            nonce: /\bnonce="([^"]+)"/i.exec(attrs)?.[1] ?? null,
+            src: /\bsrc="([^"]+)"/i.exec(attrs)?.[1] ?? null,
         };
     });
 }

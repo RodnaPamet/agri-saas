@@ -4,10 +4,24 @@
  * Verifies that GET /api/docs is dev/staging only — production must
  * always 404, and a CSP/cache-header drift is caught.
  *
- * The actual rendering of Swagger UI happens in the browser
- * (CDN-loaded). This test only validates the server-side gate +
- * response shape, not the JavaScript that swagger-ui-bundle ships.
+ * The actual rendering of Swagger UI happens in the browser. This test
+ * validates the server-side gate + response shape, not the JavaScript that
+ * swagger-ui-bundle ships.
+ *
+ * #798 changed two things here. The assets are now served SAME-ORIGIN from
+ * `/api/docs/assets/*` instead of jsDelivr, and — the load-bearing half —
+ * every script carries the per-request CSP nonce. Without it `script-src`'s
+ * `'strict-dynamic'` blocks all three and the page renders an empty div under
+ * a 200, which is how it shipped broken for the life of the feature. The
+ * nonce-relationship assertions live in `tests/unit/api/docs-route-csp.test.ts`;
+ * this file keeps the gate, the headers and the banner.
  */
+
+// The route reads the nonce the middleware sets on the request. Without this
+// mock it correctly returns 503 rather than a silently unusable page.
+jest.mock('next/headers', () => ({
+    headers: async () => ({ get: (k: string) => (k === 'x-csp-nonce' ? 'test-nonce' : null) }),
+}));
 
 
 const { NextRequest } = require('next/server');
@@ -74,19 +88,23 @@ describe('GET /api/docs — Swagger UI gating', () => {
         expect(body).toContain("url: '/openapi.json'");
     });
 
-    it('serves Swagger UI assets via a pinned CDN version', async () => {
-        // Pinning the version protects against unexpected UI shape
-        // changes between Swagger UI 5.x minors. A bare-major URL
-        // (.../swagger-ui-dist@5/...) would regress this.
+    it('serves Swagger UI assets from our own origin, never a CDN', async () => {
+        // Was "via a pinned CDN version" until #798. The pin protected
+        // against Swagger 5.x minor drift; the version is now pinned by the
+        // `swagger-ui-dist` devDependency in package-lock.json instead, which
+        // is a stronger guarantee than a URL string. What replaced the
+        // assertion is the property that actually matters: no third-party
+        // origin executes on a page we serve.
         (process.env as Record<string, string | undefined>).NODE_ENV = 'development';
         const { GET } = loadRouteFresh();
 
         const res = await GET(fakeRequest(), {});
         const body = await res.text();
 
-        expect(body).toMatch(/swagger-ui-dist@\d+\.\d+\.\d+\//);
-        expect(body).toContain('swagger-ui.css');
-        expect(body).toContain('swagger-ui-bundle.js');
+        expect(body).not.toContain('cdn.jsdelivr.net');
+        expect(body).not.toMatch(/<script[^>]+src="https?:\/\//);
+        expect(body).toContain('/api/docs/assets/swagger-ui.css');
+        expect(body).toContain('/api/docs/assets/swagger-ui-bundle.js');
     });
 
     it('sets dev-friendly cache + robot headers', async () => {
