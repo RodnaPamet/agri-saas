@@ -232,6 +232,17 @@ only one of these signals that describes production rather than a developer's
 machine — the Dockerfile must COPY `patches/` before `npm ci`, without
 `--ignore-scripts`, or the image ships unpatched while CI stays green.
 
+**In-image verification is now the house pattern for any claim about what
+shipped**, and there are two such scripts: that one, and
+`scripts/verify-image-deps.mjs` (#801), which asserts no test tooling reaches
+the runtime image. The second exists because `npm prune --omit=dev` CANNOT
+remove playwright — `next` declares `@playwright/test` as an OPTIONAL
+peerDependency, so npm resolves it through a PRODUCTION edge and marks every
+node `dev: false`. The Dockerfile's prune comment claimed for two releases that
+the prune removed it. Both scripts assert a POSITIVE CONTROL alongside the
+absence they check, because "not present" and "I resolved the wrong tree" are
+the same observation and the second fails toward green.
+
 Async-request-API: GAP-05 is **complete**. Every dynamic route
 handler under `src/app/api` types `params` as `Promise<…>` and
 `await`s it (the Next 16 contract, enforced by
