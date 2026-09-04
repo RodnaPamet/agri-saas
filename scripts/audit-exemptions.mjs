@@ -86,18 +86,82 @@ function auditJson() {
     // happens to contain rather than the specific scenario under test.
     // Never set outside a test.
     if (process.env.AUDIT_JSON_OVERRIDE) {
-        return JSON.parse(readFileSync(process.env.AUDIT_JSON_OVERRIDE, 'utf8'));
+        return assertIsAuditReport(JSON.parse(readFileSync(process.env.AUDIT_JSON_OVERRIDE, 'utf8')));
     }
     try {
         // Non-zero exit is expected here — we are parsing the report,
         // not gating on it. The gate already ran and failed upstream.
-        return JSON.parse(
-            execSync('npm audit --omit=dev --json', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }),
+        return assertIsAuditReport(
+            JSON.parse(
+                execSync('npm audit --omit=dev --json', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }),
+            ),
         );
     } catch (err) {
-        if (err.stdout) return JSON.parse(err.stdout);
+        if (err.stdout) return assertIsAuditReport(JSON.parse(err.stdout));
         throw err;
     }
+}
+
+/**
+ * Refuse anything that is not an actual audit report.
+ *
+ * ## What this cost
+ *
+ * `npm audit --json` writes its ERRORS to stdout as valid JSON. When npm's
+ * advisory endpoint failed, `JSON.parse` therefore SUCCEEDED on a payload
+ * like:
+ *
+ *     { "message": "400 Bad Request - POST .../security/audits/quick",
+ *       "statusCode": 400, "error": {...}, "uri": ..., "headers": ... }
+ *
+ * `findAdvisories` then read `report.vulnerabilities ?? {}`, got `{}`, found
+ * nothing blocking, and this script exited 0 — printing "every remaining
+ * moderate+ advisory is tracked and exempt". A gate that asserts safety
+ * while checking nothing, in the reassuring voice.
+ *
+ * `ci.yml` runs this as `npm audit ... || node scripts/audit-exemptions.mjs`,
+ * so the fallback fires EXACTLY when audit fails. The failure was pointed
+ * toward green at two independent seams.
+ *
+ * **The failure got quieter as the outage got better.** While the endpoint
+ * HUNG, jobs died on `timeout-minutes` and somebody looked. Once it answered
+ * 400 promptly, the job passed silently. Do not "simplify" this back into a
+ * truthiness check.
+ *
+ * ## Why a POSITIVE shape check
+ *
+ * `?? {}` erased the difference between two opposite facts: an ABSENT
+ * `vulnerabilities` key means "I could not check", an EMPTY one means "I
+ * checked and found nothing". Measured, a genuinely clean report carries
+ * `auditReportVersion`, `metadata` AND `vulnerabilities: {}` — the key is
+ * present and empty. npm's error payload carries none of the three.
+ *
+ * So this asserts the shape a real report HAS, rather than sniffing for the
+ * error markers npm happens to use today. A new npm error shape is caught by
+ * construction; an error-marker denylist would have to be updated for it.
+ */
+export function assertIsAuditReport(report) {
+    const looksReal =
+        report !== null &&
+        typeof report === 'object' &&
+        typeof report.auditReportVersion === 'number' &&
+        report.vulnerabilities !== null &&
+        typeof report.vulnerabilities === 'object';
+    if (looksReal) return report;
+
+    const detail =
+        report && typeof report === 'object' && report.message
+            ? String(report.message)
+            : `keys: ${report && typeof report === 'object' ? Object.keys(report).join(', ') || '(none)' : typeof report}`;
+    console.error('\n✖ npm audit did not return a report — REFUSING to report "clean".\n');
+    console.error(`    ${detail}\n`);
+    console.error(
+        '  This is NOT "no vulnerabilities found" — the audit could not run,\n' +
+            '  so nothing was checked. Common cause: npm 10 calls the RETIRED\n' +
+            '  /-/npm/v1/security/audits/quick endpoint, which answers 400. npm 11\n' +
+            '  uses the bulk endpoint instead.\n',
+    );
+    process.exit(1);
 }
 
 const BLOCKING = new Set(['moderate', 'high', 'critical']);

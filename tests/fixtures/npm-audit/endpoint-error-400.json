@@ -1,0 +1,10 @@
+{
+  "message": "400 Bad Request - POST https://registry.npmjs.org/-/npm/v1/security/audits/quick - Bad Request",
+  "method": "POST",
+  "uri": "https://registry.npmjs.org/-/npm/v1/security/audits/quick",
+  "statusCode": 400,
+  "error": {
+    "summary": "",
+    "detail": ""
+  }
+}
