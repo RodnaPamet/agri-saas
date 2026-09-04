@@ -24,11 +24,26 @@
  */
 import { render, screen, act } from '@testing-library/react';
 import { OfflineSyncBar } from '@/components/offline/OfflineSyncBar';
+import { UnsyncedWorkBanner } from '@/components/offline/UnsyncedWorkBanner';
 import en from '../../messages/en.json';
 
 const OFFLINE = en.offline as unknown as Record<string, string>;
 const HINT = OFFLINE.storageUnprotectedInstallHint;
 const REFUSAL = OFFLINE.storageUnprotected;
+const PILL_HINT = OFFLINE.installToKeep;
+
+/** Mutable so each pill case can set the snapshot it needs. */
+const sync = {
+    pending: 1,
+    pendingPhotos: 0,
+    lost: null as unknown,
+    online: false,
+    durability: { supported: true, persisted: false } as unknown,
+    acknowledgeLostWork: () => {},
+};
+jest.mock('@/lib/offline/use-offline-sync', () => ({
+    useOfflineSync: () => sync,
+}));
 
 const IPHONE =
     'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
@@ -105,5 +120,83 @@ describe('the install remedy is offered exactly where it applies', () => {
         setEnv({ ua: IPHONE, standalone: false });
         await renderBar({ pending: 0 });
         expect(screen.queryByTestId('offline-storage-unprotected')).toBeNull();
+    });
+});
+
+
+/**
+ * #744 — the remedy has to travel with the WORK.
+ *
+ * `OfflineSyncBar` mounts on five surfaces; `UnsyncedWorkBanner` mounts once,
+ * app-wide, in `ClientProviders`. An operator who queues a journal entry and
+ * walks to the map keeps the work and loses the advice — and the lost-work
+ * banner is too late by construction, because by the time it renders the thing
+ * the install would have protected is gone.
+ *
+ * These cases pin the pill's gate, not the sync bar's. They matter because a
+ * class-wide storage sweep leaves the loss DETECTOR nothing to read (see the
+ * read-set test in tests/unit/offline/outbox-eviction.test.ts), so PREVENTING
+ * the eviction is the only lever left on iOS.
+ */
+describe('the install remedy rides the app-wide pending pill (#744)', () => {
+    beforeEach(() => {
+        sync.pending = 1;
+        sync.pendingPhotos = 0;
+        sync.lost = null;
+        sync.online = false;
+        sync.durability = { supported: true, persisted: false };
+    });
+
+    async function renderPill() {
+        await act(async () => {
+            render(<UnsyncedWorkBanner />);
+        });
+    }
+
+    it('un-installed iOS Safari with work pending — the pill carries the remedy', async () => {
+        setEnv({ ua: IPHONE, standalone: false });
+        await renderPill();
+        expect(screen.getByTestId('offline-unsynced-pill')).toBeInTheDocument();
+        expect(screen.getByTestId('offline-pill-install-hint')).toHaveTextContent(PILL_HINT);
+    });
+
+    it('installed iOS — the pill stays, the remedy goes', async () => {
+        // The decisive contrast: same pending work, same refusal-capable
+        // platform, and the hint disappears because there is nothing left to
+        // install. Without this case the gate could be `true` and pass.
+        setEnv({ ua: IPHONE, standalone: true });
+        await renderPill();
+        expect(screen.getByTestId('offline-unsynced-pill')).toBeInTheDocument();
+        expect(screen.queryByTestId('offline-pill-install-hint')).toBeNull();
+    });
+
+    it('Android Chromium — no remedy, its Share-sheet story differs', async () => {
+        setEnv({ ua: ANDROID, standalone: false });
+        await renderPill();
+        expect(screen.queryByTestId('offline-pill-install-hint')).toBeNull();
+    });
+
+    it('says nothing when persistence was GRANTED', async () => {
+        setEnv({ ua: IPHONE, standalone: false });
+        sync.durability = { supported: true, persisted: true };
+        await renderPill();
+        expect(screen.queryByTestId('offline-pill-install-hint')).toBeNull();
+    });
+
+    it('says nothing when the verdict has never been measured', async () => {
+        // `null` is not `false`. Advising an install on an unmeasured device
+        // would be advice we have no evidence for.
+        setEnv({ ua: IPHONE, standalone: false });
+        sync.durability = null;
+        await renderPill();
+        expect(screen.queryByTestId('offline-pill-install-hint')).toBeNull();
+    });
+
+    it('says nothing when there is no work to lose — no pill, no advice', async () => {
+        setEnv({ ua: IPHONE, standalone: false });
+        sync.pending = 0;
+        await renderPill();
+        expect(screen.queryByTestId('offline-unsynced-pill')).toBeNull();
+        expect(screen.queryByTestId('offline-pill-install-hint')).toBeNull();
     });
 });

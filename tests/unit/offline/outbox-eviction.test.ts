@@ -29,7 +29,14 @@ import {
     subscribeToOutbox,
     QUEUE_WARNING_THRESHOLD,
 } from '@/lib/offline/outbox-state';
-import { readLostWork, readManifest, writeManifest } from '@/lib/offline/durability';
+import {
+    readLostWork,
+    readManifest,
+    writeManifest,
+    DURABILITY_STORAGE_KEY,
+    LOST_WORK_STORAGE_KEY,
+    MANIFEST_STORAGE_KEY,
+} from '@/lib/offline/durability';
 import type { OutboxItem, OutboxStore, MutationOutboxItem } from '@/lib/offline/outbox';
 
 function installLocalStorage(): Map<string, string> {
@@ -240,6 +247,66 @@ describe('eviction while the app was CLOSED', () => {
         writeManifest([{ id: 'a', label: 'Mark North 40 done', createdAt: 1 }]);
         const snap = await refreshOutboxState(store);
         expect(snap.lost).toBeNull();
+    });
+
+    it('reads NOTHING that survives a class-wide storage sweep — the #744 blind spot', async () => {
+        // This is the defect stated as an ENUMERABLE FACT rather than as an
+        // absence, and that distinction is the whole point of the test.
+        //
+        // Asserting `lost === null` after a class-wide wipe is vacuous: it is
+        // equally true of a brand-new phone that has never queued anything,
+        // which is the issue's own thesis. So instead of asserting what the
+        // detector fails to SAY, this pins what it is able to READ.
+        //
+        // Every input below lives in script-writable storage — the class iOS
+        // clears wholesale (ITP's 7-day cap). Since work is enqueued while
+        // OFFLINE (that is why it is queued at all), nothing outside that
+        // class can be written at the moment it would need to be. That is why
+        // #744 has no fix, not merely no fix yet.
+        //
+        // WHEN THIS TEST FAILS, READ IT AS NEWS. A new key or store method
+        // appearing here means someone gave the detector another input: check
+        // whether it survives a class-wide sweep. If it does, #744 became
+        // fixable and this test should be rewritten to say so.
+        const reads: string[] = [];
+        const raw = globalThis.localStorage;
+        (globalThis as unknown as { localStorage: Storage }).localStorage = {
+            ...raw,
+            getItem: (k: string) => {
+                reads.push(k);
+                return raw.getItem(k);
+            },
+        } as Storage;
+
+        const calls: string[] = [];
+        const probe = new Proxy(store, {
+            get(target, prop, recv) {
+                const v = Reflect.get(target, prop, recv);
+                if (typeof v === 'function' && typeof prop === 'string') {
+                    calls.push(prop);
+                    return v.bind(target);
+                }
+                return v;
+            },
+        }) as OutboxStore;
+
+        writeManifest([{ id: 'a', label: 'Mark North 40 done', createdAt: 1 }]);
+        reads.length = 0;
+        calls.length = 0;
+        await refreshOutboxState(probe);
+
+        // The COMPLETE cold-launch input surface. All three keys are
+        // localStorage; all three methods are IndexedDB. Both are
+        // script-writable, and iOS evicts the two together.
+        expect([...new Set(reads)].sort()).toEqual(
+            [DURABILITY_STORAGE_KEY, LOST_WORK_STORAGE_KEY, MANIFEST_STORAGE_KEY].sort(),
+        );
+        expect([...new Set(calls)].sort()).toEqual(['all', 'takeDelivered', 'wasRecreated']);
+
+        // Anti-vacuity: prove the recorders actually recorded. An empty set
+        // would satisfy every assertion above.
+        expect(reads.length).toBeGreaterThan(0);
+        expect(calls.length).toBeGreaterThan(0);
     });
 
     it('runs the cross-session check ONCE per page load, not on every refresh', async () => {

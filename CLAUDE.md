@@ -508,7 +508,22 @@ to evict. Three rules, all load-bearing — see
   an eviction-while-closed never has, and `reconcileManifest` returns `[]` the
   moment the manifest is empty. Reachable in SAFARI, where persistence is
   refused; the installed PWA's grant is what keeps it off the table there.
-  See the durability note and #744 — known, not fixed.
+  See the durability note and #744 — known, and NOT FIXABLE from the page, for
+  a reason worth stating once. Work is enqueued while OFFLINE — that is why it
+  is queued at all — so at the only moment a durable signal could be written,
+  the sole writable stores are the script-writable class iOS sweeps.
+  `refreshOutboxState`'s complete cold-launch read set is three localStorage
+  keys (`agri.offline.durability.v1`, `.lostwork.v1`,
+  `.outbox.manifest.v1`) plus three outbox-store methods (`all`,
+  `takeDelivered`, `wasRecreated`) — all inside that class, and PINNED as an
+  enumerable fact by `tests/unit/offline/outbox-eviction.test.ts`. The two
+  signals that would survive (an HttpOnly cookie; a server row) both need a
+  network at the exact moment there is none. So the lever is PREVENTION, not
+  detection: `UnsyncedWorkBanner`'s pending pill carries the Add-to-Home-Screen
+  remedy app-wide, because installing is the measured mitigation on iOS and the
+  five-surface `OfflineSyncBar` loses the advice the moment the operator
+  navigates. If that read-set test ever fails because a NEW input appeared,
+  read it as news — check whether the new input survives a class-wide sweep.
 - **A deliberate removal leaves a RECEIPT, and that is what tells a drain
   from an eviction.** The manifest alone cannot: an id the manifest lists but
   the queue no longer holds is either delivered or destroyed, and a removal

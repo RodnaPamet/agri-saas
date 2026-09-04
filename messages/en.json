@@ -2904,6 +2904,7 @@
         "savedOnPhone": "{count, plural, one {# change saved on this phone} other {# changes saved on this phone}}",
         "photosOnPhone": "{count, plural, one {# photo saved on this phone} other {# photos saved on this phone}}",
         "notOnServer": "Not on the server yet",
+        "installToKeep": "Add to Home Screen to keep it",
         "allOnServer": "Everything is on the server",
         "queueGrowing": "Get to signal soon — work kept on the phone can be deleted before it syncs.",
         "storageProtected": "This phone has agreed to keep unsent work.",
