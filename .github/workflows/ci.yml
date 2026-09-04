@@ -1287,12 +1287,25 @@ jobs:
   security:
     name: Security
     runs-on: ubuntu-latest
-    # 10, not 5: the install step retries up to 3x at 150s each, so the
-    # worst case is ~8 min of install + ~40s of scanning. At 5 the job
-    # died before the second attempt could finish, which defeated the
-    # retry it was meant to backstop. Normal runtime is 1.4-1.7 min —
-    # this bound is a runaway backstop, not a performance budget.
-    timeout-minutes: 10
+    # 20, not 10. This comment used to reason to 10 from "~8 min of install
+    # + ~40s of scanning", and it correctly called the bound "a runaway
+    # backstop, not a performance budget" — then sized it like a performance
+    # budget. Re-measured 2026-09-04 across 7 recent Security jobs:
+    #
+    #   Install dependencies                mean 155s   MAX 496s
+    #   Gate: npm audit (moderate+)         mean  97s   MAX 422s
+    #   Info: npm audit (all deps)          mean  92s   MAX 422s
+    #
+    # #818 bounds the GATE at 180s, so the floor of the bad case is
+    # 496 + 180 = 676s against a 600s budget — the job cannot finish, and it
+    # dies as CANCELLED: neither pass nor fail, no log buffer, no cause.
+    # A backstop that fires during ordinary registry degradation is not a
+    # backstop, it is a flaky gate. Normal runtime is still 1.4-1.7 min, so
+    # the larger bound costs nothing on a healthy run.
+    #
+    # NOTE: `Info: npm audit (all deps)` is NOT bounded (max 422s observed).
+    # Bounding it belongs with the audit-step work in #818, not with budgets.
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v7

@@ -49,9 +49,19 @@ interface Job {
 
 const doc = yaml.load(fs.readFileSync(CI, 'utf8')) as { jobs: Record<string, Job> };
 
+/**
+ * Two install paths exist, and only one goes through the composite action —
+ * `security` runs `actions/setup-node` plus its own `Install dependencies`
+ * step. Detecting only the composite would have left the job whose budget was
+ * MOST wrong (10 minutes against a 496s install) outside the rule.
+ */
 function installingJobs(): Array<[string, Job]> {
     return Object.entries(doc.jobs).filter(([, job]) =>
-        (job.steps ?? []).some((s) => (s.uses ?? '').includes('setup-node-prisma')),
+        (job.steps ?? []).some(
+            (s) =>
+                (s.uses ?? '').includes('setup-node-prisma') ||
+                (s.name ?? '') === 'Install dependencies',
+        ),
     );
 }
 
