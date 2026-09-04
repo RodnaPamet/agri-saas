@@ -18,6 +18,8 @@
  */
 import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';
+import type { NextRequest } from 'next/server';
+import { withApiErrorHandling } from '@/lib/errors/api';
 import { isDocsEnabled, docsDisabledResponse } from '../../enabled';
 
 export const runtime = 'nodejs';
@@ -46,10 +48,21 @@ const ASSETS: Record<string, string> = {
  */
 const PACKAGE_DIR = join(process.cwd(), 'node_modules', 'swagger-ui-dist');
 
-export async function GET(
-    _req: Request,
+/**
+ * Wrapped, like its sibling `../../route.ts`.
+ *
+ * `withApiErrorHandling` accepts a plain `Response` and does not buffer the
+ * body, so a 1.4 MB bundle streams through untouched; what it adds is the
+ * request-id header and the OTel root span every other route has. The
+ * alternative was a `BARE_ROUTE_EXEMPTIONS` entry, but the taxonomy there has
+ * no bucket for "serves bytes" — and two routes in one feature, one wrapped
+ * and one not, is the same divergence that let the two CI install paths drift
+ * apart (#823).
+ */
+export const GET = withApiErrorHandling(async (
+    _req: NextRequest,
     { params }: { params: Promise<{ asset: string }> },
-): Promise<Response> {
+): Promise<Response> => {
     if (!isDocsEnabled()) return docsDisabledResponse();
 
     const { asset } = await params;
@@ -77,4 +90,4 @@ export async function GET(
             'X-Content-Type-Options': 'nosniff',
         },
     });
-}
+});

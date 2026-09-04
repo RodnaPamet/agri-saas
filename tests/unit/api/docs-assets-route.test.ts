@@ -30,9 +30,14 @@ afterAll(() => setEnv(ORIGINAL_ENV as string));
 
 async function get(asset: string): Promise<Response> {
     const { GET } = await import('@/app/api/docs/assets/[asset]/route');
-    return GET(new Request('http://localhost:3000/x'), {
-        params: Promise.resolve({ asset }),
-    });
+    // `NextRequest`, not `Request`: the route is wrapped in
+    // `withApiErrorHandling`, which reads `req.nextUrl.pathname` and
+    // `req.method` for its observability context.
+    const { NextRequest } = await import('next/server');
+    return GET(
+        new NextRequest('http://localhost:3000/api/docs/assets/x'),
+        { params: Promise.resolve({ asset }) } as never,
+    ) as unknown as Promise<Response>;
 }
 
 describe('GET /api/docs/assets/[asset]', () => {
