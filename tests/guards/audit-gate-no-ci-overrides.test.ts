@@ -22,11 +22,34 @@
  * advisory is tracked and exempt" while checking nothing at all: an
  * absence of findings and an absence of checking produced identical output.
  * Every lever that can reproduce that deserves a ratchet.
+ *
+ * ## Scoped to the BEHAVIOUR, not to where an instance was found
+ *
+ * The first version of this file scanned `.github/` only — because that is
+ * where CI lives, and CI is where the danger seemed to be. But the levers
+ * are environment variables, and anything that can invoke the gate in an
+ * automated context can set them: a `package.json` script, a shell script
+ * under `scripts/`, a Dockerfile. None do today, which is exactly why the
+ * narrower version would have looked correct indefinitely.
+ *
+ * Three separate guards in this repo were caught on the same day scoped to
+ * an instance rather than to the behaviour — one allowlisting a route BY
+ * PATH and missing the file it was extracted into, one detecting
+ * dependency-installing jobs by the composite action they happened to use
+ * and so excluding the job with the worst case, and this one. A rule that
+ * enumerates where it has seen the pattern cannot see the pattern
+ * somewhere new; a rule that derives from what the thing DOES can.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 const ROOT = path.resolve(__dirname, '../..');
+/**
+ * Every root from which the gate can be invoked automatically. `tests/` is
+ * deliberately absent — that is where these levers are legitimately set.
+ */
+const SCAN_ROOTS = ['.github', 'scripts', 'deploy', 'infra'];
+const SCAN_FILES = ['package.json', 'Dockerfile', 'docker-compose.yml'];
 const GITHUB_DIR = path.join(ROOT, '.github');
 
 /** Levers that would disarm the audit gate if set outside a test. */
@@ -37,23 +60,34 @@ function walk(dir: string): string[] {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         const p = path.join(dir, entry.name);
         if (entry.isDirectory()) out.push(...walk(p));
-        else if (/\.(ya?ml|sh|mjs|js)$/.test(entry.name)) out.push(p);
+        else if (/\.(ya?ml|sh|mjs|js|json|ts)$/.test(entry.name) || /^Dockerfile/.test(entry.name)) out.push(p);
     }
     return out;
 }
 
-const files = fs.existsSync(GITHUB_DIR) ? walk(GITHUB_DIR) : [];
+const files = [
+    ...SCAN_ROOTS.flatMap((r) => (fs.existsSync(path.join(ROOT, r)) ? walk(path.join(ROOT, r)) : [])),
+    ...SCAN_FILES.map((f) => path.join(ROOT, f)).filter((f) => fs.existsSync(f)),
+    // The gate itself names the variables (it reads them); excluded so the
+    // scan does not flag the implementation as a misuse.
+].filter((f) => !f.endsWith('scripts/audit-exemptions.mjs'));
 
 describe('the audit gate cannot be disarmed from CI', () => {
-    it('finds the workflow files it is meant to be scanning', () => {
+    it('finds the files it is meant to be scanning, across every root', () => {
         // Anti-vacuity: an empty file list would make every assertion below
         // pass while checking nothing — which is precisely the bug class
-        // this guard was written in response to.
-        expect(files.length).toBeGreaterThan(3);
+        // this guard was written in response to. Asserted PER ROOT, because
+        // a single total would stay healthy while one root silently
+        // contributed nothing (a renamed directory, a changed extension).
+        expect(files.length).toBeGreaterThan(20);
         expect(files.some((f) => f.endsWith('ci.yml'))).toBe(true);
+        expect(files.some((f) => f.endsWith('package.json'))).toBe(true);
+        for (const root of ['.github', 'scripts']) {
+            expect(files.filter((f) => f.includes(`/${root}/`)).length).toBeGreaterThan(0);
+        }
     });
 
-    it.each(TEST_ONLY_ENV)('%s appears nowhere under .github/', (name) => {
+    it.each(TEST_ONLY_ENV)('%s appears in no automated invocation path', (name) => {
         const offenders = files
             .filter((f) => fs.readFileSync(f, 'utf8').includes(name))
             .map((f) => path.relative(ROOT, f));
