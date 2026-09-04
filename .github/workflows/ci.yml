@@ -172,11 +172,19 @@ jobs:
     # CANCELLED: neither pass nor fail, no log buffer, no diagnosis. That is
     # the silent mode #778 was written to eliminate, in jobs #778 did not cover.
     #
-    # Measured 2026-09-04 over 24 recent Lint/Typecheck runs:
-    #   Setup Node + Prisma client — min 45s, median 214s, MAX 448s
-    # `Run tsc --noEmit` takes ~47s, so 448 + 47 = 495s against a 480s budget:
-    # arithmetically unable to finish, not a rare tail. Four PRs were cancelled
-    # this way on 2026-09-04.
+    # The worst case is now DERIVABLE, not merely observed. This PR bounds each
+    # `npm ci` attempt in `setup-node-prisma` at 150s (mirroring the Security
+    # job, whose install was already bounded while this path was not), so:
+    #
+    #   3 attempts x 150s + 2 x 15s backoff = 480s ceiling on the install
+    #   + `Run tsc --noEmit` ~47s + checkout/setup ~5s
+    #
+    # A budget justified by a BOUND survives the next outage; one justified by
+    # a sample gets re-litigated after it. The sample agrees: measured over 24
+    # recent Lint/Typecheck runs the install was min 45s, median 214s, MAX
+    # 448s — inside the 480s ceiling, so the bound codifies the observed
+    # maximum rather than tightening past it. Four PRs were CANCELLED against
+    # the old 480s budget on 2026-09-04.
     #
     # This is the reasoning the `security` job already carries ("the install
     # step retries up to 3x at 150s each, so the worst case is ~8 min of
@@ -215,11 +223,19 @@ jobs:
     # CANCELLED: neither pass nor fail, no log buffer, no diagnosis. That is
     # the silent mode #778 was written to eliminate, in jobs #778 did not cover.
     #
-    # Measured 2026-09-04 over 24 recent Lint/Typecheck runs:
-    #   Setup Node + Prisma client — min 45s, median 214s, MAX 448s
-    # `Run tsc --noEmit` takes ~47s, so 448 + 47 = 495s against a 480s budget:
-    # arithmetically unable to finish, not a rare tail. Four PRs were cancelled
-    # this way on 2026-09-04.
+    # The worst case is now DERIVABLE, not merely observed. This PR bounds each
+    # `npm ci` attempt in `setup-node-prisma` at 150s (mirroring the Security
+    # job, whose install was already bounded while this path was not), so:
+    #
+    #   3 attempts x 150s + 2 x 15s backoff = 480s ceiling on the install
+    #   + `Run tsc --noEmit` ~47s + checkout/setup ~5s
+    #
+    # A budget justified by a BOUND survives the next outage; one justified by
+    # a sample gets re-litigated after it. The sample agrees: measured over 24
+    # recent Lint/Typecheck runs the install was min 45s, median 214s, MAX
+    # 448s — inside the 480s ceiling, so the bound codifies the observed
+    # maximum rather than tightening past it. Four PRs were CANCELLED against
+    # the old 480s budget on 2026-09-04.
     #
     # This is the reasoning the `security` job already carries ("the install
     # step retries up to 3x at 150s each, so the worst case is ~8 min of
@@ -262,11 +278,19 @@ jobs:
     # CANCELLED: neither pass nor fail, no log buffer, no diagnosis. That is
     # the silent mode #778 was written to eliminate, in jobs #778 did not cover.
     #
-    # Measured 2026-09-04 over 24 recent Lint/Typecheck runs:
-    #   Setup Node + Prisma client — min 45s, median 214s, MAX 448s
-    # `Run tsc --noEmit` takes ~47s, so 448 + 47 = 495s against a 480s budget:
-    # arithmetically unable to finish, not a rare tail. Four PRs were cancelled
-    # this way on 2026-09-04.
+    # The worst case is now DERIVABLE, not merely observed. This PR bounds each
+    # `npm ci` attempt in `setup-node-prisma` at 150s (mirroring the Security
+    # job, whose install was already bounded while this path was not), so:
+    #
+    #   3 attempts x 150s + 2 x 15s backoff = 480s ceiling on the install
+    #   + `Run tsc --noEmit` ~47s + checkout/setup ~5s
+    #
+    # A budget justified by a BOUND survives the next outage; one justified by
+    # a sample gets re-litigated after it. The sample agrees: measured over 24
+    # recent Lint/Typecheck runs the install was min 45s, median 214s, MAX
+    # 448s — inside the 480s ceiling, so the bound codifies the observed
+    # maximum rather than tightening past it. Four PRs were CANCELLED against
+    # the old 480s budget on 2026-09-04.
     #
     # This is the reasoning the `security` job already carries ("the install
     # step retries up to 3x at 150s each, so the worst case is ~8 min of

@@ -47,6 +47,8 @@ interface Job {
     steps?: Array<{ uses?: string; name?: string }>;
 }
 
+const ACTION = path.join(ROOT, '.github/actions/setup-node-prisma/action.yml');
+
 const doc = yaml.load(fs.readFileSync(CI, 'utf8')) as { jobs: Record<string, Job> };
 
 /**
@@ -84,4 +86,54 @@ describe('jobs that install dependencies can outlive the install', () => {
             expect(budget).toBeGreaterThanOrEqual(FLOOR_MINUTES);
         },
     );
+});
+
+
+/**
+ * Every `npm ci` in CI must be bounded, so the worst case is DERIVABLE.
+ *
+ * The two install paths diverged for a while and that is exactly what made
+ * the budgets guesswork. The Security job wrapped its attempts in
+ * `timeout -k 10 150`; the composite action — used by eight jobs — did not,
+ * so its only ceiling was the JOB's budget, and whatever it consumed came out
+ * of the step after it.
+ *
+ * With every attempt bounded the worst case is arithmetic rather than
+ * observation: 3 attempts x 150s + 2 x 15s backoff = 480s. That is the number
+ * the job budgets are sized against, and a budget justified by a bound
+ * survives the next outage where one justified by a sample does not.
+ */
+describe('every npm ci in CI is bounded', () => {
+    const sources: Array<[string, string]> = [
+        ['setup-node-prisma/action.yml', fs.readFileSync(ACTION, 'utf8')],
+        ['ci.yml', fs.readFileSync(CI, 'utf8')],
+    ];
+
+    it.each(sources)('%s wraps every npm ci invocation in timeout(1)', (_name, text) => {
+        // Any non-comment line that actually runs `npm ci`. The first
+        // version of this matcher anchored `npm ci` to the start of a
+        // command and therefore matched NOTHING once the invocations were
+        // wrapped in `timeout -k 10 150 npm ci` — the anti-vacuity check
+        // below is what caught that, which is the reason it is here.
+        const invocations = text
+            .split('\n')
+            .map((l) => l.trim())
+            .filter((l) => /\bnpm ci\b/.test(l))
+            // Not a comment, not prose in a YAML description (backticks), and
+            // not an `echo` reporting on an install that already ran. Getting
+            // this filter wrong in BOTH directions — matching nothing, then
+            // matching documentation — is why the anti-vacuity assertion and
+            // a concrete expected count both sit below.
+            .filter((l) => !l.startsWith('#'))
+            .filter((l) => !l.includes('`'))
+            .filter((l) => !/^echo\b/.test(l) && !l.includes('::'));
+
+        // Anti-vacuity: an empty list satisfies "all are bounded". If the
+        // matcher stops finding installs, this fails rather than certifying.
+        expect(invocations.length).toBeGreaterThan(0);
+
+        for (const line of invocations) {
+            expect(line).toMatch(/\btimeout\b[^|;]*\bnpm ci\b/);
+        }
+    });
 });
