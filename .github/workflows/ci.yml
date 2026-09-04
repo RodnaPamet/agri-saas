@@ -1478,7 +1478,33 @@ jobs:
 
       # ── Full audit (informational — dev deps included) ──
       - name: "Info: npm audit (all deps)"
-        run: npm audit --audit-level=critical 2>&1 || echo "::warning::npm audit found vulnerabilities in dev dependencies (see above)"
+        # BOUNDED, even though it is informational — `continue-on-error`
+        # stops a FAILING step from failing the job, but does nothing about
+        # a HANGING one, which still burns the job budget. Measured during
+        # the 2026-09-04 npm degradation: this step reached 422s. So an
+        # advisory extra could cancel a job whose real gate had already
+        # passed, which is the worst way to lose a run.
+        #
+        # It also must not conflate "could not check" with "found nothing" —
+        # the same mistake `scripts/audit-exemptions.mjs` exists to prevent.
+        # A timeout says so, rather than borrowing the vulnerability wording.
+        #
+        # DIAGNOSTIC, worth knowing: when the gate below reports 0 and this
+        # step reports advisories, that disagreement PROVES npm's advisory
+        # feed was answering — a blind feed returns 0 for both. It is the
+        # cheapest way to tell a real green from a blind one, and it costs
+        # nothing because this step already runs.
+        run: |
+          if timeout 150 npm audit --audit-level=critical 2>&1; then
+            echo "npm audit (all deps): no critical advisories."
+          else
+            rc=$?
+            if [ "$rc" -eq 124 ]; then
+              echo "::warning::npm audit (all deps) TIMED OUT after 150s — informational step, nothing was checked (this is NOT a finding)"
+            else
+              echo "::warning::npm audit found vulnerabilities in dev dependencies (see above)"
+            fi
+          fi
         continue-on-error: true
 
   # ═══════════════════════════════════════════════════════════════
