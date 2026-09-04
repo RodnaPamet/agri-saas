@@ -29,7 +29,9 @@
  *    partial queue as if complete" failure. Only the operator's explicit
  *    acknowledgement removes it.
  */
+import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { installingWouldPersist } from '@/lib/pwa/display-mode';
 import { useOfflineSync } from '@/lib/offline/use-offline-sync';
 import { Button } from '@/components/ui/button';
 import { TriangleWarning } from '@/components/ui/icons/nucleo/triangle-warning';
@@ -37,6 +39,30 @@ import { TriangleWarning } from '@/components/ui/icons/nucleo/triangle-warning';
 export function UnsyncedWorkBanner() {
     const t = useTranslations('offline');
     const { pending, pendingPhotos, lost, acknowledgeLostWork, online, durability } = useOfflineSync();
+
+    // #744 — the remedy has to travel with the WORK, not with the loss.
+    //
+    // `OfflineSyncBar` already carries this hint, but it mounts on five
+    // surfaces: queue a journal entry, walk to the map, and the advice leaves
+    // the screen while the work stays queued. And the lost-work banner is too
+    // late by construction — by the time it renders, the thing the install
+    // would have protected is gone.
+    //
+    // This pill is app-wide and shows exactly while work is still savable,
+    // which is the only window in which installing changes the outcome.
+    // Measured on a physical iPhone: mobile Safari REFUSES
+    // `navigator.storage.persist()`, the installed Home Screen app GRANTS it.
+    // So on iOS installing is a real durability mitigation, not a packaging
+    // preference — and it is the ONLY mitigation, because a class-wide sweep
+    // leaves the loss detector nothing to read (see the read-set test in
+    // tests/unit/offline/outbox-eviction.test.ts).
+    //
+    // Post-mount: `navigator.userAgent` / `matchMedia` are client-only and
+    // reading either during render would mismatch the server's markup.
+    const [showInstallHint, setShowInstallHint] = useState(false);
+    useEffect(() => {
+        setShowInstallHint(installingWouldPersist());
+    }, []);
 
     const mutations = Math.max(0, pending - pendingPhotos);
 
@@ -103,6 +129,12 @@ export function UnsyncedWorkBanner() {
                     {mutations > 0 && pendingPhotos > 0 && <span> · </span>}
                     {pendingPhotos > 0 && <span>{t('photosOnPhone', { count: pendingPhotos })}</span>}
                     <span> · {online ? t('notOnServer') : t('offline')}</span>
+                    {durability?.persisted === false && showInstallHint && (
+                        <span data-testid="offline-pill-install-hint">
+                            {' '}
+                            · {t('installToKeep')}
+                        </span>
+                    )}
                 </div>
             )}
         </>
