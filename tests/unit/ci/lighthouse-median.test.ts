@@ -46,7 +46,10 @@ function makeDir(files: Record<string, string>): string {
     return d;
 }
 
-function run(dir: string, env: NodeJS.ProcessEnv = {}) {
+// `Record<string, string>`, not `NodeJS.ProcessEnv`: this repo augments
+// ProcessEnv so NODE_ENV is REQUIRED, which makes `{}` and a one-key literal
+// both unassignable. The parameter is an override bag, not a whole environment.
+function run(dir: string, env: Record<string, string> = {}) {
     const r = spawnSync('node', [SCRIPT, dir], {
         encoding: 'utf8',
         env: { ...process.env, ...env },
