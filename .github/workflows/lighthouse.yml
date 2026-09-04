@@ -118,6 +118,19 @@ jobs:
       - name: "Gate: Lighthouse mobile budget"
         run: npx --yes @lhci/cli@0.15.1 autorun --config=lighthouserc.json
 
+      # The number behind the verdict (#796).
+      #
+      # `numberOfRuns: 3` writes three `lhr-<ts>.json` into `.lighthouseci`
+      # and nothing ever read them, so the gate could say pass/fail and no one
+      # could see the value it judged. That made any performance change
+      # un-evidenceable — including the font preload #796 actually asks for.
+      #
+      # `if: always()` so a FAILED budget still prints its numbers: the run
+      # where you most want the metric is the one that just broke.
+      - name: Median metrics
+        if: always()
+        run: node scripts/ci/lighthouse-median.mjs .lighthouseci
+
       - name: Stop app
         if: always()
         run: |
@@ -130,6 +143,12 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: lighthouse-reports-${{ github.run_id }}
+          # REQUIRED, not cosmetic: `.lighthouseci` is a HIDDEN directory and
+          # actions/upload-artifact@v7 defaults include-hidden-files to false,
+          # so `.lighthouseci/*` matched nothing. Measured on run 33839332043 —
+          # the artifact contained exactly one file, `tmp/app.log` (12,312 B).
+          # Every Lighthouse report this repo has ever produced was discarded.
+          include-hidden-files: true
           path: |
             .lighthouseci/*
             /tmp/app.log
