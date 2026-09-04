@@ -1,6 +1,9 @@
 /**
- * scripts/audit-exemptions.mjs — the per-advisory exemption gate that runs
- * when `npm audit --omit=dev --audit-level=moderate` fails in CI.
+ * scripts/audit-exemptions.mjs — the gate that judges the captured
+ * `npm audit` report in CI. (It used to run only as the RHS of
+ * `npm audit … || node scripts/audit-exemptions.mjs`; CI now captures one
+ * report and hands it these exact bytes, because everything below sat
+ * behind a `||` that a blind registry never reaches.)
  *
  * Exercised exclusively by spawning the script as a subprocess (same
  * convention as `tests/unit/sync-chart-version.test.ts` for
@@ -416,7 +419,12 @@ describe('scripts/audit-exemptions.mjs', () => {
         // not establish.
         const result = spawnSync('node', [SCRIPT], { encoding: 'utf8', timeout: 120_000 });
         const out = `${result.stdout || ''}${result.stderr || ''}`;
-        const unreachable = result.status === null || out.includes('did not return a report');
+        // Key on the ONE marker every "could not check" path prints, not on
+        // any single message. An earlier version of this line matched a
+        // specific string — and a later commit added new refusal wording,
+        // so this test went red in CI on the very PR that fixed the bug it
+        // was written for. `unusable()` is the single funnel; use its banner.
+        const unreachable = result.status === null || out.includes('npm audit is UNUSABLE');
 
         if (unreachable) {
             const why = result.status === null ? 'timed out / signal-killed' : 'npm returned a non-report';
@@ -435,6 +443,6 @@ describe('scripts/audit-exemptions.mjs', () => {
             console.error(result.stdout, result.stderr);
         }
         expect(result.status).toBe(0);
-        expect(out).not.toContain('did not return a report');
+        expect(out).not.toContain('npm audit is UNUSABLE');
     }, 130_000);
 });

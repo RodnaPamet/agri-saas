@@ -2,16 +2,22 @@
 /**
  * Per-advisory exemption gate for `npm audit`.
  *
- * The CI security job runs the real gate verbatim:
+ * The CI security job captures ONE report and hands this script those
+ * exact bytes:
  *
- *     npm audit --omit=dev --audit-level=moderate
+ *     npm audit --omit=dev --audit-level=moderate --json > audit.json || true
+ *     AUDIT_JSON_OVERRIDE=audit.json node scripts/audit-exemptions.mjs
  *
- * and only falls through to this script when that FAILS. The global
- * threshold is untouched — `tests/guardrails/security-gate-strictness.test.ts`
- * still sees the literal command and still fails CI if anyone weakens it.
- * What this adds is the narrow escape hatch the CI comment already
- * prescribes: "add a tracked exemption with a written rationale +
- * upgrade plan rather than relaxing the global gate."
+ * It used to be `npm audit … || node scripts/audit-exemptions.mjs`. That
+ * shape was unsafe twice over: every check in this file sat on the RHS of
+ * the `||`, which a registry answering `200 {}` never reaches (the gate
+ * itself exits 0); and it ran TWO audits, so a registry degrading between
+ * them let a real-advisory failure be overwritten by a clean second read.
+ * The global threshold is untouched — `security-gate-strictness` still sees
+ * the literal command and still fails CI if anyone weakens it. What this
+ * adds is the narrow escape hatch the CI comment already prescribes: "add a
+ * tracked exemption with a written rationale + upgrade plan rather than
+ * relaxing the global gate."
  *
  * Rules, deliberately strict:
  *
@@ -34,10 +40,19 @@
  *      re-argues the exemption (delete + re-add with a new `review`
  *      date) or removes it and fixes the advisory for real.
  *
+ *   5. The report must BE a report, over a real tree, from a feed shown
+ *      to be answering. `npm audit --json` writes its ERRORS to stdout as
+ *      valid JSON, and `{}` is ambiguous even at the registry — measured,
+ *      the bulk endpoint returns `200 {}` both for a package with no
+ *      advisories and for one it does not recognise. So "found nothing"
+ *      and "checked nothing" were the same bytes, and this script printed
+ *      the reassuring one. See `assertIsAuditReport` and `CANARY`.
+ *
  * Exit 0 = every remaining moderate+ advisory is exempt AND every
  *          exemption's review date is still in the future.
- * Exit 1 = something is not exempt, an exemption is stale, or an
- *          exemption's review date has passed.
+ * Exit 1 = something is not exempt, an exemption is stale, an exemption's
+ *          review date has passed, OR the audit could not be trusted at
+ *          all (see `unusable`, which prints one marker: UNUSABLE).
  */
 import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -217,14 +232,12 @@ export function assertIsAuditReport(report) {
         // otherwise well-formed, so the message below stays specific.
         const total = report.metadata?.dependencies?.total;
         if (typeof total !== 'number' || total <= 0) {
-            console.error('\n✖ npm audit examined NO dependencies — REFUSING to report "clean".\n');
-            console.error(`    metadata.dependencies.total = ${JSON.stringify(total)}\n`);
-            console.error(
-                '  A report over an empty tree and a report over a clean tree both\n' +
-                    '  say `vulnerabilities: {}`. They mean opposite things. This repo\n' +
-                    '  has thousands of dependencies, so 0 means nothing was checked.\n',
-            );
-            process.exit(1);
+            unusable('examined NO dependencies', [
+                `metadata.dependencies.total = ${JSON.stringify(total)}`,
+                'A report over an empty tree and a report over a clean tree both',
+                'say `vulnerabilities: {}`. They mean opposite things. This repo',
+                'has thousands of dependencies, so 0 means nothing was checked.',
+            ]);
         }
         return report;
     }
@@ -233,15 +246,12 @@ export function assertIsAuditReport(report) {
         report && typeof report === 'object' && report.message
             ? String(report.message)
             : `keys: ${report && typeof report === 'object' ? Object.keys(report).join(', ') || '(none)' : typeof report}`;
-    console.error('\n✖ npm audit did not return a report — REFUSING to report "clean".\n');
-    console.error(`    ${detail}\n`);
-    console.error(
-        '  This is NOT "no vulnerabilities found" — the audit could not run,\n' +
-            '  so nothing was checked. Common cause: npm 10 calls the RETIRED\n' +
-            '  /-/npm/v1/security/audits/quick endpoint, which answers 400. npm 11\n' +
-            '  uses the bulk endpoint instead.\n',
-    );
-    process.exit(1);
+    unusable('did not return a report', [
+        detail,
+        '',
+        'npm writes its ERRORS to stdout as valid JSON, so a parse succeeding',
+        'proves nothing. Common cause: the advisory endpoint answered 4xx/5xx.',
+    ]);
 }
 
 const BLOCKING = new Set(['moderate', 'high', 'critical']);
