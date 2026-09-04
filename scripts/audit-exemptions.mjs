@@ -139,6 +139,21 @@ function auditJson() {
  * So this asserts the shape a real report HAS, rather than sniffing for the
  * error markers npm happens to use today. A new npm error shape is caught by
  * construction; an error-marker denylist would have to be updated for it.
+ *
+ * ## Why `metadata.dependencies.total` is the load-bearing one
+ *
+ * The shape check alone still cannot tell a report over OUR tree from a
+ * report over NOTHING. `vulnerabilities: {}` is a legitimate value — it is
+ * exactly what a clean tree returns — so "zero advisories" and "zero packages
+ * examined" produce identical output and mean opposite things.
+ *
+ * `metadata.dependencies.total` is non-zero only if npm actually walked a
+ * dependency tree, which makes it a POSITIVE CONTROL: an absence is only
+ * evidence once you have proved you were looking at something. Measured, a
+ * report over a package with no dependencies carries `total: 0` (and
+ * `prod: 1`, the root itself) — so this repo, with ~2000 production+dev
+ * dependencies, resolving to 0 means the audit examined nothing and must not
+ * be read as "clean".
  */
 export function assertIsAuditReport(report) {
     const looksReal =
@@ -147,7 +162,22 @@ export function assertIsAuditReport(report) {
         typeof report.auditReportVersion === 'number' &&
         report.vulnerabilities !== null &&
         typeof report.vulnerabilities === 'object';
-    if (looksReal) return report;
+    if (looksReal) {
+        // Positive control — see above. Only enforced for a report that is
+        // otherwise well-formed, so the message below stays specific.
+        const total = report.metadata?.dependencies?.total;
+        if (typeof total !== 'number' || total <= 0) {
+            console.error('\n✖ npm audit examined NO dependencies — REFUSING to report "clean".\n');
+            console.error(`    metadata.dependencies.total = ${JSON.stringify(total)}\n`);
+            console.error(
+                '  A report over an empty tree and a report over a clean tree both\n' +
+                    '  say `vulnerabilities: {}`. They mean opposite things. This repo\n' +
+                    '  has thousands of dependencies, so 0 means nothing was checked.\n',
+            );
+            process.exit(1);
+        }
+        return report;
+    }
 
     const detail =
         report && typeof report === 'object' && report.message

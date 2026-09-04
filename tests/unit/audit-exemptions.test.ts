@@ -47,7 +47,19 @@ function auditReport(vulnerabilities: Record<string, AuditVuln>) {
     // too, and `{vulnerabilities: {}}`-by-omission was indistinguishable from
     // "checked, found nothing". These fixtures previously modelled a shape
     // npm never emits, which is why they could not have caught the fail-open.
-    return { auditReportVersion: 2, metadata: { vulnerabilities: {} }, vulnerabilities };
+    //
+    // `dependencies.total` must be non-zero for the same reason it is the
+    // script's positive control: a report over an EMPTY tree also says
+    // `vulnerabilities: {}`, so a fixture with total 0 would be asserting
+    // against a state the script (correctly) refuses.
+    return {
+        auditReportVersion: 2,
+        metadata: {
+            vulnerabilities: { info: 0, low: 0, moderate: 0, high: 0, critical: 0, total: 0 },
+            dependencies: { prod: 882, dev: 1074, optional: 192, peer: 38, total: 2097 },
+        },
+        vulnerabilities,
+    };
 }
 
 /** One blocking-severity advisory, shaped like a real `npm audit --json` entry. */
@@ -236,11 +248,41 @@ describe('scripts/audit-exemptions.mjs', () => {
         // clean `npm audit --json` CARRIES `vulnerabilities: {}` (present and
         // empty) alongside `auditReportVersion` and `metadata`. If a clean
         // report omitted the key, the check above would redden every run.
+        const result = runScript({ audit: auditReport({}), exempt: [] });
+        expect(result.code).toBe(0);
+    });
+
+    it('REFUSES a well-formed report that examined NO dependencies', () => {
+        // The positive control, and the case the shape check alone cannot
+        // see: this payload is a VALID report — right version, right keys,
+        // `vulnerabilities: {}` — over an empty tree. "Zero advisories" and
+        // "zero packages examined" are byte-identical in the vulnerabilities
+        // field and mean opposite things.
         const result = runScript({
-            audit: { auditReportVersion: 2, metadata: { vulnerabilities: {} }, vulnerabilities: {} },
+            audit: {
+                auditReportVersion: 2,
+                metadata: {
+                    vulnerabilities: { info: 0, low: 0, moderate: 0, high: 0, critical: 0, total: 0 },
+                    // Measured from a real zero-dependency audit: total is 0,
+                    // prod is 1 (the root package itself).
+                    dependencies: { prod: 1, dev: 0, optional: 0, peer: 0, total: 0 },
+                },
+                vulnerabilities: {},
+            },
             exempt: [],
         });
-        expect(result.code).toBe(0);
+        expect(result.code).not.toBe(0);
+        expect(result.stderr).toContain('examined NO dependencies');
+        expect(result.stderr).not.toContain('tracked and exempt');
+    });
+
+    it('REFUSES a report whose metadata is missing entirely', () => {
+        const result = runScript({
+            audit: { auditReportVersion: 2, vulnerabilities: {} },
+            exempt: [],
+        });
+        expect(result.code).not.toBe(0);
+        expect(result.stderr).toContain('examined NO dependencies');
     });
 
     // ─── End-to-end against the real (currently empty) EXEMPT list ────
