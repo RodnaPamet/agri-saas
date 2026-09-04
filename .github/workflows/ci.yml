@@ -1377,7 +1377,15 @@ jobs:
           # `--audit-level=moderate` is retained deliberately. It is the policy
           # this repo gates on, and tests/guardrails/security-gate-strictness.test.ts
           # greps this file for that literal.
-          npm audit --omit=dev --audit-level=moderate --json > "$RUNNER_TEMP/audit.json" || true
+          # BOUNDED. npm's advisory endpoint does not always answer: it has
+          # been observed hanging for the job's entire 10-minute budget, and
+          # a job killed by `timeout-minutes` reports no cause at all — you
+          # cannot tell "the registry is down" from "the gate found
+          # something" from the outside. Capping the call turns a 10-minute
+          # mystery into a ~3-minute diagnosis, because whatever npm did or
+          # did not write is then judged by the script below, which fails
+          # closed with a specific reason.
+          timeout 180 npm audit --omit=dev --audit-level=moderate --json > "$RUNNER_TEMP/audit.json" || true
           AUDIT_JSON_OVERRIDE="$RUNNER_TEMP/audit.json" node scripts/audit-exemptions.mjs
 
       # ── Full audit (informational — dev deps included) ──
