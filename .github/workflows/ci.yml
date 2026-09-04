@@ -1356,7 +1356,29 @@ jobs:
         # the list cannot rot into a permanent blind spot once upstream
         # ships a fix.
         run: |
-          npm audit --omit=dev --audit-level=moderate || node scripts/audit-exemptions.mjs
+          # ONE audit, ONE verdict. This used to be
+          #   npm audit --omit=dev --audit-level=moderate || node scripts/audit-exemptions.mjs
+          # which ran TWO separate audits and put every safety check on the
+          # RHS of the `||`. Both halves were measurably unsafe:
+          #
+          #   · a registry answering the bulk advisory endpoint `200 {}` makes
+          #     the GATE ITSELF exit 0 ("found 0 vulnerabilities"), so `||`
+          #     short-circuits and the exemption script never runs at all;
+          #   · a registry that degrades BETWEEN the two calls lets a genuine
+          #     real-advisory failure be overwritten by a clean second read —
+          #     reproduced end-to-end over 2 critical + 3 moderate advisories.
+          #
+          # Capturing once and handing the script those exact bytes removes
+          # both by construction: no short-circuit, no flap window, and half
+          # the registry exposure. `|| true` is safe ONLY because the script
+          # fails closed on an empty, truncated, malformed or blind report —
+          # see scripts/audit-exemptions.mjs.
+          #
+          # `--audit-level=moderate` is retained deliberately. It is the policy
+          # this repo gates on, and tests/guardrails/security-gate-strictness.test.ts
+          # greps this file for that literal.
+          npm audit --omit=dev --audit-level=moderate --json > "$RUNNER_TEMP/audit.json" || true
+          AUDIT_JSON_OVERRIDE="$RUNNER_TEMP/audit.json" node scripts/audit-exemptions.mjs
 
       # ── Full audit (informational — dev deps included) ──
       - name: "Info: npm audit (all deps)"

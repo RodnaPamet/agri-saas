@@ -9,17 +9,33 @@
  * direct `import` of this module fails with "Cannot use import statement
  * outside a module" regardless of which export is consumed.
  *
- * Two env-var overrides make the run hermetic:
- *   - `AUDIT_JSON_OVERRIDE` — a fixture file replacing the real
- *     `npm audit --omit=dev --json` output.
- *   - `EXEMPT_OVERRIDE` — a fixture file replacing the (currently empty)
- *     real `EXEMPT` list, so exemption scenarios can be tested without
- *     touching production entries.
+ * Three env vars drive it:
+ *   - `AUDIT_JSON_OVERRIDE` — the report to judge. NOT test-only any more:
+ *     CI captures one `npm audit --json` to a file and points the script at
+ *     it, so the tested path and the production path are the SAME path.
+ *   - `EXEMPT_OVERRIDE` — a fixture replacing the (empty) real `EXEMPT`
+ *     list. Test-only.
+ *   - `AUDIT_CANARY_OVERRIDE` — the advisory-feed positive control.
+ *     Test-only; without it the script makes a real network call.
  *
- * Focus of this file is Rule 4 (the review-date expiry check this test was
- * added for): a future `review` date passes, a past one fails the build.
- * Rules 1-3 (no exemption / stale exemption) get one assertion each so a
- * regression in the pre-existing behaviour doesn't slip through unnoticed.
+ * The last two are test-only levers that would disarm the gate if set in
+ * CI, so `tests/guards/audit-gate-no-ci-overrides.test.ts` fails the build
+ * if either name appears anywhere under `.github/`.
+ *
+ * Rules covered here:
+ *   1-3  no exemption / stale exemption      (pre-existing)
+ *   4    review-date expiry                  (the check this file began as)
+ *   5    the report must BE a report, over a real tree, from a live feed
+ *   6    an advisory we cannot NAME is not one we may drop
+ *   7    the report file may be empty, truncated or not JSON at all
+ *
+ * Rules 5-7 exist because this gate spent an unknown period printing
+ * "✓ every remaining moderate+ advisory is tracked and exempt" while
+ * checking nothing: npm writes its ERRORS to stdout as valid JSON, and
+ * `report.vulnerabilities ?? {}` turned "could not check" into "found
+ * nothing". Several of the fixtures below are npm's REAL captured output
+ * rather than hand-written approximations, because the bug was precisely in
+ * what npm actually emits.
  */
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -73,6 +89,14 @@ function runScript(opts: {
     // the whole point of them.
     audit: unknown;
     exempt: ExemptEntry[];
+    /**
+     * The advisory-feed positive control. Defaults to `'live'` so these
+     * tests stay hermetic — without it the script makes a real network call
+     * to prove the feed is answering, which would make every clean-report
+     * assertion depend on npm's uptime. Pass `'blind'` to exercise the
+     * refusal.
+     */
+    canary?: 'live' | 'blind';
 }): { code: number | null; stdout: string; stderr: string } {
     const dir = mkdtempSync(path.join(tmpdir(), 'audit-exemptions-'));
     const auditPath = path.join(dir, 'audit.json');
@@ -85,6 +109,7 @@ function runScript(opts: {
                 ...process.env,
                 AUDIT_JSON_OVERRIDE: auditPath,
                 EXEMPT_OVERRIDE: exemptPath,
+                AUDIT_CANARY_OVERRIDE: opts.canary ?? 'live',
             },
             encoding: 'utf8',
         });
@@ -283,6 +308,92 @@ describe('scripts/audit-exemptions.mjs', () => {
         });
         expect(result.code).not.toBe(0);
         expect(result.stderr).toContain('examined NO dependencies');
+    });
+
+    // ─── Rule 5: the advisory feed's own positive control ─────────────
+
+    it('REFUSES a clean report when the advisory feed cannot be shown to be live', () => {
+        // `{}` is unfalsifiable on its own: measured against the real
+        // registry, the bulk endpoint answers `200 {}` for an unknown
+        // package — byte-identical to a package with no advisories. And
+        // arborist writes the report shape and metadata counters
+        // unconditionally, before any advisory data is consulted, so a BLIND
+        // report over a 2000-package tree is byte-identical to a clean one.
+        // Only external ground truth separates them.
+        const result = runScript({ audit: auditReport({}), exempt: [], canary: 'blind' });
+        expect(result.code).not.toBe(0);
+        expect(result.stderr).toContain('advisory feed did not return a known-good result');
+        expect(result.stderr).not.toContain('tracked and exempt');
+        // Must not be mistaken for a finding, or the next person "fixes" it
+        // by deleting the probe.
+        expect(result.stderr).toContain('does NOT mean a vulnerability was found');
+    });
+
+    it('does NOT consult the feed when advisories were found — the report proves it', () => {
+        // A report that CONTAINS advisories has already demonstrated a live
+        // feed by existing, so the probe is unnecessary there. `blind` must
+        // not change the verdict.
+        const result = runScript({
+            audit: auditReport({ 'left-pad': advisory('GHSA-1111-1111-1111') }),
+            exempt: [],
+            canary: 'blind',
+        });
+        expect(result.code).toBe(1);
+        expect(result.stderr).toContain('NO exemption');
+        expect(result.stderr).not.toContain('advisory feed');
+    });
+
+    // ─── Rule 6: an advisory we cannot NAME is not an advisory we can drop ─
+
+    it('REFUSES a blocking advisory whose via carries no GHSA url', () => {
+        // Shape-valid, metadata-consistent, and previously INVISIBLE:
+        // `findAdvisories` only recorded `via` entries with a GHSA-matching
+        // url, so a plausible npm shape drift (or a non-GHSA source) made a
+        // real advisory vanish and the report read as fully exempted.
+        const result = runScript({
+            audit: auditReport({
+                'left-pad': { severity: 'critical', via: [{ url: 'https://example.invalid/advisory/123' }] },
+            }),
+            exempt: [],
+        });
+        expect(result.code).toBe(1);
+        expect(result.stderr).toContain('NO exemption');
+        expect(result.stderr).toContain('UNNAMED:left-pad');
+    });
+
+    it('REFUSES a blocking advisory whose via entries are bare strings', () => {
+        const result = runScript({
+            audit: auditReport({ 'left-pad': { severity: 'high', via: ['some-other-package'] } }),
+            exempt: [],
+        });
+        expect(result.code).toBe(1);
+        expect(result.stderr).toContain('UNNAMED:left-pad');
+    });
+
+    // ─── Rule 7: the report file itself may be unusable ────────────────
+
+    it.each([
+        ['an EMPTY file', ''],
+        ['a TRUNCATED json document', '{"auditReportVersion":2,"vulner'],
+        ['plain text (an HTML proxy error, say)', '<html>502 Bad Gateway</html>'],
+    ])('REFUSES %s', (_label, raw) => {
+        // CI now captures the report with `> audit.json || true`, so the file
+        // is whatever npm managed to write. An exception here must not fall
+        // back into "no vulnerabilities key => nothing blocking".
+        const dir = mkdtempSync(path.join(tmpdir(), 'audit-raw-'));
+        const auditPath = path.join(dir, 'audit.json');
+        writeFileSync(auditPath, raw);
+        try {
+            const result = spawnSync('node', [SCRIPT], {
+                env: { ...process.env, AUDIT_JSON_OVERRIDE: auditPath, AUDIT_CANARY_OVERRIDE: 'live' },
+                encoding: 'utf8',
+            });
+            expect(result.status).not.toBe(0);
+            expect(`${result.stderr}`).toContain('UNUSABLE');
+            expect(`${result.stdout}`).not.toContain('tracked and exempt');
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
     });
 
     // ─── End-to-end against the real (currently empty) EXEMPT list ────

@@ -77,16 +77,66 @@ const EXEMPT = process.env.EXEMPT_OVERRIDE
     ? JSON.parse(readFileSync(process.env.EXEMPT_OVERRIDE, 'utf8'))
     : REAL_EXEMPT;
 
+/**
+ * Refuse, loudly, with a message that can never be misread as a clean bill.
+ *
+ * Every path into this function means "the audit did not produce a usable
+ * answer" — NOT "the audit found nothing". Those two were folded together
+ * once already, and the whole of this file is the cost of that.
+ */
+function unusable(what, details = []) {
+    console.error(`\n✖ npm audit is UNUSABLE — ${what}.\n`);
+    for (const d of details) console.error(`    ${d}`);
+    console.error(
+        '\n  REFUSING to report "clean": nothing was checked, so this run\n' +
+            '  proves nothing about the dependency tree. This is not a finding\n' +
+            '  about a vulnerability — it is the absence of a verdict.\n',
+    );
+    process.exit(1);
+}
+
 function auditJson() {
-    // Test-only escape hatch: `tests/unit/audit-exemptions.test.ts` spawns
-    // this script as a subprocess (mirroring `sync-chart-version.mjs`'s
-    // `CHART_PATH_OVERRIDE` pattern) and points this at a fixture JSON file
-    // instead of shelling out to a real `npm audit` — which would be slow,
-    // network-dependent, and describe whatever the CURRENT lockfile
-    // happens to contain rather than the specific scenario under test.
-    // Never set outside a test.
+    // NOT test-only any more — this is now the PRIMARY path.
+    //
+    // CI captures one report (`npm audit … --json > audit.json || true`) and
+    // points this at it, so the gate and the exemption logic judge the SAME
+    // bytes. Previously CI ran `npm audit … || node scripts/audit-exemptions.mjs`
+    // — two separate audits — and a registry that degraded between them let a
+    // real-advisory failure be overwritten by a clean second read.
+    //
+    // The unit test uses the same door with fixture files, which is what makes
+    // the tested path and the production path identical rather than parallel.
     if (process.env.AUDIT_JSON_OVERRIDE) {
-        return assertIsAuditReport(JSON.parse(readFileSync(process.env.AUDIT_JSON_OVERRIDE, 'utf8')));
+        // CI now captures the report to a file (`npm audit ... --json >
+        // audit.json || true`) and points this at it, so the file is
+        // whatever npm managed to write — which on a network failure
+        // mid-write is empty or truncated. An exception here must NOT fall
+        // through to "no vulnerabilities key ⇒ nothing blocking"; that is
+        // the whole bug this file now exists to prevent.
+        let raw;
+        try {
+            raw = readFileSync(process.env.AUDIT_JSON_OVERRIDE, 'utf8');
+        } catch (err) {
+            unusable('could not read the audit report file', [
+                `${process.env.AUDIT_JSON_OVERRIDE}: ${err.message}`,
+            ]);
+        }
+        if (!raw.trim()) {
+            unusable('the audit report file is EMPTY', [
+                `${process.env.AUDIT_JSON_OVERRIDE} has ${raw.length} byte(s)`,
+                'npm wrote nothing — it failed before producing a report.',
+            ]);
+        }
+        let parsed;
+        try {
+            parsed = JSON.parse(raw);
+        } catch (err) {
+            unusable('the audit report file is not valid JSON (truncated?)', [
+                `${err.message}`,
+                `first 200 bytes: ${raw.slice(0, 200)}`,
+            ]);
+        }
+        return assertIsAuditReport(parsed);
     }
     try {
         // Non-zero exit is expected here — we are parsing the report,
@@ -196,19 +246,95 @@ export function assertIsAuditReport(report) {
 
 const BLOCKING = new Set(['moderate', 'high', 'critical']);
 
-/** Extract every blocking-severity GHSA advisory from an `npm audit --json` report. */
+/**
+ * Extract every blocking-severity advisory from an `npm audit --json` report.
+ *
+ * Entries WITHOUT a resolvable GHSA id are recorded under a synthetic
+ * `UNNAMED:<pkg>` key rather than skipped. Dropping them was a silent pass:
+ * a blocking advisory whose `via` carries no `GHSA-` url simply vanished, so
+ * a report could be declared "fully exempted" while real advisories were
+ * never compared against the list at all. An advisory we cannot NAME is
+ * still an advisory we have not EXEMPTED — and since no exemption can match
+ * a synthetic id, it lands in `unexplained` and fails, which is correct.
+ */
 export function findAdvisories(report) {
     const found = new Map(); // GHSA id → { severity, package }
     for (const [pkg, v] of Object.entries(report.vulnerabilities ?? {})) {
         if (!BLOCKING.has(v.severity)) continue;
+        let named = false;
         for (const via of v.via ?? []) {
             if (typeof via === 'object' && via.url) {
                 const m = via.url.match(/(GHSA-[\w-]+)/);
-                if (m) found.set(m[1], { severity: v.severity, package: pkg });
+                if (m) {
+                    found.set(m[1], { severity: v.severity, package: pkg });
+                    named = true;
+                }
             }
         }
+        if (!named) found.set(`UNNAMED:${pkg}`, { severity: v.severity, package: pkg });
     }
     return found;
+}
+
+/**
+ * The advisory feed's own positive control.
+ *
+ * ## Why a shape check is not enough
+ *
+ * `{}` is UNFALSIFIABLE on its own. Measured against the real registry, the
+ * bulk advisory endpoint answers `200 {}` for a package it does not
+ * recognise — byte-identical to what it returns for a package with no
+ * advisories. And arborist writes `auditReportVersion`, `vulnerabilities: {}`
+ * and the full `metadata` counters UNCONDITIONALLY, before any advisory data
+ * is consulted, so a blind report over this repo's 2096-package tree is
+ * byte-identical to a genuine clean one. Confirmed on npm 10.9.8 and 11.19.1.
+ *
+ * So no field npm emits can distinguish "examined, found nothing" from "did
+ * not examine". Only external ground truth can: ask the feed something whose
+ * answer we already know.
+ *
+ * Same discipline as `scripts/verify-image-patches.mjs` (assert the
+ * fingerprint still matches SOMETHING, so the check cannot fail open) and the
+ * basemap scanner treating `blind` as RED rather than as a pass.
+ *
+ * ## Only consulted when the answer is "clean"
+ *
+ * A report that CONTAINS advisories has already proved the feed was live.
+ * The probe runs only when we are about to certify an empty result, which is
+ * the sole answer that can be a lie of omission.
+ */
+const CANARY = {
+    // Chosen for durability, not recency: a prototype-pollution advisory on
+    // an enormously-depended-on package, published 2019 and referenced
+    // everywhere. Withdrawal or renumbering is implausible — which matters,
+    // because if this pin ever stops resolving the build goes red and the
+    // next person must not be tempted to "fix" it by deleting the canary.
+    pkg: 'lodash',
+    version: '4.17.15',
+    ghsa: 'GHSA-35jh-r3h4-6jhm',
+    url: 'https://registry.npmjs.org/-/npm/v1/security/advisories/bulk',
+};
+
+async function advisoryFeedProvenLive() {
+    // Test-only, same convention as AUDIT_JSON_OVERRIDE above. Never set
+    // outside a test — `tests/guards/audit-gate-no-ci-overrides.test.ts`
+    // fails CI if any of these appear under .github/.
+    if (process.env.AUDIT_CANARY_OVERRIDE) {
+        return process.env.AUDIT_CANARY_OVERRIDE === 'live';
+    }
+    try {
+        const res = await fetch(CANARY.url, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ [CANARY.pkg]: [CANARY.version] }),
+            signal: AbortSignal.timeout(30_000),
+        });
+        if (!res.ok) return false;
+        return (await res.text()).includes(CANARY.ghsa);
+    } catch {
+        // A probe that could not complete has not proven anything.
+        return false;
+    }
 }
 
 /**
@@ -243,7 +369,7 @@ export function classifyExemptions(exempt, found, today = new Date()) {
     return { unexplained, stale, expired };
 }
 
-function main() {
+async function main() {
     const report = auditJson();
     const found = findAdvisories(report);
     const { unexplained, stale, expired } = classifyExemptions(EXEMPT, found, new Date());
@@ -288,6 +414,23 @@ function main() {
         );
     }
 
+    if (!failed && found.size === 0) {
+        // Nothing found at all — the ONE answer that could be a lie of
+        // omission. Prove the feed was live before certifying it. A report
+        // that CONTAINED advisories has already proved that by existing.
+        if (!(await advisoryFeedProvenLive())) {
+            unusable('the advisory feed did not return a known-good result', [
+                `probe: ${CANARY.pkg}@${CANARY.version} should report ${CANARY.ghsa}`,
+                'The audit reported ZERO advisories, but the feed cannot be shown',
+                'to be answering — so "zero" may mean "not examined".',
+                '',
+                'This does NOT mean a vulnerability was found in that package.',
+                'It means this run proved nothing. Re-run once the advisory',
+                'service is healthy; do not delete the probe to go green.',
+            ]);
+        }
+    }
+
     if (!failed) {
         console.log('\n✓ npm audit: every remaining moderate+ advisory is tracked and exempt:\n');
         for (const e of EXEMPT) {
@@ -311,5 +454,5 @@ function main() {
 // with "Cannot use import statement outside a module" regardless of
 // which export is consumed.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-    main();
+    await main();
 }
