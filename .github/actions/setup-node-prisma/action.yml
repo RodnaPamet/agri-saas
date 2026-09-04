@@ -38,11 +38,49 @@ runs:
         npm config set fetch-retry-mintimeout 10000
         npm config set fetch-retry-maxtimeout 120000
         npm config set fetch-timeout 300000
+        # Report how long this took, always. The step has no ceiling of its
+        # own, so a slow registry silently eats the JOB budget and the step
+        # that gets killed is the one after this — reported as CANCELLED,
+        # which is neither pass nor fail and carries no log buffer. Measured
+        # 2026-09-04: min 45s, median 214s, max 448s over 24 runs. Without
+        # this line, learning that required the jobs API and per-step
+        # timestamps; with it, the number is in the log of the run itself.
+        # Each attempt is BOUNDED, mirroring the Security job's own install
+        # step (`timeout -k 10 150 npm ci`). The two install paths had
+        # diverged: Security bounds its attempts, this one — used by eight
+        # jobs — did not, so a hung registry had no ceiling here except the
+        # JOB's timeout. Whatever it consumed came out of the step AFTER this
+        # one, and the job died as CANCELLED: neither pass nor fail, no log
+        # buffer, no cause.
+        #
+        # With the bound, the worst case is DERIVABLE rather than observed:
+        #   3 attempts x 150s + 2 x 15s backoff = 480s
+        # which is what the job budgets in ci.yml are now sized against. A
+        # budget justified by a bound survives the next outage; one justified
+        # by a sample gets re-litigated after it.
+        #
+        # Measured max before the bound: 448s — inside 480s, so this codifies
+        # the observed ceiling rather than tightening past it.
+        started=$SECONDS
         for attempt in 1 2 3; do
-          if npm ci; then exit 0; fi
-          echo "::warning::npm ci failed (attempt ${attempt}/3) — retrying"
+          status=0
+          timeout -k 10 150 npm ci || status=$?
+          if [ "$status" -eq 0 ]; then
+            echo "::notice::npm ci succeeded in $((SECONDS - started))s (attempt ${attempt}/3)"
+            exit 0
+          fi
+          # 124 is timeout(1)'s "killed on deadline". Separating it matters:
+          # a TIMED OUT install and a FAILED install want different responses,
+          # and one message for both is how a hang gets read as a broken
+          # lockfile.
+          if [ "$status" -eq 124 ]; then
+            echo "::warning::npm ci TIMED OUT after 150s (attempt ${attempt}/3) — retrying"
+          else
+            echo "::warning::npm ci failed with exit ${status} after $((SECONDS - started))s (attempt ${attempt}/3) — retrying"
+          fi
           sleep 15
         done
+        echo "::error::npm ci failed 3/3 after $((SECONDS - started))s"
         exit 1
 
     - name: Generate Prisma client
@@ -53,9 +91,20 @@ runs:
       # crash never fails an otherwise-green job. The `if` form is
       # errexit-safe — a failed attempt does not abort the step.
       run: |
+        # Bounded for the same reason `npm ci` above is: an unbounded retry
+        # loop only re-enters when the command RETURNS, so it defends against
+        # a fast crash and not against a hang. The SIGILL this retries is a
+        # crash, but nothing guarantees the next failure mode will be. 120s is
+        # ~10x a normal generate (10-12s observed).
         for attempt in 1 2 3; do
-          if ./node_modules/.bin/prisma generate; then exit 0; fi
-          echo "::warning::prisma generate failed (attempt ${attempt}/3) — retrying"
+          status=0
+          timeout -k 10 120 ./node_modules/.bin/prisma generate || status=$?
+          if [ "$status" -eq 0 ]; then exit 0; fi
+          if [ "$status" -eq 124 ]; then
+            echo "::warning::prisma generate TIMED OUT after 120s (attempt ${attempt}/3) — retrying"
+          else
+            echo "::warning::prisma generate failed with exit ${status} (attempt ${attempt}/3) — retrying"
+          fi
           sleep 5
         done
         exit 1

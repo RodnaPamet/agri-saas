@@ -165,7 +165,32 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    # 12, not 8. The install step inside `setup-node-prisma` has NO ceiling of
+    # its own — it retries `npm ci` 3x with `fetch-timeout` at 300s — so its
+    # effective ceiling is THIS budget. When a slow registry uses it up, what
+    # gets killed is the step the job exists to run, and the job reports
+    # CANCELLED: neither pass nor fail, no log buffer, no diagnosis. That is
+    # the silent mode #778 was written to eliminate, in jobs #778 did not cover.
+    #
+    # The worst case is now DERIVABLE, not merely observed. This PR bounds each
+    # `npm ci` attempt in `setup-node-prisma` at 150s (mirroring the Security
+    # job, whose install was already bounded while this path was not), so:
+    #
+    #   3 attempts x 150s + 2 x 15s backoff = 480s ceiling on the install
+    #   + `Run tsc --noEmit` ~47s + checkout/setup ~5s
+    #
+    # A budget justified by a BOUND survives the next outage; one justified by
+    # a sample gets re-litigated after it. The sample agrees: measured over 24
+    # recent Lint/Typecheck runs the install was min 45s, median 214s, MAX
+    # 448s — inside the 480s ceiling, so the bound codifies the observed
+    # maximum rather than tightening past it. Four PRs were CANCELLED against
+    # the old 480s budget on 2026-09-04.
+    #
+    # This is the reasoning the `security` job already carries ("the install
+    # step retries up to 3x at 150s each, so the worst case is ~8 min of
+    # install") applied to the jobs that never got it. A runaway backstop, not
+    # a performance budget.
+    timeout-minutes: 12
 
     steps:
       - uses: actions/checkout@v7
@@ -191,7 +216,32 @@ jobs:
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    # 12, not 8. The install step inside `setup-node-prisma` has NO ceiling of
+    # its own — it retries `npm ci` 3x with `fetch-timeout` at 300s — so its
+    # effective ceiling is THIS budget. When a slow registry uses it up, what
+    # gets killed is the step the job exists to run, and the job reports
+    # CANCELLED: neither pass nor fail, no log buffer, no diagnosis. That is
+    # the silent mode #778 was written to eliminate, in jobs #778 did not cover.
+    #
+    # The worst case is now DERIVABLE, not merely observed. This PR bounds each
+    # `npm ci` attempt in `setup-node-prisma` at 150s (mirroring the Security
+    # job, whose install was already bounded while this path was not), so:
+    #
+    #   3 attempts x 150s + 2 x 15s backoff = 480s ceiling on the install
+    #   + `Run tsc --noEmit` ~47s + checkout/setup ~5s
+    #
+    # A budget justified by a BOUND survives the next outage; one justified by
+    # a sample gets re-litigated after it. The sample agrees: measured over 24
+    # recent Lint/Typecheck runs the install was min 45s, median 214s, MAX
+    # 448s — inside the 480s ceiling, so the bound codifies the observed
+    # maximum rather than tightening past it. Four PRs were CANCELLED against
+    # the old 480s budget on 2026-09-04.
+    #
+    # This is the reasoning the `security` job already carries ("the install
+    # step retries up to 3x at 150s each, so the worst case is ~8 min of
+    # install") applied to the jobs that never got it. A runaway backstop, not
+    # a performance budget.
+    timeout-minutes: 12
 
     steps:
       - uses: actions/checkout@v7
@@ -221,7 +271,32 @@ jobs:
   ai-evals:
     name: AI evals (non-blocking)
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    # 12, not 8. The install step inside `setup-node-prisma` has NO ceiling of
+    # its own — it retries `npm ci` 3x with `fetch-timeout` at 300s — so its
+    # effective ceiling is THIS budget. When a slow registry uses it up, what
+    # gets killed is the step the job exists to run, and the job reports
+    # CANCELLED: neither pass nor fail, no log buffer, no diagnosis. That is
+    # the silent mode #778 was written to eliminate, in jobs #778 did not cover.
+    #
+    # The worst case is now DERIVABLE, not merely observed. This PR bounds each
+    # `npm ci` attempt in `setup-node-prisma` at 150s (mirroring the Security
+    # job, whose install was already bounded while this path was not), so:
+    #
+    #   3 attempts x 150s + 2 x 15s backoff = 480s ceiling on the install
+    #   + `Run tsc --noEmit` ~47s + checkout/setup ~5s
+    #
+    # A budget justified by a BOUND survives the next outage; one justified by
+    # a sample gets re-litigated after it. The sample agrees: measured over 24
+    # recent Lint/Typecheck runs the install was min 45s, median 214s, MAX
+    # 448s — inside the 480s ceiling, so the bound codifies the observed
+    # maximum rather than tightening past it. Four PRs were CANCELLED against
+    # the old 480s budget on 2026-09-04.
+    #
+    # This is the reasoning the `security` job already carries ("the install
+    # step retries up to 3x at 150s each, so the worst case is ~8 min of
+    # install") applied to the jobs that never got it. A runaway backstop, not
+    # a performance budget.
+    timeout-minutes: 12
     continue-on-error: true
 
     steps:
@@ -1236,12 +1311,25 @@ jobs:
   security:
     name: Security
     runs-on: ubuntu-latest
-    # 10, not 5: the install step retries up to 3x at 150s each, so the
-    # worst case is ~8 min of install + ~40s of scanning. At 5 the job
-    # died before the second attempt could finish, which defeated the
-    # retry it was meant to backstop. Normal runtime is 1.4-1.7 min —
-    # this bound is a runaway backstop, not a performance budget.
-    timeout-minutes: 10
+    # 20, not 10. This comment used to reason to 10 from "~8 min of install
+    # + ~40s of scanning", and it correctly called the bound "a runaway
+    # backstop, not a performance budget" — then sized it like a performance
+    # budget. Re-measured 2026-09-04 across 7 recent Security jobs:
+    #
+    #   Install dependencies                mean 155s   MAX 496s
+    #   Gate: npm audit (moderate+)         mean  97s   MAX 422s
+    #   Info: npm audit (all deps)          mean  92s   MAX 422s
+    #
+    # #818 bounds the GATE at 180s, so the floor of the bad case is
+    # 496 + 180 = 676s against a 600s budget — the job cannot finish, and it
+    # dies as CANCELLED: neither pass nor fail, no log buffer, no cause.
+    # A backstop that fires during ordinary registry degradation is not a
+    # backstop, it is a flaky gate. Normal runtime is still 1.4-1.7 min, so
+    # the larger bound costs nothing on a healthy run.
+    #
+    # NOTE: `Info: npm audit (all deps)` is NOT bounded (max 422s observed).
+    # Bounding it belongs with the audit-step work in #818, not with budgets.
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v7
