@@ -1858,6 +1858,24 @@ notice late, amend the COMMIT — amending the body changes nothing, and
 `gh issue reopen` plus a comment stating what shipped and what remains is the
 recovery.
 
+**And the keyword closes even inside a DENIAL.** GitHub's parser matches
+`close #N` as a substring; it does not understand negation. So the sentence
+
+> This does NOT close #748.
+
+**closes #748.** Measured 2026-09-04: two issues (#748, #796) were closed by
+commits whose text said, in terms, that they must not be. Both were written
+deliberately to prevent exactly that outcome, which is what makes the trap
+worth a rule rather than a caution — the more carefully you disclaim, the more
+likely you are to trip it.
+
+Never write the words `close` / `closes` / `closed` / `fix` / `fixes` /
+`resolve` / `resolves` adjacent to a `#N` you intend to leave open, even
+negated. Say what remains instead:
+
+> Ships one measured cause; the swallowed `networkidle` waits are a separate
+> PR. Refs #748.
+
 ## Key Conventions
 
 - **Zod schemas** for all API input validation live in `src/app-layer/schemas/` (backend) and `src/lib/schemas/` (shared).
