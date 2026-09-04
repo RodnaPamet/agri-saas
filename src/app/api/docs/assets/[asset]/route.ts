@@ -33,8 +33,6 @@ const ASSETS: Record<string, string> = {
     'swagger-ui-standalone-preset.js': 'text/javascript; charset=utf-8',
 };
 
-export const ASSET_NAMES = Object.keys(ASSETS);
-
 /**
  * Resolved from the project root rather than via `createRequire`.
  *
