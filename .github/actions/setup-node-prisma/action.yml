@@ -38,11 +38,23 @@ runs:
         npm config set fetch-retry-mintimeout 10000
         npm config set fetch-retry-maxtimeout 120000
         npm config set fetch-timeout 300000
+        # Report how long this took, always. The step has no ceiling of its
+        # own, so a slow registry silently eats the JOB budget and the step
+        # that gets killed is the one after this — reported as CANCELLED,
+        # which is neither pass nor fail and carries no log buffer. Measured
+        # 2026-09-04: min 45s, median 214s, max 448s over 24 runs. Without
+        # this line, learning that required the jobs API and per-step
+        # timestamps; with it, the number is in the log of the run itself.
+        started=$SECONDS
         for attempt in 1 2 3; do
-          if npm ci; then exit 0; fi
-          echo "::warning::npm ci failed (attempt ${attempt}/3) — retrying"
+          if npm ci; then
+            echo "::notice::npm ci succeeded in $((SECONDS - started))s (attempt ${attempt}/3)"
+            exit 0
+          fi
+          echo "::warning::npm ci failed after $((SECONDS - started))s (attempt ${attempt}/3) — retrying"
           sleep 15
         done
+        echo "::error::npm ci failed 3/3 after $((SECONDS - started))s"
         exit 1
 
     - name: Generate Prisma client

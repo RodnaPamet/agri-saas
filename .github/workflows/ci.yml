@@ -165,7 +165,24 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    # 12, not 8. The install step inside `setup-node-prisma` has NO ceiling of
+    # its own — it retries `npm ci` 3x with `fetch-timeout` at 300s — so its
+    # effective ceiling is THIS budget. When a slow registry uses it up, what
+    # gets killed is the step the job exists to run, and the job reports
+    # CANCELLED: neither pass nor fail, no log buffer, no diagnosis. That is
+    # the silent mode #778 was written to eliminate, in jobs #778 did not cover.
+    #
+    # Measured 2026-09-04 over 24 recent Lint/Typecheck runs:
+    #   Setup Node + Prisma client — min 45s, median 214s, MAX 448s
+    # `Run tsc --noEmit` takes ~47s, so 448 + 47 = 495s against a 480s budget:
+    # arithmetically unable to finish, not a rare tail. Four PRs were cancelled
+    # this way on 2026-09-04.
+    #
+    # This is the reasoning the `security` job already carries ("the install
+    # step retries up to 3x at 150s each, so the worst case is ~8 min of
+    # install") applied to the jobs that never got it. A runaway backstop, not
+    # a performance budget.
+    timeout-minutes: 12
 
     steps:
       - uses: actions/checkout@v7
@@ -191,7 +208,24 @@ jobs:
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    # 12, not 8. The install step inside `setup-node-prisma` has NO ceiling of
+    # its own — it retries `npm ci` 3x with `fetch-timeout` at 300s — so its
+    # effective ceiling is THIS budget. When a slow registry uses it up, what
+    # gets killed is the step the job exists to run, and the job reports
+    # CANCELLED: neither pass nor fail, no log buffer, no diagnosis. That is
+    # the silent mode #778 was written to eliminate, in jobs #778 did not cover.
+    #
+    # Measured 2026-09-04 over 24 recent Lint/Typecheck runs:
+    #   Setup Node + Prisma client — min 45s, median 214s, MAX 448s
+    # `Run tsc --noEmit` takes ~47s, so 448 + 47 = 495s against a 480s budget:
+    # arithmetically unable to finish, not a rare tail. Four PRs were cancelled
+    # this way on 2026-09-04.
+    #
+    # This is the reasoning the `security` job already carries ("the install
+    # step retries up to 3x at 150s each, so the worst case is ~8 min of
+    # install") applied to the jobs that never got it. A runaway backstop, not
+    # a performance budget.
+    timeout-minutes: 12
 
     steps:
       - uses: actions/checkout@v7
@@ -221,7 +255,24 @@ jobs:
   ai-evals:
     name: AI evals (non-blocking)
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    # 12, not 8. The install step inside `setup-node-prisma` has NO ceiling of
+    # its own — it retries `npm ci` 3x with `fetch-timeout` at 300s — so its
+    # effective ceiling is THIS budget. When a slow registry uses it up, what
+    # gets killed is the step the job exists to run, and the job reports
+    # CANCELLED: neither pass nor fail, no log buffer, no diagnosis. That is
+    # the silent mode #778 was written to eliminate, in jobs #778 did not cover.
+    #
+    # Measured 2026-09-04 over 24 recent Lint/Typecheck runs:
+    #   Setup Node + Prisma client — min 45s, median 214s, MAX 448s
+    # `Run tsc --noEmit` takes ~47s, so 448 + 47 = 495s against a 480s budget:
+    # arithmetically unable to finish, not a rare tail. Four PRs were cancelled
+    # this way on 2026-09-04.
+    #
+    # This is the reasoning the `security` job already carries ("the install
+    # step retries up to 3x at 150s each, so the worst case is ~8 min of
+    # install") applied to the jobs that never got it. A runaway backstop, not
+    # a performance budget.
+    timeout-minutes: 12
     continue-on-error: true
 
     steps:
