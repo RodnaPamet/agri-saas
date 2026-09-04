@@ -64,6 +64,8 @@ import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { useParams } from 'next/navigation';
 import { useCopyToClipboard } from '@/components/ui/hooks';
 import { useTranslations } from 'next-intl';
+import { useTenantContext } from '@/lib/tenant-context-provider';
+import { diagnosticsBreadcrumbRoot } from './breadcrumb-root';
 
 /**
  * The four caches `public/sw.js` declares, by SUFFIX. #648 probe 2 asks for
@@ -254,6 +256,11 @@ export default function OfflineDiagnosticsPage() {
     const ranAt = data?.ranAt ?? '';
     const { copy, copied } = useCopyToClipboard();
     const t = useTranslations('diagnostics.offline');
+    // #812 — the operator can now reach this page, and the dashboard link in
+    // the trail below is denied to them. Reuses `myWork.title`, so no new
+    // strings; see ./breadcrumb-root.ts for why it is a pure function.
+    const tMyWork = useTranslations('myWork');
+    const { role } = useTenantContext();
 
     const standalone = typeof window !== 'undefined' ? isStandalone() : false;
     const ios = typeof window !== 'undefined' ? isIos() : false;
@@ -306,7 +313,13 @@ export default function OfflineDiagnosticsPage() {
                     back out. */}
                 <PageBreadcrumbs
                     items={[
-                        { label: t('breadcrumbRoot'), href: `/t/${tenantSlug}/dashboard` },
+                        (() => {
+                            const root = diagnosticsBreadcrumbRoot(role, tenantSlug);
+                            return {
+                                label: root.isOperator ? tMyWork('title') : t('breadcrumbRoot'),
+                                href: root.href,
+                            };
+                        })(),
                         { label: t('title') },
                     ]}
                 />

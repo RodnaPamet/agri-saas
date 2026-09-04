@@ -460,7 +460,14 @@ to evict. Three rules, all load-bearing — see
   (`src/app/t/[tenantSlug]/(app)/diagnostics/offline/page.tsx`, #760): a
   URL-addressable route, reachable from ONE affordance — the user menu's
   "Offline diagnostics" row, whose href `TopChrome` supplies and passes as
-  `null` on org chrome and in operator mode (#812) — that renders
+  `null` only on org chrome, where the route does not exist. It IS shown to
+  the MECHANISATOR since #812: `isOperatorAllowedPath` allows
+  `/diagnostics/offline` by EXACT match (not a `/diagnostics/` prefix — that
+  namespace's future siblings inherit nothing from the decision), because the
+  operator's phone is the one the page measures. Its breadcrumb root is
+  persona-aware for the same reason — the dashboard is denied to them, and
+  this page has no nav entry, so a bouncing trail would strand them. That
+  route renders
   the stored verdict in EVERY state INCLUDING ABSENT — the pre-existing
   signals are negative-only (`OfflineSyncBar` renders only when `pending > 0
   && storagePersisted === false`), so on screen "granted", "never measured"

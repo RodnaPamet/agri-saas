@@ -89,9 +89,13 @@ a hardcoded inline **green "Offline" page** (`public/sw.js:334-357`).
    > The installed app is `display: standalone` — **there is no address bar**,
    > so the menu row is the only way in. Before #648's reachability fix nothing
    > in the app linked this page, which made this step impossible as written.
-   > If you do not see the row, you are signed in as a MECHANISATOR: that role
-   > is still locked out of the route (#812), so run the probe as an
-   > OWNER/ADMIN account.
+   > **Run probe 6 as an OWNER/ADMIN, not as a MECHANISATOR.** Since #812 the
+   > operator persona can *reach* this page — the row is shown to them — but it
+   > cannot complete the probe: step 4 needs a journal entry with a photo, and
+   > `/t/<slug>/journal` is denied by `isOperatorAllowedPath`. Without that
+   > enqueue, `persist()` is never armed and the page reports "never measured"
+   > — a true reading of an unrun protocol, not a finding about the device.
+   > Tracked as #819.
 3. **Airplane mode on.**
 4. Create one journal entry **with a photo** — this is what arms `persist()` and puts work in the outbox.
 5. Back to the diagnostics page (avatar → Offline diagnostics) → **Re-collect** → **Copy as text**. Paste it somewhere you will still have in the morning. This is the "before".
