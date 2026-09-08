@@ -16,5 +16,27 @@ runs:
           echo "::error::postgis service container not found — cannot install pgvector" >&2
           exit 1
         fi
-        docker exec "$cid" sh -c 'apt-get update -qq && apt-get install -y -qq postgresql-16-pgvector'
+        # `Acquire::Check-Valid-Until=false` is REQUIRED, not defensive.
+        #
+        # postgis/postgis:16-3.4 is Debian bullseye, and bullseye-security's
+        # Release file stopped being refreshed on 2026-09-07T21:13:04Z:
+        #
+        #   Date:        Mon, 31 Aug 2026 21:13:04 UTC
+        #   Valid-Until: Mon, 07 Sep 2026 21:13:04 UTC
+        #
+        # Past that instant `apt-get update` exits 100 — "Release file ... is
+        # expired" — so this step, and every job that uses it, fails. Verified
+        # in the real image: without the flag exit=100, with it exit=0 and
+        # `vector.control` installs.
+        #
+        # It reads as a security relaxation and is not one. The suite is FROZEN,
+        # so there are no newer security updates being withheld; the index is
+        # simply stale. And `postgresql-16-pgvector` comes from PGDG, a separate
+        # and still-maintained repo, so its freshness is unaffected. What the
+        # flag buys is that a frozen debian-security index stops failing the
+        # whole `update`.
+        #
+        # This is a STOPGAP. The real fix is a base image on a maintained
+        # Debian — tracked in the issue referenced by the PR that added this.
+        docker exec "$cid" sh -c 'apt-get -o Acquire::Check-Valid-Until=false update -qq && apt-get install -y -qq postgresql-16-pgvector'
         echo "pgvector installed into container $cid"
