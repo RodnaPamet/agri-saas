@@ -67,10 +67,69 @@ jobs:
                   username: ${{ github.actor }}
                   password: ${{ secrets.GITHUB_TOKEN }}
 
-            - name: "Does main's tip have a published image?"
+            # ── Is this the TIP's own publish? (#845) ──
+            #
+            # `workflow_run` fires on ANY completion of the publish workflow,
+            # and `cancel-in-progress: true` means a merge burst cancels the
+            # older run the instant the newer one starts. That cancellation
+            # fires this workflow, which then asks about main's CURRENT tip —
+            # whose own publish is, by construction, still building.
+            #
+            # Measured on the very first run: run 34374961023 (c38cd3525) was
+            # cancelled at 16:16 when 34375694143 (8029f92f9) started; this
+            # check woke at 16:17 and correctly reported that 8029f92 had no
+            # image, because its build was at step 6 of 11. A true statement,
+            # asked too early — the trigger cannot tell "the tip's publish
+            # finished" from "an older publish died while the tip's runs".
+            #
+            # So: only ask when the run that triggered us was FOR the tip. Any
+            # other commit's publish is either superseded (its successor will
+            # trigger us again) or already answered. A cancelled publish for
+            # the tip still reaches the check, which is the case this file
+            # exists for. The daily cron is the backstop for anything missed.
+            - name: "Is this the tip's own publish?"
+              id: gate
+              if: github.event_name == 'workflow_run'
+              env:
+                  TRIGGERING_SHA: ${{ github.event.workflow_run.head_sha }}
+              run: |
+                  set -euo pipefail
+                  TARGET="$(git log -1 --format=%H --invert-grep --grep='\[skip ci\]')"
+                  echo "publishable tip : $TARGET"
+                  echo "triggering run  : $TRIGGERING_SHA"
+                  if [ "$TARGET" != "$TRIGGERING_SHA" ]; then
+                      echo "skip=true" >> "$GITHUB_OUTPUT"
+                      echo "::notice::Publish for ${TRIGGERING_SHA:0:9} completed, but the publishable tip is ${TARGET:0:9} — that commit's own publish will trigger this check. Not asking yet."
+                  fi
+
+            # ── Ask about the newest PUBLISHABLE commit, not literally HEAD ──
+            #
+            # semantic-release pushes `chore(release): X [skip ci]`, and GitHub
+            # suppresses workflow runs for `[skip ci]` commits — so a release
+            # commit NEVER gets a ghcr-publish run and can never have an image.
+            # Measured over the last 14 commits on main: 4 are release commits,
+            # all 4 have zero publish runs, all 10 others have one. main's tip
+            # was 5cabfc19a (3.5.10) when this was written.
+            #
+            # Asking about HEAD therefore fails 100% of the time after every
+            # release, permanently, until the next feature commit — not a race,
+            # a false premise. The question that means something is whether the
+            # newest commit that WOULD be published has been.
+            #
+            # (That the release commit's own version bump never reaches an image
+            # is a separate, pre-existing property of this repo's release flow.
+            # It is not this check's to assert on, and inventing a failure for it
+            # here would be the same error in the other direction.)
+            - name: "Does the publishable tip have an image?"
+              if: steps.gate.outputs.skip != 'true'
               env:
                   REPO: ${{ github.repository }}
               run: |
-                  TIP_SHA="$(git rev-parse HEAD)"
-                  echo "main tip: $TIP_SHA"
+                  set -euo pipefail
+                  TIP_SHA="$(git log -1 --format=%H --invert-grep --grep='\[skip ci\]')"
+                  HEAD_SHA="$(git rev-parse HEAD)"
+                  if [ "$TIP_SHA" != "$HEAD_SHA" ]; then
+                      echo "main HEAD is ${HEAD_SHA:0:9} ($(git log -1 --format=%s "$HEAD_SHA")) — not publishable"
+                  fi
+                  echo "publishable tip: $TIP_SHA"
                   TIP_SHA="$TIP_SHA" REPO="$REPO" bash .github/scripts/image-tip-check.sh

@@ -6,8 +6,8 @@
  * behind a `||` that a blind registry never reaches.)
  *
  * Exercised exclusively by spawning the script as a subprocess (same
- * convention as `tests/unit/sync-chart-version.test.ts` for
- * `sync-chart-version.mjs`, the repo's other `import.meta.url`-guarded CLI
+ * convention used for `import.meta.url`-guarded CLI scripts (the previous
+ * example, `sync-chart-version.mjs`, was removed with the Helm chart)
  * script) — ts-jest's CommonJS transform doesn't support `import.meta`, so a
  * direct `import` of this module fails with "Cannot use import statement
  * outside a module" regardless of which export is consumed.
