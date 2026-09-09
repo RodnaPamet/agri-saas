@@ -67,7 +67,43 @@ jobs:
                   username: ${{ github.actor }}
                   password: ${{ secrets.GITHUB_TOKEN }}
 
+            # ── Is this the TIP's own publish? (#845) ──
+            #
+            # `workflow_run` fires on ANY completion of the publish workflow,
+            # and `cancel-in-progress: true` means a merge burst cancels the
+            # older run the instant the newer one starts. That cancellation
+            # fires this workflow, which then asks about main's CURRENT tip —
+            # whose own publish is, by construction, still building.
+            #
+            # Measured on the very first run: run 34374961023 (c38cd3525) was
+            # cancelled at 16:16 when 34375694143 (8029f92f9) started; this
+            # check woke at 16:17 and correctly reported that 8029f92 had no
+            # image, because its build was at step 6 of 11. A true statement,
+            # asked too early — the trigger cannot tell "the tip's publish
+            # finished" from "an older publish died while the tip's runs".
+            #
+            # So: only ask when the run that triggered us was FOR the tip. Any
+            # other commit's publish is either superseded (its successor will
+            # trigger us again) or already answered. A cancelled publish for
+            # the tip still reaches the check, which is the case this file
+            # exists for. The daily cron is the backstop for anything missed.
+            - name: "Is this the tip's own publish?"
+              id: gate
+              if: github.event_name == 'workflow_run'
+              env:
+                  TRIGGERING_SHA: ${{ github.event.workflow_run.head_sha }}
+              run: |
+                  set -euo pipefail
+                  TIP="$(git rev-parse HEAD)"
+                  echo "main tip        : $TIP"
+                  echo "triggering run  : $TRIGGERING_SHA"
+                  if [ "$TIP" != "$TRIGGERING_SHA" ]; then
+                      echo "skip=true" >> "$GITHUB_OUTPUT"
+                      echo "::notice::Publish for ${TRIGGERING_SHA:0:9} completed, but main's tip is ${TIP:0:9} — that commit's own publish will trigger this check. Not asking yet."
+                  fi
+
             - name: "Does main's tip have a published image?"
+              if: steps.gate.outputs.skip != 'true'
               env:
                   REPO: ${{ github.repository }}
               run: |
