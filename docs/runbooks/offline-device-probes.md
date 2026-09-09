@@ -89,15 +89,18 @@ a hardcoded inline **green "Offline" page** (`public/sw.js:334-357`).
    > The installed app is `display: standalone` — **there is no address bar**,
    > so the menu row is the only way in. Before #648's reachability fix nothing
    > in the app linked this page, which made this step impossible as written.
-   > **Run probe 6 as an OWNER/ADMIN, not as a MECHANISATOR.** Since #812 the
-   > operator persona can *reach* this page — the row is shown to them — but it
-   > cannot complete the probe: step 4 needs a journal entry with a photo, and
-   > `/t/<slug>/journal` is denied by `isOperatorAllowedPath`. Without that
-   > enqueue, `persist()` is never armed and the page reports "never measured"
-   > — a true reading of an unrun protocol, not a finding about the device.
-   > Tracked as #819.
+   > **Probe 6 runs as EITHER persona.** Since #812 the operator can reach
+   > this page, and it can arm `persist()` too: `noteWorkQueued()` — the only
+   > caller of `requestPersistence()` — is reached from BOTH `submit`
+   > (`use-offline-sync.ts:243`) and `submitPhoto` (`:282`), and `submit` is
+   > bound to two routes on the operator allowlist (`/my-work` via
+   > `MyWorkClient`, `/field/<taskId>` via `OfflineFieldPanel`). What the
+   > operator cannot do is the PHOTO half — `submitPhoto`'s only caller is
+   > `JournalPhotosTab`, on the denied `/t/<slug>/journal` route.
+   > This note previously said the photo is what arms `persist()` and that only
+   > an OWNER/ADMIN could run probe 6. Both were wrong; see #819.
 3. **Airplane mode on.**
-4. Create one journal entry **with a photo** — this is what arms `persist()` and puts work in the outbox.
+4. Queue one piece of work — as OWNER/ADMIN, a journal entry **with a photo**; as MECHANISATOR, mark a task done in **My work** or a parcel done in **`/field/<taskId>`**. Either enqueue arms `persist()` (`use-offline-sync.ts:243`/`:282` → `noteWorkQueued()`) and puts work in the outbox.
 5. Back to the diagnostics page (avatar → Offline diagnostics) → **Re-collect** → **Copy as text**. Paste it somewhere you will still have in the morning. This is the "before".
 6. Close the app. Leave the phone overnight, untouched. Radio state does not matter overnight.
 

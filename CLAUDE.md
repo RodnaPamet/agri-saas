@@ -227,9 +227,11 @@ something at all (16.2.x had two matching sites per bundle; 16.3.1 has one,
 because `getLayerAssets` hoisted its `src` to a local). Without that control
 the check fails OPEN on the exact release where the patch most likely broke.
 
-`scripts/verify-image-patches.mjs` runs inside the BUILT IMAGE in CI. It is the
-only one of these signals that describes production rather than a developer's
-machine — the Dockerfile must COPY `patches/` before `npm ci`, without
+`scripts/verify-image-patches.mjs` runs inside the BUILT IMAGE in CI. That is
+the closest of these signals to production — but it is NOT production: it
+inspects the image CI just built, and nothing inspects the image that actually
+ships (#826). Read it as "an image built from this commit was patched", never
+as "production is patched" — the Dockerfile must COPY `patches/` before `npm ci`, without
 `--ignore-scripts`, or the image ships unpatched while CI stays green.
 
 **In-image verification is now the house pattern for any claim about what
@@ -508,10 +510,16 @@ to evict. Three rules, all load-bearing — see
   an eviction-while-closed never has, and `reconcileManifest` returns `[]` the
   moment the manifest is empty. Reachable in SAFARI, where persistence is
   refused; the installed PWA's grant is what keeps it off the table there.
-  See the durability note and #744 — known, and NOT FIXABLE from the page, for
-  a reason worth stating once. Work is enqueued while OFFLINE — that is why it
-  is queued at all — so at the only moment a durable signal could be written,
-  the sole writable stores are the script-writable class iOS sweeps.
+  See the durability note and #744 — known and UNFIXED, but not unfixable.
+  This paragraph used to say work is only ever enqueued while OFFLINE, so no
+  durable signal could ever be written. That is wrong: `submit` tries the
+  network FIRST when online and enqueues after a COMPLETED server round-trip
+  on a 409 (`use-offline-sync.ts:224`) or a transient 5xx/408/429 (`:238`),
+  and `sync.ts:125-144` parks conflicted, auth-blocked, exhausted and
+  foreign-owner items in IndexedDB for days while the device is online. Those
+  are networked moments with a non-empty queue — write points for a
+  server-side high-water marker, which is the signal that would separate a
+  clean drain from a class-wide sweep.
   `refreshOutboxState`'s complete cold-launch read set is three localStorage
   keys (`agri.offline.durability.v1`, `.lostwork.v1`,
   `.outbox.manifest.v1`) plus three outbox-store methods (`all`,
