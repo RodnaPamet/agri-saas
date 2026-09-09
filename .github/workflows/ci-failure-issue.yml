@@ -103,6 +103,8 @@ on:
       - "Basemap Provenance"
       # ── the four curation missed (#805) ───────────────────────────
       - "Publish image to GHCR"
+      # ...and the STATE question its cancellations cannot answer (#826).
+      - "Image tip check"
       # push-to-main runs only; the job-level `if:` already drops PR runs.
       - "Lighthouse"
       # Dispatch-only, but "a human dispatched it" is not "a human is
