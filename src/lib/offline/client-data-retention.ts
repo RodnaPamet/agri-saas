@@ -191,7 +191,73 @@ function sweepSwrBuckets(ls: Storage, cutoff: number): number {
  * responses carry no write timestamp we control, and the SW repopulates
  * on next use. An age-based per-entry sweep is deliberately deferred.
  */
-async function sweepCaches(): Promise<number> {
+/**
+ * The documents an offline cold launch has to be able to serve.
+ *
+ * `PRECACHE` in public/sw.js is `['/icon.svg', '/manifest.webmanifest']` — no
+ * HTML — so PAGE_CACHE is the ONLY source of an offline navigation, and the SW
+ * writes it only on `request.mode === 'navigate'`. In-app router navigation is
+ * an RSC fetch, not a document request, so visiting a route online does not
+ * make it openable offline.
+ */
+function offlineShellUrls(): string[] {
+    if (typeof location === 'undefined') return [];
+    const urls = new Set<string>();
+    try {
+        // The PWA start_url (public/manifest.webmanifest). A Home Screen launch
+        // requests THIS, not whatever route was open last, so priming only the
+        // current document leaves the icon launch broken.
+        urls.add(new URL('/tenants', location.origin).href);
+        // …and the route actually in use, so returning to it offline works.
+        urls.add(location.href);
+    } catch {
+        /* exotic location — prime nothing rather than throw */
+    }
+    return [...urls];
+}
+
+/**
+ * Re-cache the offline shell immediately after the sweep deleted it.
+ *
+ * The whole-bucket delete is justified by "the SW repopulates on next use"
+ * (see below), and that is true — but nothing ever performed the repopulate.
+ * The sweep runs on EVERY document load (`ClientDataRetentionSweep`, root
+ * layout, `useEffect(…, [])`), firing after the SW has already cached the
+ * document being loaded. So online the order is: SW caches the document →
+ * React hydrates → the sweep deletes it. PAGE_CACHE is empty at rest and the
+ * first offline cold launch has nothing to serve (#851).
+ *
+ * This closes that gap without weakening the retention control: the entries
+ * written here are fetched FRESH, are the same two documents the next launch
+ * needs, and are deleted again by the next sweep like anything else.
+ *
+ * NOT called on a purge (`maxAgeMs: 0`, sign-out) — a purge must leave nothing.
+ */
+async function primeOfflineShell(bucket: string): Promise<number> {
+    if (typeof caches === 'undefined') return 0;
+    // Offline the fetch cannot succeed, and the sweep did not delete anything
+    // to replace. Same reliable-negative argument as the sweep's own guard.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return 0;
+
+    let primed = 0;
+    try {
+        const cache = await caches.open(bucket);
+        for (const url of offlineShellUrls()) {
+            try {
+                await cache.add(url);
+                primed++;
+            } catch {
+                // One unreachable URL must not stop the others. A failed prime
+                // costs an offline launch, never correctness.
+            }
+        }
+    } catch {
+        /* Cache Storage unavailable — nothing to do */
+    }
+    return primed;
+}
+
+async function sweepCaches(prime: boolean): Promise<number> {
     if (typeof caches === 'undefined') return 0;
 
     // DEFER while offline. The whole-bucket delete above is justified by "the
@@ -217,15 +283,21 @@ async function sweepCaches(): Promise<number> {
     // the first thing that ever executed this function.
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return 0;
     let removed = 0;
+    // Remembered across the delete so the shell can be primed back into the
+    // SAME bucket: the name carries the SW's CACHE_VERSION, which this module
+    // cannot import (public/sw.js is not part of the bundle).
+    let pageBucket: string | null = null;
     try {
         for (const name of await caches.keys()) {
             if (SWEPT_CACHES.some((suffix) => name.endsWith(`-${suffix}`))) {
+                if (name.endsWith('-pages')) pageBucket = name;
                 if (await caches.delete(name)) removed++;
             }
         }
     } catch {
         /* Cache Storage unavailable — nothing to do */
     }
+    if (prime && pageBucket) await primeOfflineShell(pageBucket);
     return removed;
 }
 
@@ -253,6 +325,8 @@ export async function sweepClientStores(options: SweepOptions = {}): Promise<Swe
         result.snapshotsKept = snapshots.kept;
         result.swrBucketsRemoved = sweepSwrBuckets(ls, cutoff);
     }
-    result.cachesRemoved = await sweepCaches();
+    // Prime on a routine sweep, never on a purge: signOutAndPurge passes
+    // maxAgeMs 0 and must leave nothing behind on the device.
+    result.cachesRemoved = await sweepCaches(maxAgeMs > 0);
     return result;
 }

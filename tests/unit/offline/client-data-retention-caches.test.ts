@@ -175,3 +175,145 @@ describe('sweepCaches — never breaks the app it protects', () => {
         await expect(sweepClientStores()).resolves.toMatchObject({ cachesRemoved: 0 });
     });
 });
+
+/**
+ * The other half of the same defect (#851).
+ *
+ * The whole-bucket delete is justified by "the SW repopulates on next use".
+ * That is true with a network — but nothing ever performed the repopulate, and
+ * the sweep runs on EVERY document load, firing after the SW has already
+ * cached the document being loaded. So online: SW caches the document, React
+ * hydrates, the sweep deletes it. PAGE_CACHE is empty at rest, and the FIRST
+ * offline cold launch has nothing to serve — not the second, as the header
+ * above assumed.
+ *
+ * These pin the repopulate actually happening, and pin it OFF for a purge.
+ */
+
+interface PrimingCache {
+    add(url: string): Promise<void>;
+}
+
+/** CacheStorage that also supports open() + add(), so priming is observable. */
+class PrimingCacheStorage {
+    readonly added: Record<string, string[]> = {};
+    constructor(private names: string[], private failFor: string[] = []) {}
+    async keys(): Promise<string[]> {
+        return [...this.names];
+    }
+    async delete(name: string): Promise<boolean> {
+        const i = this.names.indexOf(name);
+        if (i < 0) return false;
+        this.names.splice(i, 1);
+        return true;
+    }
+    get remaining(): string[] {
+        return [...this.names];
+    }
+    async open(name: string): Promise<PrimingCache> {
+        if (!this.names.includes(name)) this.names.push(name);
+        this.added[name] ??= [];
+        const bucket = this.added[name];
+        const failFor = this.failFor;
+        return {
+            add: async (url: string) => {
+                if (failFor.some((f) => url.includes(f))) throw new Error('unreachable');
+                bucket.push(url);
+            },
+        };
+    }
+}
+
+function installPriming(names: string[], failFor: string[] = []): PrimingCacheStorage {
+    const fake = new PrimingCacheStorage([...names], failFor);
+    (globalThis as unknown as { caches: unknown }).caches = fake;
+    return fake;
+}
+
+const ORIGIN = 'https://app.example';
+const CURRENT = `${ORIGIN}/t/acme/my-work`;
+
+/** tests/unit runs under the NODE jest project, which has no `location`. */
+function installLocation(href: string | null): void {
+    if (href === null) {
+        delete (globalThis as unknown as { location?: unknown }).location;
+        return;
+    }
+    (globalThis as unknown as { location: unknown }).location = {
+        origin: new URL(href).origin,
+        href,
+    };
+}
+
+describe('the offline shell is primed back after the sweep (#851)', () => {
+    beforeEach(() => installLocation(CURRENT));
+    afterEach(() => installLocation(null));
+
+    it('re-caches the start_url AND the current document, online', async () => {
+        setOnline(true);
+        const fake = installPriming(ALL);
+
+        await sweepClientStores();
+
+        const primed = fake.added['agrent-v1-pages'] ?? [];
+        // The Home Screen launch requests the start_url, not the last route —
+        // priming only the current document leaves the icon launch broken.
+        expect(primed).toContain(`${ORIGIN}/tenants`);
+        expect(primed).toContain(CURRENT);
+    });
+
+    it('primes NOTHING on a purge — sign-out must leave the device empty', async () => {
+        setOnline(true);
+        const fake = installPriming(ALL);
+
+        // signOutAndPurge passes exactly this.
+        await sweepClientStores({ maxAgeMs: 0 });
+
+        expect(fake.added['agrent-v1-pages'] ?? []).toEqual([]);
+        expect(fake.remaining).not.toContain('agrent-v1-pages');
+    });
+
+    it('primes nothing while OFFLINE — the sweep deleted nothing to replace', async () => {
+        setOnline(false);
+        const fake = installPriming(ALL);
+
+        await sweepClientStores();
+
+        expect(fake.added['agrent-v1-pages'] ?? []).toEqual([]);
+        // And the bucket itself survives, per the guard above.
+        expect(fake.remaining).toContain('agrent-v1-pages');
+    });
+
+    it('one unreachable URL does not stop the other', async () => {
+        setOnline(true);
+        const fake = installPriming(ALL, ['/tenants']);
+
+        await sweepClientStores();
+
+        const primed = fake.added['agrent-v1-pages'] ?? [];
+        expect(primed).not.toContain(`${ORIGIN}/tenants`);
+        expect(primed).toContain(CURRENT);
+    });
+
+    it('leaves STATIC and BASEMAP untouched while priming', async () => {
+        setOnline(true);
+        const fake = installPriming(ALL);
+
+        await sweepClientStores();
+
+        expect(fake.remaining).toContain('agrent-v1-static');
+        expect(fake.remaining).toContain('agrent-v1-basemap');
+        expect(fake.added['agrent-v1-static']).toBeUndefined();
+    });
+    it('primes nothing when there is no location — SSR and node must not throw', () => {
+        // This is not hypothetical: the whole suite runs under the node
+        // project, and the first draft of these tests failed for exactly this
+        // reason. A missing `location` must no-op, never throw.
+        installLocation(null);
+        setOnline(true);
+        const fake = installPriming(ALL);
+        return sweepClientStores().then(() => {
+            expect(fake.added['agrent-v1-pages'] ?? []).toEqual([]);
+        });
+    });
+});
