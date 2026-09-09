@@ -1,6 +1,6 @@
 {
     "name": "inflect-compliance",
-    "version": "3.5.6",
+    "version": "3.5.7",
     "private": true,
     "engines": {
         "node": ">=22.0.0 <23.0.0",
@@ -234,9 +234,9 @@
         "eslint-config-next": "^16.3.4",
         "husky": "^9.1.7",
         "ioredis-mock": "^8.13.1",
-        "jest": "^30.3.0",
+        "jest": "^30.5.1",
         "jest-axe": "^11.0.0",
-        "jest-environment-jsdom": "^30.3.0",
+        "jest-environment-jsdom": "^30.5.1",
         "js-yaml": "^5.4.1",
         "lint-staged": "^17.4.1",
         "patch-package": "^8.0.1",
@@ -328,8 +328,8 @@
         "npm": {
             "undici": "^6.27.0"
         },
-        "adm-zip": "^0.6.0",
         "sharp": "$sharp",
+        "nwsapi": ">=2.2.16 <2.2.25",
         "fast-uri": "^3.1.7",
         "mysql2": "^3.23.1",
         "brace-expansion@^5": "^5.0.9"
