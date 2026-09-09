@@ -31,6 +31,18 @@ import { env } from '@/env';
 export interface ScheduleDefinition {
     /** Job name — must match a key in JobPayloadMap */
     name: JobName;
+    /**
+     * Whether this schedule should be REGISTERED and RUN in this environment.
+     * Defaults to true; set false by a key gate (see `ALL_SCHEDULES`).
+     *
+     * This exists so the schedule still APPEARS in `ALL_SCHEDULES` when its
+     * key is absent. Before #803 a key-gated entry vanished from the array
+     * entirely, which made "the code no longer defines this job" and "this
+     * process cannot see the key" produce an identical observable — and any
+     * reconcile keyed on the array would delete live schedules on a rotated
+     * key.
+     */
+    enabled?: boolean;
     /** Cron pattern — evaluated in `tz` if set, otherwise UTC */
     pattern: string;
     /**
@@ -55,7 +67,7 @@ export interface ScheduleDefinition {
  * All scheduled jobs in the system.
  * Used by `scripts/scheduler.ts` to register repeatable jobs.
  */
-export const SCHEDULED_JOBS: ScheduleDefinition[] = [
+export const ALL_SCHEDULES: ScheduleDefinition[] = [
     {
         name: 'promotion-lead-retention',
         pattern: '30 3 * * *',    // daily at 03:30 UTC
@@ -134,16 +146,13 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
     // 08:00-17:59 UTC, Mon-Fri (≈ Euronext Paris grain hours + delay). A
     // getQuote batches all symbols in one request → ~150 requests/week; check
     // this against the Barchart plan's request budget before enabling.
-    ...(env.BARCHART_API_KEY
-        ? [
-              {
-                  name: 'market-prices-barchart' as JobName,
-                  pattern: '*/20 8-17 * * 1-5',
-                  description: 'Intraday pull of delayed Euronext MATIF futures (Barchart) into the global market-price cache',
-                  defaultPayload: {},
-              },
-          ]
-        : []),
+    {
+        name: 'market-prices-barchart' as JobName,
+        pattern: '*/20 8-17 * * 1-5',
+        description: 'Intraday pull of delayed Euronext MATIF futures (Barchart) into the global market-price cache',
+        defaultPayload: {},
+        enabled: Boolean(env.BARCHART_API_KEY),
+    },
     {
         // Daily — agri news refreshes far more often than weekly prices. 05:50
         // UTC sits just after the weekly price pull, before European morning
@@ -164,32 +173,31 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
     // tests/regression/infrastructure-guards.test.ts, whose test env is
     // key-less). 06:15 UTC — 25 minutes after market-news-pull, so the
     // policy items it just aggregated are already in the cache.
-    ...(env.ANTHROPIC_API_KEY
-        ? [
-              {
-                  name: 'news-event-extraction' as JobName,
-                  pattern: '15 6 * * *',     // daily at 06:15 UTC
-                  description: 'Extract subsidy/regulation calendar-event proposals from policy news via Claude Haiku (proposed, never auto-published)',
-                  defaultPayload: {},
-              },
-              {
-                  // WEEKLY sibling: government SUPPORT SCHEMES (ДФЗ / МЗХ / EC
-                  // measures a farm applies for) from the same policy slice.
-                  // Weekly because an application window is announced weeks or
-                  // months ahead — the daily job already covers the date-points
-                  // that move. Monday 06:30 UTC, after both market-news-pull
-                  // (05:50) and the daily extraction (06:15), so it reads a
-                  // cache that is already current.
-                  //
-                  // Key-gated with its sibling: a key-less deployment must
-                  // never schedule a cron that can only no-op.
-                  name: 'support-scheme-extraction' as JobName,
-                  pattern: '30 6 * * 1',    // weekly, Monday 06:30 UTC
-                  description: 'Extract government support-scheme proposals (ДФЗ/МЗХ/EC) from policy news via Claude Haiku (proposed, never auto-published)',
-                  defaultPayload: {},
-              },
-          ]
-        : []),
+    {
+        name: 'news-event-extraction' as JobName,
+        pattern: '15 6 * * *',     // daily at 06:15 UTC
+        description: 'Extract subsidy/regulation calendar-event proposals from policy news via Claude Haiku (proposed, never auto-published)',
+        defaultPayload: {},
+        enabled: Boolean(env.ANTHROPIC_API_KEY),
+    },
+    {
+        // WEEKLY sibling: government SUPPORT SCHEMES (ДФЗ / МЗХ / EC
+        // measures a farm applies for) from the same policy slice.
+        // Weekly because an application window is announced weeks or
+        // months ahead — the daily job already covers the date-points
+        // that move. Monday 06:30 UTC, after both market-news-pull
+        // (05:50) and the daily extraction (06:15), so it reads a
+        // cache that is already current.
+        //
+        // Key-gated with its sibling: a key-less deployment must never
+        // RUN a cron that can only no-op — but it stays visible in
+        // ALL_SCHEDULES so the reconcile knows the job exists.
+        name: 'support-scheme-extraction' as JobName,
+        pattern: '30 6 * * 1',    // weekly, Monday 06:30 UTC
+        description: 'Extract government support-scheme proposals (ДФЗ/МЗХ/EC) from policy news via Claude Haiku (proposed, never auto-published)',
+        defaultPayload: {},
+        enabled: Boolean(env.ANTHROPIC_API_KEY),
+    },
     {
         name: 'daily-evidence-expiry',
         pattern: '0 6 * * *',     // daily at 06:00 UTC
@@ -280,3 +288,31 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
     },
 ];
 
+
+/**
+ * The schedules this environment should REGISTER and RUN.
+ *
+ * Derived from `ALL_SCHEDULES` rather than maintained beside it, so the two
+ * cannot drift. Semantics are unchanged from before #803: a key-gated entry is
+ * absent here when its key is absent, so `registerAll` does not register it and
+ * `runAll` does not execute it.
+ *
+ * Use this for "what should run". Use `ALL_SCHEDULE_NAMES` for "what jobs exist"
+ * — a reconcile that deletes must ask the second question, never the first.
+ */
+export const SCHEDULED_JOBS: ScheduleDefinition[] = ALL_SCHEDULES.filter(
+    (s) => s.enabled !== false,
+);
+
+/**
+ * Every schedule name the code defines, INDEPENDENT of environment.
+ *
+ * This is the set a reconcile may treat as "known". Keying removal on
+ * `SCHEDULED_JOBS` instead would delete `market-prices-barchart`,
+ * `news-event-extraction` and `support-scheme-extraction` from Redis the first
+ * time the scheduler runs without their API keys — silently, and
+ * indistinguishably from those jobs having been deleted from the code.
+ */
+export const ALL_SCHEDULE_NAMES: readonly string[] = ALL_SCHEDULES.map(
+    (s) => s.name,
+);

@@ -26,7 +26,8 @@ import { Queue } from 'bullmq';
 import Redis from 'ioredis';
 import pino from 'pino';
 import { QUEUE_NAME } from '../src/app-layer/jobs/types';
-import { SCHEDULED_JOBS } from '../src/app-layer/jobs/schedules';
+import { SCHEDULED_JOBS, ALL_SCHEDULE_NAMES } from '../src/app-layer/jobs/schedules';
+import { schedulersToRemove } from '../src/app-layer/jobs/schedule-reconcile';
 import { assertProductionEncryptionReady } from '../src/lib/security/startup-gate';
 
 // ─── Logger ───
@@ -85,6 +86,7 @@ async function main() {
         }
 
         await registerAll(queue);
+        await reconcile(queue);
     } finally {
         await queue.close();
         await connection.quit();
@@ -122,6 +124,40 @@ async function registerAll(queue: Queue): Promise<void> {
     }
 
     log.info('all schedules registered ✓');
+}
+
+/**
+ * Remove schedulers Redis holds that the code no longer defines.
+ *
+ * Runs on the DEPLOY path, right after `registerAll` — that is the whole point
+ * of #803: `--clean` existed but the deploy command never passes it, so a
+ * schedule deleted from the code kept firing forever.
+ *
+ * Keyed on ALL_SCHEDULE_NAMES, never SCHEDULED_JOBS. The latter omits
+ * key-gated entries when their API key is absent, so reconciling against it
+ * would delete `market-prices-barchart`, `news-event-extraction` and
+ * `support-scheme-extraction` the first time this runs with a rotated key.
+ */
+async function reconcile(queue: Queue): Promise<void> {
+    const existing = await queue.getJobSchedulers();
+    const orphans = schedulersToRemove(
+        existing.map(s => s.name),
+        ALL_SCHEDULE_NAMES,
+    );
+
+    if (orphans.length === 0) {
+        log.info({ registered: existing.length }, 'reconcile: no orphaned schedulers');
+        return;
+    }
+
+    log.info({ count: orphans.length, names: orphans }, 'reconcile: removing orphaned schedulers');
+    for (const name of orphans) {
+        await queue.removeJobScheduler(name);
+        // One line per removal, at INFO. A wrong removal has to be
+        // diagnosable after the fact rather than inferred from an absence.
+        log.info({ name }, 'reconcile: removed orphaned scheduler');
+    }
+    log.info({ count: orphans.length }, 'reconcile complete ✓');
 }
 
 async function listRepeatables(queue: Queue): Promise<void> {
