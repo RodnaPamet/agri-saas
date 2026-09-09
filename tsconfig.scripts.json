@@ -1,0 +1,34 @@
+{
+  // The production entrypoints `scripts/worker.ts` and `scripts/scheduler.ts`
+  // are EXCLUDED from tsconfig.json (see its "exclude"), and CI's only
+  // typecheck runs `tsc --noEmit` with no -p, so it uses that root config.
+  // Nothing imports these files either — every reference to them is a string
+  // inside a guard test — so they cannot be pulled into the program
+  // transitively. Result: the two processes that run the queue in production
+  // have never been typechecked. This config exists to typecheck exactly them.
+  //
+  // Keep it a SEPARATE program rather than deleting "scripts" from the root
+  // exclude: the rest of scripts/ is one-off operational tooling that does not
+  // hold to the app's strictness, and folding it in would make this a
+  // migration instead of a gate. Refs #806.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // The root config is `incremental`; a second program sharing its default
+    // .tsbuildinfo would make the two invocations clobber each other's cache.
+    "incremental": false
+  },
+  "include": [
+    // The repo declares its own ambient globals — `src/types/globals.d.ts:20`
+    // has `var EdgeRuntime: string | undefined`, which `src/lib/prisma.ts`
+    // branches on. The root config picks that up incidentally via its blanket
+    // `**/*.ts`; a scoped program does not, and omitting it fails with two
+    // TS2304 "Cannot find name 'EdgeRuntime'" errors in a file that has
+    // nothing to do with these scripts. Verified by removing this line.
+    "src/types/**/*.d.ts",
+    "scripts/worker.ts",
+    "scripts/scheduler.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

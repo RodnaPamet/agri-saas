@@ -258,6 +258,15 @@ jobs:
         # instance (NODE_OPTIONS does not reliably reach the tsc process).
         run: node --max-old-space-size=8192 ./node_modules/typescript/bin/tsc --noEmit
 
+      - name: Run tsc --noEmit on the production entrypoints
+        # tsconfig.json EXCLUDES `scripts`, and the step above passes no -p, so
+        # it uses the root config — which means `scripts/worker.ts` and
+        # `scripts/scheduler.ts`, the two processes that run the queue in
+        # production, were never typechecked by anything. Nothing imports them
+        # either, so they cannot arrive transitively. Separate program, same
+        # heap flag, for the reason stated above. Refs #806.
+        run: node --max-old-space-size=8192 ./node_modules/typescript/bin/tsc -p tsconfig.scripts.json --noEmit
+
   # ═══════════════════════════════════════════════════════════════
   #  Job 2b: AI evals — NON-BLOCKING quality report (feat/ai-evals-safety)
   #
