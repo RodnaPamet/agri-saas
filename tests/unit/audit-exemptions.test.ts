@@ -373,6 +373,70 @@ describe('scripts/audit-exemptions.mjs', () => {
         expect(result.stderr).toContain('UNNAMED:left-pad');
     });
 
+    // ── Dependent roll-ups (the adm-zip / onnxruntime-node shape) ──
+    //
+    // npm flags a package because a DEPENDENCY of it is vulnerable, spelling
+    // that as a `via` of plain strings naming the dependency. That is a
+    // pointer, not an advisory: the real one is named on the referent's own
+    // entry. Keying the parent as UNNAMED made a correct exemption impossible
+    // to write, because there is no id on the parent to exempt.
+    //
+    // The test above stays green and keeps its meaning: its referent is
+    // ABSENT from the report, so the pointer is unresolvable and the entry is
+    // still refused. The three below pin the resolvable cases.
+    it('a roll-up whose referent is present AND exempt does not block', () => {
+        const result = runScript({
+            audit: auditReport({
+                'adm-zip': {
+                    severity: 'moderate',
+                    via: [{ url: 'https://github.com/advisories/GHSA-vwc7-r8mq-g2x9' }],
+                },
+                'onnxruntime-node': { severity: 'moderate', via: ['adm-zip'] },
+            }),
+            exempt: [
+                {
+                    id: 'GHSA-vwc7-r8mq-g2x9',
+                    package: 'adm-zip',
+                    reason: 'reachability argument',
+                    review: '2099-01-01',
+                },
+            ],
+        });
+        expect(result.code).toBe(0);
+        expect(result.stderr).not.toContain('UNNAMED:onnxruntime-node');
+    });
+
+    it('a roll-up does NOT launder an unexempted referent — the child still fails', () => {
+        // The load-bearing one. Skipping the parent must never be a way for
+        // the child's advisory to escape, so this asserts the build still
+        // fails and names the CHILD's real id rather than the parent.
+        const result = runScript({
+            audit: auditReport({
+                'adm-zip': {
+                    severity: 'moderate',
+                    via: [{ url: 'https://github.com/advisories/GHSA-vwc7-r8mq-g2x9' }],
+                },
+                'onnxruntime-node': { severity: 'moderate', via: ['adm-zip'] },
+            }),
+            exempt: [],
+        });
+        expect(result.code).toBe(1);
+        expect(result.stderr).toContain('GHSA-vwc7-r8mq-g2x9');
+    });
+
+    it('a roll-up naming a referent ABSENT from the report is still refused', () => {
+        // The pointer cannot be resolved, so it is an advisory we cannot name
+        // — the original UNNAMED reasoning applies unchanged.
+        const result = runScript({
+            audit: auditReport({
+                'onnxruntime-node': { severity: 'moderate', via: ['adm-zip'] },
+            }),
+            exempt: [],
+        });
+        expect(result.code).toBe(1);
+        expect(result.stderr).toContain('UNNAMED:onnxruntime-node');
+    });
+
     // ─── Rule 7: the report file itself may be unusable ────────────────
 
     it.each([
