@@ -18,6 +18,26 @@ TITLE="CI failure: ${WF}"
 # c3581cfb closed an issue filed for d725e214.
 MARKER_PREFIX="<!-- ci-failure-run:"
 
+# Workflows whose `cancelled` conclusion carries NO information (#805).
+#
+# The discriminator in the `cancelled)` branch below — "did any job start?" —
+# was derived from CI, where a superseded run is killed while still PENDING and
+# so reports zero started jobs. That reasoning does not transfer to
+# `Publish image to GHCR`: it is a SINGLE-job workflow whose job starts within
+# seconds of the run being created, so a supersession finds a started job every
+# time and would be reported as a real failure. Its cancellations on 2026-09-04
+# were the concurrency group working exactly as designed — filing issues for
+# them is the accumulating noise #682 removed.
+#
+# The case a cancellation CAN hide — main's tip has no published image — is
+# therefore NOT answered here. It is answered by `image-tip-check.yml`, which
+# asks about STATE ("does the tip have a successful publish?") rather than
+# about an event, and which this notifier watches under its own name.
+#
+# `failure` and `timed_out` are still reported for this workflow. Only the
+# genuinely ambiguous conclusion is suppressed.
+SUPERSEDED_ONLY="${SUPERSEDED_ONLY:-Publish image to GHCR}"
+
 find_open_issue() {
     # Exact title over the LABEL, never `--search`: the search index lags by
     # seconds to minutes, which is precisely the window in which a nightly
@@ -113,6 +133,12 @@ case "$CONCLUSION" in
         # Counting cancelled-vs-succeeded jobs does NOT work: measured 17/1 for
         # the timeout and 16/1 for the other candidate. Job DURATION alone does
         # not work either. "Did any job start?" does.
+        case "|${SUPERSEDED_ONLY}|" in
+            *"|${WF}|"*)
+                echo "cancelled ${WF}: this workflow's cancellations are ambiguous by construction — image-tip-check.yml covers the case that matters (#805)"
+                exit 0
+                ;;
+        esac
         STARTED="$("$GH" api "repos/${REPO}/actions/runs/${RUN_ID}/jobs?per_page=100" \
             --jq '[.jobs[] | select(.started_at != null)] | length' 2>/dev/null || echo 0)"
         if [ "${STARTED:-0}" -eq 0 ]; then
