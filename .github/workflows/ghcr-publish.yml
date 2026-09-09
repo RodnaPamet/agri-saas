@@ -132,7 +132,16 @@ jobs:
                   # (referrer-restricted in the MapTiler dashboard) → a repo
                   # Variable, not a Secret. Absent var → empty string → graceful
                   # demo-basemap fallback (no build failure).
+                  #
+                  # BUILD_SHA (#804) is consumed by the Dockerfile's RUNNER
+                  # stage, deliberately NOT the builder: an ARG early in the
+                  # builder would invalidate the cached `next build` layer on
+                  # every commit, against `cache-from/cache-to type=gha`.
+                  # Without it `/api/health` reports `"version":"dev"`, which
+                  # is why "is production running main's tip?" was answerable
+                  # only by reading 1630 lines of buildx log on 2026-09-08.
                   build-args: |
+                      BUILD_SHA=${{ github.sha }}
                       NEXT_PUBLIC_MAPTILER_KEY=${{ vars.NEXT_PUBLIC_MAPTILER_KEY }}
                       NEXT_PUBLIC_MAP_BASEMAP_STYLE=${{ vars.NEXT_PUBLIC_MAP_BASEMAP_STYLE || 'hybrid' }}
 
