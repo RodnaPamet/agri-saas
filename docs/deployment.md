@@ -457,6 +457,21 @@ The Epic OI-2 (2026-04-27) intent was for production deployments to use the
 Helm chart at `infra/helm/inflect/` running on EKS. That intent was never
 realised.
 
+### The four runbook axes, with the answers that are actually true
+
+The deleted GAP-12 ratchet was right that on-call needs these four covered. It
+had the wrong answers for all four, because it answered for EKS.
+
+| axis | on this deployment |
+|---|---|
+| **Deploy** | `deploy/apply.sh` with `deploy/docker-compose.vm.yml`. Images are published by the `Publish image to GHCR` workflow and rolled onto the VM by Watchtower, which polls the `:latest` tag. |
+| **Rollback** | Pinning Watchtower back reverts **code only — the schema stays migrated.** Down-migrations live in `deploy/rollback/*.down.sql` and must be applied deliberately. There is no `helm rollback` here, and reaching for one wastes the window. |
+| **Scaling** | A single VM. There is no HPA and no autoscaler; capacity is the machine type. |
+| **Backup / restore** | A daily **GCE disk snapshot** — resource policy `agrent-daily-snapshot`, 02:00 UTC, 14-day retention (`docs/slos.md`). That means an **RPO of up to 24 hours**, which is worth knowing before an incident rather than during one. The restore runbook is `docs/backup-restore.md`; it is not `aws rds restore-db-instance-to-point-in-time`, which appears nowhere in this deployment. |
+
+See #842 for turning this table into the full runbook the deleted ratchet was
+guarding.
+
 > **Companion docs**
 > - `infra/helm/inflect/README.md` — chart-specific operator notes
 > - `docs/infrastructure.md` — Epic OI-1 (Terraform/AWS layer beneath the cluster)
