@@ -5,7 +5,7 @@
  * workflow's GITHUB_TOKEN. Tags are not branch-protected, so this needs no
  * special permission.
  *
- * COMMIT-BACK (bumping CHANGELOG.md / package.json / Chart.yaml on main via
+ * COMMIT-BACK (bumping CHANGELOG.md / package.json on main via
  * @semantic-release/git) is OPT-IN and OFF by default. It pushes directly to
  * main, which branch protection rejects for GITHUB_TOKEN (GH006 — required
  * status checks can't be satisfied by a fresh commit). It self-activates when a
@@ -14,8 +14,10 @@
  * as an admin (enforce_admins=false → bypasses the checks).
  *
  *   No RELEASE_TOKEN  → commit-back plugin omitted → publishing still works;
- *                       package.json / CHANGELOG / Chart.yaml stay frozen
- *                       in-repo (in-sync, so the helm-chart guard passes).
+ *                       package.json / CHANGELOG stay frozen in-repo.
+ *                       (Chart.yaml was also synced here until the Helm chart
+ *                       was deleted — nothing deployed it, and the sync step
+ *                       plus scripts/sync-chart-version.mjs went with it.)
  *   RELEASE_TOKEN set → commit-back plugin included → versions advance in-repo
  *                       in lock-step, as before.
  *
@@ -68,14 +70,6 @@ const plugins = [
     },
   ],
   ['@semantic-release/npm', { npmPublish: false }],
-  [
-    // Writes infra/helm/inflect/Chart.yaml::appVersion = the release version.
-    // When commit-back is OFF this write is discarded (uncommitted); it is kept
-    // so that enabling commit-back restores lock-step chart/version sync with no
-    // other change. Script fails LOUDLY (non-zero exit) if the regex misses.
-    '@semantic-release/exec',
-    { prepareCmd: 'node scripts/sync-chart-version.mjs ${nextRelease.version}' },
-  ],
 ];
 
 // Commit the version bump back to main — ONLY when a bypass-capable token is
@@ -84,7 +78,7 @@ if (commitBack) {
   plugins.push([
     '@semantic-release/git',
     {
-      assets: ['CHANGELOG.md', 'package.json', 'package-lock.json', 'infra/helm/inflect/Chart.yaml'],
+      assets: ['CHANGELOG.md', 'package.json', 'package-lock.json'],
       message: 'chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}',
     },
   ]);

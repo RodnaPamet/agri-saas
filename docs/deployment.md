@@ -450,12 +450,14 @@ docker compose -f docker-compose.prod.yml exec app \
 > workflow never ran a single time and has now been deleted along with the
 > Terraform/AWS layer beneath it.
 >
-> The chart at `infra/helm/inflect/` is still in the tree. It is unused and
-> undeployed; treat it as unverified scaffolding, not as a supported path.
+> The chart itself has now been deleted too. It was never deployed, its only
+> consumer (`deploy.yml`) was already gone, and an unused chart in the tree is
+> something someone eventually finds and assumes ships.
 
-The Epic OI-2 (2026-04-27) intent was for production deployments to use the
-Helm chart at `infra/helm/inflect/` running on EKS. That intent was never
-realised.
+The Epic OI-2 (2026-04-27) intent was for production deployments to use a Helm
+chart running on EKS. That intent was never realised, and the chart, the
+workflow and the Terraform beneath them are all removed. This section is kept
+as the correction record rather than as a runbook.
 
 ### The four runbook axes, with the answers that are actually true
 
