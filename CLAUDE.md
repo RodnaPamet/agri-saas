@@ -231,17 +231,22 @@ the check fails OPEN on the exact release where the patch most likely broke.
 must COPY `patches/` before `npm ci`, without `--ignore-scripts`, or the image
 ships unpatched while CI stays green.
 
-> **It runs in TWO places, and only one of them describes production.**
-> Until #826 this paragraph claimed it was "the only one of these signals
-> that describes production", which was false in the way that matters: the
-> image CI gates is built with no `build-args` (so an empty
-> `NEXT_PUBLIC_MAPTILER_KEY`) from a MUTABLE `node:22-alpine` tag, and is
-> then DISCARDED. The image production runs is built separately by
-> `ghcr-publish.yml`. Two builds, one inspected, the other shipped.
-> `ghcr-publish.yml` now runs the same three gates against the artifact it
-> is about to push, and re-reads the digest from the registry afterwards
-> with a positive control, so a gate cannot pass by failing to see. CI's
-> `docker` job keeps its copy: it gates the PR, where feedback belongs.
+> **It runs in TWO places, and they are not the same image.** CI's `docker`
+> job builds one, gates it, and DISCARDS it; that build passes no
+> `build-args` (so an empty `NEXT_PUBLIC_MAPTILER_KEY`) and comes from the
+> MUTABLE `node:22-alpine` tag, so it is a twin rather than the artifact.
+> Read a green CI run as *"an image built from this commit was patched"*,
+> never as *"production is patched"*.
+>
+> Since #826 `ghcr-publish.yml` runs the same three gates against the image
+> it is about to push, then re-reads the digest FROM THE REGISTRY and
+> re-verifies the pulled bytes, so a gate cannot pass by failing to see.
+> That is the signal that describes production. CI's `docker` job keeps its
+> copy on purpose: it gates the PR, where feedback belongs.
+>
+> This paragraph twice claimed `verify-image-patches.mjs` was "the only one
+> of these signals that describes production". It was not, and #838 retracted
+> it before #826 made it true.
 
 **In-image verification is now the house pattern for any claim about what
 shipped**, and there are two such scripts: that one, and
@@ -519,10 +524,16 @@ to evict. Three rules, all load-bearing — see
   an eviction-while-closed never has, and `reconcileManifest` returns `[]` the
   moment the manifest is empty. Reachable in SAFARI, where persistence is
   refused; the installed PWA's grant is what keeps it off the table there.
-  See the durability note and #744 — known, and NOT FIXABLE from the page, for
-  a reason worth stating once. Work is enqueued while OFFLINE — that is why it
-  is queued at all — so at the only moment a durable signal could be written,
-  the sole writable stores are the script-writable class iOS sweeps.
+  See the durability note and #744 — known and UNFIXED, but not unfixable.
+  This paragraph used to say work is only ever enqueued while OFFLINE, so no
+  durable signal could ever be written. That is wrong: `submit` tries the
+  network FIRST when online and enqueues after a COMPLETED server round-trip
+  on a 409 (`use-offline-sync.ts:224`) or a transient 5xx/408/429 (`:238`),
+  and `sync.ts:125-144` parks conflicted, auth-blocked, exhausted and
+  foreign-owner items in IndexedDB for days while the device is online. Those
+  are networked moments with a non-empty queue — write points for a
+  server-side high-water marker, which is the signal that would separate a
+  clean drain from a class-wide sweep.
   `refreshOutboxState`'s complete cold-launch read set is three localStorage
   keys (`agri.offline.durability.v1`, `.lostwork.v1`,
   `.outbox.manifest.v1`) plus three outbox-store methods (`all`,

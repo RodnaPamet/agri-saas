@@ -253,12 +253,24 @@ describe('the lockdown is precise — it must not stop the operator doing the jo
         }
     });
 
-    it('the My-work, field and locations pages pass with NO redirect', async () => {
+    it('the My-work, field, locations and offline-diagnostics pages pass with NO redirect', async () => {
         // A redirect here would be a loop: the lockdown would be bouncing the
         // operator away from the one screen it is bouncing them towards.
         getToken.mockResolvedValue(operatorToken());
 
-        for (const path of [MY_WORK, `/t/${SLUG}/field/task-1`, `/t/${SLUG}/locations`]) {
+        // `/diagnostics/offline` is here because of #812: the operator is the
+        // persona whose phone suffers the storage eviction that page measures.
+        // `tests/unit/operator-lockdown.test.ts` already asserts the PREDICATE
+        // allows it — but, as this file's header explains, that assertion
+        // survives deleting the entire enforcement block. Only a case here
+        // fails when the middleware stops honouring the allowlist, which is
+        // the assertion #812 asked for and #820 did not add.
+        for (const path of [
+            MY_WORK,
+            `/t/${SLUG}/field/task-1`,
+            `/t/${SLUG}/locations`,
+            `/t/${SLUG}/diagnostics/offline`,
+        ]) {
             const res = await middleware(req(path), {} as any);
             expect([path, res.status]).toEqual([path, 200]);
             expect([path, loc(res)]).toEqual([path, '']);
