@@ -205,59 +205,47 @@ function offlineShellUrls(): string[] {
     const urls = new Set<string>();
     try {
         // The PWA start_url (public/manifest.webmanifest). A Home Screen launch
-        // requests THIS, not whatever route was open last, so priming only the
+        // requests THIS, not whatever route was open last, so keeping only the
         // current document leaves the icon launch broken.
         urls.add(new URL('/tenants', location.origin).href);
         // …and the route actually in use, so returning to it offline works.
         urls.add(location.href);
     } catch {
-        /* exotic location — prime nothing rather than throw */
+        /* exotic location — keep nothing rather than throw */
     }
     return [...urls];
 }
 
 /**
- * Re-cache the offline shell immediately after the sweep deleted it.
+ * Empty the page bucket of tenant documents, KEEPING the offline shell.
  *
- * The whole-bucket delete is justified by "the SW repopulates on next use"
- * (see below), and that is true — but nothing ever performed the repopulate.
- * The sweep runs on EVERY document load (`ClientDataRetentionSweep`, root
- * layout, `useEffect(…, [])`), firing after the SW has already cached the
- * document being loaded. So online the order is: SW caches the document →
- * React hydrates → the sweep deletes it. PAGE_CACHE is empty at rest and the
- * first offline cold launch has nothing to serve (#851).
+ * An earlier version of this fix deleted the bucket and then re-fetched the
+ * shell back. That worked, and it cost a `/tenants` request on EVERY document
+ * load — which for a single-tenant user redirects into a full dashboard
+ * render. It pushed the mobile drift E2E past its 180s budget. Deleting
+ * everything except what we need is the same outcome for no requests at all.
  *
- * This closes that gap without weakening the retention control: the entries
- * written here are fetched FRESH, are the same two documents the next launch
- * needs, and are deleted again by the next sweep like anything else.
- *
- * NOT called on a purge (`maxAgeMs: 0`, sign-out) — a purge must leave nothing.
+ * Retention is preserved: every other cached tenant document still goes. What
+ * survives is the start_url and the document already on screen — the two the
+ * next launch would fetch anyway — and a purge (`maxAgeMs: 0`) keeps nothing.
  */
-async function primeOfflineShell(bucket: string): Promise<number> {
-    if (typeof caches === 'undefined') return 0;
-    // Offline the fetch cannot succeed, and the sweep did not delete anything
-    // to replace. Same reliable-negative argument as the sweep's own guard.
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) return 0;
-
-    let primed = 0;
-    try {
-        const cache = await caches.open(bucket);
-        for (const url of offlineShellUrls()) {
-            try {
-                await cache.add(url);
-                primed++;
-            } catch {
-                // One unreachable URL must not stop the others. A failed prime
-                // costs an offline launch, never correctness.
-            }
-        }
-    } catch {
-        /* Cache Storage unavailable — nothing to do */
+async function emptyPagesExceptShell(bucket: string): Promise<number> {
+    const keep = new Set(offlineShellUrls());
+    if (keep.size === 0) {
+        // No location to derive a shell from (SSR, node). Nothing to protect,
+        // so fall back to the original whole-bucket delete.
+        return (await caches.delete(bucket)) ? 1 : 0;
     }
-    return primed;
+    const cache = await caches.open(bucket);
+    let removed = 0;
+    for (const req of await cache.keys()) {
+        if (keep.has(req.url)) continue;
+        if (await cache.delete(req)) removed++;
+    }
+    return removed;
 }
 
-async function sweepCaches(prime: boolean): Promise<number> {
+async function sweepCaches(keepShell: boolean): Promise<number> {
     if (typeof caches === 'undefined') return 0;
 
     // DEFER while offline. The whole-bucket delete above is justified by "the
@@ -286,18 +274,20 @@ async function sweepCaches(prime: boolean): Promise<number> {
     // Remembered across the delete so the shell can be primed back into the
     // SAME bucket: the name carries the SW's CACHE_VERSION, which this module
     // cannot import (public/sw.js is not part of the bundle).
-    let pageBucket: string | null = null;
     try {
         for (const name of await caches.keys()) {
-            if (SWEPT_CACHES.some((suffix) => name.endsWith(`-${suffix}`))) {
-                if (name.endsWith('-pages')) pageBucket = name;
-                if (await caches.delete(name)) removed++;
+            if (!SWEPT_CACHES.some((suffix) => name.endsWith(`-${suffix}`))) continue;
+            // The page bucket keeps the offline shell; everything else — and
+            // all of fielddata — goes whole, as before.
+            if (keepShell && name.endsWith('-pages')) {
+                removed += await emptyPagesExceptShell(name);
+                continue;
             }
+            if (await caches.delete(name)) removed++;
         }
     } catch {
         /* Cache Storage unavailable — nothing to do */
     }
-    if (prime && pageBucket) await primeOfflineShell(pageBucket);
     return removed;
 }
 
