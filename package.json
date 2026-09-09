@@ -320,10 +320,13 @@
         "deepmerge-ts": "^8.0.1",
         "uuid": "^11.1.1",
         "@istanbuljs/load-nyc-config": {
-            "js-yaml": "^3.15.1"
+            "js-yaml": "^3.15.2"
         },
         "@eslint/eslintrc": {
-            "js-yaml": "^4.3.1"
+            "js-yaml": "^4.3.2"
+        },
+        "cosmiconfig": {
+            "js-yaml": "^4.3.2"
         },
         "npm": {
             "undici": "^6.27.0"
