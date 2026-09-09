@@ -12,7 +12,9 @@ replicaCount: 1
 
 # ── Image ────────────────────────────────────────────────────────────
 image:
-  # Built and pushed by .github/workflows/ghcr-publish.yml + deploy.yml.
+  # Built and pushed by .github/workflows/ghcr-publish.yml. (deploy.yml,
+  # which consumed this chart, was deleted in #808 — it never ran, and this
+  # chart is currently undeployed.)
   repository: ghcr.io/h0mele55/inflect-compliance
   # Empty tag falls back to .Chart.AppVersion via the inflect.image
   # helper. Set explicitly for floating tags or env pinning.

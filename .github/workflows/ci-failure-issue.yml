@@ -68,8 +68,6 @@ on:
       - "Release"
       - "Load Test (k6)"
       - "Restore Test"
-      - "Terraform"
-      - "Deploy"
       # A scheduled probe is exactly the silent-trigger class this notifier
       # exists for: nobody has a page open when a cron goes red (#781).
       - "Basemap Provenance"

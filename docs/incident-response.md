@@ -457,6 +457,10 @@ If you rollback past a Contract-style PR by accident:
 #    The blast radius depends on which credential.
 
 # Compromised AWS account credential:
+#    HISTORICAL (#808): there is no AWS account and no Secrets Manager in
+#    this deployment. Production is a GCP VM; secrets live in its env files,
+#    rotated via deploy/apply.sh. The block below is kept only so an old
+#    incident record referring to it still parses.
 #    Disable the IAM role/user via AWS console.
 #    Rotate every secret in AWS Secrets Manager for the affected env.
 aws secretsmanager update-secret \

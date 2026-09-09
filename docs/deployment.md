@@ -438,12 +438,24 @@ docker compose -f docker-compose.prod.yml exec app \
 
 ---
 
-## Kubernetes (Helm) — primary production path
+## Kubernetes (Helm) — NOT the production path
 
-As of Epic OI-2 (2026-04-27), production deployments use the Helm
-chart at `infra/helm/inflect/` running on EKS. The earlier
-SSH/docker-compose path remains documented for self-hosted scenarios
-but is **deprecated as the primary production model**.
+> **Corrected in #808.** This section previously said Helm-on-EKS was the
+> primary production path and that the docker-compose path was "deprecated as
+> the primary production model". That was exactly backwards, and it stayed
+> wrong for four months.
+>
+> Production is, and has only ever been, **docker compose on a GCP VM** —
+> `deploy/apply.sh` with `deploy/docker-compose.vm.yml`. The EKS deploy
+> workflow never ran a single time and has now been deleted along with the
+> Terraform/AWS layer beneath it.
+>
+> The chart at `infra/helm/inflect/` is still in the tree. It is unused and
+> undeployed; treat it as unverified scaffolding, not as a supported path.
+
+The Epic OI-2 (2026-04-27) intent was for production deployments to use the
+Helm chart at `infra/helm/inflect/` running on EKS. That intent was never
+realised.
 
 > **Companion docs**
 > - `infra/helm/inflect/README.md` — chart-specific operator notes

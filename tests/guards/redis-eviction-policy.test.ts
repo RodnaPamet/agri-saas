@@ -15,7 +15,7 @@
  *
  * The ElastiCache path was already correct — the terraform parameter
  * group pins `maxmemory-policy = noeviction` (guarded by
- * `terraform-redis-storage.test.ts`). The Compose path was not: an
+ * the AWS stack, removed in #808). The Compose path was not: an
  * operator running the production-like Compose stack on bare metal
  * silently ran an unsafe queue.
  *
