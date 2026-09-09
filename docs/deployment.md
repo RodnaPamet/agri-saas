@@ -438,12 +438,39 @@ docker compose -f docker-compose.prod.yml exec app \
 
 ---
 
-## Kubernetes (Helm) — primary production path
+## Kubernetes (Helm) — NOT the production path
 
-As of Epic OI-2 (2026-04-27), production deployments use the Helm
-chart at `infra/helm/inflect/` running on EKS. The earlier
-SSH/docker-compose path remains documented for self-hosted scenarios
-but is **deprecated as the primary production model**.
+> **Corrected in #808.** This section previously said Helm-on-EKS was the
+> primary production path and that the docker-compose path was "deprecated as
+> the primary production model". That was exactly backwards, and it stayed
+> wrong for four months.
+>
+> Production is, and has only ever been, **docker compose on a GCP VM** —
+> `deploy/apply.sh` with `deploy/docker-compose.vm.yml`. The EKS deploy
+> workflow never ran a single time and has now been deleted along with the
+> Terraform/AWS layer beneath it.
+>
+> The chart at `infra/helm/inflect/` is still in the tree. It is unused and
+> undeployed; treat it as unverified scaffolding, not as a supported path.
+
+The Epic OI-2 (2026-04-27) intent was for production deployments to use the
+Helm chart at `infra/helm/inflect/` running on EKS. That intent was never
+realised.
+
+### The four runbook axes, with the answers that are actually true
+
+The deleted GAP-12 ratchet was right that on-call needs these four covered. It
+had the wrong answers for all four, because it answered for EKS.
+
+| axis | on this deployment |
+|---|---|
+| **Deploy** | `deploy/apply.sh` with `deploy/docker-compose.vm.yml`. Images are published by the `Publish image to GHCR` workflow and rolled onto the VM by Watchtower, which polls the `:latest` tag. |
+| **Rollback** | Pinning Watchtower back reverts **code only — the schema stays migrated.** Down-migrations live in `deploy/rollback/*.down.sql` and must be applied deliberately. There is no `helm rollback` here, and reaching for one wastes the window. |
+| **Scaling** | A single VM. There is no HPA and no autoscaler; capacity is the machine type. |
+| **Backup / restore** | A daily **GCE disk snapshot** — resource policy `agrent-daily-snapshot`, 02:00 UTC, 14-day retention (`docs/slos.md`). That means an **RPO of up to 24 hours**, which is worth knowing before an incident rather than during one. The restore runbook is `docs/backup-restore.md`; it is not `aws rds restore-db-instance-to-point-in-time`, which appears nowhere in this deployment. |
+
+See #842 for turning this table into the full runbook the deleted ratchet was
+guarding.
 
 > **Companion docs**
 > - `infra/helm/inflect/README.md` — chart-specific operator notes

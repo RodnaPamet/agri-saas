@@ -1,7 +1,20 @@
-# Infrastructure (Epic OI-1)
+# Infrastructure (Epic OI-1) — HISTORICAL
 
-The inflect-compliance platform is provisioned via Terraform on AWS.
-This document is the operator's manual — architecture, modules,
+> **This describes infrastructure that no longer exists.** The Terraform/AWS
+> stack was removed in #808: `infra/terraform/`, `terraform.yml` and
+> `deploy.yml` are all deleted. Nothing below is provisioned, and none of the
+> runbooks here can be executed.
+>
+> **The real production path is `deploy/`** — `deploy/apply.sh` with
+> `deploy/docker-compose.vm.yml` onto a GCP VM. See `docs/deployment.md`.
+>
+> Kept as design history for Epic OI-1, not as an operator's manual. It was
+> retired because the AWS side never ran: the staging GitHub Environment held
+> no secrets, so every `Apply` failed at the OIDC credential step; `deploy.yml`
+> never ran once; and production holds only GCP credentials.
+
+The (former) inflect-compliance platform was provisioned via Terraform on AWS.
+This document was the operator's manual — architecture, modules,
 environments, secrets, costs, and the day-1 + day-2 runbooks.
 
 > **Companion docs**

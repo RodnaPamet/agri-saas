@@ -8,14 +8,16 @@
  *      (`deterministic-install`).
  *   2. E2E test isolation — fixture-scoped tenants, no cross-test
  *      `let` cascade (`e2e-isolation`).
- *   3. Staging smoke gate — production deploy `needs: smoke-staging`
- *      (`deploy-staging-gate`) + the OI-2 helm invariants
- *      (`deploy-workflow`).
- *   4. Build / env-validation discipline — the CI build skips
+ *   3. Build / env-validation discipline — the CI build skips
  *      compile-time env validation deliberately; runtime is the
  *      real gate.
  *
- * Each of 1–3 shipped its OWN structural guardrail. THIS test
+ * (A fourth pillar — the staging smoke gate and the OI-2 helm
+ * invariants — was removed in #808 along with `deploy.yml`, the EKS
+ * deploy workflow that never ran once. Its two guardrails went with
+ * it; there is no longer a subject for them to guard.)
+ *
+ * Each of 1–2 shipped its OWN structural guardrail. THIS test
  * guards the guards: it fails CI if any of those guardrail files is
  * deleted or gutted to a no-op, so a future "simplify the tests"
  * change cannot quietly dismantle the protection. It also locks the
@@ -61,16 +63,6 @@ const GUARDRAILS: ReadonlyArray<{
         pillar: 'E2E test isolation',
         anchors: ['cascade', 'isolatedTenant'],
     },
-    {
-        file: 'tests/guards/deploy-staging-gate.test.ts',
-        pillar: 'staging smoke gate',
-        anchors: ['smoke-staging', 'deploy-production'],
-    },
-    {
-        file: 'tests/guards/deploy-workflow.test.ts',
-        pillar: 'release workflow (OI-2 helm invariants)',
-        anchors: ['helm', 'deploy-staging'],
-    },
 ];
 
 /** Count `it(` / `it.each(` assertion blocks in a test file. */
@@ -96,12 +88,20 @@ describe('CI/CD pipeline-integrity — guard the guards', () => {
         });
     });
 
-    it('every registry pillar is distinct and the set is complete (5 guardrails)', () => {
+    it('every registry pillar is distinct and the set is complete (3 guardrails)', () => {
         // A drive-by deletion of one entry shrinks this count; the
         // number is the explicit contract for "how many pipeline
         // guardrails exist".
-        expect(GUARDRAILS).toHaveLength(5);
-        expect(new Set(GUARDRAILS.map((g) => g.file)).size).toBe(5);
+        // 5 -> 3 in #808: the staging-smoke-gate and OI-2-helm guardrails were
+        // deleted with deploy.yml, their subject. Derived from the registry
+        // above, not decremented blindly.
+        expect(GUARDRAILS).toHaveLength(3);
+        // Distinctness derives from the registry rather than repeating the
+        // literal: the count contract is the assertion above, and a second
+        // hardcoded number here only ever drifts from it.
+        expect(new Set(GUARDRAILS.map((g) => g.file)).size).toBe(
+            GUARDRAILS.length,
+        );
     });
 });
 

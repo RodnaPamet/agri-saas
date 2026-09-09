@@ -18,7 +18,9 @@ import { DEMO_STYLE, MAPTILER_STYLE_PREFIX } from '@/lib/geo/basemap-style';
  *
  * Three checks look like they answer it and cannot. All three were tried:
  *
- *  1. **Read the workflow.** `deploy.yml` deploys; `ghcr-publish.yml` builds.
+ *  1. **Read the workflow.** `ghcr-publish.yml` builds and publishes; the
+ *     VM pulls it. (`deploy.yml` deployed to EKS and was deleted in #808 —
+ *     it never ran.)
  *     And `Dockerfile`'s `ARG NEXT_PUBLIC_MAPTILER_KEY=""` is the default when
  *     nothing supplies one, not the effective value.
  *  2. **Check the bundle READS the var.** It reads it on BOTH branches — the

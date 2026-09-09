@@ -91,13 +91,6 @@ on:
       - "Release"
       - "Load Test (k6)"
       - "Restore Test"
-      - "Terraform"
-      # PHANTOM — named as one so the next reader does not mistake this
-      # entry for evidence of a live deploy path. `deploy.yml` targets
-      # EKS + Helm and has 0 runs ever; production is a GCE VM that
-      # Watchtower rolls from `Publish image to GHCR`. Kept because the
-      # rule above is mechanical, not curated.
-      - "Deploy"
       # A scheduled probe is exactly the silent-trigger class this notifier
       # exists for: nobody has a page open when a cron goes red (#781).
       - "Basemap Provenance"
