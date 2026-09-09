@@ -94,19 +94,42 @@ jobs:
                   TRIGGERING_SHA: ${{ github.event.workflow_run.head_sha }}
               run: |
                   set -euo pipefail
-                  TIP="$(git rev-parse HEAD)"
-                  echo "main tip        : $TIP"
+                  TARGET="$(git log -1 --format=%H --invert-grep --grep='\[skip ci\]')"
+                  echo "publishable tip : $TARGET"
                   echo "triggering run  : $TRIGGERING_SHA"
-                  if [ "$TIP" != "$TRIGGERING_SHA" ]; then
+                  if [ "$TARGET" != "$TRIGGERING_SHA" ]; then
                       echo "skip=true" >> "$GITHUB_OUTPUT"
-                      echo "::notice::Publish for ${TRIGGERING_SHA:0:9} completed, but main's tip is ${TIP:0:9} — that commit's own publish will trigger this check. Not asking yet."
+                      echo "::notice::Publish for ${TRIGGERING_SHA:0:9} completed, but the publishable tip is ${TARGET:0:9} — that commit's own publish will trigger this check. Not asking yet."
                   fi
 
-            - name: "Does main's tip have a published image?"
+            # ── Ask about the newest PUBLISHABLE commit, not literally HEAD ──
+            #
+            # semantic-release pushes `chore(release): X [skip ci]`, and GitHub
+            # suppresses workflow runs for `[skip ci]` commits — so a release
+            # commit NEVER gets a ghcr-publish run and can never have an image.
+            # Measured over the last 14 commits on main: 4 are release commits,
+            # all 4 have zero publish runs, all 10 others have one. main's tip
+            # was 5cabfc19a (3.5.10) when this was written.
+            #
+            # Asking about HEAD therefore fails 100% of the time after every
+            # release, permanently, until the next feature commit — not a race,
+            # a false premise. The question that means something is whether the
+            # newest commit that WOULD be published has been.
+            #
+            # (That the release commit's own version bump never reaches an image
+            # is a separate, pre-existing property of this repo's release flow.
+            # It is not this check's to assert on, and inventing a failure for it
+            # here would be the same error in the other direction.)
+            - name: "Does the publishable tip have an image?"
               if: steps.gate.outputs.skip != 'true'
               env:
                   REPO: ${{ github.repository }}
               run: |
-                  TIP_SHA="$(git rev-parse HEAD)"
-                  echo "main tip: $TIP_SHA"
+                  set -euo pipefail
+                  TIP_SHA="$(git log -1 --format=%H --invert-grep --grep='\[skip ci\]')"
+                  HEAD_SHA="$(git rev-parse HEAD)"
+                  if [ "$TIP_SHA" != "$HEAD_SHA" ]; then
+                      echo "main HEAD is ${HEAD_SHA:0:9} ($(git log -1 --format=%s "$HEAD_SHA")) — not publishable"
+                  fi
+                  echo "publishable tip: $TIP_SHA"
                   TIP_SHA="$TIP_SHA" REPO="$REPO" bash .github/scripts/image-tip-check.sh
