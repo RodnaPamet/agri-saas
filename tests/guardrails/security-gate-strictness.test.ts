@@ -110,4 +110,40 @@ describe('GAP-05 ratchet — Next.js version pin', () => {
         // Pin shape: no caret/tilde — silent drift blocked by lockfile.
         expect(version).not.toMatch(/^[\^~]/);
     });
+
+    // ── #826: the ratchet must follow the gate ──
+    // A second Trivy gate now runs in `ghcr-publish.yml`, against the image
+    // that actually ships. Before this test it would have been unratcheted
+    // from birth: a later PR could quiet it to CRITICAL-only and nothing
+    // would object, leaving the SHIPPED artifact scanned more loosely than
+    // the discarded CI twin. A scan the guard does not read is a scan a
+    // future PR can weaken.
+    it('the SHIPPED image is scanned as strictly as the CI twin', () => {
+        const publish = readRepoFile('.github/workflows/ghcr-publish.yml');
+
+        // Positive control first: if this file ever stops running Trivy at
+        // all, the severity assertions below would pass VACUOUSLY on an
+        // empty match set — which is the failure mode this whole file is
+        // about. Assert the gate is present before asserting its strictness.
+        expect(publish).toMatch(/aquasecurity\/trivy-action/);
+        expect(publish).toMatch(/severity:\s*["']CRITICAL,HIGH["']/);
+        expect(publish).toMatch(/exit-code:\s*["']1["']/);
+
+        const weakened = publish
+            .split('\n')
+            .find(l => l.match(/severity:/) && l.match(/\bCRITICAL\b/) && !l.match(/HIGH/));
+        expect(weakened).toBeUndefined();
+    });
+
+    it('the publish gates run BEFORE the push, not after', () => {
+        // Ordering is the whole guarantee. Gates that run after `docker push`
+        // report on an artifact consumers can already pull, which is a
+        // notification rather than a gate.
+        const publish = readRepoFile('.github/workflows/ghcr-publish.yml');
+        const gateAt = publish.indexOf('Gate: Trivy vulnerability scan');
+        const pushAt = publish.indexOf('Push the gated image');
+        expect(gateAt).toBeGreaterThan(-1);
+        expect(pushAt).toBeGreaterThan(-1);
+        expect(gateAt).toBeLessThan(pushAt);
+    });
 });

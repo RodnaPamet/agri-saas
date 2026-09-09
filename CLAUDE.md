@@ -227,12 +227,26 @@ something at all (16.2.x had two matching sites per bundle; 16.3.1 has one,
 because `getLayerAssets` hoisted its `src` to a local). Without that control
 the check fails OPEN on the exact release where the patch most likely broke.
 
-`scripts/verify-image-patches.mjs` runs inside the BUILT IMAGE in CI. That is
-the closest of these signals to production — but it is NOT production: it
-inspects the image CI just built, and nothing inspects the image that actually
-ships (#826). Read it as "an image built from this commit was patched", never
-as "production is patched" — the Dockerfile must COPY `patches/` before `npm ci`, without
-`--ignore-scripts`, or the image ships unpatched while CI stays green.
+`scripts/verify-image-patches.mjs` runs inside a BUILT IMAGE — the Dockerfile
+must COPY `patches/` before `npm ci`, without `--ignore-scripts`, or the image
+ships unpatched while CI stays green.
+
+> **It runs in TWO places, and they are not the same image.** CI's `docker`
+> job builds one, gates it, and DISCARDS it; that build passes no
+> `build-args` (so an empty `NEXT_PUBLIC_MAPTILER_KEY`) and comes from the
+> MUTABLE `node:22-alpine` tag, so it is a twin rather than the artifact.
+> Read a green CI run as *"an image built from this commit was patched"*,
+> never as *"production is patched"*.
+>
+> Since #826 `ghcr-publish.yml` runs the same three gates against the image
+> it is about to push, then re-reads the digest FROM THE REGISTRY and
+> re-verifies the pulled bytes, so a gate cannot pass by failing to see.
+> That is the signal that describes production. CI's `docker` job keeps its
+> copy on purpose: it gates the PR, where feedback belongs.
+>
+> This paragraph twice claimed `verify-image-patches.mjs` was "the only one
+> of these signals that describes production". It was not, and #838 retracted
+> it before #826 made it true.
 
 **In-image verification is now the house pattern for any claim about what
 shipped**, and there are two such scripts: that one, and
