@@ -220,4 +220,15 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
+# The commit this image was built from, surfaced by /api/health and
+# /api/readyz as `version`. Without it both report "dev", which is what made
+# "is production running main's tip?" a 1630-line build-log read on 2026-09-08.
+#
+# RUNNER stage, deliberately, and late. An ARG in the builder stage would be
+# part of the cache key for `next build`, so a new BUILD_SHA on every commit
+# would invalidate that layer every time. Here it only invalidates the final
+# few cheap layers. Refs #804.
+ARG BUILD_SHA=""
+ENV BUILD_SHA=$BUILD_SHA
+
 ENTRYPOINT ["./scripts/entrypoint.sh"]
