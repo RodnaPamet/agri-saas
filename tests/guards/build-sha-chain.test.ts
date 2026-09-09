@@ -12,11 +12,12 @@ import { join } from 'node:path';
  * 2026-09-08 that turned "is production running main's tip?" into a 1630-line
  * build-log read. Refs #804.
  *
- * WHAT THIS FILE DOES NOT YET GUARD, stated so it is not mistaken for full
- * coverage: the first link. The `--build-arg` lives in `ghcr-publish.yml`,
- * which is being rewritten in #837 and carries the line there. Until that
- * lands the chain is incomplete BY DESIGN and the response still says `'dev'`.
- * The remainder is tracked as its own issue rather than left in a PR body.
+ * All three links are now asserted. #837 landed the `--build-arg` in
+ * `ghcr-publish.yml`; this PR adds the `ARG`/`ENV` that consumes it. Between
+ * those two merges `main` sat in the asymmetric state below — a build-arg
+ * passed to a Dockerfile with no matching ARG, which Docker DISCARDS SILENTLY,
+ * leaving `"version":"dev"` and no error anywhere. That window is exactly why
+ * the asymmetry is guarded rather than assumed.
  */
 
 const ROOT = join(__dirname, '..', '..');
@@ -60,16 +61,24 @@ describe('BUILD_SHA reaches the image', () => {
         }
     });
 
-    it('if the workflow passes the build-arg, the Dockerfile must consume it', () => {
-        // The dangerous asymmetry, guarded ahead of #837: a workflow that
-        // passes --build-arg BUILD_SHA into a Dockerfile with no matching ARG
-        // is silently discarded by Docker, and the response still says 'dev'.
-        // This implication is currently vacuous — the workflow does not pass
-        // it yet — which is safe ONLY because the Dockerfile half is asserted
-        // unconditionally above. Do not collapse these into one conditional.
-        if (/BUILD_SHA/.test(PUBLISH)) {
-            expect(DOCKERFILE).toMatch(/^ARG BUILD_SHA=/m);
-            expect(DOCKERFILE).toMatch(/^ENV BUILD_SHA=\$BUILD_SHA/m);
-        }
+    it('the publish workflow passes the build-arg', () => {
+        // The first link, now that #837 has landed it. Asserted
+        // UNCONDITIONALLY — an earlier draft made this an `if (workflow has
+        // BUILD_SHA)` implication, which was honest while the link genuinely
+        // did not exist but becomes a vacuous pass the moment someone deletes
+        // the line it was waiting for.
+        expect(PUBLISH).toMatch(/BUILD_SHA=\$\{\{ github\.sha \}\}/);
+        expect(PUBLISH).toMatch(/build-args:/);
+    });
+
+    it('neither half can be removed without the other failing', () => {
+        // Docker DISCARDS a --build-arg with no matching ARG, silently. So
+        // half a chain and no chain at all produce the identical observable:
+        // "version":"dev". Both directions must be load-bearing.
+        const workflowPasses = /BUILD_SHA=\$\{\{ github\.sha \}\}/.test(PUBLISH);
+        const dockerfileConsumes = /^ARG BUILD_SHA=/m.test(DOCKERFILE)
+            && /^ENV BUILD_SHA=\$BUILD_SHA/m.test(DOCKERFILE);
+        expect(workflowPasses).toBe(dockerfileConsumes);
+        expect(workflowPasses).toBe(true);
     });
 });
