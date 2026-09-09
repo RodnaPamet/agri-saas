@@ -174,7 +174,7 @@ export async function runEvidenceRetentionNotifications(
                     // going through `enqueueEmail` — so `buildEmailContent`'s
                     // EVIDENCE_EXPIRING arm is unreachable and the strings are
                     // built here. Localised in place (#694); unifying the two
-                    // paths is tracked separately.
+                    // paths is tracked in #807.
                     const locale = resolveRecipientLocale(m.user.uiLanguage);
                     const urgencyTag = daysLeft <= 7 ? '⚠️ ' : '';
                     const subject = await translateFor(

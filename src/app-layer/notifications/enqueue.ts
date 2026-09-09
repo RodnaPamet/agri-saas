@@ -182,7 +182,7 @@ async function buildEmailContent(
         // `buildEvidenceExpiringEmail` are both dead.
         //
         // An `async` function auto-wraps a synchronous return, so they need no
-        // change. Deleting them is tracked separately; doing it here would
+        // change. Deleting them is tracked in #807; doing it here would
         // bury a localisation diff under a 400-line removal.
         case 'EVIDENCE_EXPIRING':
             return buildEvidenceExpiringEmail(payload as EvidenceExpiringPayload);
