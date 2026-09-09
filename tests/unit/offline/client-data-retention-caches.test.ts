@@ -175,3 +175,158 @@ describe('sweepCaches — never breaks the app it protects', () => {
         await expect(sweepClientStores()).resolves.toMatchObject({ cachesRemoved: 0 });
     });
 });
+
+
+/**
+ * The other half of the same defect (#851).
+ *
+ * The header above says offline cold launch "works exactly once per online
+ * session". Measured on a real phone, it works ZERO times: the sweep runs on
+ * every document load and fires AFTER the SW has cached the document being
+ * loaded, so online the order is SW-caches → hydrate → sweep-deletes, and
+ * PAGE_CACHE is empty at rest.
+ *
+ * The fix keeps the whole-bucket delete for fielddata and empties the page
+ * bucket of everything EXCEPT the offline shell — the start_url a Home Screen
+ * launch requests, and the document on screen.
+ *
+ * A first attempt deleted the bucket and re-fetched the shell back. It worked
+ * and it cost a `/tenants` request on every document load, which for a
+ * single-tenant user redirects into a full dashboard render; it pushed the
+ * mobile drift E2E past its 180s budget. Not deleting what you need costs
+ * nothing, which is why these tests assert entries rather than requests.
+ */
+
+const ORIGIN = 'https://app.example';
+const CURRENT = `${ORIGIN}/t/acme/my-work`;
+const OTHER = `${ORIGIN}/t/acme/journal/123`;
+
+/** Cache with real entries, so keep-vs-delete is observable. */
+class EntryCache {
+    constructor(public urls: string[]) {}
+    async keys(): Promise<{ url: string }[]> {
+        return this.urls.map((url) => ({ url }));
+    }
+    async delete(req: { url: string }): Promise<boolean> {
+        const i = this.urls.indexOf(req.url);
+        if (i < 0) return false;
+        this.urls.splice(i, 1);
+        return true;
+    }
+}
+
+class EntryCacheStorage {
+    readonly buckets: Record<string, EntryCache> = {};
+    constructor(private names: string[], seed: Record<string, string[]> = {}) {
+        for (const [n, urls] of Object.entries(seed)) this.buckets[n] = new EntryCache([...urls]);
+    }
+    async keys(): Promise<string[]> {
+        return [...this.names];
+    }
+    async delete(name: string): Promise<boolean> {
+        const i = this.names.indexOf(name);
+        if (i < 0) return false;
+        this.names.splice(i, 1);
+        delete this.buckets[name];
+        return true;
+    }
+    async open(name: string): Promise<EntryCache> {
+        this.buckets[name] ??= new EntryCache([]);
+        return this.buckets[name];
+    }
+    get remaining(): string[] {
+        return [...this.names];
+    }
+}
+
+/** tests/unit runs under the NODE jest project, which has no `location`. */
+function installLocation(href: string | null): void {
+    if (href === null) {
+        delete (globalThis as unknown as { location?: unknown }).location;
+        return;
+    }
+    (globalThis as unknown as { location: unknown }).location = {
+        origin: new URL(href).origin,
+        href,
+    };
+}
+
+function installEntries(): EntryCacheStorage {
+    const fake = new EntryCacheStorage([...ALL], {
+        'agrent-v1-pages': [`${ORIGIN}/tenants`, CURRENT, OTHER],
+        'agrent-v1-fielddata': [`${ORIGIN}/api/t/acme/farm-tasks`],
+    });
+    (globalThis as unknown as { caches: unknown }).caches = fake;
+    return fake;
+}
+
+describe('the offline shell survives the sweep (#851)', () => {
+    beforeEach(() => installLocation(CURRENT));
+    afterEach(() => installLocation(null));
+
+    it('keeps the start_url and the current document, drops other tenant pages', async () => {
+        setOnline(true);
+        const fake = installEntries();
+
+        await sweepClientStores();
+
+        const pages = fake.buckets['agrent-v1-pages'].urls;
+        // The Home Screen launch requests the start_url, not the last route.
+        expect(pages).toContain(`${ORIGIN}/tenants`);
+        expect(pages).toContain(CURRENT);
+        // Every other server-rendered tenant document still goes.
+        expect(pages).not.toContain(OTHER);
+    });
+
+    it('still deletes DATA_CACHE whole — it holds decrypted task text', async () => {
+        setOnline(true);
+        const fake = installEntries();
+
+        await sweepClientStores();
+
+        expect(fake.remaining).not.toContain('agrent-v1-fielddata');
+    });
+
+    it('keeps NOTHING on a purge — sign-out must leave the device empty', async () => {
+        setOnline(true);
+        const fake = installEntries();
+
+        // signOutAndPurge passes exactly this.
+        await sweepClientStores({ maxAgeMs: 0 });
+
+        expect(fake.remaining).not.toContain('agrent-v1-pages');
+        expect(fake.remaining).not.toContain('agrent-v1-fielddata');
+    });
+
+    it('touches nothing while OFFLINE — the shell is all there is', async () => {
+        setOnline(false);
+        const fake = installEntries();
+
+        await sweepClientStores();
+
+        expect(fake.buckets['agrent-v1-pages'].urls).toHaveLength(3);
+        expect(fake.remaining).toContain('agrent-v1-fielddata');
+    });
+
+    it('leaves STATIC and BASEMAP alone', async () => {
+        setOnline(true);
+        const fake = installEntries();
+
+        await sweepClientStores();
+
+        expect(fake.remaining).toContain('agrent-v1-static');
+        expect(fake.remaining).toContain('agrent-v1-basemap');
+    });
+
+    it('falls back to the whole-bucket delete when there is no location', async () => {
+        // Not hypothetical: this suite runs under the node project, which has
+        // no `location`. Nothing to protect, so the original behaviour stands.
+        installLocation(null);
+        setOnline(true);
+        const fake = installEntries();
+
+        await sweepClientStores();
+
+        expect(fake.remaining).not.toContain('agrent-v1-pages');
+    });
+});

@@ -191,7 +191,61 @@ function sweepSwrBuckets(ls: Storage, cutoff: number): number {
  * responses carry no write timestamp we control, and the SW repopulates
  * on next use. An age-based per-entry sweep is deliberately deferred.
  */
-async function sweepCaches(): Promise<number> {
+/**
+ * The documents an offline cold launch has to be able to serve.
+ *
+ * `PRECACHE` in public/sw.js is `['/icon.svg', '/manifest.webmanifest']` — no
+ * HTML — so PAGE_CACHE is the ONLY source of an offline navigation, and the SW
+ * writes it only on `request.mode === 'navigate'`. In-app router navigation is
+ * an RSC fetch, not a document request, so visiting a route online does not
+ * make it openable offline.
+ */
+function offlineShellUrls(): string[] {
+    if (typeof location === 'undefined') return [];
+    const urls = new Set<string>();
+    try {
+        // The PWA start_url (public/manifest.webmanifest). A Home Screen launch
+        // requests THIS, not whatever route was open last, so keeping only the
+        // current document leaves the icon launch broken.
+        urls.add(new URL('/tenants', location.origin).href);
+        // …and the route actually in use, so returning to it offline works.
+        urls.add(location.href);
+    } catch {
+        /* exotic location — keep nothing rather than throw */
+    }
+    return [...urls];
+}
+
+/**
+ * Empty the page bucket of tenant documents, KEEPING the offline shell.
+ *
+ * An earlier version of this fix deleted the bucket and then re-fetched the
+ * shell back. That worked, and it cost a `/tenants` request on EVERY document
+ * load — which for a single-tenant user redirects into a full dashboard
+ * render. It pushed the mobile drift E2E past its 180s budget. Deleting
+ * everything except what we need is the same outcome for no requests at all.
+ *
+ * Retention is preserved: every other cached tenant document still goes. What
+ * survives is the start_url and the document already on screen — the two the
+ * next launch would fetch anyway — and a purge (`maxAgeMs: 0`) keeps nothing.
+ */
+async function emptyPagesExceptShell(bucket: string): Promise<number> {
+    const keep = new Set(offlineShellUrls());
+    if (keep.size === 0) {
+        // No location to derive a shell from (SSR, node). Nothing to protect,
+        // so fall back to the original whole-bucket delete.
+        return (await caches.delete(bucket)) ? 1 : 0;
+    }
+    const cache = await caches.open(bucket);
+    let removed = 0;
+    for (const req of await cache.keys()) {
+        if (keep.has(req.url)) continue;
+        if (await cache.delete(req)) removed++;
+    }
+    return removed;
+}
+
+async function sweepCaches(keepShell: boolean): Promise<number> {
     if (typeof caches === 'undefined') return 0;
 
     // DEFER while offline. The whole-bucket delete above is justified by "the
@@ -217,11 +271,19 @@ async function sweepCaches(): Promise<number> {
     // the first thing that ever executed this function.
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return 0;
     let removed = 0;
+    // Remembered across the delete so the shell can be primed back into the
+    // SAME bucket: the name carries the SW's CACHE_VERSION, which this module
+    // cannot import (public/sw.js is not part of the bundle).
     try {
         for (const name of await caches.keys()) {
-            if (SWEPT_CACHES.some((suffix) => name.endsWith(`-${suffix}`))) {
-                if (await caches.delete(name)) removed++;
+            if (!SWEPT_CACHES.some((suffix) => name.endsWith(`-${suffix}`))) continue;
+            // The page bucket keeps the offline shell; everything else — and
+            // all of fielddata — goes whole, as before.
+            if (keepShell && name.endsWith('-pages')) {
+                removed += await emptyPagesExceptShell(name);
+                continue;
             }
+            if (await caches.delete(name)) removed++;
         }
     } catch {
         /* Cache Storage unavailable — nothing to do */
@@ -253,6 +315,8 @@ export async function sweepClientStores(options: SweepOptions = {}): Promise<Swe
         result.snapshotsKept = snapshots.kept;
         result.swrBucketsRemoved = sweepSwrBuckets(ls, cutoff);
     }
-    result.cachesRemoved = await sweepCaches();
+    // Prime on a routine sweep, never on a purge: signOutAndPurge passes
+    // maxAgeMs 0 and must leave nothing behind on the device.
+    result.cachesRemoved = await sweepCaches(maxAgeMs > 0);
     return result;
 }
