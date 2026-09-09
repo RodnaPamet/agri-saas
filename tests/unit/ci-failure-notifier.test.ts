@@ -46,6 +46,8 @@ interface Scenario {
     existingBody?: string;
     conclusion: string;
     runId: string;
+    /** The watched workflow's name. Defaults to a workflow with no exception. */
+    wf?: string;
 }
 
 /**
@@ -77,7 +79,7 @@ exit 0
             env: {
                 ...process.env,
                 GH: bin,
-                WF: 'Release',
+                WF: s.wf ?? 'Release',
                 CONCLUSION: s.conclusion,
                 RUN_URL: `https://example.invalid/${s.runId}`,
                 RUN_ID: s.runId,
@@ -211,5 +213,49 @@ describe('CI-failure notifier — files for real failures, and only those', () =
         });
 
         expect(closed(calls)).toBe(true);
+    });
+
+    // ── #805: `Publish image to GHCR` cancellations are ambiguous ──
+    //
+    // The `cancelled` discriminator above ("did any job start?") was derived
+    // from CI, where a superseded run dies while PENDING. ghcr-publish is a
+    // SINGLE-job workflow whose job starts within seconds, so a supersession
+    // always finds a started job and would be misreported as a real failure.
+    // The case that genuinely matters — main's tip has no image — is answered
+    // by image-tip-check.yml asking about STATE, not by this event.
+    it('a cancelled ghcr-publish files NOTHING, even with jobs started', () => {
+        const { calls } = run({
+            conclusion: 'cancelled',
+            runId: '300',
+            startedJobs: 1,
+            wf: 'Publish image to GHCR',
+        });
+
+        expect(created(calls)).toBe(false);
+        expect(commented(calls)).toBe(false);
+    });
+
+    it('a FAILED ghcr-publish still files — only the ambiguous conclusion is suppressed', () => {
+        const { calls } = run({
+            conclusion: 'failure',
+            runId: '301',
+            wf: 'Publish image to GHCR',
+        });
+
+        expect(created(calls)).toBe(true);
+    });
+
+    it('the exception is scoped: a cancelled CI run still files', () => {
+        // Without this, the fix for one workflow would silently blind the
+        // notifier to the timeout class it was extended to catch in the
+        // first place (the Coverage gate, 2026-08-21).
+        const { calls } = run({
+            conclusion: 'cancelled',
+            runId: '302',
+            startedJobs: 1,
+            wf: 'CI',
+        });
+
+        expect(created(calls)).toBe(true);
     });
 });

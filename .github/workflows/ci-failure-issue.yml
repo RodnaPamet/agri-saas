@@ -58,21 +58,57 @@
 #
 #  `pull_request` runs (they have a PR page) and `merge_group` runs
 #  (they block the queue, which is its own loud signal).
+#
+#  And this workflow itself: a notifier cannot report its own failure,
+#  so watching it would be theatre. That is the entire exception list —
+#  see the rule on the `workflows:` key below, and the guard test that
+#  derives it (`tests/guards/ci-failure-watchlist.test.ts`).
 # ───────────────────────────────────────────────────────────────
 name: CI failure → issue
 
 on:
   workflow_run:
     workflows:
+      # ── THE RULE (#805) ───────────────────────────────────────────
+      # Watch EVERY workflow in .github/workflows EXCEPT:
+      #   · those whose ONLY triggers are `pull_request` / `merge_group`
+      #     — a PR page or a blocked merge queue is already loud; and
+      #   · this workflow itself, which cannot file an issue about its
+      #     own failure.
+      # Today that exception list has exactly one entry, so the rule
+      # reads "watch everything but yourself".
+      #
+      # This list was CURATED before #805, and curation is what failed:
+      # `Publish image to GHCR` — the one workflow that produces the
+      # artifact production actually runs — was missing, so when its
+      # build hit the 20-minute budget on 2026-09-08 (run 34208631386)
+      # nothing was filed, and "did the image ship?" cost a full manual
+      # investigation to answer. `tests/guards/ci-failure-watchlist.test.ts`
+      # now DERIVES the expected set from the workflow files and fails
+      # the build the moment this list drifts from it. A curated list is
+      # a list somebody forgets.
       - "CI"
       - "Release"
       - "Load Test (k6)"
       - "Restore Test"
       - "Terraform"
+      # PHANTOM — named as one so the next reader does not mistake this
+      # entry for evidence of a live deploy path. `deploy.yml` targets
+      # EKS + Helm and has 0 runs ever; production is a GCE VM that
+      # Watchtower rolls from `Publish image to GHCR`. Kept because the
+      # rule above is mechanical, not curated.
       - "Deploy"
       # A scheduled probe is exactly the silent-trigger class this notifier
       # exists for: nobody has a page open when a cron goes red (#781).
       - "Basemap Provenance"
+      # ── the four curation missed (#805) ───────────────────────────
+      - "Publish image to GHCR"
+      # push-to-main runs only; the job-level `if:` already drops PR runs.
+      - "Lighthouse"
+      # Dispatch-only, but "a human dispatched it" is not "a human is
+      # still watching 90 minutes later", which is this file's premise.
+      - "Coverage parity (reference run)"
+      - "SBOM backfill"
     types: [completed]
 
 permissions:
