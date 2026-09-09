@@ -76,6 +76,22 @@ which is exactly why the floor, not just the lockfile, has to be
 checked when a follow-up advisory lands on a package already pinned
 here.
 
+## Regression ceilings
+
+The two categories above are both **floors** — force a transitive
+dependency *upward* to a patched or compatible release. A ceiling is
+the opposite and rarer case: upstream shipped a release that is
+*broken for us*, so the pin excludes everything from that release on.
+
+A ceiling is a liability the moment it stops being true, because it
+also excludes the eventual fix. Each entry therefore records the exact
+broken behaviour and what must be re-measured before the ceiling is
+raised.
+
+| Override | Defect | Why the ceiling, and how to lift it |
+|----------|--------|-------------------------------------|
+| `nwsapi` → `>=2.2.16 <2.2.25` | Three separate defects in the 2.2.25+ line, all under jsdom. **2.2.25**: `:focus-visible` matches nothing — its emitter requires `localName` ∈ `/input\|select\|textarea/` *and* (`contenteditable` \|\| `keyboardFocus`), and jsdom never sets `keyboardFocus`. **2.2.25**: `:open` compiles to code referencing an undefined `media`, throwing `ReferenceError`, which poisons any selector list containing it. **2.2.26+**: `matchesNative` resolves `_matches \|\| node.matches`, but `_matches` is only assigned inside `install()`, which jsdom never calls — so `node.matches` re-enters jsdom's own `Element.prototype.matches` and closes a loop. `querySelectorAll(':modal')` and `closest(':modal')` hang outright; `matches(':modal')` returns after **~2.4 s per call, with no amortisation**. | `nwsapi` is an unpinned `^2.2.16` transitive of `jsdom`, so it re-resolves on *any* dev-dependency install and rides along unnamed in every lockfile regeneration — which is how it entered #828 and caused #830 while the PR's own lock patch mentioned it zero times. The 2.2.26+ stall is reached from `@floating-ui`'s `isTopLayer()` (`element.matches(':modal')`), called by `@radix-ui/react-popper` on every reposition, so any Radix popover/select/tooltip test pays it: measured 6 of 10 tests in `tests/rendered/dashboard-grid-and-picker.test.tsx` each burning a full 30 s timeout. Nothing in this repo queries `:focus-visible` or `:focus-within` through a selector engine (the 200-odd hits are Tailwind class-name variants, which jsdom never evaluates), so the ceiling costs us nothing today. **To lift it:** confirm upstream restores a non-recursive `matchesNative` under jsdom — re-run the version matrix in #830 with a positive control (`:focus-visible` must differ between 2.2.24 and 2.2.25, or the engine swap did not take) and time `isTopLayer()`; a version is only safe if `querySelectorAll(':modal')` returns and `matches(':modal')` is sub-millisecond. |
+
 ## Deterministic installs — `npm ci`
 
 Every install path — the `Dockerfile` and all CI workflows — runs
