@@ -1,5 +1,5 @@
 #
-# GHCR publish — fast-path build + push for Watchtower auto-deploy.
+# GHCR publish — build, GATE, push, then prove what landed.
 #
 # Runs on every push to `main` (in parallel with CI). Pushes an
 # image tagged `:latest` and `:sha-<short>` to GHCR. The VM's
@@ -7,7 +7,38 @@
 #
 # Separate from the heavier `deploy.yml` pipeline (which gates on
 # CI + has staging/production environments) — this one exists purely
-# so `git push` → running in prod is ~5 min.
+# so `git push` → running in prod is short. Measured 7-21 min,
+# median 12-13; the gates below add ~4-6.
+#
+# ── Why the gates live HERE and not in CI (#826) ──
+#
+# CI's `docker` job builds an image, runs three gates against it, and
+# then THROWS IT AWAY. This workflow built a second image and pushed
+# it ungated. Two builds, one inspected, the other shipped — so every
+# "verified inside the built image" claim in the repo described an
+# artifact nobody ran.
+#
+# Moving the publish behind CI was considered and rejected:
+#
+#   · CI's `docker` job is CONDITIONAL (`github.event_name != 'merge_group'
+#     && (schedule || needs.changes.outputs.code == 'true')`), so a
+#     content-only merge to main would publish NOTHING.
+#   · It would serialise publish behind the full CI graph plus a 10-24
+#     minute image build, pushing prod latency to ~30 min.
+#   · CI's image is not this image anyway: that build passes NO
+#     `build-args`, so its bundle carries an empty
+#     NEXT_PUBLIC_MAPTILER_KEY, and `FROM node:22-alpine` is a MUTABLE
+#     tag — two builds hours apart differ in OS packages. Scanning a
+#     twin is not scanning the artifact.
+#
+# So: ONE build of the shipped artifact, gated, then pushed. CI's
+# docker job stays as-is — it gates the PR, where feedback belongs.
+#
+# NOTE ON `--push --load`: this workflow deliberately never consults
+# `steps.build.outputs.digest`. Combining `--push` and `--load`
+# redefines that output from the index to the platform manifest — the
+# flaw that killed the #781 publish-gate design. The digest asserted
+# below is read back from the REGISTRY instead.
 #
 name: Publish image to GHCR
 
@@ -18,6 +49,11 @@ on:
 
 concurrency:
     group: ghcr-publish-${{ github.ref }}
+    # A rapid second push to main SHOULD cancel this one — only the tip's
+    # image matters. The risk that creates (a cancelled run is
+    # indistinguishable from a run that never pushed) is not solved here,
+    # because no event-keyed rule can solve it. `image-tip-check.yml` asks
+    # the STATE question instead: does main's tip have a published image?
     cancel-in-progress: true
 
 permissions:
@@ -27,11 +63,16 @@ permissions:
 env:
     REGISTRY: ghcr.io
     IMAGE_NAME: ${{ github.repository }}
+    LOCAL_TAG: agri-saas-publish-candidate:${{ github.sha }}
 
 jobs:
     build-push:
         runs-on: ubuntu-latest
-        timeout-minutes: 20
+        # 20 → 40. The build alone has been measured at up to 21 min, and
+        # the three gates add ~4-6. The old budget killed run 34208631386
+        # at 20m26s AFTER a successful push, which is how "did the image
+        # ship?" became a manual read of 1630 lines of buildx output.
+        timeout-minutes: 40
 
         steps:
             - name: Checkout
@@ -60,15 +101,27 @@ jobs:
                   flavor: |
                       latest=false
 
-            - name: Build and push
+            # ── Build, but do NOT push yet ──
+            # `load: true` puts the image in the local daemon so the gates
+            # below run against the exact bytes that will be pushed. This is
+            # the whole point of #826: same build, same digest, inspected.
+            - name: Build the image (no push)
+              id: build
+              timeout-minutes: 24
               uses: docker/build-push-action@v7
               with:
                   context: .
-                  push: true
-                  tags: ${{ steps.meta.outputs.tags }}
+                  push: false
+                  load: true
+                  tags: ${{ env.LOCAL_TAG }}
                   labels: ${{ steps.meta.outputs.labels }}
                   cache-from: type=gha
-                  cache-to: type=gha,mode=max
+                  # `ignore-error=true`: the GHA cache export is an
+                  # OPTIMISATION, and on 2026-09-08 it consumed 13m25s after a
+                  # successful push and took the whole job down with it
+                  # (run 34208631386). A cache that fails to write must never
+                  # fail a publish that already succeeded.
+                  cache-to: type=gha,mode=max,ignore-error=true
                   platforms: linux/amd64
                   # NEXT_PUBLIC_* are inlined into the client bundle at BUILD
                   # time (see Dockerfile). The map's basemap key must be baked
@@ -82,3 +135,90 @@ jobs:
                   build-args: |
                       NEXT_PUBLIC_MAPTILER_KEY=${{ vars.NEXT_PUBLIC_MAPTILER_KEY }}
                       NEXT_PUBLIC_MAP_BASEMAP_STYLE=${{ vars.NEXT_PUBLIC_MAP_BASEMAP_STYLE || 'hybrid' }}
+
+            # ── The three gates CI runs, now against the SHIPPED artifact ──
+            # Identical instruments to ci.yml's docker job, deliberately: the
+            # point is not new checks, it is running the existing ones on the
+            # image that actually leaves the building.
+            - name: "Gate: image applied the CSP-nonce patch"
+              run: |
+                  docker run --rm --entrypoint node \
+                    -v "$PWD/scripts/verify-image-patches.mjs:/verify.mjs:ro" \
+                    "$LOCAL_TAG" /verify.mjs
+
+            - name: "Gate: no test tooling in the runtime image"
+              run: |
+                  docker run --rm --entrypoint node \
+                    -v "$PWD/scripts/verify-image-deps.mjs:/verify-deps.mjs:ro" \
+                    "$LOCAL_TAG" /verify-deps.mjs /app
+
+            - name: "Gate: Trivy vulnerability scan (critical+high)"
+              uses: aquasecurity/trivy-action@v0.36.0
+              with:
+                  image-ref: ${{ env.LOCAL_TAG }}
+                  format: "table"
+                  exit-code: "1"
+                  severity: "CRITICAL,HIGH"
+                  ignore-unfixed: true
+                  vuln-type: "os,library"
+                  trivyignores: ".trivyignore"
+
+            # ── Push the exact bytes the gates just passed ──
+            - name: Push the gated image
+              id: push
+              run: |
+                  set -euo pipefail
+                  PUSHED=""
+                  while IFS= read -r tag; do
+                      [ -n "$tag" ] || continue
+                      docker tag "$LOCAL_TAG" "$tag"
+                      docker push "$tag"
+                      # `docker inspect` reports the repo digest the registry
+                      # assigned. All tags of one image share it.
+                      D="$(docker inspect --format='{{index .RepoDigests 0}}' "$tag" | cut -d@ -f2)"
+                      echo "pushed $tag -> $D"
+                      PUSHED="$D"
+                  done <<< "${{ steps.meta.outputs.tags }}"
+                  test -n "$PUSHED" || { echo "::error::no tags were pushed"; exit 1; }
+                  echo "digest=$PUSHED" >> "$GITHUB_OUTPUT"
+
+            # ── Prove what the registry now serves (#826's hard requirement) ──
+            # An absence only means something once the probe has proven it can
+            # SEE. Two positive controls run before any conclusion is drawn:
+            #
+            #   A. the digest the registry serves for :latest must EQUAL the
+            #      digest just pushed. This is non-trivial here — the GHCR org
+            #      is SHARED with a different live product, and only the image
+            #      NAME separates them.
+            #   B. `verify-image-deps.mjs` refuses to report the banned set
+            #      absent until it has FOUND next/react/react-dom/@prisma/client
+            #      in the pulled image. A pull that resolved the wrong tree, or
+            #      an empty layer, fails instead of certifying.
+            #
+            # Without these, an unreachable registry reads as a clean result —
+            # which is exactly the shape #801 nearly shipped, when a recursive
+            # grep inside a container returned empty because it had TIMED OUT.
+            - name: "Prove: the registry serves the gated digest"
+              run: |
+                  set -euo pipefail
+                  EXPECTED="${{ steps.push.outputs.digest }}"
+                  REF="${REGISTRY}/${IMAGE_NAME,,}"
+
+                  SERVED="$(docker buildx imagetools inspect "${REF}:latest" \
+                      --format '{{println .Manifest.Digest}}' | head -1 | tr -d '[:space:]')"
+                  echo "expected : $EXPECTED"
+                  echo "served   : $SERVED"
+
+                  # Control A — the probe resolved OUR artifact.
+                  test -n "$SERVED" || { echo "::error::registry returned no digest for :latest — could not check, which is NOT a pass"; exit 1; }
+                  test "$SERVED" = "$EXPECTED" || { echo "::error::registry serves $SERVED but this run pushed $EXPECTED"; exit 1; }
+
+                  # Control B — pull by digest and re-run the artifact gate on
+                  # what the registry actually returns, not on the local copy.
+                  docker rmi -f "$LOCAL_TAG" >/dev/null 2>&1 || true
+                  docker pull "${REF}@${SERVED}"
+                  docker run --rm --entrypoint node \
+                    -v "$PWD/scripts/verify-image-deps.mjs:/verify-deps.mjs:ro" \
+                    "${REF}@${SERVED}" /verify-deps.mjs /app
+
+                  echo "✓ ${REF}:latest serves ${SERVED}, gated and verified after pull"
