@@ -1,6 +1,6 @@
 {
     "name": "inflect-compliance",
-    "version": "3.5.6",
+    "version": "3.5.7",
     "private": true,
     "engines": {
         "node": ">=22.0.0 <23.0.0",
@@ -43,7 +43,7 @@
         "test:ci": "jest --runInBand --no-coverage",
         "test:coverage": "jest --coverage",
         "test:all": "jest && playwright test",
-        "typecheck": "tsc --noEmit",
+        "typecheck": "tsc --noEmit && tsc -p tsconfig.scripts.json --noEmit",
         "lint": "cross-env ESLINT_USE_FLAT_CONFIG=true eslint .",
         "count-any": "node scripts/count-any.js",
         "ci:local": "node scripts/ci-local.mjs",
