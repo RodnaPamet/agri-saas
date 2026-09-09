@@ -62,6 +62,27 @@ import { pathToFileURL } from 'node:url';
  * @type {Array<{id: string, package: string, reason: string, review: string}>}
  */
 const REAL_EXEMPT = [
+    {
+        id: 'GHSA-vwc7-r8mq-g2x9',
+        package: 'adm-zip',
+        reason:
+            'Unreachable from application code, and there is nothing to upgrade to. ' +
+            'The advisory needs adm-zip to extract an ATTACKER-CONTROLLED archive ' +
+            '(entries symlinking outside the destination). Measured: the only ' +
+            'require of adm-zip in the tree is ' +
+            'node_modules/onnxruntime-node/script/install-utils.js:11, reached from ' +
+            "that package's `postinstall: node ./script/install` — it unpacks the " +
+            'ONNX native binary from a URL the vendor itself supplies, inside the ' +
+            'build container. onnxruntime-node\'s runtime entry is dist/index.js, ' +
+            'which never requires it; src/app-layer/ai/vision/onnx-provider.ts uses ' +
+            'the package for INFERENCE only. No application path hands adm-zip a ' +
+            'zip. And the range >=0.5.9 <=0.6.0 covers every published version — ' +
+            'latest IS 0.6.0 — so no floor can fix this; the only npm-suggested fix ' +
+            'is onnxruntime-node@1.21.1 with isSemVerMajor:true, a MAJOR DOWNGRADE ' +
+            'of a production ML runtime, which is the shape #800 correctly rejected ' +
+            'for mysql2/prisma. Re-check for a patched adm-zip on the review date.',
+        review: '2026-10-09',
+    },
     // Intentionally empty.
     //
     // The two `image-size` advisories (GHSA-w3rx-r6r6-pgpr,
@@ -268,20 +289,49 @@ const BLOCKING = new Set(['moderate', 'high', 'critical']);
  * a synthetic id, it lands in `unexplained` and fails, which is correct.
  */
 export function findAdvisories(report) {
+    const vulns = report.vulnerabilities ?? {};
     const found = new Map(); // GHSA id → { severity, package }
-    for (const [pkg, v] of Object.entries(report.vulnerabilities ?? {})) {
+    for (const [pkg, v] of Object.entries(vulns)) {
         if (!BLOCKING.has(v.severity)) continue;
+        const via = v.via ?? [];
         let named = false;
-        for (const via of v.via ?? []) {
-            if (typeof via === 'object' && via.url) {
-                const m = via.url.match(/(GHSA-[\w-]+)/);
+        for (const entry of via) {
+            if (typeof entry === 'object' && entry.url) {
+                const m = entry.url.match(/(GHSA-[\w-]+)/);
                 if (m) {
                     found.set(m[1], { severity: v.severity, package: pkg });
                     named = true;
                 }
             }
         }
-        if (!named) found.set(`UNNAMED:${pkg}`, { severity: v.severity, package: pkg });
+        if (named) continue;
+
+        // ── DEPENDENT ROLL-UP, not an unnameable advisory ──
+        //
+        // npm reports a package as vulnerable when a DEPENDENCY of it is, and
+        // spells that with a `via` of plain STRINGS naming those dependencies
+        // — no url, no GHSA id. `onnxruntime-node` via `['adm-zip']` is the
+        // live example. That is not an advisory we failed to name; it is a
+        // pointer to advisories named on their OWN entries in this same
+        // report, which this loop judges independently. Failing the roll-up
+        // as UNNAMED would make an exemption impossible to write: there is no
+        // id to exempt, so a correctly-exempted advisory would still block.
+        //
+        // This CANNOT hide anything, and the guard below is why: the skip
+        // applies only when every referenced package is itself present in
+        // `vulnerabilities`. If `adm-zip` is not exempt, `adm-zip`'s own entry
+        // fails and takes the build with it. If a referent is ABSENT from the
+        // report — a shape this code has never seen — the entry stays UNNAMED
+        // and still fails, because an unresolvable pointer is exactly the
+        // "advisory we cannot name" the docblock above is about.
+        const referents = via.filter((e) => typeof e === 'string');
+        const resolvable =
+            via.length > 0 &&
+            referents.length === via.length &&
+            referents.every((name) => Object.hasOwn(vulns, name));
+        if (resolvable) continue;
+
+        found.set(`UNNAMED:${pkg}`, { severity: v.severity, package: pkg });
     }
     return found;
 }
