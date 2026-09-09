@@ -70,9 +70,17 @@ export const OidcConfigSchema = z.object({
     /**
      * Well-known discovery URL override.
      *
-     * Server-side `fetch` target (`discoverOidc`). Note the pin is a scheme
-     * constraint, NOT an SSRF guard — this path has no host policy at all,
-     * unlike the automation webhook path. Tracked separately.
+     * Server-side `fetch` target (`discoverOidc`). The pin here is a scheme
+     * constraint, not an SSRF guard — but the FETCH is guarded:
+     * `discoverOidc` goes through `fetchPublicUrl`, which applies
+     * `checkWebhookUrl` (the very host policy this comment used to say was
+     * missing — it is shared with the automation webhook path) plus DNS
+     * resolution of the host, re-checked at EVERY redirect hop (#715).
+     *
+     * This said "this path has no host policy at all, unlike the automation
+     * webhook path. Tracked separately." It was true when written (#697,
+     * 2026-08-21) and false the next day (#715, 2026-08-22), then stood for
+     * 18 days pointing at a tracker that never existed.
      */
     discoveryUrl: httpsUrl().optional(),
 });
