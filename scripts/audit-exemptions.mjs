@@ -523,13 +523,14 @@ async function main() {
 // scripts/audit-exemptions.mjs`), guarding against an unconditional
 // `process.exit()` (plus a real `npm audit` shell-out) as a side effect
 // of merely loading the module. `tests/unit/audit-exemptions.test.ts`
-// exercises this script exclusively by spawning it as a subprocess
-// (same convention as `tests/unit/sync-chart-version.test.ts` for
-// `sync-chart-version.mjs`, the other `import.meta.url` CLI script in
-// this repo) rather than importing it — ts-jest's CommonJS transform
-// doesn't support `import.meta`, so a direct `import` from a test fails
-// with "Cannot use import statement outside a module" regardless of
-// which export is consumed.
+// exercises this script exclusively by spawning it as a subprocess rather
+// than importing it — ts-jest's CommonJS transform doesn't support
+// `import.meta`, so a direct `import` from a test fails with "Cannot use
+// import statement outside a module" regardless of which export is
+// consumed. Same convention as
+// `tests/unit/coverage-tooling/coverage-scripts.test.ts`, which drives
+// merge-coverage.mjs, check-coverage-thresholds.mjs and diff-coverage.mjs
+// through `spawnSync`.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
     await main();
 }
