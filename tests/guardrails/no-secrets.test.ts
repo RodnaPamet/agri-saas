@@ -85,11 +85,18 @@ interface KnownHit {
 }
 
 const REPO_BASELINE: readonly KnownHit[] = [
-    // .env.example — placeholder values committed for developer
-    // onboarding. Matches the "Hardcoded Password Assignment" pattern
-    // because lines like `AUTH_SECRET="your-secret-key-here-…"` look
-    // like assignments. They are not real secrets.
-    { file: '.env.example', pattern: 'Hardcoded Password Assignment', reason: 'Developer-onboarding placeholders.' },
+    // .env.example entry removed — its four placeholder literals
+    // (`AUTH_SECRET="your-secret-key-here-…"` and the OAuth client
+    // secrets) now carry inline `pragma: allowlist secret` markers, so
+    // the scanner walks past them without surfacing a baseline entry.
+    // Keeping the entry here would fail the "no stale baseline" check.
+    //
+    // This tightens the gate rather than loosening it: the entry exempted
+    // the whole FILE from that pattern class, whereas the pragmas exempt
+    // four named lines, so a fifth secret-shaped line in .env.example now
+    // surfaces. The pragmas exist because the baseline did not stop the
+    // pre-commit hook — any edit to .env.example failed it, and the only
+    // escape was `--no-verify`, which skips the entire scan.
 
     // Test setup + integration/unit fixtures: every entry below is a
     // synthetic test value (auth secret stubs, encryption keys for

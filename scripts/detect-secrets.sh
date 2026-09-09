@@ -150,7 +150,13 @@ findings=()
 
 # Bash 4 doesn't ship with PCRE, so the patterns above use an inline
 # `(?i)` that grep -P handles. Verify grep supports -P; fall back to
-# `pcre2grep` if available, else case-fold once via tr in a sub-shell.
+# `pcre2grep` if available, else REFUSE — deliberately, and loudly.
+#
+# There is no tr-based fallback. An earlier version of this comment promised
+# one; it never existed, and a secret scanner that silently degrades to a
+# weaker pattern set is worse than one that stops. macOS ships BSD grep with
+# no -P, so `brew install pcre2` is a prerequisite there (see
+# docs/dev-setup-macos.md).
 if echo abc | grep -qP 'a' 2>/dev/null; then
     GREP_CMD=(grep -nP)
 elif command -v pcre2grep >/dev/null 2>&1; then

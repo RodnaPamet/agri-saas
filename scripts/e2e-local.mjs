@@ -35,7 +35,7 @@ if (existsSync(envFile)) {
 
 const TEST_DB_URL = envVars.DATABASE_URL_TEST
     || process.env.DATABASE_URL_TEST
-    || 'postgresql://test:test@localhost:5434/inflect_test?schema=public';
+    || 'postgresql://test:test@localhost:5435/agri_saas_test?schema=public';
 
 const env = {
     ...process.env,
