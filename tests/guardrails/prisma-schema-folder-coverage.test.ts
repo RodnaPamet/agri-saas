@@ -118,14 +118,6 @@ describe('GAP-09 — multi-file Prisma schema layout', () => {
         }
     });
 
-    it('Helm chart migration command targets the folder, not the monolith', () => {
-        const valuesPath = path.join(REPO_ROOT, 'infra/helm/inflect/values.yaml');
-        if (!fs.existsSync(valuesPath)) return; // chart optional in some checkouts
-        const src = fs.readFileSync(valuesPath, 'utf-8');
-        expect(src).toMatch(/--schema=\.\/prisma\/schema(\b|\s|$)/);
-        expect(src).not.toMatch(/--schema=\.\/prisma\/schema\.prisma/);
-    });
-
     it('entrypoint.sh migration command targets the folder', () => {
         const entrypointPath = path.join(REPO_ROOT, 'scripts/entrypoint.sh');
         if (!fs.existsSync(entrypointPath)) return;

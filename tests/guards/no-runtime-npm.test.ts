@@ -21,7 +21,6 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import * as yaml from 'js-yaml';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -52,16 +51,6 @@ describe('no npm in the runtime image', () => {
             .filter((l) => !l.trim().startsWith('#'))
             .filter((l) => /\bnpx\b|\bnpm\b/.test(l));
         expect(offending).toEqual([]);
-    });
-
-    it('the Helm migration Job uses the vendored CLI, not npx', () => {
-        // The Job runs the APP image, so it inherits the missing npm.
-        const values = yaml.load(read('infra/helm/inflect/values.yaml')) as {
-            migration?: { command?: string[] };
-        };
-        const cmd = values.migration?.command ?? [];
-        expect(cmd[0]).toBe('./node_modules/.bin/prisma');
-        expect(cmd).not.toContain('npx');
     });
 
     it('prisma stays a production dependency — the vendored binary depends on it', () => {

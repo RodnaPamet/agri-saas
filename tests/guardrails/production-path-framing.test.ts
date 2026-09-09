@@ -60,10 +60,18 @@ describe('deployment.md names the real production path', () => {
         expect(src).toMatch(/deploy\/docker-compose\.vm\.yml/);
     });
 
-    it('says plainly that the Helm chart is not a deployed path', () => {
+    it('says plainly that the Helm path is not a deployed path', () => {
         const src = readRepoFile(DOC);
-        // The chart is still in the tree (infra/helm). Someone will find it
-        // and assume it ships. The doc has to say otherwise.
-        expect(src).toMatch(/NOT the production path|not a supported path|unused and undeployed/i);
+        // The chart itself is gone now, but the SECTION stays as the
+        // correction record — someone who read the old "primary production
+        // path" framing needs to find out it was wrong, not find silence.
+        expect(src).toMatch(/NOT the production path|never realised|has now been deleted/i);
+    });
+
+    it('the Helm chart is actually gone from the tree', () => {
+        // The doc's claim and the filesystem must agree. A doc saying the
+        // chart was deleted while `infra/helm/` still exists is the same
+        // class of stale claim this file was created to stop.
+        expect(fs.existsSync(path.join(REPO_ROOT, 'infra/helm'))).toBe(false);
     });
 });

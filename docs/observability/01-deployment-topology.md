@@ -53,8 +53,13 @@ the Grafana dashboards are unchanged — co-located vs dedicated-VM is
 a placement decision, not an architecture decision. That is the
 point of keeping it a separate project from day one.
 
-**For the Kubernetes secondary deployment (Helm chart at
-`infra/helm/inflect/`): do not hand-write manifests.** A
+**HISTORICAL — there is no Kubernetes deployment.** The Helm chart at
+`infra/helm/inflect/` was deleted in #810's follow-up alongside the EKS
+workflow and the Terraform beneath it; none of it ever ran. The guidance below
+is kept because the *config re-use* argument still holds if Kubernetes is ever
+revisited, but nothing here is deployed today.
+
+**If a Kubernetes deployment is ever built: do not hand-write manifests.** A
 hand-rolled collector Deployment and a hand-rolled Prometheus
 StatefulSet are a maintenance liability the moment they drift from
 upstream. The recommendation is the community Helm charts:
