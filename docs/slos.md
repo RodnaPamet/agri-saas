@@ -318,7 +318,26 @@ All methods wrapped with `traceRepository(...)` from `src/lib/observability/repo
 
 ### Why 1 hour
 
-Tighter (e.g. 5 minutes) requires synchronous cross-region replication — meaningful infrastructure cost increase + write-latency penalty. Looser (e.g. 24 hours) is unacceptable for a compliance SaaS where audit logs + evidence reviews are the work product. 1 hour reflects the AWS RDS automated-snapshot frequency floor + transaction-log shipping cadence; achievable within the existing OI-1 module without architectural changes.
+Tighter (e.g. 5 minutes) requires synchronous cross-region replication — meaningful infrastructure cost increase + write-latency penalty. Looser (e.g. 24 hours) is unacceptable for a product whose work product is farm records and audit logs: a day of re-entered field operations is a day of work destroyed.
+
+> **The original justification for this number was false, and is
+> corrected here rather than deleted (#842).** It read: *"1 hour
+> reflects the AWS RDS automated-snapshot frequency floor +
+> transaction-log shipping cadence; achievable within the existing OI-1
+> module without architectural changes."* There is no RDS and no OI-1
+> module — the Terraform layer was deleted in #808 and never ran. 1 hour
+> is **not** reachable without an architectural change; it needs
+> continuous WAL archiving to object storage or a managed Postgres.
+>
+> **Both numbers in this document are intended, and neither is a typo.**
+> 1 hour is the target, deliberately retained; up to 24 hours is what
+> the deployment delivers. `docs/backup-restore.md` carries the same
+> pair under "Still open", and `CLAUDE.md` states it a third time.
+> Rewriting the target down to 24 h would make the doc self-consistent
+> by deleting the commitment, which is why nobody has done it — but the
+> decision to keep funding a 1-hour target belongs to whoever owns the
+> roadmap, not to a doc edit. Until it is taken, **operate on 24 hours**:
+> that is the number an incident will hand you.
 
 > **⚠ NOT CURRENTLY MET — the target below is aspirational.**
 > The 1-hour figure was written against an AWS RDS deployment with
@@ -385,31 +404,39 @@ what is deployed.
 
 ### Why 4 hours
 
-Aligns with our compliance customers' standard SLAs (most enterprise SaaS contracts allow 4-hour MTTR for critical incidents). Also matches the realistic floor for a multi-step recovery: detection (alert) + triage (15-30 min) + restore-from-backup (RDS restore is 30-60 min for production-sized data) + smoke testing + DNS / traffic re-routing.
+Aligns with customers' standard SLAs (most enterprise SaaS contracts allow 4-hour MTTR for critical incidents). It also matches the realistic floor for the multi-step recovery this deployment actually requires: notice + triage (15-30 min) + the chosen lever below + smoke testing.
+
+> **Corrected 2026-09-10 (#842).** The original text sized this against
+> "RDS restore is 30-60 min", and the scenario table below listed
+> Kubernetes pod restarts, multi-AZ failover and Secrets Manager. None
+> of that is deployed. The scenarios are rewritten for the single GCE VM
+> that is; the 4-hour target is unchanged and remains reachable, but by
+> different means and with a different worst case.
 
 ### Recovery scenarios mapped to RTO
 
+Procedures for every row: `docs/runbooks/production-vm.md`.
+
 | Scenario | Mechanism | Estimated RTO |
 |---|---|---|
-| Single pod failure | Kubernetes auto-restart | < 1 minute |
-| Single AZ failure | RDS multi-AZ failover (production only) + ALB cross-AZ routing | 60-180 seconds |
-| Bad deploy | `helm rollback` to prior revision | < 5 minutes |
-| App-image bug requiring patched build | Deploy via `Deploy` workflow + build + smoke | 15-30 minutes |
-| RDS instance corruption (single-region) | `restore-db-instance-from-db-snapshot` to new instance, point app's `DATABASE_HOST` at new endpoint | 60-120 minutes |
-| Master KEK loss (within 30-day recovery window) | `aws secretsmanager restore-secret`, redeploy | 15-30 minutes |
-| Master KEK loss (beyond recovery window) | DR rebuild from a backup-encrypted-with-known-KEK; cross-customer notification likely | hours-to-days; may exceed RTO |
-| Regional AWS outage | Manual restore in alternate region from cross-region snapshot copy | 2-4 hours; cross-region replica deployment would shorten this |
+| App or worker container dead / restart-looping | `docker compose restart app worker` on the VM (`restart: always` usually does it unattended) | < 5 minutes |
+| Bad deploy, no migration or an additive one | Pin `app` + `worker` to the previous `sha-<short>` image and re-apply with `deploy/apply.sh`. Watchtower runs `--cleanup`, so the pull is from GHCR, not from a local copy | 10-20 minutes |
+| Bad deploy carrying a **destructive** migration | Apply `deploy/rollback/<migration>.down.sql` against the direct connection, THEN pin the image back. An image-only rollback fails outright here | 20-45 minutes **if the inverse script exists** |
+| Bad structural compose change | Restore the `<file>.bak.<timestamp>` that `deploy/apply.sh` wrote and printed, `up -d` | < 5 minutes |
+| Database corrupt / VM will not boot | New disk from the newest `agrent-daily-snapshot`, attach as boot disk, start | 60-120 minutes **and up to 24 h of data loss** (SLO 6) |
+| Zone outage (`europe-west1-b`) | Snapshots are stored `eu` multi-region: create disk + instance in another zone, re-point DNS. There is no warm standby and no replica | 2-4 hours |
+| `DATA_ENCRYPTION_KEY` loss | The key is in `/opt/agrent/.env` on the same disk as the ciphertext, so a whole-disk restore recovers both. A pgdata-only copy without the key is unrecoverable | with the disk: as above. Without it: **unrecoverable** |
 
 ### Measurement / Verification
 
-- **Detection**: covered by the alert pipeline (Epic OI-3 part 3). Critical alerts page within ~10 seconds of trigger via PagerDuty.
-- **Decision tree + runbook**: `docs/incident-response.md` walks operators through each scenario above.
+- **Detection is the weakest link and is not instrumented.** Verified 2026-09-10: no Prometheus, Grafana, Alertmanager or PagerDuty is deployed, no OTLP exporter is configured on the VM, and the GCP project has zero Cloud Monitoring uptime checks. `infra/alerts/` and `infra/dashboards/` are files nothing runs. **The detection budget inside these 4 hours is therefore unbounded**, and the 4-hour figure should be read as *time-to-restore once someone notices*. Closing this is the highest-leverage change available to SLO 7.
+- **Decision tree + runbook**: `docs/runbooks/production-vm.md` § 2 for the rollback levers; `docs/incident-response.md` for the per-symptom playbooks (read its banner first — several still describe undeployed infrastructure).
 - **Restore mechanism validation**: the monthly `restore-test-gcp.sh` exercises the snapshot-restore path end-to-end — disk from snapshot, VM, real Postgres, validation battery, teardown.
 - The 4-hour SLA is the SUM of detection + triage + recovery time; the budget allocation per stage is documented in `docs/incident-response.md` § "Severity definitions".
 
 ### Risk
 
-The RTO assumes operator availability at the time of the incident. Out-of-hours incidents extend MTTR by the on-call response time (typically 15 minutes via PagerDuty). The 4-hour SLA accommodates this; tighter targets would require follow-the-sun on-call coverage (out of scope for OI-3).
+The RTO assumes operator availability at the time of the incident — and, given the detection gap above, that someone *notices*. There is no rota and no pager: out-of-hours, MTTR is bounded by when a human next looks. The 4-hour figure is achievable for every mechanism in the table once triage starts; it is the interval before triage starts that is unmeasured.
 
 ---
 
@@ -424,7 +451,7 @@ The RTO assumes operator availability at the time of the incident. Out-of-hours 
 | Health Check Availability | ≥ 99.95% | 7 days | Synthetic probe of `/api/livez` |
 | Repository Latency (P95) | < 100ms | 7 days | `repo_method_duration` (OI-3 part 2) |
 | RPO (Recovery Point) | ≤ 1 hour *(target; **24h achieved** — see SLO 6)* | continuous | Daily GCE disk snapshot + monthly `restore-test-gcp.sh` |
-| RTO (Recovery Time) | ≤ 4 hours | per incident | `deploy/apply.sh` rollback / disk-from-snapshot / runbook |
+| RTO (Recovery Time) | ≤ 4 hours *(time-to-restore; detection is not instrumented — see SLO 7)* | per incident | Image pin + `deploy/apply.sh` / `deploy/rollback/*.down.sql` / disk-from-snapshot — `docs/runbooks/production-vm.md` |
 
 ---
 
@@ -749,5 +776,6 @@ App (metrics.ts)
 | Date | Change |
 |---|---|
 | 2026-04-18 | Initial SLO definitions (Epic 19 Phase 2) |
-| 2026-04-27 | Epic OI-3: split SLO 2 into reads (<500ms) and writes (<1000ms); add SLO 5 (repository P95 from `repo_method_*` metrics); add SLO 6 (RPO 1h, met by RDS PITR + monthly `restore-test.sh`); add SLO 7 (RTO 4h, met by `helm rollback` / `restore-db-instance` paths documented in `docs/incident-response.md`) |
+| 2026-04-27 | Epic OI-3: split SLO 2 into reads (<500ms) and writes (<1000ms); add SLO 5 (repository P95 from `repo_method_*` metrics); add SLO 6 (RPO 1h, claimed met by RDS point-in-time recovery + a monthly `restore-test.sh`); add SLO 7 (RTO 4h, claimed met by Helm-release-rollback / AWS RDS snapshot-restore paths documented in `docs/incident-response.md`). **None of that infrastructure was ever provisioned** — see the 2026-08-01 and 2026-09-10 rows. |
+| 2026-09-10 | **#842** — rewrote SLO 7's recovery scenarios for the single GCE VM (image pin, `deploy/rollback/*.down.sql`, disk-from-snapshot) and removed the Helm/AWS commands that `tests/guards/oi-3-runbook-and-slos.test.ts` had been REQUIRING by exact match; recorded that SLO 7's detection budget is uninstrumented; corrected SLO 6's "why 1 hour" rationale, which rested on RDS. **The 1 h target and the 24 h achieved figure are both unchanged and both intended** — see SLO 6. New companion: `docs/runbooks/production-vm.md`. |
 | 2026-04-28 | Added Load-Test Validation section: k6 scenario → SLO mapping, CI smoke vs full-baseline thresholds, operating procedure (GAP-11 closure). |

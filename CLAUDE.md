@@ -83,6 +83,15 @@ against the VM (run it weekly); a mismatch means the VM was hand-edited
 `deploy/env.prod.example` lists the prod-required env keys (parity with
 `src/env.ts` is guarded by `tests/guardrails/deploy-env-parity.test.ts`).
 
+**The operator runbook is `docs/runbooks/production-vm.md`** — the four
+axes (deploy, rollback, scaling, backup/restore) with commands verified
+against the running VM, and an inventory of what this deployment does
+NOT have, because several docs still describe an EKS/AWS stack that was
+never provisioned. `docs/incident-response.md` carries per-symptom
+playbooks; read its banner first — only §1 and §6 have been corrected.
+`tests/guardrails/vm-runbook-commands.test.ts` holds the runbook,
+including a derived check that every repo path it names exists.
+
 **When a runtime change must be applied to the VM** — a one-off job run,
 inspecting container logs, a manual restart — execute it directly via
 `gcloud compute ssh`; do not ask the operator to do it by hand. But a

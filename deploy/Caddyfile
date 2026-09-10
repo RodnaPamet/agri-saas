@@ -1,8 +1,17 @@
 #
 # Caddy reverse proxy for agrent.
-# The site domain (e.g. 35-187-80-26.sslip.io) is substituted by the deploy
-# script once the VM's external IP is known (pattern: <ip-with-dashes>.sslip.io).
-# Let's Encrypt issues a cert automatically on first request.
+#
+# NOTE (#842): `deploy/apply.sh` copies ONLY docker-compose.vm.yml to the VM,
+# and `deploy/check-drift.sh` hashes only that file — so this Caddyfile is
+# NOT synchronised and NOT drift-checked. The live copy at
+# /opt/agrent/Caddyfile is edited on the VM. This file is the record of what
+# it should contain; reconcile changes in BOTH directions by hand.
+#
+# Reconciled from the VM 2026-09-10: the live site block serves the custom
+# domain `app.agrent.bg` alongside the sslip.io host, which this file was
+# missing. It also sets ACME_EMAIL in the environment, overriding the default
+# below. Let's Encrypt issues a cert automatically on first request for each
+# name in the site block.
 #
 
 {
@@ -11,7 +20,7 @@
     email {$ACME_EMAIL:admin@agrent.bg}
 }
 
-35-187-80-26.sslip.io {
+35-187-80-26.sslip.io, app.agrent.bg {
     encode gzip zstd
 
     # Client-body limit roughly matches FILE_MAX_SIZE_BYTES above.

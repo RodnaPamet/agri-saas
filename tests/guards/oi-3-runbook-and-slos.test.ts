@@ -12,6 +12,27 @@
  *     command path that drives it
  *   - The runbook's "Operational alignment" section names every
  *     prior epic's deliverable that it depends on
+ *
+ * ── RE-POINTED 2026-09-10 (#842) ──────────────────────────────────
+ *
+ * Three assertions in this file used to REQUIRE, by exact match, the
+ * Helm-release rollback commands and the AWS RDS restore command — in
+ * `docs/incident-response.md`, the document that is read DURING an
+ * incident, and in `docs/slos.md`'s RTO scenarios. There is no chart
+ * (deleted in #848), no Helm release, no cluster and no RDS. So the
+ * suite was green, and correcting either doc would have turned it red:
+ * exactly the GAP-12 shape #840 removed from `deployment.md`, one
+ * document over.
+ *
+ * The reason these assertions exist is sound — an incident runbook
+ * must contain a rollback playbook, and an RTO target must name the
+ * mechanism that meets it. Only the answers were wrong. They now
+ * assert the VM path AND the absence of the impossible instruction,
+ * so drifting back is what turns them red.
+ *
+ * A green test is evidence the doc matches the assertion, never that
+ * the assertion matches reality. These describe claims about the
+ * world; re-check them against the world, not just against the doc.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -66,6 +87,23 @@ describe('OI-3 — SLOs (docs/slos.md)', () => {
         expect(src).toMatch(/Service\s+restored\s+within\s+4\s+hours/i);
     });
 
+    it('RPO discloses the ACHIEVED figure next to the target', () => {
+        const src = read(SLO_DOC);
+        // #842. The assertion above locks the 1-hour TARGET. On its own
+        // that is half a ratchet: a future edit could delete the
+        // disclosure that the deployment delivers up to 24h and stay
+        // green, leaving a reader planning an incident around a number
+        // no backup can produce. Both halves are load-bearing.
+        const slo6 = src.split('## SLO 6: RPO')[1]?.split('## SLO 7:')[0];
+        expect(slo6).toBeDefined();
+        expect(slo6.length).toBeGreaterThan(1000); // positive control
+        expect(slo6).toMatch(/NOT CURRENTLY MET|not met|aspirational/i);
+        expect(slo6).toMatch(/up to\s+\*?\*?24\*?\*?\s+hours|24h/i);
+        // And it must say what closing the gap would take, so "why is
+        // this still open?" is answerable without re-deriving it.
+        expect(slo6).toMatch(/WAL|continuous archiving|managed Postgres/i);
+    });
+
     it('RPO is verified by the monthly restore-test.sh', () => {
         const src = read(SLO_DOC);
         // The restore-test script (OI-3 part 4) is the canonical
@@ -75,13 +113,29 @@ describe('OI-3 — SLOs (docs/slos.md)', () => {
         expect(src).toMatch(/restore-test\.sh/);
     });
 
-    it('RTO scenarios reference the actual recovery commands', () => {
+    it('RTO scenarios reference the recovery levers this deployment actually has', () => {
         const src = read(SLO_DOC);
-        // helm rollback, restore-db-instance — both must appear by
-        // exact-name, since they're the canonical commands an
-        // operator runs.
-        expect(src).toMatch(/helm rollback/);
-        expect(src).toMatch(/restore-db-instance/);
+        // #842: was `helm rollback` + `restore-db-instance`. Neither
+        // exists. The three real levers, worst case last:
+        expect(src).toMatch(/deploy\/apply\.sh/);
+        expect(src).toMatch(/deploy\/rollback\/\*?\.?down\.sql|deploy\/rollback\/<migration>\.down\.sql/);
+        expect(src).toMatch(/agrent-daily-snapshot/);
+        // ...and the runbook that carries the procedures.
+        expect(src).toMatch(/docs\/runbooks\/production-vm\.md/);
+    });
+
+    it('RTO scenarios do NOT instruct an operator toward a cluster or an AWS account', () => {
+        const src = read(SLO_DOC);
+        const rto = src.split('## SLO 7: RTO')[1];
+        // Positive control: the section must exist and be substantial,
+        // or every `not.toMatch` below passes vacuously.
+        expect(rto).toBeDefined();
+        expect(rto.length).toBeGreaterThan(1000);
+        // The runnable falsehoods. A prose mention inside the
+        // correction note is fine and deliberate; a COMMAND is not.
+        expect(rto).not.toMatch(/`?helm rollback`?\s/);
+        expect(rto).not.toMatch(/restore-db-instance/);
+        expect(rto).not.toMatch(/aws secretsmanager/);
     });
 
     it('declares the repository SLO that uses OI-3 part 2 metrics', () => {
@@ -173,20 +227,51 @@ describe('OI-3 — Incident response runbook (docs/incident-response.md)', () =>
         expect(src).toMatch(/curl[^`]*\/api\/livez/);
     });
 
-    it('Rollback playbook uses helm rollback with explicit revision history', () => {
+    it('Rollback playbook gives the VM rollback path, with the image tag and the apply script', () => {
         const src = read(DOC);
-        expect(src).toMatch(/helm history inflect-production/);
-        expect(src).toMatch(/helm rollback inflect-production/);
-        expect(src).toMatch(/--namespace inflect-production/);
+        const rollback = src.split('## 6. Rollback')[1]?.split('## 7. Data Breach')[0];
+        // Positive control — an empty or renamed section must fail here,
+        // not sail through the assertions below.
+        expect(rollback).toBeDefined();
+        expect(rollback.length).toBeGreaterThan(2000);
+        // The image pin: which registry, which tag shape, applied how.
+        expect(rollback).toMatch(/ghcr\.io\/rodnapamet\/agri-saas/);
+        expect(rollback).toMatch(/sha-<short>|sha-\w+/);
+        expect(rollback).toMatch(/deploy\/apply\.sh/);
+        // The schema half — the reason a pin alone is not a rollback.
+        expect(rollback).toMatch(/deploy\/rollback\//);
+        // And how to tell whether you are on the intended build.
+        expect(rollback).toMatch(/\/api\/readyz/);
     });
 
-    it('Rollback playbook documents the migration-Job-not-re-run-on-rollback caveat', () => {
+    it('Rollback playbook does NOT instruct on-call to roll back a Helm release', () => {
+        const src = read(DOC);
+        // #842 — the exact strings this file used to REQUIRE. There is
+        // no chart, no release and no cluster for them to address, and
+        // this is the document someone reads under time pressure.
+        //
+        // Scoped to the RUNNABLE release-named form on purpose: the
+        // "Operational alignment" table still names `helm rollback` in
+        // a struck-through correction row, which is a record of what
+        // was wrong, not an instruction. Sections 2-5 still carry
+        // uncorrected EKS triage and are flagged by the doc's banner;
+        // they are tracked separately, not silently tolerated here.
+        expect(src).not.toMatch(/helm\s+(history|rollback)\s+inflect-production/);
+    });
+
+    it('Rollback playbook documents that an image rollback leaves the schema migrated', () => {
         const src = read(DOC);
         // expand-and-contract is THE mitigation. Without this the
         // rollback playbook is unsafe.
         expect(src.toLowerCase()).toMatch(/expand[\s-]and[\s-]contract/);
-        // Migration Job is one-way
-        expect(src).toMatch(/migration Job is one-way|hooks?\s+are\s+\*?\*?NOT\*?\*?\s+re-run|NOT.{1,5}re-run on rollback/i);
+        // #842: the old alternation described a Helm pre-upgrade Job.
+        // The real mechanism is the container entrypoint — which is
+        // why shipping an image is what applies a migration, and why
+        // pinning the image back does not un-apply it.
+        expect(src).toMatch(/entrypoint\.sh/);
+        expect(src).toMatch(/prisma migrate deploy/);
+        expect(src).toMatch(/shipping an image is what applies a migration/i);
+        expect(src).toMatch(/one-way|fails outright|NOT reverted/i);
     });
 
     it('Database Unavailable playbook covers PgBouncer pool inspection', () => {
