@@ -46,9 +46,11 @@
  * eleven waivers never written.
  *
  * A guard that arrives already-failing gets skipped, and this repo has a
- * documented history of exactly that (see `.trivyignore`'s eight dead
- * entries, and the coverage job that could only ever detect a regression
- * after the merge). So today's findings are written down, one
+ * documented history of exactly that: the eight dead `.trivyignore`
+ * exemptions #647 deleted (that file now carries none — see
+ * docs/implementation-notes/2026-08-20-trivyignore-staleness-guard.md), and
+ * the coverage job that could only ever detect a regression after the
+ * merge. So today's findings are written down, one
  * per entry, each with a REASON and a REVIEW date — the
  * `scripts/audit-exemptions.mjs` idiom, including its two sharp rules:
  *

@@ -1,6 +1,10 @@
 # 2026-09-10 — the structural overrides-decay guard
 
-**Commit:** `<pending> feat(deps): structural overrides-decay guard, offline and waivered`
+**Commits:** `<pending> feat(deps): structural overrides-decay guard, offline and waivered`
+and `<pending> fix(deps): rebase the overrides guard onto the dependency fix,
+retune its floor` — the branch merges
+`fix/typescript-eslint-and-picomatch-floors` before it lands, for the reason
+in "Rebased onto the dependency fix" below.
 
 ## Design
 
@@ -90,15 +94,16 @@ requester pinned exactly).
 
 - **D reports two shapes, not "admits any excluded version".** The literal
   reading was implemented and measured first: it fires on **14 of the 39**
-  entries — every legitimate security floor in `dependency-policy.md`,
+  entries in the pre-fix tree (re-measured after the merge: **9 of the 34**
+  that remain) — every legitimate security floor in `dependency-policy.md`,
   because forcing `uuid@^11.1.1` past `next-auth`'s `^8.3.2` *is* what a
   floor does. A rule that must waive a third of its own subject on day one
   teaches people to add waivers. RELAXATION and PIN-BREAK are the subset of
   that reading which is never what an override is for, and they still catch
   both cases the brief named: the `@typescript-eslint/*` family (below
   `eslint-plugin@8.70.0`'s exact sibling pins and its `parser: ^8.70.0`
-  peer) and `postcss` (`$postcss` → `^8.5.28` against `next`'s exact
-  `8.5.23`).
+  peer — since fixed, see below) and `postcss` (`$postcss` → `^8.5.28`
+  against `next`'s exact `8.5.23`, still live).
 
 - **`$name` entries are exempt from C by construction, and the exemption is
   load-bearing.** `tests/guards/overrides-no-direct-dep-conflict.test.ts`
@@ -114,30 +119,34 @@ requester pinned exactly).
   mechanical Dependabot bumps would train people to delete entries without
   reading them, which is the failure mode the ledger exists to prevent.
 
-- **31 findings shipped as waivers rather than as fixes.** Every check is
-  red on today's tree, and a guard that arrives already-failing gets
-  skipped — `.trivyignore`'s eight dead entries and the post-merge-only
-  coverage job are both in this repo's history. The two dependency fixes the
-  guard surfaces (raise the five `@typescript-eslint` floors and
-  `picomatch`; delete the twelve dead `@visx/*` subkeys and `npm: {undici}`)
-  are deliberately **not** in this diff: a guard that also moves the thing it
-  measures cannot be reviewed, and the second of those touches
-  `package.json` on a checkout another session shares.
+- **20 findings shipped as waivers rather than as fixes** (31 when the guard
+  was written; 11 of them stopped being produced once the dependency fix was
+  merged in — see below). Every check is still red, and a guard that arrives
+  already-failing gets skipped — the eight dead `.trivyignore` entries #647
+  deleted and the post-merge-only coverage job are both in this repo's
+  history. The remaining dependency fix the guard surfaces — delete the
+  twelve dead `@visx/*` subkeys and `npm: {undici}` — is deliberately **not**
+  in this diff: a guard that also moves the thing it measures cannot be
+  reviewed, and that edit touches `package.json` on a checkout another
+  session shares. It is dated 2026-10-16 in `WAIVERS`.
 
 - **Unparseable ranges are collected, not skipped.** Both C and D fail
   toward green on a range they cannot parse — C must prove *all* requesters
   are subsets, D must prove a specific relation. That is exactly the shape
   that rots into a tautology, so `unparseableRanges` is returned and the
-  guard asserts it is empty (it is, across 2,101 lockfile entries).
+  guard asserts it is empty (it is, across 2,097 lockfile entries).
 
 - **Positive controls on every selection.** An empty selection passes every
   rule here. So the guard asserts, before trusting any verdict: the
-  overrides block is non-trivial (>5 keys, >40 flattened edges); the
+  overrides block is non-trivial (>5 keys, >25 flattened edges); the
   lockfile scanner resolves a package that is definitely installed; the
   requester scanner finds `next`'s declared `postcss` edge; check B leaves
   `@visx/axis > react`, `@visx/tooltip > react-dom` and `next-auth > next`
   green; and at least twelve override keys are covered and **clean** rather
-  than merely waived.
+  than merely waived. The edge floor is deliberately set *below* the pending
+  `@visx` deletion (which takes 46 edges to 33), because a population floor
+  that the very fix this file schedules would turn red is the same trap as
+  counting findings — see below.
 
 - **What this does not cover, said in the doc rather than left implied.** It
   would not have caught the 2026-07-25 or #853 re-floors themselves — those
@@ -147,3 +156,67 @@ requester pinned exactly).
   override while three nested entries floor the other three copies). That
   fifth check is decidable and was measured — two findings, `js-yaml` and
   `undici` — but was left out rather than shipped shaky.
+
+## Rebased onto the dependency fix
+
+The guard was written against a tree where five per-package
+`@typescript-eslint` overrides sat at `^8.61.0` and `picomatch` at `^4.0.4`.
+`fix/typescript-eslint-and-picomatch-floors` retires the five and raises
+picomatch, which stops **eleven** of the 31 findings being produced — and a
+stale waiver fails this build by design. So that branch is merged in here
+first (merge, not rebase: the lane rule is never force-push) and the eleven
+waivers are deleted rather than re-dated. Verified by running the guard, not
+by reading the fix: `staleWaivers` named exactly those eleven, and reverting
+the fix in `package.json` turns the guard red with exactly those eleven
+findings, unwaived.
+
+### The anti-vacuity floor is no longer a count
+
+`expect(analysis.findings.length).toBeGreaterThan(20)` was the assertion
+that the guard cannot silently start finding nothing. The merge took the
+count to exactly 20, so it failed — and lowering it to 19 would have been
+the wrong repair twice over:
+
+1. **It ratchets against the fix.** Every waiver retired removes a finding,
+   so the number only falls as the work goes right. It went red on a change
+   that fixed six overrides entries; 19 re-arms the same trap one fix later,
+   and an assertion whose failure mode is "somebody fixed something" teaches
+   the reader to edit the assertion.
+2. **A total cannot say WHICH check is alive.** 13 of the 20 findings are
+   check B. Measured: neutering check A alone leaves the whole waiver
+   bookkeeping silent — the two `DORMANT_FLOORS` entries that answer A have
+   no staleness rule of their own — so a count set anywhere under 20 calls a
+   dead check green.
+
+It is replaced by four live proofs, one per check: the real `package.json`
+and `package-lock.json` plus one injected defect, red on A, B, C and D. B and
+C are new (a `next-auth` subkey on an edge next-auth does not declare; the
+clean `nwsapi` ceiling widened until it restates jsdom's own range, with an
+assertion that the *unmutated* entry is not reported). That floor does not
+decay as the waiver list shrinks — it still holds when the tree is entirely
+clean.
+
+### Review dates re-argued
+
+The twelve dead `@visx` subkeys, `npm > undici` and `@hono/node-server` move
+to **2026-10-16**: each is a `package.json` deletion that cannot change
+resolution, or a documentation row somebody can write today. The identical
+"next dependency PR" argument dated the `@typescript-eslint` and `picomatch`
+waivers 2026-10-16 and that PR landed five weeks early, so the easier change
+does not get the later date. `find-my-way`, `nanoid`, `postcss`,
+`deepmerge-ts` and `mysql2` keep **2026-12-11** — each needs a decision
+somebody has to make first — and `hono` keeps **2027-01-16** as a periodic
+re-read of a recorded advisory. The horizons are written into the guard so
+the next reader inherits the argument and not just the dates.
+
+### One defect found while proving the above
+
+`expired()` read the live lists, so both of its fixtures depended on this
+file still having entries in it — and the list is supposed to reach zero.
+The day the last waiver is retired, "flags an entry whose review date has
+passed" goes red with nothing wrong with the tree, and the obvious repair is
+to delete the rule that makes the list shrink. `entries` is now a parameter
+defaulting to the live lists; proven by emptying both lists (old fixture
+fails, new synthetic one passes). The pair now also pins the
+`audit-exemptions.mjs` boundary: due ON the review date, overdue the day
+after.
