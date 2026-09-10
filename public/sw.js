@@ -115,9 +115,16 @@ function isRscRequest(request, url) {
  */
 function isRscPrefetch(request) {
     const headers = request.headers;
+    // PRESENCE, not equality. Next emits THREE values for this header —
+    // node_modules/next/dist/client/components/segment-cache/cache.js:1972,
+    // :1977 and :1982 set '2', '3' and '1' respectively. An `=== '1'` test
+    // therefore stores the '2'/'3' payloads as if they were navigations, and
+    // then skips them during eviction, which is the failure this predicate
+    // exists to prevent — silently, and only once PPR-style prefetching is in
+    // play.
     return (
-        headers.get('Next-Router-Prefetch') === '1' ||
-        Boolean(headers.get('Next-Router-Segment-Prefetch'))
+        headers.get('Next-Router-Prefetch') !== null ||
+        headers.get('Next-Router-Segment-Prefetch') !== null
     );
 }
 
@@ -170,10 +177,23 @@ async function networkFirstRsc(request) {
         }
         return res;
     } catch (err) {
-        const exact = await cache.match(request, { ignoreVary: true });
-        if (exact) return exact;
-        const loose = await cache.match(request, { ignoreSearch: true, ignoreVary: true });
-        if (loose) return loose;
+        // NEWEST match, not the oldest. `Cache.match()` resolves to
+        // `matchAll()[0]` and the Query Cache walks its request/response list
+        // in INSERTION order, so the first entry wins — and Next prefetches on
+        // link render and navigates on tap, which means the PREFETCH entry is
+        // always the older one. `match()` would therefore hand back a partial
+        // tree whenever both exist for a URL.
+        //
+        // dropPrefetchRscEntries() also prevents that, but it leans on
+        // `Cache.keys()` preserving request headers, which is not something to
+        // stake the operator's screen on in WebKit. This does not depend on it:
+        // the navigation entry is `put` after the prefetch entry by
+        // construction, so the last match is the right one either way. It also
+        // picks the freshest of several navigation payloads for one pathname.
+        const exact = await cache.matchAll(request, { ignoreVary: true });
+        if (exact.length > 0) return exact[exact.length - 1];
+        const loose = await cache.matchAll(request, { ignoreSearch: true, ignoreVary: true });
+        if (loose.length > 0) return loose[loose.length - 1];
         throw err;
     }
 }
@@ -200,13 +220,41 @@ function isShellFallbackEligible(url) {
  *                  whole class of offline bug in this worker has been an
  *                  absence dressed up as an answer.
  */
-function offlineDocument(launch) {
+/**
+ * Belt-and-braces. `URL.pathname` percent-encodes `<` and `&` before this ever
+ * sees them — verified: `new URL('https://x/a/<img>').pathname` is
+ * `/a/%3Cimg%3E` — so there is deliberately NO test for this, because any test
+ * would pass whether or not the function existed. It stays because the
+ * argument is a plain string parameter and a future caller need not be a
+ * pathname.
+ */
+function escapeHtml(value) {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function offlineDocument(launch, pathname) {
+    // The path is ON THE PAGE deliberately. Both flavours of this document
+    // looked identical from a photograph, so "the app would not launch" and
+    // "that one screen was not cached" were the same screenshot — and telling
+    // them apart cost a whole round-trip to a person standing in a field.
+    // It is also just honest: naming the screen that is missing is more useful
+    // to the operator than saying "this screen".
+    const where = pathname
+        ? '<p style="opacity:.5;font-size:12px;margin-top:24px;font-family:ui-monospace,monospace;word-break:break-all">' +
+          escapeHtml(pathname) +
+          '</p>'
+        : '';
     const body = launch
         ? '<h1 style="color:#86efac">Offline</h1><p>You\u2019re offline. Marked jobs are queued and will sync when you reconnect.</p>'
         : '<h1 style="color:#86efac">Not saved for offline</h1><p>This screen wasn\u2019t opened while you had signal, so there is nothing stored to show.</p><p>Marked jobs are still queued and will sync when you reconnect.</p><p style="margin-top:24px"><a href="/tenants" style="color:#86efac">Back to the app</a></p>';
     return new Response(
         '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Offline</title><body style="font-family:system-ui;background:#0b1220;color:#e5e7eb;display:grid;place-items:center;height:100vh;margin:0"><div style="text-align:center;padding:0 24px;max-width:32rem">' +
             body +
+            where +
             '</div></body>',
         { headers: { 'Content-Type': 'text/html; charset=utf-8' } },
     );
@@ -242,30 +290,56 @@ self.addEventListener('install', (event) => {
     );
 });
 
+/**
+ * Drop ONLY the prefetch-shaped entries from the RSC bucket.
+ *
+ * #871 stored prefetch payloads alongside navigation payloads; the Cache API
+ * kept them apart by `Vary`, which #880 deliberately stopped honouring. A
+ * partial prefetch tree served for a real navigation renders half a page, so
+ * those entries have to go.
+ *
+ * What must NOT go is the whole bucket, and that mistake is the reason this
+ * function exists. #880 purged RSC_CACHE on every activate, reasoning that
+ * flight payloads are build-scoped. Two things were wrong with it:
+ *
+ *   - `activate` fires when THIS FILE changes, not when the app is rebuilt —
+ *     18 of the last 200 commits touched public/sw.js. So it never was a
+ *     staleness control; `networkFirstRsc` is network-first and rewrites every
+ *     entry the next time there is signal, which is the real one.
+ *   - It ran at precisely the wrong moment. The worker does not `skipWaiting`,
+ *     so it activates on a LATER launch than the one that installed it —
+ *     measured on an iPhone 2026-09-11: the operator relaunched with signal,
+ *     opened a task to cache it, force-quit, then relaunched in airplane mode.
+ *     THAT launch is where the new worker activated, and the purge deleted the
+ *     payload the operator had just gone and fetched. They got "Not saved for
+ *     offline" for a screen they had saved sixty seconds earlier.
+ *
+ * `Cache.keys()` returns the stored REQUESTS with their headers, so the same
+ * predicate that decides what to store decides what to evict. Idempotent: once
+ * networkFirstRsc stops storing prefetches, later activations find nothing.
+ */
+async function dropPrefetchRscEntries() {
+    try {
+        const cache = await caches.open(RSC_CACHE);
+        const keys = await cache.keys();
+        const stale = keys.filter((req) => isRscPrefetch(req));
+        await Promise.all(stale.map((req) => cache.delete(req)));
+    } catch (err) {
+        // Never let a cleanup failure block activation.
+        console.warn('[sw] prefetch RSC cleanup failed', err);
+    }
+}
+
 self.addEventListener('activate', (event) => {
     event.waitUntil(
         caches
             .keys()
             .then((keys) =>
                 Promise.all(
-                    keys
-                        // Old CACHE_VERSION buckets, plus the RSC bucket every
-                        // time. Flight payloads are BUILD-SCOPED: a new worker
-                        // means a new build, and handing this build's router a
-                        // payload serialised by the last one is a fresh way to
-                        // break navigation. They cost one network round-trip to
-                        // refill, so there is nothing to protect here — unlike
-                        // DATA_CACHE and BASEMAP_CACHE, which hold the
-                        // operator's own downloaded farm and must survive.
-                        //
-                        // This also clears the prefetch payloads #871 stored
-                        // before networkFirstRsc learned to skip them, which
-                        // `ignoreVary` would otherwise start serving for real
-                        // navigations.
-                        .filter((k) => !k.startsWith(CACHE_VERSION) || k === RSC_CACHE)
-                        .map((k) => caches.delete(k)),
+                    keys.filter((k) => !k.startsWith(CACHE_VERSION)).map((k) => caches.delete(k)),
                 ),
             )
+            .then(() => dropPrefetchRscEntries())
             .then(() => self.clients.claim()),
     );
 });
@@ -273,7 +347,15 @@ self.addEventListener('activate', (event) => {
 function isStaticAsset(url) {
     return (
         url.pathname.startsWith('/_next/static/') ||
-        /\.(?:css|js|woff2?|ttf|svg|png|jpg|jpeg|gif|webp|ico)$/.test(url.pathname)
+        // `m?js` deliberately: MapLibre v6 boots its worker from the real path
+        // /maplibre/maplibre-gl-worker.mjs (see MapCanvas.tsx's workerUrl note),
+        // which is not under /_next/static/. Matching only `js` left it
+        // uncached, so offline the map — 60vh of the operator's screen on a
+        // phone — was an empty rectangle with no spinner, icon or error, since
+        // MapCanvas registers no onError. Its maplibre-gl-shared.mjs sibling
+        // has the same problem. STATIC_CACHE_MAX_ENTRIES is a COUNT, so two
+        // more entries cost nothing.
+        /\.(?:css|m?js|woff2?|ttf|svg|png|jpg|jpeg|gif|webp|ico)$/.test(url.pathname)
     );
 }
 
@@ -597,7 +679,7 @@ self.addEventListener('fetch', (event) => {
                         }
                     }
 
-                    return offlineDocument(isShellFallbackEligible(url));
+                    return offlineDocument(isShellFallbackEligible(url), url.pathname);
                 }),
         );
     }

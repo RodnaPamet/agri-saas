@@ -66,13 +66,39 @@ class VaryCache {
         return hit ? { _served: hit.url, _body: hit.body } : undefined;
     }
 
+    // Insertion order, ALL matches — this is what Cache.match() returns [0] of.
+    async matchAll(
+        req: { url: string; headers: { get(k: string): string | null } },
+        opts?: { ignoreSearch?: boolean; ignoreVary?: boolean },
+    ) {
+        const ok = (e: Entry) => opts?.ignoreVary || this.varyAgrees(e, req);
+        const same = opts?.ignoreSearch
+            ? (e: Entry) => e.url.split('?')[0] === req.url.split('?')[0]
+            : (e: Entry) => e.url === req.url;
+        return this.entries.filter((e) => same(e) && ok(e)).map((e) => ({ _served: e.url, _body: e.body }));
+    }
+
     async put(req: { url: string; headers: { get(k: string): string | null } }, res: { _body?: string }) {
         const vary: Headers = {};
         for (const h of NEXT_VARY) vary[h] = req.headers.get(h);
         this.entries = this.entries.filter((e) => !(e.url === req.url && this.varyAgrees(e, req)));
         this.entries.push({ url: req.url, vary, body: res._body ?? 'flight' });
     }
-    async delete() { return true; }
+    // A stub returning true without removing anything is a double that cannot
+    // produce the failing input: it reported an eviction that never happened.
+    async delete(
+        req?: { url: string; headers: { get(k: string): string | null } },
+        opts?: { ignoreSearch?: boolean; ignoreVary?: boolean },
+    ) {
+        if (!req) return false;
+        const before = this.entries.length;
+        const ok = (e: Entry) => opts?.ignoreVary || this.varyAgrees(e, req);
+        const same = opts?.ignoreSearch
+            ? (e: Entry) => e.url.split('?')[0] === req.url.split('?')[0]
+            : (e: Entry) => e.url === req.url;
+        this.entries = this.entries.filter((e) => !(same(e) && ok(e)));
+        return this.entries.length < before;
+    }
 }
 
 class FakeResponse {
@@ -101,11 +127,14 @@ function loadWorker(opts: WorkerOpts) {
         registration: {},
         location: { origin: 'https://app.test' },
     };
+    // Pre-instantiate seeded buckets. Creating them lazily made "never opened"
+    // and "opened and emptied" the same observation, so a mutation could go red
+    // for a reason unrelated to the behaviour under test.
+    if (opts.rscSeed) buckets['agrent-v1-rsc'] = new VaryCache(opts.rscSeed);
+    if (opts.pageSeed) buckets['agrent-v1-pages'] = new VaryCache(opts.pageSeed);
     const caches = {
         open: async (name: string) => {
-            buckets[name] ??= new VaryCache(
-                name.endsWith('-rsc') ? opts.rscSeed ?? [] : name.endsWith('-pages') ? opts.pageSeed ?? [] : [],
-            );
+            buckets[name] ??= new VaryCache([]);
             return buckets[name];
         },
         keys: async () => opts.cacheNames ?? [],
@@ -146,6 +175,9 @@ async function dispatch(w: Worker, request: unknown) {
 
 const flight = (url: string, h: Headers = {}) =>
     ({ url, method: 'GET', mode: 'cors', headers: headersFor({ RSC: '1', ...h }) });
+
+const asset = (url: string) =>
+    ({ url, method: 'GET', mode: 'cors', headers: headersFor({}) });
 
 const navigation = (url: string) =>
     ({ url, method: 'GET', mode: 'navigate', headers: headersFor({}) });
@@ -214,6 +246,17 @@ describe('a prefetch payload is served but never stored', () => {
         expect(w.buckets['agrent-v1-rsc']?.entries ?? []).toHaveLength(0);
     });
 
+    it.each(['1', '2', '3'])('does not store a prefetch with Next-Router-Prefetch: %s', async (v) => {
+        // PRESENCE, not equality. Next emits three values —
+        // node_modules/next/dist/client/components/segment-cache/cache.js:1972,
+        // :1977, :1982 set '2', '3' and '1'. #880 tested `=== '1'`, which would
+        // have stored the '2'/'3' payloads as navigations and then skipped them
+        // during eviction — the exact failure the predicate exists to prevent.
+        const w = loadWorker({ online: true });
+        await dispatch(w, flight(TASK, { 'Next-Router-Prefetch': v }));
+        expect(w.buckets['agrent-v1-rsc']?.entries ?? []).toHaveLength(0);
+    });
+
     it('does not store a segment prefetch either', async () => {
         const w = loadWorker({ online: true });
         await dispatch(w, flight(TASK, { 'Next-Router-Segment-Prefetch': '/_tree' }));
@@ -262,14 +305,114 @@ describe('the shell fallback answers a LAUNCH, never a specific screen', () => {
     });
 });
 
-describe('activate drops build-scoped flight payloads, keeps the farm', () => {
-    it('deletes the RSC bucket but not data, basemap, pages or static', async () => {
-        const names = ['agrent-v1-static', 'agrent-v1-pages', 'agrent-v1-fielddata',
-            'agrent-v1-basemap', 'agrent-v1-rsc', 'agri-v2-pages'];
-        const w = loadWorker({ online: true, cacheNames: names });
+describe('activate evicts prefetch entries WITHOUT emptying the bucket', () => {
+    // #880 purged the whole RSC bucket on every activate, on the theory that
+    // flight payloads are build-scoped. Both halves were wrong.
+    //
+    // `activate` fires when public/sw.js changes, not when the app is rebuilt —
+    // 18 of the last 200 commits touched it — so it never was a staleness
+    // control; networkFirstRsc being network-first is. And because the worker
+    // does not skipWaiting, it activates on a LATER launch than the one that
+    // installed it. Measured on an iPhone 2026-09-11: the operator relaunched
+    // with signal, opened a task to cache it, force-quit, then relaunched in
+    // airplane mode — and THAT launch activated the worker, whose purge deleted
+    // the payload they had just gone and fetched. "Not saved for offline", for
+    // a screen saved sixty seconds earlier.
+    const seed = (): Entry[] => [
+        { url: TASK, vary: { RSC: '1', 'Next-Router-Prefetch': '1' }, body: 'PARTIAL-PREFETCH' },
+        { url: TASK, vary: { RSC: '1', 'Next-Router-State-Tree': 'tree-A' }, body: 'flight' },
+    ];
+    const NAMES = ['agrent-v1-static', 'agrent-v1-pages', 'agrent-v1-fielddata',
+        'agrent-v1-basemap', 'agrent-v1-rsc', 'agri-v2-pages'];
+
+    async function activate() {
+        const w = loadWorker({ online: true, cacheNames: NAMES, rscSeed: seed() });
         let held: Promise<unknown> | undefined;
         w.listeners['activate']({ waitUntil: (p: Promise<unknown>) => { held = p; } });
         await held;
-        expect(w.deleted.sort()).toEqual(['agrent-v1-rsc', 'agri-v2-pages']);
+        return w;
+    }
+
+    it('deletes only stale CACHE_VERSION buckets, never the RSC bucket', async () => {
+        const w = await activate();
+        expect(w.deleted.sort()).toEqual(['agri-v2-pages']);
+    });
+
+    it('evicts the partial prefetch entry', async () => {
+        const w = await activate();
+        const bodies = (w.buckets['agrent-v1-rsc']?.entries ?? []).map((e) => e.body);
+        expect(bodies).not.toContain('PARTIAL-PREFETCH');
+    });
+
+    it('KEEPS the navigation payload the operator just cached', async () => {
+        // The whole point. This is the assertion that would have caught #880.
+        const w = await activate();
+        const bodies = (w.buckets['agrent-v1-rsc']?.entries ?? []).map((e) => e.body);
+        expect(bodies).toContain('flight');
+    });
+});
+
+describe('the offline document names the screen it could not serve', () => {
+    it('includes the requested path on a deep-route miss', async () => {
+        // Both flavours of this page looked identical in a photograph, so
+        // "the app would not launch" and "that one screen was not cached" were
+        // the same screenshot. Telling them apart cost a round-trip to someone
+        // standing in a field.
+        const w = loadWorker({
+            online: false,
+            pageSeed: [{ url: MY_WORK_DOC, vary: {}, body: 'MY-WORK-DOCUMENT' }],
+        });
+        const res = await dispatch(w, navigation('https://app.test/t/acme/field/task-1'));
+        expect((res as unknown as FakeResponse)._html).toContain('/t/acme/field/task-1');
+    });
+});
+
+describe('the newest cached payload wins, never the oldest', () => {
+    it('serves the navigation payload over an older prefetch for the same URL', async () => {
+        // Cache.match() resolves to matchAll()[0] and the Query Cache walks its
+        // list in INSERTION order, so the first entry wins. Next prefetches on
+        // link render and navigates on tap, so the PREFETCH entry is always the
+        // older one — match() would hand the router a partial tree whenever
+        // both exist.
+        //
+        // dropPrefetchRscEntries() also prevents this, but it leans on
+        // Cache.keys() preserving request headers, which is not something to
+        // stake an operator's screen on in WebKit. This does not depend on it.
+        const w = loadWorker({
+            online: false,
+            rscSeed: [
+                { url: TASK, vary: { RSC: '1', 'Next-Router-Prefetch': '1' }, body: 'PARTIAL-PREFETCH' },
+                { url: TASK, vary: { RSC: '1', 'Next-Router-State-Tree': 'tree-A' }, body: 'flight' },
+            ],
+        });
+        const res = await dispatch(w, flight(TASK, { 'Next-Router-State-Tree': 'tree-B' }));
+        expect((res as { _body?: string })?._body).toBe('flight');
+    });
+});
+
+describe('the MapLibre worker is cached, so the map can boot offline', () => {
+    it.each([
+        '/maplibre/maplibre-gl-worker.mjs',
+        '/maplibre/maplibre-gl-shared.mjs',
+    ])('caches %s as a static asset', async (path) => {
+        // isStaticAsset matched `js` but not `mjs`, and these two are not under
+        // /_next/static/, so they fell off the end of the fetch handler with no
+        // respondWith at all. Offline that left MapCanvas — 60vh of a phone
+        // screen — an empty rectangle with no spinner, icon or error, because
+        // it registers no onError. An absence with nothing to explain it, which
+        // is the whole class of bug this worker keeps producing.
+        const w = loadWorker({ online: true });
+        await dispatch(w, asset('https://app.test' + path));
+        const cached = (w.buckets['agrent-v1-static']?.entries ?? []).map((e) => e.url);
+        expect(cached).toContain('https://app.test' + path);
+    });
+
+    it('still does not treat an API route as a static asset', async () => {
+        // Positive control for the widened regex: `m?js` must not start
+        // swallowing things that belong on the data path.
+        const w = loadWorker({ online: true });
+        await dispatch(w, asset('https://app.test/api/t/acme/farm-tasks'));
+        const cached = (w.buckets['agrent-v1-static']?.entries ?? []).map((e) => e.url);
+        expect(cached).toHaveLength(0);
     });
 });
