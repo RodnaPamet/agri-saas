@@ -1714,8 +1714,12 @@ jobs:
       # (Currently ZERO entries: #647 deleted all eight, whose affected
       # paths the Dockerfile's `rm -rf` had already removed from the
       # image. Nothing is suppressed today — a CRITICAL/HIGH finding
-      # fails this step. The picomatch floor in package.json overrides,
-      # not an exemption, is what keeps CVE-2026-33671 off the image.)
+        # fails this step. On CVE-2026-33671 specifically: the exemption
+        # went because its affected path was the BUNDLED npm CLI's copy,
+        # which the Dockerfile's `rm -rf` removes (Dockerfile:213). The
+        # app's own picomatch sits above the 4.0.4 patched line on its
+        # own, via overrides — the floor is a guarantee, not the sole
+        # reason the CVE is absent.)
       - name: "Gate: Trivy vulnerability scan (critical+high)"
         uses: aquasecurity/trivy-action@v0.36.0
         with:
