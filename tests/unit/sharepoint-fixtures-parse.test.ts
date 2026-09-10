@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- test-mock pattern. */
 /**
  * SP-F4 — parse-through test over recorded Graph fixtures.
  *

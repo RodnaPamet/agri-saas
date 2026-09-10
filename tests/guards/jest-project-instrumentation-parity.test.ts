@@ -71,7 +71,6 @@ function resolveTarget(file: string): string | undefined {
 
 /** The tsconfig each jest project hands to ts-jest — derived, never hardcoded. */
 function projectTsconfigs(): Array<{ project: string; tsconfig: string }> {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const cfg = require('../../jest.config.js') as {
         projects?: Array<{
             displayName?: string | { name?: string };

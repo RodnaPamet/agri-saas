@@ -136,7 +136,6 @@ export default function KnowledgeArticleDetailPage() {
         }
     }, [apiUrl, articleId]);
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => {
         fetchArticle();
     }, [fetchArticle]);

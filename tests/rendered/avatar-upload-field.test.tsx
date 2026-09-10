@@ -18,7 +18,6 @@ import userEvent from '@testing-library/user-event';
 import * as React from 'react';
 
 jest.mock('next-intl', () => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const en = require('../../messages/en.json');
     const get = (p: string): unknown =>
         p.split('.').reduce<unknown>(

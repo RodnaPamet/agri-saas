@@ -505,7 +505,23 @@ describe('useInputFocused', () => {
         ],
         ['contenteditable', <div key="c" aria-label="target" contentEditable tabIndex={0} />],
         ['role=textbox', <div key="rt" aria-label="target" role="textbox" tabIndex={0} />],
-        ['role=combobox', <div key="rc" aria-label="target" role="combobox" tabIndex={0} />],
+        [
+            // A bare `role="combobox"` is invalid ARIA — the role REQUIRES
+            // `aria-expanded` + `aria-controls`, so the fixture carries a real
+            // listbox to point at. Real call sites look like this, and the
+            // hook must detect focus on the markup users actually ship.
+            'role=combobox',
+            <div key="rc">
+                <div
+                    aria-label="target"
+                    role="combobox"
+                    tabIndex={0}
+                    aria-expanded={false}
+                    aria-controls="rc-listbox"
+                />
+                <ul id="rc-listbox" role="listbox" />
+            </div>,
+        ],
         ['role=searchbox', <div key="rs" aria-label="target" role="searchbox" tabIndex={0} />],
     ])('detects focus in a %s', (_label, node) => {
         mount(node);

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- test mocks. */
 /**
  * Unit tests for `deleteTenantUnderOrg` (soft-delete / "remove tenant"
  * from the org admin panel).

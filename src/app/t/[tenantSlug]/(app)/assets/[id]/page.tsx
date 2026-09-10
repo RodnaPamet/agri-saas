@@ -151,7 +151,6 @@ export default function AssetDetailPage() {
                 const ids = Array.isArray(rows)
                     ? rows.map((r: any) => r?.id).filter(Boolean)
                     : [];
-                // eslint-disable-next-line react-hooks/set-state-in-effect
                 if (!cancelled) setAssetIds(ids);
             } catch {
                 /* best-effort — nav just doesn't render */
@@ -193,10 +192,8 @@ export default function AssetDetailPage() {
         setActivityLoading(true);
         fetch(apiUrl(`/assets/${assetId}/activity`))
             .then((r) => (r.ok ? r.json() : []))
-            // eslint-disable-next-line react-hooks/set-state-in-effect
             .then(setActivity)
             .catch(() => { /* best-effort — feed just stays empty */ })
-            // eslint-disable-next-line react-hooks/set-state-in-effect
             .finally(() => setActivityLoading(false));
     }, [activeTab, apiUrl, assetId]);
 

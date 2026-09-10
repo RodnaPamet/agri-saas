@@ -24,7 +24,6 @@ import { OfflineSyncBar } from '@/components/offline/OfflineSyncBar';
 // point of the test is the string an operator sees, so a mock that echoed
 // key names would assert nothing.
 jest.mock('next-intl', () => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const en = require('../../messages/en.json');
     return {
         useTranslations: (ns: string) => (key: string, values?: Record<string, unknown>) => {

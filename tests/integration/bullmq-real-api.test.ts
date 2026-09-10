@@ -119,7 +119,6 @@ describe('bullmq real-API smoke', () => {
                 `  docker run -d --rm -p 6379:6379 redis:7-alpine\n` +
                 `or set BULLMQ_SMOKE_REQUIRE_REDIS=1 to make this a failure.\n` +
                 `${'='.repeat(72)}\n`;
-            // eslint-disable-next-line no-console
             console.warn(banner);
             if (REQUIRE_REDIS) {
                 throw new Error(

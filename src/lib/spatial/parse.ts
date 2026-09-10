@@ -367,7 +367,6 @@ export function parseKml(text: string): { parcels: ParsedParcel[]; skipped: numb
     // togeojson needs a DOM Document; @xmldom/xmldom provides one in Node.
     const doc = new DOMParser().parseFromString(text, 'text/xml');
     // Lazy require keeps the CJS build out of the module's static graph.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { kml } = require('@tmcw/togeojson') as typeof import('@tmcw/togeojson');
     const fc = kml(doc as unknown as Document);
     return normalizeToParcels(fc);

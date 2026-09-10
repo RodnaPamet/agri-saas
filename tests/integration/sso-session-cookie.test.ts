@@ -35,7 +35,7 @@
  */
 import { encode, getToken } from 'next-auth/jwt';
 import { NextRequest } from 'next/server';
-import { sessionCookieName, useSecureCookies } from '@/lib/auth/sso-session';
+import { sessionCookieName, secureCookiesEnabled } from '@/lib/auth/sso-session';
 
 const SECRET = 'sso-test-secret-at-least-32-characters-long'; // pragma: allowlist secret -- local encode/decode input, never a credential
 
@@ -67,7 +67,6 @@ describe('what the OLD SSO callbacks produced', () => {
         // Reproduces the shipped bug exactly. Kept as a regression anchor:
         // if someone reintroduces jwt.sign here, this documents why it
         // cannot work rather than leaving the next reader to rediscover it.
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
         const jwt = require('jsonwebtoken');
         const jws = jwt.sign({ userId: 'usr_1', sub: 'usr_1' }, SECRET, { expiresIn: '7d' });
 
@@ -95,16 +94,14 @@ describe('the cookie NAME must be the one v4 reads', () => {
         try {
             process.env.NEXTAUTH_URL = 'https://app.example.com';
             jest.resetModules();
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
             const https = require('@/lib/auth/sso-session');
-            expect(https.useSecureCookies()).toBe(true);
+            expect(https.secureCookiesEnabled()).toBe(true);
             expect(https.sessionCookieName()).toBe('__Secure-next-auth.session-token');
 
             process.env.NEXTAUTH_URL = 'http://localhost:3000';
             jest.resetModules();
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
             const http = require('@/lib/auth/sso-session');
-            expect(http.useSecureCookies()).toBe(false);
+            expect(http.secureCookiesEnabled()).toBe(false);
             expect(http.sessionCookieName()).toBe('next-auth.session-token');
         } finally {
             process.env.NEXTAUTH_URL = original;
@@ -146,9 +143,7 @@ describe('the SSO callbacks no longer hand-roll a cookie', () => {
     it('neither callback signs its own token or names a v5 cookie', () => {
         // Structural, deliberately: the behavioural halves above cannot see
         // a THIRD callback added later that repeats the mistake.
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
         const fs = require('fs');
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
         const path = require('path');
         const root = path.resolve(__dirname, '../..');
         for (const rel of [

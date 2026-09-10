@@ -88,7 +88,6 @@ describe('service worker safety', () => {
         const src = sw();
         const m = src.match(/function isFieldDataRequest\(url\)\s*\{[\s\S]*?\n\}/);
         expect(m).toBeTruthy();
-        // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
         const isFieldDataRequest = new Function(
             'url',
             `${m![0]}\nreturn isFieldDataRequest(url);`,

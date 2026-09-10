@@ -248,12 +248,10 @@ export function EntityPicker({
         )
             .then((rows) => {
                 if (cancelled) return;
-                // eslint-disable-next-line react-hooks/set-state-in-effect
                 setCandidates(rowsFromResponse(entityType, rows));
             })
             .finally(() => {
                 if (cancelled) return;
-                // eslint-disable-next-line react-hooks/set-state-in-effect
                 setLoading(false);
             });
         return () => {

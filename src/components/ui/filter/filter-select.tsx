@@ -148,7 +148,6 @@ export function FilterSelect({
 
   // Reset state when closed
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!isOpen) reset();
   }, [isOpen]);
 

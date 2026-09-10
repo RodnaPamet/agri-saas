@@ -31,7 +31,6 @@ import path from 'path';
 const ROOT = path.resolve(__dirname, '../..');
 
 describe('coverage gate diagnosability', () => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const jestConfig = require('../../jest.config.js');
 
     it('emits json-summary so a threshold failure can be attributed to files', () => {
