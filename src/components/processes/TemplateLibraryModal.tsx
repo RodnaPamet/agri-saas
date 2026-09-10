@@ -48,7 +48,7 @@ export function TemplateLibraryModal({ open, setOpen }: TemplateLibraryModalProp
         [templates, tag],
     );
 
-    async function useTemplate(id: string) {
+    async function applyTemplate(id: string) {
         setUsingId(id);
         try {
             const res = await fetch(apiUrl(CACHE_KEYS.automation.templates()), {
@@ -109,7 +109,7 @@ export function TemplateLibraryModal({ open, setOpen }: TemplateLibraryModalProp
                                     size="sm"
                                     loading={usingId === t.id}
                                     disabled={usingId !== null}
-                                    onClick={() => useTemplate(t.id)}
+                                    onClick={() => applyTemplate(t.id)}
                                 >
                                     {tr('templateLibrary.useTemplate')}
                                 </Button>

@@ -127,7 +127,6 @@ const T = {
 // Under a parallel full-suite run (>1 Jest worker) the numbers are pure
 // noise and flake; skip there. CI runs `--runInBand` (serial), where
 // `isParallelRun()` is false → the benchmarks DO run and gate regressions.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const { isParallelRun } = require('../helpers/db');
 const describePerf = isParallelRun() ? describe.skip : describe;
 

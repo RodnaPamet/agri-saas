@@ -71,7 +71,7 @@ import { SESSION_MAX_AGE_SECONDS } from '@/lib/auth/session-lifetime';
 // next-auth derives them — from NEXTAUTH_URL, not NODE_ENV. Reusing its two
 // helpers rather than restating the rule is the point: the reader of this
 // cookie is next-auth, and only the writer is ours.
-import { sessionCookieName, useSecureCookies } from '@/lib/auth/sso-session';
+import { sessionCookieName, secureCookiesEnabled } from '@/lib/auth/sso-session';
 
 export const runtime = 'nodejs';
 
@@ -133,7 +133,7 @@ async function handleAdopt(req: NextRequest): Promise<NextResponse> {
     const store = await cookies();
     store.set(sessionCookieName(), sessionToken, {
         httpOnly: true,
-        secure: useSecureCookies(),
+        secure: secureCookiesEnabled(),
         sameSite: 'lax',
         path: '/',
         maxAge: SESSION_MAX_AGE_SECONDS,

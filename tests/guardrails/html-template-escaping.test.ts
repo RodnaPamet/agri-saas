@@ -231,7 +231,6 @@ describe('Guardrail: HTML templates escape every interpolated value', () => {
     });
 
     it('escapes the characters that break out of content and quoted attributes', () => {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
         const { escapeHtml } = require('@/lib/security/escape-html');
         expect(escapeHtml('<a href="x">')).toBe('&lt;a href=&quot;x&quot;&gt;');
         expect(escapeHtml("it's & more")).toBe('it&#39;s &amp; more');

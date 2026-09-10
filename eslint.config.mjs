@@ -60,7 +60,15 @@ const config = [
             'react-hooks/set-state-in-effect': 'warn',
             'react-hooks/refs': 'warn',
             'react-hooks/immutability': 'warn',
-            'react-hooks/rules-of-hooks': 'warn',
+            // NOT downgraded, unlike its neighbours above. `rules-of-hooks`
+            // catches conditional/early-return hook calls — the exact defect
+            // that shipped a React "rendered more hooks than during the
+            // previous render" crash (#872). Its four remaining repo hits
+            // were all the `use*` NAMING heuristic misfiring on non-hooks;
+            // those functions were renamed (`secureCookiesEnabled`,
+            // `applyTemplate`) rather than suppressed, so this can be an
+            // error with zero violations. Refs #874.
+            'react-hooks/rules-of-hooks': 'error',
             'react-hooks/error-boundaries': 'warn',
             'react-hooks/purity': 'warn',
             'react-hooks/static-components': 'warn',

@@ -64,7 +64,6 @@ expect.extend(toHaveNoViolations);
 // `require` inside the factory (not top-level imports) keeps
 // babel-jest's out-of-scope-variable check happy.
 jest.mock('next-intl', () => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const enMessages = require('../../messages/en.json');
 
     const get = (path: string): unknown =>
@@ -149,7 +148,6 @@ jest.mock('next-intl', () => {
         t.rich = (key: string, values?: Record<string, unknown>) => {
             const raw = get(full(key));
             if (typeof raw !== 'string') return full(key);
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
             const React = require('react');
             const interp = formatIcu(raw, (values ?? {}) as Record<string, unknown>);
             const nodes: unknown[] = [];

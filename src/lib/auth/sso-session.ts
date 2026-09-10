@@ -65,15 +65,22 @@ import { logger } from '@/lib/observability/logger';
  * Derived from `NEXTAUTH_URL` exactly as `next-auth/jwt` and
  * `core/lib/cookie.js` do — NOT from `NODE_ENV`. The reader and the writer
  * have to agree, and only one of them is ours.
+ *
+ * NOT named `useSecureCookies` (next-auth's own name for this option), because
+ * this runs on the server in route handlers and in `establishSsoSession` and
+ * contains no React hook. The `use*` prefix made `react-hooks/rules-of-hooks`
+ * report three violations here, which is part of why that rule sat at `warn`
+ * over the crash it was supposed to catch (#874). Do not rename it back for
+ * parity with next-auth.
  */
-export function useSecureCookies(): boolean {
+export function secureCookiesEnabled(): boolean {
     const url = env.NEXTAUTH_URL ?? env.AUTH_URL ?? '';
     return url.startsWith('https://');
 }
 
 /** The cookie name v4 will look for. */
 export function sessionCookieName(): string {
-    return useSecureCookies()
+    return secureCookiesEnabled()
         ? '__Secure-next-auth.session-token'
         : 'next-auth.session-token';
 }
@@ -129,7 +136,7 @@ export async function establishSsoSession(input: EstablishSessionInput): Promise
         maxAge: SESSION_MAX_AGE_SECONDS,
     });
 
-    const secure = useSecureCookies();
+    const secure = secureCookiesEnabled();
     const store = await cookies();
     store.set(sessionCookieName(), sessionToken, {
         httpOnly: true,

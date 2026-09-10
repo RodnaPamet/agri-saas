@@ -23,7 +23,6 @@ import { TimestampTooltip } from '@/components/ui/timestamp-tooltip';
 // back to this entity via TaskLink.
 import { NewTaskModal } from '@/components/tasks/NewTaskModal';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 // Mirrors the Tasks page (TasksClient) maps so the practice / asset /
 // risk Tasks tab renders the SAME columns + tones as the global table.

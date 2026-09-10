@@ -38,7 +38,6 @@ jest.mock('@/components/ui/map/MapCanvas', () => ({ MapCanvas: () => null }));
 // the ESM module isn't parsed and the label falls back to the English
 // default ("Done"/"Pending"/…) via t.has()===false.
 jest.mock('next-intl', () => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const en = require('../../messages/en.json');
     const get = (p: string): unknown =>
         p.split('.').reduce<unknown>(

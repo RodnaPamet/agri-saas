@@ -111,7 +111,6 @@ async function main(): Promise<void> {
     });
     try {
         const { created, updated } = await seedAgriEvents(prisma);
-        // eslint-disable-next-line no-console
         console.log(`Seeded agriculture events — created ${created}, updated ${updated}.`);
     } finally {
         await prisma.$disconnect();
@@ -121,7 +120,6 @@ async function main(): Promise<void> {
 // Only run when invoked directly, so importing the helper doesn't open a client.
 if (require.main === module) {
     main().catch((err) => {
-        // eslint-disable-next-line no-console
         console.error(err);
         process.exit(1);
     });

@@ -12,7 +12,6 @@
  * `tests/guards/p3a-canvas-export-png-svg.test.ts` locks the wiring
  * to the real helper at the source level.
  */
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { render, screen } from '@testing-library/react';
 import { CanvasExportMenu } from '@/components/processes/CanvasExportMenu';
 

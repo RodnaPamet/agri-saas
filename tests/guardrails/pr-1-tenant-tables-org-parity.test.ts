@@ -81,7 +81,6 @@ describe('PR-1 — tenant tables → org-level parity', () => {
             // The "Load more" label now routes through next-intl (Bulgarian
             // sweep); the org-parity invariant lives in the en.json value.
             expect(src).toMatch(/t\('loadMore'/);
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
             expect(require('../../messages/en.json').ui.tableLoadMore.loadMore).toMatch(/Load more \{resourceName\}/);
             expect(src).toMatch(/visibleCount/);
             expect(src).toMatch(/totalCount/);

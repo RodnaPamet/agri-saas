@@ -38,7 +38,6 @@ let locationB = '';
 describe('parcel-overview isolation — execution status', () => {
     it('reports whether the DB-backed assertions actually ran', () => {
         if (!DB_AVAILABLE) {
-            // eslint-disable-next-line no-console
             console.warn(
                 '\n[parcel-overview-isolation] SKIPPED — no database reachable.\n' +
                 '  NOT verified: that the raw parcel-overview query refuses to\n' +
