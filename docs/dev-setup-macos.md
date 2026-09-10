@@ -63,30 +63,45 @@ produces a build that looks fine and ships unnonced scripts.
 
 ### 5. Debian bullseye's expired Release file — this one is not a macOS quirk
 
+### 5. Debian bullseye's expired Release file — this one is not a macOS quirk
+
 `postgis/postgis:16-3.4` is Debian bullseye, and bullseye-security's `Release`
 file expired **2026-09-07**. Every `apt-get update` against it now exits 100.
 
-**This is a live breakage of the repo, not a setup annoyance**, and it is
-tracked as **#832** — read that issue rather than working around it here. Two
-sites build on that image with an unflagged `apt-get update`:
+**This was a live breakage of the repo, not a setup annoyance**, and it is
+tracked as **#832**. Two sites built on that image with an unflagged
+`apt-get update`:
 
-- `deploy/postgres/Dockerfile:7` — so `docker compose up` and the VM's
-  `agrent-db` build both fail;
-- `infra/scripts/restore-test-gcp.sh:385` — the heredoc that rebuilds the
+- `deploy/postgres/Dockerfile` — so `docker compose up` and the VM's
+  `agrent-db` build both failed;
+- `infra/scripts/restore-test-gcp.sh` — the heredoc that rebuilds the
   database image *inside the monthly restore drill*, on the default path where
   `PG_IMAGE` is unset.
 
 **CI stayed green throughout**, because CI installs pgvector through
 `.github/actions/enable-pgvector`, which #833 patched with
-`-o Acquire::Check-Valid-Until=false`. Nothing in CI exercises the two paths
-above, so the signal that would have caught it never runs them.
+`-o Acquire::Check-Valid-Until=false`. Nothing in CI exercised the two paths
+above, so the signal that would have caught it never ran them. That is the
+lesson worth keeping from this one: the green tick covered a path nobody was
+testing.
 
-To get a local stack up before #832 lands, add the same flag to
-`deploy/postgres/Dockerfile:7`:
+**No local workaround is needed any more.** Both sites now carry the flag —
+`deploy/postgres/Dockerfile:25` and `infra/scripts/restore-test-gcp.sh:397` —
+so a clean `docker compose up` works. An earlier revision of this page told you
+to add it by hand; that gap is closed.
 
-```dockerfile
-RUN apt-get -o Acquire::Check-Valid-Until=false update && ...
-```
+The flag is a labelled stopgap, not a fix, and it is **not** ready to remove:
+`postgis/postgis` publishes no Debian tag on a maintained suite for Postgres
+16 — upstream's `16-3.5` is `FROM docker.io/postgres:16-bullseye` and
+reproduces the same failure. The real fix is a maintained base image, which is
+the decision #832 is still holding. The argument is written out at the top of
+`.github/actions/enable-pgvector/action.yml`.
+
+The flag is a labelled stopgap, not a fix, and it is **not** ready to remove:
+`postgis/postgis` publishes no Debian tag on a maintained suite for Postgres
+16 — upstream's `16-3.5` is `FROM docker.io/postgres:16-bullseye` and
+reproduces the same failure. Tracked as **#832**; the argument is written out
+at the top of `.github/actions/enable-pgvector/action.yml`.
 
 Keep that edit local — the real fix is a maintained base image, which is the
 decision #832 is holding.
