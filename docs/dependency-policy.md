@@ -27,7 +27,7 @@ the flag re-enters any install path.
 
 | Conflict | Cause | Resolution |
 |----------|-------|------------|
-| `@visx/*@3.x` vs React 19 | visx 3.x (the latest stable line) peers `react ^16 \|\| ^17 \|\| ^18`; visx 4 — which adds React 19 — is alpha-only. The repo runs `react@19`. | `overrides` block: each `@visx/*` package's `react` / `react-dom` pinned to the root version (`$react` / `$react-dom`). visx 3.x is a set of stateless SVG renderers and runs correctly under React 19 — the override records that verified fact. **Twelve of those 22 subkeys are inert and always were**, which the structural guard below measured: only `@visx/tooltip` declares a `react-dom` peer at all, and `@visx/curve` / `@visx/scale` (d3 wrappers with no JSX) declare no `react` peer either — npm scopes a nested override to the parent's own declared edge, so it has never had one to rewrite for those twelve. The **live** pinning is `react` on nine packages plus `react-dom` on `@visx/tooltip`; that is what carries React 19. The dead subkeys are waived in the guard with a dated review and should be deleted. |
+| `@visx/*@3.x` vs React 19 | visx 3.x (the latest stable line) peers `react ^16 \|\| ^17 \|\| ^18`; visx 4 — which adds React 19 — is alpha-only. The repo runs `react@19`. | `overrides` block: each `@visx/*` package's `react` / `react-dom` pinned to the root version (`$react` / `$react-dom`). visx 3.x is a set of stateless SVG renderers and runs correctly under React 19 — the override records that verified fact. **Twelve of those 22 subkeys are inert and always were**, which the structural guard below measured: only `@visx/tooltip` declares a `react-dom` peer among them (`@visx/bounds` does too, but has no override key), and `@visx/curve` / `@visx/scale` (d3 wrappers with no JSX) declare no `react` peer either — npm scopes a nested override to the parent's own declared edge, so it has never had one to rewrite for those twelve. The **live** pinning is `react` on nine packages plus `react-dom` on `@visx/tooltip`; that is what carries React 19. The dead subkeys are waived in the guard with a dated review and should be deleted. |
 | `eslint-config-next@16` vs `eslint@8` | The Next 16 upgrade bumped `eslint-config-next` to 16, which peers `eslint >=9`; `eslint` was left at 8 (now end-of-life). | `eslint` bumped to `^9`. The lint setup already uses flat config (`ESLINT_USE_FLAT_CONFIG=true`), so eslint 9 — where flat config is the default — is a natural fit. |
 | `next-auth@4` vs `next@16` / `nodemailer@7` | `next-auth@4` peers `next ^12 \|\| ^13 \|\| ^14` and (optionally) `nodemailer ^6`. The repo runs `next@16` and `nodemailer@7`. | `overrides` block: `next-auth`'s `next` and `nodemailer` pinned to the root versions. NextAuth v4 is the supported stable line here; it operates correctly on next 16 / nodemailer 7. |
 | `@typescript-eslint/eslint-plugin@8.70` vs `eslint-config-next`'s `typescript-eslint@^8.46.0` | The plugin pins its siblings at `8.70.0` EXACTLY and peers `@typescript-eslint/parser` at `^8.70.0`. `eslint-config-next` pulls the `typescript-eslint` meta-package on a range so loose (`^8.46.0`) that npm will hold whatever the lockfile already had, which strands the parser on an older line and breaks the plugin's peer. | `overrides` block: the `typescript-eslint` META entry alone, floored at the installed line. It is the single edge that lags; once the meta moves, its own exact `8.70.0` pins carry parser / typescript-estree / utils / scope-manager / type-utils with it. Five per-package entries formerly did this and were DELETED in the same change — a bare top-level override rewrites PEER edges too, so they silently re-satisfied the plugin's `^8.70.0` parser peer with 8.65.0 and hid the violation they were added to prevent. With them gone a future skew fails LOUD at install (ERESOLVE) instead of resolving wrong. |
@@ -110,21 +110,29 @@ function of the two JSON files:
 | **A — no floor without a target** | Every top-level override key must match at least one lockfile entry, or be listed as a **dormant floor** with a written reason. | `hono` / `@hono/node-server` guard packages absent from the lockfile, so they are invisible to `npm audit` AND to Dependabot. That is how both decayed twice with nothing going red. |
 | **B — no override that cannot act** | For `{parent: {child: range}}`, the parent must declare `child` in one of `dependencies` / `peerDependencies` / `optionalDependencies`, and at least one copy it resolves to must not be `inBundle: true`. | `npm: {undici}` fails on both counts — npm declares no `undici` (it is a transitive of a bundled dep) and the only copy is bundled bytes npm installs as published. Twelve `@visx/*` subkeys fail on the first. |
 | **C — no floor that isn't a floor** | For a literal range, fail when every requester's declared range is already a `semver.subset` of it. `$name` entries are EXEMPT. | A floor that excludes nothing anyone could install still reads as protection in review. The `$name` exemption is load-bearing: `tests/guards/overrides-no-direct-dep-conflict.test.ts` requires that form on a direct dependency after a literal range aborted an entire Dependabot run. |
-| **D — no silent widening** | Fail when the override's floor sits **below** a requester's floor (RELAXATION), or excludes a version a requester **pinned exactly** (PIN-BREAK). | `@typescript-eslint/*@^8.61.0` sits below `eslint-plugin@8.70.0`'s exact sibling pins and its `parser: ^8.70.0` peer, so the "floor" permits 8.61.0 — older than anything in the tree asks for. `picomatch@^4.0.4` sits below `lint-staged`'s own `^4.0.7`. |
+| **D — no silent widening** | Fail when the override's floor sits **below** a requester's floor (RELAXATION), or excludes a version a requester **pinned exactly** (PIN-BREAK). | Both halves have live examples. RELAXATION is what the five `@typescript-eslint/*@^8.61.0` entries and `picomatch@^4.0.4` were — floors sitting below `eslint-plugin@8.70.0`'s exact sibling pins and below `lint-staged`'s own `^4.0.7`, i.e. "floors" permitting older than anything in the tree asked for. They were retired and raised in the change recorded in the `@typescript-eslint/eslint-plugin` row of the conflicts table and the `picomatch` row of the security table above, which is why the check no longer reports them. PIN-BREAK is still live on three entries: `postcss` (`next` pins 8.5.23 exactly), `deepmerge-ts` (`@prisma/config` pins 7.1.5) and `mysql2` (`prisma` pins 3.15.3). |
 
 Check D deliberately does **not** flag an override whose floor sits
 *above* a requester's caret range — `uuid@^11.1.1` over `next-auth`'s
-`^8.3.2` is what a security floor IS. Measured on the 2026-09-10 tree,
-the unrestricted reading ("flag any `!semver.subset(override,
-requester)`") fires on 14 of the 39 entries, i.e. on every legitimate
-floor in this document, and would have to waive a third of its own
-subject on day one. A rule that must waive a third of its subject
-teaches people to add waivers.
+`^8.3.2` is what a security floor IS. Measured twice on 2026-09-10, the
+unrestricted reading ("flag any `!semver.subset(override, requester)`")
+fires on 14 of the 39 entries in the tree the guard was written against
+and on 9 of the 34 that remain after the `@typescript-eslint` /
+`picomatch` change — both times on every legitimate security floor in
+this document (`uuid`, `protobufjs`, `valibot`, `picomatch`) plus the
+`next-auth` peer bridge. A rule that must waive a quarter to a third of
+its own subject on day one teaches people to add waivers.
 
-**Every check was red when the guard landed** — 31 findings over 39
-entries — so it ships with an explicit waiver list (`WAIVERS` and
-`DORMANT_FLOORS` in the guard), one entry per finding, each carrying a
-written reason and a `review` date. It borrows both sharp rules from
+**Every check was red when the guard was written** — 31 findings over 39
+entries. Eleven of those were a single dependency defect wearing eleven
+hats — the five `@typescript-eslint` entries, reported by C **and** D
+because a floor below every requester both excludes nothing and permits
+something older, plus `picomatch` on D — and that fix landed
+first: the guard is merged on top of it and ships against **20 findings
+over 34 entries**, with all four checks still red. So it ships with an
+explicit waiver list (`WAIVERS` and `DORMANT_FLOORS` in the guard), one
+entry per remaining finding, each carrying a written reason and a
+`review` date. It borrows both sharp rules from
 `scripts/audit-exemptions.mjs`: a **stale** waiver fails the build (the
 finding stopped being produced, so the waiver is now a blind spot), and
 an **expired** waiver fails the build once its own author's review date

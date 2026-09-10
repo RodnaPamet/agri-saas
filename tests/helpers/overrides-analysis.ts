@@ -68,13 +68,17 @@
  *
  *   Deliberately NOT reported: an override whose floor sits ABOVE a
  *   requester's caret range (`uuid@^11.1.1` over `next-auth`'s `^8.3.2`).
- *   That is what a security floor IS. Measured on the 2026-09-10 tree, the
+ *   That is what a security floor IS. Measured twice on 2026-09-10: the
  *   unrestricted reading — "flag any `!semver.subset(override, requester)`"
- *   — fires on 14 of the 39 entries, i.e. on every legitimate floor in the
- *   table, and would have to waive a third of its own subject on day one.
- *   A rule that must waive a third of its subject teaches people to add
- *   waivers. The two shapes above are the subset of that reading which is
- *   never what an override is for.
+ *   — fires on 14 of the 39 entries in the pre-fix tree, and on 9 of the 34
+ *   that remain after the @typescript-eslint / picomatch fix this branch is
+ *   merged on top of. Both times that is every legitimate security floor in
+ *   docs/dependency-policy.md — `uuid`, `protobufjs`, `valibot`, `picomatch`
+ *   — plus the documented `next-auth` peer bridge, i.e. the rule would have
+ *   to waive a quarter to a third of its own subject on day one. A rule that
+ *   must waive that much of its subject teaches people to add waivers. The
+ *   two shapes above are the subset of that reading which is never what an
+ *   override is for.
  *
  * ## Failing safe
  *

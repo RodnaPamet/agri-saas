@@ -16,7 +16,7 @@
  *                                 target, can act, excludes something,
  *                                 and widens nothing.
  *
- * Each of those five shipped its own guardrail. THIS test guards the
+ * Each of those six shipped its own guardrail. THIS test guards the
  * guards: it fails CI if any one of them is deleted or gutted to a
  * no-op, and it asserts the governance docs survive with their
  * load-bearing policy statements intact. A contributor who removes a

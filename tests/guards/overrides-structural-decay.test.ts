@@ -37,11 +37,18 @@
  *
  * ## Why there is a waiver list, and why it is dated
  *
- * All four checks are RED on the tree this guard landed on — 31 findings
- * over 39 entries. A guard that arrives already-failing gets skipped, and
- * this repo has a documented history of exactly that (see `.trivyignore`'s
- * eight dead entries, and the coverage job that could only ever detect a
- * regression after the merge). So today's findings are written down, one
+ * All four checks were RED on the tree this guard was written against —
+ * 31 findings over 39 entries. Eleven of those were one dependency defect
+ * wearing eleven hats: five @typescript-eslint entries floored below their
+ * own requesters, plus `picomatch@^4.0.4` below lint-staged's `^4.0.7`.
+ * That fix landed FIRST and this branch is merged on top of it, so what
+ * ships here is 20 findings over 34 entries — all four checks still red,
+ * eleven waivers never written.
+ *
+ * A guard that arrives already-failing gets skipped, and this repo has a
+ * documented history of exactly that (see `.trivyignore`'s eight dead
+ * entries, and the coverage job that could only ever detect a regression
+ * after the merge). So today's findings are written down, one
  * per entry, each with a REASON and a REVIEW date — the
  * `scripts/audit-exemptions.mjs` idiom, including its two sharp rules:
  *
@@ -122,8 +129,11 @@ const DORMANT_FLOORS: DormantFloor[] = [
             'likewise absent from the lockfile at any version. Unlike `hono` it has NO row in ' +
             "docs/dependency-policy.md's security table, so what ^1.19.13 is a floor against is " +
             'undocumented — which is the precise state a dormant floor decays from. On review: ' +
-            'either document the advisory it answers, or delete the entry.',
-        review: '2027-01-16',
+            'either document the advisory it answers, or delete the entry. Dated with the ' +
+            'dead-entry deletions and NOT with `hono`: the thing missing here is a paragraph ' +
+            'somebody can write today, and an undocumented dormant floor is exactly the shape ' +
+            'that decayed twice, so it does not get the long cadence its documented sibling gets.',
+        review: '2026-10-16',
     },
 ];
 
@@ -133,10 +143,43 @@ const DORMANT_FLOORS: DormantFloor[] = [
 // One entry per (check, override entry). Keys are built from the OVERRIDE,
 // never from a lockfile path, so a hoist does not invalidate a waiver and
 // nobody learns to delete entries without reading them.
+//
+// ## The review dates are argued, not picked
+//
+// A `review` is only a forcing function if it is the date the question can
+// actually be ANSWERED. Two horizons are used here, and which one an entry
+// gets is a statement about the work, not about comfort:
+//
+//   2026-10-16  the fix is already written and blocked on nothing — a
+//               package.json deletion that cannot change resolution
+//               (the twelve dead @visx subkeys, `npm > undici`) or a
+//               documentation row somebody could write today
+//               (`@hono/node-server`). The @typescript-eslint and
+//               picomatch waivers carried this same date for this same
+//               reason, and their dependency PR landed on 2026-09-10 —
+//               five weeks EARLY. A deletion that cannot even move a
+//               resolved version does not get a later date than the
+//               change that moved six of them.
+//
+//   2026-12-11  somebody has to decide something first: archaeology on
+//               what a floor was originally added for (`find-my-way`,
+//               `nanoid`, `deepmerge-ts`), or a smoke test against a
+//               real service (`mysql2`, `postcss`). A date that arrives
+//               before its question can be answered is a date that gets
+//               bumped, and a bumped date teaches the list is soft.
+//
+// `hono` alone keeps 2027-01-16: its review is a periodic re-read of a
+// recorded advisory against an entry that is doing what it says it does.
+//
+// Re-checked entry by entry on 2026-09-10 against the tree this branch
+// merged (see the merge of fix/typescript-eslint-and-picomatch-floors):
+// every finding below is still produced and every fact each reason cites
+// still holds in package-lock.json. The eleven waivers whose fix DID land
+// in that PR are deleted, not re-dated.
 // ─────────────────────────────────────────────────────────────────────────
 interface Waiver {
     check: Exclude<CheckId, 'A'>;
-    /** Matches `Finding.target`: `picomatch`, or `npm > undici`. */
+    /** Matches `Finding.target`: `nanoid`, or `npm > undici`. */
     target: string;
     reason: string;
     review: string;
@@ -151,33 +194,23 @@ const VISX_DEAD_SUBKEY =
     'root version\"; that is true for 10 of the 22 subkeys and false for these 12. The fix is ' +
     'to DELETE the dead subkeys — a pure package.json edit that cannot change resolution, ' +
     'since npm was never applying them — and it is deliberately not in this guard\'s diff so ' +
-    'the guard lands without a dependency change. Waived only until that PR.';
-
-/** Shared prose for the five @typescript-eslint entries, which are one decay. */
-const TSESLINT_DECAYED_FLOOR =
-    'The ^8.61.0 floor sits BELOW every requester in the tree: ' +
-    '@typescript-eslint/eslint-plugin@8.70.0 pins its siblings at 8.70.0 exactly and peers ' +
-    'parser at ^8.70.0, and typescript-eslint@8.65.0 pins at 8.65.0. So the entry excludes ' +
-    'nothing anybody could install (C) while simultaneously permitting 8.61.0, older than ' +
-    'anything anyone asked for (D). This is the same decay class as the 2026-07-25 re-floor ' +
-    'and #853. Fix: raise all five entries to the installed line in ONE dependency PR, which ' +
-    'is out of this guard\'s diff on purpose — a guard that also moves the thing it measures ' +
-    'cannot be reviewed.';
+    'the guard lands without a dependency change. Waived only until that PR, which is what ' +
+    'the review date below names — nothing else has to happen first.';
 
 const WAIVERS: Waiver[] = [
     // ── B: overrides that cannot act ─────────────────────────────────────
-    { check: 'B', target: '@visx/axis > react-dom', reason: VISX_DEAD_SUBKEY, review: '2026-11-14' },
-    { check: 'B', target: '@visx/clip-path > react-dom', reason: VISX_DEAD_SUBKEY, review: '2026-11-14' },
-    { check: 'B', target: '@visx/curve > react', reason: VISX_DEAD_SUBKEY, review: '2026-11-14' },
-    { check: 'B', target: '@visx/curve > react-dom', reason: VISX_DEAD_SUBKEY, review: '2026-11-14' },
-    { check: 'B', target: '@visx/event > react-dom', reason: VISX_DEAD_SUBKEY, review: '2026-11-14' },
-    { check: 'B', target: '@visx/gradient > react-dom', reason: VISX_DEAD_SUBKEY, review: '2026-11-14' },
-    { check: 'B', target: '@visx/group > react-dom', reason: VISX_DEAD_SUBKEY, review: '2026-11-14' },
-    { check: 'B', target: '@visx/responsive > react-dom', reason: VISX_DEAD_SUBKEY, review: '2026-11-14' },
-    { check: 'B', target: '@visx/scale > react', reason: VISX_DEAD_SUBKEY, review: '2026-11-14' },
-    { check: 'B', target: '@visx/scale > react-dom', reason: VISX_DEAD_SUBKEY, review: '2026-11-14' },
-    { check: 'B', target: '@visx/shape > react-dom', reason: VISX_DEAD_SUBKEY, review: '2026-11-14' },
-    { check: 'B', target: '@visx/text > react-dom', reason: VISX_DEAD_SUBKEY, review: '2026-11-14' },
+    { check: 'B', target: '@visx/axis > react-dom', reason: VISX_DEAD_SUBKEY, review: '2026-10-16' },
+    { check: 'B', target: '@visx/clip-path > react-dom', reason: VISX_DEAD_SUBKEY, review: '2026-10-16' },
+    { check: 'B', target: '@visx/curve > react', reason: VISX_DEAD_SUBKEY, review: '2026-10-16' },
+    { check: 'B', target: '@visx/curve > react-dom', reason: VISX_DEAD_SUBKEY, review: '2026-10-16' },
+    { check: 'B', target: '@visx/event > react-dom', reason: VISX_DEAD_SUBKEY, review: '2026-10-16' },
+    { check: 'B', target: '@visx/gradient > react-dom', reason: VISX_DEAD_SUBKEY, review: '2026-10-16' },
+    { check: 'B', target: '@visx/group > react-dom', reason: VISX_DEAD_SUBKEY, review: '2026-10-16' },
+    { check: 'B', target: '@visx/responsive > react-dom', reason: VISX_DEAD_SUBKEY, review: '2026-10-16' },
+    { check: 'B', target: '@visx/scale > react', reason: VISX_DEAD_SUBKEY, review: '2026-10-16' },
+    { check: 'B', target: '@visx/scale > react-dom', reason: VISX_DEAD_SUBKEY, review: '2026-10-16' },
+    { check: 'B', target: '@visx/shape > react-dom', reason: VISX_DEAD_SUBKEY, review: '2026-10-16' },
+    { check: 'B', target: '@visx/text > react-dom', reason: VISX_DEAD_SUBKEY, review: '2026-10-16' },
     {
         check: 'B',
         target: 'npm > undici',
@@ -188,16 +221,13 @@ const WAIVERS: Waiver[] = [
             'inBundle:true, i.e. bytes shipped inside the npm tarball that npm installs as ' +
             'published. The entry has therefore never moved anything, on either count, and ' +
             '`npm` here is a devDependency-only CLI. Fix: delete it, or replace it with a ' +
-            'check on the npm version actually shipped; leaving it reads as a mitigation.',
-        review: '2026-11-14',
+            'check on the npm version actually shipped; leaving it reads as a mitigation. ' +
+            'Same date as the dead @visx subkeys: one deletion PR covers both, and neither ' +
+            'edit can change a resolved version.',
+        review: '2026-10-16',
     },
 
     // ── C: floors that exclude nothing ───────────────────────────────────
-    { check: 'C', target: '@typescript-eslint/parser', reason: TSESLINT_DECAYED_FLOOR, review: '2026-10-16' },
-    { check: 'C', target: '@typescript-eslint/scope-manager', reason: TSESLINT_DECAYED_FLOOR, review: '2026-10-16' },
-    { check: 'C', target: '@typescript-eslint/typescript-estree', reason: TSESLINT_DECAYED_FLOOR, review: '2026-10-16' },
-    { check: 'C', target: '@typescript-eslint/utils', reason: TSESLINT_DECAYED_FLOOR, review: '2026-10-16' },
-    { check: 'C', target: '@typescript-eslint/type-utils', reason: TSESLINT_DECAYED_FLOOR, review: '2026-10-16' },
     {
         check: 'C',
         target: 'find-my-way',
@@ -221,24 +251,6 @@ const WAIVERS: Waiver[] = [
     },
 
     // ── D: silent widening ───────────────────────────────────────────────
-    { check: 'D', target: '@typescript-eslint/parser', reason: TSESLINT_DECAYED_FLOOR, review: '2026-10-16' },
-    { check: 'D', target: '@typescript-eslint/scope-manager', reason: TSESLINT_DECAYED_FLOOR, review: '2026-10-16' },
-    { check: 'D', target: '@typescript-eslint/typescript-estree', reason: TSESLINT_DECAYED_FLOOR, review: '2026-10-16' },
-    { check: 'D', target: '@typescript-eslint/utils', reason: TSESLINT_DECAYED_FLOOR, review: '2026-10-16' },
-    { check: 'D', target: '@typescript-eslint/type-utils', reason: TSESLINT_DECAYED_FLOOR, review: '2026-10-16' },
-    {
-        check: 'D',
-        target: 'picomatch',
-        reason:
-            'A DECAYED FLOOR, live: ^4.0.4 sits below lint-staged\'s own `picomatch: ^4.0.7`, ' +
-            'so the floor added for CVE-2026-33671 (see the picomatch note in ' +
-            'tests/guards/trivyignore-exemptions.test.ts) now permits a version lint-staged ' +
-            'itself rejects. Nothing else in the repo can see this: the lockfile resolves a ' +
-            'patched version, so npm audit is green — the same shape as the 2026-07-25 ' +
-            'entries. Fix: raise the floor in the same dependency PR as the ' +
-            '@typescript-eslint entries.',
-        review: '2026-10-16',
-    },
     {
         check: 'D',
         target: 'postcss',
@@ -315,15 +327,37 @@ function stableDormantFloors(): string[] {
     }).map((d) => d.key);
 }
 
-/** Entries whose own author's review date has passed. */
-export function expired(today: Date): string[] {
-    const iso = today.toISOString().slice(0, 10);
+interface DatedEntry {
+    id: string;
+    review: string;
+}
+
+/** Every dated entry in this file, waivers and dormant floors alike. */
+function datedEntries(): DatedEntry[] {
     return [
         ...DORMANT_FLOORS.map((d) => ({ id: `A:${d.key}`, review: d.review })),
         ...WAIVERS.map((w) => ({ id: `${w.check}:${w.target}`, review: w.review })),
-    ]
-        .filter((e) => e.review < iso)
-        .map((e) => `${e.id} (review was ${e.review})`);
+    ];
+}
+
+/**
+ * Entries whose own author's review date has passed.
+ *
+ * `entries` is a parameter, and defaults to the live lists, so the RULE can
+ * be exercised against a synthetic entry. It used to read the live lists
+ * unconditionally, which made the two fixtures below depend on this file
+ * still having something in it — and both lists are supposed to reach zero.
+ * The day the last waiver is retired, "flags an entry whose review date has
+ * passed" would have gone red with nothing wrong with the tree, and the
+ * obvious repair would have been to delete the fixture: the rule that makes
+ * the list shrink, removed by the success of the list shrinking.
+ *
+ * Same boundary as `scripts/audit-exemptions.mjs`: an entry reviewed TODAY
+ * is due, not overdue, and expires the day after.
+ */
+export function expired(today: Date, entries: DatedEntry[] = datedEntries()): string[] {
+    const iso = today.toISOString().slice(0, 10);
+    return entries.filter((e) => e.review < iso).map((e) => `${e.id} (review was ${e.review})`);
 }
 
 function describeFindings(findings: Finding[]): string {
@@ -343,8 +377,17 @@ describe('overrides — the analysis is looking at something', () => {
     });
 
     it('flattens the block into a non-trivial set of edges', () => {
-        // 39 keys today, 51 edges (nested keys contribute one edge per child).
-        expect(analysis.edges.length).toBeGreaterThan(40);
+        // 34 keys today, 46 edges (nested keys contribute one edge per child).
+        //
+        // These are POPULATION floors, and unlike a count of findings they do
+        // not fall when a defect is fixed — only when the overrides table
+        // itself shrinks, which is a deliberate act. But one such act is
+        // already dated in WAIVERS below: deleting the twelve dead @visx
+        // subkeys and `npm > undici` takes this to 33 edges / 15 nested. The
+        // floors sit under THAT, because a population floor which the very fix
+        // this file schedules would turn red is the same trap as counting
+        // findings — see the mutation block near the end of the file.
+        expect(analysis.edges.length).toBeGreaterThan(25);
         expect(analysis.edges.filter((e) => e.parent !== null).length).toBeGreaterThan(10);
     });
 
@@ -459,10 +502,18 @@ describe('overrides — every structural finding is answered', () => {
     it('a substantial set of overrides is covered and CLEAN, not merely waived', () => {
         // If every entry were waived, this suite would pass identically with
         // the analysis returning nothing at all — the inverse of the tautology
-        // trivyignore-exemptions.test.ts guards against. Measured 2026-09-10:
-        // 31 findings touching 24 of the 39 keys, so 15 keys are actively
-        // checked and clean. A new finding on any of those 15 fails the build
-        // with no waiver standing between it and the reader.
+        // trivyignore-exemptions.test.ts guards against. Measured 2026-09-10
+        // on the merged tree: 20 findings touching 18 of the 34 keys, so 16
+        // keys are actively checked and clean. A new finding on any of those
+        // 16 fails the build with no waiver standing between it and the
+        // reader.
+        //
+        // The floor stays at 12 rather than being tightened to today's 16:
+        // this number falls when an override is DELETED outright, and
+        // docs/dependency-policy.md is explicit that an override is a bridge,
+        // not a destination. It rises as waivers are retired (retiring the
+        // @visx subkeys returns ten keys to this set), so the slack is on the
+        // side that does not punish the intended direction of travel.
         const waivedKeys = new Set(
             [...DORMANT_FLOORS.map((d) => d.key), ...WAIVERS.map((w) => w.target.split(' > ')[0])],
         );
@@ -471,9 +522,45 @@ describe('overrides — every structural finding is answered', () => {
     });
 });
 
-describe('overrides — the guard turns red on the REAL tree when a floor decays', () => {
-    // The fixtures below prove each RULE. These prove the WIRING: the same
-    // package.json this repo ships, plus one injected defect, is red.
+describe('overrides — the guard turns red on the REAL tree, once per check', () => {
+    // The fixtures further down prove each RULE against synthetic input.
+    // These four prove the WIRING: the same package.json and
+    // package-lock.json this repo ships, plus ONE injected defect, is red —
+    // and there is one per check because vacuity is per check.
+    //
+    // ## What replaced the finding count, and why
+    //
+    // This block used to end with `expect(analysis.findings.length)
+    // .toBeGreaterThan(20)`, as an anti-vacuity floor: the guard must not be
+    // able to start finding nothing. The intent was right and the assertion
+    // was wrong, in two separate ways.
+    //
+    //   1. It ratcheted AGAINST the fix. Every waiver deleted is a finding
+    //      removed, so the number can only fall as the work goes right. The
+    //      dependency PR this branch is merged on top of — five
+    //      @typescript-eslint entries retired, picomatch raised — took it
+    //      from 31 to exactly 20 and turned the assertion RED on the correct
+    //      change. An assertion whose failure mode is "somebody fixed
+    //      something" teaches the reader to edit the assertion, which is the
+    //      habit this whole file exists to resist. Lowering the number to 19
+    //      would just re-arm the same trap one fix further on.
+    //   2. A total says nothing about WHICH check is alive. Thirteen of
+    //      today's twenty findings come from check B — a scanner that stops
+    //      matching, or a semver call that starts throwing into one of the
+    //      `catch` blocks that fail toward green, could take A, C and D to
+    //      zero and still leave 13. A count only ever answers by going red
+    //      and asking to be lowered, and once it is lowered B alone clears
+    //      it: the number cannot tell "three checks died" from "somebody
+    //      fixed seven entries". Measured here — neutering check A alone
+    //      leaves the waiver bookkeeping entirely quiet, because the two
+    //      DORMANT_FLOORS entries that answer check A have no staleness rule
+    //      of their own. Only a live proof of A catches that.
+    //
+    // So the floor is now per check and phrased as a defect, not a number:
+    // each check is shown firing on the real tree under a one-line mutation.
+    // That proof does not decay as the waiver list shrinks — it holds when
+    // the tree is entirely clean, which is where this file is trying to get
+    // to — and it fails loudly if a check goes quiet.
     it('A — an override over a package nobody installs', () => {
         const mutated: PackageJson = {
             ...pkg,
@@ -481,6 +568,37 @@ describe('overrides — the guard turns red on the REAL tree when a floor decays
         };
         const keys = new Set(analyseOverrides(mutated, lock).findings.map(findingKey));
         expect(keys.has('A:not-a-package-anyone-installs')).toBe(true);
+    });
+
+    it('B — a nested override on an edge the real parent does not declare', () => {
+        // `next-auth` declares next / nodemailer / react / react-dom as peers
+        // and never mentions undici, so this subkey could not rewrite
+        // anything — the `npm > undici` shape, injected into a live entry.
+        const mutated: PackageJson = {
+            ...pkg,
+            overrides: {
+                ...pkg.overrides,
+                'next-auth': { ...(pkg.overrides?.['next-auth'] as object), undici: '^6.27.0' },
+            },
+        };
+        const keys = new Set(analyseOverrides(mutated, lock).findings.map(findingKey));
+        expect(keys.has('B:next-auth > undici')).toBe(true);
+        // and the same entry's real edges stay green, so B is discriminating
+        // rather than rejecting the whole key.
+        expect(keys.has('B:next-auth > next')).toBe(false);
+    });
+
+    it('C — a floor lowered until it restates its only requester', () => {
+        // `nwsapi` is one of the entries that is CLEAN today: the ceiling
+        // `>=2.2.16 <2.2.25` sits strictly inside jsdom's `^2.2.16`. Widen it
+        // to jsdom's own range and it stops excluding anything installable —
+        // the `nanoid` defect, injected into an entry that does not have it.
+        const mutated: PackageJson = { ...pkg, overrides: { ...pkg.overrides, nwsapi: '^2.2.16' } };
+        const finding = analyseOverrides(mutated, lock).findings.find((f) => findingKey(f) === 'C:nwsapi');
+        expect(finding?.detail).toContain('excludes no version anybody could have installed');
+        // The unmutated entry must NOT be reported, or the mutation proves
+        // nothing about C and only that nwsapi is always red.
+        expect(analysis.findings.map(findingKey)).not.toContain('C:nwsapi');
     });
 
     it('D — a floor that relaxes the root package\'s own exact pin', () => {
@@ -493,10 +611,11 @@ describe('overrides — the guard turns red on the REAL tree when a floor decays
     });
 
     it('the unmutated tree produces exactly the findings this file accounts for', () => {
-        // The complement of the two mutations: without an injected defect the
+        // The complement of the four mutations: without an injected defect the
         // finding set is closed, so a NEW finding cannot arrive unnoticed.
+        // "Exactly" is the conjunction of this and the no-stale-waiver test
+        // above — nothing unaccounted for, and nothing accounted for twice.
         expect(unwaived(analysis.findings)).toEqual([]);
-        expect(analysis.findings.length).toBeGreaterThan(20);
     });
 });
 
@@ -714,15 +833,25 @@ describe('the checks themselves — synthetic fixtures that MUST fail', () => {
     });
 
     describe('the waiver bookkeeping', () => {
+        // Synthetic entries, not the live lists: see `expired`. The live
+        // assertion is 'no expired entry' above; these two prove the rule
+        // itself, and keep proving it after the last waiver is retired.
+        const SYNTHETIC: Array<{ id: string; review: string }> = [{ id: 'C:example', review: '2026-10-16' }];
+
         it('flags an entry whose review date has passed', () => {
             // Rule 4 of the audit-exemptions idiom, ported: a `review` that is
             // only ever printed is write-only, and an accepted-for-now risk
             // becomes a forgotten one.
-            expect(expired(new Date('2099-01-01T00:00:00Z')).length).toBeGreaterThan(0);
+            expect(expired(new Date('2026-10-17T00:00:00Z'), SYNTHETIC)).toEqual([
+                'C:example (review was 2026-10-16)',
+            ]);
         });
 
-        it('does not flag entries whose review date is still ahead', () => {
-            expect(expired(new Date('2026-09-10T00:00:00Z'))).toEqual([]);
+        it('does not flag an entry ON its review date — due, not yet overdue', () => {
+            // The boundary `scripts/audit-exemptions.mjs` documents and this
+            // file inherits: the entry expires the day AFTER its review date,
+            // so "today is the review date" is still a passing build.
+            expect(expired(new Date('2026-10-16T23:59:59Z'), SYNTHETIC)).toEqual([]);
         });
 
         it('an unwaived finding is reported, not absorbed', () => {
