@@ -39,7 +39,8 @@ const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 
 /**
  * The dependency-governance guardrail registry. Each must exist,
- * still contain its subject anchors (proof it was not gutted), and
+ * still contain its subject anchors (proof it was not DELETED or renamed
+ * away — anchors are `toContain` checks and do not detect neutering), and
  * carry a real assertion surface.
  */
 const GUARDRAILS: ReadonlyArray<{
@@ -75,9 +76,12 @@ const GUARDRAILS: ReadonlyArray<{
     {
         // Registered here on purpose: this one ships with a waiver list, and
         // the cheapest way to silence a guard that carries waivers is to
-        // delete the guard rather than an entry. The anchors are the two
-        // rules that make the list shrink — `WAIVERS` plus the review-date
-        // expiry — so gutting it to a permanent allowlist also fails.
+        // delete the guard rather than an entry. The anchors catch that.
+        // They do NOT catch neutering: they are `toContain` string checks and
+        // every token below appears many times in that file, so gutting
+        // `staleWaivers()` to `return []` leaves all four green. The control
+        // for that lives in the guard itself ('...staleWaivers actually
+        // selects'), not here.
         file: 'tests/guards/overrides-structural-decay.test.ts',
         pillar: 'override structural decay — every overrides entry still does an override\'s job',
         anchors: ['WAIVERS', 'DORMANT_FLOORS', 'expired', 'analyseOverrides'],

@@ -463,6 +463,20 @@ describe('overrides — every structural finding is answered', () => {
         expect(stale).toEqual([]);
     });
 
+    it('...and staleWaivers actually selects — the control on the line above', () => {
+        // `expect(stale).toEqual([])` is satisfied by a function that always
+        // returns []. Measured: replacing this function's body with `return []`
+        // — literally turning WAIVERS into a permanent allowlist — left BOTH
+        // this suite (44/44) and dependency-governance-integrity (26/26) fully
+        // green. The four registered anchors are `toContain` string checks and
+        // every one of them appears elsewhere in this file, so they survive.
+        //
+        // So the emptiness above means nothing without this: with no live
+        // findings at all, every waiver must read as stale.
+        expect(WAIVERS.length).toBeGreaterThan(0);
+        expect(staleWaivers([])).toHaveLength(WAIVERS.length);
+    });
+
     it('no dormant floor whose package is now installed', () => {
         // A dormant floor is a claim that the package is absent. Once it is
         // present the entry is a LIVE floor and checks C and D apply to it, so
