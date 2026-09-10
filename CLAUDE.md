@@ -57,8 +57,12 @@ docker-compose up -d
 
 The production deployment runs on a single GCP VM, and **Claude has
 `gcloud` access to it** — project `hazel-design-419410`, instance
-**`agrent`**, zone `europe-west1-b` (served at
-`https://35-187-80-26.sslip.io`):
+**`agrent`**, zone `europe-west1-b`. It is served at
+**`https://app.agrent.bg`** and at `https://35-187-80-26.sslip.io` —
+the live Caddy site block carries both names, though the repo copy
+(`deploy/Caddyfile`) listed only the sslip.io one until #842, because
+`deploy/apply.sh` does not copy that file and `deploy/check-drift.sh`
+does not hash it:
 
 ```bash
 gcloud compute ssh agrent --zone europe-west1-b --command "…"
@@ -83,6 +87,40 @@ against the VM (run it weekly); a mismatch means the VM was hand-edited
 `deploy/env.prod.example` lists the prod-required env keys (parity with
 `src/env.ts` is guarded by `tests/guardrails/deploy-env-parity.test.ts`).
 
+**The operator runbook is `docs/runbooks/production-vm.md`** — the four
+axes (deploy, rollback, scaling, backup/restore) with commands verified
+against the running VM, and an inventory of what this deployment does
+NOT have, because several docs still describe an EKS/AWS stack that was
+never provisioned. `docs/incident-response.md` carries per-symptom
+playbooks; read its banner first — only §1 and §6 have been corrected.
+`tests/guardrails/vm-runbook-commands.test.ts` holds the runbook,
+including a derived check that every repo path it names exists.
+
+**Nothing detects a production outage (#854).** No uptime check, no
+alert, no pager, no rota — verified 2026-09-10. Detection today is a
+human noticing. `docs/slos.md` SLO 7's 4 hours is therefore
+time-to-restore from the moment a person starts, never time-to-recover
+from the outage, and the 15-minute PagerDuty acknowledge in
+`docs/incident-response.md` describes intended policy, not behaviour.
+**Do not write a detection time into any doc while this is open.**
+
+**`deploy/Caddyfile` is a record, not a deployment.** `deploy/apply.sh`
+does not copy it and `deploy/check-drift.sh` does not hash it, so the
+live `/opt/agrent/Caddyfile` is edited by hand and nothing detects the
+two diverging. The `caddy` service declares neither `env_file` nor
+`environment`, so no `{$VAR}` in that file can be supplied by this repo.
+**One divergence is known and deliberate** — compared on the VM
+2026-09-10, the two files differ in exactly one token: the live ACME
+contact defaults to the operator's personal mailbox, and the repo keeps
+the role address `admin@agrent.bg`. **This repository is public. Never
+paste that personal address into a tracked file to make a doc
+"accurate"** — reconcile by changing the VM, or by giving the `caddy`
+service an environment that supplies `ACME_EMAIL`. The field routes
+Let's Encrypt expiry notices only; nothing about TLS depends on it.
+`tests/guardrails/caddyfile-divergence.test.ts` holds all of that,
+including that every address in `deploy/Caddyfile` stays on the
+`agrent.bg` role domain (#842).
+
 **When a runtime change must be applied to the VM** — a one-off job run,
 inspecting container logs, a manual restart — execute it directly via
 `gcloud compute ssh`; do not ask the operator to do it by hand. But a
@@ -100,8 +138,10 @@ inflect policy's own `description` claims a 30-minute stagger but its
 ~02:29; the stagger is intent, not configuration, and
 `docs/backup-restore.md` still repeats the 02:30 figure. Both 14-day
 retention, `eu` storage, `keep-auto-snapshots`). So **RPO
-is up to 24 hours**, not the 1 hour `docs/slos.md` targets, and the
-snapshots are crash-consistent (Postgres replays WAL on restore).
+is up to 24 hours**, which is now also what `docs/slos.md` SLO 6
+*targets* — the 1-hour target it carried until 2026-09-10 was retired
+(#842) rather than met, and SLO 6 keeps that history. Snapshots are
+crash-consistent (Postgres replays WAL on restore).
 Restores are drilled monthly by `infra/scripts/restore-test-gcp.sh`
 via `.github/workflows/restore-test.yml`, which runs it once per
 target from a job matrix — it boots a real Postgres over the restored

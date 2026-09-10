@@ -23,7 +23,11 @@
  *
  * Companion ratchet: `no-legacy-peer-deps.test.ts` (strict peer
  * resolution). Together they make the whole install surface
- * trustworthy. See `docs/dependency-policy.md`.
+ * trustworthy. The rationale is written up in
+ * `docs/dependency-policy.md` — a POINTER, not an assertion: nothing
+ * in this file opens that document, so nothing here fails if its
+ * prose goes stale. Repo-wide the only check on it is an existence
+ * test (`dependency-governance-integrity.test.ts`).
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';

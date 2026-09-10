@@ -387,14 +387,21 @@ This app uses **local file storage** for evidence uploads. Platforms without per
 - **Manual**: `npm run migrate:deploy`
 - **Never** use `db push` in production
 
-## Backup & Restore (Docker Compose — legacy path only)
+## Backup & Restore (container-level, any compose deployment)
 
-> **K8s/EKS users see [Backup & Restore (RDS + S3)](#backup--restore-rds--s3)
-> in the Kubernetes section below.** The commands here apply only to
-> the deprecated docker-compose deploy model (self-hosted single VPS
-> running Postgres in a container with a mounted volume). They do
-> NOT apply to the EKS production path, which uses RDS automated
-> backups + S3 versioning instead of host-level pg_dump and tar.
+> **Corrected 2026-09-10 (#842).** This section used to be headed
+> "Docker Compose — legacy path only" and told the reader that the
+> commands "do NOT apply to the EKS production path, which uses RDS
+> automated backups + S3 versioning". That is the same falsehood as the
+> old §"primary production path" heading, inverted: it labelled the only
+> path that has ever run as legacy, and pointed at an RDS/S3 posture
+> that was never provisioned.
+>
+> **For the production VM, the backup is a daily GCE disk snapshot and
+> the runbook is `docs/backup-restore.md`.** The `pg_dump` / `tar`
+> commands below are still useful — an ad-hoc dump before a risky
+> migration, a local restore, moving data between environments — but
+> they are *not* the backup. Nothing schedules them.
 
 ### Database
 
@@ -471,13 +478,21 @@ had the wrong answers for all four, because it answered for EKS.
 | **Scaling** | A single VM. There is no HPA and no autoscaler; capacity is the machine type. |
 | **Backup / restore** | A daily **GCE disk snapshot** — resource policy `agrent-daily-snapshot`, 02:00 UTC, 14-day retention (`docs/slos.md`). That means an **RPO of up to 24 hours**, which is worth knowing before an incident rather than during one. The restore runbook is `docs/backup-restore.md`; it is not `aws rds restore-db-instance-to-point-in-time`, which appears nowhere in this deployment. |
 
-See #842 for turning this table into the full runbook the deleted ratchet was
-guarding.
+**The full runbook is now `docs/runbooks/production-vm.md`** (#842) — the
+four axes above with the actual commands, a rollback section rather than a
+rollback row, and an explicit inventory of what this deployment does not have.
+Held by `tests/guardrails/vm-runbook-commands.test.ts`, which among other
+things asserts that every repo path the runbook names exists.
 
 > **Companion docs**
-> - `infra/helm/inflect/README.md` — chart-specific operator notes
-> - `docs/infrastructure.md` — Epic OI-1 (Terraform/AWS layer beneath the cluster)
+> - `docs/runbooks/production-vm.md` — **the production runbook**
+> - `docs/backup-restore.md` — backups, the restore drill and its history
+> - `deploy/rollback/README.md` — inverse migrations, and when one is required
+> - `docs/infrastructure.md` — Epic OI-1 (the Terraform/AWS layer that was never provisioned)
 > - `docs/implementation-notes/2026-04-27-epic-oi-2-*.md` — design history
+>
+> The chart's own operator notes (`infra/helm/inflect/README.md`) went with
+> the chart in #848.
 
 ### Architecture
 

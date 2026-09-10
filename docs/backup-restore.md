@@ -62,8 +62,10 @@ gcloud compute snapshots list --sort-by=~creationTimestamp \
 
 - **RPO is up to 24 hours.** The snapshot is daily and there is no
   transaction-log archive, so a failure at 01:59 UTC loses nearly a
-  full day of work. `docs/slos.md` states a 1-hour RPO target; that
-  target is **not met** and is retained as something to build toward.
+  full day of work. `docs/slos.md` SLO 6 states 24 hours as the
+  objective too — the 1-hour target it used to carry was **retired** on
+  2026-09-10 (#842), not met; SLO 6 keeps the history and the cost of
+  tightening it.
 - **The snapshot is crash-consistent, not application-consistent.** It
   captures the volume mid-transaction; Postgres replays WAL when it
   starts. This is a supported recovery mode, and the drill below
@@ -236,5 +238,8 @@ re-pointing the workflow at it, and rewriting the guard to describe the
 posture actually deployed. The AWS scripts (`restore-test.sh`,
 `pg-dump-to-s3.sh`) were retired.
 
-**Still open:** RPO is 24h against a 1h target — closing it needs
-continuous WAL archiving or a managed Postgres.
+**Still open:** RPO is 24h, and since 2026-09-10 (#842) that is the
+stated objective rather than a missed 1-hour target. Tightening it needs
+continuous WAL archiving or a managed Postgres; neither is funded. The
+larger open item is that nothing detects an outage in the first place
+(#854).

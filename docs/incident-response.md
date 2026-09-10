@@ -1,11 +1,37 @@
 # Incident Response Runbook
 
-> Production operational playbook for inflect-compliance.
+> Epic OI-3 — written 2026-04-27 against an intended Kubernetes/EKS +
+> AWS deployment. Most of that infrastructure was never provisioned.
+
+> ## ⚠ READ THIS FIRST — most of this document describes a deployment that does not exist
 >
-> Epic OI-3 — final operational layer. Tied directly to the
-> alerts (`infra/alerts/rules.yml`), dashboards (`infra/dashboards/`),
-> deployment workflow (`.github/workflows/deploy.yml`), and recovery
-> scripts (`infra/scripts/`) shipped earlier in OI-3.
+> **Production is one GCE VM running Docker Compose** — instance
+> `agrent`, zone `europe-west1-b`, project `hazel-design-419410`,
+> served at `https://app.agrent.bg`. There is no Kubernetes cluster, no
+> Helm release, no RDS, no ElastiCache, no cert-manager, and (verified
+> 2026-09-10) no Prometheus, Grafana, Alertmanager or PagerDuty running
+> anywhere — `infra/alerts/` and `infra/dashboards/` are files in this
+> repo that nothing scrapes or serves. **Nothing pages anyone.**
+>
+> | section | status |
+> |---|---|
+> | [1. App Down](#1-app-down) | **corrected (#842)** — VM commands, verified against the running instance |
+> | [6. Rollback](#6-rollback) | **corrected (#842)** — VM procedure, verified |
+> | Quick reference, Severity, Dashboards, Common first steps | describe PagerDuty / Grafana / Alertmanager that are **not deployed** |
+> | 2. Database, 3. Redis, 4. Queue Backlog, 5. Certificate Expiry | `kubectl` / `aws` / `cert-manager` commands against infrastructure that **does not exist** — treat as unverified |
+> | [7. Data Breach Response](#7-data-breach-response) | partially corrected in #808; the `AuditLog` and KEK-rotation halves are real, the AWS commands are not |
+>
+> **The production runbook is `docs/runbooks/production-vm.md`** —
+> deploy, rollback, scaling and backup/restore with commands verified
+> against the running VM. Backup and restore detail:
+> `docs/backup-restore.md`. Migration rollback detail:
+> `deploy/rollback/README.md`.
+>
+> The remaining sections are being corrected rather than deleted: the
+> symptom-to-playbook structure is sound and someone who read the old
+> version needs to find out it was wrong, not find silence. Correcting
+> them is tracked separately, because it also invalidates the alerting
+> and dashboard layer this document is built on.
 
 ---
 
@@ -35,6 +61,16 @@
 | **WARNING** | Slack `#alerts-warnings` | Next business day | One sprint |
 
 **Severity is set by the alert rule's `labels.severity` field, not by the responder.** If you need to escalate a warning to critical, file a manual PagerDuty incident referencing the alert.
+
+> **⚠ This table is intended policy, not current behaviour — see #854.**
+> The routing column is not deployed: there is no PagerDuty service, no
+> Alertmanager, no Slack alert webhook and no rota, so no alert rule
+> sets a severity and nothing pages anyone. The 15-minute acknowledge
+> budget therefore measures nothing today — **detection is a human
+> noticing**, and the interval before that is unbounded. The 4-hour
+> resolution budget is real, but it runs from the moment a person
+> starts, which is why `docs/slos.md` SLO 7 reads its RTO as
+> time-to-restore rather than time-to-recover.
 
 ---
 
@@ -68,78 +104,98 @@ Every alert annotation carries a `dashboard:` field linking straight to the righ
 
 ## 1. App Down
 
-**Trigger**: external uptime monitor alarm (UptimeRobot/Pingdom 503 from multi-region) → PagerDuty critical. The internal `LivezProbeFailure` alert may also fire.
+**Trigger**: the site is unreachable, or a user reports 5xx / connection refused.
 
-**What it means**: external probes can't reach `/api/livez`. Either the app process is dead across all pods, OR the network path (DNS, ALB, Ingress) is broken.
+> **How this incident actually starts: a human notices.** There is no
+> external uptime monitor, no alert and no pager — verified 2026-09-10,
+> tracked as **#854**. Nothing in this document detects an outage; every
+> minute between the app dying and someone opening the site is
+> unmeasured and uncapped, and the 4-hour RTO in `docs/slos.md` SLO 7
+> is time-to-restore *from the moment you start*, not from the moment
+> it broke. Read any "page severity" or "acknowledge within 15 minutes"
+> below as the intended policy, not as a description of today.
+
+**What it means**: `/api/livez` cannot be reached. Either the `agrent-app` container is dead or restart-looping, Caddy is not proxying, or the VM itself is down.
+
+> **Corrected 2026-09-10 (#842).** The EKS triage that stood here —
+> pods, Ingress, in-cluster DNS, Helm release values — addressed a
+> cluster that does not exist. Replaced with the VM equivalents, verified
+> against the running instance. Full context:
+> `docs/runbooks/production-vm.md`.
 
 ### Triage
 
 ```bash
-# 1. Are pods running?
-kubectl --namespace inflect-production get pods \
-  -l "app.kubernetes.io/instance=inflect-production"
-
-# Look for: 0/N Ready, CrashLoopBackOff, Pending
+# 1. Is it the app, or the path to it? Ask from outside first.
+curl -sS -o /dev/null -w '%{http_code}\n' https://app.agrent.bg/api/livez
+curl -s https://app.agrent.bg/api/readyz | jq '{status, version, checks, failed}'
+# 200 + status "ready"            → app is fine; the report is something else
+# 200 livez but readyz not ready  → a dependency is down; `failed` names it
+# connection refused / TLS error  → Caddy or the VM  (steps 2-4)
 ```
 
 ```bash
-# 2. Is the Ingress healthy?
-kubectl --namespace inflect-production get ingress
-kubectl --namespace ingress-nginx get pods
-# Check the controller's logs for cert / upstream errors:
-kubectl --namespace ingress-nginx logs -l app.kubernetes.io/name=ingress-nginx --tail=200
+# 2. What is running? Seven containers: app, worker, db, pgbouncer,
+#    redis, caddy, watchtower. Docker on the VM needs sudo.
+gcloud compute ssh agrent --zone europe-west1-b --command \
+  "sudo docker compose -f /opt/agrent/docker-compose.vm.yml ps"
+# Look for: Exit, Restarting, or (unhealthy) on agrent-app.
 ```
 
 ```bash
-# 3. Can YOU reach /api/livez from inside the cluster?
-kubectl --namespace inflect-production run --rm -it --image=curlimages/curl debug -- \
-  curl -v http://inflect-production.inflect-production.svc.cluster.local/api/livez
-# 200 with body {"status":"alive",...} → app is up; problem is INGRESS or DNS
-# 503 / timeout → app process is down
+# 3. The app container's own account of why.
+gcloud compute ssh agrent --zone europe-west1-b --command \
+  "sudo docker logs --tail 200 agrent-app"
+# The entrypoint prints its migration step BEFORE Next.js starts. A loop
+# that never reaches "Starting Next.js server" is a failing migration.
 ```
 
 ```bash
-# 4. Recent events?
-kubectl --namespace inflect-production get events \
-  --sort-by='.lastTimestamp' | tail -20
+# 4. Is the VM itself up, and does it have disk? Postgres, uploads, Redis
+#    AOF and every image share one 80 GB boot disk; at 100% everything
+#    fails at once and it looks like an app fault.
+gcloud compute instances describe agrent --zone europe-west1-b --format='value(status)'
+gcloud compute ssh agrent --zone europe-west1-b --command "df -h /; free -h"
 ```
 
 ### Decide
 
 | Symptom | Next action |
 |---|---|
-| All pods CrashLoopBackOff | Likely bad image / config. → [Rollback](#6-rollback) |
-| 0 pods, ReplicaSet has 0 desired | HPA scaled to 0 or Deployment misconfigured. Check `helm get values inflect-production -n inflect-production` for `autoscaling.minReplicas` |
-| Pods Ready, in-cluster /livez returns 200, but external 503 | Ingress / DNS issue. Check ingress controller logs + DNS records. |
-| Cert error in browser/curl | → [Certificate Expiry](#5-certificate-expiry) |
+| `agrent-app` restarting in a loop, logs never reach "Starting Next.js server" | The entrypoint's `prisma migrate deploy` is failing — a bad migration shipped with the image. → [Rollback](#6-rollback) |
+| `agrent-app` healthy, `agrent-caddy` down or erroring | TLS / proxy fault. `sudo docker logs --tail 100 agrent-caddy`; restart caddy. Certs are Let's Encrypt via Caddy → [Certificate Expiry](#5-certificate-expiry) |
+| Container up, `/api/readyz` reports `database` failed | → [Database Unavailable / Slow](#2-database-unavailable--slow) |
+| Container up, `/api/readyz` reports `redis` failed | → [Redis OOM / Degraded Queueing](#3-redis-oom--degraded-queueing) |
+| Disk at or near 100% | `sudo docker image prune -a` buys room immediately; then resize the disk (`docs/runbooks/production-vm.md` § 3) |
+| Instance `status` is not `RUNNING` | Start it: `gcloud compute instances start agrent --zone europe-west1-b`. If it will not boot, the recovery path is the disk snapshot — `docs/backup-restore.md` |
+| App version is not the commit you expect | Watchtower did not roll, or rolled something else. `sudo docker logs --tail 50 agrent-watchtower`, and check `Image tip check` |
 
 ### Mitigate
 
-- **If clearly a bad deploy** (CrashLoopBackOff after a recent rollout):
+- **App container up but the site is unreachable** → Caddy terminates
+  TLS and reverse-proxies to `app:3000`. Check it, not the app:
   ```bash
-  helm rollback inflect-production --namespace inflect-production --wait --timeout 5m
-  ```
-  See [Rollback](#6-rollback) for full procedure.
-
-- **If image puller fails** (e.g. GHCR credentials rotated, image pruned):
-  Restore the image pull secret + restart pods:
-  ```bash
-  kubectl --namespace inflect-production rollout restart deployment/inflect-production
+  gcloud compute ssh agrent --zone europe-west1-b --command \
+    "sudo docker logs --tail 100 agrent-caddy"
   ```
 
-- **If completely opaque** and time-to-mitigate is exceeding 30 minutes:
-  Restart the Deployment AND scale to known-good replica count manually:
+- **App container restart-looping after a deploy** → almost always the
+  entrypoint's `prisma migrate deploy` failing, since it runs before
+  Next.js starts. → [Rollback](#6-rollback).
+
+- **Nothing conclusive after 30 minutes** → restart the app + worker.
+  This is safe; it is what Watchtower does on every deploy:
   ```bash
-  kubectl --namespace inflect-production scale deployment/inflect-production --replicas=3
-  kubectl --namespace inflect-production rollout restart deployment/inflect-production
-  kubectl --namespace inflect-production rollout status deployment/inflect-production --timeout=5m
+  gcloud compute ssh agrent --zone europe-west1-b --command \
+    "cd /opt/agrent && sudo docker compose -f docker-compose.vm.yml restart app worker"
   ```
 
 ### Verify recovery
 
-- External uptime monitor returns to healthy (PagerDuty incident auto-resolves via `send_resolved: true`).
-- `kubectl get pods` shows N/N Ready.
-- `curl https://app.example.com/api/livez` returns 200 from your machine.
+- `curl https://app.agrent.bg/api/livez` returns 200 from your machine.
+- `curl -s https://app.agrent.bg/api/readyz | jq '{status, version, checks}'` — `status: "ready"`, database and redis `ok`, and `version` is the commit SHA you expect.
+- `SMOKE_URL=https://app.agrent.bg node scripts/smoke-prod.mjs` passes.
+- There is no external uptime monitor to go green, and no PagerDuty incident to auto-resolve. Confirm by hand.
 
 ---
 
@@ -385,46 +441,125 @@ echo | openssl s_client -showcerts -servername app.example.com -connect app.exam
 
 **Trigger**: smoke test failure post-deploy, error spike post-deploy, or operator decision after another runbook recommends it.
 
-**What it means**: undo the most recent (or chosen) Helm release.
+**What it means**: put production back on the previous app image — and, if the bad deploy carried a destructive migration, put the SCHEMA back too. Those are two different operations and only one of them is fast.
 
-### Procedure
+> **Corrected 2026-09-10 (#842).** This playbook used to instruct
+> on-call to inspect a Helm release's revision history and roll it back,
+> and `tests/guards/oi-3-runbook-and-slos.test.ts` REQUIRED those exact
+> command strings — a green guardrail holding an impossible instruction
+> in place in the one document that gets read under time pressure. There
+> is no chart (deleted in #848), no Helm release and no cluster. The
+> strings are deliberately not reproduced here: the guard now asserts
+> their ABSENCE, so quoting them would re-arm the trap. The full
+> procedure, with the scaling and drift context around it, is
+> **`docs/runbooks/production-vm.md` § 2**; the essentials are below so
+> this page stands alone at 03:00.
+
+### The one fact that decides the procedure
+
+`scripts/entrypoint.sh` runs `prisma migrate deploy` before Next.js
+starts, so **shipping an image is what applies a migration**. Pointing
+the app back at the previous image reverts the CODE and leaves the
+SCHEMA migrated. After a rename or a drop, the previous image queries
+objects that no longer exist — an image-only rollback there does not
+degrade gracefully, it **fails outright**.
+
+| the bad deploy… | procedure |
+|---|---|
+| no migration, or a purely additive one | image pin (below). Old code ignores a new column. |
+| renamed / dropped / narrowed, or rewrote persisted data | down-migration FIRST, then the image pin |
+| data destroyed with no `.down.sql` | snapshot restore — up to **24 h** of loss. `docs/backup-restore.md`. |
 
 ```bash
-# 1. Confirm namespace + release
-helm list --namespace inflect-production
-
-# 2. Show the revision history
-helm history inflect-production --namespace inflect-production --max 10
-# Output: REVISION  STATUS      CHART          APP VERSION  DESCRIPTION
-#         5         deployed    inflect-0.1.0  1.36.0       Upgrade complete  ← current
-#         4         superseded  inflect-0.1.0  1.35.1       Upgrade complete  ← target
-
-# 3. Roll back to the immediately prior revision
-helm rollback inflect-production --namespace inflect-production --wait --timeout 5m
-
-# OR roll back to a specific revision
-helm rollback inflect-production 4 --namespace inflect-production --wait --timeout 5m
-
-# 4. Verify
-kubectl --namespace inflect-production rollout status deployment/inflect-production
-curl https://app.example.com/api/readyz | jq .
-
-# 5. Run smoke against the rolled-back service
-SMOKE_URL=https://app.example.com node scripts/smoke-prod.mjs
+# Which migrations did the running image apply, and when?
+gcloud compute ssh agrent --zone europe-west1-b --command \
+  "sudo docker exec -i agrent-db sh -c 'psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -tAc \
+   \"SELECT migration_name, finished_at FROM _prisma_migrations ORDER BY finished_at DESC LIMIT 10;\"'"
 ```
 
-### What rollback re-applies — and what it doesn't
+Cross-check those names against `ls deploy/rollback/`.
 
-| ✅ Re-applied | ❌ NOT re-applied |
+### Procedure — image pin
+
+```bash
+# 1. What is running now? `version` is the full commit SHA (BUILD_SHA).
+curl -s https://app.agrent.bg/api/readyz | jq -r .version
+
+# 2. Choose the last good commit; the image tag is sha-<7-char short SHA>.
+git log --oneline -10 origin/main
+
+# 3. Confirm the tag exists in GHCR before pinning to it. Watchtower runs
+#    with --cleanup, so the previous image is NOT still on the VM — every
+#    rollback goes through a registry pull.
+gcloud compute ssh agrent --zone europe-west1-b --command \
+  "sudo docker buildx imagetools inspect ghcr.io/rodnapamet/agri-saas:sha-<short> \
+     --format '{{println .Manifest.Digest}}'"
+
+# 4. Pin BOTH `app` and `worker` in deploy/docker-compose.vm.yml from
+#    `:latest` to `:sha-<short>`, then push the compose file up. An
+#    immutable sha- tag is also what stops Watchtower (--interval 300)
+#    rolling you forward again within five minutes.
+deploy/apply.sh
+
+# 5. Pull explicitly and recreate WITHOUT building — both services carry a
+#    `build:` block, and an absent image is exactly when compose would
+#    choose to build one.
+gcloud compute ssh agrent --zone europe-west1-b --command \
+  "cd /opt/agrent && sudo docker compose -f docker-compose.vm.yml pull app worker && \
+   sudo docker compose -f docker-compose.vm.yml up -d --no-build app worker"
+
+# 6. Verify + smoke.
+curl -s https://app.agrent.bg/api/readyz | jq '{status, version}'
+SMOKE_URL=https://app.agrent.bg node scripts/smoke-prod.mjs
+```
+
+A `sha-` pin left in the repo means Watchtower ships nothing ever again
+and nobody is told. File an issue when you pin, and return the compose
+file to `:latest` in the PR that fixes the defect.
+
+### Procedure — down-migration (destructive migrations only)
+
+`deploy/rollback/<migration_directory_name>.down.sql`. Read
+`deploy/rollback/README.md` first: its "Current scripts" table records
+which scripts have actually been executed against a database and which
+have only been written, and two of them have an ordering constraint
+between them.
+
+```bash
+# 1. Stop app + worker. DDL under a live app means in-flight queries hit
+#    tables mid-rename.
+gcloud compute ssh agrent --zone europe-west1-b --command \
+  "cd /opt/agrent && sudo docker compose -f docker-compose.vm.yml stop app worker"
+
+# 2. Apply against the DIRECT connection, never PgBouncer — this is DDL in
+#    one transaction and PgBouncer pools per-transaction. Running it inside
+#    the db container IS the direct connection.
+gcloud compute ssh agrent --zone europe-west1-b --command \
+  "sudo docker exec -i agrent-db sh -c 'psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" \
+     -v ON_ERROR_STOP=1'" < deploy/rollback/<name>.down.sql
+
+# 3. NOW do the image pin above. Starting the NEW image instead re-applies
+#    the forward migration from its entrypoint and puts you back where you
+#    started.
+```
+
+`-v ON_ERROR_STOP=1` is load-bearing: without it `psql` continues past a
+failed statement and, combined with the script's `BEGIN;`/`COMMIT;`
+wrapper, a rolled-back transaction is reported as a successful run. Each
+script also deletes its own `_prisma_migrations` row on purpose — leave
+it and a later roll-forward *skips* the migration as already-applied,
+putting new code on an old schema.
+
+### What an image pin re-applies — and what it doesn't
+
+| ✅ Reverted | ❌ NOT reverted |
 |---|---|
-| Deployment image tag, replicas, env, resources | Pre-install/upgrade hooks (the migration Job is **NOT** re-run on rollback) |
-| ConfigMap / Secret content (chart-managed) | Externally-managed resources (RDS state, S3 bucket contents, Secrets Manager) |
-| HPA bounds + metrics | Schema migrations |
-| Ingress + NetworkPolicy + Service | |
+| App + worker code, and anything baked into the image | **Schema migrations** — `migrate deploy` is one-way and is not re-run in reverse |
+| The `BUILD_SHA` reported by `/api/readyz` | Rows written or rewritten by a data migration |
+| | `/opt/agrent/.env` (hand-managed, never touched by `apply.sh`) |
+| | Anything outside the VM (GHCR tags, DNS, OAuth app config) |
 
-### Migration safety on rollback
-
-The migration Job is one-way. Rolling back the app image to a revision that **pre-dates** a schema migration leaves the OLD app code reading the NEW schema — broken (missing columns, wrong types).
+### Migration safety — design for the rollback you will need
 
 **Mitigation pattern: expand-and-contract migrations.**
 
@@ -434,13 +569,20 @@ The migration Job is one-way. Rolling back the app image to a revision that **pr
 | PR2 (Migrate) | (no schema change) | Use the new shape |
 | PR3 (Contract) | Drop old shape | Use the new shape exclusively |
 
-A rollback after PR2 (Migrate) is safe — the schema accommodates both. A rollback after PR3 (Contract) is a data-loss event; **flag it in PR descriptions so reviewers see the constraint explicitly**.
+A rollback after PR2 (Migrate) is safe — the schema accommodates both. A rollback after PR3 (Contract) is where you need the `.down.sql`; **flag it in PR descriptions so reviewers see the constraint explicitly**.
 
-If you rollback past a Contract-style PR by accident:
-1. Stop the pods (`kubectl scale deployment/... --replicas=0`).
-2. Restore the database from the latest snapshot taken before the Contract migration applied.
-3. Cut over the app to the restored DB endpoint.
-4. Communicate data loss window to customers.
+`tests/guards/destructive-migration-has-inverse.test.ts` derives the
+destructive set by scanning every `migration.sql` for `DROP TABLE` /
+`DROP COLUMN` / `DROP TYPE` / `RENAME TO` / `RENAME COLUMN` and requires
+each one to have an inverse, so a new drop is covered the moment it
+lands. It cannot tell you the inverse is *correct* — only that one
+exists.
+
+If you rolled back past a Contract-style migration and there is no usable inverse:
+1. Stop app + worker (step 1 above).
+2. Restore the disk from the latest snapshot taken before the migration applied (`docs/backup-restore.md` § "Recovering for real") — accepting up to 24 h of loss.
+3. Bring the previous image up against the restored disk.
+4. Communicate the data-loss window to customers.
 
 ---
 
@@ -659,7 +801,7 @@ underlying machinery shipped across OI-1 / OI-2 / OI-3:
 
 | Runbook section uses... | ...which is shipped by |
 |---|---|
-| `helm rollback`, `kubectl rollout restart` | Epic OI-2 (Helm chart, deploy workflow) |
+| ~~`helm rollback`, `kubectl rollout restart`~~ → image pin + `deploy/apply.sh` | Epic OI-2 shipped a Helm chart and a `deploy.yml` that **never ran once**; both deleted (#808, #848). The real path is `deploy/apply.sh` + `deploy/docker-compose.vm.yml` + Watchtower, documented in `docs/runbooks/production-vm.md` |
 | disk-from-snapshot restore | GCE snapshot schedule `agrent-daily-snapshot` + `infra/scripts/restore-test-gcp.sh` (validates the path monthly) |
 | Secrets Manager rotation (KEK, AUTH, DB) | Epic OI-1 (secrets module, `manage_master_user_password=true` for RDS) |
 | Database / Redis / BullMQ dashboards | Epic OI-3 part 2 (`infra/dashboards/`) |
@@ -679,3 +821,4 @@ landing on this doc cold can act without prior context.
 | Date | Change |
 |---|---|
 | 2026-04-27 | Initial runbook (Epic OI-3 final layer). 7 playbooks + 5 communication templates. Tied to OI-1 (Terraform/RDS), OI-2 (Helm/deploy), and the rest of OI-3 (readyz, observability, alerting, backup/restore). |
+| 2026-09-10 | **#842** — replaced the Helm rollback playbook (§6) with the VM procedure and rewrote §1 App Down for the VM; added the READ-THIS-FIRST banner marking which sections still describe undeployed EKS/AWS infrastructure; re-pointed `tests/guards/oi-3-runbook-and-slos.test.ts`, which had been REQUIRING the two Helm release-history/rollback command strings by exact match and so was holding an impossible instruction green — it now asserts their absence. Companion: `docs/runbooks/production-vm.md`. |
