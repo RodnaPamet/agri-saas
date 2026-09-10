@@ -1,0 +1,49 @@
+# SINGLE SOURCE OF TRUTH — the Postgres/PostGIS image every CI service
+# container, the dev/prod DB image, and the restore drill run.
+#
+# FORMAT: the first non-blank line that is not a `#` comment is the image
+# reference, and nothing else on that line. Consumers parse exactly that.
+#
+# WHO DERIVES FROM THIS FILE (no literal of their own — they read it):
+#   .github/actions/enable-pgvector/action.yml   `docker ps --filter ancestor=`
+#
+# WHO CANNOT, AND SO REPEATS THE LITERAL:
+#   .github/workflows/ci.yml                 (x3, `services.postgres.image`)
+#   .github/workflows/lighthouse.yml
+#   .github/workflows/coverage-reference.yml
+#   .github/workflows/load-test.yml
+#   deploy/postgres/Dockerfile               (`FROM`)
+#   infra/scripts/restore-test-gcp.sh        (heredoc `FROM`)
+#   docs/dev-setup-macos.md                  (arm64 table)
+# GitHub Actions gives `jobs.<id>.services.<id>.image` no `env` context and no
+# way to call an action, and `FROM` takes no runtime lookup, so those nine
+# literals (six `image:` lines, two `FROM`s, one doc table row) are literals
+# by necessity, not by choice.
+# tests/guards/postgis-image-single-source.test.ts fails CI the instant any of
+# them disagrees with the line below — that is what makes nine literals safe.
+# The count above is NOT just prose: that guard asserts the tracked tree holds
+# exactly nine live references, and that this paragraph says nine. A tenth
+# literal has to be registered here, not absorbed silently.
+#
+# AND ONE MORE SPELLING OF IT. `docker-compose.yml` and
+# `docker-compose.test.yml` build `deploy/postgres/Dockerfile` and tag the
+# result `agri-saas-postgres:<tag>-pgvector`, where `<tag>` is the tag below
+# repeated inside a LOCAL image name. That is the pin again, in a name no
+# `postgis/postgis` reference search can find — bump this file and leave
+# those two tags behind and they lie about the base, with CI green. The
+# guard's Direction D covers them: it PARSES every tracked compose file,
+# finds each service whose `build:` resolves to that Dockerfile (the
+# explicit `dockerfile:` key, or a bare `context:` pointing at the
+# directory, which is how `deploy/docker-compose.vm.yml` does it), and
+# requires any version its published `image:` encodes to be this one.
+# Parsed rather than pattern-matched, so writing `image:` ABOVE `build:` —
+# valid, idiomatic Compose — cannot hide a tag from it, and so that the
+# local name is available to the flag check in Direction B as well. A tag
+# that encodes NO version — `agrent-db:local` — is fine and stays out of
+# the way.
+#
+# BEFORE YOU BUMP THIS: read the WHY-NOT-YET note at the top of
+# .github/actions/enable-pgvector/action.yml. Every Debian-flavoured
+# `postgis/postgis` tag for Postgres <= 17 is still bullseye, so a tag bump
+# alone does NOT lift the frozen-security-index problem. Issue #832.
+postgis/postgis:16-3.4

@@ -11,32 +11,93 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        cid="$(docker ps --filter 'ancestor=postgis/postgis:16-3.4' --format '{{.ID}}' | head -1)"
-        if [ -z "$cid" ]; then
-          echo "::error::postgis service container not found — cannot install pgvector" >&2
+
+        # ── The image reference is DERIVED, never restated ──────────────
+        #
+        # This step has to find the service container the workflow started,
+        # and `docker ps --filter ancestor=` is the only handle it has: the
+        # job also runs a `redis` service, so "the only container" is not a
+        # selector. A LITERAL image string here would be a TENTH copy of
+        # the pin — and the only one that no `image:` line drags along when
+        # the pin moves. The failure mode of a stale copy is a filter that
+        # matches nothing,
+        # which is the same observation as "matched nothing for some other
+        # reason". So the string comes out of the one file that owns it.
+        pin_file="${GITHUB_ACTION_PATH}/../../postgis-image"
+        if [ ! -f "$pin_file" ]; then
+          echo "::error::pin file not found at $pin_file — .github/postgis-image is the single source of truth for the service image" >&2
           exit 1
         fi
-        # `Acquire::Check-Valid-Until=false` is REQUIRED, not defensive.
+        # `|| true` because a comments-only pin file makes `grep` exit 1,
+        # and under `set -euo pipefail` that aborts the step HERE with no
+        # message — an unnamed death where the shape check below has a named
+        # one. Let the empty string through so the diagnosis is printed.
+        image="$(grep -v -E '^[[:space:]]*(#|$)' "$pin_file" | head -1 | tr -d '[:space:]' || true)"
+
+        # POSITIVE CONTROL on the derivation itself. An empty or malformed
+        # `$image` would make `--filter ancestor=` match every container (or
+        # none) and the rest of this step would be reasoning about garbage.
+        # Assert the shape BEFORE trusting anything downstream of it.
+        if [[ ! "$image" =~ ^[a-z0-9._/-]+:[A-Za-z0-9._-]+$ ]]; then
+          echo "::error::.github/postgis-image did not yield an image reference (got: '${image}')" >&2
+          exit 1
+        fi
+        echo "resolved service image from .github/postgis-image: ${image}"
+
+        # POSITIVE CONTROL on the selection. The old code took `head -1` of
+        # the filter output, so "no container" and "one container" reached
+        # the same line and only an emptiness check told them apart. Count
+        # instead: exactly one match is the only correct answer, and both
+        # zero and two are now distinct, named failures.
+        mapfile -t cids < <(docker ps --filter "ancestor=${image}" --format '{{.ID}}')
+        if [ "${#cids[@]}" -eq 0 ]; then
+          echo "::error::no running container from ${image} — either the job declares no postgres service, or its image: line has drifted from .github/postgis-image" >&2
+          docker ps --format 'running: {{.ID}} {{.Image}}' >&2
+          exit 1
+        fi
+        if [ "${#cids[@]}" -gt 1 ]; then
+          echo "::error::${#cids[@]} running containers from ${image} — refusing to guess which one is the test database" >&2
+          docker ps --format 'running: {{.ID}} {{.Image}}' >&2
+          exit 1
+        fi
+        cid="${cids[0]}"
+
+        # ── Why `Acquire::Check-Valid-Until=false` is still here ────────
         #
-        # postgis/postgis:16-3.4 is Debian bullseye, and bullseye-security's
-        # Release file stopped being refreshed on 2026-09-07T21:13:04Z:
+        # It is REQUIRED, not defensive. It is also still a STOPGAP — and
+        # the WHY NOT YET note below is why that stopgap is not ready to
+        # come out in this change, or in any change that is only a tag edit.
+        #
+        # The image is Debian bullseye, and bullseye-security's Release file
+        # stopped being refreshed on 2026-09-07T21:13:04Z:
         #
         #   Date:        Mon, 31 Aug 2026 21:13:04 UTC
         #   Valid-Until: Mon, 07 Sep 2026 21:13:04 UTC
         #
         # Past that instant `apt-get update` exits 100 — "Release file ... is
-        # expired" — so this step, and every job that uses it, fails. Verified
-        # in the real image: without the flag exit=100, with it exit=0 and
-        # `vector.control` installs.
+        # expired" — so this step, and every job that uses it, fails.
         #
-        # It reads as a security relaxation and is not one. The suite is FROZEN,
-        # so there are no newer security updates being withheld; the index is
-        # simply stale. And `postgresql-16-pgvector` comes from PGDG, a separate
-        # and still-maintained repo, so its freshness is unaffected. What the
-        # flag buys is that a frozen debian-security index stops failing the
-        # whole `update`.
+        # It reads as a security relaxation and is not one. The suite is
+        # FROZEN, so there are no newer security updates being withheld; the
+        # index is simply stale. And `postgresql-16-pgvector` comes from
+        # PGDG, a separate and still-maintained repo, so its freshness is
+        # unaffected. What the flag buys is that a frozen debian-security
+        # index stops failing the whole `update`.
         #
-        # This is a STOPGAP. The real fix is a base image on a maintained
-        # Debian — tracked in the issue referenced by the PR that added this.
+        # WHY NOT YET (#832) — checked 2026-09-10, and the reason is not
+        # inertia. `postgis/postgis` publishes NO Debian tag on a maintained
+        # suite for Postgres 16: upstream's 16-3.5 Dockerfile is literally
+        # `FROM docker.io/postgres:16-bullseye`, and `16-3.5` reproduces this
+        # exact exit 100. The only trixie-based tag is `18-3.6`, which forces
+        # a Postgres MAJOR bump (out of scope), and `16-3.5-alpine` cannot
+        # supply pgvector for PG16 at all — Alpine's `postgresql-pgvector`
+        # depends on `postgresql18`. Migrating therefore means publishing our
+        # own image (postgres:16-trixie + PGDG postgis + pgvector, both of
+        # which are available there), which is a registry and supply-chain
+        # decision, not a tag edit.
+        #
+        # So: do NOT "clean this up". Removing the flag re-breaks every job
+        # that touches this action. When #832 lands a maintained-Debian base,
+        # the flag comes out in THAT change, where a red run has one cause.
         docker exec "$cid" sh -c 'apt-get -o Acquire::Check-Valid-Until=false update -qq && apt-get install -y -qq postgresql-16-pgvector'
         echo "pgvector installed into container $cid"

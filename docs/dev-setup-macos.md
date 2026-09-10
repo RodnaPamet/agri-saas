@@ -64,13 +64,18 @@ produces a build that looks fine and ships unnonced scripts.
 ### 5. Debian bullseye's expired Release file
 
 `deploy/postgres/Dockerfile` builds on a bullseye-based image whose security
-`Release` file expired 2026-09-07, so `apt-get update` fails. Tracked as
-**#832**; the CI action was patched separately, the Dockerfile was not. Until it
-is fixed, add locally:
+`Release` file expired 2026-09-07, so a plain `apt-get update` exits 100 and
+the build fails. **No local workaround is needed any more** — the Dockerfile
+carries `apt-get -o Acquire::Check-Valid-Until=false update`, as do the CI
+action and `infra/scripts/restore-test-gcp.sh`. (An earlier revision of this
+page told you to add the flag by hand, because #833 patched only the CI
+action; that gap is closed.)
 
-```dockerfile
-RUN apt-get -o Acquire::Check-Valid-Until=false update && ...
-```
+The flag is a labelled stopgap, not a fix, and it is **not** ready to remove:
+`postgis/postgis` publishes no Debian tag on a maintained suite for Postgres
+16 — upstream's `16-3.5` is `FROM docker.io/postgres:16-bullseye` and
+reproduces the same failure. Tracked as **#832**; the argument is written out
+at the top of `.github/actions/enable-pgvector/action.yml`.
 
 ---
 
