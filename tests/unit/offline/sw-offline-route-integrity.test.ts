@@ -1,0 +1,275 @@
+/**
+ * An offline navigation must open the route asked for, or say it cannot.
+ * It must never quietly open a DIFFERENT one.
+ *
+ * Reported from a physical iPhone, 2026-09-10, with the route's RSC payload and
+ * three documents already cached: *"It flashes the screen of the task, but then
+ * returns to the tasks screen"*. The chain, every link of it in this worker:
+ *
+ *   1. `Cache.match()` honours the response's `Vary` header unless told not to
+ *      (`ignoreVary` defaults to FALSE), and Next sets
+ *      `Vary: RSC, Next-Router-State-Tree, Next-Router-Prefetch,
+ *      Next-Router-Segment-Prefetch` on every app-router response
+ *      (node_modules/next/dist/server/base-server.js, setVaryHeader).
+ *      `Next-Router-State-Tree` is the CURRENT router tree, so it differs by
+ *      the route navigated FROM — the lookup missed.
+ *   2. A missed lookup made networkFirstRsc throw, and the App Router does not
+ *      treat a rejected flight fetch as an error to show. fetch-server-response.js
+ *      ends its catch with `return originalUrl.toString()` under the comment
+ *      "If fetch fails handle it like a mpa navigation" — a FULL DOCUMENT LOAD.
+ *   3. That document load missed too, and the shell fallback answered it with
+ *      the most recently cached document — My work. The operator was returned
+ *      to the list they had just tapped out of, with nothing reporting a fault.
+ *
+ * These tests model `Vary` for real rather than asserting on the source, so
+ * deleting `ignoreVary` turns them red for the reason the operator saw.
+ */
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
+const SW_SRC = fs.readFileSync(path.resolve(__dirname, '../../../public/sw.js'), 'utf8');
+
+/** Next's real Vary list, verbatim from base-server.js `setVaryHeader`. */
+const NEXT_VARY = ['RSC', 'Next-Router-State-Tree', 'Next-Router-Prefetch', 'Next-Router-Segment-Prefetch'];
+
+type Headers = Record<string, string | null>;
+interface Entry { url: string; vary: Headers; body: string }
+
+/** A Cache that enforces Vary the way the real one does. */
+class VaryCache {
+    entries: Entry[] = [];
+    constructor(seed: Entry[] = []) { this.entries = [...seed]; }
+    // A real Cache.keys() returns the stored REQUESTS, headers and all — a
+    // bare {url} makes the Vary check throw and passes off a harness artifact
+    // as a product bug.
+    async keys() {
+        return this.entries.map((e) => ({ url: e.url, headers: { get: (k: string) => e.vary[k] ?? null } }));
+    }
+
+    private varyAgrees(entry: Entry, req: { headers: { get(k: string): string | null } }) {
+        return NEXT_VARY.every((h) => (entry.vary[h] ?? null) === req.headers.get(h));
+    }
+
+    async match(
+        req: { url: string; headers: { get(k: string): string | null } },
+        opts?: { ignoreSearch?: boolean; ignoreVary?: boolean },
+    ) {
+        // ONE insertion-order pass, first match wins. `ignoreSearch` does NOT
+        // make the real Cache API fall back to preferring an exact URL — a
+        // fake that does is more forgiving than the thing it stands in for,
+        // and it hid whether the exact lookup's `ignoreVary` did anything.
+        const ok = (e: Entry) => opts?.ignoreVary || this.varyAgrees(e, req);
+        const same = opts?.ignoreSearch
+            ? (e: Entry) => e.url.split('?')[0] === req.url.split('?')[0]
+            : (e: Entry) => e.url === req.url;
+        const hit = this.entries.find((e) => same(e) && ok(e));
+        return hit ? { _served: hit.url, _body: hit.body } : undefined;
+    }
+
+    async put(req: { url: string; headers: { get(k: string): string | null } }, res: { _body?: string }) {
+        const vary: Headers = {};
+        for (const h of NEXT_VARY) vary[h] = req.headers.get(h);
+        this.entries = this.entries.filter((e) => !(e.url === req.url && this.varyAgrees(e, req)));
+        this.entries.push({ url: req.url, vary, body: res._body ?? 'flight' });
+    }
+    async delete() { return true; }
+}
+
+class FakeResponse {
+    static constructed: { body: string }[] = [];
+    _html: string;
+    constructor(body: string, _init?: unknown) {
+        this._html = String(body);
+        FakeResponse.constructed.push({ body: this._html });
+    }
+}
+
+interface WorkerOpts {
+    online: boolean;
+    rscSeed?: Entry[];
+    pageSeed?: Entry[];
+    cacheNames?: string[];
+}
+
+function loadWorker(opts: WorkerOpts) {
+    const listeners: Record<string, (e: unknown) => void> = {};
+    const buckets: Record<string, VaryCache> = {};
+    const deleted: string[] = [];
+    const self = {
+        addEventListener: (t: string, cb: (e: unknown) => void) => { listeners[t] = cb; },
+        clients: { matchAll: async () => [], claim: async () => undefined },
+        registration: {},
+        location: { origin: 'https://app.test' },
+    };
+    const caches = {
+        open: async (name: string) => {
+            buckets[name] ??= new VaryCache(
+                name.endsWith('-rsc') ? opts.rscSeed ?? [] : name.endsWith('-pages') ? opts.pageSeed ?? [] : [],
+            );
+            return buckets[name];
+        },
+        keys: async () => opts.cacheNames ?? [],
+        delete: async (name: string) => { deleted.push(name); return true; },
+        // The navigate branch tries the global match before any fallback.
+        match: async () => undefined,
+    };
+    const fetchImpl = async () => {
+        if (!opts.online) throw new Error('offline');
+        return {
+            ok: true, status: 200, statusText: 'OK', redirected: false,
+            headers: { get: () => '512' },
+            clone: () => ({ _body: 'flight', body: 'flight', redirected: false }),
+        };
+    };
+    const factory = new Function(
+        'self', 'indexedDB', 'caches', 'fetch', 'Response', 'URL', 'clients', 'console',
+        `${SW_SRC}\n;return true;`,
+    );
+    factory(self, { open: () => ({}), databases: async () => [] }, caches, fetchImpl,
+        FakeResponse, URL, self.clients, { ...console, warn: () => {} });
+    return { listeners, buckets, deleted };
+}
+
+type Worker = ReturnType<typeof loadWorker>;
+
+function headersFor(h: Headers) {
+    return { get: (k: string) => h[k] ?? null };
+}
+
+async function dispatch(w: Worker, request: unknown) {
+    let responded: Promise<unknown> | undefined;
+    w.listeners['fetch']({ request, respondWith: (p: Promise<unknown>) => { responded = p; } });
+    const out = responded ? await responded.catch((e: Error) => ({ _threw: e.message })) : undefined;
+    for (let i = 0; i < 3; i++) await new Promise((r) => setTimeout(r, 0));
+    return out as { _served?: string; _threw?: string; _html?: string } | undefined;
+}
+
+const flight = (url: string, h: Headers = {}) =>
+    ({ url, method: 'GET', mode: 'cors', headers: headersFor({ RSC: '1', ...h }) });
+
+const navigation = (url: string) =>
+    ({ url, method: 'GET', mode: 'navigate', headers: headersFor({}) });
+
+const TASK = 'https://app.test/t/acme/field/task-1?_rsc=abc123';
+const MY_WORK_DOC = 'https://app.test/t/acme/my-work';
+const START_URL = 'https://app.test/tenants';
+
+beforeEach(() => { FakeResponse.constructed = []; });
+
+describe('a cached flight payload survives a different router state (Vary)', () => {
+    it('serves the payload cached under a DIFFERENT Next-Router-State-Tree', async () => {
+        // Online the operator reached the task from My work; offline the app
+        // booted from the shell fallback, so the tree is not the same string.
+        // Without ignoreVary this lookup misses and the route is lost.
+        const w = loadWorker({
+            online: false,
+            rscSeed: [{
+                url: TASK,
+                vary: { RSC: '1', 'Next-Router-State-Tree': '%5B%22%22%2C%7Bmy-work%7D%5D' },
+                body: 'flight',
+            }],
+        });
+        const res = await dispatch(w, flight(TASK, { 'Next-Router-State-Tree': '%5B%22%22%2C%7Bdifferent%7D%5D' }));
+        expect(res?._threw).toBeUndefined();
+        expect(res?._served).toBe(TASK);
+    });
+
+    it('still finds it when BOTH the state tree and the _rsc hash differ', async () => {
+        const w = loadWorker({
+            online: false,
+            rscSeed: [{ url: TASK, vary: { RSC: '1', 'Next-Router-State-Tree': 'tree-A' }, body: 'flight' }],
+        });
+        const res = await dispatch(
+            w,
+            flight('https://app.test/t/acme/field/task-1?_rsc=OTHER', { 'Next-Router-State-Tree': 'tree-B' }),
+        );
+        expect(res?._served).toBe(TASK);
+    });
+
+    it('prefers the EXACT url over a stale entry on the same path', async () => {
+        // Separates the two ignoreVary sites. Drop it from the exact lookup and
+        // the exact match misses on Vary, so the loose `ignoreSearch` retry
+        // answers with whichever same-path entry was inserted FIRST — a stale
+        // payload for the right route. Without this case both lookups could be
+        // mutated one at a time with nothing going red.
+        const w = loadWorker({
+            online: false,
+            rscSeed: [
+                { url: 'https://app.test/t/acme/field/task-1?_rsc=STALE', vary: { RSC: '1', 'Next-Router-State-Tree': 'tree-A' }, body: 'stale' },
+                { url: TASK, vary: { RSC: '1', 'Next-Router-State-Tree': 'tree-A' }, body: 'flight' },
+            ],
+        });
+        const res = await dispatch(w, flight(TASK, { 'Next-Router-State-Tree': 'tree-B' }));
+        expect(res?._served).toBe(TASK);
+    });
+});
+
+describe('a prefetch payload is served but never stored', () => {
+    it('does not store a Next-Router-Prefetch response', async () => {
+        // Next returns a PARTIAL tree for a prefetch of a dynamic route. With
+        // ignoreVary in play the Cache API no longer keeps it away from a real
+        // navigation, so storing one would hand the router half a page.
+        const w = loadWorker({ online: true });
+        await dispatch(w, flight(TASK, { 'Next-Router-Prefetch': '1' }));
+        expect(w.buckets['agrent-v1-rsc']?.entries ?? []).toHaveLength(0);
+    });
+
+    it('does not store a segment prefetch either', async () => {
+        const w = loadWorker({ online: true });
+        await dispatch(w, flight(TASK, { 'Next-Router-Segment-Prefetch': '/_tree' }));
+        expect(w.buckets['agrent-v1-rsc']?.entries ?? []).toHaveLength(0);
+    });
+
+    it('DOES store a real navigation payload — the positive control', async () => {
+        // Without this the two assertions above pass for the wrong reason: an
+        // empty bucket is also what a totally broken cache path produces.
+        const w = loadWorker({ online: true });
+        await dispatch(w, flight(TASK));
+        expect((w.buckets['agrent-v1-rsc']?.entries ?? []).map((e) => e.url)).toEqual([TASK]);
+    });
+});
+
+describe('the shell fallback answers a LAUNCH, never a specific screen', () => {
+    it('does not hand a deep route some other cached document', async () => {
+        // The whole reported bug. PAGE_CACHE holds My work; the operator asked
+        // for a task. Answering with My work is how they got bounced.
+        const w = loadWorker({
+            online: false,
+            pageSeed: [{ url: MY_WORK_DOC, vary: {}, body: 'MY-WORK-DOCUMENT' }],
+        });
+        const res = await dispatch(w, navigation('https://app.test/t/acme/field/task-1'));
+        expect(res?._served).toBeUndefined();
+        expect((res as unknown as FakeResponse)._html).toContain('Not saved for offline');
+        expect((res as unknown as FakeResponse)._html).not.toContain('MY-WORK-DOCUMENT');
+    });
+
+    it('still serves the shell for the Home Screen launch url (#858 holds)', async () => {
+        // start_url is /tenants and it always redirects, so it can never be
+        // cached under its own key. Narrowing the fallback must not undo that.
+        const w = loadWorker({
+            online: false,
+            pageSeed: [{ url: MY_WORK_DOC, vary: {}, body: 'MY-WORK-DOCUMENT' }],
+        });
+        const res = await dispatch(w, navigation(START_URL));
+        expect(res?._served).toBe(MY_WORK_DOC);
+    });
+
+    it('falls back to the launch copy when nothing at all is cached', async () => {
+        const w = loadWorker({ online: false, pageSeed: [] });
+        const res = await dispatch(w, navigation(START_URL));
+        expect((res as unknown as FakeResponse)._html).toContain('Marked jobs are queued');
+        expect((res as unknown as FakeResponse)._html).not.toContain('Not saved for offline');
+    });
+});
+
+describe('activate drops build-scoped flight payloads, keeps the farm', () => {
+    it('deletes the RSC bucket but not data, basemap, pages or static', async () => {
+        const names = ['agrent-v1-static', 'agrent-v1-pages', 'agrent-v1-fielddata',
+            'agrent-v1-basemap', 'agrent-v1-rsc', 'agri-v2-pages'];
+        const w = loadWorker({ online: true, cacheNames: names });
+        let held: Promise<unknown> | undefined;
+        w.listeners['activate']({ waitUntil: (p: Promise<unknown>) => { held = p; } });
+        await held;
+        expect(w.deleted.sort()).toEqual(['agrent-v1-rsc', 'agri-v2-pages']);
+    });
+});
