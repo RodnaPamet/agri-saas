@@ -79,6 +79,86 @@ which is exactly why the floor, not just the lockfile, has to be
 checked when a follow-up advisory lands on a package already pinned
 here.
 
+## Structural decay — what a guard CAN decide offline
+
+The three 2026-07-25 re-floors above were followed six weeks later by
+two more (#853), which makes decay a **class**, not an accident. An
+entry-by-entry fix resets the clock; it does not stop the next one.
+
+The obvious guard is the one this repo must never build. **"This floor
+has decayed" is a statement about the GitHub Advisory Database at time
+T, not about the repo** — no function of `package.json` +
+`package-lock.json` can decide it, so a guard claiming to compute it is
+lying about its own subject. Worse, putting the query on the merge path
+reproduces the exact defect `scripts/audit-exemptions.mjs` exists to
+prevent: npm's bulk advisory endpoint answers `200 {}` both for "no
+advisories" and for "package not recognised", so a network guard fails
+**open** on registry degradation. And the advisory endpoint serves
+WITHDRAWN advisories — `affects=uuid@11.1.1` returns
+GHSA-qmq6-f8pr-cx5x, withdrawn as a duplicate — so a naive checker would
+have flagged this table's one runtime security floor as decayed on the
+day it shipped. **There is no advisory query on the merge path.**
+
+What IS decidable offline is whether each entry still does the
+structural job an override is for.
+`tests/guards/overrides-structural-decay.test.ts` (analysis in
+`tests/helpers/overrides-analysis.ts`) runs four checks as a pure
+function of the two JSON files:
+
+| Check | Rule | Why it is the decay shape |
+|-------|------|---------------------------|
+| **A — no floor without a target** | Every top-level override key must match at least one lockfile entry, or be listed as a **dormant floor** with a written reason. | `hono` / `@hono/node-server` guard packages absent from the lockfile, so they are invisible to `npm audit` AND to Dependabot. That is how both decayed twice with nothing going red. |
+| **B — no override that cannot act** | For `{parent: {child: range}}`, the parent must declare `child` in one of `dependencies` / `peerDependencies` / `optionalDependencies`, and at least one copy it resolves to must not be `inBundle: true`. | `npm: {undici}` fails on both counts — npm declares no `undici` (it is a transitive of a bundled dep) and the only copy is bundled bytes npm installs as published. Twelve `@visx/*` subkeys fail on the first. |
+| **C — no floor that isn't a floor** | For a literal range, fail when every requester's declared range is already a `semver.subset` of it. `$name` entries are EXEMPT. | A floor that excludes nothing anyone could install still reads as protection in review. The `$name` exemption is load-bearing: `tests/guards/overrides-no-direct-dep-conflict.test.ts` requires that form on a direct dependency after a literal range aborted an entire Dependabot run. |
+| **D — no silent widening** | Fail when the override's floor sits **below** a requester's floor (RELAXATION), or excludes a version a requester **pinned exactly** (PIN-BREAK). | Both halves have live examples. RELAXATION is what the five `@typescript-eslint/*@^8.61.0` entries and `picomatch@^4.0.4` were — floors sitting below `eslint-plugin@8.70.0`'s exact sibling pins and below `lint-staged`'s own `^4.0.7`, i.e. "floors" permitting older than anything in the tree asked for. They were retired and raised in the change recorded in the `@typescript-eslint/eslint-plugin` row of the conflicts table and the `picomatch` row of the security table above, which is why the check no longer reports them. PIN-BREAK is still live on three entries: `postcss` (`next` pins 8.5.23 exactly), `deepmerge-ts` (`@prisma/config` pins 7.1.5) and `mysql2` (`prisma` pins 3.15.3). |
+
+Check D deliberately does **not** flag an override whose floor sits
+*above* a requester's caret range — `uuid@^11.1.1` over `next-auth`'s
+`^8.3.2` is what a security floor IS. Measured twice on 2026-09-10, the
+unrestricted reading ("flag any `!semver.subset(override, requester)`")
+fires on 14 of the 39 entries in the tree the guard was written against
+and on 9 of the 34 that remain after the `@typescript-eslint` /
+`picomatch` change — both times on every legitimate security floor in
+this document (`uuid`, `protobufjs`, `valibot`, `picomatch`) plus the
+`next-auth` peer bridge. A rule that must waive a quarter to a third of
+its own subject on day one teaches people to add waivers.
+
+**Every check was red when the guard was written** — 31 findings over 39
+entries. Eleven of those were a single dependency defect wearing eleven
+hats — the five `@typescript-eslint` entries, reported by C **and** D
+because a floor below every requester both excludes nothing and permits
+something older, plus `picomatch` on D — and that fix landed
+first: the guard is merged on top of it and ships against **20 findings
+over 34 entries**, with all four checks still red. So it ships with an
+explicit waiver list (`WAIVERS` and `DORMANT_FLOORS` in the guard), one
+entry per remaining finding, each carrying a written reason and a
+`review` date. It borrows both sharp rules from
+`scripts/audit-exemptions.mjs`: a **stale** waiver fails the build (the
+finding stopped being produced, so the waiver is now a blind spot), and
+an **expired** waiver fails the build once its own author's review date
+passes. The list can therefore only shrink.
+
+**What the guard does NOT cover, stated so nobody reads it as more than
+it is:** it would not have caught the 2026-07-25 or #853 re-floors
+themselves, because those were advisory-relative — the ranges were
+structurally sound and merely no longer excluded a version the advisory
+still affected. It also does not notice a copy of an overridden package
+that no override entry covers (#853's third half, and live today:
+`js-yaml@5.4.1` sits at the lockfile root under no override while three
+nested entries floor the other three copies). Those remain the
+reviewer's job, and this document is where the reasoning goes.
+
+**One hole in the analysis was found by #866 and closed there**, and it
+is recorded because the shape recurs: `unparseableRanges` was documented
+as collecting any range the guard cannot parse, and collected only the
+ranges *requesters* declare. An override's OWN value was never examined,
+so `"sharp": "not-a-parseable-range"` — a value npm cannot apply at all —
+produced no finding from any of A/B/C/D (C and D both skip an
+unparseable value) and no entry in that list either. The most broken
+entry possible was the one entry nothing reported. `analyseOverrides`
+now records every override value that is not a usable range, including a
+`$name` reference the root package does not declare.
+
 ## Regression ceilings
 
 The two categories above are both **floors** — force a transitive

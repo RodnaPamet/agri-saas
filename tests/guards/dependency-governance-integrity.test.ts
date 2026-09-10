@@ -12,8 +12,11 @@
  *                                 classified, on their reviewed major.
  *   5. Auth-stack pin           — `next-auth` stays on v4 stable
  *                                 (the NextAuth-v5 policy).
+ *   6. Override structural decay — every `overrides` entry still has a
+ *                                 target, can act, excludes something,
+ *                                 and widens nothing.
  *
- * Each of those five shipped its own guardrail. THIS test guards the
+ * Each of those six shipped its own guardrail. THIS test guards the
  * guards: it fails CI if any one of them is deleted or gutted to a
  * no-op, and it asserts the governance docs survive with their
  * load-bearing policy statements intact. A contributor who removes a
@@ -36,8 +39,9 @@ const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 
 /**
  * The dependency-governance guardrail registry. Each must exist,
- * still contain its subject anchors (proof it was not gutted), and
- * carry a real assertion surface.
+ * still contain its subject anchors (proof it was not DELETED or renamed
+ * away — anchors are `toContain` checks over the whole file and do NOT
+ * detect neutering), and carry a real assertion surface.
  */
 const GUARDRAILS: ReadonlyArray<{
     file: string;
@@ -68,6 +72,20 @@ const GUARDRAILS: ReadonlyArray<{
         file: 'tests/guardrails/auth-stack-pinning.test.ts',
         pillar: 'auth-stack pin — next-auth stays on v4 stable',
         anchors: ['next-auth', 'beta'],
+    },
+    {
+        // Registered here on purpose: this one ships with a waiver list, and
+        // the cheapest way to silence a guard that carries waivers is to
+        // delete the guard rather than an entry. The anchors catch that.
+        // They do NOT catch neutering: they are `toContain` string checks and
+        // every token below appears many times in that file, so gutting
+        // `staleWaivers()` to `return []` leaves all four green — measured
+        // in #866, 71/71. The controls for neutering live in the guard
+        // itself, next to each selector they cover, and every one of them
+        // runs on the real tree's own input.
+        file: 'tests/guards/overrides-structural-decay.test.ts',
+        pillar: 'override structural decay — every overrides entry still does an override\'s job',
+        anchors: ['WAIVERS', 'DORMANT_FLOORS', 'expired', 'analyseOverrides'],
     },
 ];
 
@@ -101,9 +119,9 @@ describe('dependency-governance integrity — guard the guards', () => {
         });
     });
 
-    it('the registry is complete (5 dependency guardrails, distinct)', () => {
-        expect(GUARDRAILS).toHaveLength(5);
-        expect(new Set(GUARDRAILS.map((g) => g.file)).size).toBe(5);
+    it('the registry is complete (6 dependency guardrails, distinct)', () => {
+        expect(GUARDRAILS).toHaveLength(6);
+        expect(new Set(GUARDRAILS.map((g) => g.file)).size).toBe(6);
     });
 
     it.each(GOVERNANCE_DOCS)('$role — $file exists', ({ file }) => {
