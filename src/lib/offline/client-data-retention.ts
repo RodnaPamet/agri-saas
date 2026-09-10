@@ -67,6 +67,16 @@ export const NEVER_SWEPT: readonly string[] = [
 /** Cache Storage buckets the sweep may delete wholesale. */
 const SWEPT_CACHES = ['fielddata', 'pages'] as const;
 
+/**
+ * When the cache sweep last ran. OUR timestamp, in localStorage.
+ *
+ * Per-entry ageing was considered and rejected for a good reason — "Cache
+ * Storage responses carry no write timestamp we control". This sidesteps that
+ * entirely: instead of asking how old each entry is, we record when we last
+ * swept and do not sweep again until the retention window has elapsed.
+ */
+const LAST_SWEPT_KEY = 'agri.offline.retention.lastSweptAt';
+
 export interface SweepOptions {
     /** Entries older than this are removed. `0` sweeps everything. */
     maxAgeMs?: number;
@@ -245,6 +255,40 @@ async function emptyPagesExceptShell(bucket: string): Promise<number> {
     return removed;
 }
 
+/**
+ * Has the retention window elapsed since the last cache sweep?
+ *
+ * The sweep ran on EVERY document load, which is not a 24-hour retention
+ * policy — it is "delete everything, every launch". For PAGE_CACHE that cost
+ * the offline shell (#851). For DATA_CACHE it costs the offline DATA: an
+ * operator who opens My work online, navigates once more, then drives out of
+ * signal has an empty queue, because the second document load deleted the
+ * `/farm-tasks` response the first one cached.
+ *
+ * Measured on an iPhone 2026-09-10: DATA_CACHE reported MISSING after ordinary
+ * use of the app, and My work showed nothing offline.
+ *
+ * Returns true when no timestamp is stored, so a device that has never swept
+ * sweeps immediately.
+ */
+function retentionWindowElapsed(now: number, maxAgeMs: number): boolean {
+    const ls = safeLocalStorage();
+    if (!ls) return true; // cannot remember → behave as before
+    const raw = ls.getItem(LAST_SWEPT_KEY);
+    const last = raw ? Number(raw) : NaN;
+    if (!Number.isFinite(last)) return true;
+    return now - last >= maxAgeMs;
+}
+
+function markSwept(now: number): void {
+    const ls = safeLocalStorage();
+    try {
+        ls?.setItem(LAST_SWEPT_KEY, String(now));
+    } catch {
+        /* quota / private mode — the sweep still ran, we just cannot remember */
+    }
+}
+
 async function sweepCaches(keepShell: boolean): Promise<number> {
     if (typeof caches === 'undefined') return 0;
 
@@ -317,6 +361,13 @@ export async function sweepClientStores(options: SweepOptions = {}): Promise<Swe
     }
     // Prime on a routine sweep, never on a purge: signOutAndPurge passes
     // maxAgeMs 0 and must leave nothing behind on the device.
-    result.cachesRemoved = await sweepCaches(maxAgeMs > 0);
+    // Cadence, not every-launch. A purge (maxAgeMs 0) always sweeps; otherwise
+    // the caches are swept at most once per retention window, which is what a
+    // 24h bound actually means. Without this the offline caches are destroyed
+    // on every document load and the app has nothing to work with in a field.
+    if (maxAgeMs === 0 || retentionWindowElapsed(now, maxAgeMs)) {
+        result.cachesRemoved = await sweepCaches(maxAgeMs > 0);
+        if (maxAgeMs > 0) markSwept(now);
+    }
     return result;
 }
