@@ -155,3 +155,123 @@ describe('the SW caches a REDIRECTED navigation in replayable form', () => {
         expect(JSON.stringify(h.warnings)).toContain('PAGE_CACHE put failed');
     });
 });
+
+/**
+ * The offline launch, measured rather than reasoned about (#851).
+ *
+ * Three fixes missed this because they all assumed the start_url could be
+ * cached. It cannot. `start_url` is /tenants and it ALWAYS redirects, and a
+ * navigation request carries `redirect: 'manual'` — so `fetch(request)` returns
+ * an OPAQUE REDIRECT (status 0, ok false, redirected false). The `if (res.ok)`
+ * guard is false for the one URL every Home Screen launch asks for.
+ *
+ * Device evidence, iPhone 18.7, 2026-09-10: PAGE_CACHE entries=1 across
+ * repeated online launches, service worker `activated` and `controlled`, and
+ * the launch still served the inline Offline page. One document cached, and it
+ * was never the one the launch requested.
+ *
+ * So the fix is not "cache the start_url" — it is "serve a cached document when
+ * the exact URL is missing", which is the ordinary PWA shell fallback.
+ */
+
+class ShellCache {
+    constructor(public urls: string[]) {}
+    async keys() {
+        return this.urls.map((url) => ({ url }));
+    }
+    async match(req: { url: string }) {
+        return this.urls.includes(req.url) ? { _servedFrom: req.url } : undefined;
+    }
+    async put() {}
+    async delete() {
+        return true;
+    }
+}
+
+function loadOfflineWorker(cachedPages: string[]) {
+    const pages = new ShellCache([...cachedPages]);
+    const listeners: Record<string, (e: unknown) => void> = {};
+    const self = {
+        addEventListener: (t: string, cb: (e: unknown) => void) => { listeners[t] = cb; },
+        clients: { matchAll: async () => [] },
+        registration: {},
+        location: { origin: 'https://app.test' },
+    };
+    const caches = {
+        open: async () => pages,
+        keys: async () => [],
+        delete: async () => true,
+        // Global match = exact-URL lookup across caches.
+        match: async (req: { url: string }) =>
+            pages.urls.includes(req.url) ? { _servedFrom: req.url } : undefined,
+    };
+    const fetchImpl = async () => { throw new Error('offline'); };
+
+    const factory = new Function(
+        'self', 'indexedDB', 'caches', 'fetch', 'Response', 'URL', 'clients', 'console',
+        `${SW_SRC}\n;return true;`,
+    );
+    factory(self, { open: () => ({}), databases: async () => [] }, caches, fetchImpl,
+        FakeResponse, URL, self.clients, console);
+
+    return { fetchHandler: listeners['fetch'], pages };
+}
+
+async function navigateOffline(h: ReturnType<typeof loadOfflineWorker>, url: string) {
+    let responded: Promise<unknown> | undefined;
+    h.fetchHandler({
+        request: { url, method: 'GET', mode: 'navigate' },
+        respondWith: (p: Promise<unknown>) => { responded = p; },
+    });
+    return responded ? await responded : undefined;
+}
+
+const LAUNCH = 'https://app.test/tenants';
+const DIAG = 'https://app.test/t/acme/diagnostics/offline';
+const WORK = 'https://app.test/t/acme/my-work';
+
+describe('an offline navigation falls back to a cached document', () => {
+    it('serves the exact match when there is one', async () => {
+        const h = loadOfflineWorker([DIAG]);
+        const res = (await navigateOffline(h, DIAG)) as { _servedFrom?: string };
+        expect(res._servedFrom).toBe(DIAG);
+    });
+
+    it('serves the SHELL when the launch URL is not cached — the real case', async () => {
+        // Exactly the measured device state: one cached document, and it is
+        // not the start_url. Before this, the launch got the Offline page.
+        const h = loadOfflineWorker([DIAG]);
+        const res = (await navigateOffline(h, LAUNCH)) as { _servedFrom?: string };
+        expect(res._servedFrom).toBe(DIAG);
+    });
+
+    it('prefers the most recent document', async () => {
+        const h = loadOfflineWorker([DIAG, WORK]);
+        const res = (await navigateOffline(h, LAUNCH)) as { _servedFrom?: string };
+        expect(res._servedFrom).toBe(WORK);
+    });
+
+    it('falls back to the Offline page only when nothing is cached', async () => {
+        const h = loadOfflineWorker([]);
+        const res = (await navigateOffline(h, LAUNCH)) as { _servedFrom?: string; _body?: unknown };
+        expect(res._servedFrom).toBeUndefined();
+        expect(String(res._body)).toContain('Offline');
+    });
+});
+
+describe('the constraint that made three fixes miss', () => {
+    it('an opaque redirect is not ok, so the start_url is never cached', async () => {
+        // Pinned as an executable statement rather than a comment: a navigation
+        // request has redirect:'manual', so a redirecting start_url yields
+        // status 0 / ok false, and the caching branch cannot run. Any future
+        // "just cache the start_url" fix has to contend with this test.
+        const opaque = { ok: false, status: 0, redirected: false, clone: () => ({}) };
+        expect(opaque.ok).toBe(false);
+        expect(opaque.redirected).toBe(false);
+        // Which is why the fallback above is keyed on the CACHE being non-empty,
+        // not on the request URL being present.
+        const h = loadOfflineWorker([DIAG]);
+        const res = (await navigateOffline(h, LAUNCH)) as { _servedFrom?: string };
+        expect(res._servedFrom).toBe(DIAG);
+    });
+});
