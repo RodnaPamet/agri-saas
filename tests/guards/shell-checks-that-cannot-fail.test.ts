@@ -73,9 +73,11 @@ function shellFiles(): string[] {
     for (const dir of SCAN_DIRS) {
         const abs = path.join(ROOT, dir);
         if (!fs.existsSync(abs)) continue;
-        for (const e of fs.readdirSync(abs, { withFileTypes: true, recursive: true } as never) as fs.Dirent[]) {
+        for (const e of fs.readdirSync(abs, { withFileTypes: true, recursive: true })) {
             if (!e.isFile() || !e.name.endsWith('.sh')) continue;
-            out.push(path.relative(ROOT, path.join((e as unknown as { parentPath: string }).parentPath ?? abs, e.name)));
+            // `parentPath` on Node 20.12+/22; `path` on older typings.
+            const parent = (e as fs.Dirent & { parentPath?: string }).parentPath ?? abs;
+            out.push(path.relative(ROOT, path.join(parent, e.name)));
         }
     }
     return out.sort();
