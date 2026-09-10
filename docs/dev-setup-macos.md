@@ -61,21 +61,50 @@ unset and the scan path short-circuits. Only `npm run db:test:up` waits on the
 That patch is the CSP nonce fix for Next's component scripts; skipping it
 produces a build that looks fine and ships unnonced scripts.
 
-### 5. Debian bullseye's expired Release file
+### 5. Debian bullseye's expired Release file — this one is not a macOS quirk
 
-`deploy/postgres/Dockerfile` builds on a bullseye-based image whose security
-`Release` file expired 2026-09-07, so a plain `apt-get update` exits 100 and
-the build fails. **No local workaround is needed any more** — the Dockerfile
-carries `apt-get -o Acquire::Check-Valid-Until=false update`, as do the CI
-action and `infra/scripts/restore-test-gcp.sh`. (An earlier revision of this
-page told you to add the flag by hand, because #833 patched only the CI
-action; that gap is closed.)
+### 5. Debian bullseye's expired Release file — this one is not a macOS quirk
+
+`postgis/postgis:16-3.4` is Debian bullseye, and bullseye-security's `Release`
+file expired **2026-09-07**. Every `apt-get update` against it now exits 100.
+
+**This was a live breakage of the repo, not a setup annoyance**, and it is
+tracked as **#832**. Two sites built on that image with an unflagged
+`apt-get update`:
+
+- `deploy/postgres/Dockerfile` — so `docker compose up` and the VM's
+  `agrent-db` build both failed;
+- `infra/scripts/restore-test-gcp.sh` — the heredoc that rebuilds the
+  database image *inside the monthly restore drill*, on the default path where
+  `PG_IMAGE` is unset.
+
+**CI stayed green throughout**, because CI installs pgvector through
+`.github/actions/enable-pgvector`, which #833 patched with
+`-o Acquire::Check-Valid-Until=false`. Nothing in CI exercised the two paths
+above, so the signal that would have caught it never ran them. That is the
+lesson worth keeping from this one: the green tick covered a path nobody was
+testing.
+
+**No local workaround is needed any more.** Both sites now carry the flag —
+`deploy/postgres/Dockerfile:25` and `infra/scripts/restore-test-gcp.sh:397` —
+so a clean `docker compose up` works. An earlier revision of this page told you
+to add it by hand; that gap is closed.
+
+The flag is a labelled stopgap, not a fix, and it is **not** ready to remove:
+`postgis/postgis` publishes no Debian tag on a maintained suite for Postgres
+16 — upstream's `16-3.5` is `FROM docker.io/postgres:16-bullseye` and
+reproduces the same failure. The real fix is a maintained base image, which is
+the decision #832 is still holding. The argument is written out at the top of
+`.github/actions/enable-pgvector/action.yml`.
 
 The flag is a labelled stopgap, not a fix, and it is **not** ready to remove:
 `postgis/postgis` publishes no Debian tag on a maintained suite for Postgres
 16 — upstream's `16-3.5` is `FROM docker.io/postgres:16-bullseye` and
 reproduces the same failure. Tracked as **#832**; the argument is written out
 at the top of `.github/actions/enable-pgvector/action.yml`.
+
+Keep that edit local — the real fix is a maintained base image, which is the
+decision #832 is holding.
 
 ---
 
