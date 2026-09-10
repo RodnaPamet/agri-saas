@@ -30,7 +30,9 @@ const ROOT = path.resolve(__dirname, '../..');
 const EXEMPTIONS: Record<string, string> = {};
 
 function walk(dir: string, results: string[] = []): string[] {
-    if (!fs.existsSync(dir)) return results;
+    if (!fs.existsSync(dir)) {
+        throw new Error(`scan root does not exist: ${dir} — a renamed root would scan zero files and pass (#875)`);
+    }
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         const full = path.join(dir, entry.name);
         if (entry.isDirectory()) {

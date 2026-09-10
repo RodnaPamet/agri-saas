@@ -81,7 +81,9 @@ describe('DataTable selection default-on (R12-PR1)', () => {
                 .replace(/\/\/[^\n]*/g, '');
         const offenders: string[] = [];
         const walk = (dir: string) => {
-            if (!fs.existsSync(dir)) return;
+            if (!fs.existsSync(dir)) {
+                throw new Error(`scan root does not exist: ${dir} — a renamed root would scan zero files and pass (#875)`);
+            }
             for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
                 const full = path.join(dir, entry.name);
                 if (entry.isDirectory()) {
