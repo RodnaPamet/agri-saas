@@ -34,6 +34,10 @@ jobs:
 
     services:
       postgres:
+        # Pin repeated from .github/postgis-image, the single source of
+        # truth: `services.<id>.image` accepts no `env` context, so it
+        # cannot read one. tests/guards/postgis-image-single-source.test.ts
+        # fails CI if this literal and that file ever disagree.
         image: postgis/postgis:16-3.4
         env:
           POSTGRES_USER: ci

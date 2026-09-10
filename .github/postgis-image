@@ -1,0 +1,29 @@
+# SINGLE SOURCE OF TRUTH — the Postgres/PostGIS image every CI service
+# container, the dev/prod DB image, and the restore drill run.
+#
+# FORMAT: the first non-blank line that is not a `#` comment is the image
+# reference, and nothing else on that line. Consumers parse exactly that.
+#
+# WHO DERIVES FROM THIS FILE (no literal of their own — they read it):
+#   .github/actions/enable-pgvector/action.yml   `docker ps --filter ancestor=`
+#
+# WHO CANNOT, AND SO REPEATS THE LITERAL:
+#   .github/workflows/ci.yml                 (x3, `services.postgres.image`)
+#   .github/workflows/lighthouse.yml
+#   .github/workflows/coverage-reference.yml
+#   .github/workflows/load-test.yml
+#   deploy/postgres/Dockerfile               (`FROM`)
+#   infra/scripts/restore-test-gcp.sh        (heredoc `FROM`)
+#   docs/dev-setup-macos.md                  (arm64 table)
+# GitHub Actions gives `jobs.<id>.services.<id>.image` no `env` context and no
+# way to call an action, and `FROM` takes no runtime lookup, so those nine
+# literals (six `image:` lines, two `FROM`s, one doc table row) are literals
+# by necessity, not by choice.
+# tests/guards/postgis-image-single-source.test.ts fails CI the instant any of
+# them disagrees with the line below — that is what makes eight literals safe.
+#
+# BEFORE YOU BUMP THIS: read the WHY-NOT-YET note at the top of
+# .github/actions/enable-pgvector/action.yml. Every Debian-flavoured
+# `postgis/postgis` tag for Postgres <= 17 is still bullseye, so a tag bump
+# alone does NOT lift the frozen-security-index problem. Issue #832.
+postgis/postgis:16-3.4
