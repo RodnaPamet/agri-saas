@@ -61,16 +61,35 @@ unset and the scan path short-circuits. Only `npm run db:test:up` waits on the
 That patch is the CSP nonce fix for Next's component scripts; skipping it
 produces a build that looks fine and ships unnonced scripts.
 
-### 5. Debian bullseye's expired Release file
+### 5. Debian bullseye's expired Release file — this one is not a macOS quirk
 
-`deploy/postgres/Dockerfile` builds on a bullseye-based image whose security
-`Release` file expired 2026-09-07, so `apt-get update` fails. Tracked as
-**#832**; the CI action was patched separately, the Dockerfile was not. Until it
-is fixed, add locally:
+`postgis/postgis:16-3.4` is Debian bullseye, and bullseye-security's `Release`
+file expired **2026-09-07**. Every `apt-get update` against it now exits 100.
+
+**This is a live breakage of the repo, not a setup annoyance**, and it is
+tracked as **#832** — read that issue rather than working around it here. Two
+sites build on that image with an unflagged `apt-get update`:
+
+- `deploy/postgres/Dockerfile:7` — so `docker compose up` and the VM's
+  `agrent-db` build both fail;
+- `infra/scripts/restore-test-gcp.sh:385` — the heredoc that rebuilds the
+  database image *inside the monthly restore drill*, on the default path where
+  `PG_IMAGE` is unset.
+
+**CI stayed green throughout**, because CI installs pgvector through
+`.github/actions/enable-pgvector`, which #833 patched with
+`-o Acquire::Check-Valid-Until=false`. Nothing in CI exercises the two paths
+above, so the signal that would have caught it never runs them.
+
+To get a local stack up before #832 lands, add the same flag to
+`deploy/postgres/Dockerfile:7`:
 
 ```dockerfile
 RUN apt-get -o Acquire::Check-Valid-Until=false update && ...
 ```
+
+Keep that edit local — the real fix is a maintained base image, which is the
+decision #832 is holding.
 
 ---
 
