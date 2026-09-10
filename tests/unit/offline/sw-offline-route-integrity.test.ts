@@ -72,7 +72,21 @@ class VaryCache {
         this.entries = this.entries.filter((e) => !(e.url === req.url && this.varyAgrees(e, req)));
         this.entries.push({ url: req.url, vary, body: res._body ?? 'flight' });
     }
-    async delete() { return true; }
+    // A stub returning true without removing anything is a double that cannot
+    // produce the failing input: it reported an eviction that never happened.
+    async delete(
+        req?: { url: string; headers: { get(k: string): string | null } },
+        opts?: { ignoreSearch?: boolean; ignoreVary?: boolean },
+    ) {
+        if (!req) return false;
+        const before = this.entries.length;
+        const ok = (e: Entry) => opts?.ignoreVary || this.varyAgrees(e, req);
+        const same = opts?.ignoreSearch
+            ? (e: Entry) => e.url.split('?')[0] === req.url.split('?')[0]
+            : (e: Entry) => e.url === req.url;
+        this.entries = this.entries.filter((e) => !(same(e) && ok(e)));
+        return this.entries.length < before;
+    }
 }
 
 class FakeResponse {
@@ -101,11 +115,14 @@ function loadWorker(opts: WorkerOpts) {
         registration: {},
         location: { origin: 'https://app.test' },
     };
+    // Pre-instantiate seeded buckets. Creating them lazily made "never opened"
+    // and "opened and emptied" the same observation, so a mutation could go red
+    // for a reason unrelated to the behaviour under test.
+    if (opts.rscSeed) buckets['agrent-v1-rsc'] = new VaryCache(opts.rscSeed);
+    if (opts.pageSeed) buckets['agrent-v1-pages'] = new VaryCache(opts.pageSeed);
     const caches = {
         open: async (name: string) => {
-            buckets[name] ??= new VaryCache(
-                name.endsWith('-rsc') ? opts.rscSeed ?? [] : name.endsWith('-pages') ? opts.pageSeed ?? [] : [],
-            );
+            buckets[name] ??= new VaryCache([]);
             return buckets[name];
         },
         keys: async () => opts.cacheNames ?? [],
@@ -262,14 +279,64 @@ describe('the shell fallback answers a LAUNCH, never a specific screen', () => {
     });
 });
 
-describe('activate drops build-scoped flight payloads, keeps the farm', () => {
-    it('deletes the RSC bucket but not data, basemap, pages or static', async () => {
-        const names = ['agrent-v1-static', 'agrent-v1-pages', 'agrent-v1-fielddata',
-            'agrent-v1-basemap', 'agrent-v1-rsc', 'agri-v2-pages'];
-        const w = loadWorker({ online: true, cacheNames: names });
+describe('activate evicts prefetch entries WITHOUT emptying the bucket', () => {
+    // #880 purged the whole RSC bucket on every activate, on the theory that
+    // flight payloads are build-scoped. Both halves were wrong.
+    //
+    // `activate` fires when public/sw.js changes, not when the app is rebuilt —
+    // 18 of the last 200 commits touched it — so it never was a staleness
+    // control; networkFirstRsc being network-first is. And because the worker
+    // does not skipWaiting, it activates on a LATER launch than the one that
+    // installed it. Measured on an iPhone 2026-09-11: the operator relaunched
+    // with signal, opened a task to cache it, force-quit, then relaunched in
+    // airplane mode — and THAT launch activated the worker, whose purge deleted
+    // the payload they had just gone and fetched. "Not saved for offline", for
+    // a screen saved sixty seconds earlier.
+    const seed = () => [
+        { url: TASK, vary: { RSC: '1', 'Next-Router-Prefetch': '1' }, body: 'PARTIAL-PREFETCH' },
+        { url: TASK, vary: { RSC: '1', 'Next-Router-State-Tree': 'tree-A' }, body: 'flight' },
+    ];
+    const NAMES = ['agrent-v1-static', 'agrent-v1-pages', 'agrent-v1-fielddata',
+        'agrent-v1-basemap', 'agrent-v1-rsc', 'agri-v2-pages'];
+
+    async function activate() {
+        const w = loadWorker({ online: true, cacheNames: NAMES, rscSeed: seed() });
         let held: Promise<unknown> | undefined;
         w.listeners['activate']({ waitUntil: (p: Promise<unknown>) => { held = p; } });
         await held;
-        expect(w.deleted.sort()).toEqual(['agrent-v1-rsc', 'agri-v2-pages']);
+        return w;
+    }
+
+    it('deletes only stale CACHE_VERSION buckets, never the RSC bucket', async () => {
+        const w = await activate();
+        expect(w.deleted.sort()).toEqual(['agri-v2-pages']);
+    });
+
+    it('evicts the partial prefetch entry', async () => {
+        const w = await activate();
+        const bodies = (w.buckets['agrent-v1-rsc']?.entries ?? []).map((e) => e.body);
+        expect(bodies).not.toContain('PARTIAL-PREFETCH');
+    });
+
+    it('KEEPS the navigation payload the operator just cached', async () => {
+        // The whole point. This is the assertion that would have caught #880.
+        const w = await activate();
+        const bodies = (w.buckets['agrent-v1-rsc']?.entries ?? []).map((e) => e.body);
+        expect(bodies).toContain('flight');
+    });
+});
+
+describe('the offline document names the screen it could not serve', () => {
+    it('includes the requested path on a deep-route miss', async () => {
+        // Both flavours of this page looked identical in a photograph, so
+        // "the app would not launch" and "that one screen was not cached" were
+        // the same screenshot. Telling them apart cost a round-trip to someone
+        // standing in a field.
+        const w = loadWorker({
+            online: false,
+            pageSeed: [{ url: MY_WORK_DOC, vary: {}, body: 'MY-WORK-DOCUMENT' }],
+        });
+        const res = await dispatch(w, navigation('https://app.test/t/acme/field/task-1'));
+        expect((res as unknown as FakeResponse)._html).toContain('/t/acme/field/task-1');
     });
 });
