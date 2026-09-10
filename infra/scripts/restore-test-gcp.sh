@@ -421,7 +421,9 @@ echo "  ✓ ${STACK_DIR} present and carries DATA_ENCRYPTION_KEY"
 # reads as a failed restore rather than as a broken build. #833 patched only
 # the CI action; this site was missed. See
 # .github/actions/enable-pgvector/action.yml for the full argument (#832).
-# Nothing enforces either property automatically yet (#860).
+# tests/guards/postgis-image-single-source.test.ts enforces both: the tag
+# against .github/postgis-image, and the flag inside this heredoc's
+# `apt-get` invocation (#860).
 if [ -n "${PG_IMAGE}" ]; then
     RESTORE_IMAGE="${PG_IMAGE}"
     sudo docker pull "\$RESTORE_IMAGE" >/dev/null

@@ -14,16 +14,18 @@
 #   .github/workflows/load-test.yml
 #   deploy/postgres/Dockerfile               (`FROM`)
 #   infra/scripts/restore-test-gcp.sh        (heredoc `FROM`)
-#   docs/dev-setup-macos.md                  (arm64 table)
+#   docs/dev-setup-macos.md                  (x2, arm64 table + §5)
 # GitHub Actions gives `jobs.<id>.services.<id>.image` no `env` context and no
-# way to call an action, and `FROM` takes no runtime lookup, so those nine
-# literals (six `image:` lines, two `FROM`s, one doc table row) are literals
+# way to call an action, and `FROM` takes no runtime lookup, so those ten
+# literals (six `image:` lines, two `FROM`s, two doc mentions) are literals
 # by necessity, not by choice.
 # tests/guards/postgis-image-single-source.test.ts fails CI the instant any of
-# them disagrees with the line below — that is what makes nine literals safe.
+# them disagrees with the line below — that is what makes ten literals safe.
 # The count above is NOT just prose: that guard asserts the tracked tree holds
-# exactly nine live references, and that this paragraph says nine. A tenth
+# exactly ten live references, and that this paragraph says ten. An eleventh
 # literal has to be registered here, not absorbed silently.
+# (It said nine until #860. `docs/dev-setup-macos.md` grew a second mention
+# and nothing noticed, because the guard that checks this was not in the tree.)
 #
 # AND ONE MORE SPELLING OF IT. `docker-compose.yml` and
 # `docker-compose.test.yml` build `deploy/postgres/Dockerfile` and tag the
