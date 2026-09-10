@@ -132,7 +132,9 @@ describe('Button label centering', () => {
         // Walk src/app + src/components for *.tsx.
         const walk = (dir: string): string[] => {
             const abs = path.join(ROOT, dir);
-            if (!fs.existsSync(abs)) return [];
+            if (!fs.existsSync(abs)) {
+                throw new Error(`scan root does not exist: ${abs} — a renamed root would scan zero files and pass (#875)`);
+            }
             const out: string[] = [];
             for (const entry of fs.readdirSync(abs, { withFileTypes: true })) {
                 const rel = path.join(dir, entry.name);

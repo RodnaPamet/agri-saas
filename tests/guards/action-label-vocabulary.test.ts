@@ -99,7 +99,9 @@ const BASELINE_PLUS_LITERAL_SITES = new Set<string>([
 
 function walk(dir: string): string[] {
     const out: string[] = [];
-    if (!fs.existsSync(dir)) return out;
+    if (!fs.existsSync(dir)) {
+        throw new Error(`scan root does not exist: ${dir} — a renamed root would scan zero files and pass (#875)`);
+    }
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         const full = path.join(dir, entry.name);
         const rel = path.relative(ROOT, full);
@@ -162,7 +164,9 @@ describe('Action label vocabulary — no literal "+ " prefix', () => {
     it('zero i18n button values starting with "+ "', () => {
         const offenders: Hit[] = [];
         const i18nDir = path.join(ROOT, I18N_DIR);
-        if (!fs.existsSync(i18nDir)) return;
+        if (!fs.existsSync(i18nDir)) {
+            throw new Error(`scan root does not exist: ${i18nDir} — a renamed root would scan zero files and pass (#875)`);
+        }
         for (const file of fs.readdirSync(i18nDir)) {
             if (!file.endsWith('.json')) continue;
             const abs = path.join(i18nDir, file);

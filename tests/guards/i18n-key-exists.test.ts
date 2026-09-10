@@ -81,7 +81,9 @@ function loadMessageKeys(): Set<string> {
 function sourceFiles(): string[] {
     const out: string[] = [];
     const walk = (dir: string): void => {
-        if (!fs.existsSync(dir)) return;
+        if (!fs.existsSync(dir)) {
+            throw new Error(`scan root does not exist: ${dir} — a renamed root would scan zero files and pass (#875)`);
+        }
         for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
             const p = path.join(dir, entry.name);
             if (entry.isDirectory()) {
