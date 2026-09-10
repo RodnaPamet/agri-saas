@@ -108,10 +108,18 @@ from the outage, and the 15-minute PagerDuty acknowledge in
 does not copy it and `deploy/check-drift.sh` does not hash it, so the
 live `/opt/agrent/Caddyfile` is edited by hand and nothing detects the
 two diverging. The `caddy` service declares neither `env_file` nor
-`environment`, so no `{$VAR}` in that file can be supplied by this repo
-— `tests/guardrails/caddyfile-divergence.test.ts` holds that, and holds
-the header to naming what is unverified instead of explaining the
-divergence away (#842).
+`environment`, so no `{$VAR}` in that file can be supplied by this repo.
+**One divergence is known and deliberate** — compared on the VM
+2026-09-10, the two files differ in exactly one token: the live ACME
+contact defaults to the operator's personal mailbox, and the repo keeps
+the role address `admin@agrent.bg`. **This repository is public. Never
+paste that personal address into a tracked file to make a doc
+"accurate"** — reconcile by changing the VM, or by giving the `caddy`
+service an environment that supplies `ACME_EMAIL`. The field routes
+Let's Encrypt expiry notices only; nothing about TLS depends on it.
+`tests/guardrails/caddyfile-divergence.test.ts` holds all of that,
+including that every address in `deploy/Caddyfile` stays on the
+`agrent.bg` role domain (#842).
 
 **When a runtime change must be applied to the VM** — a one-off job run,
 inspecting container logs, a manual restart — execute it directly via

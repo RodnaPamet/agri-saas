@@ -10,31 +10,64 @@
 # what the live file should contain, and it is reconciled by hand in both
 # directions — with nothing checking that the reconciliation happened.
 #
-# ── WHAT IS AND IS NOT VERIFIED (#842) ────────────────────────────────────
+# ── THE LIVE FILE, COMPARED ON THE VM 2026-09-10 (#842) ───────────────────
 #
-# VERIFIED, in this repo, 2026-09-10: the `caddy` service in
-# deploy/docker-compose.vm.yml declares NEITHER `env_file` NOR `environment`
-# — unlike `app` and `worker`, which both carry `env_file`. So nothing in
-# this repo can put ACME_EMAIL into the Caddy container, and the
-# `{$ACME_EMAIL:admin@agrent.bg}` placeholder below resolves to its default
-# whenever this file is what runs. An earlier revision of this header claimed
-# "it also sets ACME_EMAIL in the environment, overriding the default below";
-# that claim was not true of anything in the repo and has been withdrawn.
+# /opt/agrent/Caddyfile was read on the VM — `gcloud compute ssh agrent
+# --zone europe-west1-b`, which works with the configured account — and
+# compared against this copy directive by directive. The live copy carries
+# none of the comments above and indents with tabs; with comments stripped
+# and whitespace normalised, the two files differ in exactly ONE token: the
+# ACME contact in the global block. The live file carries the same
+# `email {$ACME_EMAIL:...}` directive with a DIFFERENT default — the
+# operator's PERSONAL mailbox.
 #
-# NOT VERIFIED: what the live /opt/agrent/Caddyfile actually contains, and
-# what ACME account email the running Caddy is using. Neither was reachable
-# from where this was written, so no value is asserted here and none was
-# guessed. `email` only controls Let's Encrypt expiry notices; certificate
-# issuance does not depend on it.
+# (An earlier revision of this header said the live file "was not reachable
+# from where this was written" and asserted nothing on that basis. It is
+# reachable. That claim is withdrawn too.)
 #
-# TO CLOSE THIS: diff the live file against this one, and then either extend
-# `deploy/apply.sh` + `deploy/check-drift.sh` to cover the Caddyfile (so the
-# divergence becomes detectable) or delete this copy and stop implying the
-# repo is its source of truth. Until one of those happens, treat every line
-# below as UNCONFIRMED against production.
+# THAT ADDRESS IS DELIBERATELY NOT WRITTEN HERE, AND MUST NOT BE ADDED.
+# This repository is PUBLIC, and the address appears in no tracked file
+# today. Copying it in to make this copy "accurate" would publish an
+# individual's personal email address into a public repo in order to settle
+# a cosmetic mismatch in a directive that routes nothing but Let's Encrypt
+# expiry notices — certificate issuance does not depend on it, and nothing
+# about the running site is broken by the divergence.
+#
+# So this file keeps a ROLE address on purpose. `admin@agrent.bg` is the
+# value the deployment SHOULD be using: it is safe in public, it survives a
+# change of operator, and it is where an expiry notice ought to land.
+#
+# ── RECONCILING IT MEANS CHANGING THE VM, NOT THIS FILE ───────────────────
+#
+# Two ways, both VM-side:
+#
+#   1. Edit /opt/agrent/Caddyfile to the role address — back it up first
+#      (`<file>.bak.<timestamp>`), then restart the caddy container.
+#   2. Put ACME_EMAIL into the caddy container's environment.
+#
+# (2) is impossible as the stack stands. VERIFIED, in this repo, 2026-09-10:
+# the `caddy` service in deploy/docker-compose.vm.yml declares NEITHER
+# `env_file` NOR `environment` — unlike `app` and `worker`, which both carry
+# `env_file` — so nothing here can put ACME_EMAIL into that container and the
+# `{$ACME_EMAIL:admin@agrent.bg}` placeholder below always resolves to its
+# default whenever this file is what runs. An earlier revision of this header
+# claimed "it also sets ACME_EMAIL in the environment, overriding the default
+# below"; that claim was not true of anything in the repo and has been
+# withdrawn. Certificates already issued keep serving either way; the field
+# decides who receives expiry mail, not whether TLS works.
+#
+# ── NOTHING IN THIS REPO DETECTS THIS DIVERGENCE ──────────────────────────
+#
+# The mismatch above was found by reading the VM by hand, and the next one
+# will have to be too. `deploy/apply.sh` copies only docker-compose.vm.yml
+# and `deploy/check-drift.sh` hashes only that file, so no check compares any
+# Caddyfile against any other. Extending both to cover this file is the work
+# that closes it; until then, treat this copy as a RECORD that was accurate
+# on 2026-09-10 — for one deliberate exception — and not as a live mirror.
 #
 # `tests/guardrails/caddyfile-divergence.test.ts` holds the parts of the
-# above that a machine can check.
+# above a machine can check, including that every address in this file stays
+# on the agrent.bg role domain.
 #
 # The site block serves the custom domain `app.agrent.bg` alongside the
 # sslip.io host. Let's Encrypt issues a cert automatically on first request
@@ -45,8 +78,9 @@
     # Use the production LE endpoint by default (default behaviour).
     # ACME_EMAIL is NOT supplied by anything in this repo — the `caddy`
     # service has no `env_file` and no `environment` — so this resolves to
-    # the default below unless the VM's own copy of this file differs. See
-    # the header.
+    # the default below. The live VM's copy defaults to a different,
+    # personal address; the reconciliation is to change the VM, not to
+    # paste that address into a public repo. See the header.
     email {$ACME_EMAIL:admin@agrent.bg}
 }
 

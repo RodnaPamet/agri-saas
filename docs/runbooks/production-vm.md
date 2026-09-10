@@ -149,6 +149,23 @@ Exit 2 is **not** a pass — it means the question was not answered. On
 exit 1, reconcile the VM's change back INTO the repo file and commit it;
 do not hand-edit the VM to match.
 
+**Nothing checks the Caddyfile.** `check-drift.sh` sha256-compares
+`docker-compose.vm.yml` and only that, and `apply.sh` copies only that,
+so a hand-edit to `/opt/agrent/Caddyfile` is invisible to every check in
+this repo. Diff it by hand whenever you touch either copy:
+
+```bash
+gcloud compute ssh agrent --zone europe-west1-b \
+  --command "sudo cat /opt/agrent/Caddyfile" | diff - deploy/Caddyfile
+```
+
+One difference is known and intentional as of 2026-09-10: the live ACME
+contact defaults to a personal address and `deploy/Caddyfile` records the
+role address `admin@agrent.bg` instead. **This repository is public — the
+fix is to change the VM, never to copy the live value into the repo.**
+Every other directive matches. `deploy/Caddyfile`'s header carries the
+full note.
+
 ---
 
 ## 2. Rollback

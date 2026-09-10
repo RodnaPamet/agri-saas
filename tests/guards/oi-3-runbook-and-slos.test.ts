@@ -42,7 +42,7 @@
  * to end-of-file and its `length > 1000` positive control was
  * measuring the rest of the document rather than the section.
  *
- * Both shapes are now gone from this file:
+ * Two shapes were addressed there:
  *
  *   1. A test named after a SECTION extracts that section, via the
  *      `section()` helper below, which is bounded at the next heading
@@ -51,6 +51,31 @@
  *      substantial BEFORE the verdict assertions run. An empty
  *      selection is a pass in every matcher that takes one, so an
  *      unproved selection is an unproved test.
+ *
+ * ── THAT PASS CLAIMED TOO MUCH — CORRECTED 2026-09-10, third pass ──
+ *
+ * The previous revision of this header said "Both shapes are now gone
+ * from this file", and the commit that wrote it repeated the claim.
+ * **The claim was false.** The unbounded-slice shape survived INSIDE
+ * the fix for it, at the one extraction in this file that takes a
+ * PREFIX rather than a section:
+ *
+ *     src.slice(0, src.indexOf('\n## Quick reference'))
+ *
+ * `indexOf` returns -1 when the anchor is absent; `slice(0, -1)` is
+ * then the WHOLE DOCUMENT minus its last character. So the stated
+ * `banner.length > 500` positive control proved that the document had
+ * a body, not that the banner had one, and renaming
+ * `## Quick reference` left the banner test green — the same defect,
+ * one line inside its own remedy.
+ *
+ * Prefix extraction now goes through `preamble()`, which captures the
+ * index, REFUSES to slice when it is -1, and names the missing anchor
+ * in the failure. Audited afterwards, deliberately rather than by
+ * assertion: that was the last unbounded slice in this file.
+ * `section()` is bounded and unit-tested, `preamble()` is unit-tested
+ * including its -1 case, and every remaining `split()` here is a
+ * whole-string `split('\n')` with no index taken off the end.
  *
  * Mutation-proved (#842 review): deleting
  * "### Recovery scenarios mapped to RTO" from `docs/slos.md` fails
@@ -91,6 +116,30 @@ function section(src: string, heading: string): string {
     return next === -1 ? rest : rest.slice(0, next);
 }
 
+/**
+ * The PREAMBLE of `src` — everything BEFORE `anchor` — with the anchor's
+ * presence proved before anything is sliced.
+ *
+ * This exists because the obvious spelling is a tautology generator:
+ * `src.slice(0, src.indexOf(anchor))` returns the whole document minus
+ * one character when `anchor` is absent, which passes a length control,
+ * passes every `toMatch` the real preamble would pass, and reports
+ * nothing. Throwing — by name — is the only outcome that distinguishes
+ * "the banner says X" from "somewhere in this file, X".
+ */
+function preamble(src: string, anchor: string): string {
+    const at = src.indexOf(anchor);
+    if (at === -1) {
+        throw new Error(
+            `preamble(): anchor ${JSON.stringify(anchor)} is absent from the ` +
+                `document, so the text before it cannot be bounded. The ` +
+                `heading was renamed or removed — update the doc and this ` +
+                `guard together; do not slice an unlocated anchor.`,
+        );
+    }
+    return src.slice(0, at);
+}
+
 /** Lines of a markdown table body/head — used as a positive control. */
 const tableRows = (s: string) =>
     s.split('\n').filter((l) => l.trim().startsWith('|'));
@@ -128,6 +177,20 @@ describe('section() — the extractor every scoped assertion depends on', () => 
 
     it('returns empty for an absent heading, so callers must prove non-empty', () => {
         expect(section(DOC, '## Nope')).toBe('');
+    });
+
+    it('preamble() returns only the text before the anchor', () => {
+        expect(preamble(DOC, '\n## B')).toContain('alpha');
+        expect(preamble(DOC, '\n## B')).not.toContain('bravo');
+    });
+
+    it('preamble() throws, naming the anchor, rather than returning the document', () => {
+        // The trap, demonstrated rather than described: an absent anchor
+        // makes the naive spelling return everything but one character —
+        // long, plausible, and an unconditional pass for any length
+        // control or `toMatch` placed after it.
+        expect(DOC.slice(0, DOC.indexOf('\n## Nope'))).toHaveLength(DOC.length - 1);
+        expect(() => preamble(DOC, '\n## Nope')).toThrow(/## Nope/);
     });
 });
 
@@ -495,7 +558,10 @@ describe('OI-3 — Incident response runbook (docs/incident-response.md)', () =>
         // that is. Section 2 itself is corrected separately; this is
         // what must hold until then.
         const src = read(DOC);
-        const banner = src.slice(0, src.indexOf('\n## Quick reference'));
+        // NOT `src.slice(0, src.indexOf(...))`. That spelling stood here
+        // until 2026-09-10 and made the length control below vacuous:
+        // see the third-pass note at the top of this file.
+        const banner = preamble(src, '\n## Quick reference');
         expect(banner.length).toBeGreaterThan(500);
         // The banner names § 2-5 as describing infrastructure that is
         // not deployed...
