@@ -45,12 +45,60 @@ function installPathFiles(): string[] {
     return files;
 }
 
+/**
+ * The install-surface files whose CONTENT carries the banned flag.
+ *
+ * `contents` is a parameter, defaulted to the real reader, so the positive
+ * control below can hand it the real files with the defect spliced into the
+ * real install command. The FILE LIST is never synthesised — a control that
+ * fed its own list would keep passing with `installPathFiles()` gutted, which
+ * is exactly the failure this pair of tests exists to catch.
+ */
+function offendingFiles(
+    files: string[],
+    contents: (rel: string) => string = read,
+): string[] {
+    return files.filter((rel) => contents(rel).includes('legacy-peer-deps'));
+}
+
 describe('no --legacy-peer-deps in install paths', () => {
     it('Dockerfiles and CI workflows never pass --legacy-peer-deps', () => {
-        const offenders = installPathFiles().filter((rel) =>
-            read(rel).includes('legacy-peer-deps'),
+        expect(offendingFiles(installPathFiles())).toEqual([]);
+    });
+
+    it('the install surface actually invokes `npm ci` (guard is not vacuous)', () => {
+        // Same control shape as deterministic-install.test.ts. `toEqual([])`
+        // above is satisfied by an empty file list, so the list has to be shown
+        // to hold the real install surface: a Dockerfile, several workflows,
+        // and at least one file that genuinely installs dependencies.
+        const files = installPathFiles();
+        expect(files.some((f) => /^Dockerfile/.test(f))).toBe(true);
+        expect(
+            files.filter((f) => f.startsWith('.github/workflows/')).length,
+        ).toBeGreaterThan(1);
+        expect(files.some((rel) => /\bnpm\s+ci\b/.test(read(rel)))).toBe(true);
+    });
+
+    it('the flag injected into the REAL install command is selected', () => {
+        // Derived from the production tree: the file list the guard itself
+        // returns, and the Dockerfile's own bytes with `--legacy-peer-deps`
+        // appended to its actual `npm ci` line — the shape the regression
+        // arrives as when someone is making a failing install pass.
+        const files = installPathFiles();
+        const target = files.find((f) => /^Dockerfile/.test(f));
+        expect(target).toBeDefined();
+
+        const lines = read(target as string).split('\n');
+        const idx = lines.findIndex(
+            (l) => /\bnpm\s+ci\b/.test(l) && !/^\s*#/.test(l),
         );
-        expect(offenders).toEqual([]);
+        expect(idx).toBeGreaterThanOrEqual(0);
+        lines[idx] = `${lines[idx]} --legacy-peer-deps`;
+        const mutated = lines.join('\n');
+
+        expect(
+            offendingFiles(files, (rel) => (rel === target ? mutated : read(rel))),
+        ).toEqual([target]);
     });
 
     it('no .npmrc silently re-enables legacy-peer-deps', () => {

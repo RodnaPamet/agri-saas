@@ -81,6 +81,47 @@ const REVIEWED_DEV_ONLY: Record<string, { major: number }> = {
     'js-yaml': { major: 5 },
 };
 
+/**
+ * Every TypeScript source file under `src/` — the CANDIDATE SET the
+ * production-importer check classifies.
+ *
+ * Split out of the assertion so a positive control can require it to be
+ * non-empty. `expect(hits).toEqual([])` is satisfied by a walk that selects
+ * nothing at all, so the candidate set has to be observable on its own.
+ *
+ * `withFileTypes` rather than a `statSync` probe followed by a read: the entry
+ * type comes from the SAME directory read, so there is no check-then-use
+ * window. CodeQL flags the probe form as `js/file-system-race` (high), and it
+ * is right to — the file it stat'd need not be the file it then reads.
+ */
+function sourceFiles(dir: string = path.join(ROOT, 'src')): string[] {
+    const out: string[] = [];
+    const walk = (d: string) => {
+        for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+            const full = path.join(d, e.name);
+            if (e.isDirectory()) walk(full);
+            else if (/\.tsx?$/.test(e.name)) out.push(full);
+        }
+    };
+    walk(dir);
+    return out;
+}
+
+/**
+ * Which of `files` import `name`. `readFile` is a parameter so the positive
+ * control can inject the defect into a REAL file's REAL bytes while the file
+ * LIST still comes from the live walk above.
+ */
+function productionImporters(
+    name: string,
+    files: string[],
+    readFile: (f: string) => string = (f) => fs.readFileSync(f, 'utf8'),
+): string[] {
+    return files
+        .filter((f) => readFile(f).includes(`'${name}'`))
+        .map((f) => f.replace(ROOT + '/', ''));
+}
+
 /** Major of a caret/tilde/plain semver range (`^8.0.7` → 8). */
 function rangeMajor(range: string): number {
     const m = range.match(/(\d+)\./);
@@ -120,26 +161,33 @@ describe('dependency risk review — reviewed packages stay classified', () => {
             // The condition that justified the move. If a `src/` file starts
             // importing it again, the classification has to be revisited —
             // the production image no longer ships it.
-            //
-            // `withFileTypes` rather than a `statSync` probe followed by a
-            // read: the entry type comes from the SAME directory read, so
-            // there is no check-then-use window. CodeQL flags the probe form
-            // as `js/file-system-race` (high), and it is right to — the file
-            // it stat'd need not be the file it then reads. Harmless in a
-            // test walking our own `src/`, but the race-free spelling is
-            // also the simpler one, so there is nothing to trade off.
-            const hits: string[] = [];
-            const walk = (dir: string) => {
-                for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-                    const full = path.join(dir, e.name);
-                    if (e.isDirectory()) walk(full);
-                    else if (/\.tsx?$/.test(e.name) && fs.readFileSync(full, 'utf8').includes(`'${name}'`)) {
-                        hits.push(full.replace(ROOT + '/', ''));
-                    }
-                }
-            };
-            walk(path.join(ROOT, 'src'));
+            const hits = productionImporters(name, sourceFiles());
             expect({ productionImporters: hits }).toEqual({ productionImporters: [] });
+        });
+
+        it(`the ${name} importer walk actually selects sources (guard is not vacuous)`, () => {
+            // The assertion above passes over an empty candidate set. This is
+            // the set it is required to have walked — the live `src/` tree.
+            const files = sourceFiles();
+            expect(files.length).toBeGreaterThan(500);
+            expect(files.every((f) => /\.tsx?$/.test(f))).toBe(true);
+        });
+
+        it(`an injected ${name} importer in the REAL src tree is selected`, () => {
+            // The defect injected into production input rather than a fixture:
+            // the file list is the live walk, and ONE real file's real bytes
+            // gain the import that would put the package back in the image.
+            const files = sourceFiles();
+            const target = [...files].sort()[0];
+            expect(target).toBeDefined();
+
+            const injected = (f: string) => {
+                const src = fs.readFileSync(f, 'utf8');
+                return f === target ? `${src}\nimport _probe from '${name}';\n` : src;
+            };
+            expect(productionImporters(name, files, injected)).toEqual([
+                target.replace(ROOT + '/', ''),
+            ]);
         });
     }
 

@@ -38,10 +38,20 @@ const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'))
 
 const direct: Record<string, string> = { ...pkg.dependencies, ...pkg.devDependencies };
 
-/** Overrides that name a direct dependency and pin a literal range. */
-function conflicts(): string[] {
+/**
+ * Overrides that name a direct dependency and pin a literal range.
+ *
+ * `overrides` is a PARAMETER, defaulted to the live block, so the positive
+ * control below can hand it the REAL block with one entry rewritten into the
+ * defect. `direct` stays the module-level map on purpose: the control must
+ * exercise the same join the live assertion does, and a second, synthetic
+ * direct-dependency map would let a broken join keep passing.
+ */
+function conflicts(
+    overrides: Record<string, unknown> = pkg.overrides ?? {},
+): string[] {
     const out: string[] = [];
-    for (const [name, value] of Object.entries(pkg.overrides ?? {})) {
+    for (const [name, value] of Object.entries(overrides)) {
         if (typeof value !== 'string') continue;   // nested — constrains the package's own deps
         if (value.startsWith('$')) continue;       // references the direct dep, which is the fix
         if (direct[name]) out.push(`${name}: direct=${direct[name]} override=${value}`);
@@ -54,6 +64,36 @@ describe('overrides do not fight the direct dependencies', () => {
         // Anti-vacuity: an empty or restructured overrides block would make the
         // real assertion below pass while checking nothing.
         expect(Object.keys(pkg.overrides ?? {}).length).toBeGreaterThan(5);
+    });
+
+    it('the overrides block and the direct dependencies actually overlap', () => {
+        // The check above is an observable BOTH the healthy and the broken path
+        // produce: a non-empty overrides block says nothing about whether
+        // `direct` was read. This is the join itself — every name `conflicts()`
+        // can ever classify comes from this intersection, so an empty one means
+        // the real assertion below is checking nothing at all.
+        const overlap = Object.keys(pkg.overrides ?? {}).filter((n) => direct[n]);
+        expect(overlap.length).toBeGreaterThan(0);
+    });
+
+    it('a literal range injected into the REAL overrides block is selected', () => {
+        // Derived from the production tree, not a fixture: the real `overrides`
+        // object with ONE entry rewritten to the exact defect this guard exists
+        // to catch — sharp's own direct range spelled out where `$sharp`
+        // belongs, which is what Dependabot choked on.
+        const realRange = pkg.dependencies?.sharp;
+        expect(typeof realRange).toBe('string');
+
+        const injected = { ...(pkg.overrides ?? {}), sharp: realRange as string };
+        expect(conflicts(injected)).toContain(
+            `sharp: direct=${realRange} override=${realRange}`,
+        );
+
+        // …and the SAME block without the injection stays clean, so the control
+        // is measuring the injection rather than pre-existing noise.
+        expect(conflicts()).not.toContain(
+            `sharp: direct=${realRange} override=${realRange}`,
+        );
     });
 
     it('every override of a direct dependency uses $name, not a literal range', () => {
