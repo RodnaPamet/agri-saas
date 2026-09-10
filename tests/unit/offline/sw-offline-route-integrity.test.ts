@@ -231,6 +231,17 @@ describe('a prefetch payload is served but never stored', () => {
         expect(w.buckets['agrent-v1-rsc']?.entries ?? []).toHaveLength(0);
     });
 
+    it.each(['1', '2', '3'])('does not store a prefetch with Next-Router-Prefetch: %s', async (v) => {
+        // PRESENCE, not equality. Next emits three values —
+        // node_modules/next/dist/client/components/segment-cache/cache.js:1972,
+        // :1977, :1982 set '2', '3' and '1'. #880 tested `=== '1'`, which would
+        // have stored the '2'/'3' payloads as navigations and then skipped them
+        // during eviction — the exact failure the predicate exists to prevent.
+        const w = loadWorker({ online: true });
+        await dispatch(w, flight(TASK, { 'Next-Router-Prefetch': v }));
+        expect(w.buckets['agrent-v1-rsc']?.entries ?? []).toHaveLength(0);
+    });
+
     it('does not store a segment prefetch either', async () => {
         const w = loadWorker({ online: true });
         await dispatch(w, flight(TASK, { 'Next-Router-Segment-Prefetch': '/_tree' }));

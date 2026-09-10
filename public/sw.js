@@ -115,9 +115,16 @@ function isRscRequest(request, url) {
  */
 function isRscPrefetch(request) {
     const headers = request.headers;
+    // PRESENCE, not equality. Next emits THREE values for this header —
+    // node_modules/next/dist/client/components/segment-cache/cache.js:1972,
+    // :1977 and :1982 set '2', '3' and '1' respectively. An `=== '1'` test
+    // therefore stores the '2'/'3' payloads as if they were navigations, and
+    // then skips them during eviction, which is the failure this predicate
+    // exists to prevent — silently, and only once PPR-style prefetching is in
+    // play.
     return (
-        headers.get('Next-Router-Prefetch') === '1' ||
-        Boolean(headers.get('Next-Router-Segment-Prefetch'))
+        headers.get('Next-Router-Prefetch') !== null ||
+        headers.get('Next-Router-Segment-Prefetch') !== null
     );
 }
 
