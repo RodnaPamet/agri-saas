@@ -65,7 +65,9 @@ export const NEVER_SWEPT: readonly string[] = [
 ];
 
 /** Cache Storage buckets the sweep may delete wholesale. */
-const SWEPT_CACHES = ['fielddata', 'pages'] as const;
+// `rsc` holds Next flight payloads for tenant routes — server-rendered
+// tenant data in another wire format, so retention covers it like the rest.
+const SWEPT_CACHES = ['fielddata', 'pages', 'rsc'] as const;
 
 /**
  * When the cache sweep last ran. OUR timestamp, in localStorage.

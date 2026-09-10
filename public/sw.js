@@ -78,6 +78,60 @@ const BASEMAP_CACHE_BUDGET_BYTES = 24 * 1024 * 1024;
 const STATIC_CACHE_MAX_ENTRIES = 750;
 const DATA_CACHE_BUDGET_BYTES = 8 * 1024 * 1024;
 const PAGE_CACHE_BUDGET_BYTES = 4 * 1024 * 1024;
+
+// ── RSC payloads (Next App Router client-side navigation) ──────────────
+//
+// A `<Link>` navigation does NOT issue a document request. The router fetches
+// the route's RSC payload instead, and 41 of the 70 tenant pages are server
+// components — so offline, opening a task from My work fetched a payload that
+// was not there, and Next surfaced it as the generic "Something went wrong"
+// error boundary. Measured on an iPhone 2026-09-10.
+//
+// Kept in its OWN bucket rather than PAGE_CACHE, deliberately: the offline
+// fallback below matches with `ignoreSearch` (the `_rsc` query carries a
+// build/router hash), and PAGE_CACHE holds HTML documents for the same
+// pathnames. A loose match across a shared bucket would hand the router an
+// HTML document where it expects a flight payload — a worse failure than the
+// one being fixed.
+const RSC_CACHE = `${CACHE_VERSION}-rsc`;
+const RSC_CACHE_BUDGET_BYTES = 4 * 1024 * 1024;
+
+/** A Next App Router flight request, not a document navigation. */
+function isRscRequest(request, url) {
+    if (url.pathname.startsWith('/api/')) return false;
+    return request.headers.get('RSC') === '1' || url.searchParams.has('_rsc');
+}
+
+/**
+ * Network-first, cache-fallback for RSC payloads.
+ *
+ * Offline this is the difference between a route opening and the error
+ * boundary. The exact-URL match is tried first; the `ignoreSearch` retry
+ * exists because `_rsc` encodes a hash that can differ between the visit that
+ * cached the payload and the navigation that needs it.
+ */
+async function networkFirstRsc(request) {
+    const cache = await caches.open(RSC_CACHE);
+    try {
+        const res = await fetch(request);
+        if (res.ok) {
+            const copy = res.clone();
+            cache
+                .put(request, copy)
+                .then(() => evictCacheOverBudget(cache, RSC_CACHE_BUDGET_BYTES))
+                .catch((err) => {
+                    console.warn('[sw] RSC_CACHE put failed', request.url, err);
+                });
+        }
+        return res;
+    } catch (err) {
+        const exact = await cache.match(request);
+        if (exact) return exact;
+        const loose = await cache.match(request, { ignoreSearch: true });
+        if (loose) return loose;
+        throw err;
+    }
+}
 const PRECACHE = ['/icon.svg', '/manifest.webmanifest'];
 
 // ── Outbox IndexedDB contract (shared with src/lib/offline/idb-outbox.ts) ──
@@ -329,6 +383,12 @@ self.addEventListener('fetch', (event) => {
                 return cached || network;
             }),
         );
+        return;
+    }
+
+    // Client-side route changes ask for a flight payload, not a document.
+    if (isRscRequest(request, url)) {
+        event.respondWith(networkFirstRsc(request));
         return;
     }
 
