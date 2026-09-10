@@ -253,13 +253,8 @@
         "*": "bash scripts/detect-secrets.sh"
     },
     "overrides": {
-        "@typescript-eslint/parser": "^8.61.0",
-        "@typescript-eslint/scope-manager": "^8.61.0",
-        "@typescript-eslint/typescript-estree": "^8.61.0",
-        "@typescript-eslint/utils": "^8.61.0",
-        "@typescript-eslint/type-utils": "^8.61.0",
-        "typescript-eslint": "^8.61.0",
-        "picomatch": "^4.0.4",
+        "typescript-eslint": "^8.70.0",
+        "picomatch": "^4.0.7",
         "valibot": "^1.4.2",
         "protobufjs": "^8.6.6",
         "@hono/node-server": "^1.19.13",
