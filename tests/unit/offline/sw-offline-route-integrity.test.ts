@@ -66,6 +66,18 @@ class VaryCache {
         return hit ? { _served: hit.url, _body: hit.body } : undefined;
     }
 
+    // Insertion order, ALL matches — this is what Cache.match() returns [0] of.
+    async matchAll(
+        req: { url: string; headers: { get(k: string): string | null } },
+        opts?: { ignoreSearch?: boolean; ignoreVary?: boolean },
+    ) {
+        const ok = (e: Entry) => opts?.ignoreVary || this.varyAgrees(e, req);
+        const same = opts?.ignoreSearch
+            ? (e: Entry) => e.url.split('?')[0] === req.url.split('?')[0]
+            : (e: Entry) => e.url === req.url;
+        return this.entries.filter((e) => same(e) && ok(e)).map((e) => ({ _served: e.url, _body: e.body }));
+    }
+
     async put(req: { url: string; headers: { get(k: string): string | null } }, res: { _body?: string }) {
         const vary: Headers = {};
         for (const h of NEXT_VARY) vary[h] = req.headers.get(h);
@@ -163,6 +175,9 @@ async function dispatch(w: Worker, request: unknown) {
 
 const flight = (url: string, h: Headers = {}) =>
     ({ url, method: 'GET', mode: 'cors', headers: headersFor({ RSC: '1', ...h }) });
+
+const asset = (url: string) =>
+    ({ url, method: 'GET', mode: 'cors', headers: headersFor({}) });
 
 const navigation = (url: string) =>
     ({ url, method: 'GET', mode: 'navigate', headers: headersFor({}) });
@@ -349,5 +364,55 @@ describe('the offline document names the screen it could not serve', () => {
         });
         const res = await dispatch(w, navigation('https://app.test/t/acme/field/task-1'));
         expect((res as unknown as FakeResponse)._html).toContain('/t/acme/field/task-1');
+    });
+});
+
+describe('the newest cached payload wins, never the oldest', () => {
+    it('serves the navigation payload over an older prefetch for the same URL', async () => {
+        // Cache.match() resolves to matchAll()[0] and the Query Cache walks its
+        // list in INSERTION order, so the first entry wins. Next prefetches on
+        // link render and navigates on tap, so the PREFETCH entry is always the
+        // older one — match() would hand the router a partial tree whenever
+        // both exist.
+        //
+        // dropPrefetchRscEntries() also prevents this, but it leans on
+        // Cache.keys() preserving request headers, which is not something to
+        // stake an operator's screen on in WebKit. This does not depend on it.
+        const w = loadWorker({
+            online: false,
+            rscSeed: [
+                { url: TASK, vary: { RSC: '1', 'Next-Router-Prefetch': '1' }, body: 'PARTIAL-PREFETCH' },
+                { url: TASK, vary: { RSC: '1', 'Next-Router-State-Tree': 'tree-A' }, body: 'flight' },
+            ],
+        });
+        const res = await dispatch(w, flight(TASK, { 'Next-Router-State-Tree': 'tree-B' }));
+        expect((res as { _body?: string })?._body).toBe('flight');
+    });
+});
+
+describe('the MapLibre worker is cached, so the map can boot offline', () => {
+    it.each([
+        '/maplibre/maplibre-gl-worker.mjs',
+        '/maplibre/maplibre-gl-shared.mjs',
+    ])('caches %s as a static asset', async (path) => {
+        // isStaticAsset matched `js` but not `mjs`, and these two are not under
+        // /_next/static/, so they fell off the end of the fetch handler with no
+        // respondWith at all. Offline that left MapCanvas — 60vh of a phone
+        // screen — an empty rectangle with no spinner, icon or error, because
+        // it registers no onError. An absence with nothing to explain it, which
+        // is the whole class of bug this worker keeps producing.
+        const w = loadWorker({ online: true });
+        await dispatch(w, asset('https://app.test' + path));
+        const cached = (w.buckets['agrent-v1-static']?.entries ?? []).map((e) => e.url);
+        expect(cached).toContain('https://app.test' + path);
+    });
+
+    it('still does not treat an API route as a static asset', async () => {
+        // Positive control for the widened regex: `m?js` must not start
+        // swallowing things that belong on the data path.
+        const w = loadWorker({ online: true });
+        await dispatch(w, asset('https://app.test/api/t/acme/farm-tasks'));
+        const cached = (w.buckets['agrent-v1-static']?.entries ?? []).map((e) => e.url);
+        expect(cached).toHaveLength(0);
     });
 });

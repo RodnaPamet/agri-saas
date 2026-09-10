@@ -177,10 +177,23 @@ async function networkFirstRsc(request) {
         }
         return res;
     } catch (err) {
-        const exact = await cache.match(request, { ignoreVary: true });
-        if (exact) return exact;
-        const loose = await cache.match(request, { ignoreSearch: true, ignoreVary: true });
-        if (loose) return loose;
+        // NEWEST match, not the oldest. `Cache.match()` resolves to
+        // `matchAll()[0]` and the Query Cache walks its request/response list
+        // in INSERTION order, so the first entry wins — and Next prefetches on
+        // link render and navigates on tap, which means the PREFETCH entry is
+        // always the older one. `match()` would therefore hand back a partial
+        // tree whenever both exist for a URL.
+        //
+        // dropPrefetchRscEntries() also prevents that, but it leans on
+        // `Cache.keys()` preserving request headers, which is not something to
+        // stake the operator's screen on in WebKit. This does not depend on it:
+        // the navigation entry is `put` after the prefetch entry by
+        // construction, so the last match is the right one either way. It also
+        // picks the freshest of several navigation payloads for one pathname.
+        const exact = await cache.matchAll(request, { ignoreVary: true });
+        if (exact.length > 0) return exact[exact.length - 1];
+        const loose = await cache.matchAll(request, { ignoreSearch: true, ignoreVary: true });
+        if (loose.length > 0) return loose[loose.length - 1];
         throw err;
     }
 }
@@ -334,7 +347,15 @@ self.addEventListener('activate', (event) => {
 function isStaticAsset(url) {
     return (
         url.pathname.startsWith('/_next/static/') ||
-        /\.(?:css|js|woff2?|ttf|svg|png|jpg|jpeg|gif|webp|ico)$/.test(url.pathname)
+        // `m?js` deliberately: MapLibre v6 boots its worker from the real path
+        // /maplibre/maplibre-gl-worker.mjs (see MapCanvas.tsx's workerUrl note),
+        // which is not under /_next/static/. Matching only `js` left it
+        // uncached, so offline the map — 60vh of the operator's screen on a
+        // phone — was an empty rectangle with no spinner, icon or error, since
+        // MapCanvas registers no onError. Its maplibre-gl-shared.mjs sibling
+        // has the same problem. STATIC_CACHE_MAX_ENTRIES is a COUNT, so two
+        // more entries cost nothing.
+        /\.(?:css|m?js|woff2?|ttf|svg|png|jpg|jpeg|gif|webp|ico)$/.test(url.pathname)
     );
 }
 
