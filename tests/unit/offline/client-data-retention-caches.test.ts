@@ -330,3 +330,123 @@ describe('the offline shell survives the sweep (#851)', () => {
         expect(fake.remaining).not.toContain('agrent-v1-pages');
     });
 });
+
+/**
+ * The sweep is a CADENCE, not an every-launch wipe (#862 follow-up).
+ *
+ * `CLIENT_DATA_MAX_AGE_MS` is 24h and localStorage snapshots are swept by age.
+ * The caches were not — they were deleted unconditionally on every document
+ * load, which is not a 24-hour retention policy but "delete everything, every
+ * launch".
+ *
+ * For PAGE_CACHE that cost the offline shell (#851). For DATA_CACHE it costs
+ * the offline DATA: an operator opens My work online, navigates once more, and
+ * the second document load deletes the `/farm-tasks` response the first one
+ * cached. Measured on an iPhone 2026-09-10 — DATA_CACHE reported MISSING after
+ * ordinary use, and My work showed nothing in the field.
+ */
+
+const LAST_SWEPT = 'agri.offline.retention.lastSweptAt';
+const HOUR = 60 * 60 * 1000;
+
+/**
+ * tests/unit runs under the NODE jest project, which has no localStorage —
+ * and `safeLocalStorage()` returning null makes the cadence degrade to
+ * always-sweep. That is the correct fallback (a device that cannot remember
+ * when it last swept must sweep), but it would make every assertion below
+ * vacuous, so the suite supplies a real one.
+ */
+class MemoryStorage {
+    private map = new Map<string, string>();
+    get length() { return this.map.size; }
+    getItem(k: string) { return this.map.has(k) ? this.map.get(k)! : null; }
+    setItem(k: string, v: string) { this.map.set(k, String(v)); }
+    removeItem(k: string) { this.map.delete(k); }
+    clear() { this.map.clear(); }
+    key(i: number) { return [...this.map.keys()][i] ?? null; }
+}
+
+function installStorage(): MemoryStorage {
+    const ls = new MemoryStorage();
+    (globalThis as unknown as { localStorage: unknown }).localStorage = ls;
+    return ls;
+}
+
+describe('the cache sweep runs on a cadence, not every launch', () => {
+    let ls: MemoryStorage;
+    beforeEach(() => {
+        ls = installStorage();
+        installLocation(CURRENT);
+    });
+    afterEach(() => {
+        delete (globalThis as unknown as { localStorage?: unknown }).localStorage;
+        installLocation(null);
+    });
+
+    it('a device that cannot remember still sweeps — no localStorage is not a licence to keep data', async () => {
+        delete (globalThis as unknown as { localStorage?: unknown }).localStorage;
+        setOnline(true);
+        const fake = installEntries();
+        await sweepClientStores({ now: 1_000_000 });
+        expect(fake.remaining).not.toContain('agrent-v1-fielddata');
+    });
+
+    it('sweeps on a device that has never swept', async () => {
+        setOnline(true);
+        const fake = installEntries();
+        await sweepClientStores({ now: 1_000_000 });
+        expect(fake.remaining).not.toContain('agrent-v1-fielddata');
+        expect(ls.getItem(LAST_SWEPT)).toBe('1000000');
+    });
+
+    it('does NOT sweep again an hour later — the field data survives', async () => {
+        setOnline(true);
+        const first = installEntries();
+        await sweepClientStores({ now: 1_000_000 });
+        expect(first.remaining).not.toContain('agrent-v1-fielddata');
+
+        // A second document load, one hour on. Before this fix every one of
+        // these wiped the offline queue.
+        const second = installEntries();
+        await sweepClientStores({ now: 1_000_000 + HOUR });
+        expect(second.remaining).toContain('agrent-v1-fielddata');
+        expect(second.buckets['agrent-v1-fielddata'].urls).toHaveLength(1);
+    });
+
+    it('sweeps again once the retention window has elapsed', async () => {
+        setOnline(true);
+        installEntries();
+        await sweepClientStores({ now: 1_000_000 });
+
+        const later = installEntries();
+        await sweepClientStores({ now: 1_000_000 + 25 * HOUR });
+        expect(later.remaining).not.toContain('agrent-v1-fielddata');
+    });
+
+    it('a PURGE ignores the cadence entirely — sign-out must not be deferrable', async () => {
+        setOnline(true);
+        // A stamp in the FUTURE, which a clock change or a timezone move
+        // produces on a real device. `now - last` is then negative, so the
+        // window has NOT elapsed by any reading — the only thing that can
+        // still sweep is the explicit purge branch.
+        //
+        // Written this way deliberately: the first version stamped the recent
+        // past, and `now - last >= 0` is trivially true for maxAgeMs 0, so the
+        // test passed with the purge branch REMOVED. It asserted a property it
+        // could not fail on.
+        ls.setItem(LAST_SWEPT, String(9_000_000));
+        const onSignOut = installEntries();
+
+        await sweepClientStores({ maxAgeMs: 0, now: 1_000_000 });
+
+        expect(onSignOut.remaining).not.toContain('agrent-v1-fielddata');
+        expect(onSignOut.remaining).not.toContain('agrent-v1-pages');
+    });
+
+    it('a purge does not stamp the clock — the next launch still sweeps', async () => {
+        setOnline(true);
+        installEntries();
+        await sweepClientStores({ maxAgeMs: 0, now: 5_000_000 });
+        expect(ls.getItem(LAST_SWEPT)).toBeNull();
+    });
+});
