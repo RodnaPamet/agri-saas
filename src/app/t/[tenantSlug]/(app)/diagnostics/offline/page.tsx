@@ -79,6 +79,7 @@ const EXPECTED_CACHES = [
     { key: 'STATIC_CACHE', suffix: '-static', role: 'app shell' },
     { key: 'PAGE_CACHE', suffix: '-pages', role: 'serves the offline cold launch' },
     { key: 'DATA_CACHE', suffix: '-fielddata', role: 'tenant field data' },
+    { key: 'RSC_CACHE', suffix: '-rsc', role: 'offline route navigation' },
     { key: 'BASEMAP_CACHE', suffix: '-basemap', role: 'offline map tiles' },
 ] as const;
 

@@ -82,11 +82,21 @@ function installCaches(names: string[]) {
     (globalThis as unknown as { caches: unknown }).caches = new FakeCaches(names);
 }
 
-const ALL_FOUR = ['agrent-v1-static', 'agrent-v1-pages', 'agrent-v1-fielddata', 'agrent-v1-basemap'];
+// Named for what it is, not how many: `-rsc` joined the set when client-side
+// route navigation was made to work offline, and a constant called ALL_FOUR
+// holding five entries is the same stale-name problem this suite exists to
+// catch elsewhere.
+const ALL_CACHES = [
+    'agrent-v1-static',
+    'agrent-v1-pages',
+    'agrent-v1-fielddata',
+    'agrent-v1-rsc',
+    'agrent-v1-basemap',
+];
 
 beforeEach(() => {
     window.localStorage.clear();
-    installCaches(ALL_FOUR);
+    installCaches(ALL_CACHES);
     Object.defineProperty(navigator, 'storage', {
         configurable: true,
         value: { estimate: async () => ({ quota: 1024 * 1024 * 500, usage: 1024 * 1024 * 12 }) },
@@ -160,20 +170,22 @@ describe('offline diagnostics — the verdict is legible in every state', () => 
 });
 
 describe('offline diagnostics — probe 2 asks for caches BY NAME', () => {
-    it('lists all four caches with their entry counts', async () => {
+    it('lists every cache with its entry count', async () => {
         render(<OfflineDiagnosticsPage />);
 
-        for (const key of ['STATIC_CACHE', 'PAGE_CACHE', 'DATA_CACHE', 'BASEMAP_CACHE']) {
+        for (const key of ['STATIC_CACHE', 'PAGE_CACHE', 'DATA_CACHE', 'RSC_CACHE', 'BASEMAP_CACHE']) {
             await waitFor(() => expect(screen.getByText(key)).toBeInTheDocument());
         }
-        expect(screen.getAllByText('3 entries')).toHaveLength(4);
+        // Derived from the fixture rather than a literal, so adding a bucket to
+        // one and not the other cannot pass.
+        expect(screen.getAllByText('3 entries')).toHaveLength(ALL_CACHES.length);
     });
 
     it('marks a cache MISSING rather than silently omitting it', async () => {
         // PAGE_CACHE is what serves the offline cold launch (probe 3). Its
         // absence is the finding; a list that just does not mention it reads as
         // "fine".
-        installCaches(ALL_FOUR.filter((n) => !n.endsWith('-pages')));
+        installCaches(ALL_CACHES.filter((n) => !n.endsWith('-pages')));
         render(<OfflineDiagnosticsPage />);
 
         await waitFor(() => expect(screen.getByText('MISSING')).toBeInTheDocument());

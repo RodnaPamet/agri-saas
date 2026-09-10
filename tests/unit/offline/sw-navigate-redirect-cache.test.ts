@@ -97,7 +97,9 @@ function loadWorker(opts: { redirected: boolean; putThrows?: boolean }) {
 async function navigate(h: ReturnType<typeof loadWorker>, url: string): Promise<void> {
     let responded: Promise<unknown> | undefined;
     h.fetchHandler({
-        request: { url, method: 'GET', mode: 'navigate' },
+        // A real Request always has headers — the worker reads the RSC header
+        // to tell a flight request from a document navigation.
+        request: { url, method: 'GET', mode: 'navigate', headers: { get: () => null } },
         respondWith: (p: Promise<unknown>) => { responded = p; },
     });
     if (responded) await responded.catch(() => {});
@@ -220,7 +222,9 @@ function loadOfflineWorker(cachedPages: string[]) {
 async function navigateOffline(h: ReturnType<typeof loadOfflineWorker>, url: string) {
     let responded: Promise<unknown> | undefined;
     h.fetchHandler({
-        request: { url, method: 'GET', mode: 'navigate' },
+        // A real Request always has headers — the worker reads the RSC header
+        // to tell a flight request from a document navigation.
+        request: { url, method: 'GET', mode: 'navigate', headers: { get: () => null } },
         respondWith: (p: Promise<unknown>) => { responded = p; },
     });
     return responded ? await responded : undefined;
