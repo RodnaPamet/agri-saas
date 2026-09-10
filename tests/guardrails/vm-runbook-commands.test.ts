@@ -106,10 +106,23 @@ describe('production VM runbook — the rollback answers that are specific to th
         expect(s).toMatch(/deploy\/rollback\/README\.md/);
     });
 
-    it('prices the snapshot fallback honestly (up to 24h), rather than implying the 1h target', () => {
+    it('prices the snapshot fallback honestly (up to 24h), rather than implying a 1h target', () => {
         const s = rollback();
         expect(s).toMatch(/24\s*h/i);
+        // The 1-hour RPO target was retired on 2026-09-10 (#842); it must
+        // not reappear here, where it would be read as a promise about how
+        // much data a snapshot restore costs.
         expect(s).not.toMatch(/RPO of (1|one) hour/i);
+        expect(s).not.toMatch(/RPO[^.]{0,40}\b1\s*h(our)?\b/i);
+    });
+
+    it('says the incident was found by a human, not by a monitor (#854)', () => {
+        // Nothing detects a production outage. A rollback section that
+        // opens as if a page had fired teaches the reader a detection
+        // time that does not exist.
+        const s = rollback();
+        expect(s).toMatch(/#854/);
+        expect(s).toMatch(/a person noticed|a human notic|nothing paged/i);
     });
 
     it('tells the operator how to confirm which build is live', () => {
@@ -185,6 +198,39 @@ describe('production VM runbook — every repo path it names exists', () => {
             return !fs.existsSync(path.join(REPO_ROOT, target));
         });
         expect(missing).toEqual([]);
+    });
+});
+
+describe('production VM runbook — it does not imply a detection capability', () => {
+    // #854: no uptime check, no alert, no pager, no rota. The runbook is
+    // the document an operator opens at the start of an incident, so it
+    // is where a false belief about detection would be formed.
+    const src = () => readRepoFile(DOC);
+
+    it('the opening banner states plainly that a human noticed', () => {
+        const banner = src().slice(0, src().indexOf('\n## 0.'));
+        // Positive control: the banner must exist and be substantial.
+        expect(banner.length).toBeGreaterThan(500);
+        expect(banner).toMatch(/#854/);
+        expect(banner).toMatch(/a human noticed|a human notices|human noticing/i);
+        expect(banner).toMatch(/no uptime check|no alert|nothing (here )?detects/i);
+    });
+
+    it('the "does not have" inventory names the detection gap and its issue', () => {
+        const inventory = section(src(), '\n## What this deployment does not have');
+        expect(inventory.length).toBeGreaterThan(500);
+        expect(inventory).toMatch(/#854/);
+        expect(inventory).toMatch(/Nothing pages anyone/i);
+        expect(inventory).toMatch(/Detection today is a human noticing/i);
+    });
+
+    it('never quotes a detection or acknowledge time as if one were measured', () => {
+        // A stated "detected within N minutes" anywhere in this document
+        // would be fiction. The 4-hour RTO is allowed — it is a
+        // time-to-restore budget, and SLO 7 says so.
+        const s = src();
+        expect(s).not.toMatch(/detect(ed|ion)[^.\n]{0,40}\b\d+\s*(minutes|mins|hours)\b/i);
+        expect(s).not.toMatch(/acknowledge[^.\n]{0,30}\b15\s*minutes\b/i);
     });
 });
 

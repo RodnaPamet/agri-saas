@@ -62,6 +62,16 @@
 
 **Severity is set by the alert rule's `labels.severity` field, not by the responder.** If you need to escalate a warning to critical, file a manual PagerDuty incident referencing the alert.
 
+> **⚠ This table is intended policy, not current behaviour — see #854.**
+> The routing column is not deployed: there is no PagerDuty service, no
+> Alertmanager, no Slack alert webhook and no rota, so no alert rule
+> sets a severity and nothing pages anyone. The 15-minute acknowledge
+> budget therefore measures nothing today — **detection is a human
+> noticing**, and the interval before that is unbounded. The 4-hour
+> resolution budget is real, but it runs from the moment a person
+> starts, which is why `docs/slos.md` SLO 7 reads its RTO as
+> time-to-restore rather than time-to-recover.
+
 ---
 
 ## Dashboards
@@ -94,7 +104,16 @@ Every alert annotation carries a `dashboard:` field linking straight to the righ
 
 ## 1. App Down
 
-**Trigger**: the site is unreachable, or a user reports 5xx / connection refused. **There is no external uptime monitor and no pager** (see the banner) — in practice this arrives as a human noticing.
+**Trigger**: the site is unreachable, or a user reports 5xx / connection refused.
+
+> **How this incident actually starts: a human notices.** There is no
+> external uptime monitor, no alert and no pager — verified 2026-09-10,
+> tracked as **#854**. Nothing in this document detects an outage; every
+> minute between the app dying and someone opening the site is
+> unmeasured and uncapped, and the 4-hour RTO in `docs/slos.md` SLO 7
+> is time-to-restore *from the moment you start*, not from the moment
+> it broke. Read any "page severity" or "acknowledge within 15 minutes"
+> below as the intended policy, not as a description of today.
 
 **What it means**: `/api/livez` cannot be reached. Either the `agrent-app` container is dead or restart-looping, Caddy is not proxying, or the VM itself is down.
 

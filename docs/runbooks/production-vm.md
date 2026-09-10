@@ -9,6 +9,14 @@
 > a deployment this product has never had — see
 > [What this deployment does not have](#what-this-deployment-does-not-have).
 >
+> **How you found out about this incident: a human noticed.** Nothing
+> here detects an outage. There is no uptime check, no alert, no pager
+> and no rota — verified 2026-09-10 and tracked as **#854**. If you are
+> reading this because a monitor fired, the monitor is not one of ours.
+> Every procedure below starts its clock the moment you start; the
+> interval before that is unmeasured, and `docs/slos.md` SLO 7's
+> 4 hours is time-to-restore, not time-to-recover.
+>
 > Summary table: `docs/deployment.md` §
 > "Kubernetes (Helm) — NOT the production path". Backup/restore detail:
 > `docs/backup-restore.md`. Migration rollback detail:
@@ -145,8 +153,13 @@ do not hand-edit the VM to match.
 
 ## 2. Rollback
 
-**Read this before you roll anything back.** A deploy here has two
-halves that roll back at different speeds:
+**Read this before you roll anything back.** Note first that you are
+here because a person noticed, not because anything paged (#854) — so
+the deploy that caused this may be hours old, not minutes. Check
+`gh run list --workflow='Publish image to GHCR' --limit=10` before
+assuming the newest build is the guilty one.
+
+A deploy here has two halves that roll back at different speeds:
 
 - **Code** — reverted by pointing the app + worker at the previous
   image. Minutes.
@@ -344,11 +357,12 @@ engineer needs to hold in their head:
   `agrent-daily-snapshot`, daily 02:00 UTC, 14-day retention, `eu`
   multi-region storage, `keep-auto-snapshots` (deleting the disk does
   not delete the backups).
-- **Achieved RPO is up to 24 hours.** `docs/slos.md` SLO 6 targets 1
-  hour and says plainly that the target is not met; closing the gap
-  needs continuous WAL archiving or a managed Postgres, neither of
-  which is deployed. Know the real number before an incident, not
-  during one.
+- **RPO is up to 24 hours — target and achieved.** `docs/slos.md`
+  SLO 6 states 24 hours as the objective; the 1-hour target it used to
+  carry was retired on 2026-09-10 (#842) because nothing was funded to
+  meet it. Tightening it needs continuous WAL archiving or a managed
+  Postgres, neither of which is deployed. Know the real number before
+  an incident, not during one.
 - Snapshots are **crash-consistent**, not application-consistent —
   Postgres replays WAL on start. That is a supported recovery mode and
   the drill exercises it on purpose.
@@ -386,7 +400,7 @@ discover what does not exist at the worst moment.
 | Kubernetes / EKS, Helm releases, `helm rollback`, `kubectl` | [§2 Rollback](#2-rollback) — pin the image, then `deploy/apply.sh` |
 | AWS anything — RDS, PITR, ElastiCache, S3, Secrets Manager | one Postgres container on the VM disk; [§4](#4-backup--restore) |
 | Point-in-time recovery / transaction-log archive | daily disk snapshot only — RPO up to 24 h |
-| Prometheus, Grafana, Alertmanager, PagerDuty **running anywhere** | `infra/alerts/` and `infra/dashboards/` are files in this repo. Verified 2026-09-10: the VM runs seven containers and none of them is an observability component; `/opt/agrent/.env` carries no OTLP, Sentry or PagerDuty key, so the OTel metrics the app emits have nowhere to go; and the GCP project has zero Cloud Monitoring uptime checks. **Nothing pages anyone.** Detection today is a human noticing, or `Image tip check` / `restore-test.yml` going red. |
+| Prometheus, Grafana, Alertmanager, PagerDuty **running anywhere** | `infra/alerts/` and `infra/dashboards/` are files in this repo. Verified 2026-09-10: the VM runs seven containers and none of them is an observability component; `/opt/agrent/.env` carries no OTLP, Sentry or PagerDuty key, so the OTel metrics the app emits have nowhere to go; and the GCP project has zero Cloud Monitoring uptime checks. **Nothing pages anyone. Detection today is a human noticing** — or `Image tip check` / `restore-test.yml` going red, neither of which watches production. Tracked as **#854**; until it closes, no document in this repo may describe a detection time. |
 | A staging environment | there is none; `main` goes to production |
 | Horizontal scaling of any kind | [§3 Scaling](#3-scaling) |
 

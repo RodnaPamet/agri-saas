@@ -96,6 +96,23 @@ playbooks; read its banner first — only §1 and §6 have been corrected.
 `tests/guardrails/vm-runbook-commands.test.ts` holds the runbook,
 including a derived check that every repo path it names exists.
 
+**Nothing detects a production outage (#854).** No uptime check, no
+alert, no pager, no rota — verified 2026-09-10. Detection today is a
+human noticing. `docs/slos.md` SLO 7's 4 hours is therefore
+time-to-restore from the moment a person starts, never time-to-recover
+from the outage, and the 15-minute PagerDuty acknowledge in
+`docs/incident-response.md` describes intended policy, not behaviour.
+**Do not write a detection time into any doc while this is open.**
+
+**`deploy/Caddyfile` is a record, not a deployment.** `deploy/apply.sh`
+does not copy it and `deploy/check-drift.sh` does not hash it, so the
+live `/opt/agrent/Caddyfile` is edited by hand and nothing detects the
+two diverging. The `caddy` service declares neither `env_file` nor
+`environment`, so no `{$VAR}` in that file can be supplied by this repo
+— `tests/guardrails/caddyfile-divergence.test.ts` holds that, and holds
+the header to naming what is unverified instead of explaining the
+divergence away (#842).
+
 **When a runtime change must be applied to the VM** — a one-off job run,
 inspecting container logs, a manual restart — execute it directly via
 `gcloud compute ssh`; do not ask the operator to do it by hand. But a
@@ -113,8 +130,10 @@ inflect policy's own `description` claims a 30-minute stagger but its
 ~02:29; the stagger is intent, not configuration, and
 `docs/backup-restore.md` still repeats the 02:30 figure. Both 14-day
 retention, `eu` storage, `keep-auto-snapshots`). So **RPO
-is up to 24 hours**, not the 1 hour `docs/slos.md` targets, and the
-snapshots are crash-consistent (Postgres replays WAL on restore).
+is up to 24 hours**, which is now also what `docs/slos.md` SLO 6
+*targets* — the 1-hour target it carried until 2026-09-10 was retired
+(#842) rather than met, and SLO 6 keeps that history. Snapshots are
+crash-consistent (Postgres replays WAL on restore).
 Restores are drilled monthly by `infra/scripts/restore-test-gcp.sh`
 via `.github/workflows/restore-test.yml`, which runs it once per
 target from a job matrix — it boots a real Postgres over the restored

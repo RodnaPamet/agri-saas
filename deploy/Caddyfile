@@ -1,22 +1,52 @@
 #
 # Caddy reverse proxy for agrent.
 #
-# NOTE (#842): `deploy/apply.sh` copies ONLY docker-compose.vm.yml to the VM,
-# and `deploy/check-drift.sh` hashes only that file — so this Caddyfile is
-# NOT synchronised and NOT drift-checked. The live copy at
-# /opt/agrent/Caddyfile is edited on the VM. This file is the record of what
-# it should contain; reconcile changes in BOTH directions by hand.
+# ── THIS FILE IS NOT DEPLOYED, AND IT IS NOT DRIFT-CHECKED ────────────────
 #
-# Reconciled from the VM 2026-09-10: the live site block serves the custom
-# domain `app.agrent.bg` alongside the sslip.io host, which this file was
-# missing. It also sets ACME_EMAIL in the environment, overriding the default
-# below. Let's Encrypt issues a cert automatically on first request for each
-# name in the site block.
+# `deploy/apply.sh` copies ONLY docker-compose.vm.yml to the VM, and
+# `deploy/check-drift.sh` hashes only that file. The Caddy container mounts
+# `./Caddyfile` from /opt/agrent, and that copy is edited ON THE VM by hand.
+# Editing this file changes nothing in production. It is the repo's record of
+# what the live file should contain, and it is reconciled by hand in both
+# directions — with nothing checking that the reconciliation happened.
+#
+# ── WHAT IS AND IS NOT VERIFIED (#842) ────────────────────────────────────
+#
+# VERIFIED, in this repo, 2026-09-10: the `caddy` service in
+# deploy/docker-compose.vm.yml declares NEITHER `env_file` NOR `environment`
+# — unlike `app` and `worker`, which both carry `env_file`. So nothing in
+# this repo can put ACME_EMAIL into the Caddy container, and the
+# `{$ACME_EMAIL:admin@agrent.bg}` placeholder below resolves to its default
+# whenever this file is what runs. An earlier revision of this header claimed
+# "it also sets ACME_EMAIL in the environment, overriding the default below";
+# that claim was not true of anything in the repo and has been withdrawn.
+#
+# NOT VERIFIED: what the live /opt/agrent/Caddyfile actually contains, and
+# what ACME account email the running Caddy is using. Neither was reachable
+# from where this was written, so no value is asserted here and none was
+# guessed. `email` only controls Let's Encrypt expiry notices; certificate
+# issuance does not depend on it.
+#
+# TO CLOSE THIS: diff the live file against this one, and then either extend
+# `deploy/apply.sh` + `deploy/check-drift.sh` to cover the Caddyfile (so the
+# divergence becomes detectable) or delete this copy and stop implying the
+# repo is its source of truth. Until one of those happens, treat every line
+# below as UNCONFIRMED against production.
+#
+# `tests/guardrails/caddyfile-divergence.test.ts` holds the parts of the
+# above that a machine can check.
+#
+# The site block serves the custom domain `app.agrent.bg` alongside the
+# sslip.io host. Let's Encrypt issues a cert automatically on first request
+# for each name in the site block.
 #
 
 {
     # Use the production LE endpoint by default (default behaviour).
-    # Set ACME_EMAIL in the env if you want certificate expiry mail.
+    # ACME_EMAIL is NOT supplied by anything in this repo — the `caddy`
+    # service has no `env_file` and no `environment` — so this resolves to
+    # the default below unless the VM's own copy of this file differs. See
+    # the header.
     email {$ACME_EMAIL:admin@agrent.bg}
 }
 
