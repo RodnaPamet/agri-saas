@@ -157,14 +157,48 @@ fail() { printf '\n\033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 # ── Cleanup, always ────────────────────────────────────────────
 # Runs on success, on failure, and on interrupt. The VM must go first
 # (it holds the disk). Failures here are reported but never mask the
+# A delete that FAILS must never read like a delete that had nothing to do.
+# `2>/dev/null || true` stood on both delete paths below; the leaked resource
+# is a disk holding a full production database plus DATA_ENCRYPTION_KEY, and
+# nothing in this repo ever looks for one. Not-found is the only acceptable
+# failure. Anything else sets LEAKED and is shouted about at exit.
+LEAKED=0
+try_delete() {
+    local label="$1"; shift
+    local out
+    if out="$("$@" --quiet 2>&1)"; then
+        echo "  deleted ${label}"
+        return 0
+    fi
+    case "${out}" in
+        *"was not found"*|*notFound*|*"does not exist"*)
+            echo "  (no ${label} to delete)" ;;
+        *)
+            echo "::error::LEAK — ${label} was NOT deleted and holds restored production data: ${out}"
+            LEAKED=1 ;;
+    esac
+}
+
 # original exit code.
 cleanup() {
     local rc=$?
     log "cleanup — removing throwaway VM + restored disk"
-    ${GC} compute instances delete "${RESTORE_VM_ID}" --zone "${ACTIVE_ZONE}" 2>/dev/null \
-        || echo "  (no VM ${RESTORE_VM_ID} to delete)"
-    ${GC} compute disks delete "${RESTORE_DISK_ID}" --zone "${ACTIVE_ZONE}" 2>/dev/null \
-        || echo "  (no disk ${RESTORE_DISK_ID} to delete)"
+    # `2>/dev/null || echo "(nothing to delete)"` used to stand here. It
+    # reported a delete that was DENIED — IAM change, quota, resource lock —
+    # in exactly the same words as a delete that had nothing to do, sent
+    # gcloud's diagnostic to /dev/null, and re-raised the drill's own exit
+    # code. The leaked resource is a disk holding a full production database
+    # plus DATA_ENCRYPTION_KEY, and nothing else in this repo ever looks for
+    # it. Not-found is the ONLY acceptable failure here; everything else is a
+    # leak and must be loud.
+    try_delete "VM ${RESTORE_VM_ID}" \
+        ${GC} compute instances delete "${RESTORE_VM_ID}" --zone "${ACTIVE_ZONE}"
+    try_delete "disk ${RESTORE_DISK_ID}" \
+        ${GC} compute disks delete "${RESTORE_DISK_ID}" --zone "${ACTIVE_ZONE}"
+    if [ "${LEAKED}" -ne 0 ]; then
+        echo "::error::Restore drill leaked at least one resource. Delete it by hand and check the drill's IAM before the next run."
+        [ "$rc" -eq 0 ] && rc=1
+    fi
     exit $rc
 }
 trap cleanup EXIT INT TERM
@@ -291,7 +325,8 @@ STARTUP
         if is_capacity_error "${err}"; then rc=75; fi
         # The disk landed but the VM did not. Remove it before trying the next
         # zone, or every exhausted zone leaks one.
-        ${GC} compute disks delete "${RESTORE_DISK_ID}" --zone "${zone}" 2>/dev/null || true
+        try_delete "disk ${RESTORE_DISK_ID} (zone ${zone}, VM create failed)" \
+            ${GC} compute disks delete "${RESTORE_DISK_ID}" --zone "${zone}"
         ACTIVE_ZONE="${GCP_ZONE}"
         if [ "${rc}" -eq 75 ]; then
             echo "  ○ ${zone}: no ${RESTORE_MACHINE_TYPE} capacity"
@@ -449,8 +484,18 @@ echo "── validation battery ──"
 echo "  ✓ SELECT 1"
 
 # Core tables present and readable.
-psql 'SELECT count(*) FROM "Tenant"'  >/dev/null && echo "  ✓ Tenant table reachable"
-psql 'SELECT count(*) FROM "User"'    >/dev/null && echo "  ✓ User table reachable"
+# `psql ... && echo "✓"` used to stand here. `cmd && echo` is not an
+# assertion: under `set -euo pipefail` a failing left side short-circuits,
+# prints nothing and does NOT trip errexit, so a missing or unreadable
+# core table sailed through the drill. Assigning from the substitution
+# does trip errexit, which is why every OTHER check in this battery is
+# written the way these two now are.
+TENANTS=\$(psql 'SELECT count(*) FROM "Tenant"')
+[ -n "\$TENANTS" ] || { echo "Tenant table unreadable"; exit 1; }
+echo "  ✓ Tenant table reachable (\$TENANTS rows)"
+USERS=\$(psql 'SELECT count(*) FROM "User"')
+[ -n "\$USERS" ] || { echo "User table unreadable"; exit 1; }
+echo "  ✓ User table reachable (\$USERS rows)"
 
 # Migrations applied — catches a restore of a half-migrated cluster.
 MIGRATIONS=\$(psql 'SELECT count(*) FROM _prisma_migrations WHERE finished_at IS NOT NULL')
@@ -460,8 +505,13 @@ echo "  ✓ _prisma_migrations: \$MIGRATIONS applied"
 # Recent activity — catches a snapshot that is technically valid but
 # stale, or restored from a long-dead disk.
 RECENT=\$(psql 'SELECT count(*) FROM "AuditLog" WHERE "createdAt" > now() - INTERVAL '"'"'14 days'"'"'')
-echo "  ℹ AuditLog rows in the last 14 days: \$RECENT"
-[ "\$RECENT" -gt 0 ] || echo "  ⚠ no audit activity in 14 days — verify this matches expected usage"
+# Informational ONLY, deliberately. This used to carry
+# `[ "\$RECENT" -gt 0 ] || echo "⚠ ..."`, which is a warning in a monthly
+# cron log — i.e. nothing. The staleness it claimed to catch is already
+# hard-failed upstream (SNAPSHOT_AGE_HOURS vs MAX_SNAPSHOT_AGE_HOURS),
+# and the only case left is a fresh snapshot of an idle database, which
+# is not a restore failure. A number in the log beats a fake assertion.
+echo "  ℹ AuditLog rows in the last 14 days: \$RECENT (informational; snapshot age is gated upstream)"
 
 # RLS survived the restore. Tenant isolation is the product's core
 # security property; a restore that loses policies is a breach.
