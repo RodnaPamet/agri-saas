@@ -162,6 +162,57 @@ jobs:
   #  Job 1: Lint — ESLint + Next.js lint rules
   #  Fast, no DB needed. Fails immediately on lint errors.
   # ═══════════════════════════════════════════════════════════════
+  selector-teeth:
+    name: Selector teeth
+    runs-on: ubuntu-latest
+    # One jest invocation per mutation (~7s), scoped to the guard files a PR
+    # actually changes. Three guards with five selectors apiece is ~3 min; this
+    # ceiling is a runaway backstop, not a budget. A full-repo sweep is ~100
+    # minutes and deliberately NOT run here.
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # REQUIRED, not hygiene. The audit step diffs against the base to find
+          # which guards changed; at the default depth of 1 that diff is empty,
+          # the tool audits nothing, and the job reports success having checked
+          # NOTHING. Same shape as #870.
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-node-prisma
+
+      # Runs on EVERY invocation, including when no guard changed. Without it,
+      # "no dead selectors found" and "the detector is broken" are the same
+      # green tick — which is the defect class this job exists for. The fixture
+      # carries a deliberately toothless selector, so a working detector MUST
+      # report it and exit non-zero.
+      - name: "Control: the detector still detects"
+        run: |
+          set -euo pipefail
+          if node scripts/selector-teeth.mjs tests/fixtures/selector-teeth-selftest.test.ts; then
+            echo "::error::CONTROL FAILED - the self-test fixture has a planted dead selector and the tool did not report it. Every result from this job is meaningless until this passes."
+            exit 1
+          fi
+          echo "control ok: the planted dead selector was reported"
+
+      - name: "Do the guards this PR changes have live selectors?"
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BASE:-}" ]; then
+            echo "no base sha for this event; nothing to diff"
+            exit 0
+          fi
+          CHANGED="$(git diff --name-only "${BASE}" HEAD -- 'tests/guards/*.test.ts' | tr '\n' ' ')"
+          if [ -z "${CHANGED// /}" ]; then
+            echo "no guard files changed in this PR; the control above still ran"
+            exit 0
+          fi
+          echo "auditing: ${CHANGED}"
+          node scripts/selector-teeth.mjs ${CHANGED}
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
