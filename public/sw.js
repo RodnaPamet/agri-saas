@@ -339,18 +339,83 @@ self.addEventListener('fetch', (event) => {
             fetch(request)
                 .then((res) => {
                     if (res.ok) {
-                        const copy = res.clone();
-                        caches.open(PAGE_CACHE).then(async (cache) => {
-                            await cache.put(request, copy);
-                            await evictCacheOverBudget(cache, PAGE_CACHE_BUDGET_BYTES);
-                        });
+                        // A REDIRECTED response cannot be replayed for a
+                        // navigation: the browser refuses a service-worker
+                        // response whose `redirected` flag is set, so the cache
+                        // entry is dead weight even when the put succeeds.
+                        //
+                        // This is not an edge case here — it is the START_URL.
+                        // `/tenants` (public/manifest.webmanifest) 307s to
+                        // /login when signed out and to /t/<slug>/dashboard for
+                        // a single-tenant user (src/app/tenants/page.tsx:52).
+                        // So the one URL a Home Screen launch requests was the
+                        // one URL that could never be served offline, and the
+                        // failure was silent in both directions: no catch here,
+                        // and an absent entry is indistinguishable from an
+                        // entry that was never written (#851).
+                        //
+                        // Rebuilding the Response drops the redirected flag
+                        // while keeping status, headers and body, so the entry
+                        // is replayable. Cached under the ORIGINAL request,
+                        // because that is what the next launch asks for.
+                        const copy = res.redirected
+                            ? new Response(res.clone().body, {
+                                  status: res.status,
+                                  statusText: res.statusText,
+                                  headers: res.headers,
+                              })
+                            : res.clone();
+                        caches
+                            .open(PAGE_CACHE)
+                            .then(async (cache) => {
+                                await cache.put(request, copy);
+                                await evictCacheOverBudget(cache, PAGE_CACHE_BUDGET_BYTES);
+                            })
+                            .catch((err) => {
+                                // Never silent again. A failed write here costs
+                                // the offline launch, and used to do so without
+                                // a single line anywhere saying it had happened.
+                                console.warn('[sw] PAGE_CACHE put failed', request.url, err);
+                            });
                     }
                     return res;
                 })
                 .catch(async () => {
                     const cached = await caches.match(request);
+                    if (cached) return cached;
+
+                    // ── Shell fallback ──────────────────────────────────
+                    // An exact-URL match is not enough, because the URL a
+                    // Home Screen launch requests can NEVER be cached.
+                    //
+                    // `start_url` is /tenants (public/manifest.webmanifest),
+                    // and it always redirects — to /login signed out, or to
+                    // /t/<slug>/dashboard for a single-tenant user. A
+                    // navigation request carries `redirect: 'manual'`, so
+                    // `fetch(request)` on it returns an OPAQUE REDIRECT:
+                    // status 0, ok false, redirected false. The `if (res.ok)`
+                    // above is therefore false for the one URL every launch
+                    // asks for, and no amount of fixing the redirected-response
+                    // path helps — that path is for FOLLOWED redirects, which
+                    // navigations do not produce.
+                    //
+                    // Measured on an iPhone 2026-09-10: PAGE_CACHE entries=1
+                    // after repeated online launches, and that one entry was
+                    // never the start_url.
+                    //
+                    // So serve any cached document rather than nothing. This is
+                    // the ordinary PWA app-shell fallback; without it an
+                    // offline-first app cannot open offline at all. Most recent
+                    // first — it is the closest to what the operator was last
+                    // looking at.
+                    const pages = await caches.open(PAGE_CACHE);
+                    const keys = await pages.keys();
+                    if (keys.length > 0) {
+                        const shell = await pages.match(keys[keys.length - 1]);
+                        if (shell) return shell;
+                    }
+
                     return (
-                        cached ||
                         new Response(
                             '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Offline</title><body style="font-family:system-ui;background:#0b1220;color:#e5e7eb;display:grid;place-items:center;height:100vh;margin:0"><div style="text-align:center"><h1 style="color:#86efac">Offline</h1><p>You’re offline. Marked jobs are queued and will sync when you reconnect.</p></div></body>',
                             { headers: { 'Content-Type': 'text/html; charset=utf-8' } },
