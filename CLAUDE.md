@@ -57,8 +57,12 @@ docker-compose up -d
 
 The production deployment runs on a single GCP VM, and **Claude has
 `gcloud` access to it** — project `hazel-design-419410`, instance
-**`agrent`**, zone `europe-west1-b` (served at
-`https://35-187-80-26.sslip.io`):
+**`agrent`**, zone `europe-west1-b`. It is served at
+**`https://app.agrent.bg`** and at `https://35-187-80-26.sslip.io` —
+the live Caddy site block carries both names, though the repo copy
+(`deploy/Caddyfile`) listed only the sslip.io one until #842, because
+`deploy/apply.sh` does not copy that file and `deploy/check-drift.sh`
+does not hash it:
 
 ```bash
 gcloud compute ssh agrent --zone europe-west1-b --command "…"
