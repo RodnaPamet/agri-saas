@@ -45,7 +45,16 @@ const EXCLUDED_DIR = path.join(SRC_ROOT, 'components', 'ui') + path.sep;
 const BASELINE_HAND_ROLLED: Record<string, string> = {};
 
 function walk(dir: string, out: string[]): string[] {
-    if (!fs.existsSync(dir)) return out;
+    if (!fs.existsSync(dir)) {
+        // Deliberately a THROW, not `return out`. The early return was a
+        // defensive line that made this guard unable to fail: a renamed root
+        // yielded zero files, zero files yielded zero violations, and the
+        // assertion passed over nothing. An empty selection is a PASS.
+        throw new Error(
+            `scan root does not exist: ${dir}. If a directory was renamed, update SCAN_ROOTS — ` +
+                `do not let this guard scan nothing and report success.`,
+        );
+    }
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         const full = path.join(dir, entry.name);
         if (entry.isDirectory()) walk(full, out);
