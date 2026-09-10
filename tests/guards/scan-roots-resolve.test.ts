@@ -95,6 +95,7 @@ const KNOWN_SWALLOWERS: readonly string[] = [
     'offline-spec-chunk-warmup.test.ts',
     'page-actions-discipline.test.ts',
     'page-breadcrumbs-coverage.test.ts',
+    'payload-url-scheme.test.ts',
     'primary-action-budget.test.ts',
     'primary-secondary-ratio.test.ts',
     'promotions-drift.test.ts',
@@ -159,7 +160,12 @@ export function swallowsMissingRoot(src: string): boolean {
         if (!/readdirSync\s*\(/.test(lines[i])) continue;
         // the guard clause sits at the top of walk(), a line or two above
         for (let j = Math.max(0, i - 6); j < i; j++) {
-            if (/!\s*(fs\.)?existsSync\s*\(/.test(lines[j]) && /\breturn\b/.test(lines.slice(j, j + 3).join(' '))) {
+            // `continue` skips the root just as silently as `return` — found
+            // in the sibling shell guard, which used the shape it polices.
+            if (
+                /!\s*(fs\.)?existsSync\s*\(/.test(lines[j]) &&
+                /\b(return|continue)\b/.test(lines.slice(j, j + 3).join(' '))
+            ) {
                 return true;
             }
         }
@@ -236,6 +242,10 @@ describe('scan roots in tests/guards still resolve', () => {
         expect(
             swallowsMissingRoot('function walk(d) {\n  for (const e of fs.readdirSync(d)) {}\n}'),
         ).toBe(false);
+        // `continue` is the same silence as `return`
+        expect(
+            swallowsMissingRoot('for (const d of DIRS) {\n  if (!fs.existsSync(d)) continue;\n  fs.readdirSync(d);\n}'),
+        ).toBe(true);
     });
 
     it('...and a renamed root really does make it fire', () => {
@@ -250,14 +260,14 @@ describe('scan roots in tests/guards still resolve', () => {
     });
 
     it('the swallowing list does not grow — RATCHET', () => {
-        // 88 guards in this repo open their walk with
+        // 89 guards in this repo open their walk with
         //     if (!fs.existsSync(dir)) return out;
         // A defensive line that makes the guard unable to fail: a renamed root
         // yields zero files, zero files yield zero violations, and the
         // assertion passes over nothing.
         //
         // This is a RATCHET, not a fix. Failing all 99 today would get this
-        // guard deleted rather than the 88 repaired. New guards must not join
+        // guard deleted rather than the 89 repaired. New guards must not join
         // the list; the existing ones are tracked in #875 and come off as they
         // are touched. Take entries OUT of KNOWN_SWALLOWERS as you fix them —
         // the test below fails if a name here no longer swallows, so the list
