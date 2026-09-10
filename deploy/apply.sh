@@ -81,6 +81,9 @@ for path in /api/readyz /manifest.webmanifest /sw.js; do
     # Retry a few times — containers may still be settling.
     code=""
     for attempt in 1 2 3 4 5 6; do
+        # shell-check-ok: 000 is a sentinel OUTSIDE the healthy range and the
+        # comparison below fails closed on it — unlike `|| echo 0`, it cannot
+        # be mistaken for a healthy answer.
         code="$(curl -fsS -o /dev/null -w '%{http_code}' "${HEALTH_ORIGIN}${path}" 2>/dev/null || echo 000)"
         [ "$code" = "200" ] && break
         sleep 5

@@ -139,9 +139,25 @@ case "$CONCLUSION" in
                 exit 0
                 ;;
         esac
-        STARTED="$("$GH" api "repos/${REPO}/actions/runs/${RUN_ID}/jobs?per_page=100" \
-            --jq '[.jobs[] | select(.started_at != null)] | length' 2>/dev/null || echo 0)"
-        if [ "${STARTED:-0}" -eq 0 ]; then
+        # This probe is the SOLE discriminator between "cancelled because it
+        # was superseded" (not a failure) and "cancelled because it timed
+        # out" (very much a failure). `2>/dev/null || echo 0` used to stand
+        # here, which collapsed a rate limit, a 5xx and a jq error into the
+        # same answer as a genuine zero — byte-identical stdout, exit 0, and
+        # no issue filed for a real timeout. A control that cannot fail
+        # cannot discriminate.
+        if ! STARTED="$("$GH" api "repos/${REPO}/actions/runs/${RUN_ID}/jobs?per_page=100" \
+            --jq '[.jobs[] | select(.started_at != null)] | length')"; then
+            echo "::error::could not read the job list for run ${RUN_ID} — cannot tell a superseded cancel from a timeout, so refusing to stay silent"
+            STARTED=-1
+        fi
+        if [ "${STARTED}" = "-1" ]; then
+            echo "job-list probe failed; treating this cancellation as a real failure"
+        elif ! [ "${STARTED}" -eq "${STARTED}" ] 2>/dev/null; then
+            echo "::error::job-list probe returned a non-numeric answer: ${STARTED}"
+            STARTED=-1
+        fi
+        if [ "${STARTED:-0}" -eq 0 ]; then  # a genuine zero, never a failed probe
             echo "cancelled with no job ever started — superseded, not a failure"
             exit 0
         fi
