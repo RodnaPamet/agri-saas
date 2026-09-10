@@ -11,6 +11,7 @@ import { Heading } from '@/components/ui/typography';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { formatDate } from '@/lib/format-date';
+import { AsyncState } from '@/components/ui/async-state';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { useOfflineSync } from '@/lib/offline/use-offline-sync';
@@ -39,7 +40,7 @@ export function MyWorkClient({ tenantSlug: _tenantSlug }: { tenantSlug: string }
     const href = useTenantHref();
     const apiUrl = useTenantApiUrl();
     const { submit } = useOfflineSync();
-    const { data, isLoading, mutate } = useTenantSWR<WorkRow[]>('/farm-tasks?open=1');
+    const { data, error, isLoading, mutate } = useTenantSWR<WorkRow[]>('/farm-tasks?open=1');
 
     const rows = data ?? [];
 
@@ -88,13 +89,29 @@ export function MyWorkClient({ tenantSlug: _tenantSlug }: { tenantSlug: string }
                 </Link>
             </header>
 
-            {isLoading && !data ? (
-                <div className="space-y-default" aria-hidden="true">
-                    <Skeleton className="h-[72px] w-full rounded-lg" />
-                    <Skeleton className="h-[72px] w-full rounded-lg" />
-                    <Skeleton className="h-[72px] w-full rounded-lg" />
-                </div>
-            ) : rows.length === 0 ? (
+            {/*
+              * `rows` is derived from `data`, so `rows.length === 0` was true
+              * both when the queue is empty AND when the fetch never landed.
+              * Offline, SWR retries twice, gives up, sets isLoading false with
+              * data still undefined — and an operator with queued jobs was
+              * shown "no records" (#862). AsyncState resolves that: no data
+              * and not loading is a failure, and only real data reaches the
+              * empty check below.
+              */}
+            <AsyncState
+                data={data}
+                error={error}
+                isLoading={isLoading}
+                onRetry={() => void mutate()}
+                skeleton={
+                    <div className="space-y-default" aria-hidden="true">
+                        <Skeleton className="h-[72px] w-full rounded-lg" />
+                        <Skeleton className="h-[72px] w-full rounded-lg" />
+                        <Skeleton className="h-[72px] w-full rounded-lg" />
+                    </div>
+                }
+            >
+                {() => rows.length === 0 ? (
                 <EmptyState
                     variant="no-records"
                     title={t('emptyTitle')}
@@ -147,6 +164,7 @@ export function MyWorkClient({ tenantSlug: _tenantSlug }: { tenantSlug: string }
                     })}
                 </ul>
             )}
+            </AsyncState>
         </div>
     );
 }
