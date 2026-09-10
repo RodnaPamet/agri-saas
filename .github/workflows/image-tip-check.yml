@@ -59,6 +59,15 @@ jobs:
                   # Always ask about main's tip, never about the ref that
                   # happened to trigger this run.
                   ref: main
+                  # REQUIRED, not hygiene. Both steps below find the newest
+                  # PUBLISHABLE commit with `git log --invert-grep`, which has
+                  # to walk BACK past `[skip ci]` release commits. The default
+                  # depth of 1 leaves exactly one commit in the clone, so when
+                  # the tip IS a release commit the filter excludes it, finds
+                  # nothing, and returns empty — which is precisely the case
+                  # the filter was added for. It worked only when not needed.
+                  # Broke on 3.5.18 (run 34477622790, issue #869).
+                  fetch-depth: 0
 
             - name: Log in to GHCR
               uses: docker/login-action@v4
@@ -95,6 +104,13 @@ jobs:
               run: |
                   set -euo pipefail
                   TARGET="$(git log -1 --format=%H --invert-grep --grep='\[skip ci\]')"
+                  # An empty answer is not an answer. Without this, the
+                  # comparison below is trivially true and the step sets
+                  # skip=true — silently retiring the whole check.
+                  if [ -z "$TARGET" ]; then
+                      echo "::error::No publishable commit found in the clone. Every commit reachable here carries the CI-skip marker, which means the checkout is too shallow (needs fetch-depth: 0)."
+                      exit 1
+                  fi
                   echo "publishable tip : $TARGET"
                   echo "triggering run  : $TRIGGERING_SHA"
                   if [ "$TARGET" != "$TRIGGERING_SHA" ]; then
@@ -127,6 +143,10 @@ jobs:
               run: |
                   set -euo pipefail
                   TIP_SHA="$(git log -1 --format=%H --invert-grep --grep='\[skip ci\]')"
+                  if [ -z "$TIP_SHA" ]; then
+                      echo "::error::No publishable commit found in the clone. Every commit reachable here carries the CI-skip marker, which means the checkout is too shallow (needs fetch-depth: 0)."
+                      exit 1
+                  fi
                   HEAD_SHA="$(git rev-parse HEAD)"
                   if [ "$TIP_SHA" != "$HEAD_SHA" ]; then
                       echo "main HEAD is ${HEAD_SHA:0:9} ($(git log -1 --format=%s "$HEAD_SHA")) — not publishable"
