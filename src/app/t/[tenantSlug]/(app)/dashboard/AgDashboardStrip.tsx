@@ -1,5 +1,6 @@
 'use client';
 
+import { AsyncState } from '@/components/ui/async-state';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 import { CACHE_KEYS } from '@/lib/swr-keys';
@@ -29,9 +30,27 @@ import MyFarmTasksCard from './MyFarmTasksCard';
  */
 export default function AgDashboardStrip() {
     const href = useTenantHref();
-    const { data, mutate } = useTenantSWR<AgDashboardPayload>(CACHE_KEYS.dashboard.ag());
+    const { data, error, isLoading, mutate } = useTenantSWR<AgDashboardPayload>(CACHE_KEYS.dashboard.ag());
 
-    if (!data) return null;
+    // `return null` here meant the whole strip vanished offline, byte-identical
+    // to the legitimate "tenant has no ag modules" case below — so an operator
+    // could not tell "no signal" from "my account never had this" (#862).
+    // A failed load now says so; a genuinely module-less tenant still renders
+    // nothing, which is the distinction that was missing.
+    if (!data) {
+        if (isLoading && !error) return null;
+        return (
+            <AsyncState
+                data={data}
+                error={error}
+                isLoading={isLoading}
+                onRetry={() => void mutate()}
+                skeleton={null}
+            >
+                {() => null}
+            </AsyncState>
+        );
+    }
 
     // Defensive: a malformed / partial cache payload (e.g. an SWR key
     // collision in tests, or a future error-shape from the endpoint) can

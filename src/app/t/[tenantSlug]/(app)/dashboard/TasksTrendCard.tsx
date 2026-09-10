@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import { Card } from '@/components/ui/card';
 import { Heading } from '@/components/ui/typography';
 import { Skeleton } from '@/components/ui/skeleton';
+import { AsyncState } from '@/components/ui/async-state';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import {
@@ -48,7 +49,7 @@ function LegendItem({ dot, label, count }: { dot: string; label: string; count: 
  */
 export default function TasksTrendCard() {
     const t = useTranslations('dashboard.taskTrend');
-    const { data } = useTenantSWR<{ trend: FarmTaskTrendPoint[] }>(
+    const { data, error, isLoading, mutate } = useTenantSWR<{ trend: FarmTaskTrendPoint[] }>(
         CACHE_KEYS.dashboard.taskTrend(),
     );
 
@@ -102,9 +103,14 @@ export default function TasksTrendCard() {
                 )}
             </div>
 
-            {!data ? (
-                <Skeleton className="h-40 w-full" />
-            ) : !hasActivity ? (
+            <AsyncState
+                data={data}
+                error={error}
+                isLoading={isLoading}
+                onRetry={() => void mutate()}
+                skeleton={<Skeleton className="h-40 w-full" />}
+            >
+                {() => !hasActivity ? (
                 <p className="text-content-subtle text-xs">{t('empty')}</p>
             ) : (
                 <>
@@ -129,6 +135,7 @@ export default function TasksTrendCard() {
                     </div>
                 </>
             )}
+            </AsyncState>
         </Card>
     );
 }

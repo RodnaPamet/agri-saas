@@ -24,6 +24,7 @@ import { useTranslations } from 'next-intl';
 import { ChevronLeft } from '@/components/ui/icons/nucleo/chevron-left';
 import { ChevronRight } from '@/components/ui/icons/nucleo/chevron-right';
 
+import { AsyncState } from '@/components/ui/async-state';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useTenantHref } from '@/lib/tenant-context-provider';
@@ -86,7 +87,7 @@ export function MarketTrendsWidget() {
         else prev();
     };
 
-    const { data } = useTenantSWR<TrendPricesResponse>(
+    const { data, error, isLoading, mutate } = useTenantSWR<TrendPricesResponse>(
         CACHE_KEYS.trends.prices(commodity, WIDGET_RANGE),
     );
 
@@ -176,9 +177,14 @@ export function MarketTrendsWidget() {
                 aria-label={t('widget.tapThrough')}
                 className="block rounded-lg transition-colors hover:bg-bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
             >
-                {!data ? (
-                    <Skeleton className="h-16 w-full" />
-                ) : !headline ? (
+                <AsyncState
+                    data={data}
+                    error={error}
+                    isLoading={isLoading}
+                    onRetry={() => void mutate()}
+                    skeleton={<Skeleton className="h-16 w-full" />}
+                >
+                    {() => !headline ? (
                     <p className="py-4 text-xs text-content-subtle">{t('widget.empty')}</p>
                 ) : (
                     <div className="flex items-center gap-default">
@@ -209,6 +215,7 @@ export function MarketTrendsWidget() {
                         </div>
                     </div>
                 )}
+                </AsyncState>
             </Link>
 
             {/* Dot indicators — one per crop, clickable to jump. Each button is a

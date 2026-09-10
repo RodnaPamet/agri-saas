@@ -2918,7 +2918,12 @@
             "acknowledge": "I understand"
         },
         "heldForOther": "{count, plural, one {# change saved by another operator} other {# changes saved by another operator}}",
-        "heldForOtherHint": "It will sync when they sign in on this phone. It is not lost."
+        "heldForOtherHint": "It will sync when they sign in on this phone. It is not lost.",
+        "needsConnectionTitle": "No signal",
+        "needsConnectionBody": "This needs a connection. It will load when you are back online.",
+        "loadFailedTitle": "Could not load this",
+        "loadFailedBody": "Something went wrong fetching it.",
+        "retry": "Try again"
     },
     "userMenu": {
         "accountMenu": "Account menu",
