@@ -72,7 +72,13 @@ function shellFiles(): string[] {
     const out: string[] = [];
     for (const dir of SCAN_DIRS) {
         const abs = path.join(ROOT, dir);
-        if (!fs.existsSync(abs)) continue;
+        if (!fs.existsSync(abs)) {
+            // A throw, not `continue`. Skipping a renamed root silently drops
+            // it from the population, and the assertion below is `toEqual([])`
+            // — which an empty population satisfies. The file-list floor would
+            // catch a total loss, but not the loss of one root out of three.
+            throw new Error(`scan dir does not exist: ${dir}. Renamed? Update SCAN_DIRS.`);
+        }
         for (const e of fs.readdirSync(abs, { withFileTypes: true, recursive: true })) {
             if (!e.isFile() || !e.name.endsWith('.sh')) continue;
             // `parentPath` on Node 20.12+/22; `path` on older typings.
