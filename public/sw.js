@@ -103,18 +103,63 @@ function isRscRequest(request, url) {
 }
 
 /**
+ * A `<Link>` PREFETCH, as opposed to the navigation the operator actually made.
+ *
+ * Next returns a PARTIAL tree for a prefetch of a dynamic route, and every
+ * route under /t/<slug> is dynamic (src/app/t/[tenantSlug]/layout.tsx sets
+ * `force-dynamic`). Until now the Cache API kept prefetch and navigation
+ * payloads apart for us, because they differ in a header Next lists in `Vary`.
+ * `ignoreVary` below deliberately gives that up — so the separation has to
+ * happen here instead, or a partial prefetch payload gets served for a real
+ * navigation and the route renders half-built.
+ */
+function isRscPrefetch(request) {
+    const headers = request.headers;
+    return (
+        headers.get('Next-Router-Prefetch') === '1' ||
+        Boolean(headers.get('Next-Router-Segment-Prefetch'))
+    );
+}
+
+/**
  * Network-first, cache-fallback for RSC payloads.
  *
- * Offline this is the difference between a route opening and the error
- * boundary. The exact-URL match is tried first; the `ignoreSearch` retry
- * exists because `_rsc` encodes a hash that can differ between the visit that
- * cached the payload and the navigation that needs it.
+ * Offline this is the difference between a route opening and Next tearing the
+ * whole page down. A rejected flight fetch is not surfaced as an error by the
+ * App Router — it is treated as a signal to abandon client-side routing:
+ * node_modules/next/dist/client/components/router-reducer/fetch-server-response.js
+ * ends its catch block with `return originalUrl.toString()` under the comment
+ * *"If fetch fails handle it like a mpa navigation"*. So throwing here does not
+ * show the operator an error; it triggers a FULL DOCUMENT LOAD, which offline
+ * falls into the navigate branch below. Everything this function does is in
+ * service of never throwing.
+ *
+ * ── Why `ignoreVary` is load-bearing ──────────────────────────────────────
+ * Next sets this on EVERY app-router response (base-server.js, setVaryHeader):
+ *
+ *     Vary: RSC, Next-Router-State-Tree, Next-Router-Prefetch,
+ *           Next-Router-Segment-Prefetch
+ *
+ * and `Cache.match()` honours Vary unless told not to — `ignoreVary` defaults
+ * to FALSE. `Next-Router-State-Tree` is the serialised CURRENT router tree, so
+ * it depends on which route the operator navigated FROM, and offline it is
+ * different again: the app boots from the shell fallback below, which answers
+ * the launch URL with a document belonging to some other route, leaving the
+ * router's idea of the tree unlike anything recorded online. A cached payload
+ * therefore almost never matched the request that needed it, and `ignoreSearch`
+ * could not help — it ignores the query string, not the Vary headers.
+ *
+ * Measured on an iPhone 2026-09-10, with BOTH the payload and the route
+ * cached: tapping a task flashed the task screen and then dropped the operator
+ * back on the task LIST. The flash was Next's optimistic render; the list was a
+ * foreign document handed over by the shell fallback after the MPA reload.
  */
 async function networkFirstRsc(request) {
     const cache = await caches.open(RSC_CACHE);
     try {
         const res = await fetch(request);
-        if (res.ok) {
+        // Served, never stored: a prefetch payload is partial. See isRscPrefetch.
+        if (res.ok && !isRscPrefetch(request)) {
             const copy = res.clone();
             cache
                 .put(request, copy)
@@ -125,13 +170,48 @@ async function networkFirstRsc(request) {
         }
         return res;
     } catch (err) {
-        const exact = await cache.match(request);
+        const exact = await cache.match(request, { ignoreVary: true });
         if (exact) return exact;
-        const loose = await cache.match(request, { ignoreSearch: true });
+        const loose = await cache.match(request, { ignoreSearch: true, ignoreVary: true });
         if (loose) return loose;
         throw err;
     }
 }
+/**
+ * The URLs an operator can arrive at without having asked for a SPECIFIC
+ * screen — a Home Screen launch (`start_url` is /tenants, see
+ * public/manifest.webmanifest) or the bare origin. Only these may be answered
+ * with a cached document belonging to some other route; see the shell fallback
+ * in the navigate branch for why that is a lie anywhere else.
+ */
+const SHELL_FALLBACK_PATHS = new Set(['/', '/tenants']);
+
+function isShellFallbackEligible(url) {
+    return SHELL_FALLBACK_PATHS.has(url.pathname);
+}
+
+/**
+ * Last-resort offline document, in the two honest flavours.
+ *
+ * `launch` true  — the operator opened the app and nothing at all is cached.
+ * `launch` false — they asked for a screen that was never opened with signal,
+ *                  so there is genuinely nothing stored to render. Saying that
+ *                  is worth more than showing them a different screen: the
+ *                  whole class of offline bug in this worker has been an
+ *                  absence dressed up as an answer.
+ */
+function offlineDocument(launch) {
+    const body = launch
+        ? '<h1 style="color:#86efac">Offline</h1><p>You\u2019re offline. Marked jobs are queued and will sync when you reconnect.</p>'
+        : '<h1 style="color:#86efac">Not saved for offline</h1><p>This screen wasn\u2019t opened while you had signal, so there is nothing stored to show.</p><p>Marked jobs are still queued and will sync when you reconnect.</p><p style="margin-top:24px"><a href="/tenants" style="color:#86efac">Back to the app</a></p>';
+    return new Response(
+        '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Offline</title><body style="font-family:system-ui;background:#0b1220;color:#e5e7eb;display:grid;place-items:center;height:100vh;margin:0"><div style="text-align:center;padding:0 24px;max-width:32rem">' +
+            body +
+            '</div></body>',
+        { headers: { 'Content-Type': 'text/html; charset=utf-8' } },
+    );
+}
+
 const PRECACHE = ['/icon.svg', '/manifest.webmanifest'];
 
 // ── Outbox IndexedDB contract (shared with src/lib/offline/idb-outbox.ts) ──
@@ -168,7 +248,22 @@ self.addEventListener('activate', (event) => {
             .keys()
             .then((keys) =>
                 Promise.all(
-                    keys.filter((k) => !k.startsWith(CACHE_VERSION)).map((k) => caches.delete(k)),
+                    keys
+                        // Old CACHE_VERSION buckets, plus the RSC bucket every
+                        // time. Flight payloads are BUILD-SCOPED: a new worker
+                        // means a new build, and handing this build's router a
+                        // payload serialised by the last one is a fresh way to
+                        // break navigation. They cost one network round-trip to
+                        // refill, so there is nothing to protect here — unlike
+                        // DATA_CACHE and BASEMAP_CACHE, which hold the
+                        // operator's own downloaded farm and must survive.
+                        //
+                        // This also clears the prefetch payloads #871 stored
+                        // before networkFirstRsc learned to skip them, which
+                        // `ignoreVary` would otherwise start serving for real
+                        // navigations.
+                        .filter((k) => !k.startsWith(CACHE_VERSION) || k === RSC_CACHE)
+                        .map((k) => caches.delete(k)),
                 ),
             )
             .then(() => self.clients.claim()),
@@ -468,19 +563,41 @@ self.addEventListener('fetch', (event) => {
                     // offline-first app cannot open offline at all. Most recent
                     // first — it is the closest to what the operator was last
                     // looking at.
-                    const pages = await caches.open(PAGE_CACHE);
-                    const keys = await pages.keys();
-                    if (keys.length > 0) {
-                        const shell = await pages.match(keys[keys.length - 1]);
-                        if (shell) return shell;
+                    //
+                    // ── but ONLY for a launch URL ───────────────────────
+                    // Answering a DEEP route with a foreign document is not a
+                    // degraded version of the right answer, it is a wrong
+                    // answer that looks like a right one. The document carries
+                    // its own inlined flight data, so the router renders THAT
+                    // route while the address bar holds the requested one.
+                    //
+                    // On an iPhone, 2026-09-10: the operator tapped a task,
+                    // Next fell back to an MPA load of /t/<slug>/field/<id>,
+                    // this fallback handed back the most recent document —
+                    // My work — and the operator was silently returned to the
+                    // list they had just tapped out of. Reported as *"it
+                    // flashes the screen of the task, but then returns to the
+                    // tasks screen"*. Nothing anywhere said a navigation had
+                    // failed.
+                    //
+                    // A launch URL is the one case where this is honest: the
+                    // operator asked for "the app", not for a specific screen,
+                    // and /tenants can never be cached under its own key
+                    // (see the opaque-redirect note above).
+                    if (isShellFallbackEligible(url)) {
+                        const pages = await caches.open(PAGE_CACHE);
+                        const keys = await pages.keys();
+                        if (keys.length > 0) {
+                            // ignoreVary because this path is "serve ANY document"
+                            // by definition — PAGE_CACHE entries carry Next's
+                            // `Vary` too, and a strict match here could only
+                            // ever turn a deliberate substitution into a miss.
+                            const shell = await pages.match(keys[keys.length - 1], { ignoreVary: true });
+                            if (shell) return shell;
+                        }
                     }
 
-                    return (
-                        new Response(
-                            '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Offline</title><body style="font-family:system-ui;background:#0b1220;color:#e5e7eb;display:grid;place-items:center;height:100vh;margin:0"><div style="text-align:center"><h1 style="color:#86efac">Offline</h1><p>You’re offline. Marked jobs are queued and will sync when you reconnect.</p></div></body>',
-                            { headers: { 'Content-Type': 'text/html; charset=utf-8' } },
-                        )
-                    );
+                    return offlineDocument(isShellFallbackEligible(url));
                 }),
         );
     }
