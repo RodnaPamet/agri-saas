@@ -27,7 +27,7 @@ the flag re-enters any install path.
 
 | Conflict | Cause | Resolution |
 |----------|-------|------------|
-| `@visx/*@3.x` vs React 19 | visx 3.x (the latest stable line) peers `react ^16 \|\| ^17 \|\| ^18`; visx 4 — which adds React 19 — is alpha-only. The repo runs `react@19`. | `overrides` block: each `@visx/*` package's `react` / `react-dom` pinned to the root version (`$react` / `$react-dom`). visx 3.x is a set of stateless SVG renderers and runs correctly under React 19 — the override records that verified fact. |
+| `@visx/*@3.x` vs React 19 | visx 3.x (the latest stable line) peers `react ^16 \|\| ^17 \|\| ^18`; visx 4 — which adds React 19 — is alpha-only. The repo runs `react@19`. | `overrides` block: each `@visx/*` package's `react` / `react-dom` pinned to the root version (`$react` / `$react-dom`). visx 3.x is a set of stateless SVG renderers and runs correctly under React 19 — the override records that verified fact. **Twelve of those 22 subkeys are inert and always were**, which the structural guard below measured: only `@visx/tooltip` declares a `react-dom` peer at all, and `@visx/curve` / `@visx/scale` (d3 wrappers with no JSX) declare no `react` peer either — npm scopes a nested override to the parent's own declared edge, so it has never had one to rewrite for those twelve. The **live** pinning is `react` on nine packages plus `react-dom` on `@visx/tooltip`; that is what carries React 19. The dead subkeys are waived in the guard with a dated review and should be deleted. |
 | `eslint-config-next@16` vs `eslint@8` | The Next 16 upgrade bumped `eslint-config-next` to 16, which peers `eslint >=9`; `eslint` was left at 8 (now end-of-life). | `eslint` bumped to `^9`. The lint setup already uses flat config (`ESLINT_USE_FLAT_CONFIG=true`), so eslint 9 — where flat config is the default — is a natural fit. |
 | `next-auth@4` vs `next@16` / `nodemailer@7` | `next-auth@4` peers `next ^12 \|\| ^13 \|\| ^14` and (optionally) `nodemailer ^6`. The repo runs `next@16` and `nodemailer@7`. | `overrides` block: `next-auth`'s `next` and `nodemailer` pinned to the root versions. NextAuth v4 is the supported stable line here; it operates correctly on next 16 / nodemailer 7. |
 
@@ -76,6 +76,67 @@ so `npm audit` was green and nothing in the repo was wrong-looking —
 which is exactly why the floor, not just the lockfile, has to be
 checked when a follow-up advisory lands on a package already pinned
 here.
+
+## Structural decay — what a guard CAN decide offline
+
+The three 2026-07-25 re-floors above were followed six weeks later by
+two more (#853), which makes decay a **class**, not an accident. An
+entry-by-entry fix resets the clock; it does not stop the next one.
+
+The obvious guard is the one this repo must never build. **"This floor
+has decayed" is a statement about the GitHub Advisory Database at time
+T, not about the repo** — no function of `package.json` +
+`package-lock.json` can decide it, so a guard claiming to compute it is
+lying about its own subject. Worse, putting the query on the merge path
+reproduces the exact defect `scripts/audit-exemptions.mjs` exists to
+prevent: npm's bulk advisory endpoint answers `200 {}` both for "no
+advisories" and for "package not recognised", so a network guard fails
+**open** on registry degradation. And the advisory endpoint serves
+WITHDRAWN advisories — `affects=uuid@11.1.1` returns
+GHSA-qmq6-f8pr-cx5x, withdrawn as a duplicate — so a naive checker would
+have flagged this table's one runtime security floor as decayed on the
+day it shipped. **There is no advisory query on the merge path.**
+
+What IS decidable offline is whether each entry still does the
+structural job an override is for.
+`tests/guards/overrides-structural-decay.test.ts` (analysis in
+`tests/helpers/overrides-analysis.ts`) runs four checks as a pure
+function of the two JSON files:
+
+| Check | Rule | Why it is the decay shape |
+|-------|------|---------------------------|
+| **A — no floor without a target** | Every top-level override key must match at least one lockfile entry, or be listed as a **dormant floor** with a written reason. | `hono` / `@hono/node-server` guard packages absent from the lockfile, so they are invisible to `npm audit` AND to Dependabot. That is how both decayed twice with nothing going red. |
+| **B — no override that cannot act** | For `{parent: {child: range}}`, the parent must declare `child` in one of `dependencies` / `peerDependencies` / `optionalDependencies`, and at least one copy it resolves to must not be `inBundle: true`. | `npm: {undici}` fails on both counts — npm declares no `undici` (it is a transitive of a bundled dep) and the only copy is bundled bytes npm installs as published. Twelve `@visx/*` subkeys fail on the first. |
+| **C — no floor that isn't a floor** | For a literal range, fail when every requester's declared range is already a `semver.subset` of it. `$name` entries are EXEMPT. | A floor that excludes nothing anyone could install still reads as protection in review. The `$name` exemption is load-bearing: `tests/guards/overrides-no-direct-dep-conflict.test.ts` requires that form on a direct dependency after a literal range aborted an entire Dependabot run. |
+| **D — no silent widening** | Fail when the override's floor sits **below** a requester's floor (RELAXATION), or excludes a version a requester **pinned exactly** (PIN-BREAK). | `@typescript-eslint/*@^8.61.0` sits below `eslint-plugin@8.70.0`'s exact sibling pins and its `parser: ^8.70.0` peer, so the "floor" permits 8.61.0 — older than anything in the tree asks for. `picomatch@^4.0.4` sits below `lint-staged`'s own `^4.0.7`. |
+
+Check D deliberately does **not** flag an override whose floor sits
+*above* a requester's caret range — `uuid@^11.1.1` over `next-auth`'s
+`^8.3.2` is what a security floor IS. Measured on the 2026-09-10 tree,
+the unrestricted reading ("flag any `!semver.subset(override,
+requester)`") fires on 14 of the 39 entries, i.e. on every legitimate
+floor in this document, and would have to waive a third of its own
+subject on day one. A rule that must waive a third of its subject
+teaches people to add waivers.
+
+**Every check was red when the guard landed** — 31 findings over 39
+entries — so it ships with an explicit waiver list (`WAIVERS` and
+`DORMANT_FLOORS` in the guard), one entry per finding, each carrying a
+written reason and a `review` date. It borrows both sharp rules from
+`scripts/audit-exemptions.mjs`: a **stale** waiver fails the build (the
+finding stopped being produced, so the waiver is now a blind spot), and
+an **expired** waiver fails the build once its own author's review date
+passes. The list can therefore only shrink.
+
+**What the guard does NOT cover, stated so nobody reads it as more than
+it is:** it would not have caught the 2026-07-25 or #853 re-floors
+themselves, because those were advisory-relative — the ranges were
+structurally sound and merely no longer excluded a version the advisory
+still affected. It also does not notice a copy of an overridden package
+that no override entry covers (#853's third half, and live today:
+`js-yaml@5.4.1` sits at the lockfile root under no override while three
+nested entries floor the other three copies). Those remain the
+reviewer's job, and this document is where the reasoning goes.
 
 ## Regression ceilings
 

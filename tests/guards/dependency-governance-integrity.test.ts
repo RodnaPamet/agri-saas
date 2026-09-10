@@ -12,6 +12,9 @@
  *                                 classified, on their reviewed major.
  *   5. Auth-stack pin           — `next-auth` stays on v4 stable
  *                                 (the NextAuth-v5 policy).
+ *   6. Override structural decay — every `overrides` entry still has a
+ *                                 target, can act, excludes something,
+ *                                 and widens nothing.
  *
  * Each of those five shipped its own guardrail. THIS test guards the
  * guards: it fails CI if any one of them is deleted or gutted to a
@@ -69,6 +72,16 @@ const GUARDRAILS: ReadonlyArray<{
         pillar: 'auth-stack pin — next-auth stays on v4 stable',
         anchors: ['next-auth', 'beta'],
     },
+    {
+        // Registered here on purpose: this one ships with a waiver list, and
+        // the cheapest way to silence a guard that carries waivers is to
+        // delete the guard rather than an entry. The anchors are the two
+        // rules that make the list shrink — `WAIVERS` plus the review-date
+        // expiry — so gutting it to a permanent allowlist also fails.
+        file: 'tests/guards/overrides-structural-decay.test.ts',
+        pillar: 'override structural decay — every overrides entry still does an override\'s job',
+        anchors: ['WAIVERS', 'DORMANT_FLOORS', 'expired', 'analyseOverrides'],
+    },
 ];
 
 /** Docs that make the dependency-governance model explicit. */
@@ -101,9 +114,9 @@ describe('dependency-governance integrity — guard the guards', () => {
         });
     });
 
-    it('the registry is complete (5 dependency guardrails, distinct)', () => {
-        expect(GUARDRAILS).toHaveLength(5);
-        expect(new Set(GUARDRAILS.map((g) => g.file)).size).toBe(5);
+    it('the registry is complete (6 dependency guardrails, distinct)', () => {
+        expect(GUARDRAILS).toHaveLength(6);
+        expect(new Set(GUARDRAILS.map((g) => g.file)).size).toBe(6);
     });
 
     it.each(GOVERNANCE_DOCS)('$role — $file exists', ({ file }) => {
