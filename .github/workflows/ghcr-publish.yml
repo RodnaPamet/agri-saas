@@ -49,12 +49,57 @@ on:
 
 concurrency:
     group: ghcr-publish-${{ github.ref }}
-    # A rapid second push to main SHOULD cancel this one — only the tip's
-    # image matters. The risk that creates (a cancelled run is
-    # indistinguishable from a run that never pushed) is not solved here,
-    # because no event-keyed rule can solve it. `image-tip-check.yml` asks
-    # the STATE question instead: does main's tip have a published image?
-    cancel-in-progress: true
+    # QUEUE, DO NOT CANCEL (#877). This was `true` until 2026-09-11, on the
+    # reasoning that only the tip's image matters so an older build SHOULD
+    # die. The reasoning is sound and the outcome was starvation.
+    #
+    # MEASURED over 199 real publish runs (2026-08-15 → 2026-09-10, kept as
+    # tests/fixtures/ghcr-publish-history.json): a successful publish takes
+    # 13.6 min at the median, 18.5 at p90, 22.8 at the worst — while 37% of
+    # the gaps between consecutive merges to main are SHORTER than 21.4 min
+    # and 15% are under one minute. Whenever merges arrive faster than a
+    # build finishes, every build is cancelled before it can push and NOTHING
+    # ships, with no failure anywhere: 59 cancelled runs burned 265 minutes
+    # producing nothing. On 2026-09-10 that ran for over three hours —
+    # production three commits behind, every run individually correct, and
+    # the only cure a merge HOLD.
+    #
+    # `false` does NOT mean "build every commit". GitHub keeps ONE running
+    # and ONE pending run per group, and a new arrival CANCELS the pending
+    # one. So a burst costs at most two builds: the one already executing
+    # (which finishes and ships) plus the newest commit of the burst. The
+    # intermediate commits are dropped while still pending, at zero runner
+    # minutes. This repo learned that same rule from the other side — see
+    # ci.yml's concurrency comment, where the pending-drop was the BUG,
+    # because CI produces per-commit signals. A publish produces one mutable
+    # `:latest` pointer, so dropping the middle of a burst is the wanted
+    # behaviour.
+    #
+    # Simulated over that same 199-run timeline at the worst-case 22.8-min
+    # build: 124 → 173 commits shipped, 458 → 95 minutes of build time
+    # wasted, worst-case time a commit spends unshipped 63.1 → 45.5 min.
+    #
+    # WHAT THIS COSTS, stated plainly. Serialising means the tip can wait up
+    # to TWO build durations after the last merge of a burst instead of one,
+    # and a build wedged short of its 40-minute timeout now holds the queue
+    # instead of being cleared by the next merge. Both are bounded; the old
+    # behaviour was not.
+    #
+    # A per-commit group (`-${{ github.sha }}`, as ci.yml uses) would beat
+    # both on latency by building everything in parallel, and is REJECTED:
+    # `:latest` is a single pointer that Watchtower polls, parallel runs
+    # finish in completion order rather than merge order, and drawing from
+    # the measured gap and duration distributions an older commit's publish
+    # lands after a newer one's in 25.4% of colliding combinations — i.e.
+    # production rolling backwards. Making the build fast enough to win the
+    # race is rejected on the same evidence: 15% of merge gaps are under a
+    # minute, and no build gets under that.
+    #
+    # `image-tip-check.yml` still asks the STATE question — does main's tip
+    # have a published image? — because a queue makes starvation rare, not
+    # impossible, and a cancelled run is still indistinguishable from a run
+    # that never pushed.
+    cancel-in-progress: false
 
 permissions:
     contents: read

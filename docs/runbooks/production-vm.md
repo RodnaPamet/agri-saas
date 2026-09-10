@@ -87,9 +87,12 @@ gh run list --workflow "Image tip check" --limit 3
 ```
 
 `Image tip check` is the one that matters: `Publish image to GHCR` uses
-`cancel-in-progress: true`, so GitHub reports a superseded run and a
-timed-out run with the same word, `cancelled`. `Image tip check` asks
-the registry whether `main`'s tip has an image at all.
+`cancel-in-progress: false` (#877) — it QUEUES, so a burst drops the runs
+still pending rather than the one building — and GitHub reports a
+superseded run and a timed-out run with the same word, `cancelled`.
+`Image tip check` asks the registry whether `main`'s tip has an image at
+all. Expect a publish to start up to one build (~23 min) after its merge
+when several land together; that wait is the queue, not a fault.
 
 ```bash
 # Has the VM picked it up yet?
