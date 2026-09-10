@@ -32,6 +32,18 @@ class RscCache {
         }
         return undefined;
     }
+    // networkFirstRsc reads with matchAll and takes the LAST match, because
+    // Cache.match() returns the OLDEST and Next's prefetch entry is always
+    // older than the navigation entry for the same URL. A double without this
+    // does not model the lookup the worker actually performs.
+    async matchAll(req: { url: string }, opts?: { ignoreSearch?: boolean }) {
+        const bare = (u: string) => u.split('?')[0];
+        const hits = this.entries.filter((e) =>
+            opts?.ignoreSearch ? bare(e.url) === bare(req.url) : e.url === req.url,
+        );
+        return hits.map((e) => ({ _served: e.url, _body: e.body }));
+    }
+
     async put(req: { url: string }, res: { _body?: string }) {
         this.entries = this.entries.filter((e) => e.url !== req.url);
         this.entries.push({ url: req.url, body: res._body ?? 'flight' });
