@@ -1,6 +1,13 @@
 # 2026-09-10 — un-break the two apt sites #833 missed, and give the PostGIS pin one owner
 
-**Commit:** `<sha> fix(ci): un-break the two apt sites #833 missed, and give the PostGIS pin one owner`
+**Commits:**
+- `7ee92209 fix(ci): give the PostGIS pin one owner, and un-break the two apt sites #833 missed`
+- `7275bb21 fix(ci): make the PostGIS pin guard derive every population it checks`
+- `<pending> fix(ci): close three blind spots in the PostGIS pin guard`
+
+*(The line here previously quoted a subject no commit on this branch has —
+the clauses of the first one in the other order. Corrected, and the two
+later commits added.)*
 
 **The live breakage leads.** On today's `main`, `deploy/postgres/Dockerfile:7`
 and the heredoc copy of it at `infra/scripts/restore-test-gcp.sh:385` both run
@@ -188,7 +195,8 @@ that BUILDS `deploy/postgres/Dockerfile` — by the explicit `dockerfile:` key
 **or** by a `context:` pointing at the directory, which is how
 `deploy/docker-compose.vm.yml` does it — and require any version its published
 tag encodes to equal the owner's. A tag that encodes no version at all
-(`agrent-db:local`) is correct and stays out of the way.
+(`agrent-db:local`) is correct and stays out of the way. (D's *how* changed in
+the next round — see below — but its rule did not.)
 
 | mutation | result |
 |---|---|
@@ -199,6 +207,123 @@ tag encodes to equal the owner's. A tag that encodes no version at all
 
 Both compose lines now carry a comment saying the tag repeats the pin and
 naming the guard that holds them together.
+
+## What the second review changed
+
+Three more findings against the guard, all confirmed by reproducing them
+against the previous commit's guard file before fixing anything. The Dockerfile
+fix itself is untouched. In every case below, "OLD" means
+`7275bb21:tests/guards/postgis-image-single-source.test.ts` run against the
+*same* mutated tree, so the two columns are a direct comparison and not a
+recollection.
+
+### 4. Direction D was defeated by YAML key order
+
+`publishedTags()` found the `build:` key by regex and then scanned **forward
+only** (`k = j + 1`) for a sibling `image:`. Compose does not care which side of
+`build:` the `image:` key sits on, and neither does YAML — so moving that one
+line up hid the whole service.
+
+Reproduced verbatim: with `image:` moved above `build:` in `docker-compose.yml`,
+`docker compose -f docker-compose.yml config` still lists the `postgres`
+service, the old walker returns `[]` for that file, and the old guard passes
+25/25. Then, still with the key moved, staling the tag to
+`agri-saas-postgres:16-3.5-pgvector` — a live lie about the base image — left
+the old guard at **25/25 green**.
+
+D now **parses** the compose files with `js-yaml` (already a devDependency; six
+other guards use it) and reads `services.<id>.build`, so key order does not
+exist. Parsing also picked up two shapes the line regex was not handling: the
+`build: <dir>` shorthand, and `dockerfile:` resolved *relative to* `context:`
+the way Compose actually resolves it.
+
+| mutation | OLD | NEW |
+|---|---|---|
+| `image:` moved above `build:` in `docker-compose.yml` | walker returns `[]`, 25/25 green | 32/32 green — tag still seen |
+| …and that moved tag staled to `16-3.5-pgvector` | **25/25 green** | **RED** — `docker-compose.yml: agri-saas-postgres:16-3.5-pgvector` |
+| `docker-compose.yml` corrupted to unparsable YAML | n/a | **RED** at the new parse control, which names the file |
+
+The parse control is there because a parse error is the parsed population's
+version of an empty scan: any tracked YAML that mentions the pinned
+Dockerfile's directory must parse, by name, or D fails.
+
+### 5. Direction D's control was a global floor, not a per-site one
+
+`expect(encoded.length).toBeGreaterThanOrEqual(1)` is satisfied by whichever
+site is still healthy. One build site could leave the population entirely and
+the surviving one would answer for it — the exact vacuity the rest of this
+guard spends its length refusing.
+
+D's controls are now per site, in the shape A and B already use: a
+`REQUIRED_BUILD_SITES` table carrying, for each compose file, how many tags its
+pin-building services publish and how many of those encode a version.
+`deploy/docker-compose.vm.yml` is registered at **one tag, zero encoded** —
+`agrent-db:local` correctly encodes no version, and is now required to be SEEN
+rather than merely tolerated by its absence.
+
+| mutation | OLD | NEW |
+|---|---|---|
+| `image:` deleted from `docker-compose.test.yml` (exactly one site hidden) | **25/25 green** | **RED ×3**, naming that file twice and the population control once |
+| both compose tags stripped of any version | RED at the `>= 1` floor | **RED ×3**, naming *which* sites lost their version |
+| `deploy/docker-compose.vm.yml` `context:` pointed elsewhere | RED at the build-site control | **RED ×3**, incl. the vm file's own per-site row |
+
+### 6. The owner file's count assertion covered one sentence of two
+
+`.github/postgis-image` states its count twice. `toContain('nine literals')`
+matched only the second: in the first, "nine" ends one line and "literals"
+begins the next behind a `# `, so the substring never existed. The
+eight-vs-nine contradiction that finding 2 fixed could therefore be reinstated
+in the *other* sentence with the guard green.
+
+The assertion now strips the comment markers, flattens the whitespace, and
+collects **every** `<number> literals` / `<number> live references` claim in the
+file, requiring all of them to say what `DECLARED_LITERALS` says and requiring
+at least as many claims as the file makes today. `NUMBER_WORDS[count] === word`
+is also asserted, so the constant cannot itself say `{ count: 9, word: 'eight' }`.
+
+| mutation | OLD | NEW |
+|---|---|---|
+| "eight" reinstated in the FIRST sentence alone (line 19) | **25/25 green** | **RED** — the diff prints `"eight"` |
+| "eight" in the second sentence (line 23) | RED | RED |
+| "exactly nine live references" → "ten" | green (unchecked prose) | **RED** |
+
+### Residue: Direction B did not know the pin's local spelling
+
+`usesPinnedImage` recognised the `postgis/postgis:` literal and a reference to
+the owner file, but not `agri-saas-postgres:<tag>-pgvector` — which Direction D
+had just established *is* the pin, spelled a second way. A Dockerfile beginning
+`FROM agri-saas-postgres:16-3.4-pgvector` and refreshing the package index
+unflagged sat on the frozen bullseye index one layer down and was invisible to
+B: the #833 recurrence shape again, through the door D had opened.
+
+Fixed rather than deferred — it is the same defect class this branch exists to
+close, and the fix is three lines with no new list: B now also matches the local
+names **derived** from D's compose parse, so renaming a tag carries B with it.
+
+| mutation | OLD | NEW |
+|---|---|---|
+| `deploy/postgres-replica/Dockerfile`, `FROM agri-saas-postgres:16-3.4-pgvector`, index update **unflagged**, `git add -N` | **25/25 green** | **RED** — `deploy/postgres-replica/Dockerfile: RUN apt-get update \` |
+| the same file with the flag added | green | green (B trips on the flag, not on the file) |
+| the local-name recogniser deleted from `usesPinnedImage` | n/a | **RED** at B's control |
+
+### The inherited proofs, re-run rather than trusted
+
+Every mutation the previous commit claimed was re-applied to this tree and
+re-observed, not copied forward. All red: the flag dropped from each of the
+three apt sites; `inImage` over-tightened to select nothing (4 red, including
+all three per-site controls); the carve-out stretched to `deploy/`; the owner
+pin bumped to `16-3.5` with the compose tags left behind (2 red); one compose
+tag alone moved; a literal drifted in `ci.yml`; the Postgres major bumped to 18
+(3 red); the action's `pin_file` pointed at `/dev/null`; the action restating a
+literal; and `lighthouse.yml` renamed out from under the scan.
+
+**Verification.** Guard 25 → 32 tests, all green. `tests/guards` 502 suites /
+3879 tests and `tests/guardrails` 100 suites / 3525 tests green; `tsc --noEmit`
+clean; `eslint` clean on the changed file; `docker compose config` still
+accepts the two compose files this branch edits, and all 38 tracked YAML files
+load under `js-yaml` with zero parse failures (`deploy/docker-compose.vm.yml`
+is unmodified here and `config` on it needs the VM's full `.env`, so the parse
+is what covers it). The pin does not move and the stopgap stays.
 
 ## Files
 
@@ -211,7 +336,7 @@ naming the guard that holds them together.
 | `infra/scripts/restore-test-gcp.sh` | **un-broken** — gains the flag in its heredoc copy |
 | `docker-compose.yml`, `docker-compose.test.yml` | local build tag encodes the pin; annotated and brought under Direction D |
 | `docs/dev-setup-macos.md` | the "add the flag locally" workaround is obsolete |
-| `tests/guards/postgis-image-single-source.test.ts` | **new** — the four-direction guard |
+| `tests/guards/postgis-image-single-source.test.ts` | **new** — the four-direction guard; D parses the compose files with `js-yaml`, and every population control is per-site |
 
 ## Decisions
 

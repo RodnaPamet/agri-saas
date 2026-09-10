@@ -31,12 +31,16 @@
 # repeated inside a LOCAL image name. That is the pin again, in a name no
 # `postgis/postgis` reference search can find — bump this file and leave
 # those two tags behind and they lie about the base, with CI green. The
-# guard's Direction D covers them: it finds every compose service that
-# builds that Dockerfile (by the `dockerfile:` key OR by a `context:`
-# pointing at the directory, which is how `deploy/docker-compose.vm.yml`
-# does it) and requires any version such a tag encodes to be this one. A
-# tag that encodes NO version — `agrent-db:local` — is fine and stays out
-# of the way.
+# guard's Direction D covers them: it PARSES every tracked compose file,
+# finds each service whose `build:` resolves to that Dockerfile (the
+# explicit `dockerfile:` key, or a bare `context:` pointing at the
+# directory, which is how `deploy/docker-compose.vm.yml` does it), and
+# requires any version its published `image:` encodes to be this one.
+# Parsed rather than pattern-matched, so writing `image:` ABOVE `build:` —
+# valid, idiomatic Compose — cannot hide a tag from it, and so that the
+# local name is available to the flag check in Direction B as well. A tag
+# that encodes NO version — `agrent-db:local` — is fine and stays out of
+# the way.
 #
 # BEFORE YOU BUMP THIS: read the WHY-NOT-YET note at the top of
 # .github/actions/enable-pgvector/action.yml. Every Debian-flavoured
