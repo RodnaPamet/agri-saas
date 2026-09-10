@@ -20,7 +20,23 @@
 # literals (six `image:` lines, two `FROM`s, one doc table row) are literals
 # by necessity, not by choice.
 # tests/guards/postgis-image-single-source.test.ts fails CI the instant any of
-# them disagrees with the line below — that is what makes eight literals safe.
+# them disagrees with the line below — that is what makes nine literals safe.
+# The count above is NOT just prose: that guard asserts the tracked tree holds
+# exactly nine live references, and that this paragraph says nine. A tenth
+# literal has to be registered here, not absorbed silently.
+#
+# AND ONE MORE SPELLING OF IT. `docker-compose.yml` and
+# `docker-compose.test.yml` build `deploy/postgres/Dockerfile` and tag the
+# result `agri-saas-postgres:<tag>-pgvector`, where `<tag>` is the tag below
+# repeated inside a LOCAL image name. That is the pin again, in a name no
+# `postgis/postgis` reference search can find — bump this file and leave
+# those two tags behind and they lie about the base, with CI green. The
+# guard's Direction D covers them: it finds every compose service that
+# builds that Dockerfile (by the `dockerfile:` key OR by a `context:`
+# pointing at the directory, which is how `deploy/docker-compose.vm.yml`
+# does it) and requires any version such a tag encodes to be this one. A
+# tag that encodes NO version — `agrent-db:local` — is fine and stays out
+# of the way.
 #
 # BEFORE YOU BUMP THIS: read the WHY-NOT-YET note at the top of
 # .github/actions/enable-pgvector/action.yml. Every Debian-flavoured
