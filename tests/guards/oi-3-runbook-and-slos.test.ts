@@ -494,7 +494,10 @@ describe('OI-3 — Incident response runbook (docs/incident-response.md)', () =>
         expect(rollback).not.toBe('');
         expect(rollback.length).toBeGreaterThan(2000);
         // The image pin: which registry, which tag shape, applied how.
-        expect(rollback).toMatch(/ghcr\.io\/rodnapamet\/agri-saas/);
+        // `toContain`, not `toMatch`: this is a substring check on a
+        // markdown section, and an unanchored host-shaped regex reads as
+        // URL validation to CodeQL (js/regex/missing-regexp-anchor).
+        expect(rollback).toContain('ghcr.io/rodnapamet/agri-saas');
         expect(rollback).toMatch(/sha-<short>|sha-\w+/);
         expect(rollback).toMatch(/deploy\/apply\.sh/);
         // The schema half — the reason a pin alone is not a rollback.
