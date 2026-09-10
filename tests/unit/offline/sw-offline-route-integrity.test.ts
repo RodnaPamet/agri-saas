@@ -303,7 +303,7 @@ describe('activate evicts prefetch entries WITHOUT emptying the bucket', () => {
     // airplane mode — and THAT launch activated the worker, whose purge deleted
     // the payload they had just gone and fetched. "Not saved for offline", for
     // a screen saved sixty seconds earlier.
-    const seed = () => [
+    const seed = (): Entry[] => [
         { url: TASK, vary: { RSC: '1', 'Next-Router-Prefetch': '1' }, body: 'PARTIAL-PREFETCH' },
         { url: TASK, vary: { RSC: '1', 'Next-Router-State-Tree': 'tree-A' }, body: 'flight' },
     ];
