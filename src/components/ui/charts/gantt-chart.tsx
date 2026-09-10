@@ -174,6 +174,44 @@ function GanttChartInner({
     //     row belongs to lights up".
     const [hoveredKey, setHoveredKey] = useState<string | null>(null);
 
+    // Hoisted ABOVE the `data.length === 0` early return on purpose.
+    // It used to sit below it, so this component rendered TWO hooks when
+    // `data` was empty and THREE once data arrived — "Rendered more hooks
+    // than during the previous render", a crash on the first non-empty
+    // render. eslint flagged it (react-hooks/rules-of-hooks) but the rule
+    // is `warn` and `npm run lint` had no --max-warnings, so the required
+    // Lint check exited 0 over it. Empty `data` is safe here: the loops
+    // below simply do not execute.
+    const dependencyChain = useMemo(() => {
+        if (hoveredKey === null) return new Set<string>();
+        const upstream = new Map<string, string[]>();
+        const downstream = new Map<string, string[]>();
+        for (const r of data) {
+            for (const dep of r.dependencies ?? []) {
+                upstream.set(r.key, [
+                    ...(upstream.get(r.key) ?? []),
+                    dep,
+                ]);
+                downstream.set(dep, [
+                    ...(downstream.get(dep) ?? []),
+                    r.key,
+                ]);
+            }
+        }
+        const chain = new Set<string>([hoveredKey]);
+        const walk = (key: string, dir: Map<string, string[]>) => {
+            for (const next of dir.get(key) ?? []) {
+                if (!chain.has(next)) {
+                    chain.add(next);
+                    walk(next, dir);
+                }
+            }
+        };
+        walk(hoveredKey, upstream);
+        walk(hoveredKey, downstream);
+        return chain;
+    }, [hoveredKey, data]);
+
     if (data.length === 0) return null;
 
     const padding = DEFAULT_PADDING;
@@ -222,36 +260,6 @@ function GanttChartInner({
     // upstream (deps) + every downstream (rows that depend on
     // this bar, recursively). Memoised so we don't BFS twice per
     // render.
-    const dependencyChain = useMemo(() => {
-        if (hoveredKey === null) return new Set<string>();
-        const upstream = new Map<string, string[]>();
-        const downstream = new Map<string, string[]>();
-        for (const r of data) {
-            for (const dep of r.dependencies ?? []) {
-                upstream.set(r.key, [
-                    ...(upstream.get(r.key) ?? []),
-                    dep,
-                ]);
-                downstream.set(dep, [
-                    ...(downstream.get(dep) ?? []),
-                    r.key,
-                ]);
-            }
-        }
-        const chain = new Set<string>([hoveredKey]);
-        const walk = (key: string, dir: Map<string, string[]>) => {
-            for (const next of dir.get(key) ?? []) {
-                if (!chain.has(next)) {
-                    chain.add(next);
-                    walk(next, dir);
-                }
-            }
-        };
-        walk(hoveredKey, upstream);
-        walk(hoveredKey, downstream);
-        return chain;
-    }, [hoveredKey, data]);
-
     const todayX =
         todayLine && new Date() >= xMin && new Date() <= xMax
             ? xScale(new Date())
