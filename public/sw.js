@@ -339,11 +339,44 @@ self.addEventListener('fetch', (event) => {
             fetch(request)
                 .then((res) => {
                     if (res.ok) {
-                        const copy = res.clone();
-                        caches.open(PAGE_CACHE).then(async (cache) => {
-                            await cache.put(request, copy);
-                            await evictCacheOverBudget(cache, PAGE_CACHE_BUDGET_BYTES);
-                        });
+                        // A REDIRECTED response cannot be replayed for a
+                        // navigation: the browser refuses a service-worker
+                        // response whose `redirected` flag is set, so the cache
+                        // entry is dead weight even when the put succeeds.
+                        //
+                        // This is not an edge case here — it is the START_URL.
+                        // `/tenants` (public/manifest.webmanifest) 307s to
+                        // /login when signed out and to /t/<slug>/dashboard for
+                        // a single-tenant user (src/app/tenants/page.tsx:52).
+                        // So the one URL a Home Screen launch requests was the
+                        // one URL that could never be served offline, and the
+                        // failure was silent in both directions: no catch here,
+                        // and an absent entry is indistinguishable from an
+                        // entry that was never written (#851).
+                        //
+                        // Rebuilding the Response drops the redirected flag
+                        // while keeping status, headers and body, so the entry
+                        // is replayable. Cached under the ORIGINAL request,
+                        // because that is what the next launch asks for.
+                        const copy = res.redirected
+                            ? new Response(res.clone().body, {
+                                  status: res.status,
+                                  statusText: res.statusText,
+                                  headers: res.headers,
+                              })
+                            : res.clone();
+                        caches
+                            .open(PAGE_CACHE)
+                            .then(async (cache) => {
+                                await cache.put(request, copy);
+                                await evictCacheOverBudget(cache, PAGE_CACHE_BUDGET_BYTES);
+                            })
+                            .catch((err) => {
+                                // Never silent again. A failed write here costs
+                                // the offline launch, and used to do so without
+                                // a single line anywhere saying it had happened.
+                                console.warn('[sw] PAGE_CACHE put failed', request.url, err);
+                            });
                     }
                     return res;
                 })
