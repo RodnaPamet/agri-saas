@@ -71,7 +71,9 @@ const USECASE_SEAMS: ReadonlyArray<{ fn: string; file: string; reason: string }>
 const GENERATED_BYTES: ReadonlyArray<{ route: string; reason: string }> = [];
 
 function walk(dir: string): string[] {
-    if (!existsSync(dir)) return [];
+    if (!existsSync(dir)) {
+        throw new Error(`scan root does not exist: ${dir} — a renamed root would scan zero files and pass (#875)`);
+    }
     const out: string[] = [];
     for (const entry of readdirSync(dir)) {
         const full = join(dir, entry);

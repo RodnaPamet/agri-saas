@@ -24,40 +24,26 @@ const GUARD_DIR = path.join(ROOT, 'tests', 'guards');
  * floor would invert the guard.
  */
 /**
- * Guards that already swallow a missing scan root, recorded 2026-09-10. This
- * list may only SHRINK — see the ratchet test. Tracked in #875.
+ * Guards that still swallow a missing scan root. Recorded 2026-09-10 at 89
+ * entries; 87 were converted to a throw naming the missing root under #875,
+ * leaving the two below. This list may only SHRINK — see the ratchet test.
+ *
+ * Neither survivor is here for lack of effort:
+ *
+ *  · `multi-select-facet-route-parity` — its `findRouteFiles` is called
+ *    per-PAGE (`findRouteFiles(join(API, page))`), and a page whose API
+ *    directory does not exist is a documented, handled case: that guard's own
+ *    docblock names `grain/yield` and routes it through `NO_SIBLING_ROUTE` /
+ *    `KNOWN_UNFIXED` rather than a silent skip. Forcing a throw there would
+ *    break a real case, not a swallowed one. Its MANDATORY root, `PAGES`, is
+ *    covered instead by the `DEFS.length > 5` self-check it already carries.
+ *  · `offline-spec-chunk-warmup` — untouched because the offline surface was
+ *    being edited in a parallel lane at the time; it is an ordinary walk over
+ *    `tests/e2e` and converts the same way as the other 87.
  */
 const KNOWN_SWALLOWERS: readonly string[] = [
-    'admin-cell-text-size.test.ts',
-    'admin-datatable-no-double-card.test.ts',
-    'audit-structured-events.test.ts',
-    'bg-projection-single-source.test.ts',
-    'columns-dropdown-coverage.test.ts',
-    'csp-nonce-component-scripts-patch.test.ts',
-    'datatable-fillbody-coverage.test.ts',
-    'datatable-mobile-fallback.test.ts',
-    'destructive-migration-has-inverse.test.ts',
-    'detail-page-breadcrumbs.test.ts',
-    'download-route-gate-reachability.test.ts',
-    'entity-detail-shell-coverage.test.ts',
-    'i18n-use-client-directive.test.ts',
-    'invite-email-locale-wiring.test.ts',
-    'invite-no-json-redeem.test.ts',
-    'list-page-shell-coverage.test.ts',
     'multi-select-facet-route-parity.test.ts',
-    'no-horizontal-drift-patterns.test.ts',
-    'no-lucide.test.ts',
-    'no-raw-tables-in-app-pages.test.ts',
-    'no-raw-white-foreground.test.ts',
     'offline-spec-chunk-warmup.test.ts',
-    'page-breadcrumbs-coverage.test.ts',
-    'payload-url-scheme.test.ts',
-    'promotions-drift.test.ts',
-    'r14-no-page-searchbars.test.ts',
-    'regression-scanner.test.ts',
-    'skeleton-shimmer-adoption.test.ts',
-    'toast-vocabulary.test.ts',
-    'ux-foundation-ratchets.test.ts',
 ];
 
 const EXPECTED_EMPTY: Record<string, string> = {
@@ -201,18 +187,18 @@ describe('scan roots in tests/guards still resolve', () => {
     });
 
     it('the swallowing list does not grow — RATCHET', () => {
-        // 89 guards in this repo open their walk with
+        // 89 guards in this repo opened their walk with
         //     if (!fs.existsSync(dir)) return out;
         // A defensive line that makes the guard unable to fail: a renamed root
         // yields zero files, zero files yield zero violations, and the
         // assertion passes over nothing.
         //
-        // This is a RATCHET, not a fix. Failing all 99 today would get this
-        // guard deleted rather than the 89 repaired. New guards must not join
-        // the list; the existing ones are tracked in #875 and come off as they
-        // are touched. Take entries OUT of KNOWN_SWALLOWERS as you fix them —
-        // the test below fails if a name here no longer swallows, so the list
-        // cannot rot into a permanent allowlist.
+        // This started as a RATCHET rather than a fix, because failing all 89
+        // at once would have got this guard deleted instead of them repaired.
+        // #875 then paid the debt down to the two documented above. New guards
+        // must not join the list. Take entries OUT of KNOWN_SWALLOWERS as you
+        // fix them — the test below fails if a name here no longer swallows,
+        // so the list cannot rot into a permanent allowlist.
         const current = files.filter(
             (f) => f !== 'scan-roots-resolve.test.ts' && swallowsMissingRoot(readGuard(f)),
         );

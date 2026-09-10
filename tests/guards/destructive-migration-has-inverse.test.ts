@@ -87,7 +87,9 @@ function executableSql(file: string): string {
 }
 
 function migrationDirs(): string[] {
-    if (!fs.existsSync(MIGRATIONS)) return [];
+    if (!fs.existsSync(MIGRATIONS)) {
+        throw new Error(`scan root does not exist: ${MIGRATIONS} — a renamed root would scan zero files and pass (#875)`);
+    }
     return fs
         .readdirSync(MIGRATIONS)
         .filter((d) => fs.existsSync(path.join(MIGRATIONS, d, 'migration.sql')))

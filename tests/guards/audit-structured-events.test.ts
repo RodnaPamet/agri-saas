@@ -110,7 +110,9 @@ export function assertDetailsJson(
 /** Recursively collect source files from a directory. */
 function collectFiles(dir: string, exts = ['.ts']): string[] {
     const results: string[] = [];
-    if (!fs.existsSync(dir)) return results;
+    if (!fs.existsSync(dir)) {
+        throw new Error(`scan root does not exist: ${dir} — a renamed root would scan zero files and pass (#875)`);
+    }
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         const full = path.join(dir, entry.name);
         if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') {
