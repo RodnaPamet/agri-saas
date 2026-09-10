@@ -40,6 +40,10 @@ on:
 permissions:
     contents: read
     packages: read
+    # Needed to ask whether the tip's own publish is queued or running. Without
+    # it the gate cannot tell "a run is coming" from "nothing is coming", and
+    # deferring on that unknown is what let #877 go unreported for three hours.
+    actions: read
 
 concurrency:
     group: image-tip-check
@@ -101,6 +105,8 @@ jobs:
               if: github.event_name == 'workflow_run'
               env:
                   TRIGGERING_SHA: ${{ github.event.workflow_run.head_sha }}
+                  REPO: ${{ github.repository }}
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               run: |
                   set -euo pipefail
                   TARGET="$(git log -1 --format=%H --invert-grep --grep='\[skip ci\]')"
@@ -111,12 +117,12 @@ jobs:
                       echo "::error::No publishable commit found in the clone. Every commit reachable here carries the CI-skip marker, which means the checkout is too shallow (needs fetch-depth: 0)."
                       exit 1
                   fi
-                  echo "publishable tip : $TARGET"
-                  echo "triggering run  : $TRIGGERING_SHA"
-                  if [ "$TARGET" != "$TRIGGERING_SHA" ]; then
-                      echo "skip=true" >> "$GITHUB_OUTPUT"
-                      echo "::notice::Publish for ${TRIGGERING_SHA:0:9} completed, but the publishable tip is ${TARGET:0:9} — that commit's own publish will trigger this check. Not asking yet."
-                  fi
+                  # The decision lives in a script so it can be tested. It
+                  # used to be four lines here and it was wrong in a way no
+                  # test could have caught, because there was no test. See
+                  # .github/scripts/image-tip-gate.sh and #877.
+                  TARGET="$TARGET" TRIGGERING_SHA="$TRIGGERING_SHA" REPO="$REPO" \
+                      bash .github/scripts/image-tip-gate.sh
 
             # ── Ask about the newest PUBLISHABLE commit, not literally HEAD ──
             #
