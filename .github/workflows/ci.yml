@@ -1711,9 +1711,11 @@ jobs:
       # `.trivyignore` carries narrow per-CVE exemptions with written
       # reasons + upgrade plans. Exemption entries are the structural
       # escape hatch; never weaken the global severity threshold.
-      # (Currently: CVE-2026-33671 in the bundled npm CLI's picomatch,
-      # not exploitable from app code; tracked for upgrade in the next
-      # Node base-image bump.)
+      # (Currently ZERO entries: #647 deleted all eight, whose affected
+      # paths the Dockerfile's `rm -rf` had already removed from the
+      # image. Nothing is suppressed today — a CRITICAL/HIGH finding
+      # fails this step. The picomatch floor in package.json overrides,
+      # not an exemption, is what keeps CVE-2026-33671 off the image.)
       - name: "Gate: Trivy vulnerability scan (critical+high)"
         uses: aquasecurity/trivy-action@v0.36.0
         with:
