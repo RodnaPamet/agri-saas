@@ -71,7 +71,7 @@ describe('Sheet — responsive direction', () => {
 
     it('bottom direction uses inset-x positioning + max-height cap', () => {
         expect(SHEET_SRC).toMatch(/inset-x-2/);
-        expect(SHEET_SRC).toMatch(/--sheet-height:85vh/);
+        expect(SHEET_SRC).toMatch(/--sheet-height:85svh/);
     });
 
     it('right direction pins top/bottom/right with the width cap', () => {
