@@ -78,7 +78,9 @@ function schemaFiles(): string[] {
     const out: string[] = [];
     for (const rel of SCHEMA_DIRS) {
         const dir = path.join(REPO, rel);
-        if (!fs.existsSync(dir)) continue;
+        if (!fs.existsSync(dir)) {
+            throw new Error(`scan root does not exist: ${dir} — a renamed root would scan zero files and pass (#875)`);
+        }
         for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
             if (entry.isFile() && entry.name.endsWith('.ts')) {
                 out.push(path.join(rel, entry.name));

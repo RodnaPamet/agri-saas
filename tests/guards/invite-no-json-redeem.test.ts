@@ -28,7 +28,9 @@ const INVITE_PAGES_DIR = path.join(ROOT, 'src', 'app', 'invite');
 const BARE_REDEEM_RE = /`\/api\/(?:invites|org\/invite)\/\$\{[^}]+\}`/g;
 
 function walkTsx(dir: string): string[] {
-    if (!fs.existsSync(dir)) return [];
+    if (!fs.existsSync(dir)) {
+        throw new Error(`scan root does not exist: ${dir} — a renamed root would scan zero files and pass (#875)`);
+    }
     const out: string[] = [];
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         const full = path.join(dir, entry.name);

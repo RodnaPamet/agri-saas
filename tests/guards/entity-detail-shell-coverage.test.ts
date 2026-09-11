@@ -160,7 +160,9 @@ describe("EntityDetailLayout adoption — PR-4", () => {
     ]);
 
     function walk(dir: string, out: string[] = []): string[] {
-      if (!fs.existsSync(dir)) return out;
+      if (!fs.existsSync(dir)) {
+          throw new Error(`scan root does not exist: ${dir} — a renamed root would scan zero files and pass (#875)`);
+      }
       for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
         const full = path.join(dir, e.name);
         if (e.isDirectory()) walk(full, out);

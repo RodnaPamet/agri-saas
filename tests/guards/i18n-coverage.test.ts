@@ -76,7 +76,9 @@ export function hasHardcodedUserText(source: string): boolean {
 function walkTsx(dir: string): string[] {
     const out: string[] = [];
     const abs = path.join(REPO_ROOT, dir);
-    if (!fs.existsSync(abs)) return out;
+    if (!fs.existsSync(abs)) {
+        throw new Error(`scan root does not exist: ${abs} — a renamed root would scan zero files and pass (#875)`);
+    }
     const stack = [abs];
     while (stack.length) {
         const cur = stack.pop()!;

@@ -15,7 +15,9 @@ import { SOFT_DELETE_MODELS } from '@/lib/soft-delete';
 const SRC_ROOT = path.resolve(__dirname, '../../src');
 
 function walk(dir: string, exts: string[], results: string[] = []): string[] {
-    if (!fs.existsSync(dir)) return results;
+    if (!fs.existsSync(dir)) {
+        throw new Error(`scan root does not exist: ${dir} — a renamed root would scan zero files and pass (#875)`);
+    }
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         if (['node_modules', '.next', 'dist'].includes(entry.name)) continue;
         const full = path.join(dir, entry.name);
@@ -93,7 +95,9 @@ describe('Regression: Forbidden patterns', () => {
 
     test('no direct Error throws in usecases (should use typed errors)', () => {
         const usecaseDir = path.join(SRC_ROOT, 'app-layer/usecases');
-        if (!fs.existsSync(usecaseDir)) return;
+        if (!fs.existsSync(usecaseDir)) {
+            throw new Error(`scan root does not exist: ${usecaseDir} — a renamed root would scan zero files and pass (#875)`);
+        }
         const usecases = walk(usecaseDir, ['.ts']);
         const violations: string[] = [];
 
@@ -114,7 +118,9 @@ describe('Regression: Forbidden patterns', () => {
 
     test('no TODO/FIXME/HACK in production usecases without tracking', () => {
         const usecaseDir = path.join(SRC_ROOT, 'app-layer/usecases');
-        if (!fs.existsSync(usecaseDir)) return;
+        if (!fs.existsSync(usecaseDir)) {
+            throw new Error(`scan root does not exist: ${usecaseDir} — a renamed root would scan zero files and pass (#875)`);
+        }
         const usecases = walk(usecaseDir, ['.ts']);
         const violations: string[] = [];
 
@@ -139,7 +145,9 @@ describe('Regression: Forbidden patterns', () => {
 describe('Regression: Import hygiene', () => {
     test('route handlers import from app-layer, not lib/prisma directly', () => {
         const routeDir = path.join(SRC_ROOT, 'app/api/t');
-        if (!fs.existsSync(routeDir)) return;
+        if (!fs.existsSync(routeDir)) {
+            throw new Error(`scan root does not exist: ${routeDir} — a renamed root would scan zero files and pass (#875)`);
+        }
         // audit-log/coverage uses prisma for cross-entity coverage metrics.
         // key-rotation passes the prisma client through to `logEvent` so
         // the audit row lands on the same transaction the BullMQ job
@@ -169,7 +177,9 @@ describe('Regression: Import hygiene', () => {
 
     test('usecases use typed error helpers, not raw HTTP status codes', () => {
         const usecaseDir = path.join(SRC_ROOT, 'app-layer/usecases');
-        if (!fs.existsSync(usecaseDir)) return;
+        if (!fs.existsSync(usecaseDir)) {
+            throw new Error(`scan root does not exist: ${usecaseDir} — a renamed root would scan zero files and pass (#875)`);
+        }
         const usecases = walk(usecaseDir, ['.ts']);
         const violations: string[] = [];
 

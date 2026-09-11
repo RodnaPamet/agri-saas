@@ -24,99 +24,26 @@ const GUARD_DIR = path.join(ROOT, 'tests', 'guards');
  * floor would invert the guard.
  */
 /**
- * Guards that already swallow a missing scan root, recorded 2026-09-10. This
- * list may only SHRINK — see the ratchet test. Tracked in #875.
+ * Guards that still swallow a missing scan root. Recorded 2026-09-10 at 89
+ * entries; 87 were converted to a throw naming the missing root under #875,
+ * leaving the two below. This list may only SHRINK — see the ratchet test.
+ *
+ * Neither survivor is here for lack of effort:
+ *
+ *  · `multi-select-facet-route-parity` — its `findRouteFiles` is called
+ *    per-PAGE (`findRouteFiles(join(API, page))`), and a page whose API
+ *    directory does not exist is a documented, handled case: that guard's own
+ *    docblock names `grain/yield` and routes it through `NO_SIBLING_ROUTE` /
+ *    `KNOWN_UNFIXED` rather than a silent skip. Forcing a throw there would
+ *    break a real case, not a swallowed one. Its MANDATORY root, `PAGES`, is
+ *    covered instead by the `DEFS.length > 5` self-check it already carries.
+ *  · `offline-spec-chunk-warmup` — untouched because the offline surface was
+ *    being edited in a parallel lane at the time; it is an ordinary walk over
+ *    `tests/e2e` and converts the same way as the other 87.
  */
 const KNOWN_SWALLOWERS: readonly string[] = [
-    'action-label-vocabulary.test.ts',
-    'admin-cell-text-size.test.ts',
-    'admin-datatable-no-double-card.test.ts',
-    'animation-language-lock.test.ts',
-    'audit-structured-events.test.ts',
-    'badge-density.test.ts',
-    'bg-projection-single-source.test.ts',
-    'button-label-centering.test.ts',
-    'button-variant-cull.test.ts',
-    'cancel-button-size-parity.test.ts',
-    'card-density-discipline.test.ts',
-    'card-elevation-discipline.test.ts',
-    'card-pretender-eradication.test.ts',
-    'cardvariants-server-import.test.ts',
-    'columns-dropdown-coverage.test.ts',
-    'create-button-uniformity.test.ts',
-    'csp-nonce-component-scripts-patch.test.ts',
-    'dashboard-anatomy.test.ts',
-    'datatable-fillbody-coverage.test.ts',
-    'datatable-mobile-fallback.test.ts',
-    'datatable-selection-default-on.test.ts',
-    'destructive-migration-has-inverse.test.ts',
-    'detail-page-back-prop-ban.test.ts',
-    'detail-page-breadcrumbs.test.ts',
-    'detail-page-metastrip-adoption.test.ts',
-    'detail-page-tabs-slot.test.ts',
-    'download-route-gate-reachability.test.ts',
-    'empty-loading-primitive-only.test.ts',
-    'empty-state-coverage.test.ts',
-    'entity-detail-shell-coverage.test.ts',
-    'error-state-adoption.test.ts',
-    'eyebrow-discipline.test.ts',
-    'filter-toolbar-coverage.test.ts',
-    'focus-ring-discipline.test.ts',
-    'form-drift.test.ts',
-    'formfield-coverage.test.ts',
-    'heromemtric-canonical-home.test.ts',
-    'hover-state-language.test.ts',
-    'i18n-coverage.test.ts',
-    'i18n-key-exists.test.ts',
-    'i18n-use-client-directive.test.ts',
-    'icon-size-discipline.test.ts',
-    'inline-notice-discipline.test.ts',
-    'inline-subtitle-budget.test.ts',
-    'invite-email-locale-wiring.test.ts',
-    'invite-no-json-redeem.test.ts',
-    'legacy-badge-eradication.test.ts',
-    'list-page-shell-coverage.test.ts',
-    'metadatabar-detail-coverage.test.ts',
-    'metric-typography.test.ts',
-    'modal-action-order.test.ts',
-    'modal-width-tokens.test.ts',
-    'motion-language-discipline.test.ts',
-    'motion-language.test.ts',
     'multi-select-facet-route-parity.test.ts',
-    'no-horizontal-drift-patterns.test.ts',
-    'no-inline-pills.test.ts',
-    'no-inline-tab-strip.test.ts',
-    'no-lucide.test.ts',
-    'no-nested-cards.test.ts',
-    'no-raw-palette-greys.test.ts',
-    'no-raw-skeleton-pulse.test.ts',
-    'no-raw-tables-in-app-pages.test.ts',
-    'no-raw-white-foreground.test.ts',
     'offline-spec-chunk-warmup.test.ts',
-    'page-actions-discipline.test.ts',
-    'page-breadcrumbs-coverage.test.ts',
-    'payload-url-scheme.test.ts',
-    'primary-action-budget.test.ts',
-    'primary-secondary-ratio.test.ts',
-    'promotions-drift.test.ts',
-    'public-routes-self-authenticate.test.ts',
-    'r14-no-page-searchbars.test.ts',
-    'raw-color-eradication.test.ts',
-    'regression-scanner.test.ts',
-    'search-placeholder-vocabulary.test.ts',
-    'single-h1-per-page.test.ts',
-    'single-tab-pattern.test.ts',
-    'skeleton-shimmer-adoption.test.ts',
-    'spacing-cadence.test.ts',
-    'spacing-scale-discipline.test.ts',
-    'state-coverage.test.ts',
-    'state-language.test.ts',
-    'state-primitives-discipline.test.ts',
-    'status-badge-discipline.test.ts',
-    'status-badge-no-brand.test.ts',
-    'toast-vocabulary.test.ts',
-    'typography-eradication.test.ts',
-    'ux-foundation-ratchets.test.ts',
 ];
 
 const EXPECTED_EMPTY: Record<string, string> = {
@@ -168,16 +95,18 @@ export function swallowsMissingRoot(src: string): boolean {
         .map((l) => (/^\s*\*/.test(l) ? '' : l));
     for (let i = 0; i < lines.length; i++) {
         if (!/readdirSync\s*\(/.test(lines[i])) continue;
-        // the guard clause sits at the top of walk(), a line or two above
         for (let j = Math.max(0, i - 6); j < i; j++) {
-            // `continue` skips the root just as silently as `return` — found
-            // in the sibling shell guard, which used the shape it polices.
-            if (
-                /!\s*(fs\.)?existsSync\s*\(/.test(lines[j]) &&
-                /\b(return|continue)\b/.test(lines.slice(j, j + 3).join(' '))
-            ) {
-                return true;
-            }
+            if (!/!\s*(fs\.)?existsSync\s*\(/.test(lines[j])) continue;
+            // POSITIVE, not a blacklist. The first version banned `return` and
+            // `continue`, which is the `head -1` mistake: there are unbounded
+            // ways to skip a missing root — `return out`, `continue`, `break`,
+            // `out.push()` then fall through, an early `resolve()` — and one
+            // way to handle it correctly, which is to THROW.
+            //
+            // So: an existence check guarding a walk must reach a throw before
+            // the walk does. Anything else swallows, whatever it is spelled.
+            const window = lines.slice(j, i).join('\n');
+            if (!/\bthrow\b/.test(window)) return true;
         }
     }
     return false;
@@ -270,18 +199,18 @@ describe('scan roots in tests/guards still resolve', () => {
     });
 
     it('the swallowing list does not grow — RATCHET', () => {
-        // 89 guards in this repo open their walk with
+        // 89 guards in this repo opened their walk with
         //     if (!fs.existsSync(dir)) return out;
         // A defensive line that makes the guard unable to fail: a renamed root
         // yields zero files, zero files yield zero violations, and the
         // assertion passes over nothing.
         //
-        // This is a RATCHET, not a fix. Failing all 99 today would get this
-        // guard deleted rather than the 89 repaired. New guards must not join
-        // the list; the existing ones are tracked in #875 and come off as they
-        // are touched. Take entries OUT of KNOWN_SWALLOWERS as you fix them —
-        // the test below fails if a name here no longer swallows, so the list
-        // cannot rot into a permanent allowlist.
+        // This started as a RATCHET rather than a fix, because failing all 89
+        // at once would have got this guard deleted instead of them repaired.
+        // #875 then paid the debt down to the two documented above. New guards
+        // must not join the list. Take entries OUT of KNOWN_SWALLOWERS as you
+        // fix them — the test below fails if a name here no longer swallows,
+        // so the list cannot rot into a permanent allowlist.
         const current = files.filter(
             (f) => f !== 'scan-roots-resolve.test.ts' && swallowsMissingRoot(readGuard(f)),
         );

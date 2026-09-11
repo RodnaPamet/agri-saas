@@ -28,7 +28,9 @@ const API_DIR = path.join(ROOT, 'src/app/api');
 
 /** Every `route.ts` under the API tree, filesystem-derived. */
 function routeFiles(dir: string, acc: string[] = []): string[] {
-    if (!fs.existsSync(dir)) return acc;
+    if (!fs.existsSync(dir)) {
+        throw new Error(`scan root does not exist: ${dir} — a renamed root would scan zero files and pass (#875)`);
+    }
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         const full = path.join(dir, entry.name);
         if (entry.isDirectory()) routeFiles(full, acc);

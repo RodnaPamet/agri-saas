@@ -53,7 +53,9 @@ interface Hit {
 function findDetailPages(): string[] {
     const out: string[] = [];
     function walk(dir: string) {
-        if (!fs.existsSync(dir)) return;
+        if (!fs.existsSync(dir)) {
+            throw new Error(`scan root does not exist: ${dir} — a renamed root would scan zero files and pass (#875)`);
+        }
         for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
             const full = path.join(dir, entry.name);
             const rel = path.relative(ROOT, full);

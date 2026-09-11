@@ -136,7 +136,9 @@ const ANY_COMPONENT_SCRIPT_SITE =
 
 function findNextPatches(): string[] {
     const dir = path.join(ROOT, 'patches');
-    if (!fs.existsSync(dir)) return [];
+    if (!fs.existsSync(dir)) {
+        throw new Error(`scan root does not exist: ${dir} — a renamed root would scan zero files and pass (#875)`);
+    }
     return fs.readdirSync(dir).filter((f) => /^next\+.+\.patch$/.test(f));
 }
 
