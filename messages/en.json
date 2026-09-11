@@ -3197,7 +3197,8 @@
             "saveTask": "Save task",
             "deleteTask": "Delete task",
             "deleted": "Task deleted"
-        }
+        },
+        "createOffline": "No signal — the task was not created. Unlike a journal entry, a task cannot be queued yet, so nothing was saved. Your text is still here; try again when you're back online."
     },
     "issues": {
         "redirecting": "Redirecting to Tasks…",

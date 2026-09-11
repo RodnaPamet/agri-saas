@@ -30,7 +30,7 @@ import { useThresholdLoadMore, PullToRefresh } from '@/components/ui/hooks';
 import { ScrollToTop } from '@/components/ui/scroll-to-top';
 import { TableLoadMoreFooter } from '@/components/ui/table-load-more-footer';
 import { useTenantApiUrl, useTenantContext } from '@/lib/tenant-context-provider';
-import { apiPost } from '@/lib/api-client';
+import { apiPost, isOfflineError } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { Plus, CircleCheck } from '@/components/ui/icons/nucleo';
 import { Fab } from '@/components/ui/fab';
@@ -251,7 +251,18 @@ function FarmTasksInner({ tenantSlug, currentUserId }: { tenantSlug: string; cur
             resetForm();
             await mutate();
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to create task');
+            // Task creation does NOT queue: the outbox sends an
+            // Idempotency-Key but the /farm-tasks POST route does not read one,
+            // so a replay would mint a duplicate. Task.clientMutationId and its
+            // unique index already exist (work.prisma) — the wiring is missing,
+            // not the schema. Until that lands, say plainly that nothing was
+            // saved, and say why it differs from the journal entry the operator
+            // just watched queue successfully. Reported 2026-09-11.
+            setError(
+                isOfflineError(err)
+                    ? t('createOffline')
+                    : err instanceof Error ? err.message : 'Failed to create task',
+            );
         } finally {
             setSubmitting(false);
         }
