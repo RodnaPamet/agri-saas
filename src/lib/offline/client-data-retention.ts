@@ -291,7 +291,17 @@ function markSwept(now: number): void {
     }
 }
 
-async function sweepCaches(keepShell: boolean): Promise<number> {
+/**
+ * Returns the number of buckets emptied, or NULL when the sweep DEFERRED and
+ * did no work at all.
+ *
+ * `0` cannot carry that distinction, and the caller stamps a 24h clock on the
+ * strength of it — so a plain `0` meant an offline launch consumed the whole
+ * retention window without deleting anything. A phone used mostly in a field
+ * could defer the tenant-data sweep indefinitely, one offline launch at a time,
+ * while the comment below claimed the opposite.
+ */
+async function sweepCaches(keepShell: boolean): Promise<number | null> {
     if (typeof caches === 'undefined') return 0;
 
     // DEFER while offline. The whole-bucket delete above is justified by "the
@@ -312,10 +322,14 @@ async function sweepCaches(keepShell: boolean): Promise<number> {
     // repopulate", not as "definitely can".
     //
     // Deferral, not exemption — the next online launch sweeps as before, so
-    // this is not an unbounded retention hole. Pinned in both directions by
+    // this is not an unbounded retention hole. That sentence was FALSE for as
+    // long as this returned 0: the caller could not tell a deferral from a
+    // clean sweep, stamped `lastSweptAt` anyway, and the next online launch
+    // inside 24h found the window closed and skipped. Returning null is what
+    // makes the claim true. Pinned in both directions by
     // tests/unit/offline/client-data-retention-caches.test.ts, which is also
     // the first thing that ever executed this function.
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) return 0;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return null;
     let removed = 0;
     // Remembered across the delete so the shell can be primed back into the
     // SAME bucket: the name carries the SW's CACHE_VERSION, which this module
@@ -368,8 +382,14 @@ export async function sweepClientStores(options: SweepOptions = {}): Promise<Swe
     // 24h bound actually means. Without this the offline caches are destroyed
     // on every document load and the app has nothing to work with in a field.
     if (maxAgeMs === 0 || retentionWindowElapsed(now, maxAgeMs)) {
-        result.cachesRemoved = await sweepCaches(maxAgeMs > 0);
-        if (maxAgeMs > 0) markSwept(now);
+        const removed = await sweepCaches(maxAgeMs > 0);
+        // null means it DEFERRED (offline) and touched nothing. Stamping the
+        // clock there spends the retention window on a sweep that never
+        // happened, which is precisely what a field phone does every launch.
+        if (removed !== null) {
+            result.cachesRemoved = removed;
+            if (maxAgeMs > 0) markSwept(now);
+        }
     }
     return result;
 }
