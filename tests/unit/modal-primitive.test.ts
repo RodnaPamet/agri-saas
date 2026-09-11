@@ -50,7 +50,7 @@ describe('Modal — size variants via CVA', () => {
     });
 
     it('caps total height so tall forms scroll instead of overflowing the viewport', () => {
-        expect(MODAL_SRC).toMatch(/max-h-\[min\(85vh,680px\)\]/);
+        expect(MODAL_SRC).toMatch(/max-h-\[min\(85svh,680px\)\]/);
     });
 });
 

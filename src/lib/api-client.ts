@@ -47,6 +47,78 @@ export class ApiClientError extends Error {
 // ─── Internals ───
 
 /**
+ * Codes for failures that never reached the server. Callers map these to copy;
+ * `ApiClientError.message` is the fallback for anything that does not.
+ */
+export const API_OFFLINE_CODE = 'OFFLINE';
+export const API_TIMEOUT_CODE = 'TIMEOUT';
+
+/**
+ * Did this failure never reach the server?
+ *
+ * Deliberately NOT `err instanceof ApiClientError && err.code === OFFLINE`.
+ * That check has two blind spots, and both produce the same symptom — the
+ * operator is shown the English default instead of translated copy:
+ *
+ *   1. `instanceof` compares CLASS IDENTITY. If the bundler emits this module
+ *      into two chunks, the error thrown by one copy is not an instance of the
+ *      other copy's class, and the branch silently takes the wrong arm.
+ *   2. A caller using a bare `fetch()` never gets a typed error at all — it
+ *      gets the platform TypeError, whose message on WebKit is "Load failed".
+ *      Those call sites still deserve the right message.
+ *
+ * So: match on the SHAPE and on the known platform messages, not on the class.
+ */
+export function isOfflineError(err: unknown): boolean {
+    if (err instanceof ApiClientError) return err.code === API_OFFLINE_CODE;
+    if (typeof err !== 'object' || err === null) return false;
+    const e = err as { code?: unknown; name?: unknown; message?: unknown };
+    if (e.code === API_OFFLINE_CODE) return true;
+    // WebKit: "Load failed". Chromium: "Failed to fetch". Firefox:
+    // "NetworkError when attempting to fetch resource."
+    return (
+        e.name === 'TypeError' &&
+        typeof e.message === 'string' &&
+        /load failed|failed to fetch|networkerror/i.test(e.message)
+    );
+}
+
+/**
+ * `fetch` with its REJECTION typed.
+ *
+ * A non-2xx already became an ApiClientError; a rejected fetch did not — it
+ * escaped as the platform's own TypeError, and 84 call sites print
+ * `err.message` straight onto the screen. On WebKit that message is the string
+ * "Load failed", so an operator who pressed SAVE in a field with no signal was
+ * shown a two-word phrase about LOADING, produced by the browser, in English,
+ * with nothing about what happened to their work. Measured on an iPhone
+ * 2026-09-11 on the journal edit modal.
+ *
+ * `status: 0` matches the convention for "no response" and keeps callers that
+ * branch on `.status` away from treating this as a real HTTP result.
+ */
+async function fetchOrThrow(url: string, init: RequestInit): Promise<Response> {
+    try {
+        return await fetch(url, init);
+    } catch (err) {
+        // AbortSignal.timeout() rejects with a TimeoutError; a caller-owned
+        // signal aborts with AbortError. Neither is "you are offline", and
+        // saying so would be its own wrong answer.
+        const name = err instanceof Error ? err.name : '';
+        if (name === 'TimeoutError') {
+            throw new ApiClientError('The server took too long to respond.', API_TIMEOUT_CODE, 0);
+        }
+        if (name === 'AbortError') throw err; // deliberate cancellation — not ours to relabel
+        throw new ApiClientError(
+            'No connection — this did not reach the server.',
+            API_OFFLINE_CODE,
+            0,
+        );
+    }
+}
+
+
+/**
  * Parse a non-2xx response into ApiClientError.
  * Tries to parse the standard { error: { code, message, ... } } shape.
  * Falls back to generic error if the body is not parseable.
@@ -142,7 +214,7 @@ export async function apiGet<T>(
     schema?: ZodSchema<T>,
     init?: RequestInit,
 ): Promise<T> {
-    const res = await fetch(url, {
+    const res = await fetchOrThrow(url, {
         method: 'GET',
         ...withTimeout(init),
     });
@@ -162,7 +234,7 @@ export async function apiPost<T>(
     schema?: ZodSchema<T>,
     init?: RequestInit,
 ): Promise<T> {
-    const res = await fetch(url, {
+    const res = await fetchOrThrow(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -184,7 +256,7 @@ export async function apiPatch<T>(
     schema?: ZodSchema<T>,
     init?: RequestInit,
 ): Promise<T> {
-    const res = await fetch(url, {
+    const res = await fetchOrThrow(url, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -204,7 +276,7 @@ export async function apiDelete(
     url: string,
     init?: RequestInit,
 ): Promise<void> {
-    const res = await fetch(url, {
+    const res = await fetchOrThrow(url, {
         method: 'DELETE',
         ...withTimeout(init),
     });
