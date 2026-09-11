@@ -82,7 +82,17 @@ export function declaredRoots(src: string, file: string): Root[] {
  * it — so proximity to `readdirSync` is what separates the two.
  */
 export function swallowsMissingRoot(src: string): boolean {
-    const lines = src.split('\n');
+    // Comments stripped FIRST. Without this the detector matched `return` in a
+    // comment — and the comment that tripped it was, exactly,
+    //     "A throw, not a silent return: a renamed root would empty this"
+    // on a walk that correctly throws. A guard that reads prose about the thing
+    // it looks for, rather than the thing itself, is the flag-in-a-trailing-
+    // comment defeat from #860 in a different file. Found when a new guard's
+    // explanation of why it is safe made it look unsafe.
+    const lines = src
+        .split('\n')
+        .map((l) => l.replace(/\/\/.*$/, '').replace(/\/\*.*?\*\//g, ''))
+        .map((l) => (/^\s*\*/.test(l) ? '' : l));
     for (let i = 0; i < lines.length; i++) {
         if (!/readdirSync\s*\(/.test(lines[i])) continue;
         // the guard clause sits at the top of walk(), a line or two above
