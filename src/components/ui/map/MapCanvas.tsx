@@ -37,7 +37,7 @@ import type { StyleSpecification } from 'maplibre-gl';
 import { SOIL_PENDING_COLOR } from '@/lib/soil/types';
 import { CropGlyph } from '@/components/agriculture/CropGlyph';
 import { buildOfflineBasemapStyle } from '@/lib/geo/offline-basemap-style';
-import { resolveBasemapStyle } from '@/lib/geo/basemap-style';
+import { buildFixtureBasemapStyle, resolveBasemapStyle } from '@/lib/geo/basemap-style';
 import { getOneShotPosition } from '@/lib/geo/one-shot-position';
 
 // Below this zoom the per-parcel crop glyphs are hidden — at a whole-region
@@ -267,6 +267,19 @@ const MAPLIBRE_WORKER_URL = '/maplibre/maplibre-gl-worker.mjs';
 // docblock there for the precedence and why the fixture branch comes first.
 const BASEMAP_STYLE: string | StyleSpecification = resolveBasemapStyle();
 
+// Last-resort backdrop: flat land, ZERO network requests — no sources, no
+// glyphs, no sprite. Used when the operator is offline and there is no basemap
+// pack to draw, so the parcel layers still have a style to mount into and the
+// map shows FIELDS ON GROUND instead of an empty rectangle.
+//
+// BUILT ONCE, AT MODULE LOAD, AND THAT IS LOAD-BEARING. react-map-gl diffs this
+// prop by REFERENCE (`nextProps.mapStyle !== currProps.mapStyle`, no deep
+// compare), so a fresh object per render calls setStyle() every render. That
+// call does pass `{ diff: true }`, so an identical style diffs to no
+// operations rather than strobing — but it is a full style diff per frame on a
+// phone, for nothing. Do not inline this into the useMemo body.
+const NO_BASEMAP_STYLE: StyleSpecification = buildFixtureBasemapStyle();
+
 export function MapCanvas({
     parcels,
     bounds,
@@ -404,13 +417,30 @@ export function MapCanvas({
             window.removeEventListener('offline', onOffline);
         };
     }, []);
-    const activeStyle = useMemo(
-        () =>
-            offlineBasemapTileUrl && offlineBasemapTileUrl.length > 0 && !online
-                ? buildOfflineBasemapStyle(offlineBasemapTileUrl)
-                : BASEMAP_STYLE,
-        [offlineBasemapTileUrl, online],
-    );
+    const hasOfflinePack = !!offlineBasemapTileUrl && offlineBasemapTileUrl.length > 0;
+
+    // "There is no backdrop to draw at all." Offline AND this mount was never
+    // given a pack template — true of /field/[taskId] and /farm-tasks/[taskId],
+    // which is where the 60vh void actually lives. The pack template is
+    // tenant+location-scoped, so those two routes structurally cannot supply
+    // one; flat ground with real parcels is the honest ceiling for them.
+    //
+    // Before this, offline with no pack fell through to BASEMAP_STYLE — a
+    // cross-origin URL. The style DOCUMENT never loads, so there are no layers
+    // at all: not just no backdrop, NO PARCELS EITHER. The operator got an
+    // empty rectangle where their fields should be.
+    //
+    // Drives the notice below too, so the picture and the words cannot disagree.
+    const basemapUnavailable = !online && !hasOfflinePack;
+
+    const activeStyle = useMemo<string | StyleSpecification>(() => {
+        // Pack FIRST. A deliberately downloaded pack must never be pre-empted.
+        if (!online && hasOfflinePack) {
+            return buildOfflineBasemapStyle(offlineBasemapTileUrl as string);
+        }
+        if (!online) return NO_BASEMAP_STYLE;
+        return BASEMAP_STYLE;
+    }, [offlineBasemapTileUrl, hasOfflinePack, online]);
 
     // ── Cadastre VECTOR parcels overlay (КККР / АГКК) ──────────────────
     // The current viewport's official parcels, fetched from the same-origin
@@ -1082,6 +1112,26 @@ export function MapCanvas({
                 )}
             </Map>
 
+            {/* ── "No map background" notice ────────────────────────────────
+                The map must never be an absence with nothing to explain it.
+                Deliberately OUTSIDE the `showPractices` block below: the soil
+                legend and the geolocation toast live in there, but
+                FieldOperationPanel passes neither `showPractices` nor a pack,
+                so a notice gated on it would be invisible on one of the two
+                surfaces this fixes. pointer-events-none so it never eats a map
+                tap; role=status so it is announced. */}
+            {basemapUnavailable && (
+                <div
+                    role="status"
+                    aria-live="polite"
+                    data-testid="map-no-basemap"
+                    className="pointer-events-none absolute left-3 top-3 z-20 max-w-[16rem] rounded-lg border border-border-subtle bg-bg-default/95 px-3 py-2 shadow-md"
+                >
+                    <p className="text-xs font-medium text-content-emphasis">{t('noBasemapTitle')}</p>
+                    <p className="text-xs text-content-secondary">{t('noBasemapBody')}</p>
+                </div>
+            )}
+
             {/* ── On-map thumb practices (opt-in) ──────────────────────────
                 Bottom-right thumb zone; each button a ≥44px touch target.
                 The container is pointer-events-none so map panning is
@@ -1181,7 +1231,11 @@ export function MapCanvas({
                             role="status"
                             aria-live="polite"
                             data-testid="map-geo-error"
-                            className="pointer-events-none absolute inset-x-3 top-3 rounded-lg border border-border-subtle bg-bg-default/95 px-3 py-2 text-xs text-content-secondary shadow-md"
+                            className={cn(
+                                'pointer-events-none absolute inset-x-3 rounded-lg border border-border-subtle bg-bg-default/95 px-3 py-2 text-xs text-content-secondary shadow-md',
+                                // The no-basemap notice owns top-3; sit below it.
+                                basemapUnavailable ? 'top-20' : 'top-3',
+                            )}
                         >
                             {geoError}
                         </div>
