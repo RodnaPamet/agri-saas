@@ -100,6 +100,11 @@ const createTask = jest.fn(async (...args: any[]) => {
         id: `task-${taskStore.length + 1}`,
         key: `TSK-${taskStore.length + 1}`,
         clientMutationId: input?.clientMutationId ?? null,
+        // Recorded so a TYPE-SCOPED lookup is testable. clientMutationId is
+        // unique per TENANT, not per type, so an unscoped read could hand a
+        // FARM_TASK create the FIELD_OPERATION row minted from the same outbox
+        // id. Without this field the mock cannot express that difference.
+        type: input?.type ?? null,
     };
     taskStore.push(row);
     return row;
@@ -162,6 +167,7 @@ jest.mock('@/app-layer/usecases/modules', () => ({
 // KEPT REAL: the route modules, and the usecases whose dedup is under test.
 import * as journalRoute from '@/app/api/t/[tenantSlug]/journal/route';
 import * as operationsRoute from '@/app/api/t/[tenantSlug]/locations/[id]/operations/route';
+import * as farmTasksRoute from '@/app/api/t/[tenantSlug]/farm-tasks/route';
 
 const CTX = {
     tenantId: 'tenant-1',
@@ -199,6 +205,10 @@ const OPS_BODY = {
 };
 const opsArgs = () => ({ params: Promise.resolve({ tenantSlug: 'acme', id: 'loc-1' }) }) as any;
 
+const FARM_TASK_URL = 'http://localhost/api/t/acme/farm-tasks';
+const FARM_TASK_BODY = { title: 'Disc the north block', farmTaskType: 'TILLAGE' };
+const farmTaskArgs = { params: Promise.resolve({ tenantSlug: 'acme' }) } as any;
+
 beforeEach(() => {
     jest.clearAllMocks();
     journalStore.length = 0;
@@ -216,7 +226,12 @@ beforeEach(() => {
     mockDb.task.findFirst.mockImplementation(async (args: any) => {
         const key = args?.where?.clientMutationId;
         if (!key) return null;
-        return taskStore.find((t) => t.clientMutationId === key) ?? null;
+        const type = args?.where?.type;
+        return (
+            taskStore.find(
+                (t) => t.clientMutationId === key && (type ? t.type === type : true),
+            ) ?? null
+        );
     });
 });
 
@@ -303,5 +318,64 @@ describe('POST /locations/:id/operations — a replayed spray does not duplicate
         expect(first.status).toBe(201);
         expect(second.status).toBe(201);
         expect(createTask).toHaveBeenCalledTimes(2);
+    });
+});
+
+describe('POST /farm-tasks — a replayed outbox task does not duplicate', () => {
+    // Added 2026-09-11. The operator watched a journal entry queue on the phone
+    // and a task creation fail, seconds apart, on the same lack of signal. The
+    // task could not be queued because the outbox was ALREADY sending an
+    // Idempotency-Key that this route ignored — so queueing first would have
+    // minted a duplicate task on every replay, in a БАБХ work record.
+
+    it('two POSTs with the same Idempotency-Key create ONE task', async () => {
+        const first = await farmTasksRoute.POST(post(FARM_TASK_URL, FARM_TASK_BODY, OUTBOX_ID), farmTaskArgs);
+        const second = await farmTasksRoute.POST(post(FARM_TASK_URL, FARM_TASK_BODY, OUTBOX_ID), farmTaskArgs);
+
+        // Both must genuinely succeed, or "one row" could be satisfied by a
+        // second request that failed for an unrelated reason.
+        expect(first.status).toBe(201);
+        expect(second.status).toBe(201);
+
+        expect(createTask).toHaveBeenCalledTimes(1);
+        expect(taskStore).toHaveLength(1);
+        expect((await second.json()).id).toBe((await first.json()).id);
+    });
+
+    it('stamps the key so the NEXT replay can find it', async () => {
+        await farmTasksRoute.POST(post(FARM_TASK_URL, FARM_TASK_BODY, OUTBOX_ID), farmTaskArgs);
+        expect(createTask).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.objectContaining({ clientMutationId: OUTBOX_ID, type: 'FARM_TASK' }),
+        );
+    });
+
+    it('two POSTs with NO key create two tasks — dedup is not accidental', async () => {
+        const first = await farmTasksRoute.POST(post(FARM_TASK_URL, FARM_TASK_BODY), farmTaskArgs);
+        const second = await farmTasksRoute.POST(post(FARM_TASK_URL, FARM_TASK_BODY), farmTaskArgs);
+
+        expect(first.status).toBe(201);
+        expect(second.status).toBe(201);
+        expect(createTask).toHaveBeenCalledTimes(2);
+    });
+
+    it('distinct keys create distinct tasks', async () => {
+        await farmTasksRoute.POST(post(FARM_TASK_URL, FARM_TASK_BODY, 'outbox-1'), farmTaskArgs);
+        await farmTasksRoute.POST(post(FARM_TASK_URL, FARM_TASK_BODY, 'outbox-2'), farmTaskArgs);
+        expect(createTask).toHaveBeenCalledTimes(2);
+    });
+
+    it('does NOT adopt a FIELD_OPERATION minted from the same outbox id', async () => {
+        // clientMutationId is unique per TENANT, not per type. A spray job and
+        // a farm task could in principle carry the same key, and an unscoped
+        // read would hand the caller the wrong row — a task that silently
+        // "already exists" as somebody else's spray record.
+        taskStore.push({ id: 'task-spray', key: 'TSK-SPRAY', clientMutationId: OUTBOX_ID, type: 'FIELD_OPERATION' });
+
+        const res = await farmTasksRoute.POST(post(FARM_TASK_URL, FARM_TASK_BODY, OUTBOX_ID), farmTaskArgs);
+
+        expect(res.status).toBe(201);
+        expect(createTask).toHaveBeenCalledTimes(1);
+        expect((await res.json()).id).not.toBe('task-spray');
     });
 });
