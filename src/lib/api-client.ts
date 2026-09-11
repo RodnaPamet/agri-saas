@@ -54,6 +54,36 @@ export const API_OFFLINE_CODE = 'OFFLINE';
 export const API_TIMEOUT_CODE = 'TIMEOUT';
 
 /**
+ * Did this failure never reach the server?
+ *
+ * Deliberately NOT `err instanceof ApiClientError && err.code === OFFLINE`.
+ * That check has two blind spots, and both produce the same symptom — the
+ * operator is shown the English default instead of translated copy:
+ *
+ *   1. `instanceof` compares CLASS IDENTITY. If the bundler emits this module
+ *      into two chunks, the error thrown by one copy is not an instance of the
+ *      other copy's class, and the branch silently takes the wrong arm.
+ *   2. A caller using a bare `fetch()` never gets a typed error at all — it
+ *      gets the platform TypeError, whose message on WebKit is "Load failed".
+ *      Those call sites still deserve the right message.
+ *
+ * So: match on the SHAPE and on the known platform messages, not on the class.
+ */
+export function isOfflineError(err: unknown): boolean {
+    if (err instanceof ApiClientError) return err.code === API_OFFLINE_CODE;
+    if (typeof err !== 'object' || err === null) return false;
+    const e = err as { code?: unknown; name?: unknown; message?: unknown };
+    if (e.code === API_OFFLINE_CODE) return true;
+    // WebKit: "Load failed". Chromium: "Failed to fetch". Firefox:
+    // "NetworkError when attempting to fetch resource."
+    return (
+        e.name === 'TypeError' &&
+        typeof e.message === 'string' &&
+        /load failed|failed to fetch|networkerror/i.test(e.message)
+    );
+}
+
+/**
  * `fetch` with its REJECTION typed.
  *
  * A non-2xx already became an ApiClientError; a rejected fetch did not — it

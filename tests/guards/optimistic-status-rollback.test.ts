@@ -82,7 +82,12 @@ describe('a failed status change must not leave the optimistic value on screen',
         const body = commitStatusBody();
         expect(body).toContain('apiPost(');
         expect(body).not.toMatch(/await fetch\(/);
-        expect(body).toContain('API_OFFLINE_CODE');
+        // isOfflineError, NOT `instanceof ApiClientError && code === ...`.
+        // instanceof compares class identity, so a module duplicated across
+        // bundle chunks makes the branch silently take the wrong arm and the
+        // operator reads the English default instead of translated copy.
+        expect(body).toContain('isOfflineError(');
+        expect(body).not.toContain('instanceof ApiClientError');
     });
 });
 

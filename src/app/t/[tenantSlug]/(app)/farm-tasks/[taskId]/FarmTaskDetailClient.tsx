@@ -6,7 +6,7 @@ import { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { textLinkVariants } from '@/components/ui/typography';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
-import { apiPost, ApiClientError, API_OFFLINE_CODE } from '@/lib/api-client';
+import { apiPost, isOfflineError } from '@/lib/api-client';
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
 import { Button } from '@/components/ui/button';
 import { DataTable, createColumns } from '@/components/ui/table';
@@ -167,8 +167,14 @@ export function FarmTaskDetailClient({
     const taskQuery = useTenantSWR<any>(taskId ? `/tasks/${taskId}` : null);
     const task = taskQuery.data ?? null;
     const loading = taskQuery.isLoading;
+    // A task the operator opened online is in DATA_CACHE and loads fine. One
+    // they never opened is genuinely absent, and must say THAT rather than
+    // hand them the transport's own words — which was api-client's English
+    // default, and before #888 was WebKit's "Load failed".
     const error = taskQuery.error
-        ? (taskQuery.error instanceof Error ? taskQuery.error.message : t('notFound'))
+        ? (isOfflineError(taskQuery.error)
+              ? t('loadOffline')
+              : taskQuery.error instanceof Error ? taskQuery.error.message : t('notFound'))
         : '';
 
     const linksQuery = useTenantSWR<any[]>(taskId && tab === 'links' ? `/tasks/${taskId}/links` : null);
@@ -224,7 +230,7 @@ export function FarmTaskDetailClient({
             setReviewComment('');
             await taskQuery.mutate();
         } catch (e) {
-            setStatusError(e instanceof Error ? e.message : 'Review failed');
+            setStatusError(isOfflineError(e) ? t('offlineGeneric') : e instanceof Error ? e.message : 'Review failed');
         } finally {
             setReviewing(false);
         }
@@ -256,7 +262,7 @@ export function FarmTaskDetailClient({
                 (cur: any) => (cur ? { ...cur, status: previousStatus } : cur),
                 { revalidate: false },
             );
-            const offline = e instanceof ApiClientError && e.code === API_OFFLINE_CODE;
+            const offline = isOfflineError(e);
             setStatusError(
                 offline ? t('statusOffline') : e instanceof Error ? e.message : t('statusFailed'),
             );
@@ -293,7 +299,7 @@ export function FarmTaskDetailClient({
                 (cur: any) => (cur ? { ...cur, assigneeUserId: previousAssignee } : cur),
                 { revalidate: false },
             );
-            const offline = e instanceof ApiClientError && e.code === API_OFFLINE_CODE;
+            const offline = isOfflineError(e);
             setAssignError(
                 offline ? t('assignOffline') : e instanceof Error ? e.message : t('assignFailed'),
             );
@@ -364,7 +370,7 @@ export function FarmTaskDetailClient({
                 resetEvidenceForm();
                 await Promise.all([evidenceQuery.mutate(), taskQuery.mutate()]);
             } catch (err: unknown) {
-                setEvidenceError(err instanceof Error ? err.message : 'Upload failed');
+                setEvidenceError(isOfflineError(err) ? t('offlineGeneric') : err instanceof Error ? err.message : 'Upload failed');
             } finally {
                 setSavingEvidence(false);
             }
@@ -387,7 +393,7 @@ export function FarmTaskDetailClient({
             resetEvidenceForm();
             await Promise.all([evidenceQuery.mutate(), taskQuery.mutate()]);
         } catch (err: unknown) {
-            setEvidenceError(err instanceof Error ? err.message : 'Failed to link evidence');
+            setEvidenceError(isOfflineError(err) ? t('offlineGeneric') : err instanceof Error ? err.message : 'Failed to link evidence');
         } finally {
             setSavingEvidence(false);
         }
@@ -452,7 +458,7 @@ export function FarmTaskDetailClient({
             setShowEditModal(false);
             await taskQuery.mutate();
         } catch (err) {
-            setEditError(err instanceof Error ? err.message : 'Failed to save task');
+            setEditError(isOfflineError(err) ? t('offlineGeneric') : err instanceof Error ? err.message : 'Failed to save task');
         } finally {
             setSavingEdit(false);
         }

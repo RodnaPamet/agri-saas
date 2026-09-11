@@ -16,7 +16,7 @@ import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetState
 import dynamic from 'next/dynamic';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
-import { apiPatch, ApiClientError, API_OFFLINE_CODE } from '@/lib/api-client';
+import { apiPatch, isOfflineError } from '@/lib/api-client';
 import { useOfflineSync, type OfflineSync } from '@/lib/offline/use-offline-sync';
 import { Button } from '@/components/ui/button';
 import { Plus, Trash } from '@/components/ui/icons/nucleo';
@@ -423,8 +423,7 @@ export function JournalEntryModal({ open, setOpen, tenantSlug, initial, onSaved,
             // decision recorded in the route itself). Failing honestly is the
             // correct behaviour here — but it has to SAY so, and say that the
             // operator's typing is still on screen.
-            const offline =
-                err instanceof ApiClientError && err.code === API_OFFLINE_CODE;
+            const offline = isOfflineError(err);
             setError(
                 offline
                     ? t('saveOffline')
