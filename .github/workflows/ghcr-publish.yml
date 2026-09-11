@@ -99,6 +99,14 @@ concurrency:
     # have a published image? — because a queue makes starvation rare, not
     # impossible, and a cancelled run is still indistinguishable from a run
     # that never pushed.
+    # WHY NOT a per-commit group (`ghcr-publish-${{ github.sha }}`), which also
+    # stops a merge killing a running build: this workflow writes the MUTABLE
+    # `:latest` tag, and the VM's Watchtower polls it. Per-commit keying allows
+    # two builds to run concurrently with NO ordering guarantee, so a slow build
+    # for an OLDER commit can finish last and win the tag — rolling production
+    # backwards onto stale code. One group per ref serialises the writes, which
+    # is the property that actually matters here; queueing rather than
+    # cancelling is what keeps the builds alive inside it.
     cancel-in-progress: false
 
 permissions:
