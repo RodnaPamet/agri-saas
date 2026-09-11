@@ -74,11 +74,26 @@ only to show none of these options is dramatically slower to build.
 
 | option | base | PG | PostGIS | pgvector | image size | vs today | build |
 |---|---|---|---|---|---|---|---|
-| **today** | `postgis/postgis:16-3.4` (bullseye, glibc 2.31) | 16.4 | 3.4.3 | 0.8.6 | 794,460,274 B (757.7 MiB) | — | 63 s |
-| **A** | `postgres:16-trixie` (glibc 2.41) + PGDG | 16.15 | 3.6.4 | 0.8.6 | 681,994,851 B (650.4 MiB) | **−107.3 MiB (−14.2 %)** | 48 s |
-| **B** | `postgres:16-bookworm` (glibc 2.36) + PGDG | 16.15 | 3.6.4 | 0.8.6 | 648,266,142 B (618.2 MiB) | −139.4 MiB (−18.4 %) | 39 s |
-| **C** | `postgis/postgis:16-3.5-alpine` (musl) + pgvector from source | 16.15 | 3.5.x | 0.8.6 | 524,948,320 B (500.6 MiB) | −257.0 MiB (−33.9 %) | 39 s |
-| **D** | stay on `16-3.4` + the flag | 16.4 | 3.4.3 | 0.8.6 | 794,460,274 B | 0 | 63 s |
+| **today** | `postgis/postgis:16-3.4` (bullseye, glibc 2.31) | 16.4 | 3.4.3 | 0.8.6 | 794,460,274 B (757.7 MiB) | — | see §note |
+| **A** | `postgres:16-trixie` (glibc 2.41) + PGDG | 16.15 | 3.6.4 | 0.8.6 | 681,994,851 B (650.4 MiB) | **−107.3 MiB (−14.2 %)** | see §note |
+| **B** | `postgres:16-bookworm` (glibc 2.36) + PGDG | 16.15 | 3.6.4 | 0.8.6 | 648,266,142 B (618.2 MiB) | −139.4 MiB (−18.4 %) | see §note |
+| **C** | `postgis/postgis:16-3.5-alpine` (musl) + pgvector from source | 16.15 | 3.5.x | 0.8.6 | 524,948,320 B (500.6 MiB) | −257.0 MiB (−33.9 %) | see §note |
+| **D** | stay on `16-3.4` + the flag | 16.4 | 3.4.3 | 0.8.6 | 794,460,274 B | 0 | see §note |
+
+> **Build seconds are NOT reported, deliberately.** Two independent runs of the
+> same builds, on the same machine hours apart, disagreed and INVERTED the
+> ordering: 63/48/39 s in the first, 56/67/89 s in the second. The machine was
+> carrying three to four parallel agents running jest and tsc, with load
+> averages between 29 and 53, so neither run measures the image — both measure
+> contention. A number that reverses its own ranking between runs is not
+> evidence, and quoting either would have made a contested figure look settled.
+>
+> **Image SIZE is reliable** and reproduced to within 0.006% across both runs,
+> so the −107.3 MiB (−14.2 %) figure for option A stands. Size is a property of
+> the image; build time on a loaded shared box is a property of the box.
+>
+> If build time matters to the decision, it needs re-measuring on an idle
+> machine — or better, on CI, which is where it is actually paid.
 
 ### Does PostGIS 3.4/3.5 exist in PGDG for these suites?
 
@@ -181,7 +196,7 @@ is 32 MiB smaller and an older glibc.
 | target | result |
 |---|---|
 | **option A** (`postgres:16-trixie` + PostGIS 3.6.4 + pgvector 0.8.6) | **exit 0 — "All migrations have been successfully applied", 241 rows in `_prisma_migrations`**, extensions `postgis 3.6.4`, `vector 0.8.6` |
-| control — bare `postgres:16-trixie`, no extensions | **exit 1** at `20260309115528_audit_workflow_extensions`: `ERROR: extension "postgis" is not available` |
+| control — bare `postgres:16-trixie`, no extensions | **exit 1** at `20260613090735_ag_feature1_spray_map`: `ERROR: extension "postgis" is not available` |
 | control — `postgis/postgis:16-3.4`, pgvector NOT installed | **exit 1** at `20260619100000_ai_rag_pgvector`: `ERROR: extension "vector" is not available` |
 
 The two controls are the point. A green migrate run against a database is
@@ -492,7 +507,7 @@ currently say the image is a `postgis/postgis` one.
 plus the `:12-24` comment block explaining the flag, which becomes false.
 
 **5. `infra/scripts/restore-test-gcp.sh:431-434`** — the same edit inside the
-heredoc, plus the `:410-419` comment.
+heredoc, plus the `:410-424` comment.
 
 **6. Two local tags** — `docker-compose.yml:14` and
 `docker-compose.test.yml:21`, each with the comment above it:
@@ -558,9 +573,9 @@ deployment either (`deploy/docker-compose.vm.yml` declares one `db` service).
 ### Not in scope of the diffs above
 
 `deploy/docker-compose.vm.yml:17` tags the built image `agrent-db:local`,
-which encodes no version and needs no change. `deploy/startup.sh:9,:18`
+which encodes no version and needs no change. `deploy/startup.sh:16`
 derive their apt line from `${VERSION_CODENAME}` and follow the host.
-`restore-test-gcp.sh:285` runs on an Ubuntu 24.04 VM. All three are
+`restore-test-gcp.sh:309-310` runs on an Ubuntu 24.04 VM. All three are
 unaffected, as #832's own comments already established.
 
 ---
@@ -587,6 +602,35 @@ Stated plainly, rather than estimated:
   no arm64 build or test run was performed (this machine is amd64).
 
 ## 11. Incidental findings
+
+### The owner file promises a guard that does not exist
+
+`.github/postgis-image:22-26` states, in the present tense:
+
+> `tests/guards/postgis-image-single-source.test.ts` fails CI the instant any of
+> them disagrees with the line below — that is what makes nine literals safe.
+> The count above is NOT just prose: that guard asserts the tracked tree holds
+> exactly nine live references, and that this paragraph says nine.
+
+**That file does not exist on `main`.** It was split out to #860 when the fix
+landed without it (#861), because the guard had failed review three times for
+being green against the very break it existed to prevent. The owner file was not
+updated to match.
+
+So every consumer site currently cites an owner file that cites a guard that is
+not there, and the comments at those sites correctly say agreement is maintained
+by hand — while the owner file says the opposite, more loudly and in the present
+tense.
+
+This matters for the base-image decision specifically: **option A is eleven
+hand-edits with nothing checking they agree.** The doc's §8 recommendation
+should be read with that in mind, and #860 is arguably a prerequisite rather
+than a parallel task.
+
+It is also this document's own defect class, which is why it belongs here rather
+than in a footnote: a claim that reads as a safety property, stated confidently,
+with nothing behind it. Found by an adversary reading the file rather than the
+claim.
 
 - `docs/dev-setup-macos.md` currently contains a **duplicated section 5**
   heading and two near-identical copies of the "flag is a labelled stopgap"
