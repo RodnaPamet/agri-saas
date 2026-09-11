@@ -6,6 +6,7 @@ import { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { textLinkVariants } from '@/components/ui/typography';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { apiPost, ApiClientError, API_OFFLINE_CODE } from '@/lib/api-client';
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
 import { Button } from '@/components/ui/button';
 import { DataTable, createColumns } from '@/components/ui/table';
@@ -124,6 +125,7 @@ export function FarmTaskDetailClient({
     const [pendingTerminalStatus, setPendingTerminalStatus] = useState<string | null>(null);
     const [resolutionDraft, setResolutionDraft] = useState('');
     const [statusError, setStatusError] = useState('');
+    const [assignError, setAssignError] = useState('');
     const [assigning, setAssigning] = useState(false);
     const [assigneeDraft, setAssigneeDraft] = useState<string | null | undefined>(undefined);
 
@@ -231,37 +233,73 @@ export function FarmTaskDetailClient({
     const commitStatus = async (status: string, resolution: string | null) => {
         setChangingStatus(true);
         setStatusError('');
+        // Captured BEFORE the optimistic write, so a failure can put it back.
+        // Without this the badge kept the optimistic value on a failed save:
+        // an operator with no signal tapped "Mark done", typed the resolution
+        // note БАБХ requires, and was shown RESOLVED for a record that never
+        // left the phone. The revalidate below cannot repair it either —
+        // offline that fetch fails too, so SWR keeps the optimistic value.
+        // A compliance status is the last thing that should be optimistic
+        // about whether it reached the server. Measured on an iPhone
+        // 2026-09-11.
+        const previousStatus: unknown = taskQuery.data?.status;
+        let committed = false;
         try {
             await taskQuery.mutate((cur: any) => (cur ? { ...cur, status } : cur), { revalidate: false });
-            const res = await fetch(apiUrl(`/tasks/${taskId}/status`), {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(resolution ? { status, resolution } : { status }),
-            });
-            if (!res.ok) {
-                const data = await res.json().catch(() => ({}));
-                throw new Error((typeof data?.error === 'string' && data.error) || data?.message || 'Failed to change status');
-            }
+            await apiPost(apiUrl(`/tasks/${taskId}/status`), resolution ? { status, resolution } : { status });
+            committed = true;
             setPendingTerminalStatus(null);
         } catch (e) {
-            setStatusError(e instanceof Error ? e.message : 'Failed to change status');
+            // Put the badge back before saying anything, so the message and
+            // the screen agree.
+            await taskQuery.mutate(
+                (cur: any) => (cur ? { ...cur, status: previousStatus } : cur),
+                { revalidate: false },
+            );
+            const offline = e instanceof ApiClientError && e.code === API_OFFLINE_CODE;
+            setStatusError(
+                offline ? t('statusOffline') : e instanceof Error ? e.message : t('statusFailed'),
+            );
         } finally {
             setChangingStatus(false);
-            await taskQuery.mutate();
+            // Only on success. Offline this rejects, and the caller at the
+            // quick-action button invokes commitStatus with `void`, so a
+            // rejection thrown from `finally` was an unhandled rejection that
+            // also discarded the catch block's work.
+            if (committed) await taskQuery.mutate();
         }
     };
 
     const handleAssign = async () => {
         setAssigning(true);
+        setAssignError('');
         const assigneeUserId = assigneeValue || null;
+        // This had NO catch at all, and never checked res.ok. The optimistic
+        // write landed, the request failed, and the revalidate in `finally`
+        // failed too (offline) or returned the unchanged row (a 500) — so SWR
+        // kept the optimistic value and the task showed as REASSIGNED to
+        // somebody who was never told. Silent, in both the offline and the
+        // server-error case, and wired bare to onClick so the rejection was
+        // unhandled. A screen that asserts something false is worse than one
+        // that admits it failed.
+        const previousAssignee: unknown = taskQuery.data?.assigneeUserId;
+        let committed = false;
         try {
             await taskQuery.mutate((cur: any) => (cur ? { ...cur, assigneeUserId } : cur), { revalidate: false });
-            await fetch(apiUrl(`/tasks/${taskId}/assign`), {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ assigneeUserId }),
-            });
+            await apiPost(apiUrl(`/tasks/${taskId}/assign`), { assigneeUserId });
+            committed = true;
+        } catch (e) {
+            await taskQuery.mutate(
+                (cur: any) => (cur ? { ...cur, assigneeUserId: previousAssignee } : cur),
+                { revalidate: false },
+            );
+            const offline = e instanceof ApiClientError && e.code === API_OFFLINE_CODE;
+            setAssignError(
+                offline ? t('assignOffline') : e instanceof Error ? e.message : t('assignFailed'),
+            );
         } finally {
             setAssigning(false);
-            await taskQuery.mutate();
+            if (committed) await taskQuery.mutate();
         }
     };
 
@@ -565,6 +603,11 @@ export function FarmTaskDetailClient({
             {/* Assignment practices */}
             {permissions.canWrite && (
                 <div className={cardVariants({ density: 'compact' })}>
+                    {assignError && (
+                        <p role="alert" className="mb-compact text-sm text-content-error">
+                            {assignError}
+                        </p>
+                    )}
                     <div className="flex items-center gap-compact flex-wrap">
                         <span className="text-sm text-content-muted">{t('assigneeLabel')}</span>
                         <span className="text-sm text-content-emphasis font-medium" id="task-assignee">
