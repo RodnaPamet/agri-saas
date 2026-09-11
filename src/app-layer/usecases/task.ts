@@ -271,6 +271,36 @@ export async function bulkDeleteTask(
 
 // ─── Status ───
 
+/**
+ * Serialise concurrent drains of a queued status change for ONE task.
+ *
+ * `POST /tasks/:id/status` is queued by the offline outbox — an operator marks
+ * a job done in a field — and on reconnect the SAME queued item is drained by
+ * BOTH the in-page sender AND the service worker's background sync. journal.ts
+ * documents that race and solves it exactly this way.
+ *
+ * Without serialisation both drains read the PRE-state under READ COMMITTED,
+ * both pass the no-op transition gate, both write, and both `logEvent`: TWO
+ * TASK_STATUS_CHANGED rows in a hash-chained compliance audit trail for ONE
+ * operator action. The task row is not duplicated; the HISTORY is, which is
+ * worse, because the history is what an auditor reads.
+ *
+ * With the lock the loser waits, re-reads the POST-state, and
+ * `checkWorkItemTransition(RESOLVED, RESOLVED)` classifies it as a no_op → 400
+ * → the outbox drops it. Exactly once, using the gate that was already there.
+ * Transaction-scoped: released automatically on commit or rollback.
+ *
+ * Lives HERE rather than inline because tests/guardrails/audit-s8 slices a
+ * fixed 2500-character window from `setTaskStatus` and requires the transition
+ * gate inside it. That window is a proxy for "the gate fires before the write",
+ * and it measures comment volume rather than ordering — so the explanation
+ * sits outside the window and the call site stays one line. Worth fixing the
+ * guard to assert the ORDER directly; not in this PR.
+ */
+async function lockTaskStatusRow(db: PrismaTx, ctx: RequestContext, taskId: string) {
+    await db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`${ctx.tenantId}:task-status:${taskId}`}))`;
+}
+
 export async function setTaskStatus(ctx: RequestContext, taskId: string, status: string, resolution?: string | null) {
     // `resolution` is an ENCRYPTED_FIELDS column. Sanitise BEFORE the
     // terminal-status emptiness gate below, so a resolution consisting only
@@ -280,24 +310,7 @@ export async function setTaskStatus(ctx: RequestContext, taskId: string, status:
         resolution = sanitizePlainText(resolution);
     }
     const result = await runInTenantContext(ctx, async (db) => {
-        // Exactly-once backstop for the CONCURRENT-FLUSH race. This endpoint is
-        // queued by the offline outbox (MyWorkClient marks a job done in a
-        // field), and on reconnect the SAME queued item is drained by BOTH the
-        // in-page sender AND the service worker's background sync — the repo
-        // documents that in journal.ts, which solves it the same way.
-        //
-        // Without serialisation both drains read the PRE-state under READ
-        // COMMITTED, both pass the no-op gate below, both write, and both
-        // logEvent — TWO TASK_STATUS_CHANGED rows in a hash-chained compliance
-        // audit trail for one operator action. The row itself is not
-        // duplicated; the audit history is, which is worse, because that is
-        // what an auditor reads.
-        //
-        // With the lock the loser waits, re-reads the POST-state, and
-        // `checkWorkItemTransition(RESOLVED, RESOLVED)` classifies it as a
-        // no_op -> 400 -> the outbox drops it. Exactly once, using the gate
-        // that was already there. Released automatically on commit/rollback.
-        await db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`${ctx.tenantId}:task-status:${taskId}`}))`;
+        await lockTaskStatusRow(db, ctx, taskId);
 
         // Pre-fetch once so we can both validate + capture fromStatus
         // for the automation event.
