@@ -139,7 +139,6 @@ export function LocationsClient({ tenantSlug }: { tenantSlug: string }) {
                     error={loadError}
                     isLoading={isLoading}
                     onRetry={() => void mutate()}
-                    className="rounded-lg border border-border-default bg-bg-default"
                     skeleton={(
                         <DataTable
                             fillBody
