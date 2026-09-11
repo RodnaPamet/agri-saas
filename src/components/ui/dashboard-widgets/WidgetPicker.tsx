@@ -426,7 +426,7 @@ export function WidgetPicker({
                                     if (Number.isFinite(next)) setDays(next);
                                 }}
                                 data-testid="widget-picker-trend-days"
-                                className="block w-full rounded-md border border-border-default bg-bg-default px-3 py-2 text-sm text-content-emphasis focus:outline-none focus:ring-2 focus:ring-ring"
+                                className="block w-full rounded-md border border-border-default bg-bg-default px-3 py-2 text-base md:text-sm text-content-emphasis focus:outline-none focus:ring-2 focus:ring-ring"
                             />
                         </FormField>
                     )}
@@ -500,7 +500,7 @@ export function WidgetPicker({
                             maxLength={120}
                             placeholder={typeLabels[meta.type]}
                             data-testid="widget-picker-title"
-                            className="block w-full rounded-md border border-border-default bg-bg-default px-3 py-2 text-sm text-content-emphasis placeholder:text-content-subtle focus:outline-none focus:ring-2 focus:ring-ring"
+                            className="block w-full rounded-md border border-border-default bg-bg-default px-3 py-2 text-base md:text-sm text-content-emphasis placeholder:text-content-subtle focus:outline-none focus:ring-2 focus:ring-ring"
                         />
                     </FormField>
 

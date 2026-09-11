@@ -399,7 +399,7 @@ function LoginForm() {
                                             inputMode="email"
                                             enterKeyHint="send"
                                             aria-label={t('resendEmailAria')}
-                                            className="input flex-1 text-xs"
+                                            className="input flex-1 text-base md:text-xs"
                                             placeholder={t('resendEmailPlaceholder')}
                                             value={resendEmail}
                                             onChange={(e) => setResendEmail(e.target.value)}

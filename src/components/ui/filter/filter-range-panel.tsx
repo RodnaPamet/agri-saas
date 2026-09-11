@@ -170,7 +170,7 @@ function RangeEndPractice({
         aria-label={bound === "min" ? t("minimumValue") : t("maximumValue")}
         placeholder={unboundedLabel}
         id={`filter-range-input-${bound}`}
-        className="min-w-0 flex-1 border-0 bg-transparent px-3 py-1 text-sm text-content-emphasis outline-none placeholder:text-content-subtle focus:ring-0"
+        className="min-w-0 flex-1 border-0 bg-transparent px-3 py-1 text-base md:text-sm text-content-emphasis outline-none placeholder:text-content-subtle focus:ring-0"
         value={draft}
         onChange={(e) => {
           setDraft(sanitizeNumericDraft(e.target.value, displayScale));

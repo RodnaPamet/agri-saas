@@ -247,7 +247,7 @@ export function SpatialImportModal({ locationId, open, setOpen, cadastreEnabled,
                                     rows={6}
                                     spellCheck={false}
                                     placeholder={'68134.8360.729\n02676.15.42'}
-                                    className="block w-full rounded-lg border border-border-subtle bg-bg-default px-3 py-2 font-mono text-sm text-content-default"
+                                    className="block w-full rounded-lg border border-border-subtle bg-bg-default px-3 py-2 font-mono text-base md:text-sm text-content-default"
                                 />
                                 {parsedIds.invalid.length > 0 && (
                                     <p className="mt-2 text-xs text-content-error">

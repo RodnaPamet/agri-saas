@@ -237,7 +237,7 @@ export function CanvasDocumentBar({
                             12,
                         )}ch`,
                     }}
-                    className="max-w-[28ch] rounded-[6px] border border-transparent bg-transparent px-2 py-1 text-xs font-medium text-content-emphasis hover:border-canvas-border focus:border-border-emphasis focus:bg-canvas-surface focus:outline-none"
+                    className="max-w-[28ch] rounded-[6px] border border-transparent bg-transparent px-2 py-1 text-base md:text-xs font-medium text-content-emphasis hover:border-canvas-border focus:border-border-emphasis focus:bg-canvas-surface focus:outline-none"
                 />
             )}
             <Button

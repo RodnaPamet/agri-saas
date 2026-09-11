@@ -278,7 +278,7 @@ export function ProcessInspector({
                             e.currentTarget.blur();
                         }
                     }}
-                    className="rounded-[6px] border border-canvas-border bg-canvas-surface px-2 py-1 text-xs text-content-emphasis focus:border-border-emphasis focus:outline-none"
+                    className="rounded-[6px] border border-canvas-border bg-canvas-surface px-2 py-1 text-base md:text-xs text-content-emphasis focus:border-border-emphasis focus:outline-none"
                     data-testid="inspector-label-input"
                 />
             </label>
@@ -297,7 +297,7 @@ export function ProcessInspector({
                         }
                     }}
                     placeholder={t("processInspector.optional")}
-                    className="rounded-[6px] border border-canvas-border bg-canvas-surface px-2 py-1 text-xs text-content-emphasis focus:border-border-emphasis focus:outline-none"
+                    className="rounded-[6px] border border-canvas-border bg-canvas-surface px-2 py-1 text-base md:text-xs text-content-emphasis focus:border-border-emphasis focus:outline-none"
                     data-testid="inspector-subtitle-input"
                 />
             </label>
@@ -557,7 +557,7 @@ function EdgeInspectorBody({
                         }
                     }}
                     placeholder={t("processInspector.optional")}
-                    className="rounded-[6px] border border-canvas-border bg-canvas-surface px-2 py-1 text-xs text-content-emphasis focus:border-border-emphasis focus:outline-none"
+                    className="rounded-[6px] border border-canvas-border bg-canvas-surface px-2 py-1 text-base md:text-xs text-content-emphasis focus:border-border-emphasis focus:outline-none"
                     data-testid="inspector-edge-label-input"
                 />
             </label>

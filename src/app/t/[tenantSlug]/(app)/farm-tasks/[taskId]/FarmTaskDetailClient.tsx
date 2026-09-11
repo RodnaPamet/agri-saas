@@ -653,7 +653,7 @@ export function FarmTaskDetailClient({
                                             value={reviewComment}
                                             onChange={(e) => setReviewComment(e.target.value)}
                                             rows={2}
-                                            className="block w-full rounded-md border border-border-subtle bg-bg-default px-3 py-1.5 text-sm"
+                                            className="block w-full rounded-md border border-border-subtle bg-bg-default px-3 py-1.5 text-base md:text-sm"
                                             placeholder={t('review.commentPlaceholder')}
                                         />
                                     </FormField>

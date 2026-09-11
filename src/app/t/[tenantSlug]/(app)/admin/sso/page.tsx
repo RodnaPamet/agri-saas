@@ -428,7 +428,7 @@ export default function SsoAdminPage() {
                                 onChange={(e) => setSamlCertificate(e.target.value)}
                                 placeholder={t('certificatePlaceholder')}
                                 rows={3}
-                                className="input w-full font-mono text-xs"
+                                className="input w-full font-mono text-base md:text-xs"
                             />
                         </div>
                         <div>
@@ -445,7 +445,7 @@ export default function SsoAdminPage() {
                                 value={samlNameIdFormat}
                                 onChange={(e) => setSamlNameIdFormat(e.target.value)}
                                 placeholder={t('nameIdFormatPlaceholder')}
-                                className="input w-full text-xs"
+                                className="input w-full text-base md:text-xs"
                             />
                         </div>
                         <div>
@@ -455,7 +455,7 @@ export default function SsoAdminPage() {
                                 value={typeof window !== 'undefined'
                                     ? `${window.location.origin}/api/auth/sso/saml/callback`
                                     : '/api/auth/sso/saml/callback'}
-                                className="input w-full text-xs text-content-subtle cursor-not-allowed"
+                                className="input w-full text-base md:text-xs text-content-subtle cursor-not-allowed"
                             />
                         </div>
                     </div>

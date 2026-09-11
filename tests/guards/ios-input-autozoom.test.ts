@@ -77,6 +77,26 @@ function stripComments(src: string): string {
  *   · any `const NAME = "…"` whose NAME is referenced inside one of those,
  *     because the shared rung is declared outside the cva that uses it.
  */
+/**
+ * Index of the `>` that closes a JSX tag. A plain indexOf('>') stops at
+ * the arrow in `onChange={(e) => …}` and truncates the tag before any
+ * className written after it — the region then looks clean because the
+ * offending class was never in it.
+ */
+export function tagEnd(code: string, start: number): number {
+    let depth = 0;
+    let quote = '';
+    for (let i = start; i < code.length; i++) {
+        const c = code[i];
+        if (quote) { if (c === quote) quote = ''; continue; }
+        if (c === '"' || c === "'" || c === '`') { quote = c; continue; }
+        if (c === '{') depth++;
+        else if (c === '}') depth--;
+        else if (c === '>' && depth === 0) return i;
+    }
+    return code.length - 1;
+}
+
 export function controlRegions(src: string): string[] {
     const code = stripComments(src);
     const regions: string[] = [];
@@ -94,8 +114,7 @@ export function controlRegions(src: string): string[] {
 
     for (const m of code.matchAll(/<(input|textarea)\b/g)) {
         const start = m.index!;
-        const end = code.indexOf('>', start);
-        regions.push(code.slice(start, end === -1 ? code.length : end + 1));
+        regions.push(code.slice(start, tagEnd(code, start) + 1));
     }
 
     // Pull in constants the regions reference by name.
@@ -190,5 +209,166 @@ describe('text controls do not trigger iOS focus-zoom', () => {
             found: true,
             value: 5,
         });
+    });
+});
+
+/* ─────────────────────────────────────────────────────────────────────
+ * #910 fixed this defect in its Tailwind spelling. It has a SECOND
+ * spelling that the original guard structurally could not see: a CSS
+ * class. `.input { @apply … text-sm … }` in globals.css put 14px on the
+ * login and MFA fields — the first two screens a phone user meets — and
+ * on 29 editable elements besides. The guard was green throughout,
+ * because it scanned three .tsx files for Tailwind utilities and the
+ * offender was neither.
+ *
+ * So the scan is widened on both axes: every .tsx file (not three), and
+ * the stylesheet behind whatever class those files put on an editable
+ * element. The class list is DERIVED from the JSX, never enumerated —
+ * an enumerated list silently stops covering the thing it was written
+ * for the moment someone adds a class to it.
+ * ───────────────────────────────────────────────────────────────────── */
+
+/**
+ * Tree-wide scan, tag-only. `unsafeSizes` also reads every cva() call,
+ * which is correct inside a text control's own module and wrong
+ * everywhere else — pointed at all 837 .tsx files it flags badge,
+ * label, status-badge and typography, none of which can be focused.
+ */
+/**
+ * Input types that open NO keyboard, so Safari never focus-zooms them:
+ * a file picker, a checkbox, a colour well, a slider. `type="file"` is
+ * not hypothetical — the cost-entry invoice picker carries `text-xs`
+ * legitimately, and the first version of this scan demanded it be
+ * "fixed" to 16px, which would have changed a visual for no reason.
+ */
+const NON_TEXT_INPUT =
+    /type\s*=\s*["']?(file|checkbox|radio|submit|button|reset|image|hidden|range|color)["']?/;
+
+export function unsafeSizesOnTags(src: string): string[] {
+    const bad: string[] = [];
+    for (const region of controlRegions(src)) {
+        if (!/^<(input|textarea)\b/.test(region.trim())) continue;
+        if (NON_TEXT_INPUT.test(region)) continue;
+        for (const m of region.matchAll(/(?:^|[\s"'`])((?:[a-z]+:)*)(text-(?:xs|sm|base|\[\d*\.?\d+rem\]))/g)) {
+            const [, prefix, token] = m;
+            if (prefix) continue;
+            const rem = remOf(token);
+            if (rem !== null && rem < 1) bad.push(token);
+        }
+    }
+    return [...new Set(bad)];
+}
+
+const GLOBALS = 'src/app/globals.css';
+
+/** Every .tsx in src/, so a raw <input> cannot hide outside a curated list. */
+export function allTsx(root: string): string[] {
+    const out: string[] = [];
+    const walk = (dir: string) => {
+        for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+            const full = path.join(dir, e.name);
+            if (e.isDirectory()) walk(full);
+            else if (e.name.endsWith('.tsx')) out.push(full);
+        }
+    };
+    walk(path.join(root, 'src'));
+    return out;
+}
+
+/** Bare class tokens that some .tsx puts on an <input>/<textarea>. */
+export function classesOnEditables(src: string): string[] {
+    const found: string[] = [];
+    for (const region of controlRegions(src)) {
+        if (!/^<(input|textarea)\b/.test(region.trim())) continue;
+        for (const m of region.matchAll(/className\s*=\s*"([^"]*)"/g)) {
+            for (const tok of m[1].split(/\s+/)) {
+                if (/^[a-zA-Z][\w-]*$/.test(tok)) found.push(tok);
+            }
+        }
+    }
+    return [...new Set(found)];
+}
+
+/** The declaration body of `.cls { … }`, or null when no such rule exists. */
+export function cssRuleBody(css: string, cls: string): string | null {
+    // `m` flag, anchored per line: the rule may follow a COMMENT rather
+    // than a closing brace, which a `(?:^|\\})` anchor silently misses —
+    // `.input` does exactly that, and the control above caught it.
+    const m = new RegExp(`^\\s*\\.${cls}\\s*\\{([^}]*)\\}`, 'm').exec(css);
+    return m ? m[1] : null;
+}
+
+/** Unprefixed sub-16px sizes inside an @apply body. Same rule as the JSX side. */
+export function unsafeInApply(body: string): string[] {
+    const bad: string[] = [];
+    for (const m of body.matchAll(/(?:^|[\s"'`])((?:[a-z]+:)*)(text-(?:xs|sm|base|\[\d*\.?\d+rem\]))/g)) {
+        const [, prefix, token] = m;
+        if (prefix) continue;
+        const rem = remOf(token);
+        if (rem !== null && rem < 1) bad.push(token);
+    }
+    return [...new Set(bad)];
+}
+
+describe('the CSS-class spelling of the same defect', () => {
+    it('the derivation resolves — a control on the assertion below', () => {
+        // If this ever reads 0, the assertion beneath it is vacuous and
+        // an empty selection would be reported as a clean PASS.
+        const css = fs.readFileSync(path.join(ROOT, GLOBALS), 'utf-8');
+        const classes = new Set<string>();
+        for (const f of allTsx(ROOT)) {
+            for (const c of classesOnEditables(fs.readFileSync(f, 'utf-8'))) classes.add(c);
+        }
+        const styled = [...classes].filter((c) => cssRuleBody(css, c) !== null);
+        expect({
+            tsxScanned: allTsx(ROOT).length > 100,
+            classFound: styled.includes('input'),
+        }).toEqual({ tsxScanned: true, classFound: true });
+    });
+
+    it('...and it fires on a CORRUPTED REAL globals.css, not only a fixture', () => {
+        const real = fs.readFileSync(path.join(ROOT, GLOBALS), 'utf-8');
+        const corrupted = real.replace(
+            'px-3 py-2 text-base md:text-sm transition-all',
+            'px-3 py-2 text-sm transition-all',
+        );
+        expect(corrupted).not.toEqual(real); // the anchor still exists
+        expect(unsafeInApply(cssRuleBody(corrupted, 'input')!)).toEqual(['text-sm']);
+    });
+
+    it('the tag scan spans the WHOLE tag, where indexOf would stop at an arrow', () => {
+        // Without this, reverting `tagEnd` to `code.indexOf('>')` passes every
+        // other assertion in this file — the scan just silently stops seeing
+        // any className written after an event handler. Reverting it hid SEVEN
+        // real offenders (CanvasDocumentBar, ProcessInspector x3, WidgetPicker
+        // x2, SpatialImportModal) and nothing went red. This is the assertion
+        // that makes that revert cost something.
+        const tag = '<input onChange={(e) => setX(e)} className="text-xs" />';
+        expect(tag.indexOf('>')).toBeLessThan(tag.length - 2); // indexOf IS fooled
+        expect(tagEnd(tag, 0)).toBe(tag.length - 1);           // tagEnd is not
+        expect(unsafeSizesOnTags(tag)).toEqual(['text-xs']);   // ...so the class is seen
+    });
+
+    it('no CSS class used on an editable element sets a phone font-size below 16px', () => {
+        const css = fs.readFileSync(path.join(ROOT, GLOBALS), 'utf-8');
+        const offenders: string[] = [];
+        for (const f of allTsx(ROOT)) {
+            for (const cls of classesOnEditables(fs.readFileSync(f, 'utf-8'))) {
+                const body = cssRuleBody(css, cls);
+                if (!body) continue;
+                const bad = unsafeInApply(body);
+                if (bad.length) offenders.push(`.${cls} { ${bad.join(' ')} }`);
+            }
+        }
+        expect([...new Set(offenders)]).toEqual([]);
+    });
+
+    it('no raw <input>/<textarea> anywhere in src/ sets one either', () => {
+        const offenders: string[] = [];
+        for (const f of allTsx(ROOT)) {
+            const bad = unsafeSizesOnTags(fs.readFileSync(f, 'utf-8'));
+            if (bad.length) offenders.push(`${path.relative(ROOT, f)}: ${bad.join(' ')}`);
+        }
+        expect(offenders).toEqual([]);
     });
 });
