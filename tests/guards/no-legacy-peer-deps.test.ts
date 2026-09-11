@@ -46,6 +46,21 @@ function installPathFiles(): string[] {
 }
 
 describe('no --legacy-peer-deps in install paths', () => {
+    it('the install surface actually resolves (guard is not vacuous)', () => {
+        // installPathFiles() IS the selector. `return []` makes every
+        // assertion below filter an empty list and pass — measured: all
+        // three tests green with no Dockerfile and no workflow read.
+        //
+        // deterministic-install.test.ts already carries exactly this control
+        // for the same helper; this file simply lacked it. Named files, not
+        // just a count, so a selector that finds *something* else does not
+        // satisfy it.
+        const files = installPathFiles();
+        expect(files).toContain('Dockerfile');
+        expect(files.filter((f) => f.startsWith('.github/workflows/')).length)
+            .toBeGreaterThan(3);
+    });
+
     it('Dockerfiles and CI workflows never pass --legacy-peer-deps', () => {
         const offenders = installPathFiles().filter((rel) =>
             read(rel).includes('legacy-peer-deps'),

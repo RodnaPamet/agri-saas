@@ -88,6 +88,33 @@ function rangeMajor(range: string): number {
     return Number(m[1]);
 }
 
+/**
+ * The file filter, and the population every per-package scan filters. Shared
+ * with the control below deliberately: when the walk had its own inline
+ * `/\.tsx?$/`, replacing it with a never-matching regex left all ten tests
+ * green — the walk still recursed `src/`, it just classified nothing, and an
+ * empty selection is a PASS.
+ *
+ * `withFileTypes` rather than a `statSync` probe followed by a read: the entry
+ * type comes from the SAME directory read, so there is no check-then-use
+ * window. CodeQL flags the probe form as `js/file-system-race` (high), and it
+ * is right to — the file it stat'd need not be the file it then reads.
+ */
+const SOURCE_FILE = /\.tsx?$/;
+
+function sourceFiles(): string[] {
+    const out: string[] = [];
+    const walk = (dir: string) => {
+        for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+            const full = path.join(dir, e.name);
+            if (e.isDirectory()) walk(full);
+            else if (SOURCE_FILE.test(e.name)) out.push(full);
+        }
+    };
+    walk(path.join(ROOT, 'src'));
+    return out;
+}
+
 describe('dependency risk review — reviewed packages stay classified', () => {
     for (const [name, { major }] of Object.entries(REVIEWED)) {
         it(`${name} stays a runtime dependency`, () => {
@@ -128,20 +155,21 @@ describe('dependency risk review — reviewed packages stay classified', () => {
             // it stat'd need not be the file it then reads. Harmless in a
             // test walking our own `src/`, but the race-free spelling is
             // also the simpler one, so there is nothing to trade off.
-            const hits: string[] = [];
-            const walk = (dir: string) => {
-                for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-                    const full = path.join(dir, e.name);
-                    if (e.isDirectory()) walk(full);
-                    else if (/\.tsx?$/.test(e.name) && fs.readFileSync(full, 'utf8').includes(`'${name}'`)) {
-                        hits.push(full.replace(ROOT + '/', ''));
-                    }
-                }
-            };
-            walk(path.join(ROOT, 'src'));
+            const hits = sourceFiles()
+                .filter((full) => fs.readFileSync(full, 'utf8').includes(`'${name}'`))
+                .map((full) => full.replace(ROOT + '/', ''));
             expect({ productionImporters: hits }).toEqual({ productionImporters: [] });
         });
     }
+
+    it('the source walk actually reaches production files', () => {
+        // Without this, killing SOURCE_FILE leaves every `has no production
+        // importer` assertion filtering an empty list, and all of them pass.
+        // Measured before the fix: 10 passed, 10 total, selector dead.
+        const files = sourceFiles();
+        expect(files.length).toBeGreaterThan(300);
+        expect(files.some((f) => f.endsWith('.tsx'))).toBe(true);
+    });
 
     it('the review doc exists alongside this guard', () => {
         expect(
