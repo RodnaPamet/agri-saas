@@ -12,13 +12,23 @@
  *                                 classified, on their reviewed major.
  *   5. Auth-stack pin           — `next-auth` stays on v4 stable
  *                                 (the NextAuth-v5 policy).
+ *   6. Policy-doc claims        — `docs/dependency-policy.md` agrees
+ *                                 with package.json overrides, the
+ *                                 lockfile, and the advisories it cites
+ *                                 (#864).
  *
- * Each of those five shipped its own guardrail. THIS test guards the
+ * Each of those six shipped its own guardrail. THIS test guards the
  * guards: it fails CI if any one of them is deleted or gutted to a
  * no-op, and it asserts the governance docs survive with their
  * load-bearing policy statements intact. A contributor who removes a
  * dependency guardrail must reckon with a red meta-ratchet — the gap
  * cannot silently reopen.
+ *
+ * NOTE the limit of the doc assertions BELOW: `expect(exists(file))` and
+ * the `toMatch(/…/)` phrase checks are PRESENCE tests. They catch a
+ * deleted or hollowed-out document and nothing else — a row that keeps
+ * its phrases and inverts its meaning passes every one of them, which is
+ * exactly what #864 measured. Guardrail 6 is the check with teeth.
  *
  * Sibling of `ci-pipeline-integrity.test.ts`,
  * `observability-reliability-integrity.test.ts`, and
@@ -69,6 +79,13 @@ const GUARDRAILS: ReadonlyArray<{
         pillar: 'auth-stack pin — next-auth stays on v4 stable',
         anchors: ['next-auth', 'beta'],
     },
+    {
+        file: 'tests/guards/dependency-policy-claims.test.ts',
+        pillar:
+            'policy-doc claims — the install-time policy document agrees with package.json ' +
+            'overrides, the lockfile, and the advisories it cites',
+        anchors: ['overrides', 'package-lock.json', 'Scope'],
+    },
 ];
 
 /** Docs that make the dependency-governance model explicit. */
@@ -101,9 +118,9 @@ describe('dependency-governance integrity — guard the guards', () => {
         });
     });
 
-    it('the registry is complete (5 dependency guardrails, distinct)', () => {
-        expect(GUARDRAILS).toHaveLength(5);
-        expect(new Set(GUARDRAILS.map((g) => g.file)).size).toBe(5);
+    it('the registry is complete (6 dependency guardrails, distinct)', () => {
+        expect(GUARDRAILS).toHaveLength(6);
+        expect(new Set(GUARDRAILS.map((g) => g.file)).size).toBe(6);
     });
 
     it.each(GOVERNANCE_DOCS)('$role — $file exists', ({ file }) => {

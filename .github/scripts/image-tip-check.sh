@@ -4,11 +4,12 @@
 #
 # ── Why this asks about STATE, not about an event (#805, #826) ──
 #
-# `Publish image to GHCR` sets `cancel-in-progress: true`, which is
-# correct: on a burst of merges only the tip's image matters, and the
-# earlier runs SHOULD die. But GitHub reports a superseded run and a run
-# killed by its own `timeout-minutes` with the same word — `cancelled` —
-# and on 2026-09-08 run 34208631386 was the second kind.
+# `Publish image to GHCR` QUEUES rather than cancels since #877 — it
+# carries `cancel-in-progress: false`, so a burst supersedes runs that are
+# still PENDING while the executing one finishes. Cancellations therefore
+# still happen, and GitHub reports a superseded run and a run killed by its
+# own `timeout-minutes` with the same word — `cancelled` — and on
+# 2026-09-08 run 34208631386 was the second kind.
 #
 # That run had, in fact, pushed successfully 13 minutes before it was
 # killed. Two readers looked at the same run list and reached opposite

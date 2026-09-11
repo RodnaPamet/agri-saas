@@ -46,14 +46,22 @@ class VaryCache {
         return this.entries.map((e) => ({ url: e.url, headers: { get: (k: string) => e.vary[k] ?? null } }));
     }
 
+    /** The real Cache API accepts a URL string as well as a Request. */
+    private norm(req: unknown) {
+        return typeof req === 'string'
+            ? { url: req, headers: { get: () => null } }
+            : (req as { url: string; headers: { get(k: string): string | null } });
+    }
+
     private varyAgrees(entry: Entry, req: { headers: { get(k: string): string | null } }) {
         return NEXT_VARY.every((h) => (entry.vary[h] ?? null) === req.headers.get(h));
     }
 
     async match(
-        req: { url: string; headers: { get(k: string): string | null } },
+        reqIn: unknown,
         opts?: { ignoreSearch?: boolean; ignoreVary?: boolean },
     ) {
+        const req = this.norm(reqIn);
         // ONE insertion-order pass, first match wins. `ignoreSearch` does NOT
         // make the real Cache API fall back to preferring an exact URL — a
         // fake that does is more forgiving than the thing it stands in for,
@@ -78,7 +86,8 @@ class VaryCache {
         return this.entries.filter((e) => same(e) && ok(e)).map((e) => ({ _served: e.url, _body: e.body }));
     }
 
-    async put(req: { url: string; headers: { get(k: string): string | null } }, res: { _body?: string }) {
+    async put(reqIn: unknown, res: { _body?: string }) {
+        const req = this.norm(reqIn);
         const vary: Headers = {};
         for (const h of NEXT_VARY) vary[h] = req.headers.get(h);
         this.entries = this.entries.filter((e) => !(e.url === req.url && this.varyAgrees(e, req)));
@@ -139,15 +148,28 @@ function loadWorker(opts: WorkerOpts) {
         },
         keys: async () => opts.cacheNames ?? [],
         delete: async (name: string) => { deleted.push(name); return true; },
-        // The navigate branch tries the global match before any fallback.
-        match: async () => undefined,
+        // The REAL caches.match searches EVERY open cache. A stub returning
+        // undefined makes "not cached anywhere" and "my fake cannot look"
+        // the same observation — which read a working warmup as broken.
+        match: async (req: unknown, opts?: { ignoreSearch?: boolean; ignoreVary?: boolean }) => {
+            for (const b of Object.values(buckets)) {
+                const hit = await b.match(req, opts);
+                if (hit) return hit;
+            }
+            return undefined;
+        },
     };
-    const fetchImpl = async () => {
+    const calls: string[] = [];
+    const fetchImpl = async (u: unknown) => {
+        const url = typeof u === 'string' ? u : (u as { url: string }).url;
+        calls.push(url);
         if (!opts.online) throw new Error('offline');
+        // The document request carries no `_rsc`; the flight request does.
+        const body = url.includes('_rsc') ? 'flight' : 'DOCUMENT';
         return {
             ok: true, status: 200, statusText: 'OK', redirected: false,
             headers: { get: () => '512' },
-            clone: () => ({ _body: 'flight', body: 'flight', redirected: false }),
+            clone: () => ({ _body: body, body, redirected: false }),
         };
     };
     const factory = new Function(
@@ -156,7 +178,7 @@ function loadWorker(opts: WorkerOpts) {
     );
     factory(self, { open: () => ({}), databases: async () => [] }, caches, fetchImpl,
         FakeResponse, URL, self.clients, { ...console, warn: () => {} });
-    return { listeners, buckets, deleted };
+    return { listeners, buckets, deleted, calls };
 }
 
 type Worker = ReturnType<typeof loadWorker>;
@@ -414,5 +436,55 @@ describe('the MapLibre worker is cached, so the map can boot offline', () => {
         await dispatch(w, asset('https://app.test/api/t/acme/farm-tasks'));
         const cached = (w.buckets['agrent-v1-static']?.entries ?? []).map((e) => e.url);
         expect(cached).toHaveLength(0);
+    });
+});
+
+describe('a route visited online becomes openable offline', () => {
+    // The structural gap this closes: PAGE_CACHE is written in ONE place, the
+    // navigate branch, and a navigate request only happens on a FULL PAGE LOAD.
+    // App Router users move with <Link> and router.push, which issue no
+    // document request at all — so PAGE_CACHE stayed nearly empty no matter how
+    // much of the app they used (measured on an iPhone: ONE entry).
+    //
+    // That left every route one RSC miss away from a dead end, because a missed
+    // flight fetch makes Next fall back to a full document load and offline
+    // that document was never there. Reported 2026-09-11 for
+    // /t/<slug>/farm-tasks — a page the operator had been looking at minutes
+    // before.
+    const LIST = 'https://app.test/t/acme/farm-tasks';
+
+    it('warms the DOCUMENT into PAGE_CACHE when the flight payload is cached', async () => {
+        const w = loadWorker({ online: true });
+        await dispatch(w, flight(`${LIST}?_rsc=abc`));
+        const warmed = (w.buckets['agrent-v1-pages']?.entries ?? []).map((e) => e.url);
+        expect(warmed).toContain(LIST);
+    });
+
+    it('and that route then opens offline', async () => {
+        const w = loadWorker({
+            online: false,
+            pageSeed: [{ url: LIST, vary: {}, body: 'DOCUMENT' }],
+        });
+        const res = await dispatch(w, navigation(LIST));
+        expect((res as { _body?: string })?._body).toBe('DOCUMENT');
+    });
+
+    it('does not refetch a document it already has', async () => {
+        // At most ONE extra request per route per cache generation. Without
+        // this the warmup would double every navigation forever.
+        const w = loadWorker({
+            online: true,
+            pageSeed: [{ url: LIST, vary: {}, body: 'DOCUMENT' }],
+        });
+        await dispatch(w, flight(`${LIST}?_rsc=abc`));
+        expect(w.calls.filter((u) => !u.includes('_rsc'))).toHaveLength(0);
+    });
+
+    it('does not warm on a PREFETCH — only on a real visit', async () => {
+        // A prefetch means a link became visible, not that the operator went
+        // there. Warming on prefetch would fetch a document for every row.
+        const w = loadWorker({ online: true });
+        await dispatch(w, flight(`${LIST}?_rsc=abc`, { 'Next-Router-Prefetch': '1' }));
+        expect(w.calls.filter((u) => !u.includes('_rsc'))).toHaveLength(0);
     });
 });

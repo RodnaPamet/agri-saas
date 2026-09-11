@@ -8,11 +8,14 @@
 # The question this answers is NOT "is the triggering publish the tip's?" but
 # "is there a reason to believe the tip is about to be answered for?".
 #
-# BACKGROUND (#877). ghcr-publish runs under
+# BACKGROUND (#877). ghcr-publish USED TO run under
 #   concurrency: ghcr-publish-${{ github.ref }}   with cancel-in-progress
-# so a merge cancels the build in flight. A publish takes 15-21 minutes. When
-# merges arrive faster than that, EVERY build is cancelled before it finishes
-# and the tip is never built.
+# so a merge cancelled the build in flight. A publish takes 13-23 minutes.
+# When merges arrived faster than that, EVERY build was cancelled before it
+# finished and the tip was never built. That half is fixed — the workflow now
+# carries `cancel-in-progress: false` and queues — but this gate stays, and
+# so does the reasoning below: a superseded PENDING run still reports
+# `cancelled`, and a queue makes starvation rare rather than impossible.
 #
 # The old gate skipped whenever the triggering sha was not the tip, saying
 # "that commit's own publish will trigger this check". Under starvation that
@@ -34,15 +37,17 @@ set -euo pipefail
 
 REPO="${REPO:?REPO is required}"
 TARGET="${TARGET:?TARGET is required (the publishable tip sha)}"
-TRIGGERING_SHA="${TRIGGERING_SHA:?TRIGGERING_SHA is required}"
+# Empty on `schedule` / `workflow_dispatch`: there is no triggering run to
+# compare against, only the question "is anything going to answer for the tip?".
+TRIGGERING_SHA="${TRIGGERING_SHA:-}"
 GH="${GH:-gh}"
 PUBLISH_WORKFLOW="${PUBLISH_WORKFLOW:-Publish image to GHCR}"
 OUT="${GITHUB_OUTPUT:-/dev/null}"
 
 echo "publishable tip : ${TARGET}"
-echo "triggering run  : ${TRIGGERING_SHA}"
+echo "triggering run  : ${TRIGGERING_SHA:-<none: scheduled run>}"
 
-if [ "${TARGET}" = "${TRIGGERING_SHA}" ]; then
+if [ -n "${TRIGGERING_SHA}" ] && [ "${TARGET}" = "${TRIGGERING_SHA}" ]; then
     echo "this IS the tip's own publish — asking"
     exit 0
 fi
