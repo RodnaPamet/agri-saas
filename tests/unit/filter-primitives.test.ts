@@ -258,7 +258,11 @@ describe('FilterScroll — primitive contract', () => {
     });
 
     it('emits an overflow-y-scroll container sized for a bounded menu', () => {
-        expect(src).toMatch(/max-h-\[50vh\]/);
+        // `svh`, not `vh`. On iOS Safari `vh` is the LARGE viewport, so a
+        // dropdown capped with it overflows the visible area. This assertion
+        // pinned the broken unit — a test can ratchet a bug in as easily as a
+        // fix, and this one held `50vh` in place across every overlay pass.
+        expect(src).toMatch(/max-h-\[50svh\]/);
         expect(src).toMatch(/overflow-y-scroll/);
         expect(src).toMatch(/scrollbar-hide/);
     });

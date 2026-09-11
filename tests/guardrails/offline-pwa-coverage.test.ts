@@ -101,6 +101,14 @@ describe('service worker safety', () => {
         expect(isFieldDataRequest(u('/api/t/acme/locations/loc1'))).toBe(true);
         expect(isFieldDataRequest(u('/api/t/acme/locations/loc1/parcels'))).toBe(true);
         expect(isFieldDataRequest(u('/api/t/acme/farm-tasks'))).toBe(true);
+        // The task DETAIL, not just the list. Caching /farm-tasks does not
+        // cache /tasks/<id>, so an operator could see every task offline and
+        // open none of them — reported from a phone 2026-09-11.
+        expect(isFieldDataRequest(u('/api/t/acme/tasks/t-123'))).toBe(true);
+        // ...but not the collection, the bulk routes, or the tab-gated subpaths.
+        expect(isFieldDataRequest(u('/api/t/acme/tasks'))).toBe(false);
+        expect(isFieldDataRequest(u('/api/t/acme/tasks/bulk/assign'))).toBe(false);
+        expect(isFieldDataRequest(u('/api/t/acme/tasks/t-123/links'))).toBe(false);
         // Invariant — arbitrary /api is NEVER cached.
         expect(isFieldDataRequest(u('/api/t/acme/admin/members'))).toBe(false);
         expect(isFieldDataRequest(u('/api/t/acme/risks'))).toBe(false);
