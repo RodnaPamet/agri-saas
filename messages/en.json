@@ -3197,7 +3197,8 @@
             "saveTask": "Save task",
             "deleteTask": "Delete task",
             "deleted": "Task deleted"
-        }
+        },
+        "createOffline": "No signal, and the task could not be saved on this phone either. Nothing was stored; your text is still here."
     },
     "issues": {
         "redirecting": "Redirecting to Tasks…",

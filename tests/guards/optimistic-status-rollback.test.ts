@@ -122,3 +122,25 @@ describe('a failed ASSIGN must not leave the task showing a new assignee', () =>
         expect(body).toMatch(/if \(committed\)\s*await taskQuery\.mutate\(\)/);
     });
 });
+
+describe('a create that cannot queue must say so, not show transport vocabulary', () => {
+    // The operator watched a journal entry queue on the phone and a task
+    // creation fail, seconds apart. The task failure said "No connection —
+    // this did not reach the server", which is api-client's English default:
+    // true, useless, and silent about the fact that NOTHING WAS SAVED while
+    // the journal entry WAS. Task creation cannot queue yet because the
+    // /farm-tasks POST route ignores the Idempotency-Key the outbox sends —
+    // see the issue. Until then the copy has to carry that difference.
+    const LIST = fs.readFileSync(
+        path.join(ROOT, 'src/app/t/[tenantSlug]/(app)/farm-tasks/FarmTasksClient.tsx'),
+        'utf8',
+    );
+
+    it('maps an offline create failure to translated copy', () => {
+        const start = LIST.indexOf('const submit = async ()');
+        expect(start).toBeGreaterThan(-1); // positive control
+        const body = LIST.slice(start, LIST.indexOf('\n    };', start));
+        expect(body).toContain('isOfflineError(');
+        expect(body).toContain("t('createOffline')");
+    });
+});

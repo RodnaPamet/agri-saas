@@ -31,13 +31,9 @@ import { env } from '@/env';
 import { traceAgUsecase, logger } from '@/lib/observability';
 import { enqueue } from '../jobs/queue';
 import { trace } from '@opentelemetry/api';
-import { Prisma } from '@prisma/client';
 import { reconcileMimeType } from '@/lib/storage/mime-sniff';
+import { isUniqueViolation } from '@/lib/errors/prisma';
 
-/** Prisma's unique-constraint violation — the idempotency-race backstop. */
-function isUniqueViolation(err: unknown): boolean {
-    return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
-}
 
 /**
  * Field-journal usecases — the durable record of work done (or planned)

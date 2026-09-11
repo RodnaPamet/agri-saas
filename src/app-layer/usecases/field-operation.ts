@@ -1,3 +1,4 @@
+import { isUniqueViolation } from '@/lib/errors/prisma';
 import { RequestContext } from '../types';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
@@ -13,13 +14,8 @@ import { logger } from '@/lib/observability/logger';
 import { trace } from '@opentelemetry/api';
 import { emitAutomationEvent } from '../automation';
 import { enqueue } from '@/app-layer/jobs/queue';
-import { Prisma } from '@prisma/client';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 
-/** Prisma's unique-constraint violation — the idempotency-race backstop. */
-function isUniqueViolation(err: unknown): boolean {
-    return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
-}
 
 type OperationType = 'SPRAY' | 'FERTILIZE' | 'SEED' | 'OTHER';
 type ParcelStatus = 'PENDING' | 'DONE' | 'SKIPPED';

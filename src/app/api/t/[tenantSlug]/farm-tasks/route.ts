@@ -66,7 +66,14 @@ export const POST = withApiErrorHandling(
         async (req, { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> }, body) => {
             const params = await paramsPromise;
             const ctx = await getTenantCtx(params, req);
-            const task = await createFarmTask(ctx, body);
+            // Offline exactly-once — the outbox replays a queued task with its
+            // item id as the Idempotency-Key, and createFarmTask dedupes on it,
+            // so a re-send over flaky rural LTE returns the ORIGINAL task
+            // rather than minting a second one. Until this line existed the
+            // client could not safely queue a task at all: the outbox was
+            // already sending the header and nothing was reading it.
+            const idempotencyKey = req.headers.get('Idempotency-Key') || undefined;
+            const task = await createFarmTask(ctx, body, idempotencyKey);
             return jsonResponse(task, { status: 201 });
         },
     ),

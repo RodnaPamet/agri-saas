@@ -30,7 +30,9 @@ import { useThresholdLoadMore, PullToRefresh } from '@/components/ui/hooks';
 import { ScrollToTop } from '@/components/ui/scroll-to-top';
 import { TableLoadMoreFooter } from '@/components/ui/table-load-more-footer';
 import { useTenantApiUrl, useTenantContext } from '@/lib/tenant-context-provider';
-import { apiPost } from '@/lib/api-client';
+import { apiPost, isOfflineError } from '@/lib/api-client';
+import { useOfflineSync } from '@/lib/offline/use-offline-sync';
+import { OfflineSyncBar } from '@/components/offline/OfflineSyncBar';
 import { Button } from '@/components/ui/button';
 import { Plus, CircleCheck } from '@/components/ui/icons/nucleo';
 import { Fab } from '@/components/ui/fab';
@@ -124,6 +126,7 @@ function FarmTasksInner({ tenantSlug, currentUserId }: { tenantSlug: string; cur
     const router = useRouter();
     const { permissions } = useTenantContext();
     const canWrite = !!permissions.canWrite;
+    const { online, pending, queueGrowing, foreign, durability, submit: enqueueSubmit, flush } = useOfflineSync();
     const t = useTranslations('farmTasks');
     const te = useTranslations('taskEnums');
     const statusLabel = (s: string) => (te.has(`status.${s}`) ? te(`status.${s}`) : s);
@@ -238,20 +241,46 @@ function FarmTasksInner({ tenantSlug, currentUserId }: { tenantSlug: string; cur
         setSubmitting(true);
         setError(null);
         try {
-            await apiPost(buildUrl('/farm-tasks'), {
-                title: title.trim(),
-                farmTaskType,
-                priority,
-                dueAt: dueAt ? dueAt.toISOString() : null,
-                assigneeUserId: assigneeUserId || null,
-                locationIds,
-                equipmentIds,
+            // Through the OUTBOX, as journal creation already was. Online it
+            // POSTs immediately; offline it queues and the worker replays on
+            // reconnect, carrying its outbox id as the Idempotency-Key so the
+            // server returns the original task instead of minting a second.
+            //
+            // This was only safe once the route READ that header — it was
+            // being sent and ignored, so queueing first would have duplicated
+            // every replayed task in a БАБХ work record.
+            const result = await enqueueSubmit({
+                url: buildUrl('/farm-tasks'),
+                method: 'POST',
+                body: {
+                    title: title.trim(),
+                    farmTaskType,
+                    priority,
+                    dueAt: dueAt ? dueAt.toISOString() : null,
+                    assigneeUserId: assigneeUserId || null,
+                    locationIds,
+                    equipmentIds,
+                },
+                label: title.trim() || t('create'),
             });
             setIsCreateOpen(false);
             resetForm();
-            await mutate();
+            // Offline there is nothing new to fetch — the row arrives on the
+            // refetch after the replay. Revalidating here would only fail.
+            if (result === 'sent') await mutate();
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to create task');
+            // Task creation does NOT queue: the outbox sends an
+            // Idempotency-Key but the /farm-tasks POST route does not read one,
+            // so a replay would mint a duplicate. Task.clientMutationId and its
+            // unique index already exist (work.prisma) — the wiring is missing,
+            // not the schema. Until that lands, say plainly that nothing was
+            // saved, and say why it differs from the journal entry the operator
+            // just watched queue successfully. Reported 2026-09-11.
+            setError(
+                isOfflineError(err)
+                    ? t('createOffline')
+                    : err instanceof Error ? err.message : 'Failed to create task',
+            );
         } finally {
             setSubmitting(false);
         }
@@ -549,6 +578,21 @@ function FarmTasksInner({ tenantSlug, currentUserId }: { tenantSlug: string; cur
                 className: 'hover:bg-bg-muted',
             }}
         >
+            {/* A task created with no signal is now QUEUED, not lost — but the
+                list cannot show it until the replay lands, so without this strip
+                the modal would simply close and the operator would see nothing.
+                A silent success is the failure mode this whole surface has been
+                fixing all along. Mirrors JournalClient. */}
+            {(!online || pending > 0) && (
+                <OfflineSyncBar
+                    online={online}
+                    pending={pending}
+                    queueGrowing={queueGrowing} foreign={foreign}
+                    storagePersisted={durability?.persisted ?? null}
+                    onSyncNow={() => void flush()}
+                    className="fixed inset-x-0 bottom-0 z-40 md:left-auto md:right-4 md:bottom-4 md:max-w-sm"
+                />
+            )}
             <PullToRefresh onRefresh={() => mutate()} />
             <ScrollToTop />
             {bulkDelete.dialog}
