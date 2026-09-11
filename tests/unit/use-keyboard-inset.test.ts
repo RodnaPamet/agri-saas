@@ -60,6 +60,79 @@ describe('useKeyboardInset', () => {
         expect(result.current.height).toBe(460);
     });
 
+    // ── Re-render discipline ────────────────────────────────────────────
+    //
+    // This hook listens on `focusin`/`focusout` at the WINDOW, so every Tab
+    // keypress fires two updates. `setState` with a freshly-built object
+    // re-renders even when both fields are unchanged, because React's bail-out
+    // is reference equality — so each Tab re-rendered every consumer (Modal,
+    // Popover: the open dialog), and Radix's focus trap restores focus on
+    // re-render, firing `focusin` again.
+    //
+    // Reported from production as "tab on writing the name of the task and the
+    // whole page gets broken". None of the tests above caught it: they all
+    // assert VALUES, and the values were correct throughout. The defect was in
+    // how often they were delivered.
+
+    it('does not re-render when a focus event leaves the measurements unchanged', () => {
+        Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 });
+        const vv = installVisualViewport(800);
+        let renders = 0;
+        renderHook(() => {
+            renders += 1;
+            return useKeyboardInset();
+        });
+        act(() => {});
+
+        // Ten focus changes that move nothing: exactly what tabbing between
+        // fields in a dialog produces.
+        act(() => {
+            for (let i = 0; i < 10; i += 1) {
+                window.dispatchEvent(new FocusEvent('focusout'));
+                window.dispatchEvent(new FocusEvent('focusin'));
+            }
+        });
+        const afterFirstBatch = renders;
+
+        // ...and ten more. THE PROPERTY IS THAT THE COUNT DOES NOT GROW WITH
+        // THE EVENT COUNT — that is what prevents the loop. It is not zero:
+        // React renders a component once before it can determine the bail-out
+        // ("React may still need to render that specific component before
+        // bailing out"), then stops. Measured: 1 for the first no-op update
+        // and 0 for every one after, against ONE PER EVENT before the fix.
+        act(() => {
+            for (let i = 0; i < 10; i += 1) {
+                window.dispatchEvent(new FocusEvent('focusout'));
+                window.dispatchEvent(new FocusEvent('focusin'));
+            }
+        });
+        expect({ growth: renders - afterFirstBatch }).toEqual({ growth: 0 });
+    });
+
+    it('...but still re-renders when a focus event DOES change them', () => {
+        // The discriminating control. Without it, a hook that never updated at
+        // all would satisfy the assertion above.
+        Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 });
+        const vv = installVisualViewport(800);
+        let renders = 0;
+        const { result } = renderHook(() => {
+            renders += 1;
+            return useKeyboardInset();
+        });
+        const afterMount = renders;
+        const input = document.createElement('input');
+        document.body.appendChild(input);
+        input.focus();
+        act(() => {
+            vv.height = 460;
+            vv.offsetTop = 260;
+            window.dispatchEvent(new FocusEvent('focusin'));
+        });
+        expect(renders).toBeGreaterThan(afterMount);
+        expect(result.current.inset).toBe(80);
+        input.remove();
+    });
+
     // ── Focus-refined detection (the #890 fix) ──────────────────────────
     //
     // The bug: on iOS, when Safari scrolls the page to bring a focused input
