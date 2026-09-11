@@ -16,7 +16,7 @@ import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetState
 import dynamic from 'next/dynamic';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
-import { apiPatch } from '@/lib/api-client';
+import { apiPatch, ApiClientError, API_OFFLINE_CODE } from '@/lib/api-client';
 import { useOfflineSync, type OfflineSync } from '@/lib/offline/use-offline-sync';
 import { Button } from '@/components/ui/button';
 import { Plus, Trash } from '@/components/ui/icons/nucleo';
@@ -411,7 +411,27 @@ export function JournalEntryModal({ open, setOpen, tenantSlug, initial, onSaved,
                 });
             }
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to save entry');
+            // A network failure now arrives typed (api-client.ts fetchOrThrow)
+            // instead of as the platform's own TypeError, whose message on
+            // WebKit is the string "Load failed" — two words about LOADING,
+            // shown to an operator who pressed SAVE. Measured on an iPhone
+            // 2026-09-11.
+            //
+            // Journal edits deliberately do NOT queue: LogEntry has no version
+            // column and this route reads no If-Match, so a replayed PATCH
+            // would clobber an intervening edit with no conflict flow (see the
+            // decision recorded in the route itself). Failing honestly is the
+            // correct behaviour here — but it has to SAY so, and say that the
+            // operator's typing is still on screen.
+            const offline =
+                err instanceof ApiClientError && err.code === API_OFFLINE_CODE;
+            setError(
+                offline
+                    ? t('saveOffline')
+                    : err instanceof Error
+                      ? err.message
+                      : t('saveFailedFallback'),
+            );
         } finally {
             setSubmitting(false);
         }
