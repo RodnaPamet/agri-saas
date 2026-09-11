@@ -105,6 +105,12 @@ import { logEvent } from '@/app-layer/events/audit';
 import { makeRequestContext } from '../../helpers/make-context';
 
 const mockRunInTx = runInTenantContext as jest.MockedFunction<typeof runInTenantContext>;
+
+// Every tenant transaction now carries `$executeRaw`: setTaskStatus takes a
+// transaction-scoped advisory lock before reading, to serialise the concurrent
+// outbox drains that were writing two TASK_STATUS_CHANGED rows for one
+// operator action. A bare `{}` is a double too SMALL for the code under test.
+const TX = { $executeRaw: async () => 1 };
 const mockGetById = WorkItemRepository.getById as jest.MockedFunction<typeof WorkItemRepository.getById>;
 const mockCreate = WorkItemRepository.create as jest.MockedFunction<typeof WorkItemRepository.create>;
 const mockSetStatus = WorkItemRepository.setStatus as jest.MockedFunction<typeof WorkItemRepository.setStatus>;
@@ -141,7 +147,7 @@ describe('createTask', () => {
     });
 
     it('emits TASK_CREATED audit AND fires emitAutomationEvent', async () => {
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({ ...TX } as never));
 
         await createTask(makeRequestContext('EDITOR'), { title: 'x' });
 
@@ -162,6 +168,7 @@ describe('createTask', () => {
     it('enqueues TASK_ASSIGNED email when an assignee is set on create', async () => {
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn({
+                ...TX,
                 user: {
                     findUnique: jest.fn()
                         .mockResolvedValueOnce({ email: 'a@b.com', name: 'A' }) // assignee
@@ -186,7 +193,7 @@ describe('createTask', () => {
 
 describe('setTaskStatus — fromStatus capture + validateTypeRelevance', () => {
     it('passes fromStatus from the pre-fetch into the automation event payload', async () => {
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({ ...TX } as never));
         mockGetById.mockResolvedValueOnce({
             id: 't1', status: 'OPEN', type: 'TASK', practiceId: null,
         } as never);
@@ -206,7 +213,7 @@ describe('setTaskStatus — fromStatus capture + validateTypeRelevance', () => {
     });
 
     it('throws notFound when the task does not exist', async () => {
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({ ...TX } as never));
         mockGetById.mockResolvedValueOnce(null as never);
 
         await expect(
@@ -223,7 +230,7 @@ describe('setTaskStatus — fromStatus capture + validateTypeRelevance', () => {
     // link left to enforce.
 
     it('allows RESOLVED for INCIDENT when an ASSET link is present', async () => {
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({ ...TX } as never));
         mockGetById.mockResolvedValueOnce({
             id: 't1', status: 'OPEN', type: 'INCIDENT', practiceId: null,
         } as never);
@@ -239,7 +246,7 @@ describe('setTaskStatus — fromStatus capture + validateTypeRelevance', () => {
 
 describe('setTaskStatus — assignee self-serve (operator completion)', () => {
     it('lets the ASSIGNEE change status without general write (MECHANISATOR)', async () => {
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({ ...TX } as never));
         // ctx.userId defaults to 'user-1'; the task is assigned to them.
         mockGetById.mockResolvedValueOnce({
             id: 't1', status: 'OPEN', type: 'FARM_TASK', practiceId: null,
@@ -253,7 +260,7 @@ describe('setTaskStatus — assignee self-serve (operator completion)', () => {
     });
 
     it('blocks a MECHANISATOR who is NOT the assignee', async () => {
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({ ...TX } as never));
         mockGetById.mockResolvedValueOnce({
             id: 't1', status: 'OPEN', type: 'FARM_TASK', practiceId: null,
             assigneeUserId: 'someone-else',
@@ -274,7 +281,7 @@ describe('assignTask', () => {
     });
 
     it('throws notFound when repo returns null (cross-tenant id)', async () => {
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({ ...TX } as never));
         mockAssign.mockResolvedValueOnce(null as never);
 
         await expect(
@@ -291,7 +298,7 @@ describe('addTaskComment — Epic C.5 sanitisation', () => {
     });
 
     it('sanitises body BEFORE the repository write', async () => {
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({ ...TX } as never));
 
         await addTaskComment(
             makeRequestContext('EDITOR'),
@@ -314,7 +321,7 @@ describe('addTaskComment — Epic C.5 sanitisation', () => {
 
 describe('bulkSetTaskStatus', () => {
     it('emits one TASK_STATUS_CHANGED audit per id (not one summary row)', async () => {
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({ ...TX } as never));
         // S8 — bulk path pre-fetches every row's current status so
         // the all-or-nothing transition gate can run before the
         // bulk update. Each id resolves to a legal RESOLVED→CLOSED.
@@ -354,7 +361,7 @@ describe('deleteTask', () => {
     it('deletes the row (children cascade) and emits TASK_DELETED audit', async () => {
         const del = jest.fn().mockResolvedValue({});
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
-            fn({ task: { delete: del } } as never),
+            fn({ ...TX, task: { delete: del } } as never),
         );
         mockGetById.mockResolvedValueOnce({
             id: 't1', title: 'My task', type: 'TASK', status: 'OPEN', practiceId: null,
@@ -373,7 +380,7 @@ describe('deleteTask', () => {
     it('throws notFound and never deletes when the task is missing', async () => {
         const del = jest.fn();
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
-            fn({ task: { delete: del } } as never),
+            fn({ ...TX, task: { delete: del } } as never),
         );
         mockGetById.mockResolvedValueOnce(null as never);
 

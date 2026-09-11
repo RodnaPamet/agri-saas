@@ -49,7 +49,13 @@ jest.mock('@/app-layer/repositories/WorkItemRepository', () => ({
 }));
 
 jest.mock('@/lib/db-context', () => ({
-    runInTenantContext: jest.fn(async (_c: unknown, fn: (db: unknown) => unknown) => fn({})),
+    // `$executeRaw` because setTaskStatus now takes a transaction-scoped
+    // advisory lock before reading, to serialise the concurrent outbox drains
+    // that were writing two TASK_STATUS_CHANGED rows for one operator action.
+    // An empty `{}` is a double too SMALL for the code under test — it throws
+    // before any assertion runs, which is the loud kind of wrong.
+    runInTenantContext: jest.fn(async (_c: unknown, fn: (db: unknown) => unknown) =>
+        fn({ $executeRaw: async () => 1 })),
 }));
 
 jest.mock('@/app-layer/events/audit', () => ({ logEvent: jest.fn(async () => undefined) }));
