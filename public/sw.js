@@ -129,6 +129,58 @@ function isRscPrefetch(request) {
 }
 
 /**
+ * Warm PAGE_CACHE with the DOCUMENT for a route the operator just visited.
+ *
+ * This exists because of a structural gap, not an edge case. PAGE_CACHE is
+ * written in exactly ONE place — the navigate branch — and a navigate request
+ * only happens on a FULL PAGE LOAD. In an App Router app the operator moves
+ * around with <Link> and router.push, which fetch flight payloads and issue no
+ * document request at all. So PAGE_CACHE stayed almost empty no matter how much
+ * of the app they used: measured on an iPhone, ONE entry after repeated
+ * sessions.
+ *
+ * That made every route one RSC miss away from a dead end. A missed flight
+ * fetch makes Next fall back to a full document load (see networkFirstRsc), and
+ * offline that document was never there — so the operator got "Not saved for
+ * offline" for a screen they had been looking at minutes earlier. Reported on
+ * 2026-09-11 for /t/<slug>/farm-tasks, a page visited online in the same
+ * session.
+ *
+ * So: whenever we cache a flight payload, also fetch and cache the document for
+ * the same route. Bounded and cheap — at most ONE extra request per route per
+ * cache generation (the `match` below short-circuits every later visit), online
+ * only, and the existing byte budget evicts LRU.
+ */
+async function warmDocumentFor(request) {
+    try {
+        const url = new URL(request.url);
+        // The flight URL carries a cache-busting `_rsc`; the document does not.
+        url.searchParams.delete('_rsc');
+        const docUrl = url.toString();
+        const cache = await caches.open(PAGE_CACHE);
+        if (await cache.match(docUrl, { ignoreVary: true })) return; // already warm
+        const res = await fetch(docUrl, { credentials: 'same-origin' });
+        if (!res.ok) return;
+        // A response with the redirected flag set is REFUSED by the browser for
+        // a navigation, so it would be dead weight — rebuild it, exactly as the
+        // navigate branch does.
+        const body = res.redirected
+            ? new Response(res.clone().body, {
+                  status: res.status,
+                  statusText: res.statusText,
+                  headers: res.headers,
+              })
+            : res.clone();
+        await cache.put(docUrl, body);
+        await evictCacheOverBudget(cache, PAGE_CACHE_BUDGET_BYTES);
+    } catch (err) {
+        // Best-effort by design: a failed warmup must never affect the
+        // navigation the operator is actually making.
+        console.warn('[sw] document warmup failed', request.url, err);
+    }
+}
+
+/**
  * Network-first, cache-fallback for RSC payloads.
  *
  * Offline this is the difference between a route opening and Next tearing the
@@ -167,6 +219,10 @@ async function networkFirstRsc(request) {
         const res = await fetch(request);
         // Served, never stored: a prefetch payload is partial. See isRscPrefetch.
         if (res.ok && !isRscPrefetch(request)) {
+            // The route is reachable right now, so take the document too —
+            // without it this payload is useless the moment Next falls back to
+            // a full page load. Fire-and-forget.
+            warmDocumentFor(request);
             const copy = res.clone();
             cache
                 .put(request, copy)
