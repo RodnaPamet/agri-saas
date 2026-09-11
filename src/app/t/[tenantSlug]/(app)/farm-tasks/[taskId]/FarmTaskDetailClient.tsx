@@ -6,7 +6,7 @@ import { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { textLinkVariants } from '@/components/ui/typography';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
-import { apiPost, ApiClientError, API_OFFLINE_CODE } from '@/lib/api-client';
+import { apiPost, isOfflineError } from '@/lib/api-client';
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
 import { Button } from '@/components/ui/button';
 import { DataTable, createColumns } from '@/components/ui/table';
@@ -224,7 +224,7 @@ export function FarmTaskDetailClient({
             setReviewComment('');
             await taskQuery.mutate();
         } catch (e) {
-            setStatusError(e instanceof Error ? e.message : 'Review failed');
+            setStatusError(isOfflineError(e) ? t('offlineGeneric') : e instanceof Error ? e.message : 'Review failed');
         } finally {
             setReviewing(false);
         }
@@ -256,7 +256,7 @@ export function FarmTaskDetailClient({
                 (cur: any) => (cur ? { ...cur, status: previousStatus } : cur),
                 { revalidate: false },
             );
-            const offline = e instanceof ApiClientError && e.code === API_OFFLINE_CODE;
+            const offline = isOfflineError(e);
             setStatusError(
                 offline ? t('statusOffline') : e instanceof Error ? e.message : t('statusFailed'),
             );
@@ -293,7 +293,7 @@ export function FarmTaskDetailClient({
                 (cur: any) => (cur ? { ...cur, assigneeUserId: previousAssignee } : cur),
                 { revalidate: false },
             );
-            const offline = e instanceof ApiClientError && e.code === API_OFFLINE_CODE;
+            const offline = isOfflineError(e);
             setAssignError(
                 offline ? t('assignOffline') : e instanceof Error ? e.message : t('assignFailed'),
             );
@@ -364,7 +364,7 @@ export function FarmTaskDetailClient({
                 resetEvidenceForm();
                 await Promise.all([evidenceQuery.mutate(), taskQuery.mutate()]);
             } catch (err: unknown) {
-                setEvidenceError(err instanceof Error ? err.message : 'Upload failed');
+                setEvidenceError(isOfflineError(err) ? t('offlineGeneric') : err instanceof Error ? err.message : 'Upload failed');
             } finally {
                 setSavingEvidence(false);
             }
@@ -387,7 +387,7 @@ export function FarmTaskDetailClient({
             resetEvidenceForm();
             await Promise.all([evidenceQuery.mutate(), taskQuery.mutate()]);
         } catch (err: unknown) {
-            setEvidenceError(err instanceof Error ? err.message : 'Failed to link evidence');
+            setEvidenceError(isOfflineError(err) ? t('offlineGeneric') : err instanceof Error ? err.message : 'Failed to link evidence');
         } finally {
             setSavingEvidence(false);
         }
@@ -452,7 +452,7 @@ export function FarmTaskDetailClient({
             setShowEditModal(false);
             await taskQuery.mutate();
         } catch (err) {
-            setEditError(err instanceof Error ? err.message : 'Failed to save task');
+            setEditError(isOfflineError(err) ? t('offlineGeneric') : err instanceof Error ? err.message : 'Failed to save task');
         } finally {
             setSavingEdit(false);
         }

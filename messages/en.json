@@ -3604,7 +3604,8 @@
             "statusOffline": "No signal — the status was not changed. Nothing was sent; try again when you're back online.",
             "statusFailed": "Could not change the status.",
             "assignOffline": "No signal — the assignee was not changed. Nothing was sent; try again when you're back online.",
-            "assignFailed": "Could not change the assignee."
+            "assignFailed": "Could not change the assignee.",
+            "offlineGeneric": "No signal — the change was not saved. Nothing was sent; try again when you're back online."
         }
     },
     "accessReviews": {
