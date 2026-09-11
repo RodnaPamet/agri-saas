@@ -463,7 +463,7 @@ export function CommandPalette() {
 
                         <Command.List
                             className={cn(
-                                'max-h-[min(60vh,420px)] overflow-y-auto',
+                                'max-h-[min(60svh,420px)] overflow-y-auto',
                                 'p-2',
                             )}
                             data-testid="command-palette-list"

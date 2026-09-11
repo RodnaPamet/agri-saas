@@ -141,7 +141,7 @@ export function CanvasCommandPalette({ groups }: CanvasCommandPaletteProps) {
                             />
                         </div>
 
-                        <Command.List className="max-h-[60vh] overflow-y-auto p-2">
+                        <Command.List className="max-h-[60svh] overflow-y-auto p-2">
                             <Command.Empty
                                 className="px-3 py-6 text-center text-xs text-content-subtle"
                             >

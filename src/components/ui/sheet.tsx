@@ -149,7 +149,7 @@ function SheetRoot({
                               ]
                             : [
                                   "inset-x-2 bottom-2",
-                                  "h-[min(var(--sheet-height),calc(100vh-var(--sheet-margin)*2))] [--sheet-margin:8px] [--sheet-height:85vh]",
+                                  "h-[min(var(--sheet-height),calc(100svh-var(--sheet-margin)*2))] [--sheet-margin:8px] [--sheet-height:85svh]",
                               ],
                         contentProps?.className,
                     )}
