@@ -280,6 +280,25 @@ export async function setTaskStatus(ctx: RequestContext, taskId: string, status:
         resolution = sanitizePlainText(resolution);
     }
     const result = await runInTenantContext(ctx, async (db) => {
+        // Exactly-once backstop for the CONCURRENT-FLUSH race. This endpoint is
+        // queued by the offline outbox (MyWorkClient marks a job done in a
+        // field), and on reconnect the SAME queued item is drained by BOTH the
+        // in-page sender AND the service worker's background sync — the repo
+        // documents that in journal.ts, which solves it the same way.
+        //
+        // Without serialisation both drains read the PRE-state under READ
+        // COMMITTED, both pass the no-op gate below, both write, and both
+        // logEvent — TWO TASK_STATUS_CHANGED rows in a hash-chained compliance
+        // audit trail for one operator action. The row itself is not
+        // duplicated; the audit history is, which is worse, because that is
+        // what an auditor reads.
+        //
+        // With the lock the loser waits, re-reads the POST-state, and
+        // `checkWorkItemTransition(RESOLVED, RESOLVED)` classifies it as a
+        // no_op -> 400 -> the outbox drops it. Exactly once, using the gate
+        // that was already there. Released automatically on commit/rollback.
+        await db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`${ctx.tenantId}:task-status:${taskId}`}))`;
+
         // Pre-fetch once so we can both validate + capture fromStatus
         // for the automation event.
         const existing = await WorkItemRepository.getById(db, ctx, taskId);
