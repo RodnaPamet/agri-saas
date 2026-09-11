@@ -54,6 +54,19 @@ fi
 
 # Is anything actually going to answer for the tip?
 #
+# "Not completed" — asserted POSITIVELY, because there is exactly ONE status
+# that means finished and an open-ended set that means not.
+#
+# This whitelisted `queued` and `in_progress`. GitHub also reports `pending`,
+# `waiting` and `requested`, and on 2026-09-11 a publish for the tip sat at
+# `pending` while this gate declared "NO publish queued or running" and failed
+# the check (#902). Its own diagnostic printed `its runs: pending` on the line
+# above the verdict — the evidence was in the output, and the predicate could
+# not see it.
+#
+# Same mistake as banning `head -1` and meeting `head -n 1`: enumerate the one
+# thing you mean, never the unbounded set you do not.
+#
 # Deliberately NOT `... || echo 0`. A rate limit, a 5xx or a jq error must not
 # read as "nothing is running", because that answer sends us down the SKIP
 # path — the exact collapse that made the notifier go silent in #873. A failed
@@ -61,7 +74,7 @@ fi
 if RUNS_JSON="$("${GH}" api "repos/${REPO}/actions/runs?head_sha=${TARGET}&per_page=100")"; then
     IN_FLIGHT="$(printf '%s' "${RUNS_JSON}" | jq --arg wf "${PUBLISH_WORKFLOW}" \
         '[.workflow_runs[] | select(.name == $wf)
-          | select(.status == "queued" or .status == "in_progress")] | length')"
+          | select(.status != "completed")] | length')"
     RECENT="$(printf '%s' "${RUNS_JSON}" | jq -r --arg wf "${PUBLISH_WORKFLOW}" \
         '[.workflow_runs[] | select(.name == $wf) | .conclusion // .status] | join(", ")')"
 else

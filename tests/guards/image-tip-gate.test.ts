@@ -170,6 +170,43 @@ describe('image-tip-check gate', () => {
         expect(d.stdout).toMatch(/NO publish queued or running/);
     });
 
+    // ── Every not-finished status counts as "coming" (#902) ─────────────
+    //
+    // The predicate whitelisted `queued` and `in_progress`. GitHub also
+    // reports `pending`, `waiting` and `requested`. On 2026-09-11 a publish
+    // for the tip sat at `pending`, the gate declared "NO publish queued or
+    // running", and the check failed — while printing `its runs: pending` on
+    // the line above its own verdict.
+    //
+    // There is one status that means finished and an open-ended set that means
+    // not, so the predicate asserts the former.
+    it.each(['pending', 'waiting', 'requested', 'queued', 'in_progress'])(
+        'defers while the tip\'s publish is %s',
+        (status) => {
+            const d = runGate({
+                target: TIP,
+                triggering: OLDER,
+                runs: [{ status, conclusion: null }],
+            });
+            expect({ status, skipped: d.skipped }).toEqual({ status, skipped: true });
+        },
+    );
+
+    it('...but a COMPLETED publish is not "coming", whatever its conclusion', () => {
+        // The discriminating control. If "not completed" were read as "any run
+        // at all", a long-cancelled publish would defer forever and the gate
+        // would never report an unbuilt tip again — silencing it rather than
+        // fixing it.
+        for (const conclusion of ['cancelled', 'failure', 'success', 'skipped']) {
+            const d = runGate({
+                target: TIP,
+                triggering: OLDER,
+                runs: [{ status: 'completed', conclusion }],
+            });
+            expect({ conclusion, skipped: d.skipped }).toEqual({ conclusion, skipped: false });
+        }
+    });
+
     it("the tip's own publish always asks", () => {
         const d = runGate({ target: TIP, triggering: TIP, runs: [] });
         expect(d.skipped).toBe(false);
