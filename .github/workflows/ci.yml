@@ -199,19 +199,39 @@ jobs:
       - name: "Do the guards this PR changes have live selectors?"
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          # One jest run per mutation at ~7s. A PR touching a dozen guards is
+          # minutes; a bulk conversion touching 88 is hours.
+          #
+          # PR #894 (89 swallowing scan roots -> 2) changed 88 guard files and
+          # ran this job to the 15-minute timeout, which reported CANCELLED —
+          # neither pass nor fail, no verdict, no diagnosis. A job that cannot
+          # finish is not a gate, and a cancelled one is the silent mode this
+          # repo has spent a lot of effort eliminating elsewhere.
+          #
+          # So the coverage is BOUNDED and the bound is LOUD. Truncating in
+          # silence would let "audited 12 of 88" read as "audited everything",
+          # which is the defect class this whole job exists to catch.
+          MAX_GUARDS: "12"
         run: |
           set -euo pipefail
           if [ -z "${BASE:-}" ]; then
             echo "no base sha for this event; nothing to diff"
             exit 0
           fi
-          CHANGED="$(git diff --name-only "${BASE}" HEAD -- 'tests/guards/*.test.ts' | tr '\n' ' ')"
-          if [ -z "${CHANGED// /}" ]; then
+          mapfile -t ALL < <(git diff --name-only "${BASE}" HEAD -- 'tests/guards/*.test.ts')
+          TOTAL=${#ALL[@]}
+          if [ "${TOTAL}" -eq 0 ]; then
             echo "no guard files changed in this PR; the control above still ran"
             exit 0
           fi
-          echo "auditing: ${CHANGED}"
-          node scripts/selector-teeth.mjs ${CHANGED}
+          if [ "${TOTAL}" -gt "${MAX_GUARDS}" ]; then
+            echo "::warning::Selector teeth audited ${MAX_GUARDS} of ${TOTAL} changed guards. The remaining $((TOTAL - MAX_GUARDS)) were NOT audited — this job is bounded at ${MAX_GUARDS} files because each mutation costs a jest run. Run 'node scripts/selector-teeth.mjs <file>' locally on the rest, or split the PR."
+            echo "NOT AUDITED:"
+            printf '  %s\n' "${ALL[@]:${MAX_GUARDS}}"
+          fi
+          echo "auditing ${TOTAL} changed guard(s), capped at ${MAX_GUARDS}:"
+          printf '  %s\n' "${ALL[@]:0:${MAX_GUARDS}}"
+          node scripts/selector-teeth.mjs "${ALL[@]:0:${MAX_GUARDS}}"
 
   lint:
     name: Lint
