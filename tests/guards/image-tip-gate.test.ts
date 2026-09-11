@@ -186,6 +186,58 @@ describe('image-tip-check gate', () => {
         expect(d.stdout).toMatch(/Could not read the tip's publish runs/);
     });
 
+    // ── The SCHEDULED run (#896) ────────────────────────────────────────
+    //
+    // The gate was `if: github.event_name == 'workflow_run'`, so the daily
+    // cron skipped it and asked unconditionally. It therefore could not tell
+    // "the tip has no image and nothing is coming" — a real problem — from
+    // "the tip has no image because its publish is still running" — a
+    // transient one, four minutes into a 15-21 minute build. It filed #896
+    // for the second.
+    //
+    // Same distinction #878 drew for the workflow_run path, not carried
+    // across. On a scheduled run TRIGGERING_SHA is empty, and the rule
+    // collapses to the one that was always doing the work: defer iff a
+    // publish for the tip is queued or running.
+
+    it('SCHEDULED: defers while the tip is mid-publish rather than crying wolf', () => {
+        const d = runGate({
+            target: TIP,
+            triggering: '',
+            runs: [{ status: 'in_progress', conclusion: null }],
+        });
+        expect(d.skipped).toBe(true);
+        expect(d.stdout).toMatch(/still running/);
+    });
+
+    it('SCHEDULED: still ASKS when nothing is coming — the backstop keeps its teeth', () => {
+        // The discriminating control. Same empty trigger, same tip; the only
+        // difference is that no publish exists. If this also deferred, the
+        // cron would have been silenced rather than corrected — and the daily
+        // backstop is the only thing that catches a tip nothing ever built.
+        const d = runGate({
+            target: TIP,
+            triggering: '',
+            runs: [{ status: 'completed', conclusion: 'cancelled' }],
+        });
+        expect(d.skipped).toBe(false);
+        expect(d.stdout).toMatch(/NO publish queued or running/);
+    });
+
+    it('SCHEDULED: a failed probe asks, it does not defer', () => {
+        const d = runGate({ target: TIP, triggering: '', runs: 'fail' });
+        expect(d.skipped).toBe(false);
+    });
+
+    it('the gate is not gated on the trigger type', () => {
+        // The workflow-level `if:` is what caused this. Assert its absence
+        // where it was, rather than trusting the script alone: the script can
+        // be perfect and never run.
+        const wf = fs.readFileSync(path.join(ROOT, '.github/workflows/image-tip-check.yml'), 'utf8');
+        const gateBlock = wf.slice(wf.indexOf('id: gate'), wf.indexOf('image-tip-gate.sh'));
+        expect(gateBlock).not.toMatch(/if:\s*github\.event_name/);
+    });
+
     it('the workflow calls this script rather than re-inlining the decision', () => {
         const wf = fs.readFileSync(path.join(ROOT, '.github/workflows/image-tip-check.yml'), 'utf8');
         expect(wf).toMatch(/image-tip-gate\.sh/);

@@ -102,7 +102,18 @@ jobs:
             # exists for. The daily cron is the backstop for anything missed.
             - name: "Is this the tip's own publish?"
               id: gate
-              if: github.event_name == 'workflow_run'
+              # Runs on EVERY trigger, not just workflow_run.
+              #
+              # It was workflow_run-only, so the daily cron asked
+              # unconditionally and could not tell "the tip has no image and
+              # nothing is coming" — a real problem — from "the tip has no
+              # image because its publish is still running" — a transient one.
+              # It filed #896 for the second, 4 minutes into a 15-21 minute
+              # publish.
+              #
+              # That is the SAME distinction #878 drew for the workflow_run
+              # path, not carried across to this one. A check that cries wolf
+              # gets ignored, which costs more than the check is worth.
               env:
                   TRIGGERING_SHA: ${{ github.event.workflow_run.head_sha }}
                   REPO: ${{ github.repository }}

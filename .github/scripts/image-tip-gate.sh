@@ -34,15 +34,17 @@ set -euo pipefail
 
 REPO="${REPO:?REPO is required}"
 TARGET="${TARGET:?TARGET is required (the publishable tip sha)}"
-TRIGGERING_SHA="${TRIGGERING_SHA:?TRIGGERING_SHA is required}"
+# Empty on `schedule` / `workflow_dispatch`: there is no triggering run to
+# compare against, only the question "is anything going to answer for the tip?".
+TRIGGERING_SHA="${TRIGGERING_SHA:-}"
 GH="${GH:-gh}"
 PUBLISH_WORKFLOW="${PUBLISH_WORKFLOW:-Publish image to GHCR}"
 OUT="${GITHUB_OUTPUT:-/dev/null}"
 
 echo "publishable tip : ${TARGET}"
-echo "triggering run  : ${TRIGGERING_SHA}"
+echo "triggering run  : ${TRIGGERING_SHA:-<none: scheduled run>}"
 
-if [ "${TARGET}" = "${TRIGGERING_SHA}" ]; then
+if [ -n "${TRIGGERING_SHA}" ] && [ "${TARGET}" = "${TRIGGERING_SHA}" ]; then
     echo "this IS the tip's own publish — asking"
     exit 0
 fi
