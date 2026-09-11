@@ -449,4 +449,51 @@ describe('the cache sweep runs on a cadence, not every launch', () => {
         await sweepClientStores({ maxAgeMs: 0, now: 5_000_000 });
         expect(ls.getItem(LAST_SWEPT)).toBeNull();
     });
+
+    // ── #884 ────────────────────────────────────────────────────────────
+    // An OFFLINE launch defers: sweepCaches returns before deleting anything.
+    // It used to stamp the clock anyway, so the 24h window was consumed by a
+    // sweep that never happened — and a phone used mostly in a field could
+    // defer the tenant-data sweep indefinitely, one offline launch at a time.
+    //
+    // The comment above the offline guard claimed the opposite ("the next
+    // online launch sweeps as before"), which is exactly the shape that
+    // survives review: a load-bearing claim in prose that nothing asserts.
+    //
+    // NOTE what is NOT asserted: `cachesRemoved === 0`. That test could not
+    // fail — 0 is what BOTH the healthy and the broken path return. The clock
+    // is the only observable that separates them.
+
+    it('an OFFLINE launch does not stamp the clock', async () => {
+        setOnline(false);
+        installEntries();
+        await sweepClientStores({ maxAgeMs: 1_000, now: 5_000_000 });
+        expect(ls.getItem(LAST_SWEPT)).toBeNull();
+    });
+
+    it('so the next ONLINE launch inside the window still sweeps', async () => {
+        // The whole point. Before the fix this second call found the window
+        // closed and skipped, leaving tenant data on the device past its
+        // retention bound with nothing reporting it.
+        setOnline(false);
+        installEntries();
+        await sweepClientStores({ maxAgeMs: 1_000, now: 5_000_000 });
+
+        setOnline(true);
+        const second = installEntries();
+        await sweepClientStores({ maxAgeMs: 1_000, now: 5_000_100 }); // well inside 1s window
+
+        expect(second.remaining).not.toContain('agrent-v1-fielddata');
+        expect(ls.getItem(LAST_SWEPT)).toBe(String(5_000_100));
+    });
+
+    it('CONTROL: an online launch DOES stamp the clock', async () => {
+        // Without this the two assertions above hold for a build that never
+        // stamps at all, which would break the cadence in the other direction
+        // — destroying the offline caches on every single document load.
+        setOnline(true);
+        installEntries();
+        await sweepClientStores({ maxAgeMs: 1_000, now: 5_000_000 });
+        expect(ls.getItem(LAST_SWEPT)).toBe(String(5_000_000));
+    });
 });
