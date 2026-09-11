@@ -1,0 +1,57 @@
+{
+  "_README": [
+    "Selectors that can be gutted to a constant without any test noticing.",
+    "",
+    "DISCOVERED, NOT DESIGNED. These were found by scripts/selector-teeth.mjs on",
+    "the first 12 guards it audited (PR #894 touched 88). They are PRE-EXISTING",
+    "debt, not caused by the PR that surfaced them, and 12 of 12 files had at",
+    "least one \u2014 so the repo almost certainly has many more among its 506 guards.",
+    "",
+    "RULES:",
+    "  \u00b7 A survivor NOT listed here FAILS the build. New debt is blocked.",
+    "  \u00b7 A listed entry that no longer survives ALSO fails, with instructions to",
+    "    delete it. The list cannot rot into a permanent allowlist the way an",
+    "    unchecked exemption file does.",
+    "  \u00b7 Adding an entry is a visible diff in a PR. That is the point: it should",
+    "    cost a reviewer's attention, not be a silent escape hatch.",
+    "",
+    "WHY A BASELINE AND NOT A FIX: each of these needs a non-empty control on the",
+    "population its guard actually scans, which is a judgement per guard, not a",
+    "sweep. Holding an unrelated PR hostage to that work would be the wrong trade;",
+    "leaving the tool non-blocking would be worse, because a check that cannot",
+    "fail is the defect this whole tool exists to find."
+  ],
+  "known": {
+    "tests/guards/action-label-vocabulary.test.ts": [
+      "walk"
+    ],
+    "tests/guards/admin-datatable-no-double-card.test.ts": [
+      "stripComments"
+    ],
+    "tests/guards/animation-language-lock.test.ts": [
+      "walk",
+      "stripComments"
+    ],
+    "tests/guards/badge-density.test.ts": [
+      "isExempt",
+      "walk",
+      "countStatusBadges"
+    ],
+    "tests/guards/button-variant-cull.test.ts": [
+      "scanMultiLineButton",
+      "buildPatterns",
+      "isExempt",
+      "walk"
+    ],
+    "tests/guards/cancel-button-size-parity.test.ts": [
+      "isExempt",
+      "walk",
+      "getSize"
+    ],
+    "tests/guards/card-density-discipline.test.ts": [
+      "isExempt",
+      "walk",
+      "findOffenders"
+    ]
+  }
+}
