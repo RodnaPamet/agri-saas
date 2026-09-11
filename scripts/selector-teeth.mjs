@@ -179,6 +179,22 @@ export function auditFile(file) {
 const invokedDirectly = process.argv[1] && process.argv[1].endsWith('selector-teeth.mjs');
 if (!invokedDirectly) { /* imported: expose the API only */ }
 else {
+/**
+ * Known survivors, loaded from tests/guards/selector-teeth-baseline.json.
+ *
+ * A survivor listed there does not fail the run; one that is NOT listed does.
+ * And a listed entry that no longer survives ALSO fails, so the file cannot rot
+ * into a permanent allowlist — the failure names it and says to delete it.
+ */
+function loadBaseline() {
+  try {
+    const raw = readFileSync('tests/guards/selector-teeth-baseline.json', 'utf8');
+    return JSON.parse(raw).known ?? {};
+  } catch {
+    return {};
+  }
+}
+
 const args = process.argv.slice(2);
 const asJson = args.includes('--json');
 const files = args.filter((a) => !a.startsWith('--'));
@@ -187,8 +203,25 @@ if (files.length === 0) {
     process.exit(2);
 }
 const results = files.map(auditFile);
+const baseline = loadBaseline();
+
+/** Survivors this run found that the baseline does not excuse. */
+const unexpected = [];
+/** Baseline entries that no longer survive — the list must shrink. */
+const stale = [];
+for (const r of results) {
+    const listed = baseline[r.file] ?? [];
+    for (const s of r.survivors) {
+        if (!listed.includes(s.selector)) unexpected.push(`${r.file}:${s.line}  ${s.selector}()`);
+    }
+    const found = new Set(r.survivors.map((s) => s.selector));
+    for (const name of listed) {
+        if (!found.has(name)) stale.push(`${r.file}  ${name}()`);
+    }
+}
+
 if (asJson) {
-    console.log(JSON.stringify(results, null, 2));
+    console.log(JSON.stringify({ results, unexpected, stale }, null, 2));
 } else {
     for (const r of results) {
         for (const s of r.survivors) console.log(`  ${r.file}:${s.line}  ${s.selector}() → return ${s.gut}  SURVIVED`);
@@ -196,5 +229,18 @@ if (asJson) {
         if (!r.survivors.length && !r.untestable.length) console.log(`  ${r.file}  all selectors have teeth`);
     }
 }
-process.exit(results.some((r) => r.survivors.length) ? 1 : 0);
+if (unexpected.length) {
+    console.log('\nNEW dead selectors (not in tests/guards/selector-teeth-baseline.json):');
+    for (const u of unexpected) console.log(`  ${u}`);
+    console.log('\nEach needs a control proving its selector can select on the population');
+    console.log('its guard actually scans. If you are knowingly deferring, add it to the');
+    console.log('baseline in this PR so the debt is visible in the diff.');
+}
+if (stale.length) {
+    console.log('\nBASELINE ENTRIES THAT NO LONGER SURVIVE — delete them:');
+    for (const s of stale) console.log(`  ${s}`);
+    console.log('\nThese were fixed. Leaving them listed would let the file rot into a');
+    console.log('permanent allowlist, which is what the baseline exists to avoid.');
+}
+process.exit(unexpected.length || stale.length ? 1 : 0);
 }

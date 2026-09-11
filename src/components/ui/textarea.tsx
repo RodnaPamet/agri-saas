@@ -24,7 +24,9 @@ import * as React from "react";
 
 export const textareaVariants = cva(
     [
-        "block w-full rounded-lg border text-sm transition-colors",
+        // `text-base` below `md`: 14px would trigger the same iOS focus-zoom
+        // as the input rung. See the note in input.tsx.
+        "block w-full rounded-lg border text-base md:text-sm transition-colors",
         "bg-bg-default text-content-emphasis placeholder-content-subtle",
         "border-border-subtle",
         "hover:border-border-emphasis",

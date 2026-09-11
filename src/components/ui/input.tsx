@@ -50,12 +50,33 @@ import { Eye, EyeSlash } from "./icons";
  * rung's height so the two line up in a shared row. Text-entry surfaces keep
  * their own horizontal padding — a 0.7rem inset is tight for typing.
  */
-const INPUT_RUNG = "h-7 min-h-[44px] md:min-h-7 px-2.5 text-[0.76rem]";
+// `text-base` (16px) below `md`, the designed 12.16px above it.
+//
+// iOS Safari ZOOMS THE PAGE whenever a focused input has a font-size
+// under 16px. The zoom shrinks the visual viewport, so the sheet the
+// field sits in overflows the screen horizontally and its text clips
+// mid-word — reported as "typing a task name breaks the whole page".
+//
+// The existing `min-h-[44px] md:min-h-7` floor is the same idea for the
+// TOUCH TARGET and does nothing about type size; the two are independent
+// iOS minimums and this rung needed both. `sm:text-sm` in the combobox
+// search field is this same idiom, already applied there and never
+// carried across.
+//
+// Blocking zoom instead (`maximumScale: 1`) would fix the symptom by
+// removing a real accessibility affordance; the viewport deliberately
+// allows scale 5.
+const INPUT_RUNG =
+    "h-7 min-h-[44px] md:min-h-7 px-2.5 text-base md:text-[0.76rem]";
 
 export const inputVariants = cva(
     [
         // R22-PR-A — radius mirror of button-variants.ts (12→10px).
-        "w-full rounded-[8px] text-sm",
+        // No font-size here. The size variant owns it, and a base that also
+        // sets one leaves two font-sizes in the same class list resolved
+        // only by tailwind-merge ordering — which happened to give the
+        // right answer and would not have survived a reorder.
+        "w-full rounded-[8px]",
         "bg-bg-default text-content-emphasis placeholder-content-subtle",
         "focus:outline-none focus-visible:outline-none",
         "border border-[var(--ctrl-edge-rest)]",
