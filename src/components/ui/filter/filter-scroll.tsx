@@ -33,7 +33,7 @@ export const FilterScroll = forwardRef<
   return (
     <>
       <div
-        className="scrollbar-hide max-h-[50vh] w-screen overflow-y-scroll sm:w-auto"
+        className="scrollbar-hide max-h-[50svh] w-screen overflow-y-scroll sm:w-auto"
         ref={setRef}
         onScroll={updateScrollProgress}
       >

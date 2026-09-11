@@ -78,7 +78,7 @@ export function EditColumnsButton<T>({
       openPopover={isOpen}
       setOpenPopover={setIsOpen}
       content={
-        <ScrollContainer className="max-h-[50vh]">
+        <ScrollContainer className="max-h-[50svh]">
           <Command tabIndex={0} loop>
             <Command.List className="flex w-screen flex-col gap-0.5 p-1 text-sm focus-visible:outline-none sm:w-auto sm:min-w-[180px]">
               {hideableColumns.map((column) => (
