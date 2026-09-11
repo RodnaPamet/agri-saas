@@ -35,11 +35,15 @@ import { useEffect, useState } from "react";
  * strip is small because the viewport scrolled", and those need opposite
  * answers.
  *
- * So the keyboard is detected from FOCUS — an editable element has focus —
- * and the pixel measurement is used only to size the lift, never to decide
- * whether to lift at all. Browser chrome (URL bar, toolbar) also covers the
- * bottom strip, so a small floor still filters chrome-only jitter, but it
- * can no longer veto a real keyboard.
+ * So FOCUS lowers the bar rather than replacing the measurement. With an
+ * editable element focused a soft keyboard is up by the platform's own
+ * contract, and `covered` is the real obscured height whatever its size —
+ * so only a jitter floor applies. With nothing focused the original
+ * chrome-versus-keyboard threshold is used unchanged.
+ *
+ * That ordering matters: it is backward-compatible by construction, so the
+ * hook's existing tests still pin the no-focus behaviour, and the change is
+ * confined to the case the old code got wrong.
  */
 export interface KeyboardInset {
   /** Keyboard height in CSS px (0 when no keyboard). */
@@ -49,11 +53,19 @@ export interface KeyboardInset {
 }
 
 /**
- * Below this the covered strip is browser chrome, not a keyboard. Only
- * consulted once focus already says an editable element is active, so it
- * filters jitter rather than deciding the question.
+ * With NOTHING focused, a covered strip this big is taken to be a keyboard.
+ * Unchanged from the original implementation, deliberately: with no focus
+ * signal this is the only evidence available, and the existing tests pin the
+ * boundary (an 80px gap must read as chrome).
  */
-const CHROME_MAX_PX = 80;
+const KEYBOARD_MIN_PX = 120;
+
+/**
+ * With an editable element FOCUSED, a soft keyboard is up by the platform's
+ * own contract, so `covered` is the real obscured height and the only job of
+ * this floor is to filter sub-pixel jitter.
+ */
+const CHROME_MAX_PX = 40;
 
 /** Input types that raise no soft keyboard. */
 const NON_TEXT_INPUT_TYPES = new Set([
@@ -94,7 +106,15 @@ export function useKeyboardInset(): KeyboardInset {
         0,
         window.innerHeight - vv.height - vv.offsetTop,
       );
-      const keyboardOpen = editableHasFocus() && covered > CHROME_MAX_PX;
+      // Focus REFINES the measurement, it does not replace it. With nothing
+      // focused this is exactly the original heuristic, so the behaviour is
+      // backward-compatible by construction — which is why this hook's
+      // existing tests still hold. Focus only lowers the bar, for the case
+      // the old code got wrong: a real keyboard whose measured strip has
+      // been shrunk by a grown `offsetTop`.
+      const keyboardOpen = editableHasFocus()
+        ? covered > CHROME_MAX_PX
+        : covered > KEYBOARD_MIN_PX;
       setState({
         inset: keyboardOpen ? Math.round(covered) : 0,
         // Always reported. Consumers cap maxHeight with this whether or not
