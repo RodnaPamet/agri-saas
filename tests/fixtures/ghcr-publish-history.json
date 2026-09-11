@@ -1,0 +1,1204 @@
+{
+  "source": "gh run list --workflow=ghcr-publish.yml --limit 200 --json ... (event=push only)",
+  "capturedAt": "2026-09-11",
+  "window": {
+    "from": "2026-08-15T02:05:21Z",
+    "to": "2026-09-10T22:21:52Z"
+  },
+  "runs": [
+    {
+      "sha": "f664e7c8e",
+      "mergedAt": "2026-08-15T02:05:21Z",
+      "conclusion": "success",
+      "minutes": 16.25
+    },
+    {
+      "sha": "68b1a3f48",
+      "mergedAt": "2026-08-15T06:24:35Z",
+      "conclusion": "success",
+      "minutes": 11.5
+    },
+    {
+      "sha": "6740f73a8",
+      "mergedAt": "2026-08-15T19:02:35Z",
+      "conclusion": "success",
+      "minutes": 14.2
+    },
+    {
+      "sha": "caa12d134",
+      "mergedAt": "2026-08-16T08:49:26Z",
+      "conclusion": "success",
+      "minutes": 8.85
+    },
+    {
+      "sha": "001c01833",
+      "mergedAt": "2026-08-16T15:12:50Z",
+      "conclusion": "success",
+      "minutes": 14.22
+    },
+    {
+      "sha": "c11c45d64",
+      "mergedAt": "2026-08-16T19:20:48Z",
+      "conclusion": "success",
+      "minutes": 12.03
+    },
+    {
+      "sha": "3490410da",
+      "mergedAt": "2026-08-16T20:32:17Z",
+      "conclusion": "success",
+      "minutes": 14.53
+    },
+    {
+      "sha": "41e845d08",
+      "mergedAt": "2026-08-17T07:27:03Z",
+      "conclusion": "success",
+      "minutes": 14.42
+    },
+    {
+      "sha": "0f9c10ae9",
+      "mergedAt": "2026-08-17T08:52:03Z",
+      "conclusion": "success",
+      "minutes": 11.35
+    },
+    {
+      "sha": "5b8836504",
+      "mergedAt": "2026-08-17T09:27:00Z",
+      "conclusion": "success",
+      "minutes": 16.13
+    },
+    {
+      "sha": "fa4839d9d",
+      "mergedAt": "2026-08-17T11:02:32Z",
+      "conclusion": "cancelled",
+      "minutes": 14.45
+    },
+    {
+      "sha": "8cc1128c9",
+      "mergedAt": "2026-08-17T11:16:34Z",
+      "conclusion": "success",
+      "minutes": 16.13
+    },
+    {
+      "sha": "72071e010",
+      "mergedAt": "2026-08-17T12:12:21Z",
+      "conclusion": "success",
+      "minutes": 8.3
+    },
+    {
+      "sha": "1aed444a6",
+      "mergedAt": "2026-08-17T12:22:55Z",
+      "conclusion": "success",
+      "minutes": 16.48
+    },
+    {
+      "sha": "ba431b2c1",
+      "mergedAt": "2026-08-17T12:54:01Z",
+      "conclusion": "success",
+      "minutes": 8.15
+    },
+    {
+      "sha": "436af2a09",
+      "mergedAt": "2026-08-17T17:14:16Z",
+      "conclusion": "success",
+      "minutes": 14.13
+    },
+    {
+      "sha": "2dccb22d2",
+      "mergedAt": "2026-08-17T17:42:30Z",
+      "conclusion": "success",
+      "minutes": 16.88
+    },
+    {
+      "sha": "11369c4db",
+      "mergedAt": "2026-08-17T18:29:15Z",
+      "conclusion": "success",
+      "minutes": 15.22
+    },
+    {
+      "sha": "e10f19f9f",
+      "mergedAt": "2026-08-17T20:42:09Z",
+      "conclusion": "cancelled",
+      "minutes": 6.33
+    },
+    {
+      "sha": "54cabb7f5",
+      "mergedAt": "2026-08-17T20:47:20Z",
+      "conclusion": "success",
+      "minutes": 15.85
+    },
+    {
+      "sha": "b7dd0f362",
+      "mergedAt": "2026-08-18T12:18:26Z",
+      "conclusion": "success",
+      "minutes": 6.68
+    },
+    {
+      "sha": "5e4a45574",
+      "mergedAt": "2026-08-18T12:43:57Z",
+      "conclusion": "success",
+      "minutes": 9.05
+    },
+    {
+      "sha": "e23b34f23",
+      "mergedAt": "2026-08-18T15:31:04Z",
+      "conclusion": "cancelled",
+      "minutes": 1.22
+    },
+    {
+      "sha": "18f8a8dd1",
+      "mergedAt": "2026-08-18T15:31:14Z",
+      "conclusion": "cancelled",
+      "minutes": 0.2
+    },
+    {
+      "sha": "035110756",
+      "mergedAt": "2026-08-18T15:31:25Z",
+      "conclusion": "cancelled",
+      "minutes": 1.25
+    },
+    {
+      "sha": "a8aa9c1e2",
+      "mergedAt": "2026-08-18T15:32:38Z",
+      "conclusion": "success",
+      "minutes": 13.3
+    },
+    {
+      "sha": "6a3fe54c9",
+      "mergedAt": "2026-08-18T20:00:19Z",
+      "conclusion": "cancelled",
+      "minutes": 0.27
+    },
+    {
+      "sha": "da7f7892c",
+      "mergedAt": "2026-08-18T20:00:30Z",
+      "conclusion": "success",
+      "minutes": 18.33
+    },
+    {
+      "sha": "837c8419c",
+      "mergedAt": "2026-08-18T21:44:07Z",
+      "conclusion": "success",
+      "minutes": 18.13
+    },
+    {
+      "sha": "f2f0870cf",
+      "mergedAt": "2026-08-18T23:06:47Z",
+      "conclusion": "cancelled",
+      "minutes": 1.65
+    },
+    {
+      "sha": "475cabeb8",
+      "mergedAt": "2026-08-18T23:08:04Z",
+      "conclusion": "success",
+      "minutes": 8.3
+    },
+    {
+      "sha": "489b0a29b",
+      "mergedAt": "2026-08-19T00:49:36Z",
+      "conclusion": "success",
+      "minutes": 17.38
+    },
+    {
+      "sha": "e032d0396",
+      "mergedAt": "2026-08-19T02:58:34Z",
+      "conclusion": "success",
+      "minutes": 13.12
+    },
+    {
+      "sha": "9268814dc",
+      "mergedAt": "2026-08-19T09:54:27Z",
+      "conclusion": "success",
+      "minutes": 11.68
+    },
+    {
+      "sha": "f12a83830",
+      "mergedAt": "2026-08-19T10:23:27Z",
+      "conclusion": "success",
+      "minutes": 10.2
+    },
+    {
+      "sha": "b41bad097",
+      "mergedAt": "2026-08-19T10:45:58Z",
+      "conclusion": "success",
+      "minutes": 11.5
+    },
+    {
+      "sha": "e5906f254",
+      "mergedAt": "2026-08-19T10:58:02Z",
+      "conclusion": "success",
+      "minutes": 11.77
+    },
+    {
+      "sha": "613549f10",
+      "mergedAt": "2026-08-19T15:12:45Z",
+      "conclusion": "success",
+      "minutes": 11.27
+    },
+    {
+      "sha": "3d83407c3",
+      "mergedAt": "2026-08-19T16:03:42Z",
+      "conclusion": "success",
+      "minutes": 17.32
+    },
+    {
+      "sha": "29455e5ff",
+      "mergedAt": "2026-08-19T16:43:14Z",
+      "conclusion": "success",
+      "minutes": 13.22
+    },
+    {
+      "sha": "3bd7c779f",
+      "mergedAt": "2026-08-19T18:34:07Z",
+      "conclusion": "success",
+      "minutes": 10.75
+    },
+    {
+      "sha": "5f7b607a1",
+      "mergedAt": "2026-08-19T19:27:56Z",
+      "conclusion": "success",
+      "minutes": 7.5
+    },
+    {
+      "sha": "8310e35d6",
+      "mergedAt": "2026-08-19T19:54:09Z",
+      "conclusion": "success",
+      "minutes": 10.23
+    },
+    {
+      "sha": "314317231",
+      "mergedAt": "2026-08-19T23:17:43Z",
+      "conclusion": "cancelled",
+      "minutes": 13.13
+    },
+    {
+      "sha": "ec4404a39",
+      "mergedAt": "2026-08-19T23:30:26Z",
+      "conclusion": "success",
+      "minutes": 17.58
+    },
+    {
+      "sha": "69bc9eed2",
+      "mergedAt": "2026-08-20T09:58:48Z",
+      "conclusion": "success",
+      "minutes": 15.83
+    },
+    {
+      "sha": "694d712b6",
+      "mergedAt": "2026-08-20T12:56:22Z",
+      "conclusion": "success",
+      "minutes": 8.9
+    },
+    {
+      "sha": "6f8650cf0",
+      "mergedAt": "2026-08-20T13:49:43Z",
+      "conclusion": "success",
+      "minutes": 14.85
+    },
+    {
+      "sha": "3fc6a357c",
+      "mergedAt": "2026-08-20T14:49:01Z",
+      "conclusion": "success",
+      "minutes": 16.07
+    },
+    {
+      "sha": "94ffacc9a",
+      "mergedAt": "2026-08-20T16:20:57Z",
+      "conclusion": "success",
+      "minutes": 16.55
+    },
+    {
+      "sha": "106282fbd",
+      "mergedAt": "2026-08-20T17:12:35Z",
+      "conclusion": "success",
+      "minutes": 7.85
+    },
+    {
+      "sha": "acc58c9ce",
+      "mergedAt": "2026-08-20T18:42:52Z",
+      "conclusion": "cancelled",
+      "minutes": 0.1
+    },
+    {
+      "sha": "b500a844e",
+      "mergedAt": "2026-08-20T18:42:56Z",
+      "conclusion": "cancelled",
+      "minutes": 4.03
+    },
+    {
+      "sha": "a1b6bd3ca",
+      "mergedAt": "2026-08-20T18:46:44Z",
+      "conclusion": "success",
+      "minutes": 12.08
+    },
+    {
+      "sha": "40da062be",
+      "mergedAt": "2026-08-20T19:56:28Z",
+      "conclusion": "cancelled",
+      "minutes": 7.9
+    },
+    {
+      "sha": "5e128f5dc",
+      "mergedAt": "2026-08-20T20:03:58Z",
+      "conclusion": "cancelled",
+      "minutes": 8.02
+    },
+    {
+      "sha": "e8764f19b",
+      "mergedAt": "2026-08-20T20:11:31Z",
+      "conclusion": "success",
+      "minutes": 18.48
+    },
+    {
+      "sha": "87af96901",
+      "mergedAt": "2026-08-20T20:45:16Z",
+      "conclusion": "cancelled",
+      "minutes": 5.7
+    },
+    {
+      "sha": "06f288af2",
+      "mergedAt": "2026-08-20T20:50:28Z",
+      "conclusion": "success",
+      "minutes": 9.75
+    },
+    {
+      "sha": "ca4a0164f",
+      "mergedAt": "2026-08-20T21:38:11Z",
+      "conclusion": "success",
+      "minutes": 7.55
+    },
+    {
+      "sha": "66ab6bf66",
+      "mergedAt": "2026-08-20T21:57:45Z",
+      "conclusion": "success",
+      "minutes": 7.33
+    },
+    {
+      "sha": "0e118fb22",
+      "mergedAt": "2026-08-20T22:34:41Z",
+      "conclusion": "success",
+      "minutes": 7.57
+    },
+    {
+      "sha": "0561dd259",
+      "mergedAt": "2026-08-20T22:59:03Z",
+      "conclusion": "success",
+      "minutes": 8.58
+    },
+    {
+      "sha": "38cad211d",
+      "mergedAt": "2026-08-20T23:11:37Z",
+      "conclusion": "success",
+      "minutes": 18.67
+    },
+    {
+      "sha": "dbab00e60",
+      "mergedAt": "2026-08-21T00:05:27Z",
+      "conclusion": "cancelled",
+      "minutes": 3.53
+    },
+    {
+      "sha": "e9c40b126",
+      "mergedAt": "2026-08-21T00:08:40Z",
+      "conclusion": "success",
+      "minutes": 21.67
+    },
+    {
+      "sha": "cad57699e",
+      "mergedAt": "2026-08-21T06:19:15Z",
+      "conclusion": "success",
+      "minutes": 14.87
+    },
+    {
+      "sha": "6eda5eb93",
+      "mergedAt": "2026-08-21T07:53:15Z",
+      "conclusion": "success",
+      "minutes": 7.42
+    },
+    {
+      "sha": "c3581cfba",
+      "mergedAt": "2026-08-21T09:40:36Z",
+      "conclusion": "cancelled",
+      "minutes": 0.35
+    },
+    {
+      "sha": "d725e214b",
+      "mergedAt": "2026-08-21T09:40:51Z",
+      "conclusion": "cancelled",
+      "minutes": 0.2
+    },
+    {
+      "sha": "e09b2c4df",
+      "mergedAt": "2026-08-21T09:41:01Z",
+      "conclusion": "cancelled",
+      "minutes": 0.22
+    },
+    {
+      "sha": "1050e953b",
+      "mergedAt": "2026-08-21T09:41:13Z",
+      "conclusion": "cancelled",
+      "minutes": 2.07
+    },
+    {
+      "sha": "48a712e44",
+      "mergedAt": "2026-08-21T09:42:56Z",
+      "conclusion": "success",
+      "minutes": 16.67
+    },
+    {
+      "sha": "96ea79658",
+      "mergedAt": "2026-08-21T10:33:44Z",
+      "conclusion": "cancelled",
+      "minutes": 1.37
+    },
+    {
+      "sha": "276be7387",
+      "mergedAt": "2026-08-21T10:34:40Z",
+      "conclusion": "success",
+      "minutes": 16.07
+    },
+    {
+      "sha": "f6cf02e99",
+      "mergedAt": "2026-08-21T12:48:26Z",
+      "conclusion": "cancelled",
+      "minutes": 0.22
+    },
+    {
+      "sha": "698584617",
+      "mergedAt": "2026-08-21T12:48:36Z",
+      "conclusion": "cancelled",
+      "minutes": 0.85
+    },
+    {
+      "sha": "020796933",
+      "mergedAt": "2026-08-21T12:49:25Z",
+      "conclusion": "cancelled",
+      "minutes": 3.67
+    },
+    {
+      "sha": "4753b7c0c",
+      "mergedAt": "2026-08-21T12:52:48Z",
+      "conclusion": "success",
+      "minutes": 22.83
+    },
+    {
+      "sha": "9a587bb66",
+      "mergedAt": "2026-08-21T14:55:59Z",
+      "conclusion": "cancelled",
+      "minutes": 0.15
+    },
+    {
+      "sha": "d31c67dde",
+      "mergedAt": "2026-08-21T14:56:06Z",
+      "conclusion": "success",
+      "minutes": 21.38
+    },
+    {
+      "sha": "6a11275bc",
+      "mergedAt": "2026-08-21T15:30:39Z",
+      "conclusion": "success",
+      "minutes": 13.58
+    },
+    {
+      "sha": "b8ed9af87",
+      "mergedAt": "2026-08-21T17:14:32Z",
+      "conclusion": "cancelled",
+      "minutes": 0.15
+    },
+    {
+      "sha": "95ccd2eb8",
+      "mergedAt": "2026-08-21T17:14:40Z",
+      "conclusion": "success",
+      "minutes": 14.72
+    },
+    {
+      "sha": "10993d5e3",
+      "mergedAt": "2026-08-21T18:10:15Z",
+      "conclusion": "success",
+      "minutes": 13.75
+    },
+    {
+      "sha": "22efb8a90",
+      "mergedAt": "2026-08-21T18:58:37Z",
+      "conclusion": "success",
+      "minutes": 11.93
+    },
+    {
+      "sha": "87696d871",
+      "mergedAt": "2026-08-21T19:12:34Z",
+      "conclusion": "cancelled",
+      "minutes": 0.18
+    },
+    {
+      "sha": "1e71854ad",
+      "mergedAt": "2026-08-21T19:12:44Z",
+      "conclusion": "success",
+      "minutes": 15.98
+    },
+    {
+      "sha": "1789d81d5",
+      "mergedAt": "2026-08-21T20:21:00Z",
+      "conclusion": "success",
+      "minutes": 14.83
+    },
+    {
+      "sha": "d81a64bd2",
+      "mergedAt": "2026-08-21T22:33:07Z",
+      "conclusion": "success",
+      "minutes": 14.53
+    },
+    {
+      "sha": "8bd5fb40b",
+      "mergedAt": "2026-08-22T04:23:27Z",
+      "conclusion": "success",
+      "minutes": 14.25
+    },
+    {
+      "sha": "b1420889a",
+      "mergedAt": "2026-08-22T05:29:08Z",
+      "conclusion": "cancelled",
+      "minutes": 2.6
+    },
+    {
+      "sha": "fc6165f71",
+      "mergedAt": "2026-08-22T05:31:31Z",
+      "conclusion": "cancelled",
+      "minutes": 0.97
+    },
+    {
+      "sha": "31a0137a9",
+      "mergedAt": "2026-08-22T05:32:23Z",
+      "conclusion": "success",
+      "minutes": 15.82
+    },
+    {
+      "sha": "145726fad",
+      "mergedAt": "2026-08-22T05:54:34Z",
+      "conclusion": "success",
+      "minutes": 15.78
+    },
+    {
+      "sha": "fd2218565",
+      "mergedAt": "2026-08-22T07:42:15Z",
+      "conclusion": "success",
+      "minutes": 13.73
+    },
+    {
+      "sha": "fcdb40a6f",
+      "mergedAt": "2026-08-22T15:47:02Z",
+      "conclusion": "success",
+      "minutes": 8.73
+    },
+    {
+      "sha": "2d07fce02",
+      "mergedAt": "2026-08-22T16:24:30Z",
+      "conclusion": "success",
+      "minutes": 14.42
+    },
+    {
+      "sha": "c0bf82331",
+      "mergedAt": "2026-08-22T19:02:05Z",
+      "conclusion": "success",
+      "minutes": 11.02
+    },
+    {
+      "sha": "09cfd8a5b",
+      "mergedAt": "2026-08-22T20:08:54Z",
+      "conclusion": "cancelled",
+      "minutes": 0.48
+    },
+    {
+      "sha": "f93097006",
+      "mergedAt": "2026-08-22T20:09:18Z",
+      "conclusion": "success",
+      "minutes": 14.55
+    },
+    {
+      "sha": "1f8ed48d3",
+      "mergedAt": "2026-08-22T21:17:16Z",
+      "conclusion": "success",
+      "minutes": 14.85
+    },
+    {
+      "sha": "6ca0516a6",
+      "mergedAt": "2026-08-22T21:52:34Z",
+      "conclusion": "cancelled",
+      "minutes": 6.05
+    },
+    {
+      "sha": "5a3515f20",
+      "mergedAt": "2026-08-22T21:58:11Z",
+      "conclusion": "success",
+      "minutes": 15.62
+    },
+    {
+      "sha": "d6b7b1fa3",
+      "mergedAt": "2026-08-22T22:55:31Z",
+      "conclusion": "success",
+      "minutes": 15.15
+    },
+    {
+      "sha": "809e1e404",
+      "mergedAt": "2026-08-22T23:48:34Z",
+      "conclusion": "success",
+      "minutes": 15.7
+    },
+    {
+      "sha": "cd1573380",
+      "mergedAt": "2026-08-23T00:40:52Z",
+      "conclusion": "success",
+      "minutes": 10.98
+    },
+    {
+      "sha": "345738671",
+      "mergedAt": "2026-08-23T05:28:22Z",
+      "conclusion": "success",
+      "minutes": 7.48
+    },
+    {
+      "sha": "8df9eb45a",
+      "mergedAt": "2026-08-23T05:55:31Z",
+      "conclusion": "success",
+      "minutes": 7.52
+    },
+    {
+      "sha": "eba157e8b",
+      "mergedAt": "2026-08-23T13:57:23Z",
+      "conclusion": "success",
+      "minutes": 7.13
+    },
+    {
+      "sha": "11facc239",
+      "mergedAt": "2026-08-23T14:29:45Z",
+      "conclusion": "success",
+      "minutes": 7.73
+    },
+    {
+      "sha": "71e00520d",
+      "mergedAt": "2026-08-23T14:58:23Z",
+      "conclusion": "success",
+      "minutes": 11.47
+    },
+    {
+      "sha": "fc71d0ff8",
+      "mergedAt": "2026-08-23T20:48:50Z",
+      "conclusion": "success",
+      "minutes": 14.03
+    },
+    {
+      "sha": "c05d77e5c",
+      "mergedAt": "2026-08-23T21:25:47Z",
+      "conclusion": "success",
+      "minutes": 7.72
+    },
+    {
+      "sha": "ee352ec72",
+      "mergedAt": "2026-08-23T21:36:58Z",
+      "conclusion": "success",
+      "minutes": 7.63
+    },
+    {
+      "sha": "cea1a2553",
+      "mergedAt": "2026-08-24T06:32:14Z",
+      "conclusion": "cancelled",
+      "minutes": 4.05
+    },
+    {
+      "sha": "88f5a1736",
+      "mergedAt": "2026-08-24T06:35:51Z",
+      "conclusion": "success",
+      "minutes": 16.9
+    },
+    {
+      "sha": "f90275c91",
+      "mergedAt": "2026-08-24T07:08:56Z",
+      "conclusion": "success",
+      "minutes": 14.75
+    },
+    {
+      "sha": "20fd757d8",
+      "mergedAt": "2026-08-24T17:49:51Z",
+      "conclusion": "success",
+      "minutes": 9.53
+    },
+    {
+      "sha": "e727603b3",
+      "mergedAt": "2026-08-24T18:04:28Z",
+      "conclusion": "success",
+      "minutes": 7.5
+    },
+    {
+      "sha": "fe56063dd",
+      "mergedAt": "2026-08-24T19:30:08Z",
+      "conclusion": "success",
+      "minutes": 7
+    },
+    {
+      "sha": "a079f4f71",
+      "mergedAt": "2026-08-24T19:40:11Z",
+      "conclusion": "success",
+      "minutes": 7.15
+    },
+    {
+      "sha": "4a0bce19f",
+      "mergedAt": "2026-08-24T21:00:43Z",
+      "conclusion": "cancelled",
+      "minutes": 0.42
+    },
+    {
+      "sha": "7de9787fe",
+      "mergedAt": "2026-08-24T21:01:07Z",
+      "conclusion": "success",
+      "minutes": 12.25
+    },
+    {
+      "sha": "933350117",
+      "mergedAt": "2026-08-24T21:16:04Z",
+      "conclusion": "success",
+      "minutes": 12.3
+    },
+    {
+      "sha": "5d16e0627",
+      "mergedAt": "2026-08-25T05:36:57Z",
+      "conclusion": "success",
+      "minutes": 15.4
+    },
+    {
+      "sha": "8eaf38866",
+      "mergedAt": "2026-08-25T06:09:30Z",
+      "conclusion": "success",
+      "minutes": 12.98
+    },
+    {
+      "sha": "6ffd796d7",
+      "mergedAt": "2026-08-29T16:10:56Z",
+      "conclusion": "success",
+      "minutes": 8.75
+    },
+    {
+      "sha": "eb425242b",
+      "mergedAt": "2026-08-29T16:35:40Z",
+      "conclusion": "success",
+      "minutes": 12.52
+    },
+    {
+      "sha": "dbb13ca86",
+      "mergedAt": "2026-08-31T07:26:37Z",
+      "conclusion": "cancelled",
+      "minutes": 0.15
+    },
+    {
+      "sha": "217cd2abe",
+      "mergedAt": "2026-08-31T07:26:44Z",
+      "conclusion": "cancelled",
+      "minutes": 0.13
+    },
+    {
+      "sha": "bd7a4376b",
+      "mergedAt": "2026-08-31T07:26:51Z",
+      "conclusion": "cancelled",
+      "minutes": 9.43
+    },
+    {
+      "sha": "95b980026",
+      "mergedAt": "2026-08-31T07:35:52Z",
+      "conclusion": "cancelled",
+      "minutes": 0.17
+    },
+    {
+      "sha": "b411d40c5",
+      "mergedAt": "2026-08-31T07:36:01Z",
+      "conclusion": "success",
+      "minutes": 12.6
+    },
+    {
+      "sha": "57bb9572f",
+      "mergedAt": "2026-08-31T08:23:22Z",
+      "conclusion": "success",
+      "minutes": 0.83
+    },
+    {
+      "sha": "0c1617df6",
+      "mergedAt": "2026-08-31T08:25:51Z",
+      "conclusion": "success",
+      "minutes": 1.52
+    },
+    {
+      "sha": "785cb02bb",
+      "mergedAt": "2026-08-31T08:36:44Z",
+      "conclusion": "success",
+      "minutes": 14.62
+    },
+    {
+      "sha": "88d12e39a",
+      "mergedAt": "2026-09-01T08:04:02Z",
+      "conclusion": "cancelled",
+      "minutes": 0.77
+    },
+    {
+      "sha": "28704dfd3",
+      "mergedAt": "2026-09-01T08:04:31Z",
+      "conclusion": "success",
+      "minutes": 11.47
+    },
+    {
+      "sha": "173ceb04a",
+      "mergedAt": "2026-09-01T09:24:35Z",
+      "conclusion": "cancelled",
+      "minutes": 6.52
+    },
+    {
+      "sha": "d6ecaf336",
+      "mergedAt": "2026-09-01T09:30:41Z",
+      "conclusion": "success",
+      "minutes": 13.85
+    },
+    {
+      "sha": "8af24891c",
+      "mergedAt": "2026-09-01T10:12:39Z",
+      "conclusion": "success",
+      "minutes": 18.65
+    },
+    {
+      "sha": "51bc30a62",
+      "mergedAt": "2026-09-01T11:57:50Z",
+      "conclusion": "success",
+      "minutes": 7.62
+    },
+    {
+      "sha": "73b6e9479",
+      "mergedAt": "2026-09-01T12:34:55Z",
+      "conclusion": "cancelled",
+      "minutes": 13.75
+    },
+    {
+      "sha": "91bddf2bc",
+      "mergedAt": "2026-09-01T12:48:14Z",
+      "conclusion": "success",
+      "minutes": 21.5
+    },
+    {
+      "sha": "60c2ccff0",
+      "mergedAt": "2026-09-01T13:14:08Z",
+      "conclusion": "cancelled",
+      "minutes": 12.65
+    },
+    {
+      "sha": "b8f6abd60",
+      "mergedAt": "2026-09-01T13:26:15Z",
+      "conclusion": "success",
+      "minutes": 14.62
+    },
+    {
+      "sha": "0f7c70c9d",
+      "mergedAt": "2026-09-01T13:42:28Z",
+      "conclusion": "cancelled",
+      "minutes": 12.67
+    },
+    {
+      "sha": "732d9a134",
+      "mergedAt": "2026-09-01T13:54:27Z",
+      "conclusion": "success",
+      "minutes": 16.42
+    },
+    {
+      "sha": "931df29f2",
+      "mergedAt": "2026-09-01T15:05:35Z",
+      "conclusion": "success",
+      "minutes": 12.02
+    },
+    {
+      "sha": "babb9ea19",
+      "mergedAt": "2026-09-01T17:10:08Z",
+      "conclusion": "failure",
+      "minutes": 11.08
+    },
+    {
+      "sha": "15c9a173e",
+      "mergedAt": "2026-09-03T20:10:32Z",
+      "conclusion": "success",
+      "minutes": 13.05
+    },
+    {
+      "sha": "d6b4083d4",
+      "mergedAt": "2026-09-03T21:01:12Z",
+      "conclusion": "success",
+      "minutes": 11.25
+    },
+    {
+      "sha": "67baba5ea",
+      "mergedAt": "2026-09-04T12:06:34Z",
+      "conclusion": "success",
+      "minutes": 16.53
+    },
+    {
+      "sha": "84e49627f",
+      "mergedAt": "2026-09-04T13:13:12Z",
+      "conclusion": "success",
+      "minutes": 11.23
+    },
+    {
+      "sha": "42a4ce982",
+      "mergedAt": "2026-09-04T13:38:56Z",
+      "conclusion": "cancelled",
+      "minutes": 0.88
+    },
+    {
+      "sha": "3f44bef5a",
+      "mergedAt": "2026-09-04T13:39:05Z",
+      "conclusion": "cancelled",
+      "minutes": 0.12
+    },
+    {
+      "sha": "ba3c06d3a",
+      "mergedAt": "2026-09-04T13:39:11Z",
+      "conclusion": "cancelled",
+      "minutes": 0.08
+    },
+    {
+      "sha": "9d752cbe7",
+      "mergedAt": "2026-09-04T13:39:15Z",
+      "conclusion": "cancelled",
+      "minutes": 0.1
+    },
+    {
+      "sha": "dc82a213e",
+      "mergedAt": "2026-09-04T13:39:20Z",
+      "conclusion": "success",
+      "minutes": 9.37
+    },
+    {
+      "sha": "c59d15885",
+      "mergedAt": "2026-09-04T13:53:46Z",
+      "conclusion": "success",
+      "minutes": 18.57
+    },
+    {
+      "sha": "4133004be",
+      "mergedAt": "2026-09-04T14:23:06Z",
+      "conclusion": "cancelled",
+      "minutes": 0.53
+    },
+    {
+      "sha": "e3dc83c45",
+      "mergedAt": "2026-09-04T14:23:37Z",
+      "conclusion": "success",
+      "minutes": 13.9
+    },
+    {
+      "sha": "e279d6b1a",
+      "mergedAt": "2026-09-07T06:19:38Z",
+      "conclusion": "success",
+      "minutes": 12.8
+    },
+    {
+      "sha": "ac720a39c",
+      "mergedAt": "2026-09-07T07:01:42Z",
+      "conclusion": "success",
+      "minutes": 11.1
+    },
+    {
+      "sha": "2ea1ec4fc",
+      "mergedAt": "2026-09-08T08:41:57Z",
+      "conclusion": "success",
+      "minutes": 9.53
+    },
+    {
+      "sha": "c454722b7",
+      "mergedAt": "2026-09-08T09:11:37Z",
+      "conclusion": "cancelled",
+      "minutes": 20.48
+    },
+    {
+      "sha": "173f92e5a",
+      "mergedAt": "2026-09-09T14:16:04Z",
+      "conclusion": "success",
+      "minutes": 11.23
+    },
+    {
+      "sha": "7366c8df9",
+      "mergedAt": "2026-09-09T14:57:57Z",
+      "conclusion": "success",
+      "minutes": 11.2
+    },
+    {
+      "sha": "7f60e3fb4",
+      "mergedAt": "2026-09-09T15:09:09Z",
+      "conclusion": "cancelled",
+      "minutes": 0.2
+    },
+    {
+      "sha": "9997a6c10",
+      "mergedAt": "2026-09-09T15:09:18Z",
+      "conclusion": "success",
+      "minutes": 12.78
+    },
+    {
+      "sha": "c38cd3525",
+      "mergedAt": "2026-09-09T16:09:42Z",
+      "conclusion": "cancelled",
+      "minutes": 7.98
+    },
+    {
+      "sha": "8029f92f9",
+      "mergedAt": "2026-09-09T16:16:38Z",
+      "conclusion": "success",
+      "minutes": 22.5
+    },
+    {
+      "sha": "f089c442c",
+      "mergedAt": "2026-09-09T17:04:08Z",
+      "conclusion": "cancelled",
+      "minutes": 1.27
+    },
+    {
+      "sha": "6d505a2df",
+      "mergedAt": "2026-09-09T17:04:15Z",
+      "conclusion": "cancelled",
+      "minutes": 0.08
+    },
+    {
+      "sha": "b90a62cfd",
+      "mergedAt": "2026-09-09T17:04:19Z",
+      "conclusion": "success",
+      "minutes": 12.07
+    },
+    {
+      "sha": "89781badf",
+      "mergedAt": "2026-09-09T17:44:45Z",
+      "conclusion": "success",
+      "minutes": 16.32
+    },
+    {
+      "sha": "d6cafb63c",
+      "mergedAt": "2026-09-09T18:35:06Z",
+      "conclusion": "success",
+      "minutes": 12.58
+    },
+    {
+      "sha": "0bc574fca",
+      "mergedAt": "2026-09-09T18:49:57Z",
+      "conclusion": "success",
+      "minutes": 15.22
+    },
+    {
+      "sha": "2ed7c9db8",
+      "mergedAt": "2026-09-09T19:45:21Z",
+      "conclusion": "success",
+      "minutes": 12.63
+    },
+    {
+      "sha": "25889f612",
+      "mergedAt": "2026-09-09T20:52:32Z",
+      "conclusion": "success",
+      "minutes": 10.85
+    },
+    {
+      "sha": "3cd7d1f6f",
+      "mergedAt": "2026-09-10T04:21:25Z",
+      "conclusion": "success",
+      "minutes": 18.08
+    },
+    {
+      "sha": "7c8f2fb5d",
+      "mergedAt": "2026-09-10T07:01:38Z",
+      "conclusion": "success",
+      "minutes": 21.63
+    },
+    {
+      "sha": "4f0a9fbb4",
+      "mergedAt": "2026-09-10T09:27:00Z",
+      "conclusion": "success",
+      "minutes": 15.62
+    },
+    {
+      "sha": "568f0c5ae",
+      "mergedAt": "2026-09-10T10:33:27Z",
+      "conclusion": "cancelled",
+      "minutes": 16.1
+    },
+    {
+      "sha": "548935870",
+      "mergedAt": "2026-09-10T10:49:07Z",
+      "conclusion": "cancelled",
+      "minutes": 17.93
+    },
+    {
+      "sha": "2cb8fadb4",
+      "mergedAt": "2026-09-10T11:06:40Z",
+      "conclusion": "success",
+      "minutes": 20.93
+    },
+    {
+      "sha": "67faa9e26",
+      "mergedAt": "2026-09-10T11:54:53Z",
+      "conclusion": "cancelled",
+      "minutes": 5.55
+    },
+    {
+      "sha": "a23c9a730",
+      "mergedAt": "2026-09-10T11:59:31Z",
+      "conclusion": "cancelled",
+      "minutes": 1.78
+    },
+    {
+      "sha": "3b5e5a1aa",
+      "mergedAt": "2026-09-10T12:01:17Z",
+      "conclusion": "success",
+      "minutes": 15.35
+    },
+    {
+      "sha": "cf77149cf",
+      "mergedAt": "2026-09-10T15:08:17Z",
+      "conclusion": "cancelled",
+      "minutes": 10.82
+    },
+    {
+      "sha": "0adb33ff2",
+      "mergedAt": "2026-09-10T15:17:31Z",
+      "conclusion": "cancelled",
+      "minutes": 7.58
+    },
+    {
+      "sha": "1af2bf0b5",
+      "mergedAt": "2026-09-10T15:24:24Z",
+      "conclusion": "success",
+      "minutes": 21.37
+    },
+    {
+      "sha": "a304b4129",
+      "mergedAt": "2026-09-10T16:13:51Z",
+      "conclusion": "cancelled",
+      "minutes": 1.48
+    },
+    {
+      "sha": "bb68f5861",
+      "mergedAt": "2026-09-10T16:13:56Z",
+      "conclusion": "success",
+      "minutes": 19.95
+    },
+    {
+      "sha": "e8a0d82ff",
+      "mergedAt": "2026-09-10T17:00:11Z",
+      "conclusion": "cancelled",
+      "minutes": 11.73
+    },
+    {
+      "sha": "5d2d0959c",
+      "mergedAt": "2026-09-10T17:11:22Z",
+      "conclusion": "success",
+      "minutes": 21.2
+    },
+    {
+      "sha": "ab2aafeeb",
+      "mergedAt": "2026-09-10T22:09:55Z",
+      "conclusion": "cancelled",
+      "minutes": 12.52
+    },
+    {
+      "sha": "0276ad0c2",
+      "mergedAt": "2026-09-10T22:21:52Z",
+      "conclusion": "in_progress",
+      "minutes": 1.18
+    }
+  ]
+}

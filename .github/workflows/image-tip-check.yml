@@ -3,8 +3,9 @@
 #
 # ── The gap this closes (#805, #826) ──
 #
-# `Publish image to GHCR` carries `cancel-in-progress: true`, so a burst
-# of merges cancels the earlier publishes — correct behaviour, since only
+# `Publish image to GHCR` supersedes publishes during a burst — with
+# `cancel-in-progress: false` since #877 it drops the ones still PENDING
+# instead of the one executing, but either way earlier runs die, since only
 # the tip's image matters. The problem is that GitHub reports a SUPERSEDED
 # run and a run killed by its own `timeout-minutes` with the same word,
 # `cancelled`, and the second kind means the tip may be unpublished.
@@ -83,10 +84,10 @@ jobs:
             # ── Is this the TIP's own publish? (#845) ──
             #
             # `workflow_run` fires on ANY completion of the publish workflow,
-            # and `cancel-in-progress: true` means a merge burst cancels the
-            # older run the instant the newer one starts. That cancellation
-            # fires this workflow, which then asks about main's CURRENT tip —
-            # whose own publish is, by construction, still building.
+            # and a merge burst supersedes older runs — before #877 the one
+            # executing, now the one still pending. Either cancellation fires
+            # this workflow, which then asks about main's CURRENT tip — whose
+            # own publish is, by construction, still building or queued.
             #
             # Measured on the very first run: run 34374961023 (c38cd3525) was
             # cancelled at 16:16 when 34375694143 (8029f92f9) started; this
