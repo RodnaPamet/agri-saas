@@ -20,9 +20,13 @@ jest.mock('@/lib/db-context', () => {
     return {
         ...actual,
         runInTenantContext: jest.fn(async (_ctx, callback) => {
-            // Callback gets a `db` arg — repos are fully mocked below, so
-            // anything truthy satisfies the signature.
-            return callback({} as unknown);
+            // Callback gets a `db` arg. "Anything truthy satisfies the
+            // signature" WAS true and is not any more: setTaskStatus takes a
+            // transaction-scoped advisory lock before reading, to serialise
+            // the concurrent outbox drains that were writing two
+            // TASK_STATUS_CHANGED rows for one operator action. The double has
+            // to carry every db method the code actually calls.
+            return callback({ $executeRaw: async () => 1 } as unknown);
         }),
     };
 });

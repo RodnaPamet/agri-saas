@@ -388,6 +388,34 @@ async function markOperationParcelImpl(
         // state so the client can offer keep-mine / take-server) rather than
         // silently clobbering. Online edits (no expectedVersion) skip the check.
         if (expectedVersion !== undefined && line.version !== expectedVersion) {
+            // ALREADY APPLIED, not a conflict. This endpoint is queued by the
+            // outbox, and a replay after a lost response carries the version
+            // the operator saw BEFORE their own write landed — so the version
+            // check fails on their own success. Treated as 409 it parked an
+            // operator-facing conflict asking them to resolve keep-mine vs
+            // take-server AGAINST THEMSELVES, which is not a question anyone
+            // can answer.
+            //
+            // If the line already carries the status this write wanted, the
+            // intent is satisfied: return the current state and write no
+            // second audit row. (If somebody else set the same status, the
+            // operator's intent is still satisfied and that change has its own
+            // audit row — so this is right in that case too.)
+            if (line.status === status) {
+                // SAME SHAPE as the success path below — this value is the
+                // API response and is read post-transaction. `resolved: false`
+                // matters: it is what stops the БАБХ farm-record regeneration
+                // being enqueued a second time for one operator action.
+                // `version` is the CURRENT one, so the client syncs to truth
+                // rather than to the number it optimistically expected.
+                return {
+                    success: true as const,
+                    resolved: false,
+                    application: null,
+                    version: line.version,
+                    alreadyApplied: true as const,
+                };
+            }
             throw staleData('This job changed while you were offline.', {
                 currentVersion: line.version,
                 currentStatus: line.status,
