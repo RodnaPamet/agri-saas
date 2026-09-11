@@ -95,16 +95,18 @@ export function swallowsMissingRoot(src: string): boolean {
         .map((l) => (/^\s*\*/.test(l) ? '' : l));
     for (let i = 0; i < lines.length; i++) {
         if (!/readdirSync\s*\(/.test(lines[i])) continue;
-        // the guard clause sits at the top of walk(), a line or two above
         for (let j = Math.max(0, i - 6); j < i; j++) {
-            // `continue` skips the root just as silently as `return` — found
-            // in the sibling shell guard, which used the shape it polices.
-            if (
-                /!\s*(fs\.)?existsSync\s*\(/.test(lines[j]) &&
-                /\b(return|continue)\b/.test(lines.slice(j, j + 3).join(' '))
-            ) {
-                return true;
-            }
+            if (!/!\s*(fs\.)?existsSync\s*\(/.test(lines[j])) continue;
+            // POSITIVE, not a blacklist. The first version banned `return` and
+            // `continue`, which is the `head -1` mistake: there are unbounded
+            // ways to skip a missing root — `return out`, `continue`, `break`,
+            // `out.push()` then fall through, an early `resolve()` — and one
+            // way to handle it correctly, which is to THROW.
+            //
+            // So: an existence check guarding a walk must reach a throw before
+            // the walk does. Anything else swallows, whatever it is spelled.
+            const window = lines.slice(j, i).join('\n');
+            if (!/\bthrow\b/.test(window)) return true;
         }
     }
     return false;
