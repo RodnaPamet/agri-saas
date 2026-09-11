@@ -38,10 +38,17 @@ const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'))
 
 const direct: Record<string, string> = { ...pkg.dependencies, ...pkg.devDependencies };
 
-/** Overrides that name a direct dependency and pin a literal range. */
-function conflicts(): string[] {
+/**
+ * Overrides that name a direct dependency and pin a literal range.
+ *
+ * Takes the map as a parameter so a control can run THIS function — not a
+ * reimplementation of it — over the real overrides with one entry perturbed.
+ * Without that, `conflicts()` could `return []` wholesale and every
+ * assertion here still passed: measured, it SURVIVED selector-teeth.
+ */
+function conflicts(overrides: Record<string, unknown> = pkg.overrides ?? {}): string[] {
     const out: string[] = [];
-    for (const [name, value] of Object.entries(pkg.overrides ?? {})) {
+    for (const [name, value] of Object.entries(overrides)) {
         if (typeof value !== 'string') continue;   // nested — constrains the package's own deps
         if (value.startsWith('$')) continue;       // references the direct dep, which is the fix
         if (direct[name]) out.push(`${name}: direct=${direct[name]} override=${value}`);
@@ -71,6 +78,23 @@ describe('overrides do not fight the direct dependencies', () => {
         const overlap = Object.keys(pkg.overrides ?? {}).filter((n) => direct[n]);
         expect(overlap.length).toBeGreaterThan(0);
         expect(overlap).toContain('sharp');
+    });
+
+    it('...and conflicts() itself can select on the real overrides', () => {
+        // The control above proves the JOIN resolves. It does not prove
+        // conflicts() selects through it — `return []` survived it.
+        //
+        // A healthy tree has zero conflicts, which is exactly what the
+        // assertion below asserts, so counting the live result can never
+        // prove selection. Instead, run the real function over the REAL
+        // overrides map with the one entry we know is a direct dependency
+        // flipped to a literal range. That is the production population with
+        // a single realistic perturbation — not a hand-made fixture that the
+        // live path never sees.
+        const perturbed = { ...(pkg.overrides ?? {}), sharp: '0.34.0' };
+        expect(conflicts(perturbed)).toEqual([
+            `sharp: direct=${direct.sharp} override=0.34.0`,
+        ]);
     });
 
     it('every override of a direct dependency uses $name, not a literal range', () => {
