@@ -138,6 +138,40 @@ describe('overlays size themselves with svh, not vh', () => {
         expect(offendingCaps(corrupted)).toEqual(['max-h-[92vh]']);
     });
 
+    it('no TEST pins the broken unit into an overlay source', () => {
+        // Three tests asserted the literal `vh` string against overlay source
+        // — filter-primitives, modal-primitive and sheet-popover — and each
+        // one held the bug in place. A test ratchets a defect IN as readily as
+        // it ratchets one out, and a source assertion is the strongest form:
+        // it makes fixing the source a test failure.
+        //
+        // They were found ONE CI RUN AT A TIME, because the first sweep matched
+        // guessed spellings (`max-h-[NNvh]`) rather than the thing itself, and
+        // missed `--sheet-height:85vh` and `max-h-\[min\(85vh,680px\)\]`.
+        // Blacklisting spellings loses to the spelling you did not think of —
+        // the same mistake as banning `head -1` and meeting `head -n 1`.
+        //
+        // Scope: `toMatch` / `toContain` only. A fixture STRING containing
+        // `vh` is legitimate — this file is full of them — so the trigger is
+        // asserting it, not mentioning it.
+        const testFiles = walk(path.join(ROOT, 'tests'))
+            .filter((f) => !f.endsWith('overlay-viewport-units.test.ts'));
+        const pinned: string[] = [];
+        for (const abs of testFiles) {
+            const rel = path.relative(ROOT, abs);
+            // The offline lane owns its own surfaces; a `60vh` map container
+            // there is not an overlay and is not this guard's business.
+            if (rel.includes('/offline/') || rel.includes('offline-')) continue;
+            const src = fs.readFileSync(abs, 'utf-8');
+            src.split('\n').forEach((line, i) => {
+                if (!/\.(toMatch|toContain)\(/.test(line)) return;
+                if (/^\s*(\/\/|\*)/.test(line)) return;
+                if (BARE_VH.test(line)) pinned.push(`${rel}:${i + 1}  ${line.trim().slice(0, 70)}`);
+            });
+        }
+        expect(pinned).toEqual([]);
+    });
+
     it('no overlay caps its height with the large-viewport unit', () => {
         const offenders = sources.flatMap(({ rel, src }) =>
             offendingCaps(src).map((cap) => `${rel}  ${cap}`),
