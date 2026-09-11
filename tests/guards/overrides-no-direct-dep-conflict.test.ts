@@ -56,6 +56,23 @@ describe('overrides do not fight the direct dependencies', () => {
         expect(Object.keys(pkg.overrides ?? {}).length).toBeGreaterThan(5);
     });
 
+    it('...and the override -> direct-dependency JOIN resolves', () => {
+        // The control above proves the overrides block is non-empty. It does
+        // NOT prove `direct` is populated, and conflicts() selects by looking
+        // each override name up in `direct` — so emptying that map makes
+        // conflicts() return [] for every input and the assertion below passes
+        // while reading nothing. Measured: `const direct = {}` left all three
+        // tests green.
+        //
+        // The OVERLAP is the observable only the healthy path produces: it is
+        // computed from the same `direct` map the real assertion selects
+        // through, on the real package.json, so it cannot be satisfied by a
+        // dead join.
+        const overlap = Object.keys(pkg.overrides ?? {}).filter((n) => direct[n]);
+        expect(overlap.length).toBeGreaterThan(0);
+        expect(overlap).toContain('sharp');
+    });
+
     it('every override of a direct dependency uses $name, not a literal range', () => {
         // A literal range here does not fail at install time — it fails later,
         // in Dependabot, by aborting the entire updater run.

@@ -58,6 +58,15 @@ function installPathFiles(): string[] {
  */
 const stripComment = (line: string) => line.replace(/(^|\s)#.*$/, '');
 
+/**
+ * The node-version SELECTOR. Shared with its control below on purpose: an
+ * inline copy can be killed (a regex that matches no line) while the control
+ * keeps using a private, working one, and then the control proves nothing
+ * about the path that matters. Measured: a never-matching regex here left
+ * all four tests green.
+ */
+const NODE_VERSION_RE = /\bnode-version:\s*(.+?)\s*$/;
+
 /** `npm install` and its aliases (`npm i`, `npm add`) — the verbs we ban. */
 const NPM_INSTALL = /\bnpm\s+(install|i|add)\b/;
 
@@ -92,6 +101,22 @@ describe('deterministic install model', () => {
         expect(pkg.engines.node).toContain('22');
     });
 
+    it('the node-version selector actually matches production workflows', () => {
+        // NODE_VERSION_RE is the selector the assertion below filters through.
+        // A regex that matches nothing yields zero offenders and passes — the
+        // empty-selection class. This counts what the SAME regex extracts from
+        // the SAME files, so a dead selector cannot satisfy it.
+        const found: string[] = [];
+        for (const rel of installPathFiles()) {
+            if (!rel.startsWith('.github/workflows/')) continue;
+            for (const line of read(rel).split('\n')) {
+                const m = stripComment(line).match(NODE_VERSION_RE);
+                if (m) found.push(`${rel}: ${m[1]}`);
+            }
+        }
+        expect(found.length).toBeGreaterThan(2);
+    });
+
     it('the Node version is pinned consistently (.nvmrc / engines / workflows)', () => {
         // .nvmrc is the source of truth for version-manager users.
         const nvmrc = read('.nvmrc').trim();
@@ -110,9 +135,7 @@ describe('deterministic install model', () => {
             read(rel)
                 .split('\n')
                 .forEach((line, i) => {
-                    const m = stripComment(line).match(
-                        /\bnode-version:\s*(.+?)\s*$/,
-                    );
+                    const m = stripComment(line).match(NODE_VERSION_RE);
                     if (!m) return;
                     // Value may be '22' / "22" or a GitHub Actions
                     // expression `${{ env.NODE_VERSION }}`.
