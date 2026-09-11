@@ -267,6 +267,18 @@ const ALL_OVERRIDE_ROWS = [...CONFLICT_ROWS, ...SECURITY_ROWS, ...CEILING_ROWS].
 /** The rows that carry the machine-checked Scope / Checked columns. */
 const SCOPED_ROWS = [...SECURITY_ROWS, ...CEILING_ROWS];
 
+/**
+ * Floors for what each assertion must have LOOKED AT. Named constants rather
+ * than inline numbers so the failure says which population shrank.
+ *
+ * These are deliberately below today's counts — they are anti-vacuity floors,
+ * not a ratchet on the document's size. A row legitimately removed should not
+ * fail CI; a table VANISHING should.
+ */
+const MIN_SECURITY_ROWS = 4;
+const MIN_CEILING_ROWS = 1;
+const MIN_SCOPED_ROWS = MIN_SECURITY_ROWS + MIN_CEILING_ROWS;
+
 const UNDOCUMENTED_HEADING = 'Overrides recorded here but not explained';
 
 /** The doc's own list of overrides it does NOT explain. */
@@ -683,24 +695,89 @@ describe('docs/dependency-policy.md — machine-checkable claims', () => {
         });
     });
 
+    // ─────────────────────────────────────────────────────────────────────
+    // Every assertion below states WHAT IT EXAMINED before stating that it
+    // found nothing wrong.
+    //
+    // Without that, `expect(check(ROWS)).toEqual([])` is satisfied by ROWS
+    // being empty, and this guard shipped with exactly that hole: narrowing
+    //     const SCOPED_ROWS = [...SECURITY_ROWS, ...CEILING_ROWS];
+
+/**
+ * Floors for what each assertion must have LOOKED AT. Named constants rather
+ * than inline numbers so the failure says which population shrank.
+ *
+ * These are deliberately below today's counts — they are anti-vacuity floors,
+ * not a ratchet on the document's size. A row legitimately removed should not
+ * fail CI; a table VANISHING should.
+ */
+const MIN_SECURITY_ROWS = 4;
+const MIN_CEILING_ROWS = 1;
+const MIN_SCOPED_ROWS = MIN_SECURITY_ROWS + MIN_CEILING_ROWS;
+    // to `[...SECURITY_ROWS]` — one token — dropped the entire ceiling table
+    // out of three live checks, and the suite reported 30 passed, exit 0. With
+    // a real ceiling row corrupted ON TOP of that (inverted Scope claim AND an
+    // impossible date, 2026-13-45) it was STILL 30 passed.
+    //
+    // The cardinality assertions elsewhere in this file did not help: they
+    // count SECURITY_ROWS and CEILING_ROWS, never the array these assertions
+    // actually iterate. A count on a sibling constant is not a control on this
+    // selection.
+    //
+    // `expectExamined` is deliberately per-assertion. Asserting the size once,
+    // far away, is what failed.
+    const expectExamined = (label: string, rows: readonly unknown[], atLeast: number): void => {
+        expect({ label, examined: rows.length >= atLeast }).toEqual({ label, examined: true });
+    };
+
+    // A FLOOR IS NOT ENOUGH, and finding that out is why this comment exists.
+    //
+    // The first attempt set MIN_SCOPED_ROWS to 5. The document has 6 security
+    // rows and exactly ONE ceiling row, so the realistic narrowing — dropping
+    // `...CEILING_ROWS` — takes the population from 7 to 6, which clears a
+    // floor of 5. The mutation still passed. A floor catches a table
+    // VANISHING; it cannot catch the only row of a small table going missing,
+    // and the small table is the easy one to lose.
+    //
+    // So tie the derived array to BOTH its sources by identity. This cannot be
+    // satisfied by a number that happens to be big enough.
+    it('the scoped population really is both tables — a control on the checks below', () => {
+        expect(SCOPED_ROWS).toHaveLength(SECURITY_ROWS.length + CEILING_ROWS.length);
+        for (const row of SECURITY_ROWS) expect(SCOPED_ROWS).toContain(row);
+        for (const row of CEILING_ROWS) expect(SCOPED_ROWS).toContain(row);
+        // ...and both sources are themselves non-empty, or the identity above
+        // is satisfied by two empty arrays.
+        expect({ security: SECURITY_ROWS.length >= MIN_SECURITY_ROWS }).toEqual({ security: true });
+        expect({ ceiling: CEILING_ROWS.length >= MIN_CEILING_ROWS }).toEqual({ ceiling: true });
+    });
+
     describe('doc ↔ package-lock.json', () => {
         it('every Scope column agrees with the lockfile', () => {
+            expectExamined('scope rows', SCOPED_ROWS, MIN_SCOPED_ROWS);
             expect(checkScope(SCOPED_ROWS)).toEqual([]);
         });
 
         it('every resolved version satisfies the range the doc states', () => {
+            expectExamined('range rows', SCOPED_ROWS, MIN_SCOPED_ROWS);
             expect(checkLockfileSatisfiesRange(SCOPED_ROWS)).toEqual([]);
         });
     });
 
     describe('security floors vs the advisories they cite', () => {
         it('no security row states a floor below its own patched version', () => {
+            expectExamined('security rows', SECURITY_ROWS, MIN_SECURITY_ROWS);
             expect(checkFloorAgainstAdvisory(SECURITY_ROWS)).toEqual([]);
         });
     });
 
     describe('review dates', () => {
         it('every Checked date parses, is not in the future, and has not expired', () => {
+            expectExamined('dated rows', SCOPED_ROWS, MIN_SCOPED_ROWS);
+            // ...and that the dates themselves were non-empty. A row whose
+            // `checked` cell is blank contributes no error, so "every date is
+            // fine" and "there were no dates" are otherwise the same result.
+            const dated = SCOPED_ROWS.filter((r) => r.checked.trim() !== '');
+            expect({ datedCells: dated.length >= MIN_SCOPED_ROWS }).toEqual({ datedCells: true });
             const now = new Date();
             const errors = SCOPED_ROWS.flatMap((r) => checkDate(r.checked, `${DOC_REL}:${r.line}`, now));
             expect(errors).toEqual([]);
