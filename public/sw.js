@@ -374,6 +374,18 @@ function isFieldDataRequest(url) {
         // offline-pwa-coverage guardrail.)
         /\/locations\/[^/]+\/tiles\/\d+\/\d+\/\d+(?:\.pbf)?$/.test(url.pathname) ||
         /\/field-operations\/[^/]+$/.test(url.pathname) ||
+        // The task DETAIL. `/farm-tasks` below is the LIST, and matching the
+        // list does NOT match this — which is why an operator could see every
+        // task offline and open NONE of them. Reported from a phone,
+        // 2026-09-11: "i never reach the assigned to screen offline — when i
+        // click a task the red sign appears". The navigation was fine by then;
+        // the page simply had no data to render and said so.
+        //
+        // Deliberately `[^/]+$`: it takes /tasks/<id> and not /tasks/<id>/links
+        // or /comments (both tab-gated, and the default tab is `overview`), not
+        // the /tasks list, and not /tasks/bulk/*. Writes never reach here — the
+        // fetch handler returns early on `method !== 'GET'`.
+        /\/tasks\/[^/]+$/.test(url.pathname) ||
         /\/farm-tasks(?:$|\?)/.test(url.pathname) ||
         url.pathname.endsWith('/farm-tasks')
     );

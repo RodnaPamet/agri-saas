@@ -167,8 +167,14 @@ export function FarmTaskDetailClient({
     const taskQuery = useTenantSWR<any>(taskId ? `/tasks/${taskId}` : null);
     const task = taskQuery.data ?? null;
     const loading = taskQuery.isLoading;
+    // A task the operator opened online is in DATA_CACHE and loads fine. One
+    // they never opened is genuinely absent, and must say THAT rather than
+    // hand them the transport's own words — which was api-client's English
+    // default, and before #888 was WebKit's "Load failed".
     const error = taskQuery.error
-        ? (taskQuery.error instanceof Error ? taskQuery.error.message : t('notFound'))
+        ? (isOfflineError(taskQuery.error)
+              ? t('loadOffline')
+              : taskQuery.error instanceof Error ? taskQuery.error.message : t('notFound'))
         : '';
 
     const linksQuery = useTenantSWR<any[]>(taskId && tab === 'links' ? `/tasks/${taskId}/links` : null);
