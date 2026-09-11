@@ -115,13 +115,26 @@ export function useKeyboardInset(): KeyboardInset {
       const keyboardOpen = editableHasFocus()
         ? covered > CHROME_MAX_PX
         : covered > KEYBOARD_MIN_PX;
-      setState({
+      const next = {
         inset: keyboardOpen ? Math.round(covered) : 0,
         // Always reported. Consumers cap maxHeight with this whether or not
         // a keyboard is open, because `100vh` on iOS is the LARGE viewport
         // and overflows the visible area on its own.
         height: Math.round(vv.height),
-      });
+      };
+      // BAIL OUT WHEN NOTHING CHANGED. Returning the PREVIOUS object makes
+      // React skip the re-render; returning a fresh object with identical
+      // fields does not, because the bail-out is reference equality.
+      //
+      // This listens on `focusin`/`focusout` at the window, so EVERY Tab
+      // keypress fires two updates. Without this guard each one re-rendered
+      // every consumer — Modal and Popover, i.e. the open dialog — and
+      // Radix's focus trap restores focus on re-render, which fires
+      // `focusin` again. Tabbing between fields in a dialog could therefore
+      // drive an unbounded render loop and lock the page.
+      setState((prev) =>
+        prev.inset === next.inset && prev.height === next.height ? prev : next,
+      );
     };
 
     update();
