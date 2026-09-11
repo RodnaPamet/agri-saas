@@ -566,7 +566,7 @@ export function Combobox<
                                         value={search}
                                         onValueChange={setSearch}
                                         className={cn(
-                                            "text-content-emphasis placeholder:text-content-muted grow border-0 bg-transparent py-3 pl-4 pr-2 outline-none focus:ring-0 sm:text-sm",
+                                            "text-content-emphasis placeholder:text-content-muted grow border-0 bg-transparent py-3 pl-4 pr-2 text-base outline-none focus:ring-0 sm:text-sm",
                                             inputClassName,
                                         )}
                                         onKeyDown={(e) => {
