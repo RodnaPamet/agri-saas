@@ -16,6 +16,7 @@ import { Modal } from '@/components/ui/modal';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { EmptyState } from '@/components/ui/empty-state';
+import { AsyncState } from '@/components/ui/async-state';
 import { Fab } from '@/components/ui/fab';
 import { PullToRefresh } from '@/components/ui/hooks';
 import { ScrollToTop } from '@/components/ui/scroll-to-top';
@@ -39,7 +40,10 @@ export function LocationsClient({ tenantSlug }: { tenantSlug: string }) {
     // depending on `kind`, and this page's columns describe fields — a bin
     // rendered here shows "0 parcels" and a Status that does not apply to it.
     // Bins have their own page (/grain/bins) with capacity and fill.
-    const { data, mutate, isLoading } = useTenantSWR<LocationItem[]>(
+    // `loadError`, not `error`: the create-modal's useState already owns the
+    // identifier `error` in this function body, so a bare destructure is
+    // TS2451 "Cannot redeclare block-scoped variable".
+    const { data, error: loadError, mutate, isLoading } = useTenantSWR<LocationItem[]>(
         '/locations?kind=FIELD',
     );
 
@@ -95,8 +99,6 @@ export function LocationsClient({ tenantSlug }: { tenantSlug: string }) {
         [tenantSlug, t],
     );
 
-    const rows = data ?? [];
-
     return (
         <ListPageShell className="gap-section">
             <ListPageShell.Header>
@@ -116,31 +118,67 @@ export function LocationsClient({ tenantSlug }: { tenantSlug: string }) {
                 </div>
             </ListPageShell.Header>
             <ListPageShell.Body>
-                <DataTable
-                    fillBody
-                    mobileFallback="card"
-                    data-testid="locations-table"
-                    data={rows}
-                    columns={columns}
-                    loading={isLoading && !data}
-                    getRowId={(l) => l.id}
-                    // Hover-warm the detail SWR cache (the row's title Link
-                    // already prefetches the route) so list→detail is instant.
-                    onRowPrefetch={(row) => prefetchData(`/locations/${row.original.id}`)}
-                    // Single click anywhere on a row opens the location — no
-                    // selection checkboxes. The name cell keeps its own <Link>
-                    // (keyboard path); the row handler is the pointer path.
-                    onRowClick={(row) => router.push(`/t/${tenantSlug}/locations/${row.original.id}`)}
-                    emptyState={(
-                        <EmptyState
-                            size="sm"
-                            variant="no-records"
-                            title={t('emptyTitle')}
-                            description={t('emptyDesc')}
-                            primaryAction={{ label: t('newLocation'), onClick: () => setShowNew(true) }}
+                {/*
+                  * A failed load must never fall through to the empty table.
+                  * `data ?? []` made "the fetch never landed" and "this farm
+                  * has no fields" the SAME observable, so an operator WITH
+                  * fields was told they had none — #862's defect on the page
+                  * that fix missed. AsyncState owns the split, and its
+                  * `data !== undefined` check runs FIRST, so a failed
+                  * BACKGROUND revalidation keeps stale rows on screen rather
+                  * than blanking good data.
+                  *
+                  * The skeleton is this table in `loading` mode, not a
+                  * <SkeletonTable>: that primitive is @deprecated and
+                  * tests/guards/skeleton-parity.test.ts locks the convention
+                  * that a list page passes `loading` through instead. First
+                  * paint stays byte-identical to today's.
+                  */}
+                <AsyncState
+                    data={data}
+                    error={loadError}
+                    isLoading={isLoading}
+                    onRetry={() => void mutate()}
+                    className="rounded-lg border border-border-default bg-bg-default"
+                    skeleton={(
+                        <DataTable
+                            fillBody
+                            mobileFallback="card"
+                            data-testid="locations-table-skeleton"
+                            loading
+                            data={[]}
+                            columns={columns}
+                            getRowId={(l) => l.id}
                         />
                     )}
-                />
+                >
+                    {(locations) => (
+                    <DataTable
+                        fillBody
+                        mobileFallback="card"
+                        data-testid="locations-table"
+                        data={locations}
+                        columns={columns}
+                        getRowId={(l) => l.id}
+                        // Hover-warm the detail SWR cache (the row's title Link
+                        // already prefetches the route) so list→detail is instant.
+                        onRowPrefetch={(row) => prefetchData(`/locations/${row.original.id}`)}
+                        // Single click anywhere on a row opens the location — no
+                        // selection checkboxes. The name cell keeps its own <Link>
+                        // (keyboard path); the row handler is the pointer path.
+                        onRowClick={(row) => router.push(`/t/${tenantSlug}/locations/${row.original.id}`)}
+                        emptyState={(
+                            <EmptyState
+                                size="sm"
+                                variant="no-records"
+                                title={t('emptyTitle')}
+                                description={t('emptyDesc')}
+                                primaryAction={{ label: t('newLocation'), onClick: () => setShowNew(true) }}
+                            />
+                        )}
+                    />
+                    )}
+                </AsyncState>
             </ListPageShell.Body>
 
             <Modal showModal={showNew} setShowModal={setShowNew} size="md" title={t('modalTitle')} description={t('modalDescription')}>
