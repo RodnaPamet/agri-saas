@@ -1127,8 +1127,12 @@ export function MapCanvas({
                     data-testid="map-no-basemap"
                     className="pointer-events-none absolute left-3 top-3 z-20 max-w-[16rem] rounded-lg border border-border-subtle bg-bg-default/95 px-3 py-2 shadow-md"
                 >
-                    <p className="text-xs font-medium text-content-emphasis">{t('noBasemapTitle')}</p>
-                    <p className="text-xs text-content-secondary">{t('noBasemapBody')}</p>
+                    {/* `backdropMissing*`, not `noBasemap*`: the empty-state
+                        tone guard selects on `key.startsWith('no')` and holds
+                        every match to the "No X yet" title voice — including a
+                        BODY, which is allowed prose and needs its full stop. */}
+                    <p className="text-xs font-medium text-content-emphasis">{t('backdropMissingTitle')}</p>
+                    <p className="text-xs text-content-secondary">{t('backdropMissingBody')}</p>
                 </div>
             )}
 
