@@ -129,7 +129,13 @@ jest.mock('@/components/ui/map/MapCanvas', () => ({
 // renders would hide the row chrome the axe pass needs to cover).
 
 const SWR_FIXTURES: Record<string, unknown> = {
-    '/locations': [
+    // LocationsClient asks for FIELD-kind rows only, and the fixture lookup is
+    // EXACT — so the bare '/locations' key matched nothing and this suite has
+    // been auditing the EMPTY-STATE branch, not the row chrome its docblock
+    // claims. Since the AsyncState wrap an undefined `data` renders the
+    // failure branch instead, which axe also passes — silently dropping the
+    // table markup from the sweep altogether.
+    '/locations?kind=FIELD': [
         { id: 'loc-1', name: 'Home Farm', status: 'ACTIVE', _count: { parcels: 4 } },
         { id: 'loc-2', name: 'River Block', status: 'ACTIVE', _count: { parcels: 2 } },
     ],

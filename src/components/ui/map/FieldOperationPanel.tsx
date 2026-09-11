@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button';
 import { AgStatusBadge } from '@/components/ag/ag-status';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
-import { apiPatch } from '@/lib/api-client';
+import { apiPatch, isOfflineError, API_TIMEOUT_CODE } from '@/lib/api-client';
 import { totalLabel, haToDca, trimNumber } from '@/lib/agro/rate-calc';
 import { haptic } from '@/lib/haptics';
 import { playSound } from '@/lib/sound';
@@ -55,6 +55,18 @@ export function FieldOperationPanel({ taskId }: FieldOperationPanelProps) {
     const buildUrl = useTenantApiUrl();
     const { data, mutate, isLoading } = useTenantSWR<FieldOpView>(`/field-operations/${taskId}`);
     const [busyId, setBusyId] = useState<string | null>(null);
+    // A failed mark must SAY so, next to the row it failed on. Every caller is
+    // a bare `onClick={() => mark(…)}`, so the old `throw err` was an unhandled
+    // rejection — nothing in the app listens, the only `unhandledrejection`
+    // handler ignores anything that is not a ChunkLoadError. The row stayed
+    // PENDING and the whole story an operator got was a buzz.
+    //
+    // This panel is NOT manager-only: a MECHANISATOR can open the locations
+    // page, the Operations tab renders it, and the list is not filtered by
+    // assignee — so an operator can tap Done on a COLLEAGUE'S job and take a
+    // 403 while fully online. That, not the offline case, is the common
+    // failure here. (#887)
+    const [markError, setMarkError] = useState<{ lineId: string; message: string } | null>(null);
 
     const doneIds = useMemo(
         () => (data?.lines ?? [])
@@ -85,7 +97,41 @@ export function FieldOperationPanel({ taskId }: FieldOperationPanelProps) {
             await mutate();
         } catch (err) {
             haptic('error');
-            throw err;
+            // Nothing here is optimistic — the row on screen is still server
+            // truth — so there is no rollback to do. What was missing is the
+            // SENTENCE.
+            //
+            // FOUR outcomes, four instructions, because the wrong instruction
+            // rewrites a regulatory date. A successful mark stamps
+            // `completedAt = new Date()`, and that column is the printed
+            // "Дата" of the treatment AND the base for the earliest-harvest
+            // date in the БАБХ ДНЕВНИК. Telling an operator to retry a write
+            // that actually LANDED makes them re-mark, and the re-mark moves
+            // that date — across midnight, by a day.
+            //
+            // Shape-matched, not `instanceof`: two bundler copies of the error
+            // class would silently take the wrong arm.
+            const e = (typeof err === 'object' && err !== null ? err : {}) as { code?: unknown; status?: unknown };
+            setMarkError({
+                lineId,
+                message: isOfflineError(err)
+                    // Never reached the server. Safe to promise nothing was saved.
+                    ? t('fieldOp.markOffline')
+                    : e.code === API_TIMEOUT_CODE
+                        // The request may well have landed. Do NOT claim "unchanged".
+                        ? t('fieldOp.markTimeout')
+                        : e.status === 403
+                            // Not the assignee. Retrying can never work, so
+                            // "try again" would be a lie.
+                            ? t('fieldOp.markForbidden')
+                            : t('fieldOp.markFailed'),
+            });
+            // Re-read so the row agrees with the server — this is what makes
+            // the timeout copy actionable. Offline it does NOT reject: the SW
+            // serves /field-operations/<id> from DATA_CACHE. Wrapped because a
+            // throw here would resurrect the unhandled rejection this patch
+            // exists to remove.
+            void Promise.resolve(mutate()).catch(() => {});
         } finally {
             setBusyId(null);
         }
@@ -123,7 +169,8 @@ export function FieldOperationPanel({ taskId }: FieldOperationPanelProps) {
             <MapCanvas parcels={mapParcels} bounds={bounds} interactive={false} doneIds={doneIds} className="h-[360px] w-full overflow-hidden rounded-lg border border-border-subtle" />
             <ul className="divide-y divide-border-subtle rounded-lg border border-border-subtle">
                 {data.lines.map((l) => (
-                    <li key={l.id} className="flex items-center justify-between gap-default px-4 py-3">
+                    <li key={l.id} className="px-4 py-3">
+                        <div className="flex items-center justify-between gap-default">
                         <div>
                             <div className="text-sm font-medium">{l.parcel?.name ?? t('parcel')}</div>
                             <div className="text-xs text-content-secondary">
@@ -151,6 +198,12 @@ export function FieldOperationPanel({ taskId }: FieldOperationPanelProps) {
                                 <Button size="sm" variant="secondary" loading={busyId === l.id} disabled={busyId === l.id} onClick={() => mark(l.id, 'PENDING')}>{t('fieldOp.reopen')}</Button>
                             )}
                         </div>
+                        </div>
+                        {markError?.lineId === l.id && (
+                            <div role="alert" className="mt-2 rounded-lg border border-border-error bg-bg-error px-3 py-2 text-sm text-content-error">
+                                {markError.message}
+                            </div>
+                        )}
                     </li>
                 ))}
             </ul>
