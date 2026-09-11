@@ -274,10 +274,14 @@ function PopoverRoot({
           // it stays visible. The wrapper is pinned to the viewport bottom, so
           // the lift is expressed as a bottom margin on the content itself.
           style={
-            mobileSheetInOverlay && keyboardInset
+            mobileSheetInOverlay && viewportHeight
               ? {
-                  marginBottom: keyboardInset,
+                  // Cap to the measured visual viewport whenever it is known;
+                  // lift only when a keyboard is actually open. Gating BOTH on
+                  // `keyboardInset` meant the cap vanished together with the
+                  // lift, falling back to a class-level viewport unit.
                   maxHeight: viewportHeight,
+                  ...(keyboardInset ? { marginBottom: keyboardInset } : {}),
                   transition: reducedMotion
                     ? undefined
                     : "margin-bottom 150ms ease-out, max-height 150ms ease-out",

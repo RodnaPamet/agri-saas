@@ -64,7 +64,7 @@ const modalContentVariants = cva(
         // with independent body scroll. Header/footer pinned via the slot
         // components below.
         "fixed inset-0 z-40 m-auto h-fit w-full",
-        "flex max-h-[min(85vh,680px)] flex-col",
+        "flex max-h-[min(85svh,680px)] flex-col",
         // B3 — brand-tinted focal-glow texture + elegant border + glass-edge
         // highlight (the class provides bg, border, and shadow; see
         // globals.css `.surface-popup-texture`).
@@ -241,9 +241,19 @@ function ModalRoot({
                         // the drawer onto its top edge (`bottom`) and cap its
                         // height to the visible viewport so the pinned footer
                         // (Save/Cancel) stays reachable and the header on-screen.
+                        // maxHeight applies whenever the visual viewport is
+                        // known — NOT only when a keyboard is open. The class
+                        // fallback below is `svh`, but capping to the measured
+                        // height is exact where the unit is an approximation.
+                        // The lift (`bottom`) is keyboard-only.
                         style={
-                            keyboardInset
-                                ? { bottom: keyboardInset, maxHeight: viewportHeight }
+                            viewportHeight
+                                ? {
+                                      maxHeight: viewportHeight,
+                                      ...(keyboardInset
+                                          ? { bottom: keyboardInset }
+                                          : {}),
+                                  }
                                 : undefined
                         }
                         onPointerDownOutside={(e) => {
@@ -260,7 +270,12 @@ function ModalRoot({
                             // focal-glow texture (background + border +
                             // glass edge) for parity — replaces the flat
                             // bg-bg-default/border-border-subtle.
-                            "surface-popup-texture max-h-[92vh] rounded-t-[10px] text-content-emphasis",
+                            // `svh`, not `vh`. On iOS Safari `vh` is the LARGE viewport — it
+                            // deliberately ignores the URL bar and toolbar — so `92vh`
+                            // is 92% of an area taller than the one you can see, and the
+                            // sheet's top goes off-screen behind the chrome. `svh` is the
+                            // SMALL viewport: always visible, never overflows.
+                            "surface-popup-texture max-h-[92svh] rounded-t-[10px] text-content-emphasis",
                             className,
                         )}
                     >

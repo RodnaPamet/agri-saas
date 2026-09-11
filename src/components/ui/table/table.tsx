@@ -1404,7 +1404,7 @@ export function Table<T>({
             className="bg-bg-page/70 absolute inset-0 h-full rounded-lg"
           >
             {/* here we're using min(75%,75vh) to ensure proper placement on full height vs partial height tables */}
-            <div className="flex h-[min(75%,75vh)] w-full items-center justify-center">
+            <div className="flex h-[min(75%,75svh)] w-full items-center justify-center">
               <LoadingSpinner />
             </div>
           </motion.div>
