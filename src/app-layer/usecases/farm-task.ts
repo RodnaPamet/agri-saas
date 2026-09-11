@@ -6,6 +6,7 @@ import { JournalRepository } from '../repositories/JournalRepository';
 import { WorkItemRepository } from '../repositories/WorkItemRepository';
 import { createTask, addTaskLink, listTasks } from './task';
 import { getFarmTaskType } from '@/lib/agriculture/farm-task-types';
+import { isUniqueViolation } from '@/lib/errors/prisma';
 
 /**
  * Farm tasks — assignable field work tied to places/crops/equipment.
@@ -47,7 +48,39 @@ function assertAllOwned(label: string, requested: string[], valid: Set<string>) 
  * catalog type in metadata + assignee → TASK_ASSIGNED) and addTaskLink
  * per place/equipment.
  */
-export async function createFarmTask(ctx: RequestContext, input: CreateFarmTaskInput) {
+/**
+ * The task a replayed request already minted — same outbox id, same
+ * `Idempotency-Key`, same `clientMutationId`. Returns the original so a
+ * re-send never doubles the work.
+ *
+ * Scoped to `type: 'FARM_TASK'` deliberately. `clientMutationId` is unique per
+ * TENANT, not per type, so an unscoped read could return a FIELD_OPERATION
+ * task minted from the same outbox id and hand the caller the wrong row.
+ */
+async function findFarmTaskByMutationKey(ctx: RequestContext, idempotencyKey: string) {
+    return runInTenantContext(ctx, (db) =>
+        db.task.findFirst({
+            where: { tenantId: ctx.tenantId, clientMutationId: idempotencyKey, type: 'FARM_TASK' },
+        }),
+    );
+}
+
+export async function createFarmTask(
+    ctx: RequestContext,
+    input: CreateFarmTaskInput,
+    idempotencyKey?: string | null,
+) {
+    // Offline exactly-once. A task queued in a field and replayed over a flaky
+    // link carries the same outbox id as `Idempotency-Key`. If that key already
+    // minted a task, return the original and do NO further work — createTask
+    // below also writes an audit event, emits a TASK_CREATED automation event
+    // and enqueues an assignee notification, so a second pass would duplicate
+    // all three even if the row itself were deduped.
+    if (idempotencyKey) {
+        const existing = await findFarmTaskByMutationKey(ctx, idempotencyKey);
+        if (existing) return existing;
+    }
+
     const typeDef = getFarmTaskType(input.farmTaskType);
     if (!typeDef) throw badRequest('INVALID_FARM_TASK_TYPE', `Unknown farm task type: ${input.farmTaskType}`);
 
@@ -68,15 +101,29 @@ export async function createFarmTask(ctx: RequestContext, input: CreateFarmTaskI
         }
     });
 
-    const task = await createTask(ctx, {
-        type: 'FARM_TASK',
-        title: input.title,
-        description: input.description ?? null,
-        priority: input.priority,
-        dueAt: input.dueAt ?? null,
-        assigneeUserId: input.assigneeUserId ?? null,
-        metadataJson: { farmTaskType: typeDef.key, farmTaskCategory: typeDef.category },
-    });
+    let task;
+    try {
+        task = await createTask(ctx, {
+            type: 'FARM_TASK',
+            title: input.title,
+            description: input.description ?? null,
+            priority: input.priority,
+            dueAt: input.dueAt ?? null,
+            assigneeUserId: input.assigneeUserId ?? null,
+            metadataJson: { farmTaskType: typeDef.key, farmTaskCategory: typeDef.category },
+            clientMutationId: idempotencyKey ?? null,
+        });
+    } catch (err) {
+        // Race backstop — two replays of the same queued task reach the unique
+        // (tenantId, clientMutationId) index together. The loser gets a P2002
+        // from the INSERT, before any event is logged, so re-reading the
+        // winner's row is both safe and correct.
+        if (idempotencyKey && isUniqueViolation(err)) {
+            const existing = await findFarmTaskByMutationKey(ctx, idempotencyKey);
+            if (existing) return existing;
+        }
+        throw err;
+    }
 
     // Reuse TaskLink via the Task module's addTaskLink (entityType is the
     // freshly-widened enum value).

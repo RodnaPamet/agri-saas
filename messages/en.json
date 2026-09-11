@@ -2553,7 +2553,11 @@
                 "done": "Done",
                 "skip": "Skip",
                 "reopen": "Reopen",
-                "areaDca": "{dca} dca"
+                "areaDca": "{dca} dca",
+                "markFailed": "Could not save that mark — the parcel is unchanged. Try again.",
+                "markOffline": "No signal — this mark did not reach the server. Nothing was saved.",
+                "markTimeout": "The server did not answer. It is not certain the mark was saved — check the row before marking it again.",
+                "markForbidden": "You can only mark jobs assigned to you. Ask whoever this job belongs to."
             },
             "canvas": {
                 "parcelMap": "Parcel map — {mode}",
@@ -2578,7 +2582,9 @@
                 "locateMe": "Locate me",
                 "zoomHintWindows": "Use Ctrl + scroll to zoom the map",
                 "zoomHintMac": "Use ⌘ + scroll to zoom the map",
-                "zoomHintMobile": "Use two fingers to move the map"
+                "zoomHintMobile": "Use two fingers to move the map",
+                "backdropMissingTitle": "No map background",
+                "backdropMissingBody": "Your fields are still shown. The backdrop loads when you have signal."
             },
             "parcelSheet": {
                 "description": "Parcel detail and apply-rate calculator",
@@ -3197,7 +3203,8 @@
             "saveTask": "Save task",
             "deleteTask": "Delete task",
             "deleted": "Task deleted"
-        }
+        },
+        "createOffline": "No signal, and the task could not be saved on this phone either. Nothing was stored; your text is still here."
     },
     "issues": {
         "redirecting": "Redirecting to Tasks…",
