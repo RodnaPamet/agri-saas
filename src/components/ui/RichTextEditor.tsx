@@ -236,7 +236,7 @@ export function RichTextEditor({
             />
             {mode === 'MARKDOWN' ? (
                 <textarea
-                    className="input w-full rounded-none border-0 border-t border-border-default bg-transparent font-mono text-sm focus:ring-0"
+                    className="input w-full rounded-none border-0 border-t border-border-default bg-transparent font-mono text-base md:text-sm focus:ring-0"
                     style={{ minHeight: `${minHeightPx}px` }}
                     value={value}
                     disabled={disabled}
