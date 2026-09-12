@@ -16,7 +16,14 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
 });
 
 /**
- * Journal edits are LAST-WRITE-WINS by decision, not by omission.
+ * Journal edits WERE last-write-wins by decision. #919 revisited it, on the
+ * trigger this very comment named — "journal edits start going through the
+ * outbox" — and followed the OperationParcel precedent it pointed at:
+ * `version Int`, `If-Match` here, a compare-and-swap guarded on version,
+ * `staleData()` 409, and `ifMatch` on the outbox item.
+ *
+ * The paragraph below is kept as the RECORD OF WHY, not as current behaviour.
+ * Historical:
  *
  * `LogEntry` has no `version` column and this route reads no `If-Match`. That
  * is deliberate: the offline outbox carries journal CREATEs (POST) and photo
@@ -41,7 +48,22 @@ export const PUT = withApiErrorHandling(withValidatedBody(UpdateLogEntrySchema, 
     const params = await paramsPromise;
     const ctx = await getTenantCtx(params, req);
     await assertModuleEnabled(ctx, 'JOURNAL');
-    const entry = await updateLogEntry(ctx, params.id, body);
+    // #919 — offline edits. The outbox replays a queued edit with the row
+    // version the operator saw as `If-Match` and its item id as
+    // `Idempotency-Key`. Both were already being SENT and neither was read,
+    // which is why queueing edits was UNSAFE rather than merely absent:
+    // without the version a replay clobbers a supervisor's later change, and
+    // without the key the operator's own replay reads as a conflict with
+    // themselves.
+    //
+    // Absent headers = an online edit from the modal, which keeps
+    // last-write-wins exactly as before.
+    const rawIfMatch = req.headers.get('If-Match');
+    const expectedVersion = rawIfMatch !== null && /^\d+$/.test(rawIfMatch)
+        ? Number.parseInt(rawIfMatch, 10)
+        : undefined;
+    const idempotencyKey = req.headers.get('Idempotency-Key') || undefined;
+    const entry = await updateLogEntry(ctx, params.id, body, expectedVersion, idempotencyKey);
     return jsonResponse({ success: true, entry });
 }));
 

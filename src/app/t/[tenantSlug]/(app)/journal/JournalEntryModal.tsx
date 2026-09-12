@@ -108,6 +108,13 @@ interface JournalSubmitBody {
 
 export interface JournalEntryInitial {
     id?: string;
+    /**
+     * The row version the operator is editing, replayed as `If-Match` (#919).
+     * Absent = an online edit with no version to assert, which keeps
+     * last-write-wins. Present = the server rejects a stale write with 409
+     * instead of clobbering whatever changed meanwhile.
+     */
+    version?: number;
     type?: string;
     status?: string;
     occurredAt?: string | null;
@@ -380,13 +387,27 @@ export function JournalEntryModal({ open, setOpen, tenantSlug, initial, onSaved,
             };
             if (harvestPayload) body.harvest = harvestPayload;
             if (isEdit && initial?.id) {
-                const res = await apiPatch<{ entry: { id: string } }>(
-                    buildUrl(`/journal/${initial.id}`),
+                // #919 — EDITS QUEUE NOW, like creates. Online this PATCHes
+                // immediately; offline it queues and the worker replays on
+                // reconnect, carrying the version the operator saw as
+                // `If-Match` and its outbox id as `Idempotency-Key`.
+                //
+                // Safe only because the route now READS both. Queueing first
+                // would have clobbered a supervisor's later change on every
+                // replay — the precondition that made this dangerous rather
+                // than merely missing, and the same trap as #898.
+                const result = await enqueueSubmit({
+                    url: buildUrl(`/journal/${initial.id}`),
+                    method: 'PATCH',
                     body,
-                );
+                    label: body.title || t('editTitle'),
+                    ifMatch: initial.version,
+                });
                 setDirty(false);
                 setOpen(false);
-                onSaved?.(res.entry);
+                // Offline there is no server entry yet — the row updates on the
+                // refetch after the replay. The id is all `onSaved` consumes.
+                if (result === 'sent') onSaved?.({ id: initial.id });
             } else {
                 // CREATE goes through the offline outbox: online it POSTs
                 // immediately; offline (or on a transient 5xx) it queues and the
@@ -417,12 +438,12 @@ export function JournalEntryModal({ open, setOpen, tenantSlug, initial, onSaved,
             // shown to an operator who pressed SAVE. Measured on an iPhone
             // 2026-09-11.
             //
-            // Journal edits deliberately do NOT queue: LogEntry has no version
-            // column and this route reads no If-Match, so a replayed PATCH
-            // would clobber an intervening edit with no conflict flow (see the
-            // decision recorded in the route itself). Failing honestly is the
-            // correct behaviour here — but it has to SAY so, and say that the
-            // operator's typing is still on screen.
+            // As of #919 an offline edit QUEUES rather than failing, so this
+            // arm no longer fires for a plain lack of signal — `enqueueSubmit`
+            // resolves 'queued' instead of throwing. What still reaches here is
+            // a 409 the outbox surfaces as a conflict, or a genuine server
+            // error. The offline copy is kept for the residual case where the
+            // outbox itself cannot accept the item.
             const offline = isOfflineError(err);
             setError(
                 offline

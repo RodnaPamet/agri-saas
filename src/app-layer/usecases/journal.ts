@@ -15,7 +15,7 @@ import { advancePlantingStatusForLinks } from './crop-planning';
 import { emitAutomationEvent } from '../automation';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { notFound, badRequest, staleData } from '@/lib/errors/types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { createLogEntryWithAudit } from './journal-write';
 import { sanitizePlainText, sanitizeRichTextHtml } from '@/lib/security/sanitize';
@@ -393,7 +393,15 @@ async function createLogEntryImpl(
 
 // ─── Update ─────────────────────────────────────────────────────────
 
-export async function updateLogEntry(ctx: RequestContext, id: string, data: UpdateLogEntryData) {
+export async function updateLogEntry(
+    ctx: RequestContext,
+    id: string,
+    data: UpdateLogEntryData,
+    /** The row version the client saw, from `If-Match`. Absent = online edit. */
+    expectedVersion?: number,
+    /** The outbox item id, from `Idempotency-Key`. Absent = online edit. */
+    idempotencyKey?: string | null,
+) {
     assertCanWrite(ctx);
 
     const input: UpdateLogEntryInput = {
@@ -429,6 +437,41 @@ export async function updateLogEntry(ctx: RequestContext, id: string, data: Upda
         if (!existing) throw notFound('Journal entry not found');
 
         await assertLinksValid(db, ctx, data.locationIds, data.equipmentIds);
+
+        // ── Optimistic lock (#919) ──────────────────────────────────────
+        // A compare-and-swap on `version`, as its OWN statement rather than a
+        // condition on the content write: the repository update performs nested
+        // child-collection replaces, and `updateMany` cannot express those. So
+        // this claims the row first and the content write follows, both inside
+        // the one transaction, which makes them atomic together.
+        //
+        // Skipped entirely when the caller sent no If-Match — an online edit
+        // from the modal has no version to assert and keeps today's behaviour.
+        if (expectedVersion !== undefined) {
+            const claimed = await db.logEntry.updateMany({
+                where: { id, tenantId: ctx.tenantId, version: expectedVersion },
+                data: { version: { increment: 1 }, lastMutationId: idempotencyKey ?? null },
+            });
+
+            if (claimed.count === 0) {
+                // Either somebody else moved the row, or this is a REPLAY of a
+                // write that already landed — the operator's own success. The
+                // second is not a conflict and must never be presented as one:
+                // asking someone to resolve keep-mine versus take-server
+                // against themselves is a question with no right answer (#913).
+                const current = await db.logEntry.findFirst({
+                    where: { id, tenantId: ctx.tenantId },
+                    select: { version: true, lastMutationId: true },
+                });
+                if (idempotencyKey && current?.lastMutationId === idempotencyKey) {
+                    return existing;
+                }
+                throw staleData('This entry changed while you were offline.', {
+                    currentVersion: current?.version ?? null,
+                    expectedVersion,
+                });
+            }
+        }
 
         const entry = await JournalRepository.updateLogEntry(db, ctx, id, input);
 
