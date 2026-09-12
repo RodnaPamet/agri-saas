@@ -244,16 +244,44 @@ describe('text controls do not trigger iOS focus-zoom', () => {
 const NON_TEXT_INPUT =
     /type\s*=\s*["']?(file|checkbox|radio|submit|button|reset|image|hidden|range|color)["']?/;
 
+/** The `cva(...)` body bound to `const NAME = cva(`, or null. */
+export function cvaBodyNamed(code: string, name: string): string | null {
+    const m = new RegExp(`const\\s+${name}\\s*(?::[^=]+)?=\\s*cva\\(`).exec(code);
+    if (!m) return null;
+    let depth = 0;
+    const start = m.index + m[0].length - 1;
+    for (let i = start; i < code.length; i++) {
+        if (code[i] === '(') depth++;
+        else if (code[i] === ')') { depth--; if (depth === 0) return code.slice(start, i + 1); }
+    }
+    return null;
+}
+
 export function unsafeSizesOnTags(src: string): string[] {
     const bad: string[] = [];
+    const code = stripComments(src);
     for (const region of controlRegions(src)) {
         if (!/^<(input|textarea)\b/.test(region.trim())) continue;
         if (NON_TEXT_INPUT.test(region)) continue;
-        for (const m of region.matchAll(/(?:^|[\s"'`])((?:[a-z]+:)*)(text-(?:xs|sm|base|\[\d*\.?\d+rem\]))/g)) {
-            const [, prefix, token] = m;
-            if (prefix) continue;
-            const rem = remOf(token);
-            if (rem !== null && rem < 1) bad.push(token);
+
+        // Also scan any cva() the TAG'S OWN className calls. number-stepper
+        // put its 14px in `stepperInputVariants` and left the tag itself
+        // size-less, so a tag-only scan read it as clean — the audit found it,
+        // this did not. Scoping to the cva the input actually references is
+        // what keeps badge/label/typography cva out of range; pulling in every
+        // cva in the tree flagged all of those and was wrong.
+        const scopes = [region];
+        for (const id of region.matchAll(/\b([A-Za-z_$][\w$]*)\s*\(/g)) {
+            const body = cvaBodyNamed(code, id[1]);
+            if (body) scopes.push(body);
+        }
+        for (const scope of scopes) {
+            for (const m of scope.matchAll(/(?:^|[\s"'`])((?:[a-z]+:)*)(text-(?:xs|sm|base|\[\d*\.?\d+rem\]))/g)) {
+                const [, prefix, token] = m;
+                if (prefix) continue;
+                const rem = remOf(token);
+                if (rem !== null && rem < 1) bad.push(token);
+            }
         }
     }
     return [...new Set(bad)];

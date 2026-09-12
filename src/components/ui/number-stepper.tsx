@@ -87,8 +87,11 @@ const stepperInputVariants = cva(
     {
         variants: {
             size: {
-                default: "px-3 text-sm",
-                sm: "px-2 text-xs",
+                // text-base on the phone: this is a real <input> and iOS
+                // focus-zooms anything under 16px. Desktop keeps the
+                // original scale above the md breakpoint.
+                default: "px-3 text-base md:text-sm",
+                sm: "px-2 text-base md:text-xs",
             },
         },
         defaultVariants: { size: "default" },
