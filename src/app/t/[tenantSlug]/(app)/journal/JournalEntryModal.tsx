@@ -403,6 +403,17 @@ export function JournalEntryModal({ open, setOpen, tenantSlug, initial, onSaved,
                     label: body.title || t('editTitle'),
                     ifMatch: initial.version,
                 });
+                // A REFUSED edit must not close the modal. `submit` parks a 409
+                // in the outbox, and every drain skips a parked item until an
+                // operator resolves it — so closing here reported success for a
+                // correction that will never be sent, and the operator's text
+                // was gone with it. Keep the modal open, holding their edit, and
+                // say what happened; the OfflineConflictBanner on the journal
+                // surfaces offers keep-mine / take-server for the parked copy.
+                if (result === 'conflict') {
+                    setError(t('saveConflict'));
+                    return;
+                }
                 setDirty(false);
                 setOpen(false);
                 // Offline there is no server entry yet — the row updates on the
@@ -419,6 +430,14 @@ export function JournalEntryModal({ open, setOpen, tenantSlug, initial, onSaved,
                     body,
                     label: body.title || t('createEntry'),
                 });
+                // A POST carries no If-Match so it should not 409 — but if the
+                // route ever refuses one, `onCreated(false, …)` would paint an
+                // optimistic row for an entry the server rejected. Surface it
+                // instead of inventing the row.
+                if (result === 'conflict') {
+                    setError(t('saveConflict'));
+                    return;
+                }
                 setDirty(false);
                 setOpen(false);
                 onCreated?.(result === 'queued', {
@@ -440,9 +459,12 @@ export function JournalEntryModal({ open, setOpen, tenantSlug, initial, onSaved,
             //
             // As of #919 an offline edit QUEUES rather than failing, so this
             // arm no longer fires for a plain lack of signal — `enqueueSubmit`
-            // resolves 'queued' instead of throwing. What still reaches here is
-            // a 409 the outbox surfaces as a conflict, or a genuine server
-            // error. The offline copy is kept for the residual case where the
+            // resolves 'queued' instead of throwing.
+            //
+            // It does NOT catch a 409 either, and this comment said it did
+            // until #921: `submit` RESOLVES on a conflict (now 'conflict',
+            // previously 'queued') and never throws one. What still reaches
+            // here is a genuine server error, or the residual case where the
             // outbox itself cannot accept the item.
             const offline = isOfflineError(err);
             setError(

@@ -151,7 +151,12 @@ const ROOT = path.resolve(__dirname, '../..');
 //   traceability-panel-undo  / unlink surface, deleted with the component
 // The Epic 67 undo-toast contract the two traceability suites also carried
 // survives on the other registered sites (see epic-67-rollout-coverage).
-const RENDERED_TEST_FLOOR = 229;
+// Raised 229 -> 231 by #921. Two suites, both about a write the operator was
+// told had succeeded: `offline-conflict-is-not-queued` (a 409-parked journal
+// edit reported as 'queued' and closed like a save) and the delete-confirm
+// suite already on disk. Raised WITH the tests rather than spending the slack —
+// the slack exists for a lag, not as a budget.
+const RENDERED_TEST_FLOOR = 231;
 // Lowered 55 → 54 in the risk-quantification uproot (2026-08-08).
 // `ai-risk-assessment.spec.ts` and `new-risk-modal.spec.ts` were both
 // wholly about the deleted register; the specs that merely REFERENCED a

@@ -42,6 +42,33 @@ function isTerminalClientError(status: number): boolean {
     return status >= 400 && status < 500 && status !== 408 && status !== 429;
 }
 
+/**
+ * Pull the server's current version out of a parked 409 body.
+ *
+ * The API envelope nests it — `withApiErrorHandling` serialises a DomainError
+ * as `{ error: { code, message, details } }`, which is the shape
+ * `api-client.ts:137` reads (`body.error.details`) — and `staleData(msg, {
+ * currentVersion, expectedVersion })` puts the number in `details`. This used
+ * to read `server.currentVersion`, one level too shallow, so it was ALWAYS
+ * undefined and keep-mine re-sent with no `If-Match` at all: the retry became
+ * a blind overwrite that could also clobber a THIRD edit landing between the
+ * conflict and the operator's decision. Nothing caught it because keep-mine's
+ * intent is to overwrite, so the wrong path produced the expected outcome in
+ * every case but that one.
+ *
+ * The flat shape is still accepted: `sync.ts` stores whatever the body parsed
+ * to, and a future endpoint may answer unwrapped.
+ */
+function readCurrentVersion(server: unknown): number | undefined {
+    if (typeof server !== 'object' || server === null) return undefined;
+    const flat = (server as { currentVersion?: unknown }).currentVersion;
+    if (typeof flat === 'number') return flat;
+    const details = (server as { error?: { details?: unknown } }).error?.details;
+    if (typeof details !== 'object' || details === null) return undefined;
+    const nested = (details as { currentVersion?: unknown }).currentVersion;
+    return typeof nested === 'number' ? nested : undefined;
+}
+
 /** Shared with public/sw.js — the Background Sync tag that triggers a replay. */
 export const FLUSH_OUTBOX_SYNC_TAG = 'flush-outbox';
 
@@ -73,7 +100,17 @@ export interface OfflineSync {
     pending: number;
     /** Queued PHOTO uploads only — surfaced distinctly in the sync bar. */
     pendingPhotos: number;
-    submit: (input: EnqueueInput) => Promise<'sent' | 'queued'>;
+    /**
+     * `'sent'` — the server has it. `'queued'` — durably queued and the drain
+     * WILL retry it. `'conflict'` — the server REFUSED it (409) and it is
+     * parked awaiting keep-mine / take-server; `flushOutbox` skips a parked
+     * item forever, so a caller that renders 'conflict' as an ordinary close
+     * is telling the operator their write is on its way when nothing will
+     * ever send it. That third state exists because until #921 the 409 arm
+     * returned 'queued', and `pending` excludes conflicts — so a refused
+     * journal edit closed the modal like a success and vanished.
+     */
+    submit: (input: EnqueueInput) => Promise<'sent' | 'queued' | 'conflict'>;
     /**
      * Queue (or send-then-queue) a photo upload. The blob is the ALREADY
      * downscaled bytes; oversized blobs reject at enqueue. Requires
@@ -202,7 +239,7 @@ export function useOfflineSync(): OfflineSync {
     }, [flush, refresh]);
 
     const submit = useCallback(
-        async (input: EnqueueInput): Promise<'sent' | 'queued'> => {
+        async (input: EnqueueInput): Promise<'sent' | 'queued' | 'conflict'> => {
             const offline = typeof navigator !== 'undefined' && !navigator.onLine;
             const store = getOutboxStore();
             if (!offline) {
@@ -220,11 +257,16 @@ export function useOfflineSync(): OfflineSync {
                         // Optimistic-lock conflict even while online (a concurrent
                         // edit landed first). Park it for the resolution UI rather
                         // than throwing — keep-mine / take-server, same as a replay.
+                        //
+                        // Returns 'conflict', NOT 'queued'. A parked item is skipped
+                        // by every drain until an operator resolves it, so the two
+                        // outcomes have opposite futures and must not share an
+                        // observable — the caller has to be able to say so on screen.
                         const server = await res.json().catch(() => undefined);
                         const item = await enqueue(store, input);
                         await store.update({ ...item, conflict: { status: 409, server } });
                         await refresh();
-                        return 'queued';
+                        return 'conflict';
                     }
                     if (isTerminalClientError(res.status)) {
                         throw new Error(`Request failed (${res.status})`);
@@ -302,10 +344,10 @@ export function useOfflineSync(): OfflineSync {
                 // keep-mine — re-send at the server's CURRENT version so the
                 // write is accepted (version matches) and the operator's edit
                 // overwrites, deliberately this time.
-                const server = item.conflict?.server as { currentVersion?: number } | undefined;
+                const server = item.conflict?.server;
                 const retry: OutboxItem = {
                     ...item,
-                    ifMatch: typeof server?.currentVersion === 'number' ? server.currentVersion : undefined,
+                    ifMatch: readCurrentVersion(server),
                     conflict: undefined,
                 };
                 const res = await fetchSender()(retry);

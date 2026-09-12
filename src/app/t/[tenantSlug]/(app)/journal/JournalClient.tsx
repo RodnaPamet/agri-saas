@@ -8,7 +8,8 @@ import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { useCursorPagination, PullToRefresh } from '@/components/ui/hooks';
 import { ScrollToTop } from '@/components/ui/scroll-to-top';
 import { CACHE_KEYS } from '@/lib/swr-keys';
-import { useOfflineSync } from '@/lib/offline/use-offline-sync';
+import { useOfflineSync, type ConflictResolution } from '@/lib/offline/use-offline-sync';
+import { OfflineConflictBanner } from '@/components/offline/OfflineConflictBanner';
 import { OfflineSyncBar } from '@/components/offline/OfflineSyncBar';
 import { Button } from '@/components/ui/button';
 import { Plus, Trash } from '@/components/ui/icons/nucleo';
@@ -193,7 +194,22 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
 
     // Offline-capable journal-entry create. One shared hook so a create queued
     // from the modal is reflected in this page's OfflineSyncBar pending count.
-    const { online, pending, queueGrowing, foreign, durability, submit: offlineSubmit, flush } = useOfflineSync();
+    const { online, pending, queueGrowing, foreign, durability, submit: offlineSubmit, flush, conflicts, resolveConflict } = useOfflineSync();
+    const [resolvingId, setResolvingId] = useState<string | null>(null);
+    const onResolveConflict = useCallback(
+        async (id: string, resolution: ConflictResolution) => {
+            setResolvingId(id);
+            try {
+                await resolveConflict(id, resolution);
+                // take-server discarded the queued edit; keep-mine has just
+                // applied it. Either way the list on screen is now behind.
+                await page1Query.mutate();
+            } finally {
+                setResolvingId(null);
+            }
+        },
+        [resolveConflict, page1Query],
+    );
     const handleEntryCreated = (queued: boolean, optimistic: OptimisticJournalEntry) => {
         // Prepend an optimistic row so the just-logged entry shows at once.
         // Online (!queued): revalidate to swap it for the server row. Offline
@@ -517,6 +533,15 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
                         onCreated={handleEntryCreated}
                         grainEnabled={grainEnabled}
                     />
+                    {/* 409 conflicts — a queued journal write the server refused
+                        because the entry moved on. Mounted UNCONDITIONALLY (it
+                        self-hides when empty) and OUTSIDE the sync bar's gate:
+                        `pending` excludes parked conflicts, so `!online ||
+                        pending > 0` is false in exactly the state that needs
+                        showing, and until #921 a refused edit was invisible on
+                        every journal surface while no drain would ever re-send
+                        it. */}
+                    <OfflineConflictBanner conflicts={conflicts} onResolve={onResolveConflict} busyId={resolvingId} />
                     {/* Surfaces a queued (offline) create + a "Sync now" when
                         back online. Hidden while online with nothing pending. */}
                     {(!online || pending > 0) && (
