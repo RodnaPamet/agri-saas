@@ -3355,7 +3355,11 @@
             "deleteEntry": "Delete entry",
             "entryDeleted": "Entry deleted",
             "undo": "Undo",
-            "cost": "Cost"
+            "cost": "Cost",
+            "deleteFailedTitle": "Delete did not go through",
+            "deleteFailedBody": "The server did not confirm the delete. Check the journal list before entering this record again.",
+            "deleteFailedOffline": "No signal — the delete never reached the server. The entry is still in the journal; try again when you're back online.",
+            "deleteFailedDismiss": "Dismiss"
         },
         "trash": {
             "title": "Deleted entries",
