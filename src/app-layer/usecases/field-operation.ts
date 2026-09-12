@@ -135,9 +135,38 @@ export async function createFieldOperation(
     // Offline exactly-once — a queued spray job re-sent over a flaky link
     // carries the same outbox id as `Idempotency-Key`. If we already minted a
     // Task for that key, return the original result and do no further work.
+    //
+    // `parcelCount > 0` is the discriminator, and it is load-bearing (#931).
+    // This create commits in TWO transactions: `createTask` opens its own, so
+    // `clientMutationId` is durable BEFORE the TaskLink, operationType and
+    // prescription lines are written by the second one below. If that second
+    // transaction dies — a pod rolled mid-deploy, a connection reset, or
+    // `createMany` over N parcels plus an encrypting `logEvent` exceeding
+    // Prisma's 5s interactive default — it rolls back whole and the client
+    // gets a 500.
+    //
+    // A 500 is transient, so the outbox keeps the item and replays it. This
+    // arm used to answer that replay with 201 and `parcelCount: 0`, whereupon
+    // the drain deleted the queued body as delivered and the operator was told
+    // the job synced. The Task survives with no location link, a NULL
+    // operationType and no lines; nothing can add lines afterwards (the
+    // parcels route is PATCH-only) and the ДНЕВНИК joins Location → taskLink →
+    // DONE operationParcel, so that treatment can never reach the compliance
+    // record. `CreateFieldOperationSchema` requires `parcelIds.min(1)`, so
+    // zero is unreachable for a healthy operation — it uniquely marks the
+    // partial commit.
+    //
+    // So a zero-line hit is NOT a completed write. Fall through and finish the
+    // job from this replay's body, which the outbox still holds precisely
+    // because the first attempt failed. Refusing instead would be honest but
+    // useless: the item would retry, refuse again, and park as `exhausted` —
+    // and nothing clears that (#930), so the record would be stuck rather than
+    // merely wrong.
+    let repairTaskId: string | null = null;
     if (idempotencyKey) {
         const existing = await findFieldOperationByMutationKey(ctx, locationId, idempotencyKey);
-        if (existing) return existing;
+        if (existing && existing.parcelCount > 0) return existing;
+        if (existing) repairTaskId = existing.taskId;
     }
 
     // The operation applies exactly one input — a product XOR a fertilizer.
@@ -183,29 +212,78 @@ export async function createFieldOperation(
     //     the chosen input kind (fertilizer → FERTILIZE, else SPRAY).
     const opType: OperationType = input.operationType ?? (chosen.isFertilizer ? 'FERTILIZE' : 'SPRAY');
     const title = input.title?.trim() || `${titleCase(opType)} — ${location.name}`;
-    let task;
-    try {
-        task = await createTask(ctx, {
-            title,
-            type: 'FIELD_OPERATION',
-            assigneeUserId: input.assigneeUserId,
-            dueAt: input.dueAt ?? null,
-            description: input.targetNote ?? null,
-            clientMutationId: idempotencyKey ?? null,
-        });
-    } catch (err) {
-        // Race backstop — two replays of the same queued job hit the unique
-        // (tenantId, clientMutationId) index concurrently. The loser gets a
-        // P2002; re-read the winner's Task and return its result.
-        if (idempotencyKey && isUniqueViolation(err)) {
-            const existing = await findFieldOperationByMutationKey(ctx, locationId, idempotencyKey);
-            if (existing) return existing;
+    let task: { id: string; key: string | null };
+    if (repairTaskId) {
+        // Repairing a partial commit (#931) — the Task exists from the failed
+        // attempt, so minting another would only hit the unique
+        // (tenantId, clientMutationId) index. Finish THIS one.
+        //
+        // Bound to a const because the closure below outlives the narrowing:
+        // `repairTaskId` is a reassignable `let` (the P2002 arm sets it too),
+        // so TypeScript cannot prove it is still non-null inside the callback.
+        const taskIdToRepair = repairTaskId;
+        const found = await runInTenantContext(ctx, (db) =>
+            db.task.findFirst({
+                where: { id: taskIdToRepair, tenantId: ctx.tenantId },
+                select: { id: true, key: true },
+            }),
+        );
+        if (!found) throw notFound('Task not found');
+        task = found;
+    } else {
+        try {
+            task = await createTask(ctx, {
+                title,
+                type: 'FIELD_OPERATION',
+                assigneeUserId: input.assigneeUserId,
+                dueAt: input.dueAt ?? null,
+                description: input.targetNote ?? null,
+                clientMutationId: idempotencyKey ?? null,
+            });
+        } catch (err) {
+            // Race backstop — two replays of the same queued job hit the unique
+            // (tenantId, clientMutationId) index concurrently. The loser gets a
+            // P2002; re-read the winner's Task and return its result.
+            //
+            // The loser may re-read a row whose own second transaction has not
+            // committed yet, so a zero-line read here is a RACE, not a partial
+            // commit — returning it would hand back the empty result #931 is
+            // about. Only a complete operation is a valid answer; otherwise
+            // fall through and let the locked writer below settle it.
+            if (idempotencyKey && isUniqueViolation(err)) {
+                const existing = await findFieldOperationByMutationKey(ctx, locationId, idempotencyKey);
+                if (existing && existing.parcelCount > 0) return existing;
+                if (existing) {
+                    repairTaskId = existing.taskId;
+                    task = { id: existing.taskId, key: existing.taskKey };
+                } else {
+                    throw err;
+                }
+            } else {
+                throw err;
+            }
         }
-        throw err;
     }
 
     // 3 — link Task→Location and write the per-parcel prescription lines
     const parcelCount = await runInTenantContext(ctx, async (db) => {
+        // Serialise writers for THIS task. Two drains of one queued job — the
+        // page sender and the service worker's background sync — can both
+        // arrive here, and `OperationParcel` carries no unique on
+        // (taskId, parcelId), so an unserialised second pass DOUBLES every
+        // prescription line rather than colliding. Same mechanism as
+        // `lockTaskStatusRow` (task.ts) and the journal's file dedupe;
+        // transaction-scoped, released on commit or rollback.
+        await db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`${ctx.tenantId}:field-op-lines:${task.id}`}))`;
+
+        // Re-read INSIDE the lock. The loser of that race — and any repair
+        // whose sibling finished while it waited — must not write a second
+        // set of lines over a task that now has them.
+        const already = await db.operationParcel.count({
+            where: { tenantId: ctx.tenantId, taskId: task.id },
+        });
+        if (already > 0) return already;
+
         await TaskLinkRepository.link(db, ctx, task.id, 'LOCATION', locationId);
 
         // Persist the operation type + application technique on the Task so
