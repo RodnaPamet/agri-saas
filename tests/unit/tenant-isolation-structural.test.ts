@@ -207,6 +207,21 @@ describe('Structural Guard: Tenant Isolation Conventions', () => {
             // sits outside `/api/t/`. The avatar upload/delete acts
             // only on `session.user.id`; the serve route is read-only.
             'account',
+            // #930/#932 — the offline drain's identity probe
+            // (`/api/offline/whoami`). It answers "who is signed in on this
+            // DEVICE", which is a property of the SESSION, not of a tenant: a
+            // user may belong to several, the outbox holds queued writes for
+            // whichever tenant they were made in, and the SERVICE WORKER —
+            // the caller that most needs the answer — has no tenant slug to
+            // put in a URL. Scoping it to a tenant would make it answer a
+            // different question, and a wrong one on a shared device.
+            //
+            // Same reasoning as `account` above and `auth` at the top: it
+            // resolves the session user via `auth()`, never builds a
+            // `RequestContext`, touches no tenant data, and returns nothing
+            // but the caller's own id. Authentication is the middleware's,
+            // which answers an unauthenticated API route with 401 JSON.
+            'offline',
             // Promotions #12 — artwork for the GLOBAL promotions catalogue
             // (`/api/promotions/[id]/image`). `Promotion` has no tenantId and
             // the SAME image is rendered in every tenant's offers feed, so a
