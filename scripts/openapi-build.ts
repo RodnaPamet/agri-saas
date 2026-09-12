@@ -30,6 +30,7 @@ import {
     type OpenAPIRegistry,
 } from '@asteasolutions/zod-to-openapi';
 import { registry } from '@/lib/openapi/registry';
+import { registerAllPaths } from '@/lib/openapi/paths';
 import {
     API_CONTRACT_VERSION,
     MINIMUM_SUPPORTED_CLIENT_VERSION,
@@ -145,7 +146,11 @@ export function buildOpenApiDoc(opts: BuildOptions = {}): {
     info: { title: string; version: string; description?: string; license?: { name: string } };
     servers?: Array<{ url: string; description?: string }>;
     components?: { schemas?: Record<string, unknown> };
-    paths?: Record<string, unknown>;
+    // REQUIRED, not optional. `paths?:` is precisely why a spec describing
+    // zero endpoints satisfied every assertion built on this type for as long
+    // as it did — an absent key and an empty object were indistinguishable
+    // from a documented API.
+    paths: Record<string, unknown>;
 } {
     const sources: Array<{ ns: Record<string, unknown>; label: string }> = [
         { ns: requestSchemas, label: '@/lib/schemas' },
@@ -168,6 +173,13 @@ export function buildOpenApiDoc(opts: BuildOptions = {}): {
         }
         totalRegistered += n;
     }
+
+    // Operations, AFTER the component walk so every schema an operation
+    // references is already registered (#944). Until this call existed the
+    // document had 47 components and ZERO paths — a valid OpenAPI file
+    // describing no endpoints, which every test passed because `paths` was
+    // typed optional.
+    registerAllPaths(registry);
 
     const pkg = JSON.parse(
         readFileSync(resolve(REPO_ROOT, 'package.json'), 'utf-8'),
@@ -208,7 +220,24 @@ export function buildOpenApiDoc(opts: BuildOptions = {}): {
         console.log(`[openapi-build] Total registered (deduped): ${totalRegistered}`);
     }
 
-    return doc;
+    // The builder REFUSES to emit a document that describes nothing.
+    //
+    // This is the fix for the root of #944, not a defensive flourish. For as
+    // long as it took anyone to notice, `npm run openapi:generate` produced a
+    // valid OpenAPI 3.1 file with 47 components and zero paths, and every
+    // check passed — because `paths` was typed optional, so "no endpoints"
+    // and "endpoints, documented" were the same observable. Failing loudly
+    // here means the pathless state cannot be reached again by forgetting
+    // something, only by deliberately deleting this.
+    if (!doc.paths || Object.keys(doc.paths).length === 0) {
+        throw new Error(
+            '[openapi-build] refused: the generated document describes ZERO endpoints. ' +
+            'Operations are registered by src/lib/openapi/paths/index.ts — check that ' +
+            'registerAllPaths() is still called and that its modules still register.',
+        );
+    }
+
+    return { ...doc, paths: doc.paths };
 }
 
 /**
