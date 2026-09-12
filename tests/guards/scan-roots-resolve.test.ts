@@ -25,10 +25,11 @@ const GUARD_DIR = path.join(ROOT, 'tests', 'guards');
  */
 /**
  * Guards that still swallow a missing scan root. Recorded 2026-09-10 at 89
- * entries; 87 were converted to a throw naming the missing root under #875,
- * leaving the two below. This list may only SHRINK — see the ratchet test.
+ * entries; 87 were converted to a throw naming the missing root under #875 and
+ * `offline-spec-chunk-warmup` followed, leaving the one below. This list may
+ * only SHRINK — see the ratchet test.
  *
- * Neither survivor is here for lack of effort:
+ * The survivor is not here for lack of effort:
  *
  *  · `multi-select-facet-route-parity` — its `findRouteFiles` is called
  *    per-PAGE (`findRouteFiles(join(API, page))`), and a page whose API
@@ -37,14 +38,8 @@ const GUARD_DIR = path.join(ROOT, 'tests', 'guards');
  *    `KNOWN_UNFIXED` rather than a silent skip. Forcing a throw there would
  *    break a real case, not a swallowed one. Its MANDATORY root, `PAGES`, is
  *    covered instead by the `DEFS.length > 5` self-check it already carries.
- *  · `offline-spec-chunk-warmup` — untouched because the offline surface was
- *    being edited in a parallel lane at the time; it is an ordinary walk over
- *    `tests/e2e` and converts the same way as the other 87.
  */
-const KNOWN_SWALLOWERS: readonly string[] = [
-    'multi-select-facet-route-parity.test.ts',
-    'offline-spec-chunk-warmup.test.ts',
-];
+const KNOWN_SWALLOWERS: readonly string[] = ['multi-select-facet-route-parity.test.ts'];
 
 const EXPECTED_EMPTY: Record<string, string> = {
     'node_modules': 'no-tracked-node-modules asserts these are NOT tracked; zero is the pass condition',
