@@ -22,6 +22,11 @@ const mockDb = {
     unit: { findUnique: jest.fn() },
     task: { findFirst: jest.fn(), update: jest.fn() },
     operationParcel: { count: jest.fn(), createMany: jest.fn() },
+    // #931 serialises the line write with pg_advisory_xact_lock, the same
+    // mechanism task.ts and journal.ts use. The double needs the surface or
+    // every path through the second transaction dies on "not a function" —
+    // which says nothing about the behaviour under test.
+    $executeRaw: jest.fn(async () => 0),
 };
 
 jest.mock('@/lib/db-context', () => ({

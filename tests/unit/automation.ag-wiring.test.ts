@@ -13,6 +13,19 @@ jest.mock('@/lib/audit', () => ({
 }));
 
 const mockDb: Record<string, unknown> = {};
+
+/**
+ * Wipe the shared double between cases, then restore the surface that is NOT
+ * per-case. #931 serialises the field-operation line write with
+ * `pg_advisory_xact_lock`, so `$executeRaw` has to survive the reset — the
+ * beforeEach deletes every key, and a missing one kills the whole second
+ * transaction with "not a function", which says nothing about the emission
+ * these tests are actually about.
+ */
+function resetMockDb() {
+    for (const k of Object.keys(mockDb)) delete mockDb[k];
+    mockDb.$executeRaw = jest.fn(async () => 0);
+}
 jest.mock('@/lib/db-context', () => {
     const actual = jest.requireActual('@/lib/db-context');
     return {
@@ -82,7 +95,7 @@ describe('ag field-workflow usecase emission', () => {
     beforeEach(() => {
         resetAutomationBus();
         jest.clearAllMocks();
-        for (const k of Object.keys(mockDb)) delete mockDb[k];
+        resetMockDb();
     });
 
     test('createYieldRecord publishes HARVEST_YIELD_RECORDED', async () => {
@@ -171,7 +184,9 @@ describe('ag field-workflow usecase emission', () => {
         mockDb.location = { findFirst: jest.fn().mockResolvedValue({ id: 'loc-1', name: 'North Field' }) };
         mockDb.item = { findFirst: jest.fn().mockResolvedValue({ id: 'item-1' }) };
         mockDb.unit = { findUnique: jest.fn().mockResolvedValue({ id: 'u-1' }) };
-        mockDb.operationParcel = { createMany: jest.fn().mockResolvedValue({}) };
+        // `count` is read inside the #931 advisory lock to confirm the task has
+        // no lines yet; 0 means "write them", which is this case's path.
+        mockDb.operationParcel = { createMany: jest.fn().mockResolvedValue({}), count: jest.fn().mockResolvedValue(0) };
         // createFieldOperation now persists operationType + applicationTechnique
         // on the Task via db.task.update inside the same tenant tx.
         mockDb.task = { update: jest.fn().mockResolvedValue({}) };
@@ -222,7 +237,7 @@ describe('farm-record completion snapshot + operation-type reader', () => {
     beforeEach(() => {
         resetAutomationBus();
         jest.clearAllMocks();
-        for (const k of Object.keys(mockDb)) delete mockDb[k];
+        resetMockDb();
     });
 
     test('markOperationParcel freezes certs + technique into INPUT_APPLICATION conditionsJson on DONE', async () => {

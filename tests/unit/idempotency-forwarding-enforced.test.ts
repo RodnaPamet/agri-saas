@@ -60,6 +60,10 @@ const mockDb: any = {
     unit: { findUnique: jest.fn() },
     task: { findFirst: jest.fn(), update: jest.fn() },
     operationParcel: { count: jest.fn(), createMany: jest.fn() },
+    // #931 serialises the prescription-line write with pg_advisory_xact_lock.
+    // Without this the whole second transaction dies on "not a function" and
+    // every case here reports 500 — a failure about the double, not the route.
+    $executeRaw: jest.fn(async () => 0),
 };
 
 jest.mock('@/lib/db-context', () => ({
