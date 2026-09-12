@@ -44,7 +44,7 @@
         "test:coverage": "jest --coverage",
         "test:all": "jest && playwright test",
         "typecheck": "tsc --noEmit && tsc -p tsconfig.scripts.json --noEmit",
-        "lint": "cross-env ESLINT_USE_FLAT_CONFIG=true eslint .",
+        "lint": "tsx scripts/lint-ceiling.ts",
         "count-any": "node scripts/count-any.js",
         "ci:local": "node scripts/ci-local.mjs",
         "e2e:local": "node scripts/e2e-local.mjs",
@@ -73,7 +73,9 @@
         "load:mutations:200": "k6 run -e VUS=200 -e DURATION=2m tests/load/mutations.js",
         "load:smoke": "k6 run -e VUS=5 -e DURATION=30s tests/load/auth.js && k6 run -e VUS=5 -e DURATION=30s tests/load/lists.js",
         "prod:up": "docker compose -f docker-compose.prod.yml up -d --build",
-        "prod:down": "docker compose -f docker-compose.prod.yml down"
+        "prod:down": "docker compose -f docker-compose.prod.yml down",
+        "lint:raw": "cross-env ESLINT_USE_FLAT_CONFIG=true eslint .",
+        "lint:fix": "cross-env ESLINT_USE_FLAT_CONFIG=true eslint . --fix"
     },
     "dependencies": {
         "@anthropic-ai/sdk": "^0.123.0",
