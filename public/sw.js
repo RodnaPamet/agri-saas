@@ -23,6 +23,26 @@
 // installed clients re-precache the new seedling icon.svg + manifest. The
 // `activate` handler below deletes every cache not prefixed with this value.
 const CACHE_VERSION = 'agrent-v1';
+/**
+ * Content hash of THIS FILE — the only version identifier a worker has.
+ *
+ * `CACHE_VERSION` above is a hand-written brand literal that no build varies
+ * (its own comment says so), and `BUILD_SHA` cannot reach here: it is a
+ * runner-stage ENV declared after `next build`, read only by the health
+ * routes, and nothing templates this file at build time.
+ *
+ * It MUST stay a hash of this file's own bytes and MUST NEVER be derived from
+ * BUILD_SHA or any per-deploy value. New bytes in sw.js mean a new worker,
+ * which means an "Update ready — refresh" prompt; a per-deploy stamp would
+ * take that from the handful of commits that touch this file to EVERY deploy.
+ * That is a change to how often operators are interrupted mid-queue — a policy
+ * change smuggled in as instrumentation, and the opposite of what measuring
+ * staleness is for.
+ *
+ * `tests/guards/sw-revision-stamp.test.ts` recomputes it and prints the
+ * expected value on failure, so updating it is a paste.
+ */
+const SW_REVISION = '53f4f58a0e3a';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 const DATA_CACHE = `${CACHE_VERSION}-fielddata`;
@@ -1027,6 +1047,13 @@ self.addEventListener('message', (event) => {
     // interrupts an in-flight outbox flush on its own.
     if (event.data && event.data.type === 'SKIP_WAITING') {
         self.skipWaiting();
+    }
+    // Answer "which worker is actually running?" — the page cannot otherwise
+    // tell, and install deliberately skips skipWaiting, so a device can run a
+    // months-old worker with no upper bound and nothing measures it.
+    // READ-ONLY: reports, changes nothing, and never calls skipWaiting.
+    if (event.data && event.data.type === 'SW_VERSION' && event.source) {
+        event.source.postMessage({ type: 'SW_VERSION', revision: SW_REVISION });
     }
 });
 
