@@ -39,22 +39,72 @@ type Spec = {
 const METHODS = ['get', 'post', 'put', 'patch', 'delete'] as const;
 
 /**
- * Raised by #944's first batch (journal). Raise it in the PR that adds paths,
- * never on its own — a floor that drifts below the real count is a ratchet
- * that has stopped ratcheting.
+ * Raised by #944's first batch (journal: 2), then by the operator batch —
+ * farm-tasks (1), field-operations (3) and locations (20). Raise it in the PR
+ * that adds paths, never on its own — a floor that drifts below the real
+ * count is a ratchet that has stopped ratcheting.
  */
-const PATH_FLOOR = 2;
+const PATH_FLOOR = 26;
 
 /**
  * Operations a client is known to consume. A count alone can be satisfied by
  * a large-but-wrong document; these cannot.
+ *
+ * The whole operator path is listed, not a sample. A sample would let the
+ * count carry the weight for everything outside it, and the count is the part
+ * a large-but-wrong document can already satisfy.
  */
 const REQUIRED_OPERATION_IDS = [
+    // Journal
     'listJournalEntries',
     'createJournalEntry',
     'getJournalEntry',
     'updateJournalEntry',
     'deleteJournalEntry',
+    // Farm tasks — the operator's queue
+    'listFarmTasks',
+    'createFarmTask',
+    // Field operations — the job the operator executes
+    'getFieldOperation',
+    'markOperationParcel',
+    'reviewFieldOperation',
+    // Locations
+    'listLocations',
+    'createLocation',
+    'getLocation',
+    'replaceLocation',
+    'updateLocation',
+    'deleteLocation',
+    'bulkDeleteLocations',
+    'getLocationSmartDefaults',
+    // Parcels
+    'listLocationParcels',
+    'createParcel',
+    'updateParcel',
+    'deleteParcel',
+    'mergeParcels',
+    'splitParcel',
+    // Leases (аренда/наем)
+    'listParcelLeases',
+    'createParcelLease',
+    'updateParcelLease',
+    'deleteParcelLease',
+    // Field operations, created against a location
+    'listLocationOperations',
+    'createFieldOperation',
+    // Map
+    'getParcelClusters',
+    'getParcelTile',
+    'getBasemapTile',
+    // БАБХ farm records
+    'generateFarmRecord',
+    'listFarmRecords',
+    // Imports
+    'getCadastreImportSettings',
+    'startCadastreImport',
+    'getCadastreImportJob',
+    'startSpatialImport',
+    'getSpatialImportJob',
 ];
 
 function readSpec(): Spec {

@@ -10,8 +10,16 @@
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { registerSecuritySchemes } from './helpers';
 import { registerJournalPaths } from './journal.paths';
+import { registerFarmTaskPaths } from './farm-tasks.paths';
+import { registerFieldOperationPaths } from './field-operations.paths';
+import { registerLocationPaths } from './locations.paths';
 
 export function registerAllPaths(registry: OpenAPIRegistry): void {
     registerSecuritySchemes(registry);
     registerJournalPaths(registry);
+    // The operator path, in the order a field client meets it: the queue,
+    // the job it opens from the queue, and the places the job hangs off.
+    registerFarmTaskPaths(registry);
+    registerFieldOperationPaths(registry);
+    registerLocationPaths(registry);
 }

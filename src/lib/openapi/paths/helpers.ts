@@ -113,21 +113,59 @@ export interface OperationInput {
     query?: ZodObject;
     /** Request body schema. Omit for GET/DELETE. */
     body?: ZodTypeAny;
-    /** The success response. REQUIRED — an operation that describes no result documents nothing. */
-    success: { status: 200 | 201 | 202 | 204; description: string; schema?: ZodTypeAny };
+    /**
+     * Media type of the REQUEST body. Defaults to `application/json`.
+     *
+     * Not every write on this API takes JSON: the spatial import is a
+     * `multipart/form-data` upload read with `req.formData()`. Declaring its
+     * body as JSON because that is what the helper happened to support would
+     * be a documented lie, and a generated client built on it cannot upload a
+     * shapefile at all.
+     */
+    bodyContentType?: string;
+    /**
+     * The success response. REQUIRED — an operation that describes no result
+     * documents nothing.
+     *
+     * `schema` is the shorthand for a single `application/json` body and
+     * covers almost every operation. `content` is the general form, for the
+     * operator endpoints that are not JSON — the MVT parcel tile, the
+     * basemap tile — and for `POST .../farm-record`, whose ONE 200 answers
+     * `application/pdf` by default and `application/json` when the caller
+     * asks to save instead. A client that assumes one of those parses the
+     * other as garbage, so the media type is part of the contract, not a
+     * detail to approximate.
+     */
+    success: {
+        status: 200 | 201 | 202 | 204;
+        description: string;
+        schema?: ZodTypeAny;
+        content?: Record<string, ZodTypeAny>;
+    };
     /** Extra statuses this operation specifically can return, e.g. 409 on an optimistic lock. */
     extraResponses?: RouteConfig['responses'];
 }
 
 /** Register one operation with the shared security, params and error envelope. */
 export function op(registry: OpenAPIRegistry, input: OperationInput): void {
+    const successBodies =
+        input.success.content ??
+        (input.success.schema ? { 'application/json': input.success.schema } : undefined);
+
     const responses: RouteConfig['responses'] = {
         ...commonErrorResponses(),
         ...(input.extraResponses ?? {}),
         [input.success.status]: {
             description: input.success.description,
-            ...(input.success.schema
-                ? { content: { 'application/json': { schema: input.success.schema } } }
+            ...(successBodies
+                ? {
+                      content: Object.fromEntries(
+                          Object.entries(successBodies).map(([mediaType, schema]) => [
+                              mediaType,
+                              { schema },
+                          ]),
+                      ),
+                  }
                 : {}),
         },
     };
@@ -144,7 +182,13 @@ export function op(registry: OpenAPIRegistry, input: OperationInput): void {
             ...(input.params ? { params: input.params } : {}),
             ...(input.query ? { query: input.query } : {}),
             ...(input.body
-                ? { body: { content: { 'application/json': { schema: input.body } } } }
+                ? {
+                      body: {
+                          content: {
+                              [input.bodyContentType ?? 'application/json']: { schema: input.body },
+                          },
+                      },
+                  }
                 : {}),
         },
         responses,
