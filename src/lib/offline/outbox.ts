@@ -114,7 +114,40 @@ interface OutboxItemBase {
     queuedByUserId?: string;
     /** Present ⇒ a 409 conflict is awaiting operator resolution (not re-sent). */
     conflict?: OutboxConflict;
+    /**
+     * Opt-in: this write REPLACES any unsent queued write carrying the same
+     * key (#934). Absent by default, which is the old append-everything
+     * behaviour.
+     *
+     * See {@link SupersedeTarget} for why the key is caller-supplied and
+     * closed rather than derived from url+method.
+     */
+    supersedes?: SupersedeTarget;
 }
+
+/**
+ * The identity of the ROW a queued write is the latest state of.
+ *
+ * A closed union, and caller-supplied, because the obvious alternative is
+ * unsafe: `url + method` collapses two DIFFERENT spray jobs into one.
+ * `ParcelDetailSheet` POSTs creates to a collection URL
+ * (`/locations/:id/operations`), so two jobs on the same location share
+ * url+method exactly — superseding them would destroy a БАБХ compliance
+ * record with no delivery receipt and no manifest gap, i.e. invisible to both
+ * loss detectors. Meanwhile `POST /tasks/:id/status` would be perfectly safe
+ * under the same rule. A rule that is right at one call site and destroys a
+ * record at another is not a rule.
+ *
+ * So supersede is legal ONLY on a write whose body is the ABSOLUTE state of
+ * one EXISTING row, and NEVER on a create. The closed template-literal union
+ * is what stops a caller spelling a collection path: adding a member forces an
+ * edit to this paragraph. Same idiom as {@link OutboxId} in #924 — make the
+ * dangerous value untypable rather than documenting that it is dangerous.
+ *
+ * It stays a plain string at rest, so IndexedDB and the localStorage store
+ * round-trip it unchanged and `public/sw.js` needs no knowledge of it.
+ */
+export type SupersedeTarget = `field-op-line:${string}` | `journal-entry:${string}`;
 
 export interface MutationOutboxItem extends OutboxItemBase {
     kind?: 'mutation';
@@ -305,6 +338,8 @@ export interface EnqueueInput {
     label: string;
     /** Optimistic-lock version to send as `If-Match` on replay (see OutboxItem). */
     ifMatch?: number;
+    /** Replace any unsent queued write for this row — see {@link SupersedeTarget}. */
+    supersedes?: SupersedeTarget;
 }
 
 /**
@@ -351,9 +386,55 @@ export async function enqueue(
         attempts: 0,
         ...attribution(),
         ...(input.ifMatch !== undefined ? { ifMatch: input.ifMatch } : {}),
+        // ABSENT rather than `undefined`, for the reason `attribution()` gives:
+        // the row is read raw from IndexedDB by the service worker and
+        // JSON-round-tripped by the localStorage store.
+        ...(input.supersedes ? { supersedes: input.supersedes } : {}),
     };
     await store.add(item);
     return item;
+}
+
+/**
+ * Remove any unsent queued write this one replaces (#934).
+ *
+ * The enqueue-side sibling of `parkIfStillQueued`: the re-read immediately
+ * before the removal IS the guard, and the residual TOCTOU is the same one the
+ * drain already accepts.
+ *
+ * WHY IT CANNOT DETECT AN IN-FLIGHT SEND, and why that is safe anyway.
+ * `runExclusiveFlush` is module-scoped — it excludes a second mounted surface,
+ * not the SERVICE WORKER, which drains the same IndexedDB with no lock the page
+ * can read. So "the victim already reached the server" is never excludable.
+ * The caller therefore ADDS the replacement before calling this, so a crash in
+ * the window leaves a duplicate rather than a hole: a duplicate of an absolute
+ * state write is the same state written twice, while a hole is lost work.
+ *
+ * The eligibility clauses are the whole safety argument:
+ *   • `id !== keepId` — never delete the replacement itself.
+ *   • `!i.conflict` — a parked 409 is awaiting an operator DECISION; deleting
+ *     it silently answers that question for them.
+ *   • `!i.blocked` — an auth/refused/exhausted park is a record of something
+ *     that happened; #923 exists precisely to stop those disappearing.
+ *   • not foreign — never touch another operator's queued work, the same
+ *     predicate the drain skips on.
+ */
+export async function supersedeQueuedWrites(
+    store: OutboxStore,
+    key: SupersedeTarget,
+    keepId: string,
+): Promise<string[]> {
+    const owner = getCurrentUserId();
+    const victims = (await store.all()).filter(
+        (i) =>
+            i.supersedes === key &&
+            i.id !== keepId &&
+            !i.conflict &&
+            !i.blocked &&
+            !(owner && i.queuedByUserId && i.queuedByUserId !== owner),
+    );
+    for (const v of victims) await store.remove(v.id);
+    return victims.map((v) => v.id);
 }
 
 export interface EnqueuePhotoInput {
@@ -373,6 +454,11 @@ export interface EnqueuePhotoInput {
  * Enforces {@link MAX_QUEUED_PHOTO_BYTES} at enqueue — a blob over the cap
  * throws {@link PhotoTooLargeError} and is NOT queued, so a huge photo can
  * never wedge the drain loop.
+ */
+/**
+ * Deliberately takes NO supersede key. A photo POST is ADDITIVE: two queued
+ * photos are two attachments, not two states of one row, so the absolute-state
+ * contract that makes a supersede safe does not hold here.
  */
 export async function enqueuePhoto(
     store: OutboxStore,

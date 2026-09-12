@@ -21,6 +21,7 @@ import {
     enqueuePhoto,
     newOutboxId,
     outboxHeaders,
+    supersedeQueuedWrites,
     type EnqueueInput,
     type EnqueuePhotoInput,
     type OutboxItem,
@@ -270,6 +271,26 @@ export function useOfflineSync(): OfflineSync {
             // time, on all three CREATE routes.
             const id = newOutboxId();
             let enqueued = false;
+
+            /**
+             * ONE exit for every terminal outcome (#934).
+             *
+             * A supersede has to happen on ALL THREE — 'sent' as much as
+             * 'queued'. If this write reached the server, an older unsent write
+             * for the same row is not merely redundant, it is a LOST UPDATE
+             * waiting to replay over the state that just landed.
+             *
+             * Routed through a single epilogue for the #924 lesson by name:
+             * there the header was correct in both replay senders and missing
+             * from the one attempt that actually reached the server first,
+             * because each exit built its own request. Three exits, three
+             * chances to forget.
+             */
+            const settle = async (outcome: 'sent' | 'queued' | 'conflict') => {
+                if (input.supersedes) await supersedeQueuedWrites(store, input.supersedes, id);
+                await refresh();
+                return outcome;
+            };
             if (!offline) {
                 try {
                     const res = await fetch(input.url, {
@@ -277,7 +298,7 @@ export function useOfflineSync(): OfflineSync {
                         headers: outboxHeaders({ id, ifMatch: input.ifMatch }),
                         body: input.body !== undefined ? JSON.stringify(input.body) : undefined,
                     });
-                    if (res.ok) return 'sent';
+                    if (res.ok) return settle('sent');
                     if (res.status === 409) {
                         // Optimistic-lock conflict even while online (a concurrent
                         // edit landed first). Park it for the resolution UI rather
@@ -291,8 +312,7 @@ export function useOfflineSync(): OfflineSync {
                         const item = await enqueue(store, input, id);
                         enqueued = true;
                         await store.update({ ...item, conflict: { status: 409, server } });
-                        await refresh();
-                        return 'conflict';
+                        return settle('conflict');
                     }
                     if (isTerminalClientError(res.status)) {
                         throw new Error(`Request failed (${res.status})`);
@@ -313,7 +333,6 @@ export function useOfflineSync(): OfflineSync {
             // parked conflict in place and return 'queued', re-creating the
             // exact silent-loss shape #922 fixed.
             if (!enqueued) await enqueue(store, input, id);
-            await refresh();
             // First queued item is the moment to ask the browser to keep this
             // origin's storage — meaningful engagement, and self-explanatory
             // if the browser prompts. See durability.ts.
@@ -324,7 +343,7 @@ export function useOfflineSync(): OfflineSync {
             // First failure → ask the SW to replay when the network returns,
             // even if the operator closes the app (Background Sync).
             void registerOutboxSync();
-            return 'queued';
+            return settle('queued');
         },
         [refresh],
     );

@@ -402,6 +402,13 @@ export function JournalEntryModal({ open, setOpen, tenantSlug, initial, onSaved,
                     body,
                     label: body.title || t('editTitle'),
                     ifMatch: initial.version,
+                    // EDIT only: the body is the absolute state of THIS entry,
+                    // so a later edit replaces an earlier unsent one (#934).
+                    // Without it, two offline edits both carry the version the
+                    // operator first saw, the second 409s against the
+                    // operator's own first, and both resolution branches are
+                    // wrong — "use server" discards the correction.
+                    supersedes: `journal-entry:${initial.id}` as const,
                 });
                 // A REFUSED edit must not close the modal. `submit` parks a 409
                 // in the outbox, and every drain skips a parked item until an
@@ -429,6 +436,10 @@ export function JournalEntryModal({ open, setOpen, tenantSlug, initial, onSaved,
                     method: 'POST',
                     body,
                     label: body.title || t('createEntry'),
+                    // NO supersede key, deliberately. A POST to /journal MINTS
+                    // a row, so two queued creates are two entries — not two
+                    // states of one. Superseding here would silently destroy a
+                    // БАБХ record the operator entered.
                 });
                 // A POST carries no If-Match so it should not 409 — but if the
                 // route ever refuses one, `onCreated(false, …)` would paint an

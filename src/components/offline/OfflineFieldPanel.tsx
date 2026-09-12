@@ -148,6 +148,19 @@ export function OfflineFieldPanel({ taskId }: { taskId: string }) {
                     // Optimistic lock — send the version we saw; a stale replay
                     // 409s instead of clobbering a supervisor's later edit.
                     ifMatch: line.version,
+                    // This write is the LATEST state of this line, so it
+                    // replaces any earlier unsent one (#934). Before this, a
+                    // correction carried the same If-Match as the mark it
+                    // corrected — the local `version` never advances offline —
+                    // so the drain parked the operator's CORRECTION as a
+                    // conflict against their own superseded write, and "use
+                    // server" then discarded the newer value.
+                    //
+                    // `version` is still deliberately NOT bumped locally: at
+                    // most one unsent write now exists per line, and it must
+                    // assert the version the SERVER is known to hold. Bumping
+                    // would guarantee the 409 this removes.
+                    supersedes: `field-op-line:${line.id}` as const,
                 });
                 // 3 — when it actually went out, revalidate against the server
                 //     (picks up the job auto-resolve + any stock deduction);

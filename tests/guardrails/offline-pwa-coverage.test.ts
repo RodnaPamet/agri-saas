@@ -283,6 +283,54 @@ describe('outbox replay carries the idempotency handle', () => {
         expect(src).not.toMatch(/['"]Content-Type['"]\s*:\s*['"]application\/json/);
     });
 
+    // #934 — every terminal exit of `submit` goes through ONE epilogue, so a
+    // supersede cannot be forgotten on one of them. Three SEPARATE matches:
+    // a single whole-file toMatch would pass while two of the three exits had
+    // been reverted, which is the mistake #924's guard already made once.
+    it('submit settles SENT through the shared epilogue', () => {
+        expect(read('src/lib/offline/use-offline-sync.ts')).toMatch(/return settle\('sent'\)/);
+    });
+
+    it('submit settles QUEUED through the shared epilogue', () => {
+        expect(read('src/lib/offline/use-offline-sync.ts')).toMatch(/return settle\('queued'\)/);
+    });
+
+    it('submit settles CONFLICT through the shared epilogue', () => {
+        expect(read('src/lib/offline/use-offline-sync.ts')).toMatch(/return settle\('conflict'\)/);
+    });
+
+    // The teeth: no exit may go back to returning a bare literal. Scoped to
+    // `submit`'s own body, because `submitPhoto` legitimately returns bare
+    // literals — it takes no supersede key (a photo POST is additive; two
+    // queued photos are two attachments, not two states of one row).
+    it('no exit of submit returns a bare outcome literal', () => {
+        const src = read('src/lib/offline/use-offline-sync.ts');
+        const start = src.indexOf('const submit = useCallback');
+        const end = src.indexOf('const submitPhoto = useCallback');
+        expect(start).toBeGreaterThan(-1);
+        expect(end).toBeGreaterThan(start);
+        // Strip comments before matching. The comment explaining the
+        // `enqueued` guard accurately quotes `return 'queued'` as the thing it
+        // prevents, and a guard that reads prose as code would force that
+        // explanation to be reworded to suit a regex — the tail wagging the
+        // dog, and the mirror image of the trailing-comment trick that has
+        // defeated text guards in this repo before.
+        const code = src
+            .slice(start, end)
+            .replace(/\/\*[\s\S]*?\*\//g, '')
+            .replace(/\/\/.*$/gm, '');
+        expect(code).not.toMatch(/return '(sent|queued|conflict)'/);
+        // Positive control: the stripper must not have eaten the code too.
+        expect(code).toMatch(/return settle\('queued'\)/);
+    });
+
+    it('the photo enqueue input carries no supersede key', () => {
+        const src = read('src/lib/offline/outbox.ts');
+        const start = src.indexOf('export interface EnqueuePhotoInput');
+        const end = src.indexOf('}', start);
+        expect(src.slice(start, end)).not.toMatch(/supersedes/);
+    });
+
     // The same shared builder is the only reason the two can no longer drift.
     it('outboxHeaders always emits the handle, and omits Content-Type for multipart', () => {
         const src = read('src/lib/offline/outbox.ts');
