@@ -591,7 +591,7 @@ jobs:
       # once per CI run (no redundant work across shards).
       #
       # On legitimate contract changes:
-      #   1. `npm run openapi:generate`         (rewrites public/openapi.json)
+      #   1. `npm run openapi:generate`         (rewrites src/generated/openapi.json)
       #   2. `npx jest tests/contracts/ -u`     (updates per-schema snapshots)
       #   3. Commit both files together. Reviewer sees the diff
       #      against the previous contract and approves explicitly.

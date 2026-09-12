@@ -14,7 +14,8 @@ import { env } from '@/env';
  * production", GAP-03), so staging takes the same hard 404.
  *
  * Operators who need to read the spec in a deployed environment should
- * fetch `/openapi.json`, which is served statically and is not gated.
+ * fetch `/api/openapi`, which requires a session but is available in
+ * every environment (#944 moved it out of public/ so it could be gated).
  *
  * Reads the VALIDATED `env`, not `process.env`. The old inline route was
  * allowlisted in `tests/unit/no-fallbacks.test.ts` by path

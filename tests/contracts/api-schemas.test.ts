@@ -14,7 +14,7 @@
  *
  *   2. **Full-spec drift check**. Re-build the spec in-process via
  *      `buildOpenApiDoc()` and compare the serialised output
- *      byte-for-byte against the committed `public/openapi.json`.
+ *      byte-for-byte against the committed `src/generated/openapi.json`.
  *      Catches the case where someone changed an annotation but
  *      forgot to run `npm run openapi:generate` — the committed
  *      file would lag the schema layer.
@@ -29,11 +29,11 @@
  *   - Adding/removing required fields — per-schema snapshot diff.
  *   - Tightening or loosening a constraint (min/max, enum
  *     values) — per-schema snapshot diff.
- *   - Forgetting to regenerate `public/openapi.json` after a
+ *   - Forgetting to regenerate `src/generated/openapi.json` after a
  *     schema change — full-spec drift check.
  *
  * On legitimate contract changes:
- *   1. Run `npm run openapi:generate` to update `public/openapi.json`.
+ *   1. Run `npm run openapi:generate` to update `src/generated/openapi.json`.
  *   2. Run `npx jest tests/contracts/ -u` to update the per-schema
  *      snapshots.
  *   3. Commit both. The reviewer sees the diff against the
@@ -52,7 +52,7 @@ interface OpenApiDoc {
     components?: { schemas?: Record<string, unknown> };
 }
 
-const COMMITTED_SPEC_PATH = path.resolve(__dirname, '../../public/openapi.json');
+const COMMITTED_SPEC_PATH = path.resolve(__dirname, '../../src/generated/openapi.json');
 
 // ─── Build once, reuse across every test in this file ───────────────
 //
@@ -66,7 +66,7 @@ const schemas = doc.components?.schemas ?? {};
 const schemaNames = Object.keys(schemas).sort();
 
 describe('API contract — full-spec drift check', () => {
-    it('public/openapi.json matches the in-process build (no drift)', () => {
+    it('src/generated/openapi.json matches the in-process build (no drift)', () => {
         const generated = serializeDoc(doc as never);
 
         // UPDATE_OPENAPI=1 flips this test from compare-mode to
@@ -107,7 +107,7 @@ describe('API contract — full-spec drift check', () => {
             const committedLines = committed.split('\n').length;
             const message = [
                 '',
-                'public/openapi.json is out of sync with the schema layer.',
+                'src/generated/openapi.json is out of sync with the schema layer.',
                 '',
                 `  committed file: ${committedLines} lines`,
                 `  generated now:  ${generatedLines} lines`,
@@ -115,9 +115,9 @@ describe('API contract — full-spec drift check', () => {
                 'This usually means a Zod schema changed but `npm run openapi:generate`',
                 'was not re-run. To fix:',
                 '',
-                '  npm run openapi:generate                 # rewrites public/openapi.json',
+                '  npm run openapi:generate                 # rewrites src/generated/openapi.json',
                 '  npx jest tests/contracts/ -u             # updates the per-schema snapshots',
-                '  git add public/openapi.json tests/contracts/__snapshots__/',
+                '  git add src/generated/openapi.json tests/contracts/__snapshots__/',
                 '',
                 'Then re-run the test suite to confirm both diffs are intentional.',
                 '',

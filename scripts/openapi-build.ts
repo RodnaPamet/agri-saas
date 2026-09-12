@@ -3,7 +3,7 @@
  *
  * Two callers:
  *   1. `scripts/generate-openapi.ts` — CLI that writes the result
- *      to `public/openapi.json`.
+ *      to `src/generated/openapi.json` (served, gated, by `/api/openapi`).
  *   2. `tests/contracts/api-schemas.test.ts` — contract test that
  *      compares the result against the committed file (drift
  *      detection) and snapshots each component schema individually.
@@ -66,7 +66,12 @@ import * as operationParcelDTOs from '@/lib/dto/operation-parcel.dto';
 import * as inventoryDTOs from '@/lib/dto/inventory.dto';
 
 export const REPO_ROOT = process.cwd();
-export const OUTPUT_PATH = resolve(REPO_ROOT, 'public/openapi.json');
+// NOT under public/. A file in public/ is served by Next's static handler
+// before any application code runs, so it cannot be gated by middleware, by a
+// route, or reliably by Caddy — it is anonymous by construction. The spec is
+// generated here and served by `/api/openapi`, which the middleware's API auth
+// gate covers like any other route (#944).
+export const OUTPUT_PATH = resolve(REPO_ROOT, 'src/generated/openapi.json');
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
@@ -209,7 +214,7 @@ export function buildOpenApiDoc(opts: BuildOptions = {}): {
 /**
  * Canonical serialisation. The contract test compares
  * `serializeDoc(buildOpenApiDoc())` against the committed
- * `public/openapi.json` byte-for-byte; the CLI writes
+ * `src/generated/openapi.json` byte-for-byte; the CLI writes
  * `serializeDoc(buildOpenApiDoc())` to disk. The single function
  * guarantees both paths produce identical output.
  *

@@ -1,5 +1,5 @@
 /**
- * GAP-10 step 3 — assertions on the generated `public/openapi.json`.
+ * GAP-10 step 3 — assertions on the generated `src/generated/openapi.json`.
  *
  * The generator script (`scripts/generate-openapi.ts`) is the
  * single source of truth for the spec. This test reads the
@@ -17,7 +17,7 @@
  *
  * If you're here because this test failed:
  *   1. Run `npm run openapi:generate` and inspect the diff.
- *   2. If the diff is intentional, commit the new `public/openapi.json`.
+ *   2. If the diff is intentional, commit the new `src/generated/openapi.json`.
  *   3. If unexpected, walk back to the schema annotation that
  *      changed.
  */
@@ -38,7 +38,7 @@ interface OpenApiDoc {
     };
 }
 
-const SPEC_PATH = path.resolve(__dirname, '../../public/openapi.json');
+const SPEC_PATH = path.resolve(__dirname, '../../src/generated/openapi.json');
 
 function loadSpec(): OpenApiDoc {
     const raw = fs.readFileSync(SPEC_PATH, 'utf-8');
@@ -123,7 +123,7 @@ describe('GAP-10 step 3 — generated OpenAPI 3.1 spec', () => {
         // stays a real "every canonical response DTO is registered"
         // bound instead of degenerating into the four cross-cutting
         // shapes. Names measured against the committed
-        // public/openapi.json.
+        // src/generated/openapi.json.
         const expectedResponses = [
             // Cross-cutting
             'UserRef', 'UserRefShort', 'ErrorResponse', 'AuditLogEntry', 'SuccessResponse',

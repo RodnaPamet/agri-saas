@@ -18,7 +18,7 @@ immediately, which is what the guard below is for.
 
 ## The version lives in the spec, not in prose
 
-`public/openapi.json` carries:
+`src/generated/openapi.json` carries:
 
 ```json
 "x-api-version": 1,
@@ -28,6 +28,14 @@ immediately, which is what the guard below is for.
 
 Source of truth: `src/lib/api/contract-version.ts`. Prose drifts; a generated
 spec does not.
+
+The spec is generated to `src/generated/openapi.json` and served by
+**`GET /api/openapi`**, which requires a session. It used to sit at
+`public/openapi.json` and be fetched anonymously; a file in `public/` is served
+by Next's static handler before any application code runs, so it cannot be
+gated by middleware, by a route, or by the Caddyfile. That cost nothing while
+the document described zero endpoints (#944) — filling it in makes it a
+complete map of the API surface, so it moved rather than staying anonymous.
 
 **A single version, not per-route `introduced-in` metadata.** This server
 deploys atomically — Watchtower updates `app` and `worker` together — so routes
