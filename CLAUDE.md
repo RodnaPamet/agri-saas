@@ -9,7 +9,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm run dev               # Start Next.js dev server
 npm run build             # Validate env + build
 npm run typecheck         # tsc --noEmit
-npm run lint              # Next.js lint
+npm run lint              # ESLint + the ceiling gate (scripts/lint-ceiling.ts)
+npm run lint:raw          # Plain `eslint .`, no ceiling
+npm run lint:fix          # Plain `eslint . --fix`
 
 # Database
 # The Prisma schema lives in a folder, not a single file — 21 files:
@@ -1864,8 +1866,25 @@ fixed, delete the entry in the same diff.
 
 ### Codebase-hygiene ratchets
 
-Three codebase-hygiene invariants are held by structural guardrails
+Four codebase-hygiene invariants are held by structural guardrails
 — **see `docs/codebase-hygiene.md`** for the contributor guide:
+
+- **The `Lint` gate counts SUPPRESSIONS, not just warnings.**
+  `npm run lint` runs `scripts/lint-ceiling.ts`, because ESLint excludes
+  inline-disabled findings from BOTH `errorCount` and `warningCount` —
+  they move to `suppressedMessages`, which a `--max-warnings` ceiling
+  never reads. Measured at `0a109317b`: 121 warnings against **1,580
+  suppressions**, so 93% of findings sat outside anything a warning
+  ceiling could see, and 13 of them mute rules the config sets to
+  severity 2. The invariant is that **converting a warning into a
+  suppression changes no total** — muting relaxes the warning ceiling by
+  one and breaches the suppression ceiling by one, so silencing costs
+  what leaving it costs. The gate also floors the LINTED-FILE COUNT: a
+  config that stops resolving reports zero findings and satisfies every
+  ceiling, which is the empty-selection defect one level up. Ceilings may
+  be lowered freely and drift sentinels force them down; raising one is a
+  visible line in the diff. Proof is `tests/guards/lint-ceiling-has-teeth.test.ts`
+  (13 mutations of a passing baseline plus a control).
 
 - **`as any` stays on a downward ratchet.** The `src/` count is 4
   (documented staged debt). `tests/guardrails/no-explicit-any-ratchet.test.ts`
