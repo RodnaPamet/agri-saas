@@ -166,7 +166,10 @@ const ROOT = path.resolve(__dirname, '../..');
 // rendered test to MOUNT JournalEntryModal. #922 fixed a refused edit closing
 // the modal like a save and proved it at the hook only — the surface where the
 // defect actually lived had no behavioural cover at all.
-const RENDERED_TEST_FLOOR = 234;
+// Raised 234 -> 235 by #933 (field-panel-failed-enqueue-reverts): a failed
+// enqueue used to leave a phantom DONE on screen and in the persisted
+// snapshot while telling the operator it had been reverted.
+const RENDERED_TEST_FLOOR = 235;
 // Lowered 55 → 54 in the risk-quantification uproot (2026-08-08).
 // `ai-risk-assessment.spec.ts` and `new-risk-modal.spec.ts` were both
 // wholly about the deleted register; the specs that merely REFERENCED a

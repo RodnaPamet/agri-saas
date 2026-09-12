@@ -52,6 +52,42 @@ interface FieldOpView {
     progress: { total: number; done: number };
 }
 
+/**
+ * Set one line's status in the view, recompute progress, and persist the
+ * snapshot — the ONE transform used by both the optimistic write and its
+ * revert (#933).
+ *
+ * Shared deliberately. The revert used to be `await mutate()`, which is not the
+ * inverse of anything: the optimistic write also persisted the snapshot, so an
+ * undo that touches only SWR leaves the phantom on disk. Two hand-written
+ * halves of one operation is how they drift; expressing the undo as the same
+ * transform with the ORIGINAL status makes that structural.
+ *
+ * `saveFieldSnapshot` inside the updater mirrors what the optimistic write has
+ * always done here — keeping both in the updater is what guarantees the
+ * persisted snapshot and the rendered view can never disagree.
+ */
+function applyLineStatus(
+    prev: FieldOpView | null,
+    lineId: string,
+    status: LineStatus,
+    taskId: string,
+): FieldOpView | null {
+    if (!prev) return prev;
+    const next: FieldOpView = {
+        ...prev,
+        lines: prev.lines.map((l) => (l.id === lineId ? { ...l, status } : l)),
+        progress: {
+            total: prev.progress.total,
+            done: prev.lines.filter((l) =>
+                l.id === lineId ? status !== 'PENDING' : l.status !== 'PENDING',
+            ).length,
+        },
+    };
+    saveFieldSnapshot(taskId, next);
+    return next;
+}
+
 export function OfflineFieldPanel({ taskId }: { taskId: string }) {
     const t = useTranslations('offline');
     const buildUrl = useTenantApiUrl();
@@ -120,21 +156,7 @@ export function OfflineFieldPanel({ taskId }: { taskId: string }) {
             // 1 — optimistic update of the local view (responds instantly,
             //     online OR offline) + persist the snapshot so a cold offline
             //     reload reflects work already queued.
-            setView((prev) => {
-                if (!prev) return prev;
-                const next: FieldOpView = {
-                    ...prev,
-                    lines: prev.lines.map((l) => (l.id === line.id ? { ...l, status } : l)),
-                    progress: {
-                        total: prev.progress.total,
-                        done: prev.lines.filter((l) =>
-                            l.id === line.id ? status !== 'PENDING' : l.status !== 'PENDING',
-                        ).length,
-                    },
-                };
-                saveFieldSnapshot(taskId, next);
-                return next;
-            });
+            setView((prev) => applyLineStatus(prev, line.id, status, taskId));
             // 2 — send-or-queue. A terminal failure (server rejected the
             //     mark) throws — revalidate to server truth and surface the
             //     error rather than leaving a phantom "Done" on screen.
@@ -164,9 +186,27 @@ export function OfflineFieldPanel({ taskId }: { taskId: string }) {
                     await mutate();
                 }
             } catch {
+                // REVERT EXPLICITLY (#933). `mutate()` alone does not undo the
+                // optimistic write, and the case where it matters is exactly
+                // the case where it cannot: the mark never reached the server,
+                // so a refetch returns data deep-equal to what SWR already
+                // holds, SWR keeps the SAME object reference, and the
+                // `[data, taskId]` effect that mirrors server→view never
+                // re-runs. Offline the refetch cannot even resolve.
+                //
+                // So the row stayed DONE while the message said it was
+                // reverted, the snapshot on disk was already the optimistic
+                // one (persisted before the send), and the outbox was EMPTY —
+                // nothing queued, no pending pill, no loss record. A fourth
+                // state that reads exactly like "on the server", produced on
+                // the one path where the queue cannot be the safety net.
+                setView((prev) => applyLineStatus(prev, line.id, line.status, taskId));
                 setError(t('saveError'));
                 haptic('error');
-                await mutate(); // revalidate → SWR effect discards the optimistic update
+                // Still revalidate when there IS a network — server truth
+                // supersedes the local revert. A no-op offline, which is fine
+                // now that the revert no longer depends on it.
+                await mutate();
             } finally {
                 setMarkingId(null);
             }
