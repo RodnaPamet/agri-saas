@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
@@ -18,6 +18,8 @@ import { useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { Eyebrow, Heading } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
+import { apiDelete, isOfflineError } from '@/lib/api-client';
+import { InlineNotice } from '@/components/ui/inline-notice';
 import { EmptyState } from '@/components/ui/empty-state';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { sanitizeRichTextHtml } from '@/lib/security/sanitize';
@@ -115,16 +117,77 @@ export default function JournalDetailPage() {
      * reversible branch: navigate back to the list and let the DELETE fire
      * after the 5s window.
      */
+    /**
+     * #887 — the delete COMMITS 5s after the click, so these two pieces of
+     * state are the page's only way to report what happened. Before them a
+     * failed DELETE was entirely unobservable: the operator read "Entry
+     * deleted", navigated away, and the request died unseen.
+     *
+     * `deletePending` is an INTERLOCK, not a spinner flag. Moving navigation
+     * into onCommit means the operator now stays on a fully interactive entry
+     * for the whole window — a state that did not exist before — so the Delete
+     * and Edit buttons below have to be closed for its duration.
+     */
+    const [deletePending, setDeletePending] = useState(false);
+    const [deleteError, setDeleteError] = useState<string | null>(null);
+
+    /**
+     * Set in the effect BODY, not only the cleanup: StrictMode mounts,
+     * unmounts and remounts in development, so a ref whose only writer is the
+     * cleanup reads false on the second mount and would suppress the commit
+     * navigation permanently.
+     */
+    const mountedRef = useRef(true);
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => { mountedRef.current = false; };
+    }, []);
+
+    /**
+     * Delete the entry — Epic 67 undo pattern. The delete is SOFT, but
+     * restoring it is ADMIN-ONLY (`restoreLogEntry` opens with assertCanAdmin),
+     * so an EDITOR who deletes by mistake cannot put it back. That is why the
+     * undo window and the interlocks carry real weight here.
+     *
+     * Navigation lives in `onCommit`, not in this body — that is the whole of
+     * #887. `useToastWithUndo` deliberately does not re-throw, so a rejected
+     * DELETE is observable only through `onError`, and an `onError` on an
+     * unmounted page can render nothing.
+     */
     const handleDeleteEntry = () => {
+        setDeleteError(null);
+        setDeletePending(true);
         triggerUndoToast({
             message: t('entryDeleted'),
             undoMessage: t('undo'),
-            action: async () => {
-                const res = await fetch(apiUrl(`/journal/${entryId}`), { method: 'DELETE' });
-                if (!res.ok) throw new Error('Delete failed');
+            // apiDelete, not a bare fetch: a bare fetch rejects with the
+            // platform TypeError ("Load failed" on WebKit) and leaves no typed
+            // code to branch on. The SW returns early on non-GET, so offline
+            // this genuinely never reaches the server — the offline copy is
+            // the truth, not a guess.
+            action: () => apiDelete(apiUrl(`/journal/${entryId}`)),
+            onUndo: () => setDeletePending(false),
+            onError: (err: unknown) => {
+                setDeletePending(false);
+                const message = isOfflineError(err)
+                    ? t('deleteFailedOffline')
+                    : t('deleteFailedBody');
+                setDeleteError(message);
+                // If they left during the window the banner renders to nobody.
+                // Sonner's portal is mounted at the app shell and survives
+                // client-side navigation, so a sticky toast is the only
+                // surface that still reaches them.
+                if (!mountedRef.current) {
+                    toast.error(t('deleteFailedTitle'), { description: message });
+                }
+            },
+            onCommit: () => {
+                // Only once the server has confirmed. Skipped if they already
+                // navigated: yanking someone back five seconds later is its
+                // own defect.
+                if (mountedRef.current) router.push(tenantHref('/journal'));
             },
         });
-        router.push(tenantHref('/journal'));
     };
 
     // БАБХ ДНЕВНИК (PDF) — offered on entries that record a field operation.
@@ -266,6 +329,12 @@ export default function JournalDetailPage() {
                                 variant="destructive-outline"
                                 size="icon"
                                 onClick={handleDeleteEntry}
+                                // Newly reachable: until #887 the page
+                                // navigated away on click, so a second tap was
+                                // impossible. Now the operator stays for 5s and
+                                // could arm a second commit for the same entry
+                                // — which the server answers 404, not a no-op.
+                                disabled={deletePending}
                                 id="delete-journal-btn"
                                 aria-label={t('deleteEntry')}
                             >
@@ -279,6 +348,15 @@ export default function JournalDetailPage() {
                                 variant="secondary"
                                 size="icon"
                                 onClick={() => setEditing(true)}
+                                // #887 interlock, and the reason this change is
+                                // safe at all. The undo window is now spent ON
+                                // this page, so Edit is reachable between the
+                                // click and the commit. An edit saved in that
+                                // window is silently destroyed 5s later, and
+                                // `restoreLogEntry` is assertCanAdmin — an
+                                // EDITOR cannot recover it. Closed here rather
+                                // than left for the operator to discover.
+                                disabled={deletePending}
                                 id="edit-journal-btn"
                                 aria-label={t('editEntry')}
                             >
@@ -292,6 +370,21 @@ export default function JournalDetailPage() {
             activeTab={activeTab}
             onTabChange={(k) => setActiveTab(k)}
         >
+            {/* #887 — the page's only delete error surface. It sits in the tab
+                PANEL, not inside one tab's body, so a failure is visible
+                wherever the operator happens to be. */}
+            {deleteError && (
+                <InlineNotice
+                    variant="error"
+                    id="journal-delete-error"
+                    title={t('deleteFailedTitle')}
+                    onDismiss={() => setDeleteError(null)}
+                    dismissLabel={t('deleteFailedDismiss')}
+                >
+                    {deleteError}
+                </InlineNotice>
+            )}
+
             {permissions.canWrite && (
                 <JournalEntryModal
                     open={editing}
