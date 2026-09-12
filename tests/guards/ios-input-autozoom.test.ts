@@ -84,7 +84,17 @@ function stripComments(src: string): string {
  * offending class was never in it.
  */
 export function tagEnd(code: string, start: number): number {
-    return {};
+    let depth = 0;
+    let quote = '';
+    for (let i = start; i < code.length; i++) {
+        const c = code[i];
+        if (quote) { if (c === quote) quote = ''; continue; }
+        if (c === '"' || c === "'" || c === '`') { quote = c; continue; }
+        if (c === '{') depth++;
+        else if (c === '}') depth--;
+        else if (c === '>' && depth === 0) return i;
+    }
+    return code.length - 1;
 }
 
 export function controlRegions(src: string): string[] {
