@@ -133,7 +133,8 @@ export function CanvasCommandPalette({ groups }: CanvasCommandPaletteProps) {
                                 onValueChange={setQuery}
                                 placeholder={t("canvasCommandPalette.searchPlaceholder")}
                                 className={cn(
-                                    "flex-1 bg-transparent text-sm",
+                                    // 16px on the phone: same autoFocus zoom as the main palette.
+                                "flex-1 bg-transparent text-base md:text-sm",
                                     "text-content-emphasis placeholder:text-content-subtle",
                                     "focus:outline-none",
                                 )}

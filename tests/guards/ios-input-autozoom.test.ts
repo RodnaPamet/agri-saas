@@ -59,7 +59,26 @@ export function remOf(token: string): number | null {
 function stripComments(src: string): string {
     return src
         .split('\n')
-        .map((l) => l.replace(/\/\/.*$/, ''))
+        .map((line) => {
+            // `//` INSIDE A STRING IS NOT A COMMENT. The naive
+            // `.replace(/\/\/.*$/, '')` ate the rest of any line holding a
+            // URL — `placeholder="https://hooks.example.com/…"` lost its
+            // closing quote, the braces stopped balancing, tagEnd ran to end
+            // of file, and that tag's "region" swallowed the whole component.
+            // It then reported a <p className="text-sm"> hundreds of lines
+            // away as an offending input. Measured on RuleBuilderModal.tsx.
+            let quote = '';
+            for (let i = 0; i < line.length; i++) {
+                const c = line[i];
+                if (quote) {
+                    if (c === quote && line[i - 1] !== '\\') quote = '';
+                    continue;
+                }
+                if (c === '"' || c === "'" || c === '`') { quote = c; continue; }
+                if (c === '/' && line[i + 1] === '/') return line.slice(0, i);
+            }
+            return line;
+        })
         .map((l) => (/^\s*\*/.test(l) ? '' : l))
         .join('\n');
 }
@@ -112,7 +131,18 @@ export function controlRegions(src: string): string[] {
         regions.push(code.slice(start, i + 1));
     }
 
-    for (const m of code.matchAll(/<(input|textarea)\b/g)) {
+    // A FOURTH spelling of a text input, after the raw tag, the CSS class and
+    // the cva: a COMPONENT that renders one. cmdk's `Command.Input` emits a
+    // real <input>, but the JSX tag reads `Command.Input`, which /<input\b/
+    // cannot match. Five exist in this tree; two carried an unprefixed
+    // `text-sm` with `autoFocus`, so they zoomed the moment the palette
+    // opened, and every assertion here was green.
+    //
+    // `<Input`/`<X.Input` call sites come into range too. The component
+    // declares its own safe rung, so a bare call site contributes nothing —
+    // but a caller passing `className="… text-sm"` overrides it, and that is
+    // a real defect a component-level check cannot see.
+    for (const m of code.matchAll(/<(input|textarea|(?:[A-Za-z_$][\w$]*\.)?Input)\b/g)) {
         const start = m.index!;
         regions.push(code.slice(start, tagEnd(code, start) + 1));
     }
@@ -241,6 +271,9 @@ describe('text controls do not trigger iOS focus-zoom', () => {
  * legitimately, and the first version of this scan demanded it be
  * "fixed" to 16px, which would have changed a visual for no reason.
  */
+/** A JSX tag that accepts typed text: the raw elements, or an Input component. */
+const TEXT_ENTRY_TAG = /^<(input|textarea|(?:[A-Za-z_$][\w$]*\.)?Input)\b/;
+
 const NON_TEXT_INPUT =
     /type\s*=\s*["']?(file|checkbox|radio|submit|button|reset|image|hidden|range|color)["']?/;
 
@@ -261,7 +294,7 @@ export function unsafeSizesOnTags(src: string): string[] {
     const bad: string[] = [];
     const code = stripComments(src);
     for (const region of controlRegions(src)) {
-        if (!/^<(input|textarea)\b/.test(region.trim())) continue;
+        if (!TEXT_ENTRY_TAG.test(region.trim())) continue;
         if (NON_TEXT_INPUT.test(region)) continue;
 
         // Also scan any cva() the TAG'S OWN className calls. number-stepper
@@ -307,7 +340,7 @@ export function allTsx(root: string): string[] {
 export function classesOnEditables(src: string): string[] {
     const found: string[] = [];
     for (const region of controlRegions(src)) {
-        if (!/^<(input|textarea)\b/.test(region.trim())) continue;
+        if (!TEXT_ENTRY_TAG.test(region.trim())) continue;
         for (const m of region.matchAll(/className\s*=\s*"([^"]*)"/g)) {
             for (const tok of m[1].split(/\s+/)) {
                 if (/^[a-zA-Z][\w-]*$/.test(tok)) found.push(tok);
@@ -406,6 +439,32 @@ describe('the CSS-class spelling of the same defect', () => {
         const body = cvaBodyNamed(stripComments(src), 'stepperInputVariants');
         expect(body).not.toBeNull();
         expect(body as string).toContain('text-base');
+    });
+
+    it('a URL in a placeholder does not blind the tag scan', () => {
+        // Regression: `//` inside a string is not a comment. The naive
+        // stripComments ate the rest of the line, so this tag lost its
+        // closing quote, the braces stopped balancing, tagEnd ran to end of
+        // file, and the region swallowed everything after it — reporting the
+        // <p> below as an offending input. Measured on RuleBuilderModal.tsx,
+        // which has placeholder="https://hooks.example.com/…".
+        const src = [
+            '<Input',
+            '  value={x}',
+            '  placeholder="https://hooks.example.com/path"',
+            '  onChange={(e) => set(e.target.value)}',
+            '/>',
+            '<p className="text-sm">not an input, must not be reported</p>',
+        ].join('\n');
+        expect(unsafeSizesOnTags(src)).toEqual([]);
+    });
+
+    it('...but a Command.Input with a small size IS reported', () => {
+        // The fourth spelling. cmdk renders a real <input>; the JSX tag reads
+        // Command.Input, which /<input\b/ cannot match. Two of these shipped
+        // with an unprefixed text-sm AND autoFocus.
+        const src = '<Command.Input autoFocus className={cn(\'flex-1 bg-transparent text-sm\')} />';
+        expect(unsafeSizesOnTags(src)).toEqual(['text-sm']);
     });
 
     it('no raw <input>/<textarea> anywhere in src/ sets one either', () => {
