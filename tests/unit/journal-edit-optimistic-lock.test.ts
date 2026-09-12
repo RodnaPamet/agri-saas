@@ -27,7 +27,7 @@ jest.mock('@/lib/db-context', () => ({
 }));
 
 const getById = jest.fn();
-const updateLogEntryRepo = jest.fn(async () => ({ id: 'e1', type: 'OBSERVATION', title: 't', status: 'DONE' }));
+const updateLogEntryRepo = jest.fn(async (..._a: any[]) => ({ id: 'e1', type: 'OBSERVATION', title: 't', status: 'DONE' }));
 jest.mock('../../src/app-layer/repositories/JournalRepository', () => ({
     JournalRepository: {
         getById: (...a: any[]) => getById(...a),
