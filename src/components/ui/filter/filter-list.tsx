@@ -564,7 +564,7 @@ function OperatorFilterPill({
                     placeholder={`${filter.label}...`}
                     value={search}
                     onValueChange={setSearch}
-                    className="grow border-0 py-3 pl-4 pr-2 outline-none placeholder:text-content-subtle focus:ring-0 sm:text-sm bg-transparent text-content-emphasis"
+                    className="grow border-0 py-3 pl-4 pr-2 outline-none placeholder:text-content-subtle focus:ring-0 text-base sm:text-sm bg-transparent text-content-emphasis"
                     autoCapitalize="none"
                   />
                 </div>

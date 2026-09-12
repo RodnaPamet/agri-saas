@@ -398,7 +398,10 @@ export function CommandPalette() {
                                         : t('placeholder')
                                 }
                                 className={cn(
-                                    'flex-1 bg-transparent text-sm',
+                                    // 16px on the phone or iOS focus-zooms the page. This input has
+                                    // autoFocus, so it would zoom the instant the
+                                    // palette opens.
+                                    'flex-1 bg-transparent text-base md:text-sm',
                                     'text-content-emphasis placeholder:text-content-subtle',
                                     'focus:outline-none',
                                 )}
