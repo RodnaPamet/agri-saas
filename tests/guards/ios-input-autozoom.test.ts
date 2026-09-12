@@ -391,6 +391,23 @@ describe('the CSS-class spelling of the same defect', () => {
         expect([...new Set(offenders)]).toEqual([]);
     });
 
+    it('the cva lookup resolves on the real tree — a control on the scan below', () => {
+        // unsafeSizesOnTags sees number-stepper's 14px ONLY through this
+        // helper: the <input> tag carries no size, the size lives in
+        // `stepperInputVariants`. `cvaBodyNamed` returning null makes that
+        // invisible again and every other assertion in this file still
+        // passes — selector-teeth caught exactly that mutation surviving.
+        //
+        // Production input, and the same lookup the live scan performs.
+        const src = fs.readFileSync(
+            path.join(ROOT, 'src/components/ui/number-stepper.tsx'),
+            'utf-8',
+        );
+        const body = cvaBodyNamed(stripComments(src), 'stepperInputVariants');
+        expect(body).not.toBeNull();
+        expect(body as string).toContain('text-base');
+    });
+
     it('no raw <input>/<textarea> anywhere in src/ sets one either', () => {
         const offenders: string[] = [];
         for (const f of allTsx(ROOT)) {
