@@ -1,0 +1,42 @@
+-- Issue #919 — journal edits could not survive a lost connection.
+--
+-- Creating a journal entry has queued through the offline outbox for a while.
+-- EDITING one did not: the modal's edit branch called the API directly, so an
+-- operator who corrected a spray rate in a field simply lost the correction.
+-- The route documented that as a decision rather than an omission, and named
+-- its own revisit condition — "revisit when journal edits start going through
+-- the outbox, then follow the OperationParcel precedent end-to-end". This is
+-- that revisit.
+--
+-- `version` is the optimistic lock, mirroring OperationParcel.version down to
+-- the 0 default. A queued edit captures the version it saw and replays it as
+-- If-Match; the server rejects a stale write with 409 STALE_DATA instead of
+-- silently clobbering a supervisor's later change, and the existing
+-- keep-mine / take-server conflict UI resolves it.
+--
+-- `lastMutationId` is NOT a duplicate of clientMutationId, and the distinction
+-- is load-bearing. clientMutationId sits under
+-- @@unique([tenantId, clientMutationId]) and holds the CREATE's outbox id;
+-- writing an update's id there would destroy create-dedupe. This column holds
+-- the last UPDATE's Idempotency-Key and carries no constraint, because it is
+-- read for equality, never enforced.
+--
+-- It exists because of a failure mode already fixed once elsewhere: a replay
+-- after a lost response carries the version the operator saw BEFORE their own
+-- write landed, so the version guard fails on their own success and the outbox
+-- parks a conflict asking them to resolve keep-mine versus take-server against
+-- themselves — a question with no right answer. #913 solved that for parcel
+-- marks by comparing status; a journal body has too many fields for a
+-- comparison to be sound, so the mutation id is the honest handle.
+--
+-- Purely additive and safe to run against live data: both columns are new,
+-- `version` carries a NOT NULL DEFAULT so existing rows backfill to 0, and
+-- `lastMutationId` is nullable. No row is rewritten, no constraint is added to
+-- existing data, and an older application image ignores both columns.
+--
+-- Generated with `prisma migrate diff --from-schema … --to-schema … --script`
+-- (no database required) and reproduced verbatim below.
+
+-- AlterTable
+ALTER TABLE "LogEntry" ADD COLUMN     "lastMutationId" TEXT,
+ADD COLUMN     "version" INTEGER NOT NULL DEFAULT 0;

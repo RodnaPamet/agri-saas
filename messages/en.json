@@ -3303,7 +3303,7 @@
             "recordYieldLabel": "Also record as yield — {tonnes} t",
             "recordYieldHint": "Adds this harvest to your production figures for the season, linked to this entry. Without it the grain lands in store but the yield total stays at zero.",
             "recordYieldUnavailable": "This harvest cannot be recorded as yield: production is measured in tonnes, and the selected product is not weighed.",
-            "saveOffline": "No signal — this entry was not saved. Your changes are still here; try again when you're back online.",
+            "saveOffline": "Saved on this phone — no signal, so it will sync when you are back online.",
             "saveFailedFallback": "Could not save this entry."
         },
         "photos": {

@@ -62,6 +62,25 @@ model LogEntry {
   /// duplicate. Nullable + NULLS-DISTINCT: online creates without a key are
   /// unconstrained (every NULL is unique to Postgres). Mirrors Task.clientMutationId.
   clientMutationId  String?
+  /// Optimistic lock for OFFLINE EDITS (#919). An edit queued in a field
+  /// captures the version it saw and replays it as `If-Match`; the server
+  /// 409s a stale write instead of clobbering a supervisor's later change.
+  /// Mirrors OperationParcel.version, including the 0 default.
+  version           Int            @default(0)
+  /// The Idempotency-Key of the last UPDATE applied to this row.
+  ///
+  /// Deliberately NOT reusing `clientMutationId`: that column is under
+  /// @@unique([tenantId, clientMutationId]) and holds the CREATE's key, so
+  /// writing an update's key there would destroy create-dedupe. Deliberately
+  /// NOT unique either — this is an equality check, not a constraint.
+  ///
+  /// Without it, a replay after a lost response carries the version the
+  /// operator saw BEFORE their own write landed, the version guard fails on
+  /// their own success, and the outbox parks a conflict asking them to resolve
+  /// keep-mine vs take-server against themselves. #913 fixed exactly that for
+  /// parcel marks by comparing status; a journal body has too many fields for
+  /// that to be sound, so the mutation id is the honest handle.
+  lastMutationId    String?
   createdByUserId   String?
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt

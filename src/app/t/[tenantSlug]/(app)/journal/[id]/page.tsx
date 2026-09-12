@@ -64,6 +64,12 @@ interface PhotoLink {
 }
 interface LogEntryDetail {
     id: string;
+    /**
+     * Optimistic-lock version (#919). Replayed as If-Match when an edit is
+     * queued offline, so the server rejects a stale write instead of
+     * clobbering a change made while the operator had no signal.
+     */
+    version: number;
     type: string;
     status: string;
     title: string;
@@ -293,6 +299,10 @@ export default function JournalDetailPage() {
                     tenantSlug={tenantSlug}
                     initial={{
                         id: entry.id,
+                        // The version the operator is editing, replayed as
+                        // If-Match so a queued edit cannot clobber a change
+                        // made while they were offline (#919).
+                        version: entry.version,
                         type: entry.type,
                         status: entry.status,
                         occurredAt: entry.occurredAt,
