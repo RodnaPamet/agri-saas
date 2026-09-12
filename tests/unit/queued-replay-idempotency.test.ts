@@ -78,6 +78,69 @@ beforeEach(() => {
     mockDb.operationParcel.updateMany.mockResolvedValue({ count: 1 });
 });
 
+describe('#935 — the CONCURRENT replay gets the same answer as the sequential one', () => {
+    // Two drains of ONE queued mark: the in-page sender and the service
+    // worker's background sync. This is routine, not exotic — it is the race
+    // `lockTaskStatusRow` exists for, and the SW replays on every `online`.
+    //
+    // The loser reads the line BEFORE the winner's write, so it PASSES the
+    // version pre-check, then loses the compare-and-swap. That arm re-read the
+    // fresh row and threw 409 unconditionally — so one queued mark got two
+    // different answers depending only on timing, and the operator was handed
+    // a conflict against their own successful write.
+    it('returns success when the winner already applied the SAME status', async () => {
+        // 1st findFirst = the pre-check read (version matches, so no 409 there).
+        // 2nd findFirst = the fresh re-read after losing the CAS.
+        mockDb.operationParcel.findFirst
+            .mockResolvedValueOnce(lineAt(3, 'PENDING'))
+            .mockResolvedValueOnce({ version: 4, status: 'DONE' });
+        mockDb.operationParcel.updateMany.mockResolvedValue({ count: 0 });
+
+        const res: any = await markOperationParcel(CTX, 't1', 'line-1', 'DONE' as any, undefined, 3);
+
+        expect(res.success).toBe(true);
+        expect(res.alreadyApplied).toBe(true);
+        // The SERVER's version, so the client syncs to truth.
+        expect(res.version).toBe(4);
+    });
+
+    it('writes no second audit row for the concurrent loser', async () => {
+        mockDb.operationParcel.findFirst
+            .mockResolvedValueOnce(lineAt(3, 'PENDING'))
+            .mockResolvedValueOnce({ version: 4, status: 'DONE' });
+        mockDb.operationParcel.updateMany.mockResolvedValue({ count: 0 });
+
+        await markOperationParcel(CTX, 't1', 'line-1', 'DONE' as any, undefined, 3);
+        expect(logEvent).not.toHaveBeenCalled();
+    });
+
+    // CONTROL — a genuine conflict must still 409. Without this, "never throws
+    // after a lost CAS" would be satisfied by a build that silently accepts a
+    // supervisor's different status as if it were the operator's own write.
+    it('CONTROL: a DIFFERENT status after the lost race still raises the conflict', async () => {
+        mockDb.operationParcel.findFirst
+            .mockResolvedValueOnce(lineAt(3, 'PENDING'))
+            .mockResolvedValueOnce({ version: 4, status: 'SKIPPED' });
+        mockDb.operationParcel.updateMany.mockResolvedValue({ count: 0 });
+
+        await expect(
+            markOperationParcel(CTX, 't1', 'line-1', 'DONE' as any, undefined, 3),
+        ).rejects.toThrow();
+    });
+
+    // CONTROL — a vanished row is not "already applied".
+    it('CONTROL: a row that disappeared after the lost race still raises the conflict', async () => {
+        mockDb.operationParcel.findFirst
+            .mockResolvedValueOnce(lineAt(3, 'PENDING'))
+            .mockResolvedValueOnce(null);
+        mockDb.operationParcel.updateMany.mockResolvedValue({ count: 0 });
+
+        await expect(
+            markOperationParcel(CTX, 't1', 'line-1', 'DONE' as any, undefined, 3),
+        ).rejects.toThrow();
+    });
+});
+
 describe('a replayed parcel mark is not a conflict with yourself', () => {
     it('returns success when the line ALREADY carries the status this write wanted', async () => {
         // The replay: the operator's own write landed and bumped 3 -> 4, and

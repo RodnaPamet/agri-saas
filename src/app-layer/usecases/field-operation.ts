@@ -523,6 +523,31 @@ async function markOperationParcelImpl(
                 where: { id: lineId, tenantId: ctx.tenantId },
                 select: { version: true, status: true },
             });
+            // ALREADY APPLIED, exactly as in the pre-check arm above (#935).
+            //
+            // This arm used to throw unconditionally, so ONE queued mark got
+            // two different answers depending only on timing: drained
+            // sequentially it returned 200 `alreadyApplied`, but drained
+            // CONCURRENTLY — the page sender and the service worker replaying
+            // the same item, which is routine and is the race
+            // `lockTaskStatusRow` exists for — the loser read the line BEFORE
+            // the winner's write, passed the version pre-check, lost the CAS,
+            // and 409d.
+            //
+            // The operator then got a conflict against their own successful
+            // write, asking them to resolve keep-mine versus take-server
+            // against themselves. #913 removed that question from the
+            // sequential path and #923 mirrored it into `setTaskStatus`; this
+            // is the concurrent path of the same fix.
+            if (fresh && fresh.status === status) {
+                return {
+                    success: true as const,
+                    resolved: false,
+                    application: null,
+                    version: fresh.version,
+                    alreadyApplied: true as const,
+                };
+            }
             throw staleData('This job changed while you were offline.', {
                 currentVersion: fresh?.version ?? null,
                 currentStatus: fresh?.status ?? null,
