@@ -285,9 +285,20 @@ export async function bulkDeleteTask(
  * operator action. The task row is not duplicated; the HISTORY is, which is
  * worse, because the history is what an auditor reads.
  *
- * With the lock the loser waits, re-reads the POST-state, and
- * `checkWorkItemTransition(RESOLVED, RESOLVED)` classifies it as a no_op → 400
- * → the outbox drops it. Exactly once, using the gate that was already there.
+ * With the lock the loser waits and re-reads the POST-state. It then hits the
+ * ALREADY-APPLIED arm in `setTaskStatus` and returns 200 with the current task,
+ * writing no second audit row. Exactly once, and the outbox removes the item as
+ * a normal delivery.
+ *
+ * Until #923 that loser instead fell through to
+ * `checkWorkItemTransition(RESOLVED, RESOLVED)` → no_op → 400, and the outbox
+ * DROPPED it. Same exactly-once outcome, but it made one status code mean two
+ * opposite things — "refused" and "already landed" — and #923 needs a terminal
+ * 4xx to mean only the first, because it stops destroying such a write and
+ * starts telling the operator about it. Telling an operator to re-enter a
+ * compliance record that is already recorded is how that fix would have
+ * manufactured duplicates.
+ *
  * Transaction-scoped: released automatically on commit or rollback.
  *
  * Lives HERE rather than inline because tests/guardrails/audit-s8 slices a
@@ -329,6 +340,34 @@ export async function setTaskStatus(ctx: RequestContext, taskId: string, status:
         }
 
         const fromStatus = existing.status;
+
+        // ALREADY APPLIED — the replay of a status change that already landed.
+        //
+        // This is a prerequisite for #923, not a convenience. Until now such a
+        // replay fell through to `checkWorkItemTransition(RESOLVED, RESOLVED)`
+        // → no_op → 400, and the outbox DROPPED the item. That drop is the
+        // exactly-once mechanism the lock docblock above describes, and it
+        // works — but it makes one status code mean two opposite things: "the
+        // server refused your write" and "your write already landed". #923
+        // stops a terminal 4xx from destroying a queued write and starts
+        // telling the operator about it, so the 400 has to stop meaning
+        // success FIRST, or an operator is told to re-enter a compliance
+        // record that is already recorded.
+        //
+        // Mirrors `markOperationParcel` (field-operation.ts): the intent is
+        // satisfied, so return the current state and write NO second audit
+        // row, no automation event, no notification. If somebody else set the
+        // same status, the operator's intent is still satisfied and that
+        // change has its own audit row — so this is right in that case too.
+        //
+        // Gated on the resolution matching as well. A same-status call
+        // carrying DIFFERENT resolution text is not a replay; it 400s today,
+        // and short-circuiting it here would turn a visible error into a
+        // silent no-op that discards what the operator typed. A real replay
+        // carries the same body, so it still short-circuits.
+        const resolutionUnchanged =
+            resolution === undefined || resolution === null || resolution === existing.resolution;
+        if (fromStatus === status && resolutionUnchanged) return existing;
 
         // Audit Coherence S8 (2026-05-24) — state-machine gate runs
         // BEFORE the type-relevance check. Catches no-op + illegal
