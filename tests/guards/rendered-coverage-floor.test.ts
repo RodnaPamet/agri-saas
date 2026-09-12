@@ -159,7 +159,10 @@ const ROOT = path.resolve(__dirname, '../..');
 // Raised 231 -> 232 by #924 (outbox-first-attempt-idempotency): the first
 // online attempt now carries the same Idempotency-Key its replays carry, so a
 // response lost after the server committed can no longer duplicate the write.
-const RENDERED_TEST_FLOOR = 232;
+// Raised 232 -> 233 by #923 (offline-refused-work-banner): a write the server
+// refuses is parked instead of destroyed, and the banner is what makes the
+// park an improvement rather than a silently stuck row.
+const RENDERED_TEST_FLOOR = 233;
 // Lowered 55 → 54 in the risk-quantification uproot (2026-08-08).
 // `ai-risk-assessment.spec.ts` and `new-risk-modal.spec.ts` were both
 // wholly about the deleted register; the specs that merely REFERENCED a

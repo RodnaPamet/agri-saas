@@ -813,6 +813,24 @@ async function reportOutboxRecreated() {
 // deciding anything was lost — without them a worker drain is indistinguishable
 // from an eviction, because the worker cannot write localStorage and so leaves
 // no other trace. Mirrors src/lib/offline/delivery-receipts.ts.
+/**
+ * Write a park back ONLY if the row is still queued.
+ *
+ * `idbWrite(db, 'put', ...)` is an upsert, and the PAGE drains this same queue
+ * concurrently, so an unguarded park re-creates a row the page already
+ * delivered and removed — a permanently blocked copy of a write that is on the
+ * server. The 409 arm has always guarded; #923 gave the auth, exhausted and
+ * refused arms the same guard, which matters far more now that a refusal is
+ * parked instead of deleted. Mirrors `parkIfStillQueued` in
+ * src/lib/offline/sync.ts.
+ */
+async function parkIfStillQueued(db, item, patch) {
+    const current = await idbGetAll(db);
+    if (!current.some((i) => i.id === item.id)) return false;
+    await idbWrite(db, 'put', { ...item, ...patch });
+    return true;
+}
+
 function idbNoteDelivered(db, id) {
     return new Promise((resolve) => {
         try {
@@ -965,19 +983,25 @@ async function flushOutbox() {
         } else if (status === 401 || status === 403) {
             // The server refused the SESSION, not the work. Retain, block, and
             // stop the pass — every remaining item carries the same credential.
-            await idbWrite(db, 'put', { ...item, blocked: 'auth' });
+            await parkIfStillQueued(db, item, { blocked: 'auth' });
             authBlocked = true;
             break;
         } else if (isTransient(status)) {
             const next = { ...item, attempts: (item.attempts || 0) + 1 };
             // Park, never delete. The escape from a poison item is that it
             // stops being retried, not that the work is destroyed.
-            if (next.attempts >= OUTBOX_MAX_ATTEMPTS) await idbWrite(db, 'put', { ...next, blocked: 'exhausted' });
-            else { await idbWrite(db, 'put', next); transientRemains = true; }
+            if (next.attempts >= OUTBOX_MAX_ATTEMPTS) await parkIfStillQueued(db, next, { blocked: 'exhausted' });
+            else { await parkIfStillQueued(db, next, {}); transientRemains = true; }
         } else {
-            // Genuinely terminal for THIS item (a 4xx about the payload).
-            await idbNoteDelivered(db, item.id);
-            await idbWrite(db, 'delete', item.id);
+            // REFUSED — terminal for THIS item (a 4xx about the payload), and
+            // PARKED rather than destroyed since #923. This arm used to be
+            // byte-for-byte the success arm above — idbNoteDelivered then delete,
+            // with not even a counter to tell them apart — so a destroyed
+            // compliance write and a delivered one left the same trace, and the
+            // receipt is what suppressed the loss detector. Mirrors
+            // src/lib/offline/sync.ts: the two drains share this queue and
+            // NOTHING enforces the mirror, so they are kept in lockstep by hand.
+            await parkIfStillQueued(db, item, { blocked: 'refused', refusedStatus: status });
         }
     }
     // Notify any open clients so their pending-count refreshes.

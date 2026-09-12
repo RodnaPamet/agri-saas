@@ -29,10 +29,29 @@ describe('flushOutbox', () => {
         expect(await s.all()).toHaveLength(0);
     });
 
-    it('drops terminal 4xx (so the queue keeps moving)', async () => {
+    // INVERTED by #923. This asserted `dropped: 2, remaining: 0` — it encoded
+    // the defect as intended behaviour, which is why nothing caught it: the
+    // destroyed write and the delivered one made the SAME two calls
+    // (noteDelivered then remove), and the receipt suppressed the loss
+    // detector. The queue still keeps moving, because the loop skips a parked
+    // item; it just no longer destroys the work to achieve that.
+    it('PARKS a terminal 4xx as refused (queue keeps moving, work survives)', async () => {
         const s = await seed(2);
         const res = await flushOutbox(s, terminal);
-        expect(res).toMatchObject({ sent: 0, dropped: 2, remaining: 0 });
+        expect(res).toMatchObject({ sent: 0, refused: 2, dropped: 0, remaining: 2 });
+        const all = await s.all();
+        expect(all).toHaveLength(2);
+        expect(all.every((i) => i.blocked === 'refused')).toBe(true);
+        expect(all.every((i) => i.refusedStatus === 400)).toBe(true);
+    });
+
+    it('a parked refusal is not re-sent on the next pass', async () => {
+        const s = await seed(1);
+        await flushOutbox(s, terminal);
+        const send = jest.fn(async () => ({ ok: true, status: 200 }));
+        const res = await flushOutbox(s, send);
+        expect(send).not.toHaveBeenCalled();
+        expect(res).toMatchObject({ sent: 0, blocked: 1, remaining: 1 });
     });
 
     it('keeps + bumps attempts on a 5xx (transient)', async () => {
@@ -218,7 +237,10 @@ describe('flushOutbox', () => {
         const send: Sender = async (item) =>
             item.id === 'a' ? { ok: true, status: 200 } : item.id === 'b' ? { ok: false, status: 422 } : { ok: false, status: 500 };
         const res = await flushOutbox(s, send);
-        expect(res).toMatchObject({ sent: 1, dropped: 1, failed: 1, remaining: 1 });
-        expect((await s.all())[0].id).toBe('c');
+        // 'b' is PARKED rather than destroyed since #923, so it remains.
+        expect(res).toMatchObject({ sent: 1, refused: 1, dropped: 0, failed: 1, remaining: 2 });
+        const left = await s.all();
+        expect(left.map((i) => i.id).sort()).toEqual(['b', 'c']);
+        expect(left.find((i) => i.id === 'b')?.blocked).toBe('refused');
     });
 });
