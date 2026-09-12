@@ -1896,6 +1896,44 @@ exports[`API contract — per-schema snapshots schema: LocationUpdateRequest 1`]
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: LogEntry 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "title": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "occurredAt": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "version": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "id",
+    "type",
+    "status"
+  ],
+  "additionalProperties": {}
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: LogEntryCreateRequest 1`] = `
 "{
   "type": "object",
@@ -2720,6 +2758,40 @@ exports[`API contract — per-schema snapshots schema: PracticeCreateRequest 1`]
     "name"
   ],
   "description": "Payload for creating a practice. Status defaults to NOT_STARTED. \`code\` carries the framework reference where one applies (e.g. ISO 27001:2022 A.5.1) and is minted as \`CTL-N\` for custom practices. Custom practices (isCustom=true) are tenant-specific."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: StaleDataError 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "error": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "example": "NOT_FOUND"
+        },
+        "message": {
+          "type": "string",
+          "example": "Practice not found"
+        },
+        "requestId": {
+          "type": "string",
+          "example": "req_01HG7…"
+        },
+        "details": {}
+      },
+      "required": [
+        "code",
+        "message"
+      ]
+    }
+  },
+  "required": [
+    "error"
+  ],
+  "description": "A 409 from the optimistic lock. \`error.details.currentVersion\` carries the version the server holds — read it from \`error.details\`, NOT from the body root. A client that treats this as success loses the operator’s edit (#921/#922)."
 }"
 `;
 
