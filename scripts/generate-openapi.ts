@@ -1,5 +1,5 @@
 /**
- * GAP-10 step 3 — CLI: generate `public/openapi.json` from the
+ * GAP-10 step 3 — CLI: generate `src/generated/openapi.json` from the
  * annotated Zod schemas.
  *
  * Run via:
@@ -43,4 +43,4 @@ if (result.status !== 0) {
 }
 
 
-console.log('[generate-openapi] Wrote public/openapi.json (via Jest contract test in update mode)');
+console.log('[generate-openapi] Wrote src/generated/openapi.json (via Jest contract test in update mode)');

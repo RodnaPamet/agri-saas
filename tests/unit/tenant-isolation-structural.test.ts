@@ -222,6 +222,15 @@ describe('Structural Guard: Tenant Isolation Conventions', () => {
             // but the caller's own id. Authentication is the middleware's,
             // which answers an unauthenticated API route with 401 JSON.
             'offline',
+            // #944 — the OpenAPI document (`/api/openapi`). One global
+            // contract describing the whole API; there is no per-tenant
+            // variant, so a tenant-scoped URL would be a lie in the same way
+            // `promotions` below is. It reads no tenant data and touches no
+            // RequestContext — it returns a build artefact. It lives under
+            // /api/ rather than public/ precisely SO the middleware's session
+            // gate reaches it; a file in public/ is served by the static
+            // handler before any application code runs.
+            'openapi',
             // Promotions #12 — artwork for the GLOBAL promotions catalogue
             // (`/api/promotions/[id]/image`). `Promotion` has no tenantId and
             // the SAME image is rendered in every tenant's offers feed, so a

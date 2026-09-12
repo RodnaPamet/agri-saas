@@ -19,7 +19,7 @@ import * as path from 'path';
 import { buildOpenApiDoc, serializeDoc } from '../../scripts/openapi-build';
 import { findBreakingChanges } from '../../scripts/openapi-breaking';
 
-const COMMITTED = path.resolve(__dirname, '../../public/openapi.json');
+const COMMITTED = path.resolve(__dirname, '../../src/generated/openapi.json');
 
 function schemaSpec(schemas: Record<string, unknown>) {
     return { components: { schemas } };
