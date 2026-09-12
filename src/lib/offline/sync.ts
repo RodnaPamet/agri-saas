@@ -33,7 +33,7 @@
  * to achieve it. The same item id rides every retry, so a server that dedupes
  * on it sees at-least-once delivery as exactly-once.
  */
-import { isPhotoItem, type OutboxItem, type OutboxStore } from './outbox';
+import { isPhotoItem, outboxHeaders, type OutboxItem, type OutboxStore } from './outbox';
 import { noteDelivered } from './delivery-receipts';
 
 export interface SendResult {
@@ -235,17 +235,13 @@ export function fetchSender(): Sender {
                 method: item.method,
                 // No explicit Content-Type — the browser sets the multipart
                 // boundary. The idempotency handle rides a header only.
-                headers: { 'Idempotency-Key': item.id },
+                headers: outboxHeaders({ id: item.id, photo: true }),
                 body: fd,
             });
         } else {
             res = await fetch(item.url, {
                 method: item.method,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Idempotency-Key': item.id,
-                    ...(item.ifMatch !== undefined ? { 'If-Match': String(item.ifMatch) } : {}),
-                },
+                headers: outboxHeaders({ id: item.id, ifMatch: item.ifMatch }),
                 body: item.body !== undefined ? JSON.stringify(item.body) : undefined,
             });
         }

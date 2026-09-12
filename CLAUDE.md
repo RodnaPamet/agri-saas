@@ -653,6 +653,25 @@ to evict. Three rules, all load-bearing — see
   `src/` is exactly why: two implementations drifting is the same shape as
   #786, one level up.
 
+- **The idempotency handle is minted BEFORE the first attempt, and every
+  outbox-bound request builds its headers through `outboxHeaders()`.** Until
+  #924 `fetchSender` sent `Idempotency-Key` on every REPLAY while `submit`'s
+  first attempt sent none and `submitPhoto`'s sent no headers at all — so the
+  one request that actually reaches the server FIRST was the one the server
+  could not dedupe. A response lost after the server committed then re-queued
+  under an id minted at enqueue time, which the server had never seen, and the
+  write landed TWICE (traced: two rows, every time, on all three CREATE routes
+  — `createLogEntryImpl` has no natural-key fallback and its only pre-check is
+  gated on `if (idempotencyKey)`). `submit`/`submitPhoto` now mint an
+  `OutboxId` up front and pass it to `enqueue`, so the attempt and its replays
+  share one key. **A new sender uses `outboxHeaders()` or it is the same bug
+  again** — the same shape as the `attribution()` rule above, and the reason
+  the guard failed to see it is that every existing check pointed at the replay
+  path. The id parameter is BRANDED (`OutboxId`) because `store.add` is an
+  upsert: a caller passing `task.id` would silently overwrite queued work.
+  Note this binds the SENDERS, not the routes — `PlantingBoard.tsx` still
+  creates journal entries through a keyless `apiPost` (#924 names it).
+
 New offline surfaces subscribe to the shared state; they do not add another
 `useState` count or another flush loop.
 
