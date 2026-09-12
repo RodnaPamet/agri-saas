@@ -3754,7 +3754,7 @@ exports[`API contract — per-schema snapshots schema: ParcelGeo 1`] = `
         "number",
         "null"
       ],
-      "description": "On-ellipsoid hectares from ST_Area. A NUMBER here, unlike the STRING on an OperationParcel line."
+      "description": "On-ellipsoid hectares, computed in PostGIS. A NUMBER here, unlike the STRING on an OperationParcel line."
     },
     "geometry": {
       "description": "GeoJSON (WGS84). Simplified when the read passed \`?simplify=\` — never for sketch/edit, which needs exact geometry."
