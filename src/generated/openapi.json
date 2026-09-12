@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "3.14.0",
+    "version": "3.14.1",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -3627,7 +3627,7 @@
               "number",
               "null"
             ],
-            "description": "On-ellipsoid hectares from ST_Area. A NUMBER here, unlike the STRING on an OperationParcel line."
+            "description": "On-ellipsoid hectares, computed in PostGIS. A NUMBER here, unlike the STRING on an OperationParcel line."
           },
           "geometry": {
             "description": "GeoJSON (WGS84). Simplified when the read passed `?simplify=` — never for sketch/edit, which needs exact geometry."
@@ -7454,10 +7454,10 @@
                 "number",
                 "null"
               ],
-              "description": "ST_Simplify tolerance in DEGREES, for a lighter display payload. Clamped to 0.01; a non-positive or unparseable value is ignored and full geometry is returned. Never send it for sketch/edit — the simplified geometry would be saved back."
+              "description": "Geometry simplification tolerance in DEGREES, for a lighter display payload. Clamped to 0.01; a non-positive or unparseable value is ignored and full geometry is returned. Never send it for sketch/edit — the simplified geometry would be saved back."
             },
             "required": false,
-            "description": "ST_Simplify tolerance in DEGREES, for a lighter display payload. Clamped to 0.01; a non-positive or unparseable value is ignored and full geometry is returned. Never send it for sketch/edit — the simplified geometry would be saved back.",
+            "description": "Geometry simplification tolerance in DEGREES, for a lighter display payload. Clamped to 0.01; a non-positive or unparseable value is ignored and full geometry is returned. Never send it for sketch/edit — the simplified geometry would be saved back.",
             "name": "simplify",
             "in": "query"
           }

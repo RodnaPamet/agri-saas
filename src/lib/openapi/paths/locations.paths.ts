@@ -117,7 +117,7 @@ const ParcelGeo = z
         name: z.string(),
         cropType: z.string().nullable(),
         areaHa: z.number().nullable().openapi({
-            description: 'On-ellipsoid hectares from ST_Area. A NUMBER here, unlike the STRING on an OperationParcel line.',
+            description: 'On-ellipsoid hectares, computed in PostGIS. A NUMBER here, unlike the STRING on an OperationParcel line.',
         }),
         geometry: z.unknown().nullable().openapi({
             description:
@@ -704,7 +704,7 @@ export function registerLocationPaths(registry: OpenAPIRegistry): void {
             simplify: z.coerce.number().optional().openapi({
                 param: { name: 'simplify', in: 'query' },
                 description:
-                    'ST_Simplify tolerance in DEGREES, for a lighter display payload. Clamped to ' +
+                    'Geometry simplification tolerance in DEGREES, for a lighter display payload. Clamped to ' +
                     '0.01; a non-positive or unparseable value is ignored and full geometry is ' +
                     'returned. Never send it for sketch/edit — the simplified geometry would be ' +
                     'saved back.',
