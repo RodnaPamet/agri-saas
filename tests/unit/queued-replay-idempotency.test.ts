@@ -3,9 +3,10 @@
 /**
  * The two write paths the OUTBOX ALREADY QUEUES but that no endpoint dedupes.
  *
- * An audit of every mutating handler found 226 of them and exactly FOUR that
- * read `Idempotency-Key`. The outbox queues six write paths — and two of them
- * hit endpoints in neither set. Neither mints a duplicate ROW, so neither
+ * An audit of every mutating handler found FOUR that read `Idempotency-Key`.
+ * That count is now FIVE — the journal-edit route joined it with #919/#920, and
+ * this sentence said four until #924 measured it again. The outbox queues six
+ * write paths — and two of them hit endpoints in neither set. Neither mints a duplicate ROW, so neither
  * looked broken; each was protected by something that is not idempotency, and
  * each had a real hole underneath.
  *

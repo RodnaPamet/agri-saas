@@ -156,7 +156,10 @@ const ROOT = path.resolve(__dirname, '../..');
 // edit reported as 'queued' and closed like a save) and the delete-confirm
 // suite already on disk. Raised WITH the tests rather than spending the slack —
 // the slack exists for a lag, not as a budget.
-const RENDERED_TEST_FLOOR = 231;
+// Raised 231 -> 232 by #924 (outbox-first-attempt-idempotency): the first
+// online attempt now carries the same Idempotency-Key its replays carry, so a
+// response lost after the server committed can no longer duplicate the write.
+const RENDERED_TEST_FLOOR = 232;
 // Lowered 55 → 54 in the risk-quantification uproot (2026-08-08).
 // `ai-risk-assessment.spec.ts` and `new-risk-modal.spec.ts` were both
 // wholly about the deleted register; the specs that merely REFERENCED a

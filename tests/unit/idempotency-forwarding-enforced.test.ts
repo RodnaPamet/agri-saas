@@ -7,13 +7,16 @@
  * WHY THIS FILE EXISTS, stated plainly so it is not "simplified" later:
  *
  * The offline outbox replays a queued journal entry or spray job over flaky
- * rural LTE using its item id as the `Idempotency-Key`. Three routes read that
- * header and forward it. **No test in the repo imports any of those three route
+ * rural LTE using its item id as the `Idempotency-Key`. FIVE routes read that
+ * header and forward it (this said "three" until #924 recounted; the journal
+ * edit route arrived with #919/#920). **No test in the repo imports those route
  * modules**, so the forwarding hop itself sits at 0% runtime coverage, and both
  * halves around it are tested against themselves:
  *
- *   - `offline-pwa-coverage.test.ts:213` greps `sync.ts` for the header string
- *     — the CLIENT half, by regex, zero runtime coverage.
+ *   - `offline-pwa-coverage.test.ts`'s "outbox replay carries the idempotency
+ *     handle" block greps `sync.ts` for the header — the CLIENT half, by regex,
+ *     zero runtime coverage. (Cited by line number until #924; the line moved
+ *     and the pointer had gone stale, which is the same rot this file is about.)
  *   - `log-entry-idempotency.test.ts` and `field-operation-idempotency.test.ts`
  *     call the usecases with the key as a POSITIONAL ARGUMENT. They prove the
  *     usecase dedupes WHEN GIVEN a key; they are structurally incapable of

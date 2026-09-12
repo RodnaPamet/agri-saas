@@ -245,14 +245,50 @@ describe('outbox replay carries the idempotency handle', () => {
     // minting a duplicate row. BOTH senders (the in-page fetch sender AND the
     // service-worker background flush) must set it — they drain the SAME
     // outbox, so a gap in either reopens the double-write path.
-    it('the in-page fetch sender sets Idempotency-Key from the item id', () => {
+    // BOTH of the in-page sender's branches, matched separately. A single
+    // whole-file toMatch passed while either branch alone still carried the
+    // header, so it could not redden a one-branch revert — the two anchors are
+    // what make the mutation proof mean anything.
+    it('the in-page fetch sender sets the handle on the JSON branch', () => {
         const src = read('src/lib/offline/sync.ts');
-        expect(src).toMatch(/['"]Idempotency-Key['"]\s*:\s*item\.id/);
+        expect(src).toMatch(/outboxHeaders\(\{\s*id:\s*item\.id,\s*ifMatch:\s*item\.ifMatch/);
+    });
+
+    it('the in-page fetch sender sets the handle on the PHOTO branch', () => {
+        const src = read('src/lib/offline/sync.ts');
+        expect(src).toMatch(/outboxHeaders\(\{\s*id:\s*item\.id,\s*photo:\s*true/);
     });
 
     it('the service-worker flush sets Idempotency-Key from the item id', () => {
         const src = read('public/sw.js');
         expect(src).toMatch(/['"]Idempotency-Key['"]\s*:\s*item\.id/);
+    });
+
+    // #924 — the FIRST attempt, which is the one that actually reaches the
+    // server first and the one every guard above was blind to. These greps
+    // point at use-offline-sync.ts, a file this block never read: it was
+    // checked at :361/:383/:391 for flush wiring only, so the keyless first
+    // attempt sat under a passing "outbox carries the idempotency handle"
+    // heading for as long as it existed.
+    it('submit and submitPhoto build their FIRST-attempt headers through outboxHeaders', () => {
+        const src = read('src/lib/offline/use-offline-sync.ts');
+        expect(src).toMatch(/outboxHeaders\(\{\s*id,\s*ifMatch:\s*input\.ifMatch/);
+        expect(src).toMatch(/outboxHeaders\(\{\s*id,\s*photo:\s*true/);
+        // The id must be minted BEFORE the attempt, not by enqueue afterwards.
+        expect(src).toMatch(/const id = newOutboxId\(\)/);
+    });
+
+    it('no sender in use-offline-sync.ts hand-rolls JSON headers (that is how the key went missing)', () => {
+        const src = read('src/lib/offline/use-offline-sync.ts');
+        expect(src).not.toMatch(/['"]Content-Type['"]\s*:\s*['"]application\/json/);
+    });
+
+    // The same shared builder is the only reason the two can no longer drift.
+    it('outboxHeaders always emits the handle, and omits Content-Type for multipart', () => {
+        const src = read('src/lib/offline/outbox.ts');
+        expect(src).toMatch(/export function outboxHeaders/);
+        expect(src).toMatch(/['"]Idempotency-Key['"]\s*:\s*opts\.id/);
+        expect(src).toMatch(/if \(opts\.photo\) return \{\s*['"]Idempotency-Key['"]\s*:\s*opts\.id\s*\}/);
     });
 });
 
@@ -273,8 +309,10 @@ describe('binary photo outbox path (client + SW lockstep)', () => {
         expect(src).toMatch(/isPhotoItem\(item\)/);
         expect(src).toMatch(/new FormData\(\)/);
         expect(src).toMatch(/new File\(\[item\.blob\], item\.fileName/);
-        // Multipart replay still carries the idempotency handle (header only).
-        expect(src).toMatch(/['"]Idempotency-Key['"]\s*:\s*item\.id/);
+        // Multipart replay still carries the idempotency handle (header only) —
+        // via the shared builder since #924, so this branch and submitPhoto's
+        // first attempt cannot drift apart again.
+        expect(src).toMatch(/outboxHeaders\(\{\s*id:\s*item\.id,\s*photo:\s*true/);
     });
 
     it('the service-worker flush reconstructs multipart FormData from the stored Blob', () => {

@@ -169,14 +169,57 @@ export interface OutboxStore {
 
 export const OUTBOX_STORAGE_KEY = 'agri.offline.outbox.v1';
 
+declare const OutboxIdBrand: unique symbol;
+
+/**
+ * An id that came from {@link newOutboxId}, and cannot be spelled by hand.
+ *
+ * The brand is load-bearing, not decoration. #924 lets a caller supply the id
+ * so the FIRST attempt and its replays share one `Idempotency-Key`, and that
+ * opens an injection channel into a store whose writes are UPSERTS:
+ * `IndexedDbOutboxStore.add` is `put` on `keyPath: 'id'` (idb-outbox.ts), so
+ * enqueueing an item whose id already exists OVERWRITES the queued write in
+ * place — no exception, no receipt, no manifest gap, therefore invisible to
+ * both loss detectors. A caller passing something derived (`task.id`, an entry
+ * id) would destroy queued work on a path that looks like it succeeded.
+ *
+ * Branding makes that untypable: `enqueue(store, input, task.id)` no longer
+ * compiles. `OutboxItemBase.id` stays a plain `string`, so reads, tests and
+ * stored rows are unaffected.
+ */
+export type OutboxId = string & { readonly [OutboxIdBrand]: true };
+
 /** Stable id without a uuid dep (crypto.randomUUID where available). */
-export function newOutboxId(): string {
+export function newOutboxId(): OutboxId {
     try {
-        if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
+        if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID() as OutboxId;
     } catch {
         /* fall through */
     }
-    return `ob_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+    return `ob_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}` as OutboxId;
+}
+
+/**
+ * The headers every outbox-bound write carries — built in ONE place so a
+ * sender cannot construct a request without deciding its idempotency handle.
+ *
+ * #924: `fetchSender` sent `Idempotency-Key` on every REPLAY while `submit`'s
+ * first attempt sent none, so a response lost after the server committed
+ * re-queued under a fresh id the server had never seen, and the write landed
+ * TWICE. The header was correct in both replay senders and absent from the one
+ * attempt that actually reaches the server first — which is why no guard
+ * caught it: they were all pointed at the replay path.
+ *
+ * `photo: true` omits Content-Type deliberately — the runtime must set the
+ * multipart boundary itself.
+ */
+export function outboxHeaders(opts: { id: string; photo?: boolean; ifMatch?: number }): Record<string, string> {
+    if (opts.photo) return { 'Idempotency-Key': opts.id };
+    return {
+        'Content-Type': 'application/json',
+        'Idempotency-Key': opts.id,
+        ...(opts.ifMatch !== undefined ? { 'If-Match': String(opts.ifMatch) } : {}),
+    };
 }
 
 /**
@@ -265,10 +308,22 @@ function attribution(): { queuedByUserId?: string } {
     return queuedByUserId ? { queuedByUserId } : {};
 }
 
-/** Append a mutation to the outbox; returns the created item. */
-export async function enqueue(store: OutboxStore, input: EnqueueInput): Promise<MutationOutboxItem> {
+/**
+ * Append a mutation to the outbox; returns the created item.
+ *
+ * `id` defaults to a fresh mint, so every existing 2-argument call is
+ * unchanged. `submit` passes one it minted BEFORE its first network attempt,
+ * so the attempt that may already have reached the server and the replay that
+ * follows it carry the SAME `Idempotency-Key` — see {@link OutboxId} for why
+ * the parameter is branded rather than a plain string.
+ */
+export async function enqueue(
+    store: OutboxStore,
+    input: EnqueueInput,
+    id: OutboxId = newOutboxId(),
+): Promise<MutationOutboxItem> {
     const item: MutationOutboxItem = {
-        id: newOutboxId(),
+        id,
         url: input.url,
         method: input.method,
         body: input.body,
@@ -303,12 +358,13 @@ export interface EnqueuePhotoInput {
 export async function enqueuePhoto(
     store: OutboxStore,
     input: EnqueuePhotoInput,
+    id: OutboxId = newOutboxId(),
 ): Promise<PhotoOutboxItem> {
     if (input.blob.size > MAX_QUEUED_PHOTO_BYTES) {
         throw new PhotoTooLargeError(input.blob.size);
     }
     const item: PhotoOutboxItem = {
-        id: newOutboxId(),
+        id,
         kind: 'photo',
         url: input.url,
         method: 'POST',

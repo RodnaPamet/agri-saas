@@ -19,6 +19,8 @@ import {
     getOutboxStore,
     enqueue,
     enqueuePhoto,
+    newOutboxId,
+    outboxHeaders,
     type EnqueueInput,
     type EnqueuePhotoInput,
     type OutboxItem,
@@ -242,14 +244,23 @@ export function useOfflineSync(): OfflineSync {
         async (input: EnqueueInput): Promise<'sent' | 'queued' | 'conflict'> => {
             const offline = typeof navigator !== 'undefined' && !navigator.onLine;
             const store = getOutboxStore();
+            // #924 — minted HERE, before the first attempt, and reused by every
+            // enqueue below so the attempt that may already have reached the
+            // server and its replays carry ONE Idempotency-Key.
+            //
+            // Minting inside `enqueue` (where it used to happen) made the fix
+            // impossible: the id came into existence only after the decision to
+            // queue, so the first attempt had nothing to send. A response lost
+            // after the server committed then re-queued under an id the server
+            // had never seen, and the write landed twice — two rows, every
+            // time, on all three CREATE routes.
+            const id = newOutboxId();
+            let enqueued = false;
             if (!offline) {
                 try {
                     const res = await fetch(input.url, {
                         method: input.method,
-                        headers: {
-                            'Content-Type': 'application/json',
-                            ...(input.ifMatch !== undefined ? { 'If-Match': String(input.ifMatch) } : {}),
-                        },
+                        headers: outboxHeaders({ id, ifMatch: input.ifMatch }),
                         body: input.body !== undefined ? JSON.stringify(input.body) : undefined,
                     });
                     if (res.ok) return 'sent';
@@ -263,7 +274,8 @@ export function useOfflineSync(): OfflineSync {
                         // outcomes have opposite futures and must not share an
                         // observable — the caller has to be able to say so on screen.
                         const server = await res.json().catch(() => undefined);
-                        const item = await enqueue(store, input);
+                        const item = await enqueue(store, input, id);
+                        enqueued = true;
                         await store.update({ ...item, conflict: { status: 409, server } });
                         await refresh();
                         return 'conflict';
@@ -277,7 +289,16 @@ export function useOfflineSync(): OfflineSync {
                     if (err instanceof Error && err.message.startsWith('Request failed (4')) throw err;
                 }
             }
-            await enqueue(store, input);
+            // `enqueued` guards a path that only exists because the id is now
+            // shared. The 409 arm's enqueue / store.update / refresh all sit
+            // inside the `try`, and the catch rethrows only "Request failed
+            // (4…)" — so a throw from `update` or `refresh` used to fall
+            // through to here and enqueue AGAIN. With a fresh id that produced
+            // a duplicate row; with the shared id it is worse, because
+            // `store.add` is an UPSERT: the clean item would overwrite the
+            // parked conflict in place and return 'queued', re-creating the
+            // exact silent-loss shape #922 fixed.
+            if (!enqueued) await enqueue(store, input, id);
             await refresh();
             // First queued item is the moment to ask the browser to keep this
             // origin's storage — meaningful engagement, and self-explanatory
@@ -304,11 +325,20 @@ export function useOfflineSync(): OfflineSync {
                 throw new Error('offline photo queue unavailable (no IndexedDB)');
             }
             const offline = typeof navigator !== 'undefined' && !navigator.onLine;
+            // Same mint-before-attempt as `submit`. A photo is the artefact
+            // most likely to be re-sent on flaky signal, and the replay sender
+            // has always carried the handle — this attempt sent NO headers at
+            // all, so a lost response attached the same photo twice.
+            const id = newOutboxId();
             if (!offline) {
                 try {
                     const fd = new FormData();
                     fd.append('file', new File([input.blob], input.fileName, { type: input.fileType }));
-                    const res = await fetch(input.url, { method: 'POST', body: fd });
+                    const res = await fetch(input.url, {
+                        method: 'POST',
+                        headers: outboxHeaders({ id, photo: true }),
+                        body: fd,
+                    });
                     if (res.ok) return 'sent';
                     if (isTerminalClientError(res.status)) {
                         throw new Error(`Request failed (${res.status})`);
@@ -319,7 +349,7 @@ export function useOfflineSync(): OfflineSync {
                 }
             }
             // Enforces MAX_QUEUED_PHOTO_BYTES — an oversized blob throws here.
-            await enqueuePhoto(getOutboxStore(), input);
+            await enqueuePhoto(getOutboxStore(), input, id);
             await refresh();
             void noteWorkQueued();
             haptic('tap');

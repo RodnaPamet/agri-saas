@@ -7,7 +7,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { apiDelete } from '@/lib/api-client';
 import { downscalePhoto } from '@/lib/image/downscale-photo';
 import { useOfflineSync } from '@/lib/offline/use-offline-sync';
-import { PhotoTooLargeError } from '@/lib/offline/outbox';
+import { PhotoTooLargeError, newOutboxId, outboxHeaders } from '@/lib/offline/outbox';
 import { OfflineSyncBar } from '@/components/offline/OfflineSyncBar';
 import { useToastWithUndo } from '@/components/ui/hooks';
 import { haptic } from '@/lib/haptics';
@@ -96,7 +96,16 @@ export function JournalPhotosTab({ entryId, photos, apiUrl, canWrite, onChanged 
     const directUpload = async (toUpload: File) => {
         const fd = new FormData();
         fd.append('file', toUpload);
-        const res = await fetch(apiUrl(`/journal/${entryId}/files`), { method: 'POST', body: fd });
+        // Carries an idempotency handle even though it never queues (#924).
+        // The route reads the header, and this path runs precisely where the
+        // outbox cannot: no IndexedDB, so a lost response has no replay to
+        // dedupe against — but the operator retrying by hand does, and without
+        // a key that attaches the same photo twice.
+        const res = await fetch(apiUrl(`/journal/${entryId}/files`), {
+            method: 'POST',
+            headers: outboxHeaders({ id: newOutboxId(), photo: true }),
+            body: fd,
+        });
         if (!res.ok) {
             let msg = `Upload failed (${res.status})`;
             try {
