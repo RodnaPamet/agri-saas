@@ -331,6 +331,34 @@ describe('outbox replay carries the idempotency handle', () => {
         expect(src.slice(start, end)).not.toMatch(/supersedes/);
     });
 
+    // #936 — every OfflineSyncBar mount must pass `readable`.
+    //
+    // The prop DEFAULTS to true so the existing mounts kept compiling, and
+    // that default is exactly why this needs a guard: a mount that forgets it
+    // silently claims "everything is on the server" about a queue that could
+    // not be opened. Proved necessary — with the component's own rendered
+    // tests in place, removing the prop from a mount was still GREEN.
+    it('every OfflineSyncBar mount passes `readable`', () => {
+        const roots = ['src/app', 'src/components'];
+        const files: string[] = [];
+        const walk = (dir: string) => {
+            for (const entry of fs.readdirSync(path.join(REPO_ROOT, dir), { withFileTypes: true })) {
+                const rel = `${dir}/${entry.name}`;
+                if (entry.isDirectory()) walk(rel);
+                else if (entry.name.endsWith('.tsx')) files.push(rel);
+            }
+        };
+        roots.forEach(walk);
+
+        const mounts = files.filter((f) => read(f).includes('<OfflineSyncBar'));
+        // Positive control: the scan must actually find the mounts, or an
+        // empty selection would pass this whole assertion.
+        expect(mounts.length).toBeGreaterThanOrEqual(4);
+
+        const missing = mounts.filter((f) => !/readable=\{/.test(read(f)));
+        expect(missing).toEqual([]);
+    });
+
     // The same shared builder is the only reason the two can no longer drift.
     it('outboxHeaders always emits the handle, and omits Content-Type for multipart', () => {
         const src = read('src/lib/offline/outbox.ts');

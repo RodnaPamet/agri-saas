@@ -126,7 +126,7 @@ function FarmTasksInner({ tenantSlug, currentUserId }: { tenantSlug: string; cur
     const router = useRouter();
     const { permissions } = useTenantContext();
     const canWrite = !!permissions.canWrite;
-    const { online, pending, queueGrowing, foreign, durability, submit: enqueueSubmit, flush } = useOfflineSync();
+    const { online, pending, readable, queueGrowing, foreign, durability, submit: enqueueSubmit, flush } = useOfflineSync();
     const t = useTranslations('farmTasks');
     const te = useTranslations('taskEnums');
     const statusLabel = (s: string) => (te.has(`status.${s}`) ? te(`status.${s}`) : s);
@@ -585,6 +585,7 @@ function FarmTasksInner({ tenantSlug, currentUserId }: { tenantSlug: string; cur
                 fixing all along. Mirrors JournalClient. */}
             {(!online || pending > 0) && (
                 <OfflineSyncBar
+                    readable={readable}
                     online={online}
                     pending={pending}
                     queueGrowing={queueGrowing} foreign={foreign}

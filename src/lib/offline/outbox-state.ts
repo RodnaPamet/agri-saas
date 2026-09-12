@@ -111,11 +111,27 @@ export interface OutboxSnapshot {
      * and the loss detector was actively suppressed for them.
      */
     refused: OutboxItem[];
+    /**
+     * False when the queue could not be READ and there has never been a
+     * successful read to fall back on (#936).
+     *
+     * `pending: 0` means two opposite things without it. The catch below holds
+     * the last known snapshot rather than publishing a reassuring zero — right,
+     * and on the FIRST refresh of a page load the last known snapshot IS
+     * `EMPTY`, so it published exactly the zero it was written to prevent. The
+     * sync bar then rendered `allOnServer` — the strongest of the three states
+     * — about a queue it could not open at all.
+     *
+     * Reachable whenever IndexedDB will not open: a private window, a browser
+     * blocking site data, a corrupted store, an upgrade that threw.
+     */
+    readable: boolean;
 }
 
 const EMPTY: OutboxSnapshot = {
     pending: 0,
     pendingPhotos: 0,
+    readable: true,
     conflicts: [],
     refused: [],
     lost: null,
@@ -127,6 +143,13 @@ const EMPTY: OutboxSnapshot = {
 };
 
 let snapshot: OutboxSnapshot = EMPTY;
+/**
+ * Has the queue EVER been read successfully in this page load?
+ *
+ * The discriminator between "read it, it is empty" and "never managed to read
+ * it" — two states that produced an identical `pending: 0` before #936.
+ */
+let everRead = false;
 const listeners = new Set<() => void>();
 
 /** Startup reconciliation runs once per page load, before anything drains. */
@@ -182,9 +205,19 @@ export async function refreshOutboxState(
     let all: OutboxItem[];
     try {
         all = await store.all();
+        everRead = true;
     } catch {
         // A store that cannot be read is not a store that is empty. Hold the
         // last known snapshot rather than publishing a reassuring zero.
+        //
+        // Except on the FIRST refresh of a page load, where the last known
+        // snapshot IS `EMPTY` — so holding it published the reassuring zero
+        // this arm exists to prevent, and the bar claimed everything was on
+        // the server about a queue it could not open (#936). With no
+        // successful read to hold, say UNREADABLE rather than empty.
+        if (!everRead) {
+            emit({ ...EMPTY, readable: false, durability: readDurabilityVerdict() });
+        }
         return snapshot;
     }
 
@@ -229,6 +262,7 @@ export async function refreshOutboxState(
         blocked: blocked.length,
         blockedAuth: blocked.filter((i) => i.blocked === 'auth').length,
         refused: blocked.filter((i) => i.blocked === 'refused'),
+        readable: true,
         conflicts: all.filter((i) => i.conflict),
         lost,
         durability: readDurabilityVerdict(),

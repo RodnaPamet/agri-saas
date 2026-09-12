@@ -27,6 +27,12 @@ import { installingWouldPersist } from '@/lib/pwa/display-mode';
 export interface OfflineSyncBarProps {
     online: boolean;
     pending: number;
+    /**
+     * False when the queue could not be READ (#936). Defaults true so the five
+     * existing mount sites are unchanged; a caller that has the value should
+     * pass it, because `pending: 0` means two opposite things without it.
+     */
+    readable?: boolean;
     /** Subset of `pending` that are photo uploads — surfaced distinctly. */
     pendingPhotos?: number;
     /** True when the queue has grown past the point of routine. */
@@ -53,6 +59,7 @@ export interface OfflineSyncBarProps {
 export function OfflineSyncBar({
     online,
     pending,
+    readable = true,
     pendingPhotos = 0,
     queueGrowing = false,
     foreign = 0,
@@ -102,7 +109,16 @@ export function OfflineSyncBar({
                         className={pending > 0 ? 'text-content-warning' : 'text-content-muted'}
                         data-testid="offline-location-claim"
                     >
-                        {pending > 0 ? t('notOnServer') : t('allOnServer')}
+                        {pending > 0
+                            ? t('notOnServer')
+                            : readable
+                              ? t('allOnServer')
+                              : /* #936 — a queue we could not OPEN is not a queue
+                                   that is empty. Saying "everything is on the
+                                   server" here is the strongest of the three
+                                   states asserted about the one case where we
+                                   know nothing. */
+                                t('queueUnreadable')}
                     </span>
                 </span>
                 {pending > 0 && online && (

@@ -194,7 +194,7 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
 
     // Offline-capable journal-entry create. One shared hook so a create queued
     // from the modal is reflected in this page's OfflineSyncBar pending count.
-    const { online, pending, queueGrowing, foreign, durability, submit: offlineSubmit, flush, conflicts, resolveConflict } = useOfflineSync();
+    const { online, pending, readable, queueGrowing, foreign, durability, submit: offlineSubmit, flush, conflicts, resolveConflict } = useOfflineSync();
     const [resolvingId, setResolvingId] = useState<string | null>(null);
     const onResolveConflict = useCallback(
         async (id: string, resolution: ConflictResolution) => {
@@ -546,6 +546,7 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
                         back online. Hidden while online with nothing pending. */}
                     {(!online || pending > 0) && (
                         <OfflineSyncBar
+                            readable={readable}
                             online={online}
                             pending={pending}
                             queueGrowing={queueGrowing} foreign={foreign}

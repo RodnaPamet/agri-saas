@@ -2912,6 +2912,7 @@
         "notOnServer": "Not on the server yet",
         "installToKeep": "Add to Home Screen to keep it",
         "allOnServer": "Everything is on the server",
+        "queueUnreadable": "Cannot read this phone's queue — do not assume your work has synced",
         "queueGrowing": "Get to signal soon — work kept on the phone can be deleted before it syncs.",
         "storageProtected": "This phone has agreed to keep unsent work.",
         "storageUnprotected": "This phone has not agreed to keep unsent work. Sync as soon as you have signal.",

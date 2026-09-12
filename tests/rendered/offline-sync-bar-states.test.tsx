@@ -19,6 +19,7 @@
  */
 import { render, screen } from '@testing-library/react';
 import { OfflineSyncBar } from '@/components/offline/OfflineSyncBar';
+import en from '../../messages/en.json';
 
 // Real English copy, with the one ICU form these keys use evaluated — the
 // point of the test is the string an operator sees, so a mock that echoed
@@ -124,6 +125,47 @@ describe('OfflineSyncBar — where is the work?', () => {
         it('stays quiet when the browser never reported — silence is not a refusal', () => {
             render(<OfflineSyncBar online pending={2} storagePersisted={null} onSyncNow={noop} />);
             expect(screen.queryByTestId('offline-storage-unprotected')).not.toBeInTheDocument();
+        });
+    });
+
+    // #936 — a FOURTH state that used to render as the second.
+    //
+    // `refreshOutboxState` holds the last known snapshot when the queue cannot
+    // be read, "rather than publishing a reassuring zero". On the first refresh
+    // of a page load the last known snapshot IS empty, so it published that
+    // zero — and this bar rendered the strongest of its three claims about a
+    // queue it could not open. Reachable whenever IndexedDB will not open: a
+    // private window, a browser blocking site data, a corrupted store.
+    describe('a queue that could not be READ', () => {
+        it('does NOT claim everything is on the server', () => {
+            render(<OfflineSyncBar online pending={0} readable={false} onSyncNow={noop} />);
+            expect(screen.queryByText(en.offline.allOnServer)).not.toBeInTheDocument();
+        });
+
+        it('says the queue cannot be read', () => {
+            render(<OfflineSyncBar online pending={0} readable={false} onSyncNow={noop} />);
+            expect(screen.getByText(en.offline.queueUnreadable)).toBeInTheDocument();
+        });
+
+        // CONTROL — a readable, genuinely empty queue must still make the
+        // claim, or the fix trades one wrong answer for another.
+        it('CONTROL: a readable empty queue still says everything is on the server', () => {
+            render(<OfflineSyncBar online pending={0} readable onSyncNow={noop} />);
+            expect(screen.getByText(en.offline.allOnServer)).toBeInTheDocument();
+        });
+
+        // CONTROL — the default keeps the four existing mounts honest if one
+        // ever forgets to pass it: absent means readable.
+        it('CONTROL: omitting the prop behaves as readable', () => {
+            render(<OfflineSyncBar online pending={0} onSyncNow={noop} />);
+            expect(screen.getByText(en.offline.allOnServer)).toBeInTheDocument();
+        });
+
+        // Queued work outranks it — "not on the server" is already the honest
+        // answer and is more specific than "cannot read".
+        it('queued work still reports not-on-server', () => {
+            render(<OfflineSyncBar online pending={2} readable={false} onSyncNow={noop} />);
+            expect(screen.getByText(en.offline.notOnServer)).toBeInTheDocument();
         });
     });
 });

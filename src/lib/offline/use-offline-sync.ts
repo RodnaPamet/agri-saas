@@ -122,6 +122,12 @@ export interface OfflineSync {
      */
     submitPhoto: (input: EnqueuePhotoInput) => Promise<'sent' | 'queued'>;
     flush: () => Promise<FlushSummary>;
+    /**
+     * False when the queue could not be READ at all and no earlier successful
+     * read exists to fall back on (#936). A surface must not claim
+     * "everything is on the server" on a `pending: 0` it got this way.
+     */
+    readable: boolean;
     /** Writes parked as 409 conflicts, awaiting keep-mine / take-server. */
     conflicts: OutboxItem[];
     /**
@@ -172,7 +178,7 @@ export function useOfflineSync(): OfflineSync {
         getOutboxSnapshot,
         getServerOutboxSnapshot,
     );
-    const { pending, pendingPhotos, conflicts, refused, lost, durability, queueGrowing, foreign } = snapshot;
+    const { pending, pendingPhotos, readable, conflicts, refused, lost, durability, queueGrowing, foreign } = snapshot;
     const [online, setOnline] = useState(true);
     // Honors a 429 Retry-After: schedule the next drain instead of hammering.
     const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -457,6 +463,7 @@ export function useOfflineSync(): OfflineSync {
         online,
         pending,
         pendingPhotos,
+        readable,
         submit,
         submitPhoto,
         flush,
