@@ -150,7 +150,12 @@ export function RichTextEditor({
         editorProps: {
             attributes: {
                 class:
-                    'prose prose-sm prose-invert max-w-none p-4 focus:outline-none',
+                    // `text-base` on the phone or iOS focus-zooms the page: a
+                    // contenteditable zooms exactly like an <input>. This
+                    // element declared NO size and inherited Modal.Body's
+                    // `text-sm` (14px). `prose-sm` looked like a size and is
+                    // inert — @tailwindcss/typography is not installed here.
+                    'prose prose-invert max-w-none p-4 focus:outline-none text-base md:text-sm',
                 'data-testid': 'rich-text-editor-content',
                 role: 'textbox',
                 'aria-multiline': 'true',

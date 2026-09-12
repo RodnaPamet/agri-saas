@@ -244,16 +244,44 @@ describe('text controls do not trigger iOS focus-zoom', () => {
 const NON_TEXT_INPUT =
     /type\s*=\s*["']?(file|checkbox|radio|submit|button|reset|image|hidden|range|color)["']?/;
 
+/** The `cva(...)` body bound to `const NAME = cva(`, or null. */
+export function cvaBodyNamed(code: string, name: string): string | null {
+    const m = new RegExp(`const\\s+${name}\\s*(?::[^=]+)?=\\s*cva\\(`).exec(code);
+    if (!m) return null;
+    let depth = 0;
+    const start = m.index + m[0].length - 1;
+    for (let i = start; i < code.length; i++) {
+        if (code[i] === '(') depth++;
+        else if (code[i] === ')') { depth--; if (depth === 0) return code.slice(start, i + 1); }
+    }
+    return null;
+}
+
 export function unsafeSizesOnTags(src: string): string[] {
     const bad: string[] = [];
+    const code = stripComments(src);
     for (const region of controlRegions(src)) {
         if (!/^<(input|textarea)\b/.test(region.trim())) continue;
         if (NON_TEXT_INPUT.test(region)) continue;
-        for (const m of region.matchAll(/(?:^|[\s"'`])((?:[a-z]+:)*)(text-(?:xs|sm|base|\[\d*\.?\d+rem\]))/g)) {
-            const [, prefix, token] = m;
-            if (prefix) continue;
-            const rem = remOf(token);
-            if (rem !== null && rem < 1) bad.push(token);
+
+        // Also scan any cva() the TAG'S OWN className calls. number-stepper
+        // put its 14px in `stepperInputVariants` and left the tag itself
+        // size-less, so a tag-only scan read it as clean — the audit found it,
+        // this did not. Scoping to the cva the input actually references is
+        // what keeps badge/label/typography cva out of range; pulling in every
+        // cva in the tree flagged all of those and was wrong.
+        const scopes = [region];
+        for (const id of region.matchAll(/\b([A-Za-z_$][\w$]*)\s*\(/g)) {
+            const body = cvaBodyNamed(code, id[1]);
+            if (body) scopes.push(body);
+        }
+        for (const scope of scopes) {
+            for (const m of scope.matchAll(/(?:^|[\s"'`])((?:[a-z]+:)*)(text-(?:xs|sm|base|\[\d*\.?\d+rem\]))/g)) {
+                const [, prefix, token] = m;
+                if (prefix) continue;
+                const rem = remOf(token);
+                if (rem !== null && rem < 1) bad.push(token);
+            }
         }
     }
     return [...new Set(bad)];
@@ -363,6 +391,23 @@ describe('the CSS-class spelling of the same defect', () => {
         expect([...new Set(offenders)]).toEqual([]);
     });
 
+    it('the cva lookup resolves on the real tree — a control on the scan below', () => {
+        // unsafeSizesOnTags sees number-stepper's 14px ONLY through this
+        // helper: the <input> tag carries no size, the size lives in
+        // `stepperInputVariants`. `cvaBodyNamed` returning null makes that
+        // invisible again and every other assertion in this file still
+        // passes — selector-teeth caught exactly that mutation surviving.
+        //
+        // Production input, and the same lookup the live scan performs.
+        const src = fs.readFileSync(
+            path.join(ROOT, 'src/components/ui/number-stepper.tsx'),
+            'utf-8',
+        );
+        const body = cvaBodyNamed(stripComments(src), 'stepperInputVariants');
+        expect(body).not.toBeNull();
+        expect(body as string).toContain('text-base');
+    });
+
     it('no raw <input>/<textarea> anywhere in src/ sets one either', () => {
         const offenders: string[] = [];
         for (const f of allTsx(ROOT)) {
@@ -370,5 +415,118 @@ describe('the CSS-class spelling of the same defect', () => {
             if (bad.length) offenders.push(`${path.relative(ROOT, f)}: ${bad.join(' ')}`);
         }
         expect(offenders).toEqual([]);
+    });
+});
+
+/* ─────────────────────────────────────────────────────────────────────
+ * CONTENTEDITABLE, and why inheritance is not a defence.
+ *
+ * The journal entry body is a Tiptap `EditorContent` — a contenteditable
+ * div, which Safari focus-zooms exactly like an <input>. It escaped every
+ * assertion above for three independent reasons, each sufficient on its
+ * own:
+ *
+ *   1. it is neither <input> nor <textarea>, so the tag scan never saw it;
+ *   2. its class lives in a JS object (`editorProps.attributes.class`),
+ *      not a `className=` attribute, so the class scan never saw it;
+ *   3. it declared NO size at all and INHERITED `Modal.Body`'s `text-sm`
+ *      (14px) — and an element with no size class looks clean to any
+ *      check that only reads the element's own classes.
+ *
+ * (3) is the general lesson: inheritance is invisible to a per-element
+ * scan, and tracing every ancestor chain statically is not tractable. So
+ * the rule inverts — a text-entry surface MUST DECLARE its own phone-safe
+ * size. Declaring it is cheap; proving what it inherits is not.
+ *
+ * `prose-sm` sat on this element looking like a font-size. It is inert:
+ * @tailwindcss/typography is not installed and not in tailwind.config.js,
+ * so every `prose*` class in this repo produces no CSS. A class that
+ * looks load-bearing and is not is worse than no class.
+ * ───────────────────────────────────────────────────────────────────── */
+
+/** Class strings applied to a contenteditable surface. */
+export function contentEditableClasses(src: string): string[] {
+    const code = stripComments(src);
+    const out: string[] = [];
+
+    // Tiptap/ProseMirror: editorProps: { attributes: { class: '…' } }
+    //
+    // Balanced braces, not a character budget. The first spelling capped the
+    // block at 400 chars and matched NOTHING here — stripped comment lines
+    // leave blank indentation that pushes the real block past any such cap,
+    // and the detector then reported zero offenders as a clean pass. The
+    // control above is what caught it.
+    for (const m of code.matchAll(/attributes\s*:\s*\{/g)) {
+        const open = code.indexOf('{', m.index!);
+        let depth = 0;
+        let end = open;
+        for (let i = open; i < code.length; i++) {
+            if (code[i] === '{') depth++;
+            else if (code[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+        }
+        const block = code.slice(open + 1, end);
+        const cls = /\bclass\s*:\s*([\s\S]*?),\s*(?:['"`]?[\w-]+['"`]?\s*:|$)/.exec(block);
+        if (cls) out.push(cls[1]);
+    }
+    // Plain JSX contenteditable
+    for (const m of code.matchAll(/<[A-Za-z][\w.]*\b[^>]*\bcontentEditable\b/g)) {
+        const end = tagEnd(code, m.index!);
+        out.push(code.slice(m.index!, end + 1));
+    }
+    return out;
+}
+
+/** Does a class string declare an UNPREFIXED size of at least 16px? */
+export function declaresPhoneSafeSize(cls: string): boolean {
+    for (const m of cls.matchAll(
+        /(?:^|[\s"'`])((?:[a-z]+:)*)(text-(?:xs|sm|base|lg|xl|\[\d*\.?\d+rem\]))/g,
+    )) {
+        const [, prefix, token] = m;
+        if (prefix) continue;
+        const rem = token === 'text-lg' || token === 'text-xl' ? 1.25 : remOf(token);
+        if (rem !== null && rem >= 1) return true;
+    }
+    return false;
+}
+
+describe('contenteditable surfaces declare their own phone font-size', () => {
+    it('the detector finds the editors that exist — a control on the assertion below', () => {
+        // Without this, a detector that matches nothing reports zero
+        // offenders and passes. RichTextEditor is the known population.
+        const src = fs.readFileSync(
+            path.join(ROOT, 'src/components/ui/RichTextEditor.tsx'),
+            'utf-8',
+        );
+        expect(contentEditableClasses(src).length).toBeGreaterThan(0);
+    });
+
+    it('...and it rejects the inherit-only spelling that shipped', () => {
+        // The exact string that was live, which looked fine and was not.
+        expect(
+            declaresPhoneSafeSize("'prose prose-sm prose-invert max-w-none p-4 focus:outline-none'"),
+        ).toBe(false);
+        // A breakpoint-scoped size is NOT a phone size.
+        expect(declaresPhoneSafeSize("'md:text-base'")).toBe(false);
+        expect(declaresPhoneSafeSize("'text-base md:text-sm'")).toBe(true);
+    });
+
+    it('every contenteditable in src/ declares an unprefixed >=16px size', () => {
+        const offenders: string[] = [];
+        for (const f of allTsx(ROOT)) {
+            for (const cls of contentEditableClasses(fs.readFileSync(f, 'utf-8'))) {
+                if (!declaresPhoneSafeSize(cls)) {
+                    offenders.push(`${path.relative(ROOT, f)}: ${cls.trim().slice(0, 72)}`);
+                }
+            }
+        }
+        expect(offenders).toEqual([]);
+    });
+
+    it('prose* classes are inert here, so none of them may stand in for a size', () => {
+        // If the typography plugin is ever installed, `prose-sm` starts
+        // setting 0.875rem and silently re-breaks every editor relying on
+        // the sibling `text-base`. This assertion is the tripwire.
+        const cfg = fs.readFileSync(path.join(ROOT, 'tailwind.config.js'), 'utf-8');
+        expect(cfg.includes('@tailwindcss/typography')).toBe(false);
     });
 });

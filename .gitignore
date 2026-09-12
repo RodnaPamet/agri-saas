@@ -160,3 +160,7 @@ ag-saas/MEMORY.md
 
 # AI eval runner output (generated; baseline.json IS committed)
 scripts/ai/eval/report.json
+
+# selector-teeth writes this while mutating a guard; it must never be
+# committed, and an interrupted run can leave one behind.
+*.teeth-bak
