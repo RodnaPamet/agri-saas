@@ -40,6 +40,11 @@ const sync = {
     online: false,
     durability: { supported: true, persisted: false } as unknown,
     acknowledgeLostWork: () => {},
+    // #923 — the banner reads `refused.length`, so a double that omits it
+    // throws before any assertion here runs. This file is about the install
+    // hint, not refusals; an empty list keeps that subject unchanged.
+    refused: [] as unknown[],
+    discardRefused: async () => {},
 };
 jest.mock('@/lib/offline/use-offline-sync', () => ({
     useOfflineSync: () => sync,
