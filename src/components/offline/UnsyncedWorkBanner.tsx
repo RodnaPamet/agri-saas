@@ -38,7 +38,7 @@ import { TriangleWarning } from '@/components/ui/icons/nucleo/triangle-warning';
 
 export function UnsyncedWorkBanner() {
     const t = useTranslations('offline');
-    const { pending, pendingPhotos, lost, acknowledgeLostWork, online, durability } = useOfflineSync();
+    const { pending, pendingPhotos, lost, acknowledgeLostWork, online, durability, refused, discardRefused } = useOfflineSync();
 
     // #744 — the remedy has to travel with the WORK, not with the loss.
     //
@@ -104,6 +104,59 @@ export function UnsyncedWorkBanner() {
                             <Button variant="secondary" size="sm" onClick={acknowledgeLostWork}>
                                 {t('lost.acknowledge')}
                             </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* REFUSED (#923) — writes the server rejected with a terminal 4xx.
+                Until #923 these were DELETED, with a delivery receipt written
+                first, so a destroyed compliance write and a delivered one left
+                an identical trace and the loss detector was suppressed for
+                them. Parking them is only an improvement if they are SEEN, so
+                this renders here, app-wide, beside the lost-work alert rather
+                than on the five surfaces OfflineSyncBar mounts on.
+
+                Not dismissible as a group. Each item is discarded explicitly,
+                because a refusal means the work is NOT on the server and
+                clearing it without a person deciding is the destruction this
+                whole change exists to stop. */}
+            {refused.length > 0 && (
+                <div
+                    role="alert"
+                    id="offline-refused-work"
+                    data-testid="offline-refused-work"
+                    className="mb-default rounded-lg border border-border-warning bg-bg-warning px-4 py-3 text-content-warning"
+                >
+                    <div className="flex items-start gap-compact">
+                        <TriangleWarning className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
+                        <div className="min-w-0 space-y-tight">
+                            <p className="font-medium">{t('refused.title')}</p>
+                            <p className="text-sm">{t('refused.description', { count: refused.length })}</p>
+                            <ul className="space-y-tight text-sm">
+                                {refused.map((item) => (
+                                    <li key={item.id} className="flex flex-wrap items-center gap-compact">
+                                        <span className="min-w-0 break-words font-medium">{item.label}</span>
+                                        {/* The client sees a NUMBER, so it must not
+                                            claim more than a number supports. A 404
+                                            means the parent record is gone and
+                                            re-entry is pointless; anything else
+                                            means the payload was rejected and the
+                                            operator has to check the server before
+                                            entering it again. Saying "try again"
+                                            for every 4xx is how a fix for a silent
+                                            loss becomes a duplicate record. */}
+                                        <span>{item.refusedStatus === 404 ? t('refused.gone') : t('refused.rejected')}</span>
+                                        <Button
+                                            variant="secondary"
+                                            size="sm"
+                                            onClick={() => void discardRefused(item.id)}
+                                        >
+                                            {t('refused.discard')}
+                                        </Button>
+                                    </li>
+                                ))}
+                            </ul>
                         </div>
                     </div>
                 </div>

@@ -61,13 +61,32 @@ interface OutboxItemBase {
      * revoked or expired session is a property of the session; deleting the
      * operator's marks because their password changed on another device
      * destroys field work that nothing can recover. `exhausted` — past
-     * MAX_ATTEMPTS on genuine server-side transients.
+     * MAX_ATTEMPTS on genuine server-side transients. `refused` — the server
+     * answered a terminal 4xx about the PAYLOAD (#923).
+     *
+     * `refused` replaces a deletion. The terminal-4xx arm used to call
+     * `noteDelivered()` then `store.remove()` — the SAME two calls as the
+     * success arm — so a destroyed compliance write and a delivered one left
+     * an identical trace, and the receipt is precisely what stops the loss
+     * detector reporting the removal. Only a `dropped` counter differed, and
+     * nothing in `src/` reads it. That also contradicted this queue's own
+     * rule, stated one paragraph down: a poison item is PARKED, never deleted.
      *
      * Blocked items are never sent and never dropped. They are surfaced so an
-     * operator can act (sign in again), which is the only thing that can
-     * unblock them.
+     * operator can act (sign in again, or read what was refused and discard
+     * it), which is the only thing that can unblock them.
      */
-    blocked?: 'auth' | 'exhausted';
+    blocked?: 'auth' | 'exhausted' | 'refused';
+    /**
+     * The status that refused this write, kept alongside `blocked: 'refused'`.
+     *
+     * The client sees only a number and must not pretend otherwise: a 404 means
+     * the parent record is gone (re-entry is pointless, removal is the only
+     * action), while a 400 means the payload was rejected and the work is NOT
+     * on the server. Telling an operator "enter it again" for every 4xx is how
+     * a fix for a silent loss becomes a duplicate compliance record.
+     */
+    refusedStatus?: number;
     /**
      * Optimistic-lock version the client saw when it queued this write, sent
      * back as `If-Match` on replay. The server 409s if the row moved on. Absent

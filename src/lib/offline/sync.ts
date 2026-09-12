@@ -5,9 +5,15 @@
  * `Sender` (the real one POSTs/PATCHes via fetch). The retry policy is
  * the crux:
  *   - 2xx success            → remove (delivered).
- *   - 4xx (except 408/429)   → DROP. A client error won't succeed on
- *                              retry; keeping it would wedge the queue
- *                              behind a permanently-failing item.
+ *   - 4xx (except 401/403/
+ *     408/409/429)           → PARK as `refused`. A client error won't
+ *                              succeed on retry, but destroying the write to
+ *                              keep the queue moving made a refused write and
+ *                              a delivered one indistinguishable — the same
+ *                              two calls, receipt included. A parked item is
+ *                              skipped by the loop, so the queue keeps moving
+ *                              without the work being destroyed to achieve it
+ *                              (#923). This line said DROP until then.
  *   - network throw / 5xx /
  *     408                    → KEEP + bump attempts (transient; retry on
  *                              the next flush / reconnect).
@@ -50,7 +56,16 @@ export type Sender = (item: OutboxItem) => Promise<SendResult>;
 export interface FlushSummary {
     sent: number;
     failed: number;
+    /**
+     * DEAD since #923 and kept at 0 so the shape does not churn. It used to
+     * count writes this drain DESTROYED on a terminal 4xx — and it was the
+     * only thing distinguishing a destroyed write from a delivered one, while
+     * nothing in `src/` ever read it and every `flush()` call site is
+     * `void flush()`. Those writes are parked as `refused` now.
+     */
     dropped: number;
+    /** Writes the server refused with a terminal 4xx, parked for the operator. */
+    refused: number;
     /**
      * Items left untouched because a DIFFERENT operator queued them. Never
      * sent (they would land attributed to the wrong person, or 403 and be
@@ -97,6 +112,35 @@ function neverSent(status: number): boolean {
 }
 
 /** Drain the outbox once. Safe to call repeatedly (idempotent per item). */
+/**
+ * Write a park back to the queue ONLY if the row is still there.
+ *
+ * Every store write in this file is an UPSERT — `IndexedDbOutboxStore.update`
+ * delegates to `add`, which is `put` on `keyPath: 'id'`, and the service
+ * worker's `idbWrite(db, 'put', …)` is the same. So an unguarded park RESURRECTS
+ * a row that a concurrent drain already delivered and removed: the page sender
+ * and the service worker's background sync replay the SAME queue, which is the
+ * race `lockTaskStatusRow` exists for. The resurrected copy would then sit
+ * permanently blocked, describing a write that is on the server.
+ *
+ * The 409 arm has had this guard since it was written; the auth, exhausted and
+ * (as of #923) refused arms did not, which mattered much more once a park
+ * became the terminal outcome for a 4xx rather than a deletion.
+ *
+ * Returns whether the park was actually written, so counters only count rows
+ * that exist.
+ */
+async function parkIfStillQueued(
+    store: OutboxStore,
+    item: OutboxItem,
+    patch: Partial<OutboxItem>,
+): Promise<boolean> {
+    const stillQueued = (await store.all()).some((i) => i.id === item.id);
+    if (!stillQueued) return false;
+    await store.update({ ...item, ...patch } as OutboxItem);
+    return true;
+}
+
 export async function flushOutbox(
     store: OutboxStore,
     send: Sender,
@@ -114,6 +158,7 @@ export async function flushOutbox(
     let authBlocked = false;
     let failed = 0;
     let dropped = 0;
+    let refused = 0;
     let foreign = 0;
     let conflicts = 0;
     let rateLimited = false;
@@ -189,8 +234,7 @@ export async function flushOutbox(
             // a laptop destroys field work nothing can recover. Stop the pass
             // — every remaining item carries the same credential and would
             // meet the same answer.
-            await store.update({ ...item, blocked: 'auth' });
-            blocked++;
+            if (await parkIfStillQueued(store, item, { blocked: 'auth' })) blocked++;
             authBlocked = true;
             break;
         } else if (isTransient(res.status)) {
@@ -198,24 +242,37 @@ export async function flushOutbox(
             if (next.attempts >= MAX_ATTEMPTS) {
                 // Park, never delete. The poison-item escape is that it stops
                 // being retried, not that the work is destroyed.
-                await store.update({ ...next, blocked: 'exhausted' });
-                blocked++;
+                if (await parkIfStillQueued(store, next, { blocked: 'exhausted' })) blocked++;
             } else {
-                await store.update(next);
-                failed++;
+                if (await parkIfStillQueued(store, next, {})) failed++;
             }
         } else {
-            // Genuinely terminal for THIS item (a 4xx about the payload).
-            // Dropping keeps the queue moving, and the receipt below is what
-            // stops the loss detector reading it as an eviction.
-            await noteDelivered(store, item.id);
-            await store.remove(item.id);
-            dropped++;
+            // REFUSED — genuinely terminal for THIS item (a 4xx about the
+            // payload). Parked, not destroyed (#923).
+            //
+            // This arm used to call `noteDelivered()` then `store.remove()` —
+            // byte for byte the two calls the SUCCESS arm makes twenty lines
+            // up. A destroyed compliance write and a delivered one therefore
+            // left an identical trace on the device: queue row gone, receipt
+            // written, `pending` back to zero. The receipt is specifically
+            // what stops the loss detector reporting the removal, so the
+            // destruction was not merely unreported, it was suppressed. The
+            // only thing that differed was a `dropped` counter, and nothing in
+            // `src/` reads it — every `flush()` call site is `void flush()`.
+            //
+            // A terminal 4xx now means what it says: the work is NOT on the
+            // server. That became true only with the already-applied arm in
+            // `setTaskStatus` (this PR) — before it, the commonest 400 here
+            // was a replay whose write had ALREADY landed, and parking that
+            // one would tell an operator to re-enter a record that exists.
+            if (await parkIfStillQueued(store, item, { blocked: 'refused', refusedStatus: res.status })) {
+                refused++;
+            }
         }
     }
 
     const remaining = (await store.all()).length;
-    return { sent, failed, dropped, foreign, blocked, authBlocked, conflicts, remaining, rateLimited, retryAfterSeconds };
+    return { sent, failed, dropped, refused, foreign, blocked, authBlocked, conflicts, remaining, rateLimited, retryAfterSeconds };
 }
 
 /** A fetch-backed Sender for the browser. */

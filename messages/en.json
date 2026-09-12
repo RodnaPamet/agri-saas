@@ -2929,7 +2929,14 @@
         "needsConnectionBody": "This needs a connection. It will load when you are back online.",
         "loadFailedTitle": "Could not load this",
         "loadFailedBody": "Something went wrong fetching it.",
-        "retry": "Try again"
+        "retry": "Try again",
+        "refused": {
+            "title": "Some work was refused by the server",
+            "description": "{count, plural, one {# change was rejected and is still on this phone.} other {# changes were rejected and are still on this phone.}} They will not be sent again.",
+            "rejected": "Rejected — check the server before entering it again",
+            "gone": "The record it belonged to no longer exists",
+            "discard": "Remove from phone"
+        }
     },
     "userMenu": {
         "accountMenu": "Account menu",

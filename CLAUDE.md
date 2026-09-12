@@ -511,14 +511,34 @@ to evict. Three rules, all load-bearing — see
   move" instead of two numbers an operator reconciles in their head in a
   field. `blockedAuth` is split out because only it has an action attached;
   the other kind resolves itself when the server recovers.
-- **A poison item is PARKED, never deleted.** Past `MAX_ATTEMPTS` a transient
-  failure writes `blocked: 'exhausted'` (`sync.ts`) instead of removing the
-  row — the escape from a poison item is that it stops being RETRIED, not
-  that the work is destroyed. Nothing in the codebase clears a `blocked`
-  flag, so both kinds of park are permanent until something explicitly
-  unblocks them; that is a deliberate trade of a stuck row against a
-  silently deleted one, and it is the same principle as the sticky lost
-  record above.
+- **A poison item is PARKED, never deleted, and since #923 that includes a
+  REFUSAL.** Past `MAX_ATTEMPTS` a transient failure writes
+  `blocked: 'exhausted'` (`sync.ts`); a terminal 4xx about the payload writes
+  `blocked: 'refused'` + `refusedStatus`. That arm used to call
+  `noteDelivered()` then `store.remove()` — byte for byte the SUCCESS arm — so
+  a destroyed compliance write and a delivered one left an identical trace,
+  and the receipt is precisely what suppressed the loss detector for it. Only
+  a `dropped` counter differed, and nothing in `src/` reads it. `flushOutbox`
+  now has ONE removal (success); every other outcome parks. Two things ride
+  with that: a park is written through `parkIfStillQueued`, because
+  `store.update` is an upsert and the page and service worker drain the same
+  queue, so an unguarded park RESURRECTS a row the other drain already
+  delivered; and a refusal is surfaced by `UnsyncedWorkBanner` with a per-item
+  discard, because parking an invisible row only trades a silent loss for a
+  silent stall. A terminal 4xx is only honest as "not on the server" because
+  `setTaskStatus` gained an already-applied arm in the same change — its
+  commonest 400 was a replay whose write had ALREADY landed.
+
+  The escape from a poison item is that it stops being RETRIED, not that the
+  work is destroyed. Nothing in the codebase clears a `blocked` flag on its
+  own, so every kind of park is permanent until something explicitly unblocks
+  it — signing in again for `auth`, and for `refused` an operator tapping
+  discard, the one path that removes it. That is a deliberate trade of a stuck
+  row against a silently deleted one, and it is the same principle as the
+  sticky lost record above. The cost is real and worth stating: a parked photo
+  holds up to `MAX_QUEUED_PHOTO_BYTES` (8 MiB) of Blob until someone acts, so
+  on a device without granted persistence a hoard of refusals raises the
+  eviction risk for writes that are still deliverable.
 - **`navigator.storage.persist()` is requested at the FIRST ENQUEUE**, not
   on first paint (Firefox prompts; Chromium grants on engagement). The
   verdict is recorded under `agri.offline.durability.v1`, and that CACHED
@@ -593,8 +613,8 @@ to evict. Three rules, all load-bearing — see
   covers only removals the PAGE made and then refreshed; the SERVICE WORKER
   drains the same queue and cannot write localStorage, so its drains read as
   eviction on the next cross-session reconcile — a sticky, FALSE "your work
-  was deleted" for work already on the server. So both removals in
-  `flushOutbox` write a receipt FIRST (`noteDelivered` from
+  was deleted" for work already on the server. So the removal in
+  `flushOutbox` writes a receipt FIRST (`noteDelivered` from
   `src/lib/offline/delivery-receipts.ts`, then `store.remove`), into a SECOND
   IndexedDB object store beside the queue — `RECEIPT_STORE_NAME =
   'delivered'`, added at `OUTBOX_DB_VERSION = 2` in `idb-outbox.ts` and

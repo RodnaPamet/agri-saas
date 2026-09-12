@@ -99,12 +99,25 @@ export interface OutboxSnapshot {
      * from `exhausted` because that one resolves itself when the server does.
      */
     blockedAuth: number;
+    /**
+     * Writes the server REFUSED with a terminal 4xx, parked rather than
+     * destroyed (#923). Carried as the ITEMS, not a count, because the
+     * operator has to be able to read what was refused before deciding — a
+     * count alone would say "something you did failed" and name nothing.
+     *
+     * A subset of `blocked`, so it is already inside `pending`. Before #923
+     * these were DELETED, with a delivery receipt written first, so a
+     * destroyed compliance write and a delivered one were indistinguishable
+     * and the loss detector was actively suppressed for them.
+     */
+    refused: OutboxItem[];
 }
 
 const EMPTY: OutboxSnapshot = {
     pending: 0,
     pendingPhotos: 0,
     conflicts: [],
+    refused: [],
     lost: null,
     durability: null,
     queueGrowing: false,
@@ -215,6 +228,7 @@ export async function refreshOutboxState(
         pendingPhotos: live.filter(isPhotoItem).length,
         blocked: blocked.length,
         blockedAuth: blocked.filter((i) => i.blocked === 'auth').length,
+        refused: blocked.filter((i) => i.blocked === 'refused'),
         conflicts: all.filter((i) => i.conflict),
         lost,
         durability: readDurabilityVerdict(),

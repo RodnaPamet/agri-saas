@@ -124,6 +124,20 @@ export interface OfflineSync {
     /** Writes parked as 409 conflicts, awaiting keep-mine / take-server. */
     conflicts: OutboxItem[];
     /**
+     * Writes the server REFUSED with a terminal 4xx, parked instead of
+     * destroyed (#923). Items rather than a count: the operator has to read
+     * WHAT was refused before deciding, and a bare number names nothing.
+     */
+    refused: OutboxItem[];
+    /**
+     * Discard one refused write, on an explicit operator action only.
+     *
+     * Nothing else clears a `refused` park — deliberately. A refusal means the
+     * work is NOT on the server, so removing it without a person deciding is
+     * the destruction #923 exists to stop.
+     */
+    discardRefused: (id: string) => Promise<void>;
+    /**
      * Resolve a parked conflict: `take-server` discards the queued edit;
      * `keep-mine` re-sends it at the server's current version so it wins.
      */
@@ -157,7 +171,7 @@ export function useOfflineSync(): OfflineSync {
         getOutboxSnapshot,
         getServerOutboxSnapshot,
     );
-    const { pending, pendingPhotos, conflicts, lost, durability, queueGrowing, foreign } = snapshot;
+    const { pending, pendingPhotos, conflicts, refused, lost, durability, queueGrowing, foreign } = snapshot;
     const [online, setOnline] = useState(true);
     // Honors a 429 Retry-After: schedule the next drain instead of hammering.
     const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -179,7 +193,7 @@ export function useOfflineSync(): OfflineSync {
         });
         if (res === null) {
             const remaining = (await getOutboxStore().all()).length;
-            return { sent: 0, failed: 0, dropped: 0, foreign: 0, blocked: 0, authBlocked: false, conflicts: 0, remaining, rateLimited: false };
+            return { sent: 0, failed: 0, dropped: 0, refused: 0, foreign: 0, blocked: 0, authBlocked: false, conflicts: 0, remaining, rateLimited: false };
         }
         // Rate-limited mid-burst with work still queued → back off for the
         // server's Retry-After (default one mutation window) and re-drain,
@@ -393,6 +407,33 @@ export function useOfflineSync(): OfflineSync {
         [refresh],
     );
 
+    /**
+     * Remove one refused write, on an explicit operator action.
+     *
+     * Removes and `refresh()`es in the SAME call, so it re-mirrors the manifest
+     * itself and writes no delivery receipt — the documented exception
+     * `resolveConflict` already relies on. A receipt means "deliberately
+     * removed" and is what stops the loss detector crying eviction; a removal
+     * this function performs is followed immediately by the refresh that
+     * rewrites the manifest, so there is nothing left over to explain.
+     *
+     * Guarded on `blocked === 'refused'`: this must never become a way to
+     * delete a still-deliverable item.
+     */
+    const discardRefused = useCallback(
+        async (id: string) => {
+            const store = getOutboxStore();
+            const item = (await store.all()).find((i) => i.id === id);
+            if (!item || item.blocked !== 'refused') {
+                await refresh();
+                return;
+            }
+            await store.remove(id);
+            await refresh();
+        },
+        [refresh],
+    );
+
     return {
         online,
         pending,
@@ -402,6 +443,8 @@ export function useOfflineSync(): OfflineSync {
         flush,
         conflicts,
         resolveConflict,
+        refused,
+        discardRefused,
         lost,
         acknowledgeLostWork: acknowledgeLoss,
         durability,

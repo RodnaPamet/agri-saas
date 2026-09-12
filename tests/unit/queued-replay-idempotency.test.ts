@@ -10,9 +10,13 @@
  * looked broken; each was protected by something that is not idempotency, and
  * each had a real hole underneath.
  *
- *   1. POST /tasks/:id/status — safe only SEQUENTIALLY. The state machine
- *      rejects from === to as a no-op, so a serial replay 400s and the outbox
- *      drops it. But on reconnect the SAME queued item is drained CONCURRENTLY
+ *   1. POST /tasks/:id/status — safe only SEQUENTIALLY, and by ACCIDENT. The
+ *      state machine rejected from === to as a no-op, so a serial replay 400d
+ *      and the outbox DROPPED it — exactly once, via a gate that meant
+ *      something else. #923 replaced that with an explicit already-applied arm
+ *      returning 200, because a 400 that means "already landed" and a 400 that
+ *      means "refused" cannot both be true once a refused write stops being
+ *      destroyed silently. But on reconnect the SAME queued item is drained CONCURRENTLY
  *      by the in-page sender AND the SW background sync (journal.ts documents
  *      this and solves it with an advisory lock). Under READ COMMITTED both
  *      drains read the PRE-state, both pass the gate, both write, and both

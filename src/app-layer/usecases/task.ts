@@ -285,9 +285,20 @@ export async function bulkDeleteTask(
  * operator action. The task row is not duplicated; the HISTORY is, which is
  * worse, because the history is what an auditor reads.
  *
- * With the lock the loser waits, re-reads the POST-state, and
- * `checkWorkItemTransition(RESOLVED, RESOLVED)` classifies it as a no_op → 400
- * → the outbox drops it. Exactly once, using the gate that was already there.
+ * With the lock the loser waits and re-reads the POST-state. It then hits the
+ * ALREADY-APPLIED arm in `setTaskStatus` and returns 200 with the current task,
+ * writing no second audit row. Exactly once, and the outbox removes the item as
+ * a normal delivery.
+ *
+ * Until #923 that loser instead fell through to
+ * `checkWorkItemTransition(RESOLVED, RESOLVED)` → no_op → 400, and the outbox
+ * DROPPED it. Same exactly-once outcome, but it made one status code mean two
+ * opposite things — "refused" and "already landed" — and #923 needs a terminal
+ * 4xx to mean only the first, because it stops destroying such a write and
+ * starts telling the operator about it. Telling an operator to re-enter a
+ * compliance record that is already recorded is how that fix would have
+ * manufactured duplicates.
+ *
  * Transaction-scoped: released automatically on commit or rollback.
  *
  * Lives HERE rather than inline because tests/guardrails/audit-s8 slices a
@@ -299,6 +310,51 @@ export async function bulkDeleteTask(
  */
 async function lockTaskStatusRow(db: PrismaTx, ctx: RequestContext, taskId: string) {
     await db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`${ctx.tenantId}:task-status:${taskId}`}))`;
+}
+
+/**
+ * Is this call a REPLAY of a status change that already landed?
+ *
+ * A prerequisite for #923, not a convenience. Such a replay used to fall
+ * through to `checkWorkItemTransition(RESOLVED, RESOLVED)` → no_op → 400, and
+ * the outbox DROPPED the item — the exactly-once mechanism `lockTaskStatusRow`
+ * describes above. It works, but it makes one status code mean two opposite
+ * things: "the server refused your write" and "your write already landed".
+ * #923 stops a terminal 4xx destroying a queued write and starts telling the
+ * operator about it, so the 400 has to stop meaning success FIRST — otherwise
+ * an operator is invited to re-enter a compliance record that already exists.
+ *
+ * Mirrors `markOperationParcel` (field-operation.ts, #913): the intent is
+ * satisfied, so the caller returns current state and writes NO second audit
+ * row, no automation event, no notification. If somebody ELSE set the same
+ * status the operator's intent is still satisfied, and that change has its own
+ * audit row — so this is right in that case too.
+ *
+ * Gated on the resolution as well. A same-status call carrying DIFFERENT text
+ * is not a replay; it 400s, and short-circuiting it would turn a visible error
+ * into a silent no-op that discards what the operator typed. A real replay
+ * carries the same body, so it still short-circuits.
+ *
+ * Lives HERE rather than inline for the same reason `lockTaskStatusRow` does:
+ * `tests/guardrails/audit-s8-task-remediation.test.ts` slices a fixed
+ * 2500-character window from the start of that function and requires the
+ * transition gate inside it. The window measures COMMENT VOLUME rather than
+ * ordering, so an explanation written inline pushes the gate out of range and
+ * reds a guard about something else entirely. It did exactly that once here.
+ *
+ * And do NOT write the guard's anchor text in a comment: it locates the
+ * window with `indexOf`, so naming the function's declaration in prose ABOVE
+ * it moves the window onto the comment. That cost a second red on this PR
+ * after the first was already fixed.
+ */
+function isAlreadyApplied(
+    existing: { status: string; resolution?: string | null },
+    status: string,
+    resolution?: string | null,
+): boolean {
+    const resolutionUnchanged =
+        resolution === undefined || resolution === null || resolution === existing.resolution;
+    return existing.status === status && resolutionUnchanged;
 }
 
 export async function setTaskStatus(ctx: RequestContext, taskId: string, status: string, resolution?: string | null) {
@@ -329,6 +385,9 @@ export async function setTaskStatus(ctx: RequestContext, taskId: string, status:
         }
 
         const fromStatus = existing.status;
+
+        // A replay of a write that already landed — see isAlreadyApplied.
+        if (isAlreadyApplied(existing, status, resolution)) return existing;
 
         // Audit Coherence S8 (2026-05-24) — state-machine gate runs
         // BEFORE the type-relevance check. Catches no-op + illegal
