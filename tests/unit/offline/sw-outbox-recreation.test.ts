@@ -51,6 +51,14 @@ function loadWorker(opts: {
     /** Whether an open finds the object store already present. */
     storePresent: boolean;
     items?: unknown[];
+    /**
+     * What `/api/offline/whoami` answers. Defaults to a verified user, because
+     * since #932 the worker establishes WHO the drain is before sending
+     * anything and returns early on any other answer — so a harness that wants
+     * a drain has to supply an identity. That is the contract, not a detail:
+     * an unverified pass would replay one operator's work under another's id.
+     */
+    whoami?: { kind: 'user'; userId: string } | { kind: 'signed-out' } | { kind: 'unknown' };
 }): Harness {
     const opens: string[] = [];
     const posted: Array<{ type?: string }> = [];
@@ -96,8 +104,23 @@ function loadWorker(opts: {
         'self', 'indexedDB', 'caches', 'fetch', 'Response', 'URL', 'clients',
         `${SW_SRC}\n;return { flushOutbox };`,
     );
+    const who = opts.whoami ?? { kind: 'user', userId: 'operator-a' };
+    const whoamiFetch = async (url: string) => {
+        if (String(url).includes('/api/offline/whoami')) {
+            if (who.kind === 'signed-out') return { status: 401, ok: false, headers: { get: () => null } };
+            if (who.kind === 'unknown') return { status: 502, ok: false, headers: { get: () => null } };
+            return {
+                status: 200,
+                ok: true,
+                headers: { get: (h: string) => (h.toLowerCase() === 'content-type' ? 'application/json' : null) },
+                json: async () => ({ userId: who.userId }),
+            };
+        }
+        return { status: 200, ok: true, headers: { get: () => null }, json: async () => ({}) };
+    };
+
     const api = factory(
-        self, indexedDB, { open: async () => ({}) }, async () => ({}),
+        self, indexedDB, { open: async () => ({}) }, whoamiFetch,
         class {}, URL, self.clients,
     ) as { flushOutbox: () => Promise<void> };
 

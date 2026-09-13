@@ -42,7 +42,7 @@ const CACHE_VERSION = 'agrent-v1';
  * `tests/guards/sw-revision-stamp.test.ts` recomputes it and prints the
  * expected value on failure, so updating it is a paste.
  */
-const SW_REVISION = '53f4f58a0e3a';
+const SW_REVISION = 'd0a09451785d';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 const DATA_CACHE = `${CACHE_VERSION}-fielddata`;
@@ -897,6 +897,55 @@ function isTransient(status) {
 // must stop the pass (no point replaying the rest into a closed window). We
 // retain everything, surface the server's Retry-After to open clients, and
 // throw so the browser reschedules the drain after backing off.
+/**
+ * Who does the SERVER say is signed in? (#932)
+ *
+ * A hand-mirror of `resolveWhoami` in src/lib/offline/whoami.ts, because a
+ * service worker cannot import from `src/`. Same three outcomes, same reasons —
+ * and like the rest of this file's outbox logic, NOTHING enforces the mirror,
+ * so it is kept in lockstep by hand.
+ *
+ * The worker cannot use the page's user id: `setCurrentUserId` is fed from the
+ * server-rendered layout, so that value belongs to the DOCUMENT, and this very
+ * file replays cached documents. On a shared phone the shell fallback can hand
+ * operator B a page rendered for A. Asking the server is the only way the
+ * worker can know.
+ *
+ * THREE outcomes, never two. Collapsing "unknown" into either definite answer
+ * is the defect the page-side module exists to avoid: a captive portal answers
+ * 200 with HTML, a proxy answers 502, the version gate answers 426. None of
+ * those is a 401.
+ */
+async function swResolveWhoami() {
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), 5000) : null;
+    try {
+        const res = await fetch('/api/offline/whoami', {
+            method: 'GET',
+            cache: 'no-store',
+            headers: { Accept: 'application/json' },
+            credentials: 'same-origin',
+            ...(controller ? { signal: controller.signal } : {}),
+        });
+        if (res.status === 401 || res.status === 403) return { kind: 'signed-out' };
+        if (!res.ok) return { kind: 'unknown', reason: 'status:' + res.status };
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/json') === false) {
+            return { kind: 'unknown', reason: 'content-type:' + (contentType || 'absent') };
+        }
+        const body = await res.json().catch(() => null);
+        if (!body || typeof body.userId !== 'string' || body.userId.length === 0) {
+            return { kind: 'unknown', reason: 'body:no-user-id' };
+        }
+        return { kind: 'user', userId: body.userId };
+    } catch (err) {
+        const name = err && typeof err.name === 'string' ? err.name : 'unknown';
+        return { kind: 'unknown', reason: 'throw:' + name };
+    } finally {
+        if (timer) clearTimeout(timer);
+    }
+}
+
 async function flushOutbox() {
     // An absent database has no queue to replay, so there is nothing to gain
     // by opening it — and everything to lose, because opening CREATES it and
@@ -918,11 +967,48 @@ async function flushOutbox() {
     try { items = await idbGetAll(db); } catch { return; }
     items.sort((a, b) => a.createdAt - b.createdAt);
 
+    // Establish WHO this drain is, once per pass, before sending anything.
+    //
+    // The page drain has skipped foreign items since #761; this one never has,
+    // so on a shared device operator A's queued work replayed under whoever was
+    // signed in at flush time — landing in a hash-chained AuditLog and, worse,
+    // in `OperationParcel.completedByUserId`, a permanent domain column on a
+    // БАБХ compliance record. `src/lib/auth/sign-out.ts` already PROMISES this
+    // does not happen: "another operator signing in cannot send it either — it
+    // is held, visibly, until its owner returns."
+    //
+    // Anything but a verified identity means the pass does not run. Holding
+    // work costs a delayed sync that Background Sync will retry; sending it
+    // unverified costs an attribution that cannot be corrected. The endpoint
+    // ships in the same image as this file, so `unknown` here means a captive
+    // portal, a proxy, or a rolled-back server — in every one of which the
+    // writes themselves would not have landed cleanly either.
+    const who = await swResolveWhoami();
+    if (who.kind !== 'user') {
+        const clients = await self.clients.matchAll({ includeUncontrolled: true });
+        clients.forEach((c) => c.postMessage({ type: 'outbox-flush-deferred', reason: who.kind }));
+        try { db.close(); } catch { /* already closed */ }
+        // Throw only for `unknown` — a definite signed-out is not a transient
+        // condition and rescheduling it burns the browser's sync budget.
+        if (who.kind === 'unknown') throw new Error('outbox: identity unverified — reschedule sync');
+        return;
+    }
+    const ownerUserId = who.userId;
+
     let transientRemains = false;
     let authBlocked = false;
     let rateLimited = false;
+    let foreignHeld = false;
     let retryAfterSeconds;
     for (const item of items) {
+        // Queued by a DIFFERENT operator on this device. Byte-for-byte the
+        // page's rule (src/lib/offline/sync.ts): skip, never send, never drop.
+        // It waits for its owner. Legacy items with no attribution still flush,
+        // exactly as on the page.
+        if (item.queuedByUserId && item.queuedByUserId !== ownerUserId) {
+            foreignHeld = true;
+            continue;
+        }
         // Already parked as undeliverable — re-sending an auth-blocked item
         // before the operator signs in again just reproduces the 401.
         if (item.blocked) continue;
@@ -1026,7 +1112,7 @@ async function flushOutbox() {
     }
     // Notify any open clients so their pending-count refreshes.
     const clients = await self.clients.matchAll({ includeUncontrolled: true });
-    clients.forEach((c) => c.postMessage({ type: 'outbox-flushed', rateLimited, retryAfterSeconds }));
+    clients.forEach((c) => c.postMessage({ type: 'outbox-flushed', rateLimited, retryAfterSeconds, foreignHeld }));
     if (rateLimited) throw new Error('outbox: rate limited — reschedule sync after backoff');
     if (transientRemains) throw new Error('outbox: transient failures remain — reschedule sync');
 }
