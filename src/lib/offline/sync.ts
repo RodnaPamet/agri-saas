@@ -244,13 +244,23 @@ export async function flushOutbox(
         }
 
         // Queued by a DIFFERENT operator on this device. A replay uses the
-        // CURRENT session cookie, so sending it would either attribute the
-        // write to the wrong person in a hash-chained audit trail, or — if
-        // the tenants differ — earn a 403, which the terminal-4xx branch
-        // below would treat as undeliverable and REMOVE. That removal is
-        // invisible to the loss detector, because it looks deliberate and
-        // the manifest is re-mirrored from the queue straight after. So:
-        // skip, never send, never drop. It waits for its owner.
+        // CURRENT session cookie, so sending it attributes the write to the
+        // wrong person — in a hash-chained audit trail AND, for the field
+        // operations this queue carries, in `OperationParcel.completedByUserId`,
+        // a permanent domain column on a БАБХ compliance record.
+        //
+        // If the tenants differ it earns a 403 instead, which is parked
+        // `blocked: 'auth'` a few arms below and stops the pass.
+        //
+        // This comment used to justify the skip by saying that 403 would reach
+        // the terminal-4xx branch and be REMOVED. Both halves stopped being
+        // true at #923: a 403 never reaches that branch, and the branch no
+        // longer removes anything — it parks. The skip is still right, and the
+        // reason is the mis-attribution above, not a deletion that cannot
+        // happen. Corrected rather than deleted because the removal story is
+        // exactly the kind of thing a reader would act on.
+        //
+        // So: skip, never send, never drop. It waits for its owner.
         if (ownerUserId && item.queuedByUserId && item.queuedByUserId !== ownerUserId) {
             foreign++;
             continue;
