@@ -84,6 +84,12 @@ export interface FlushSummary {
     remaining: number;
     /** True when the pass stopped early because the server rate-limited us. */
     rateLimited: boolean;
+    /**
+     * The server answered 426: this BUILD is below the client-version floor.
+     * Retained, not parked — it clears when the app updates, with no operator
+     * action, so it must never reach the terminal `refused` state.
+     */
+    clientTooOld: boolean;
     /** Seconds to back off before the next flush, from the 429 `Retry-After`. */
     retryAfterSeconds?: number;
     /** Items newly parked as 409 conflicts awaiting operator resolution. */
@@ -162,6 +168,7 @@ export async function flushOutbox(
     let foreign = 0;
     let conflicts = 0;
     let rateLimited = false;
+    let clientTooOld = false;
     let retryAfterSeconds: number | undefined;
 
     for (const item of items) {
@@ -216,6 +223,24 @@ export async function flushOutbox(
                 await store.update({ ...item, conflict: { status: 409, server: res.conflict } });
                 conflicts++;
             }
+        } else if (res.status === 426) {
+            // The BUILD is too old, not the work. `src/middleware.ts` answers
+            // any API route below the client-version floor with 426 before the
+            // handler runs, so it says nothing about this payload — and every
+            // remaining item would meet the same answer.
+            //
+            // Environmental like a 429, so treated like one: retain untouched,
+            // no attempt spent, and stop the pass. It clears when the app
+            // updates, with no operator action.
+            //
+            // Deliberately NOT a park. `blocked: 'refused'` is terminal and
+            // nothing in the codebase clears a blocked flag on its own, so
+            // parking here would put the WHOLE queue behind a per-item discard
+            // the operator would have to tap for work that was never refused —
+            // the one-way door #930 exists to close, opened for a condition
+            // that resolves itself.
+            clientTooOld = true;
+            break;
         } else if (res.status === 429) {
             // Rate limited — retain untouched (no attempts bump, never
             // dropped) and stop draining into a closed window.
@@ -272,7 +297,7 @@ export async function flushOutbox(
     }
 
     const remaining = (await store.all()).length;
-    return { sent, failed, dropped, refused, foreign, blocked, authBlocked, conflicts, remaining, rateLimited, retryAfterSeconds };
+    return { sent, failed, dropped, refused, foreign, blocked, authBlocked, conflicts, remaining, rateLimited, clientTooOld, retryAfterSeconds };
 }
 
 /** A fetch-backed Sender for the browser. */

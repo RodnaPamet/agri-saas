@@ -185,6 +185,48 @@ describe('flushOutbox', () => {
         expect((await s.all())[0].conflict?.status).toBe(409); // still parked
     });
 
+    // ── 426 client-too-old handling (#938) ───────────────────────────
+    // `src/middleware.ts` answers any API route below the client-version floor
+    // with 426 BEFORE the handler runs. It is a statement about the BUILD, not
+    // the payload — but it is a 4xx, so without its own arm it fell through to
+    // the terminal branch and parked as `blocked: 'refused'`.
+    //
+    // That is the whole queue, not one item: every remaining write carries the
+    // same too-old client. And `refused` is terminal — nothing in the codebase
+    // clears a blocked flag on its own, so the only exit is the operator
+    // tapping discard on each item in turn, for work the server never refused.
+    // A condition that resolves itself on the next app update would have become
+    // the one-way door #930 exists to close.
+
+    it('426 RETAINS the item — it must never park as refused', async () => {
+        const s = await seed(1);
+        const res = await flushOutbox(s, async () => ({ ok: false, status: 426 }));
+        expect(res).toMatchObject({ sent: 0, dropped: 0, refused: 0, remaining: 1, clientTooOld: true });
+        const item = (await s.all())[0];
+        expect(item.blocked).toBeUndefined();
+        // No attempt spent either — the build being old is not the item failing.
+        expect(item.attempts).toBe(0);
+    });
+
+    it('426 stops the pass instead of parking every queued item', async () => {
+        // The blast radius. Three items, one 426: the arm must break, not walk
+        // the queue marking each one terminal.
+        const s = await seed(3);
+        const res = await flushOutbox(s, async () => ({ ok: false, status: 426 }));
+        expect(res.refused).toBe(0);
+        expect(res.remaining).toBe(3);
+        expect((await s.all()).filter((i) => i.blocked).length).toBe(0);
+    });
+
+    it('CONTROL: a real payload rejection still parks as refused', async () => {
+        // Otherwise the assertions above would be satisfied by an arm that
+        // stopped parking ANY 4xx — which would resurrect the defect #923 fixed.
+        const s = await seed(1);
+        const res = await flushOutbox(s, async () => ({ ok: false, status: 422 }));
+        expect(res.refused).toBe(1);
+        expect((await s.all())[0].blocked).toBe('refused');
+    });
+
     // ── 429 rate-limit handling (Roadmap-5 PR1) ──────────────────────
     // A PWA reconnect burst can outrun the mutation limiter. A 429 must
     // RETAIN queued work (never dropped, never counts toward MAX_ATTEMPTS)

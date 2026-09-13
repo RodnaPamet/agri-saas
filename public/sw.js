@@ -42,7 +42,7 @@ const CACHE_VERSION = 'agrent-v1';
  * `tests/guards/sw-revision-stamp.test.ts` recomputes it and prints the
  * expected value on failure, so updating it is a paste.
  */
-const SW_REVISION = 'd0a09451785d';
+const SW_REVISION = '58fb42436494';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 const DATA_CACHE = `${CACHE_VERSION}-fielddata`;
@@ -998,6 +998,7 @@ async function flushOutbox() {
     let transientRemains = false;
     let authBlocked = false;
     let rateLimited = false;
+    let clientTooOld = false;
     let foreignHeld = false;
     let retryAfterSeconds;
     for (const item of items) {
@@ -1074,6 +1075,21 @@ async function flushOutbox() {
             if (current.some((i) => i.id === item.id)) {
                 await idbWrite(db, 'put', { ...item, conflict: { status: 409, server: conflictBody } });
             }
+        } else if (status === 426) {
+            // The BUILD is too old, not the work. The version gate in
+            // src/middleware.ts answers before the handler runs, so it says
+            // nothing about this payload, and every remaining item meets the
+            // same answer. Environmental like a 429 below: retain untouched,
+            // no attempt spent, stop the pass. It clears when the app updates.
+            //
+            // Deliberately NOT a park — `refused` is terminal, nothing clears a
+            // blocked flag on its own, and parking would put the whole queue
+            // behind a per-item discard for work that was never refused.
+            //
+            // Mirrors src/lib/offline/sync.ts. The two drains share this queue
+            // and NOTHING enforces the mirror; they are kept in lockstep by hand.
+            clientTooOld = true;
+            break;
         } else if (status === 429) {
             // Rate limited — retain untouched (no attempts bump, never
             // dropped) and stop draining into the closed window.
@@ -1112,7 +1128,7 @@ async function flushOutbox() {
     }
     // Notify any open clients so their pending-count refreshes.
     const clients = await self.clients.matchAll({ includeUncontrolled: true });
-    clients.forEach((c) => c.postMessage({ type: 'outbox-flushed', rateLimited, retryAfterSeconds, foreignHeld }));
+    clients.forEach((c) => c.postMessage({ type: 'outbox-flushed', rateLimited, retryAfterSeconds, foreignHeld, clientTooOld }));
     if (rateLimited) throw new Error('outbox: rate limited — reschedule sync after backoff');
     if (transientRemains) throw new Error('outbox: transient failures remain — reschedule sync');
 }
