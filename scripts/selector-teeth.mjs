@@ -137,8 +137,12 @@ export function auditFile(file) {
     ACTIVE = file;
     const survivors = [];
     const untestable = [];
+    // Counted, and reported, because "every selector was killed" and "there
+    // was nothing to kill" are the SAME output otherwise — see the note on
+    // `candidates` in the return value below.
+    const selectors = selectorsIn(original);
     try {
-        for (const sel of selectorsIn(original)) {
+        for (const sel of selectors) {
             const lines = original.split('\n');
             // EVERY gut that typechecks must be killed. Stopping at the first
             // kill was the tool's own instance of the defect it hunts: gutting
@@ -170,7 +174,24 @@ export function auditFile(file) {
         unlinkSync(backup);
         ACTIVE = null;
     }
-    return { file, survivors, untestable };
+    /**
+     * `candidates` is the DENOMINATOR, and it is load-bearing.
+     *
+     * This tool only mutates MODULE-LEVEL functions — functions declared
+     * inside `it()` / `describe()` are deliberately never touched (see the
+     * header). A guard that does its selecting inline inside `it()` therefore
+     * offers nothing to gut, and until this field existed the run reported
+     * `all selectors have teeth` for it: a clean bill of health from an audit
+     * that examined nothing.
+     *
+     * That is the very defect this tool hunts, one level up — an empty
+     * selection reading as a pass. Measured across `tests/guards` +
+     * `tests/guardrails` at `c2574d1e5`: 188 of 617 files have zero
+     * candidates, so almost a third of the population was getting that
+     * message. A caller can now tell "audited and clean" (`candidates > 0`,
+     * no survivors) from "not audited" (`candidates === 0`).
+     */
+    return { file, candidates: selectors.length, survivors, untestable };
 }
 
 // Only run the CLI when invoked directly — the audit functions above are
@@ -226,7 +247,16 @@ if (asJson) {
     for (const r of results) {
         for (const s of r.survivors) console.log(`  ${r.file}:${s.line}  ${s.selector}() → return ${s.gut}  SURVIVED`);
         for (const u of r.untestable) console.log(`  ${r.file}  ${u}()  no gut typechecked — not tested`);
-        if (!r.survivors.length && !r.untestable.length) console.log(`  ${r.file}  all selectors have teeth`);
+        if (r.candidates === 0) {
+            // NOT the same statement as "all selectors have teeth", and
+            // conflating the two was this tool's own empty-selection pass.
+            console.log(
+                `  ${r.file}  NOT AUDITED - no module-level selectors. Its selecting ` +
+                    `happens inline inside it(), which this tool does not mutate.`,
+            );
+        } else if (!r.survivors.length && !r.untestable.length) {
+            console.log(`  ${r.file}  all ${r.candidates} selector(s) have teeth`);
+        }
     }
 }
 if (unexpected.length) {
