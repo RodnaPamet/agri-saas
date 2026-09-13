@@ -79,6 +79,25 @@ function selectorNamesOfSource(src: string): string[] {
     return JSON.parse(out.trim()) as string[];
 }
 
+/** Call the tool's own `formatReport` in a real node process, as with selectorsIn. */
+function formatReport(payload: unknown, asJson: boolean): string {
+    const script =
+        `import { formatReport } from ${JSON.stringify(pathToFileURL(TOOL).href)};` +
+        `const p = JSON.parse(Buffer.from(process.argv[1], 'base64').toString('utf8'));` +
+        `process.stdout.write(formatReport(p, process.argv[2] === 'json'));`;
+    return execFileSync(
+        'node',
+        [
+            '--input-type=module',
+            '-e',
+            script,
+            Buffer.from(JSON.stringify(payload), 'utf8').toString('base64'),
+            asJson ? 'json' : 'text',
+        ],
+        { cwd: ROOT, encoding: 'utf-8' },
+    );
+}
+
 function runTool(fixture: string): string {
     // Zero-candidate files return immediately — no jest run happens — so this
     // costs nothing. Never point it at a file WITH candidates: that is one
@@ -148,5 +167,57 @@ describe('the CLI distinguishes "audited and clean" from "not audited"', () => {
         // The other direction. If `selectorsIn` returned [] for everything,
         // every assertion above would pass and mean nothing.
         expect(selectorNamesOf('tests/fixtures/selector-teeth-selftest.test.ts')).toEqual(['pick']);
+    });
+});
+
+describe('--json emits JSON, especially when there is something to report', () => {
+    /**
+     * A payload with BOTH kinds of finding. The empty case never reproduced the
+     * bug: the prose blocks were skipped, so the document parsed and the mode
+     * looked healthy. It broke only once there was news, which is the one time
+     * a caller needs it.
+     */
+    const withFindings = {
+        results: [
+            {
+                file: 'a.test.ts',
+                candidates: 1,
+                survivors: [{ selector: 'pick', gut: '[]', line: 13 }],
+                untestable: [],
+            },
+        ],
+        unexpected: ['a.test.ts:13  pick()'],
+        stale: ['b.test.ts  gone()'],
+    };
+
+    it('parses as JSON with survivors, unexpected AND stale all non-empty', () => {
+        const parsed = JSON.parse(formatReport(withFindings, true));
+        expect(parsed.unexpected).toEqual(['a.test.ts:13  pick()']);
+        expect(parsed.stale).toEqual(['b.test.ts  gone()']);
+        expect(parsed.results[0].candidates).toBe(1);
+    });
+
+    it('emits NOTHING after the closing brace', () => {
+        // The regression, stated as the shape rather than as a parse. A future
+        // append would still parse if it happened to be valid JSON; nothing may
+        // follow the document at all.
+        const out = formatReport(withFindings, true);
+        expect(out.trimEnd().endsWith('}')).toBe(true);
+        expect(out).not.toMatch(/NEW dead selectors/);
+        expect(out).not.toMatch(/BASELINE ENTRIES/);
+    });
+
+    it('CONTROL: text mode still reports both blocks, so nothing was lost', () => {
+        // Silencing the prose in BOTH modes would satisfy every assertion above
+        // while destroying the human output the CI job prints.
+        const out = formatReport(withFindings, false);
+        expect(out).toMatch(/NEW dead selectors/);
+        expect(out).toMatch(/BASELINE ENTRIES/);
+        expect(out).toMatch(/pick\(\)/);
+    });
+
+    it('CONTROL: the empty case parsed even before the fix, so it proves nothing alone', () => {
+        const empty = { results: [{ file: 'a.test.ts', candidates: 2, survivors: [], untestable: [] }], unexpected: [], stale: [] };
+        expect(() => JSON.parse(formatReport(empty, true))).not.toThrow();
     });
 });

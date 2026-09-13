@@ -194,6 +194,58 @@ export function auditFile(file) {
     return { file, candidates: selectors.length, survivors, untestable };
 }
 
+/**
+ * The whole report, as ONE string.
+ *
+ * `--json` used to print a valid document and then append prose to the SAME
+ * stream, because the "NEW dead selectors" and "BASELINE ENTRIES" blocks sat
+ * outside the `else`. stdout therefore stopped being JSON exactly when there
+ * was something to report: a machine-readable mode that parsed only while the
+ * news was good. A sweep of 94 guards hit it on 42 of them and recorded every
+ * one as "unparsed" — while the data it wanted sat in the `unexpected` and
+ * `stale` fields of the document it could no longer read.
+ *
+ * Guarding each block with `!asJson` would have fixed it. Returning ONE value
+ * makes it unrepresentable instead: the JSON branch is a single `return`, so no
+ * later edit can append to it without first deleting that return. Same reason
+ * `cleanPass` asserts a clean pass positively rather than blacklisting failure
+ * spellings — there are unbounded ways to append, and one way not to.
+ *
+ * Exported so the property is testable in milliseconds. Proving it through the
+ * CLI costs a real audit: 178s for the one-selector fixture.
+ */
+export function formatReport({ results, unexpected, stale }, asJson) {
+    if (asJson) return JSON.stringify({ results, unexpected, stale }, null, 2);
+
+    const out = [];
+    for (const r of results) {
+        for (const s of r.survivors) out.push(`  ${r.file}:${s.line}  ${s.selector}() \u2192 return ${s.gut}  SURVIVED`);
+        for (const u of r.untestable) out.push(`  ${r.file}  ${u}()  no gut typechecked \u2014 not tested`);
+        if (r.candidates === 0) {
+            out.push(
+                `  ${r.file}  NOT AUDITED - no module-level selectors. Its selecting ` +
+                    `happens inline inside it(), which this tool does not mutate.`,
+            );
+        } else if (!r.survivors.length && !r.untestable.length) {
+            out.push(`  ${r.file}  all ${r.candidates} selector(s) have teeth`);
+        }
+    }
+    if (unexpected.length) {
+        out.push('\nNEW dead selectors (not in tests/guards/selector-teeth-baseline.json):');
+        for (const u of unexpected) out.push(`  ${u}`);
+        out.push('\nEach needs a control proving its selector can select on the population');
+        out.push('its guard actually scans. If you are knowingly deferring, add it to the');
+        out.push('baseline in this PR so the debt is visible in the diff.');
+    }
+    if (stale.length) {
+        out.push('\nBASELINE ENTRIES THAT NO LONGER SURVIVE \u2014 delete them:');
+        for (const s of stale) out.push(`  ${s}`);
+        out.push('\nThese were fixed. Leaving them listed would let the file rot into a');
+        out.push('permanent allowlist, which is what the baseline exists to avoid.');
+    }
+    return out.join('\n');
+}
+
 // Only run the CLI when invoked directly — the audit functions above are
 // imported by the tool's own tests, and running the CLI on import made that
 // impossible (it exited with a usage message).
@@ -241,36 +293,7 @@ for (const r of results) {
     }
 }
 
-if (asJson) {
-    console.log(JSON.stringify({ results, unexpected, stale }, null, 2));
-} else {
-    for (const r of results) {
-        for (const s of r.survivors) console.log(`  ${r.file}:${s.line}  ${s.selector}() → return ${s.gut}  SURVIVED`);
-        for (const u of r.untestable) console.log(`  ${r.file}  ${u}()  no gut typechecked — not tested`);
-        if (r.candidates === 0) {
-            // NOT the same statement as "all selectors have teeth", and
-            // conflating the two was this tool's own empty-selection pass.
-            console.log(
-                `  ${r.file}  NOT AUDITED - no module-level selectors. Its selecting ` +
-                    `happens inline inside it(), which this tool does not mutate.`,
-            );
-        } else if (!r.survivors.length && !r.untestable.length) {
-            console.log(`  ${r.file}  all ${r.candidates} selector(s) have teeth`);
-        }
-    }
-}
-if (unexpected.length) {
-    console.log('\nNEW dead selectors (not in tests/guards/selector-teeth-baseline.json):');
-    for (const u of unexpected) console.log(`  ${u}`);
-    console.log('\nEach needs a control proving its selector can select on the population');
-    console.log('its guard actually scans. If you are knowingly deferring, add it to the');
-    console.log('baseline in this PR so the debt is visible in the diff.');
-}
-if (stale.length) {
-    console.log('\nBASELINE ENTRIES THAT NO LONGER SURVIVE — delete them:');
-    for (const s of stale) console.log(`  ${s}`);
-    console.log('\nThese were fixed. Leaving them listed would let the file rot into a');
-    console.log('permanent allowlist, which is what the baseline exists to avoid.');
-}
+console.log(formatReport({ results, unexpected, stale }, asJson));
+
 process.exit(unexpected.length || stale.length ? 1 : 0);
 }
