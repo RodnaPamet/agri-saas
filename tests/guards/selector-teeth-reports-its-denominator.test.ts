@@ -27,8 +27,6 @@
  * words would pass while the tool said whatever it liked.
  */
 import { execFileSync } from 'child_process';
-import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 
@@ -58,15 +56,27 @@ function selectorNamesOf(fileRel: string): string[] {
     return JSON.parse(out.trim()) as string[];
 }
 
-/** Write a snippet to a temp file so `selectorNamesOf` can read it as node would. */
-function selectorNamesOfSource(name: string, src: string): string[] {
-    const p = path.join(os.tmpdir(), `selector-teeth-${name}.test.ts`);
-    fs.writeFileSync(p, src);
-    try {
-        return selectorNamesOf(p);
-    } finally {
-        fs.unlinkSync(p);
-    }
+/**
+ * Same, for a snippet held in memory.
+ *
+ * The source travels as a base64 ARGV value, not through a temp file. An
+ * earlier version wrote to a predictable path under `os.tmpdir()`, which
+ * CodeQL correctly flagged as `js/insecure-temporary-file` — a world-writable
+ * directory plus a guessable name is a symlink swap waiting to happen. Passing
+ * the bytes as data removes the file rather than hardening it, and base64
+ * keeps the payload out of shell-quoting territory entirely.
+ */
+function selectorNamesOfSource(src: string): string[] {
+    const script =
+        `import { selectorsIn } from ${JSON.stringify(pathToFileURL(TOOL).href)};` +
+        `const src = Buffer.from(process.argv[1], 'base64').toString('utf8');` +
+        `console.log(JSON.stringify(selectorsIn(src).map((s) => s.name)));`;
+    const out = execFileSync(
+        'node',
+        ['--input-type=module', '-e', script, Buffer.from(src, 'utf8').toString('base64')],
+        { cwd: ROOT, encoding: 'utf-8' },
+    );
+    return JSON.parse(out.trim()) as string[];
 }
 
 function runTool(fixture: string): string {
@@ -84,7 +94,7 @@ describe('selectorsIn — the denominator', () => {
             '}',
             'describe("d", () => { it("t", () => { expect(pick([])).toEqual([]); }); });',
         ].join('\n');
-        expect(selectorNamesOfSource('module-level', src)).toEqual(['pick']);
+        expect(selectorNamesOfSource(src)).toEqual(['pick']);
     });
 
     it('counts ZERO when the selecting happens inline inside it()', () => {
@@ -98,7 +108,7 @@ describe('selectorsIn — the denominator', () => {
             '    });',
             '});',
         ].join('\n');
-        expect(selectorNamesOfSource('inline', src)).toEqual([]);
+        expect(selectorNamesOfSource(src)).toEqual([]);
     });
 
     it('does not mutate a function declared inside describe()', () => {
@@ -108,7 +118,7 @@ describe('selectorsIn — the denominator', () => {
             '    it("t", () => { expect(helper()).toEqual([]); });',
             '});',
         ].join('\n');
-        expect(selectorNamesOfSource('in-describe', src)).toEqual([]);
+        expect(selectorNamesOfSource(src)).toEqual([]);
     });
 });
 
