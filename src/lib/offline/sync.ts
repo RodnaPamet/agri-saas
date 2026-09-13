@@ -147,6 +147,66 @@ async function parkIfStillQueued(
     return true;
 }
 
+/**
+ * Clear the `auth` park for items belonging to a VERIFIED operator (#930).
+ *
+ * A 401/403 parks an item `blocked: 'auth'` and stops the pass, because the
+ * server refused the SESSION rather than the work. Nothing in the codebase then
+ * cleared that flag — so signing back in did not resume the queue, and the only
+ * exit was the operator noticing on a diagnostics page they have no reason to
+ * open. A one-way door for work that exists nowhere else.
+ *
+ * ## Why the identity is a parameter, and must be SERVER-verified
+ *
+ * Not read here, deliberately. The page's own `getCurrentUserId()` is fed from
+ * the server-rendered layout, so it belongs to the DOCUMENT — and `public/sw.js`
+ * replays cached documents, so on a shared phone the shell fallback can hand
+ * operator B a page rendered for A. Unblocking on that value would hand A's
+ * queue to B. The caller passes the result of the whoami probe (#946) or
+ * nothing happens.
+ *
+ * ## Why only the operator's OWN items
+ *
+ * An item with a DIFFERENT `queuedByUserId` stays parked: it is not this
+ * operator's to send, and `flushOutbox` would skip it anyway.
+ *
+ * An item with NO `queuedByUserId` also stays parked, and that is a product
+ * decision rather than an oversight. Those predate attribution
+ * (`outbox.ts` documents them), so unblocking them would let an unattributed
+ * БАБХ record replay under whoever signed in next — permanently, into a
+ * hash-chained audit trail AND `OperationParcel.completedByUserId`, a domain
+ * column. The owner chose to leave them parked and make them VISIBLE instead:
+ * `OutboxSnapshot.blockedAuthUnclaimable` counts them so they stop being
+ * invisible, which is the half that makes leaving them parked honest.
+ *
+ * ## Why the still-queued re-read
+ *
+ * `store.update` is an UPSERT (`put` on `keyPath: 'id'`), and the page and the
+ * service worker drain the same queue. Writing an item back without checking it
+ * is still there RESURRECTS a row the other drain already delivered — the same
+ * reason `parkIfStillQueued` exists.
+ *
+ * Returns how many parks were cleared, so a caller can skip a pointless flush.
+ */
+export async function unblockAuthParks(
+    store: OutboxStore,
+    verifiedUserId: string,
+): Promise<number> {
+    if (!verifiedUserId) return 0;
+    let cleared = 0;
+    for (const item of await store.all()) {
+        if (item.blocked !== 'auth') continue; // never touch exhausted or refused
+        if (item.queuedByUserId !== verifiedUserId) continue;
+        const stillQueued = (await store.all()).some((i) => i.id === item.id);
+        if (!stillQueued) continue;
+        const next = { ...item };
+        delete next.blocked;
+        await store.update(next);
+        cleared++;
+    }
+    return cleared;
+}
+
 export async function flushOutbox(
     store: OutboxStore,
     send: Sender,

@@ -100,6 +100,21 @@ export interface OutboxSnapshot {
      */
     blockedAuth: number;
     /**
+     * The subset of `blockedAuth` that signing in again will NOT resume: items
+     * with no `queuedByUserId`, queued before attribution shipped.
+     *
+     * `unblockAuthParks` clears a park only for the verified owner, so these
+     * stay parked however many times the operator signs in — unblocking them
+     * would let an unattributed БАБХ record replay under whoever verified next,
+     * permanently, into a hash-chained audit trail and a domain column.
+     *
+     * Counted separately because leaving work parked is only defensible if the
+     * operator can SEE it. A number inside `blockedAuth` that never falls, with
+     * no way to tell it apart from one that will, is the invisible-stall half
+     * of the same one-way door.
+     */
+    blockedAuthUnclaimable: number;
+    /**
      * Writes the server REFUSED with a terminal 4xx, parked rather than
      * destroyed (#923). Carried as the ITEMS, not a count, because the
      * operator has to be able to read what was refused before deciding — a
@@ -140,6 +155,7 @@ const EMPTY: OutboxSnapshot = {
     foreign: 0,
     blocked: 0,
     blockedAuth: 0,
+    blockedAuthUnclaimable: 0,
 };
 
 let snapshot: OutboxSnapshot = EMPTY;
@@ -261,6 +277,7 @@ export async function refreshOutboxState(
         pendingPhotos: live.filter(isPhotoItem).length,
         blocked: blocked.length,
         blockedAuth: blocked.filter((i) => i.blocked === 'auth').length,
+        blockedAuthUnclaimable: blocked.filter((i) => i.blocked === 'auth' && !i.queuedByUserId).length,
         refused: blocked.filter((i) => i.blocked === 'refused'),
         readable: true,
         conflicts: all.filter((i) => i.conflict),

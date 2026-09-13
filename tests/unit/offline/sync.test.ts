@@ -4,7 +4,7 @@
  * removes, terminal-4xx drops, transient keeps + bumps, poison drops.
  */
 import { InMemoryOutboxStore, enqueue, type OutboxItem } from '@/lib/offline/outbox';
-import { flushOutbox, MAX_ATTEMPTS, type Sender } from '@/lib/offline/sync';
+import { unblockAuthParks, flushOutbox, MAX_ATTEMPTS, type Sender } from '@/lib/offline/sync';
 
 async function seed(n: number): Promise<InMemoryOutboxStore> {
     const s = new InMemoryOutboxStore();
@@ -284,5 +284,84 @@ describe('flushOutbox', () => {
         const left = await s.all();
         expect(left.map((i) => i.id).sort()).toEqual(['b', 'c']);
         expect(left.find((i) => i.id === 'b')?.blocked).toBe('refused');
+    });
+});
+
+// ── unblockAuthParks (#930) ──────────────────────────────────────────
+// A 401/403 parks an item `blocked: 'auth'` and stops the pass, because the
+// server refused the SESSION rather than the work. Nothing then cleared that
+// flag, so signing back in did not resume the queue: a one-way door for work
+// that exists nowhere else.
+//
+// The unblock is scoped to the VERIFIED owner. The product decision behind the
+// scoping is the interesting half — see the unattributed case below.
+describe('unblockAuthParks', () => {
+    const parked = (id: string, owner?: string): OutboxItem =>
+        ({
+            id, url: `/u/${id}`, method: 'PATCH', body: {}, label: 'L',
+            createdAt: 1, attempts: 0, blocked: 'auth',
+            ...(owner ? { queuedByUserId: owner } : {}),
+        }) as OutboxItem;
+
+    it('clears the park for the verified owner’s own item', async () => {
+        const s = new InMemoryOutboxStore();
+        await s.add(parked('a1', 'operator-a'));
+        expect(await unblockAuthParks(s, 'operator-a')).toBe(1);
+        expect((await s.all())[0].blocked).toBeUndefined();
+    });
+
+    it('leaves another operator’s item parked', async () => {
+        const s = new InMemoryOutboxStore();
+        await s.add(parked('a1', 'operator-a'));
+        expect(await unblockAuthParks(s, 'operator-b')).toBe(0);
+        expect((await s.all())[0].blocked).toBe('auth');
+    });
+
+    it('leaves an UNATTRIBUTED item parked — the deliberate trade', async () => {
+        // Items queued before attribution shipped carry no `queuedByUserId`.
+        // Unblocking them would let an unattributed БАБХ record replay under
+        // whoever verified next — permanently, into a hash-chained audit trail
+        // AND `OperationParcel.completedByUserId`, a domain column. The owner
+        // chose to leave them parked and surface them instead; the surfacing is
+        // what makes that honest, and is asserted in the snapshot test below.
+        const s = new InMemoryOutboxStore();
+        await s.add(parked('legacy'));
+        expect(await unblockAuthParks(s, 'operator-a')).toBe(0);
+        expect((await s.all())[0].blocked).toBe('auth');
+    });
+
+    it('never touches exhausted or refused parks', async () => {
+        // Those are terminal for different reasons and have their own exits.
+        // A blanket "clear every blocked flag" would delete both distinctions.
+        const s = new InMemoryOutboxStore();
+        await s.add({ ...parked('x', 'operator-a'), blocked: 'exhausted' } as OutboxItem);
+        await s.add({ ...parked('y', 'operator-a'), blocked: 'refused', refusedStatus: 422 } as OutboxItem);
+        expect(await unblockAuthParks(s, 'operator-a')).toBe(0);
+        const all = await s.all();
+        expect(all.map((i) => i.blocked).sort()).toEqual(['exhausted', 'refused']);
+    });
+
+    it('CONTROL: an unverified id clears nothing', async () => {
+        // Without this, a bug that ignored the id argument would satisfy the
+        // owner-matching test above by clearing everything it saw.
+        const s = new InMemoryOutboxStore();
+        await s.add(parked('a1', 'operator-a'));
+        expect(await unblockAuthParks(s, '')).toBe(0);
+        expect((await s.all())[0].blocked).toBe('auth');
+    });
+
+    it('does not resurrect an item the other drain already delivered', async () => {
+        // `store.update` is an upsert, and the page and service worker drain the
+        // same queue. Writing back without re-reading puts a delivered row back.
+        const s = new InMemoryOutboxStore();
+        await s.add(parked('gone', 'operator-a'));
+        const original = s.all.bind(s);
+        let firstRead = true;
+        s.all = async () => {
+            const rows = await original();
+            if (firstRead) { firstRead = false; return rows; }
+            return []; // the other drain removed it between read and write
+        };
+        expect(await unblockAuthParks(s, 'operator-a')).toBe(0);
     });
 });

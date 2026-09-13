@@ -28,7 +28,7 @@ import {
 } from './outbox';
 import { indexedDbAvailable } from './idb-outbox';
 import { getCurrentUserId } from './current-user';
-import { flushOutbox, fetchSender, type FlushSummary } from './sync';
+import { flushOutbox, fetchSender, unblockAuthParks, type FlushSummary } from './sync';
 import {
     acknowledgeLoss,
     getOutboxSnapshot,
@@ -38,6 +38,7 @@ import {
     runExclusiveFlush,
     subscribeToOutbox,
 } from './outbox-state';
+import { resolveWhoami } from './whoami';
 import type { DurabilityVerdict, LostWorkRecord } from './durability';
 import { haptic } from '@/lib/haptics';
 
@@ -192,7 +193,27 @@ export function useOfflineSync(): OfflineSync {
         // The lock is MODULE-scoped, not per-instance: two mounted surfaces
         // draining at once would read the same items and send each twice.
         const res = await runExclusiveFlush(async () => {
-            const summary = await flushOutbox(getOutboxStore(), fetchSender(), getCurrentUserId());
+            const store = getOutboxStore();
+
+            // Resume anything parked by a 401/403, if — and only if — the
+            // SERVER now says who is signed in (#930).
+            //
+            // Gated on there being something to resume, so the ordinary drain
+            // costs no extra request. Gated on the whoami probe rather than on
+            // `getCurrentUserId()` because that value is fed from the
+            // server-rendered layout and therefore belongs to the DOCUMENT,
+            // which `public/sw.js` replays from cache — on a shared phone it
+            // can be operator A's id in front of operator B.
+            //
+            // `signed-out` and `unknown` both do nothing. Treating unknown as
+            // verified would unblock on a captive portal's 200-with-HTML;
+            // treating it as signed-out costs only a later retry.
+            if (getOutboxSnapshot().blockedAuth > 0) {
+                const who = await resolveWhoami();
+                if (who.kind === 'user') await unblockAuthParks(store, who.userId);
+            }
+
+            const summary = await flushOutbox(store, fetchSender(), getCurrentUserId());
             // Refresh pending + the photo sub-count + conflicts — a flush can
             // drain photos/mutations AND park a 409 the resolution UI must show.
             await refresh();

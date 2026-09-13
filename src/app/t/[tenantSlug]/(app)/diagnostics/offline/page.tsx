@@ -436,6 +436,15 @@ export default function OfflineDiagnosticsPage() {
                             value={String(outbox.blockedAuth)}
                             hint={t('blockedAuthHint')}
                         />
+                        {/* Split out because signing in again resumes one of
+                            these populations and never resumes the other, and
+                            a single falling-then-stalling number cannot say
+                            which is which. */}
+                        <Row
+                            label="blocked · auth · unclaimable"
+                            value={String(outbox.blockedAuthUnclaimable)}
+                            hint={t('blockedAuthUnclaimableHint')}
+                        />
                         <Row
                             label="foreign"
                             value={String(outbox.foreign)}
