@@ -16,8 +16,11 @@
  *                                 with package.json overrides, the
  *                                 lockfile, and the advisories it cites
  *                                 (#864).
+ *   7. Override structural decay — every `overrides` entry still has a
+ *                                 target, can act, excludes something,
+ *                                 and widens nothing (#866).
  *
- * Each of those six shipped its own guardrail. THIS test guards the
+ * Each of those seven shipped its own guardrail. THIS test guards the
  * guards: it fails CI if any one of them is deleted or gutted to a
  * no-op, and it asserts the governance docs survive with their
  * load-bearing policy statements intact. A contributor who removes a
@@ -28,7 +31,11 @@
  * the `toMatch(/…/)` phrase checks are PRESENCE tests. They catch a
  * deleted or hollowed-out document and nothing else — a row that keeps
  * its phrases and inverts its meaning passes every one of them, which is
- * exactly what #864 measured. Guardrail 6 is the check with teeth.
+ * exactly what #864 measured. Guardrails 6 and 7 are the checks with
+ * teeth, and the `anchors` below share the presence-test limit: they are
+ * `toContain` string checks, so they catch a guard DELETED or renamed away
+ * and never one neutered in place. Each registered guard carries its own
+ * mutation proofs for that.
  *
  * Sibling of `ci-pipeline-integrity.test.ts`,
  * `observability-reliability-integrity.test.ts`, and
@@ -86,6 +93,20 @@ const GUARDRAILS: ReadonlyArray<{
             'overrides, the lockfile, and the advisories it cites',
         anchors: ['overrides', 'package-lock.json', 'Scope'],
     },
+    {
+        // Registered on purpose: this one ships with a WAIVER LIST, and the
+        // cheapest way to quieten a guard that carries waivers is to delete
+        // the guard rather than an entry. The anchors catch that and nothing
+        // more — see the note in this file's header. The proof that its
+        // selectors still discriminate lives in the guard itself, in 'the
+        // bookkeeping itself has teeth', where each one is fed the REAL
+        // findings with a single defect injected (#866).
+        file: 'tests/guards/overrides-structural-decay.test.ts',
+        pillar:
+            'override structural decay — every overrides entry still has a target, can act, ' +
+            'excludes something, and widens nothing',
+        anchors: ['WAIVERS', 'DORMANT_FLOORS', 'expired', 'analyseOverrides'],
+    },
 ];
 
 /** Docs that make the dependency-governance model explicit. */
@@ -118,9 +139,9 @@ describe('dependency-governance integrity — guard the guards', () => {
         });
     });
 
-    it('the registry is complete (6 dependency guardrails, distinct)', () => {
-        expect(GUARDRAILS).toHaveLength(6);
-        expect(new Set(GUARDRAILS.map((g) => g.file)).size).toBe(6);
+    it('the registry is complete (7 dependency guardrails, distinct)', () => {
+        expect(GUARDRAILS).toHaveLength(7);
+        expect(new Set(GUARDRAILS.map((g) => g.file)).size).toBe(7);
     });
 
     it.each(GOVERNANCE_DOCS)('$role — $file exists', ({ file }) => {
