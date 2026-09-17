@@ -141,16 +141,17 @@ Running `npm run db:seed` afterwards seeds a second time.
 
 | service | port | notes |
 |---|---|---|
-| Postgres via pgbouncer | 5433 | what the app connects to |
-| Postgres direct | 5434 | migrations only — pgbouncer's transaction pooling breaks DDL |
+| Postgres via pgbouncer | 5436 | what the app connects to |
+| Postgres direct | 5437 | migrations only — pgbouncer's transaction pooling breaks DDL |
 | Postgres test | 5435 | `docker-compose.test.yml` |
 | Redis | 6379 | |
 | Redis test | 6380 | |
 
 The test database is on **5435** and named **`agri_saas_test`**, both on purpose.
-A sibling `inflect-compliance` stack holds 5434, and distinct database names
-alone were not enough to keep the two apart — the port has to differ too. See the
-comment at `docker-compose.test.yml:26`.
+A sibling `inflect-compliance` stack holds 5433/5434, and distinct database
+names alone were not enough to keep the two apart — the port has to differ too.
+This repo's dev stack moved to 5436/5437 for the same reason, so both products
+can now run at once. See the comment in `docker-compose.test.yml`.
 
 ### Memory ceilings
 
