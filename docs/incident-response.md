@@ -10,8 +10,17 @@
 > served at `https://app.agrent.bg`. There is no Kubernetes cluster, no
 > Helm release, no RDS, no ElastiCache, no cert-manager, and (verified
 > 2026-09-10) no Prometheus, Grafana, Alertmanager or PagerDuty running
-> anywhere — `infra/alerts/` and `infra/dashboards/` are files in this
-> repo that nothing scrapes or serves. **Nothing pages anyone.**
+> anywhere — `infra/dashboards/` and `infra/alerts/receivers.yml` are
+> files in this repo that nothing scrapes or serves.
+>
+> **Detection DOES exist as of 2026-09-17 (#854)**, and it is not any of
+> the above: a GCP Cloud Monitoring uptime check probes
+> `https://app.agrent.bg/api/readyz` every 60s from six regions, and an
+> alert policy with an attached email channel fires on sustained
+> multi-region failure. So an outage reaches an inbox within a couple of
+> minutes. **There is still no rota and no pager** — one address, one
+> person, email — so nothing wakes anyone at 03:00, and every acknowledge
+> and routing claim below remains intended policy rather than behaviour.
 >
 > | section | status |
 > |---|---|
@@ -65,9 +74,11 @@
 > **⚠ This table is intended policy, not current behaviour — see #854.**
 > The routing column is not deployed: there is no PagerDuty service, no
 > Alertmanager, no Slack alert webhook and no rota, so no alert rule
-> sets a severity and nothing pages anyone. The 15-minute acknowledge
-> budget therefore measures nothing today — **detection is a human
-> noticing**, and the interval before that is unbounded. The 4-hour
+> sets a severity. Detection itself is no longer the gap — since
+> 2026-09-17 a GCP uptime check and alert policy email one named person
+> when `/api/readyz` fails from more than one region. But an inbox is not
+> an on-call rota: the 15-minute acknowledge budget still measures
+> nothing, because nothing escalates and nobody is paged. The 4-hour
 > resolution budget is real, but it runs from the moment a person
 > starts, which is why `docs/slos.md` SLO 7 reads its RTO as
 > time-to-restore rather than time-to-recover.
