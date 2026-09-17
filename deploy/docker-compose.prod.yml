@@ -15,12 +15,12 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: inflect_compliance
+      POSTGRES_DB: agrent_production
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./init-roles.sh:/docker-entrypoint-initdb.d/01-init-roles.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d inflect_compliance"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d agrent_production"]
       interval: 3s
       timeout: 3s
       retries: 10
@@ -37,7 +37,7 @@ services:
       DB_PORT: "5432"
       DB_USER: postgres
       DB_PASSWORD: ${POSTGRES_PASSWORD}
-      DB_NAME: inflect_compliance
+      DB_NAME: agrent_production
       POOL_MODE: transaction
       DEFAULT_POOL_SIZE: "25"
       MAX_CLIENT_CONN: "200"
