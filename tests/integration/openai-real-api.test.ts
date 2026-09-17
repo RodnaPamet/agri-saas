@@ -237,15 +237,34 @@ describe('embeddings.create', () => {
         expect(recorded[0]?.body).toMatchObject({ encoding_format: 'base64' });
     });
 
-    it('a backend answering with PLAIN FLOATS decodes to an EMPTY vector, with no error', async () => {
-        // The hazard, stated as an assertion rather than a warning. Many
-        // OpenAI-compatible backends answer `encoding_format` requests with a
-        // plain float array. The SDK tries to base64-decode that string-less
-        // value and yields []. Nothing throws.
+    it('a backend answering with PLAIN FLOATS round-trips them — the #754 hazard was FIXED in openai 7.15.0', async () => {
+        // THIS TEST USED TO ASSERT THE OPPOSITE, AND THAT IS THE POINT OF IT.
         //
-        // The provider's only guard counts vectors, and the COUNT is right —
-        // one empty vector per input. `datum.embedding as number[]` is a cast,
-        // so the types do not object either. See #754.
+        // Through openai 7.10.0 the hazard was real and this assertion was
+        // `toEqual([])`: many OpenAI-COMPATIBLE backends answer with a plain
+        // float array, the SDK tried to base64-decode that string-less value,
+        // and yielded [] with nothing thrown. The provider's only guard counts
+        // vectors and the COUNT was right — one empty vector per input — and
+        // `datum.embedding as number[]` is a cast, so the types did not object
+        // either. Silent garbage into RAG.
+        //
+        // Measured on 7.15.0: the same wire reply now decodes to [0.3, 0.4].
+        // Re-characterized rather than deleted, because the version boundary is
+        // the useful part: anyone pinning openai back below 7.15.0 reintroduces
+        // the hazard, and this test then fails rather than going quietly green.
+        //
+        // WHAT DID NOT CHANGE — the REQUEST side. The SDK still silently sends
+        // `encoding_format: "base64"` when the caller omits it; the sibling
+        // test above still passes and pins exactly that. Only the DECODE became
+        // tolerant. So "name the wire format" remains the rule, and
+        // openai-compatible-provider.ts still passes `encoding_format: 'float'`
+        // explicitly rather than relying on this fix.
+        //
+        // THE ORDER HAZARD IS UNTOUCHED and is why this fixture answers out of
+        // order. `data[0]` is index 1, not input[0]. A caller reading
+        // positionally gets the wrong vector for the right count — which is the
+        // same shape as the old bug, one axis over. The provider sorts by index
+        // (openai-compatible-provider.ts:344) and so does this test.
         respond = (_req, res) =>
             json(res, 200, {
                 object: 'list',
@@ -263,9 +282,17 @@ describe('embeddings.create', () => {
 
         expect(recorded[0]?.url).toBe('/v1/embeddings');
         expect(response.data).toHaveLength(2);
-        // Right count, right indices, no vectors.
         expect([...response.data].sort((a, b) => a.index - b.index).map((d) => d.index)).toEqual([0, 1]);
-        expect(response.data[0]?.embedding).toEqual([]);
+
+        // The fix: vectors survive, rather than arriving empty.
+        const byIndex = [...response.data].sort((a, b) => a.index - b.index);
+        expect(byIndex[0]?.embedding).toEqual([0.1, 0.2]);
+        expect(byIndex[1]?.embedding).toEqual([0.3, 0.4]);
+
+        // And the order hazard, stated as an assertion: wire order, not input
+        // order. This is what a positional reader would have got.
+        expect(response.data[0]?.index).toBe(1);
+        expect(response.data[0]?.embedding).toEqual([0.3, 0.4]);
     });
 
     it('asking for floats EXPLICITLY round-trips them intact', async () => {
