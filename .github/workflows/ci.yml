@@ -218,18 +218,28 @@ jobs:
             echo "no base sha for this event; nothing to diff"
             exit 0
           fi
-          mapfile -t ALL < <(git diff --name-only "${BASE}" HEAD -- 'tests/guards/*.test.ts')
+          # BOTH guard directories. This pathspec was 'tests/guards/*.test.ts'
+          # alone until 2026-09-17, so tests/guardrails — 102 of the 621 guard
+          # files — was NEVER audited, even by a PR that changed it. That is
+          # the empty-selection defect this job exists to find, in the job's
+          # own selector: a PR touching only guardrails got "no guard files
+          # changed" and a green tick. One of the two dead selectors the
+          # parser rewrite surfaced (parcel-authoring-coverage) lives there,
+          # which is part of why it stayed hidden.
+          # tests/guards/selector-teeth-audits-every-guard-dir.test.ts fails
+          # if a guard directory exists that this pathspec does not cover.
+          mapfile -t ALL < <(git diff --name-only "${BASE}" HEAD -- 'tests/guards/*.test.ts' 'tests/guardrails/*.test.ts')
           TOTAL=${#ALL[@]}
           if [ "${TOTAL}" -eq 0 ]; then
-            echo "no guard files changed in this PR; the control above still ran"
+            echo "no guard or guardrail files changed in this PR; the control above still ran"
             exit 0
           fi
           if [ "${TOTAL}" -gt "${MAX_GUARDS}" ]; then
-            echo "::warning::Selector teeth audited ${MAX_GUARDS} of ${TOTAL} changed guards. The remaining $((TOTAL - MAX_GUARDS)) were NOT audited — this job is bounded at ${MAX_GUARDS} files because each mutation costs a jest run. Run 'node scripts/selector-teeth.mjs <file>' locally on the rest, or split the PR."
+            echo "::warning::Selector teeth audited ${MAX_GUARDS} of ${TOTAL} changed guards/guardrails. The remaining $((TOTAL - MAX_GUARDS)) were NOT audited — this job is bounded at ${MAX_GUARDS} files because each mutation costs a jest run. Run 'node scripts/selector-teeth.mjs <file>' locally on the rest, or split the PR."
             echo "NOT AUDITED:"
             printf '  %s\n' "${ALL[@]:${MAX_GUARDS}}"
           fi
-          echo "auditing ${TOTAL} changed guard(s), capped at ${MAX_GUARDS}:"
+          echo "auditing ${TOTAL} changed guard/guardrail file(s), capped at ${MAX_GUARDS}:"
           printf '  %s\n' "${ALL[@]:0:${MAX_GUARDS}}"
           node scripts/selector-teeth.mjs "${ALL[@]:0:${MAX_GUARDS}}"
 
