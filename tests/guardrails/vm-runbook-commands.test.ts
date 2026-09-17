@@ -321,21 +321,32 @@ describe('production VM runbook — it does not imply a detection capability', (
         expect(banner).toMatch(/no uptime check|no alert|nothing (here )?detects/i);
     });
 
-    it('the "does not have" inventory names the detection gap and its issue', () => {
+    it('the "does not have" inventory names the remaining detection gap and its issue', () => {
         const inventory = section(src(), '\n## What this deployment does not have');
         expect(inventory.length).toBeGreaterThan(500);
         expect(inventory).toMatch(/#854/);
-        expect(inventory).toMatch(/Nothing pages anyone/i);
-        expect(inventory).toMatch(/Detection today is a human noticing/i);
+        // Until 2026-09-17 this asserted "Nothing pages anyone" and "Detection
+        // today is a human noticing". Both became false when the GCP uptime
+        // check landed — detection is now instrumented. What is STILL true,
+        // and what this now pins, is that no alert reaches a person: the
+        // policy has no notification channel. The assertion moved with the
+        // fact rather than being deleted with it.
+        expect(inventory).toMatch(/no notification channel|pages nobody|reaches (?:a person|nobody)/i);
     });
 
-    it('never quotes a detection or acknowledge time as if one were measured', () => {
-        // A stated "detected within N minutes" anywhere in this document
-        // would be fiction. The 4-hour RTO is allowed — it is a
-        // time-to-restore budget, and SLO 7 says so.
+    it('never quotes an ALERT-TO-HUMAN time as if one were measured', () => {
+        // This used to forbid any stated detection time, because there was no
+        // detector and every such number was fiction. Since #854 a detection
+        // time is MEASURED — a 60s probe from six regions, alerting on
+        // sustained multi-region failure — so quoting one is now honest and
+        // the prohibition would forbid the truth.
+        //
+        // What remains fiction is the half after the alert: the policy has no
+        // notification channel and there is no rota, so any acknowledge or
+        // page-to-human budget is still made up. That is what this pins now.
         const s = src();
-        expect(s).not.toMatch(/detect(ed|ion)[^.\n]{0,40}\b\d+\s*(minutes|mins|hours)\b/i);
-        expect(s).not.toMatch(/acknowledge[^.\n]{0,30}\b15\s*minutes\b/i);
+        expect(s).not.toMatch(/acknowledge[^.\n]{0,30}\b\d+\s*(minutes|mins|hours)\b/i);
+        expect(s).not.toMatch(/paged?[^.\n]{0,30}\bwithin\b[^.\n]{0,20}\b\d+\s*(minutes|mins|hours)\b/i);
     });
 });
 

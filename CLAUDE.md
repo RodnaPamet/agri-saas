@@ -98,13 +98,24 @@ playbooks; read its banner first — only §1 and §6 have been corrected.
 `tests/guardrails/vm-runbook-commands.test.ts` holds the runbook,
 including a derived check that every repo path it names exists.
 
-**Nothing detects a production outage (#854).** No uptime check, no
-alert, no pager, no rota — verified 2026-09-10. Detection today is a
-human noticing. `docs/slos.md` SLO 7's 4 hours is therefore
-time-to-restore from the moment a person starts, never time-to-recover
-from the outage, and the 15-minute PagerDuty acknowledge in
-`docs/incident-response.md` describes intended policy, not behaviour.
-**Do not write a detection time into any doc while this is open.**
+**Production outages are DETECTED but not ROUTED (#854).** Since
+2026-09-17 a GCP Cloud Monitoring uptime check
+(`agrent-readyz-oKY0R5q09QU`) probes `https://app.agrent.bg/api/readyz`
+every 60s from six regions, requiring a 2xx whose body contains
+`"status":"ready"` — so a dependency outage fails it, not just a dead
+process. Alert policy `agrent production is not ready (#854)` fires on
+sustained failure from more than one region. Detection latency is
+therefore about two minutes, and a detection time MAY now be written
+down — but only that one. **The policy has no notification channel
+attached, so nothing reaches a person**, and there is no rota. So
+`docs/slos.md` SLO 7's 4 hours is still time-to-restore from the moment
+a person starts, and the 15-minute PagerDuty acknowledge in
+`docs/incident-response.md` still describes intended policy, not
+behaviour. Do not write an alert-to-human time into any doc until a
+channel is wired. `infra/alerts/external-uptime.yml` records what runs
+and why the probe is `readyz` rather than `livez` — the previous spec's
+reasoning was imported from a multi-pod Kubernetes deployment and is
+false for a single VM with one app container.
 
 **`deploy/Caddyfile` is a record, not a deployment.** `deploy/apply.sh`
 does not copy it and `deploy/check-drift.sh` does not hash it, so the
