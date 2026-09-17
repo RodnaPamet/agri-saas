@@ -103,6 +103,53 @@ interface Hit {
 }
 
 describe("PR-8 state primitives discipline", () => {
+  /**
+   * Controls proving the two selectors can SELECT before anything is
+   * concluded from what they did not find.
+   *
+   * Both were measured dead by `scripts/selector-teeth.mjs` (#971):
+   *
+   *   isExempt() → return [] | new Set() | new Map() | {}   SURVIVED
+   *   walk()     → return [] | '' | new Set() | new Map()   SURVIVED
+   *
+   * The mechanism is the repo's recurring one. Every assertion below this
+   * block is an ABSENCE — "zero offenders" — so a `walk()` that returns
+   * nothing reports a clean bill of health from an audit that opened no
+   * files. And `isExempt()` gutted to `[]` or `{}` is TRUTHY, so every path
+   * is exempt and `walk()` collects nothing: the same empty population by a
+   * different route.
+   *
+   * `walk()` already threw on a missing scan root (#875), which guards a
+   * RENAMED directory but says nothing about a gutted collector.
+   */
+  describe("the selectors actually select", () => {
+    it("each scan root yields files, counted per root", () => {
+      // Per root rather than in total, so one root silently resolving to
+      // nothing cannot hide behind the other one's count.
+      for (const dir of SCAN_DIRS) {
+        const found = walk(path.join(ROOT, dir));
+        expect(found.length).toBeGreaterThan(100);
+      }
+    });
+
+    it("the scanned population is the whole tree, not a sliver", () => {
+      const total = SCAN_DIRS.reduce((n, dir) => n + walk(path.join(ROOT, dir)).length, 0);
+      // 1267 today (src/app 584 + src/components 683). The floor is far
+      // below that so ordinary churn never touches it — its job is to
+      // separate "scanned the tree" from "scanned almost nothing", not to
+      // track the count.
+      expect(total).toBeGreaterThan(800);
+    });
+
+    it("isExempt DISCRIMINATES — it is not stuck on one answer", () => {
+      // Both directions, because a gut can be truthy (everything exempt →
+      // empty population) or falsy (nothing exempt → the exemption list is
+      // silently not applied). One assertion each way catches both.
+      expect(isExempt("src/components/ui/skeleton.tsx")).toBe(true);
+      expect(isExempt("src/components/ui/button.tsx")).toBe(false);
+    });
+  });
+
   describe("animate-pulse h- placeholder eradication", () => {
     it("zero `animate-pulse h-N` placeholder blocks outside canonical skeletons", () => {
       const offenders: Hit[] = [];
