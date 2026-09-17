@@ -29,6 +29,16 @@ function git(args: string[]): string {
 }
 
 describe('node_modules is never tracked', () => {
+    /**
+     * Control. This guard's healthy answer is an EMPTY result, which makes it
+     * uniquely vulnerable: a `git()` that returns nothing — wrong arguments, a
+     * broken binary, the wrong cwd — is indistinguishable from the pass. So
+     * prove the command can return something on a query that must not be empty.
+     */
+    it('the selector selects — git ls-files answers a query that cannot be empty', () => {
+        expect(git(['ls-files', '--', 'package.json'])).toContain('package.json');
+    });
+
     it('no tracked path is or lives under node_modules', () => {
         // `ls-files` lists the index, so this catches the symlink blob, a
         // committed directory, and any stray file beneath one.

@@ -45,6 +45,14 @@ function srcFiles(): string[] {
 }
 
 describe('CSP Style Guardrails', () => {
+    /**
+     * Control — see audit-immutability-guardrails for the reasoning. Without
+     * it, `srcFiles()` returning `[]` leaves every scan below green.
+     */
+    it('the selector selects — src/ is scanned, not an empty list', () => {
+        expect(srcFiles().length).toBeGreaterThan(1000);
+    });
+
     const tsxFiles = srcFiles();
 
     describe('<style> tags', () => {

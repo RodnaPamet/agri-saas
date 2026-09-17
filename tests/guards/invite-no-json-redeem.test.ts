@@ -49,6 +49,15 @@ function invitePageFiles(): string[] {
 }
 
 describe('Invite flow never navigates to the raw-JSON redeem endpoint', () => {
+    /**
+     * Control. The scan below expects no offenders, which an empty file list
+     * also satisfies. This is a small population, so the assertion is small —
+     * but a population of zero is the failure it exists to catch.
+     */
+    it('the selector selects — the invite pages are scanned', () => {
+        expect(invitePageFiles().length).toBeGreaterThan(1);
+    });
+
     it('no invite page form/link targets the bare /api/invites/:token (JSON) endpoint', () => {
         const offenders: string[] = [];
         for (const file of invitePageFiles()) {

@@ -83,6 +83,16 @@ export function findIndexSpecifiers(
 }
 
 describe('storage module specifier', () => {
+    /**
+     * Control. `findIndexSpecifiers` is proven against hand-written fixtures
+     * below, which stay green whatever the walk does — so the fixtures prove
+     * the DETECTOR and this proves the POPULATION. Both are needed: a working
+     * detector over an empty list is still a guard that cannot fail.
+     */
+    it('the selector selects — src/ is scanned, not an empty list', () => {
+        expect(srcFiles().length).toBeGreaterThan(1000);
+    });
+
     it('the ambiguity this guard exists for is real', () => {
         // If either of these stops being true the guard is either
         // pointless or wrong, and the docblock above needs re-reading.

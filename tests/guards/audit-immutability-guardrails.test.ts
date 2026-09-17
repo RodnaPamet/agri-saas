@@ -29,6 +29,17 @@ function srcFiles(): string[] {
 }
 
 describe('AuditLog Immutability Guardrails', () => {
+    /**
+     * Control. Every assertion below scans `srcFiles()` for offenders and
+     * expects none; an EMPTY file list produces the same green. The floor
+     * inside `collectSourceFiles` catches a walk that under-collects, but not
+     * a `srcFiles()` that stops calling it — so the population is asserted
+     * here, where the guard can see it.
+     */
+    test('the selector selects — src/ is scanned, not an empty list', () => {
+        expect(srcFiles().length).toBeGreaterThan(1000);
+    });
+
     test('no application code calls auditLog.update or auditLog.updateMany', () => {
         const files = srcFiles();
         const violations: string[] = [];
