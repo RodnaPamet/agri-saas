@@ -23,6 +23,7 @@
  */
 import { readFileSync, writeFileSync, copyFileSync, unlinkSync, existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import ts from 'typescript';
 
 /**
  * CRASH SAFETY. This tool writes a mutation into a REAL source file and relies
@@ -53,6 +54,25 @@ function restoreActive() {
         unlinkSync(BAK(ACTIVE));
     }
 }
+/**
+ * Best-effort, and NOT a guarantee — measured 2026-09-17.
+ *
+ * Almost all of this tool's wall clock is spent inside `spawnSync`, which
+ * blocks the event loop, and node cannot deliver a signal while it is blocked.
+ * A SIGTERM that arrives mid-jest is therefore queued behind a child that may
+ * outlive the parent, and the process can die with the guard still gutted and
+ * a `.teeth-bak` on disk. That happened during a timed-out sweep and left
+ * `state-primitives-discipline.test.ts` holding `return {};`.
+ *
+ * Two things cover it and both are downstream of this handler, not in it: the
+ * `[recovered]` path above restores the backup on the NEXT run, and
+ * `tests/guards/selector-teeth-no-stray-mutations.test.ts` fails the build if
+ * one is left behind. Fixing it here would mean an async spawn and a rewritten
+ * run loop; the mitigations are cheaper and already exist.
+ *
+ * If you interrupt a sweep, run the tool again — or `git status` before you
+ * commit.
+ */
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
     process.on(sig, () => { restoreActive(); process.exit(130); });
 }
@@ -61,32 +81,72 @@ process.on('uncaughtException', (e) => { restoreActive(); throw e; });
 /** Constants to gut a function body with. First one that TYPECHECKS is used. */
 const GUTS = ['[]', "''", '0', 'null', 'undefined', 'false', 'new Set()', 'new Map()', '{}'];
 
-/** Module-level `function name(...)` declarations, with their body extents. */
+/**
+ * Every module-level function-valued declaration, with its body extent.
+ *
+ * Parsed with the TypeScript compiler rather than matched line by line. The
+ * regex version this replaced had two independent false negatives, and both
+ * pointed toward "nothing to audit", which reads as a pass:
+ *
+ *   - Its describe/it gate was `/\b(describe|it|test)\s*(\.\w+)?\s*\(/`,
+ *     which also matches `RegExp.prototype.test` — `/^Dockerfile/.test(f)` —
+ *     and prose inside a `/** *\/` doc comment, e.g. a line reading
+ *     `*   test('A creates it', async () => {`.
+ *   - Its counter only ever decremented when a line closed more braces than it
+ *     opened, and only by one. So once a brace-opening false positive pushed it
+ *     above zero it could never come back down, and EVERY module-level function
+ *     later in the file was silently skipped. In `e2e-isolation.test.ts` the
+ *     counter stuck at line 13 and all six functions — declared at lines 57-218,
+ *     all before the only real `describe` at 234 — were dropped.
+ *
+ * Measured against the parser over `tests/guards` + `tests/guardrails`: the
+ * regex saw 599 of 885 real declarations, missing 286 (32%), and called 338 of
+ * 621 files "nothing to audit" when only 186 truly have nothing at module level.
+ *
+ * The gate is GONE rather than patched, because `sourceFile.statements` IS the
+ * module level: a function declared inside `describe()` is not a top-level
+ * statement and cannot appear here by construction. A class of defect is
+ * removed instead of one spelling of it.
+ *
+ * A hand-rolled lexer was prototyped first and measured WORSE than the regex
+ * (528 candidates / 350 zero-candidate files). Regex literals are why: a
+ * pattern like `/['"]/` or `/\{/` opens a phantom string or brace in any
+ * scanner that does not track regex-literal context. Do not reach for one.
+ *
+ * Returns CHARACTER offsets, not line numbers. A concise-bodied arrow
+ * (`const read = (rel) => fs.readFileSync(rel)`) has no block for a
+ * line-splice to replace, so line extents cannot express it — that bucket is
+ * 10 of the 46 unreachable files on its own.
+ */
 export function selectorsIn(src) {
-    const lines = src.split('\n');
+    const sf = ts.createSourceFile('guard.ts', src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
     const out = [];
-    let inBlock = 0;
-    for (let i = 0; i < lines.length; i++) {
-        // crude but sufficient: track describe/it nesting so we never mutate an
-        // assertion. A selector declared inside a describe is rare and, if it
-        // exists, is genuinely part of the test rather than the population.
-        if (/\b(describe|it|test)\s*(\.\w+)?\s*\(/.test(lines[i])) inBlock++;
-        if (inBlock > 0) {
-            const opens = (lines[i].match(/\{/g) ?? []).length;
-            const closes = (lines[i].match(/\}/g) ?? []).length;
-            if (closes > opens && inBlock > 0) inBlock = Math.max(0, inBlock - 1);
+
+    const record = (name, declNode, body) => {
+        out.push({
+            name,
+            // 'block' bodies are replaced wholesale; an expression body is
+            // substituted in place, because there is no `return` to write.
+            kind: ts.isBlock(body) ? 'block' : 'expr',
+            bodyStart: body.getStart(sf),
+            bodyEnd: body.getEnd(),
+            line: sf.getLineAndCharacterOfPosition(declNode.getStart(sf)).line + 1,
+        });
+    };
+
+    for (const stmt of sf.statements) {
+        if (ts.isFunctionDeclaration(stmt) && stmt.name && stmt.body) {
+            record(stmt.name.text, stmt, stmt.body);
+            continue;
         }
-        const m = /^(?:export\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/.exec(lines[i]);
-        if (!m || inBlock > 0) continue;
-        let depth = 0, started = false, end = -1;
-        for (let j = i; j < lines.length; j++) {
-            for (const ch of lines[j]) {
-                if (ch === '{') { depth++; started = true; }
-                else if (ch === '}') depth--;
+        if (!ts.isVariableStatement(stmt)) continue;
+        for (const decl of stmt.declarationList.declarations) {
+            if (!ts.isIdentifier(decl.name) || !decl.initializer) continue;
+            const init = decl.initializer;
+            if (ts.isArrowFunction(init) || ts.isFunctionExpression(init)) {
+                record(decl.name.text, decl, init.body);
             }
-            if (started && depth === 0) { end = j; break; }
         }
-        if (end > i) out.push({ name: m[1], start: i, end });
     }
     return out;
 }
@@ -143,7 +203,6 @@ export function auditFile(file) {
     const selectors = selectorsIn(original);
     try {
         for (const sel of selectors) {
-            const lines = original.split('\n');
             // EVERY gut that typechecks must be killed. Stopping at the first
             // kill was the tool's own instance of the defect it hunts: gutting
             // `pick()` to `null` fails an assertion (irrelevant), while gutting
@@ -154,9 +213,13 @@ export function auditFile(file) {
             const survivedGuts = [];
             let anyCompiled = false;
             for (const gut of GUTS) {
-                const mutated = [...lines];
-                mutated.splice(sel.start + 1, sel.end - sel.start - 1, `    return ${gut};`);
-                writeFileSync(file, mutated.join('\n'));
+                // Parenthesised for the expression case: `() => {}` parses as
+                // an empty BLOCK, not an object literal, so a bare `{}` gut
+                // would silently become a no-op body instead of a return value.
+                const replacement = sel.kind === 'block' ? `{ return ${gut}; }` : `(${gut})`;
+                const mutated =
+                    original.slice(0, sel.bodyStart) + replacement + original.slice(sel.bodyEnd);
+                writeFileSync(file, mutated);
                 const { out } = runGuard(file);
                 // A gut whose return type does not typecheck never runs, so it
                 // is not a mutation of this program at all — skip, do not score.
@@ -166,7 +229,7 @@ export function auditFile(file) {
             }
             if (!anyCompiled) untestable.push(sel.name);
             else if (survivedGuts.length) {
-                survivors.push({ selector: sel.name, gut: survivedGuts.join(' | '), line: sel.start + 1 });
+                survivors.push({ selector: sel.name, gut: survivedGuts.join(' | '), line: sel.line });
             }
         }
     } finally {
@@ -185,11 +248,16 @@ export function auditFile(file) {
      * that examined nothing.
      *
      * That is the very defect this tool hunts, one level up — an empty
-     * selection reading as a pass. Measured across `tests/guards` +
-     * `tests/guardrails` at `c2574d1e5`: 188 of 617 files have zero
-     * candidates, so almost a third of the population was getting that
-     * message. A caller can now tell "audited and clean" (`candidates > 0`,
-     * no survivors) from "not audited" (`candidates === 0`).
+     * selection reading as a pass. A caller can tell "audited and clean"
+     * (`candidates > 0`, no survivors) from "not audited" (`candidates === 0`).
+     *
+     * This docblock used to claim "188 of 617 files have zero candidates, so
+     * almost a third of the population". Both halves were wrong. Re-measured at
+     * the commit it cited, with `selectorsIn` byte-identical: the real figure
+     * under the line-based scanner was 338 of 617 — a MAJORITY, not a third —
+     * and 152 of those files were mislabelled rather than genuinely empty. With
+     * the parser the honest number is 186 of 621, and the denominator this
+     * field reports finally means what it says.
      */
     return { file, candidates: selectors.length, survivors, untestable };
 }
