@@ -98,7 +98,7 @@ playbooks; read its banner first — only §1 and §6 have been corrected.
 `tests/guardrails/vm-runbook-commands.test.ts` holds the runbook,
 including a derived check that every repo path it names exists.
 
-**Production outages are DETECTED but not ROUTED (#854).** Since
+**Production outages are DETECTED and emailed; there is no rota (#854).** Since
 2026-09-17 a GCP Cloud Monitoring uptime check
 (`agrent-readyz-oKY0R5q09QU`) probes `https://app.agrent.bg/api/readyz`
 every 60s from six regions, requiring a 2xx whose body contains
@@ -106,13 +106,14 @@ every 60s from six regions, requiring a 2xx whose body contains
 process. Alert policy `agrent production is not ready (#854)` fires on
 sustained failure from more than one region. Detection latency is
 therefore about two minutes, and a detection time MAY now be written
-down — but only that one. **The policy has no notification channel
-attached, so nothing reaches a person**, and there is no rota. So
+down — but only that one. An email notification channel is attached and was
+proved to deliver. **There is still no rota and no pager** — one
+address, one person, email — so
 `docs/slos.md` SLO 7's 4 hours is still time-to-restore from the moment
 a person starts, and the 15-minute PagerDuty acknowledge in
 `docs/incident-response.md` still describes intended policy, not
-behaviour. Do not write an alert-to-human time into any doc until a
-channel is wired. `infra/alerts/external-uptime.yml` records what runs
+behaviour. Do not write an acknowledge or
+alert-to-human time into any doc: an inbox is not an on-call rota. `infra/alerts/external-uptime.yml` records what runs
 and why the probe is `readyz` rather than `livez` — the previous spec's
 reasoning was imported from a multi-pod Kubernetes deployment and is
 false for a single VM with one app container.

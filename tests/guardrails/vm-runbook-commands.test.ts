@@ -325,13 +325,18 @@ describe('production VM runbook — it does not imply a detection capability', (
         const inventory = section(src(), '\n## What this deployment does not have');
         expect(inventory.length).toBeGreaterThan(500);
         expect(inventory).toMatch(/#854/);
-        // Until 2026-09-17 this asserted "Nothing pages anyone" and "Detection
-        // today is a human noticing". Both became false when the GCP uptime
-        // check landed — detection is now instrumented. What is STILL true,
-        // and what this now pins, is that no alert reaches a person: the
-        // policy has no notification channel. The assertion moved with the
-        // fact rather than being deleted with it.
-        expect(inventory).toMatch(/no notification channel|pages nobody|reaches (?:a person|nobody)/i);
+        // This assertion has moved twice in one day, deliberately, and the
+        // movement is the record:
+        //   before  "Nothing pages anyone" / "Detection today is a human
+        //           noticing"  — true while nothing probed production
+        //   then    "no notification channel"  — true for the hour between
+        //           the uptime check landing and an address being supplied
+        //   now     no rota  — an email channel is attached and proved to
+        //           deliver, so an alert reaches an inbox; nobody is on call
+        // Each time the assertion followed the fact instead of being deleted
+        // with it, which is what forces every document to be corrected in the
+        // same change rather than one of them being quietly missed.
+        expect(inventory).toMatch(/no rota|not a rota|nobody is on call/i);
     });
 
     it('never quotes an ALERT-TO-HUMAN time as if one were measured', () => {

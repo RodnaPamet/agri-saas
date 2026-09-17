@@ -76,20 +76,20 @@ monitors:
       condition: COUNT_FALSE > 1 over a 300s window, for 60s
       auto_close_seconds: 1800
 
-# ─── THE REMAINING STEP ─────────────────────────────────────────────────
+# ─── NOTIFICATION ──────────────────────────────────────────────────────
 #
-# The alert policy exists and is ENABLED, but has NO notification channel
-# attached, so it currently notifies nobody. Detection is real; routing is not.
-# Until a channel is attached, this file must not be read as "we get paged".
+# The alert policy is ENABLED and has one email notification channel attached
+# (`agrent on-call`, channel id 11199896282881593035). The address lives in GCP
+# project config and deliberately NOT in this file: the repository is public.
 #
-# To attach one (the address never enters this repo — it lives in GCP project
-# config, and this repository is public):
+# A verification email was sent through the channel on 2026-09-17 to prove the
+# path delivers, rather than inferring it from the API accepting the config.
 #
-#   gcloud beta monitoring channels create \
-#     --display-name="agrent on-call" --type=email \
-#     --channel-labels=email_address=<address>
-#
-#   then PATCH the policy's notificationChannels with the returned name.
+# WHAT THIS STILL IS NOT: a rota, or a pager. One address, one person, and
+# email. So detection latency is bounded (~2 minutes) and time from the alert
+# landing in an inbox to a human acting on it is NOT — nobody is on call, and
+# an outage at 03:00 waits for someone to wake up and read email. Do not write
+# an acknowledge or response time anywhere on the strength of this channel.
 #
 # ─── WHAT THIS DOES NOT COVER ───────────────────────────────────────────
 #

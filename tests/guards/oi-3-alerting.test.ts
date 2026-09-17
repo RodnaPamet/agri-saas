@@ -346,11 +346,18 @@ describe('OI-3 — external uptime contract', () => {
         }
     });
 
-    it('the file states that nothing is notified yet, while that is true', () => {
-        // The honest half. Detection exists; routing does not. A reader who
-        // takes this file as "we get paged" would be wrong, and this assertion
-        // fails the moment someone deletes the caveat without wiring a channel.
+    it('the file states the gap that remains, whatever that gap currently is', () => {
+        // The honest half, and it has already moved once. Until a channel was
+        // attached this asserted /no notification channel/i. That became false
+        // the moment one was wired, and the assertion had to move WITH the
+        // fact rather than be deleted with it — which is what forced every
+        // document to be corrected in the same change instead of one of them
+        // being missed.
+        //
+        // What is true now: alerts reach an inbox, and there is no rota and no
+        // pager. A reader who takes this file as "someone is on call" would be
+        // wrong, and this fails if the caveat is removed without one existing.
         const raw = read('infra/alerts/external-uptime.yml');
-        expect(raw).toMatch(/no notification channel/i);
+        expect(raw).toMatch(/no rota|not a rota|nobody is on call/i);
     });
 });

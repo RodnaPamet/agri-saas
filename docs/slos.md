@@ -408,9 +408,9 @@ RPO still assumes somebody starts a restore. Since 2026-09-17 a GCP uptime check
 probes `/api/readyz` every 60s from six regions and an alert policy fires on
 sustained multi-region failure (#854) — so the DATABASE dying at 02:01 UTC is
 now detected within about two minutes, because `readyz` reports its
-dependencies. But that policy has no notification channel attached yet, so
-nothing reaches a person: the gap moved from "nobody is looking" to "the alarm
-rings in an empty room". A snapshot schedule that silently detaches is still
+dependencies. An email channel is attached and proved to deliver, so the alarm now rings
+somewhere — but there is no rota, so whether anyone hears it at 03:00 is still
+a matter of luck rather than of design. A snapshot schedule that silently detaches is still
 caught only monthly, by `restore-test-gcp.sh`.
 
 ---
@@ -448,7 +448,7 @@ Procedures for every row: `docs/runbooks/production-vm.md`.
 
 ### Measurement / Verification
 
-- **Detection is instrumented as of 2026-09-17 (#854); ROUTING is not.** A GCP Cloud Monitoring uptime check (`agrent-readyz-oKY0R5q09QU`) probes `https://app.agrent.bg/api/readyz` every 60s from six regions — apac-singapore, eur-belgium, sa-brazil-sao_paulo, usa-iowa, usa-oregon, usa-virginia — requiring a 2xx whose body contains `"status":"ready"`, so a DEPENDENCY outage fails the check and not just a dead process. Alert policy `agrent production is not ready (#854)` fires when more than one region fails for 60s. **It has no notification channel attached, so it currently notifies nobody** — detection latency is now bounded at roughly 2 minutes, but the time from alert to a human remains unbounded until a channel is wired. Read the 4-hour figure as *time-to-restore once someone notices* until then. The 15-minute acknowledge budget in `docs/incident-response.md` § "Severity definitions" still assumes a PagerDuty rota that does not exist. `infra/alerts/external-uptime.yml` records what is deployed and why `readyz` rather than `livez`; `infra/dashboards/` remains files nothing runs (#856).
+- **Detection is instrumented as of 2026-09-17 (#854); ROUTING is not.** A GCP Cloud Monitoring uptime check (`agrent-readyz-oKY0R5q09QU`) probes `https://app.agrent.bg/api/readyz` every 60s from six regions — apac-singapore, eur-belgium, sa-brazil-sao_paulo, usa-iowa, usa-oregon, usa-virginia — requiring a 2xx whose body contains `"status":"ready"`, so a DEPENDENCY outage fails the check and not just a dead process. Alert policy `agrent production is not ready (#854)` fires when more than one region fails for 60s. An email notification channel is attached and was proved to deliver. So detection latency is bounded at roughly 2 minutes and an alert now reaches an inbox — but **there is no rota and no pager**: one address, one person, email. The time from the alert landing to a human acting on it is still unbounded, so keep reading the 4-hour figure as *time-to-restore once someone notices*, and do not write an acknowledge time anywhere. The 15-minute acknowledge budget in `docs/incident-response.md` § "Severity definitions" still assumes a PagerDuty rota that does not exist. `infra/alerts/external-uptime.yml` records what is deployed and why `readyz` rather than `livez`; `infra/dashboards/` remains files nothing runs (#856).
 - **Decision tree + runbook**: `docs/runbooks/production-vm.md` § 2 for the rollback levers; `docs/incident-response.md` for the per-symptom playbooks (read its banner first — several still describe undeployed infrastructure).
 - **Restore mechanism validation**: the monthly `restore-test-gcp.sh` exercises the snapshot-restore path end-to-end — disk from snapshot, VM, real Postgres, validation battery, teardown.
 - The 4-hour SLA is the SUM of detection + triage + recovery time; the budget allocation per stage is documented in `docs/incident-response.md` § "Severity definitions".
