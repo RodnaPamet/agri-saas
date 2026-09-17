@@ -2,26 +2,43 @@
   "_README": [
     "Selectors that can be gutted to a constant without any test noticing.",
     "",
-    "DISCOVERED, NOT DESIGNED. These were found by scripts/selector-teeth.mjs on",
-    "the first 12 guards it audited (PR #894 touched 88). They are PRE-EXISTING",
-    "debt, not caused by the PR that surfaced them, and 12 of 12 files had at",
-    "least one \u2014 so the repo almost certainly has many more among its 506 guards.",
+    "DISCOVERED, NOT DESIGNED. These are PRE-EXISTING debt, not caused by the PR",
+    "that surfaced them.",
     "",
     "RULES:",
-    "  \u00b7 A survivor NOT listed here FAILS the build. New debt is blocked.",
-    "  \u00b7 A listed entry that no longer survives ALSO fails, with instructions to",
+    "  · A survivor NOT listed here FAILS the build. New debt is blocked.",
+    "  · A listed entry that no longer survives ALSO fails, with instructions to",
     "    delete it. The list cannot rot into a permanent allowlist the way an",
     "    unchecked exemption file does.",
-    "  \u00b7 Adding an entry is a visible diff in a PR. That is the point: it should",
+    "  · Adding an entry is a visible diff in a PR. That is the point: it should",
     "    cost a reviewer's attention, not be a silent escape hatch.",
     "",
     "WHY A BASELINE AND NOT A FIX: each of these needs a non-empty control on the",
     "population its guard actually scans, which is a judgement per guard, not a",
     "sweep. Holding an unrelated PR hostage to that work would be the wrong trade;",
     "leaving the tool non-blocking would be worse, because a check that cannot",
-    "fail is the defect this whole tool exists to find."
+    "fail is the defect this whole tool exists to find.",
+    "",
+    "TWO CLAIMS THIS FILE USED TO MAKE, BOTH CORRECTED 2026-09-17:",
+    "  · It said the first sweep covered 12 guards and that '12 of 12 files had",
+    "    at least one'. Only 7 files were ever listed. Either the sweep was 7 or",
+    "    five entries were dropped; the record does not say, so the count is no",
+    "    longer asserted here.",
+    "  · It said 'its 506 guards'. The population is 621 .test.ts files across",
+    "    tests/guards + tests/guardrails, measured.",
+    "",
+    "THE LAST TWO ENTRIES WERE INVISIBLE UNTIL THE TOOL COULD SEE THEM.",
+    "parcel-authoring-coverage and generated-columns both reported ZERO candidates",
+    "under the old line-based scanner — a clean bill of health from an audit that",
+    "examined nothing — because its describe/it gate matched RegExp.prototype.test",
+    "and doc-comment prose, then never decremented. generated-columns:walk survives",
+    "EVERY gut the tool has. Neither is new debt; both are newly VISIBLE debt, and",
+    "the rest of the 286 selectors the rewrite recovered have not been swept."
   ],
   "known": {
+    "tests/guardrails/parcel-authoring-coverage.test.ts": [
+      "walk"
+    ],
     "tests/guards/action-label-vocabulary.test.ts": [
       "walk"
     ],
@@ -52,6 +69,9 @@
       "isExempt",
       "walk",
       "findOffenders"
+    ],
+    "tests/guards/generated-columns.test.ts": [
+      "walk"
     ]
   }
 }
