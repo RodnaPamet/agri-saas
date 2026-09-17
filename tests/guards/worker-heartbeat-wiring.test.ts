@@ -93,6 +93,14 @@ describe('the worker heartbeat is wired end to end', () => {
         // the specific mistake the issue calls out; this pins that the beat is
         // not reached that way.
         const stripped = code('scripts/worker.ts');
+        // Positive control on the strip. Every assertion below is NEGATIVE, so
+        // an empty or over-aggressive `code()` satisfies them while reading
+        // nothing — `indexOf` returns -1, the slice is '', and `not.toMatch`
+        // passes. Selector-teeth caught exactly that: gutting `code()` to
+        // return '' left this guard green.
+        expect(stripped).toContain("worker.on('completed'");
+        expect(stripped).toContain('beat(');
+
         const beatSection = stripped.slice(stripped.indexOf("worker.on('completed'"));
         expect(beatSection.slice(0, 300)).not.toMatch(/setInterval/);
     });
@@ -137,6 +145,13 @@ describe('the worker heartbeat is wired end to end', () => {
         // A probe that created a job would keep passing while the worker's own
         // consumption was dead: it would be testing Redis, not the worker.
         const src = code('scripts/worker-healthcheck.ts');
+        // Positive control, for the same reason: the assertion below is
+        // negative, so the strip must be shown to have left the probe's CODE
+        // behind. (A no-op `code()` is already caught — the docblock says the
+        // word "enqueue", which is what made this guard red at baseline.)
+        expect(src).toContain('WORKER_HEARTBEAT_KEY');
+        expect(src.length).toBeGreaterThan(200);
+
         expect(src).not.toMatch(/\benqueue\b|\.add\(|new Queue\b/);
     });
 
