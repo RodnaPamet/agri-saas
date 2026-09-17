@@ -153,6 +153,27 @@ function trackedFiles(): string[] {
     );
 }
 
+/**
+ * This guard's own file. It is the REGISTRY: it necessarily contains every
+ * image string it registers, in HISTORICAL_MENTIONS, ALTERNATE_IMAGES and the
+ * docblock explaining what moved. A registry containing the things it
+ * registers is not drift, so the sweep skips it.
+ *
+ * Excluded here rather than via HISTORICAL_MENTIONS because a self-referential
+ * entry would need editing every time those lists change and would go stale
+ * silently. The property is not lost: a wrong entry in the lists is caught by
+ * "every declared historical mention still contains one", which reads each
+ * declared image back out of the file it claims to be in.
+ *
+ * THIS COST A CI ROUND-TRIP, and the reason is worth keeping. It passed
+ * locally and failed on push, because `trackedFiles()` reads `git ls-files`
+ * and an uncommitted new file is not tracked — so while this guard was new it
+ * could not see itself, and no amount of local running would have shown it.
+ * A guard that sweeps the tracked tree cannot be fully verified before its own
+ * first commit.
+ */
+const SELF = 'tests/guards/postgis-image-single-source.test.ts';
+
 const PIN = pinnedImage();
 const TAG = tagOf(PIN);
 
@@ -276,6 +297,7 @@ describe('.github/postgis-image is the single source of truth', () => {
             // leaves "no offenders" meaning "nothing was looked at".
             let seen = 0;
             for (const file of trackedFiles()) {
+                if (file === SELF) continue;
                 if (!/\.(ya?ml|md|sh|ts|tsx|js|mjs|sql|json)$|Dockerfile/.test(file)) continue;
                 let text: string;
                 try {
@@ -302,6 +324,7 @@ describe('.github/postgis-image is the single source of truth', () => {
             const offenders: string[] = [];
 
             for (const file of trackedFiles()) {
+                if (file === SELF) continue;
                 if (!/\.(ya?ml|md|sh|ts|tsx|js|mjs|sql|json)$|Dockerfile/.test(file)) continue;
                 let text: string;
                 try {
