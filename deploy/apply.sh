@@ -51,6 +51,30 @@ TS="$(date +%Y%m%d-%H%M%S)"
 log() { printf '\033[36m[apply]\033[0m %s\n' "$*"; }
 err() { printf '\033[31m[apply] ERROR:\033[0m %s\n' "$*" >&2; }
 
+# ── COMPOSE_BASENAME is an allowlist, not a free variable ────────────────
+#
+# This script's job is one file: the repo-canonical prod compose. The override
+# existed as a bare default, so `COMPOSE_BASENAME=docker-compose.prod.yml
+# deploy/apply.sh` was a supported invocation — and that file hardcodes a
+# database name this stack does not use. The sequence is copy-up, `docker
+# compose config` (which validates SYNTAX, not that the database exists),
+# `up -d`, and only THEN health-verify, so the outage lands before anything
+# notices. check-drift.sh would never have warned either: it only ever reads
+# whatever this variable points at, so drift stays green on a file it does not
+# look at.
+#
+# Refuse by default. The escape hatch is deliberately awkward to type, because
+# reaching for it should be a decision and not a reflex.
+CANONICAL_COMPOSE="docker-compose.vm.yml"
+if [ "$COMPOSE_BASENAME" != "$CANONICAL_COMPOSE" ] \
+   && [ "${I_KNOW_THIS_IS_NOT_THE_CANONICAL_COMPOSE:-0}" != "1" ]; then
+    err "refusing to act on '${COMPOSE_BASENAME}' — the canonical compose is '${CANONICAL_COMPOSE}'."
+    err "  Every running container on the prod VM is labelled with that file."
+    err "  If you genuinely mean another one, set"
+    err "  I_KNOW_THIS_IS_NOT_THE_CANONICAL_COMPOSE=1 and say why in your notes."
+    exit 2
+fi
+
 [ -f "$LOCAL_COMPOSE" ] || { err "missing $LOCAL_COMPOSE"; exit 1; }
 
 # Helper: run a command on the VM.
