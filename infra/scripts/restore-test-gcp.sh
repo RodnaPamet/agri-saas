@@ -413,24 +413,31 @@ echo "  ✓ ${STACK_DIR} present and carries DATA_ENCRYPTION_KEY"
 #
 # The heredoc below is a COPY of deploy/postgres/Dockerfile, because this
 # script is scp'd to a bare restore VM that has no repo checkout to build
-# from. Both the tag and the `Acquire::Check-Valid-Until=false` flag must
-# therefore track that file: the tag equals .github/postgis-image (the single
-# source of truth) and the flag is required because the bullseye base's
-# security Release file expired 2026-09-07 — without it `apt-get update`
-# exits 100 and this drill cannot build a Postgres to restore INTO, which
-# reads as a failed restore rather than as a broken build. #833 patched only
-# the CI action; this site was missed. See
-# .github/actions/enable-pgvector/action.yml for the full argument (#832).
-# Nothing enforces either property automatically yet (#860).
+# from. It must track that file: the tag equals .github/postgis-image (the
+# single source of truth) and the package list must match, since PostGIS is
+# now INSTALLED rather than baked into the base.
+#
+# The `Acquire::Check-Valid-Until=false` flag this heredoc used to carry is
+# gone with #832. It was required while the base was bullseye, whose security
+# Release file expired 2026-09-07 — without it `apt-get update` exits 100 and
+# this drill cannot build a Postgres to restore INTO, which reads as a FAILED
+# RESTORE rather than as a broken build. That is why the flag mattered here
+# more than anywhere else, and why trixie (supported to 2028-08-09) is worth
+# more here than the bytes it saves.
+#
+# Nothing enforces agreement with deploy/postgres/Dockerfile automatically
+# yet (#860).
 if [ -n "${PG_IMAGE}" ]; then
     RESTORE_IMAGE="${PG_IMAGE}"
     sudo docker pull "\$RESTORE_IMAGE" >/dev/null
 else
     RESTORE_IMAGE=agrent-db:local
     sudo docker build -t "\$RESTORE_IMAGE" - <<'DOCKERFILE'
-FROM postgis/postgis:16-3.4
-RUN apt-get -o Acquire::Check-Valid-Until=false update \
-    && apt-get install -y --no-install-recommends postgresql-16-pgvector \
+FROM postgres:16-trixie
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        postgresql-16-postgis-3 \
+        postgresql-16-pgvector \
     && rm -rf /var/lib/apt/lists/*
 DOCKERFILE
 fi

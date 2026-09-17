@@ -45,7 +45,7 @@ Two images in the stack are amd64-only, and no compose file declares a
 
 | image | used by | arm64? |
 |---|---|---|
-| `postgis/postgis:16-3.4` | `deploy/postgres/Dockerfile` | **no** — single amd64 manifest |
+| `postgres:16-trixie` | `deploy/postgres/Dockerfile` | **yes** — multi-arch manifest |
 | `clamav/clamav:1.4` | `docker-compose.test.yml` | **no** |
 
 Enable Rosetta in Docker Desktop (Settings → General → *Use Rosetta for x86/amd64
@@ -61,73 +61,40 @@ unset and the scan path short-circuits. Only `npm run db:test:up` waits on the
 That patch is the CSP nonce fix for Next's component scripts; skipping it
 produces a build that looks fine and ships unnonced scripts.
 
-### 5. Debian bullseye's expired Release file — this one is not a macOS quirk
+### 5. Debian bullseye's expired Release file — resolved by #832
 
-### 5. Debian bullseye's expired Release file — this one is not a macOS quirk
+**Nothing to do here any more.** This section is kept because the lesson is
+worth more than the fix.
 
-`postgis/postgis:16-3.4` is Debian bullseye, and bullseye-security's `Release`
-file expired **2026-09-07**. Every `apt-get update` against it now exits 100.
+The database image used to be `postgis/postgis:16-3.4`, which is Debian
+bullseye, and bullseye-security's `Release` file expired **2026-09-07**. Every
+`apt-get update` against it exited 100 from that instant. Two sites built on
+that image with an unflagged update — `deploy/postgres/Dockerfile`, so
+`docker compose up` and the VM's `agrent-db` build both failed, and
+`infra/scripts/restore-test-gcp.sh`, the heredoc that rebuilds the database
+image *inside the monthly restore drill*.
 
-**This was a live breakage of the repo, not a setup annoyance**, and it is
-tracked as **#832**. Two sites built on that image with an unflagged
-`apt-get update`:
+**CI stayed green throughout.** CI installed pgvector through
+`.github/actions/enable-pgvector`, which #833 had patched with
+`-o Acquire::Check-Valid-Until=false`; nothing in CI exercised the two paths
+above, so the signal that would have caught it never ran them. That is the part
+worth keeping: the green tick covered a path nobody was testing.
 
-- `deploy/postgres/Dockerfile` — so `docker compose up` and the VM's
-  `agrent-db` build both failed;
-- `infra/scripts/restore-test-gcp.sh` — the heredoc that rebuilds the
-  database image *inside the monthly restore drill*, on the default path where
-  `PG_IMAGE` is unset.
+The base is now **`postgres:16-trixie`** with PostGIS and pgvector installed
+from PGDG. Trixie's regular security support runs to **2028-08-09**, so all
+three `Acquire::Check-Valid-Until=false` flags are gone rather than carried —
+the index is not stale, so nothing is being worked around. `postgis/postgis`
+itself was not an option: it publishes no Debian tag on a maintained suite for
+Postgres 16 (its `16-3.5` is `FROM postgres:16-bullseye` and reproduces the
+same exit 100), and its only trixie tag forces a Postgres major bump.
 
-**CI stayed green throughout**, because CI installs pgvector through
-`.github/actions/enable-pgvector`, which #833 patched with
-`-o Acquire::Check-Valid-Until=false`. Nothing in CI exercised the two paths
-above, so the signal that would have caught it never ran them. That is the
-lesson worth keeping from this one: the green tick covered a path nobody was
-testing.
+One side effect you may notice on Apple silicon: the old image had a single
+amd64 manifest and ran under emulation. `postgres:16-trixie` is multi-arch, so
+it runs natively.
 
-**No local workaround is needed any more.** Both sites now carry the flag —
-`deploy/postgres/Dockerfile:25` and `infra/scripts/restore-test-gcp.sh:397` —
-so a clean `docker compose up` works. An earlier revision of this page told you
-to add it by hand; that gap is closed.
-
-The flag is a labelled stopgap, not a fix, and it is **not** ready to remove:
-`postgis/postgis` publishes no Debian tag on a maintained suite for Postgres
-16 — upstream's `16-3.5` is `FROM docker.io/postgres:16-bullseye` and
-reproduces the same failure. The real fix is a maintained base image, which is
-the decision #832 is still holding. The argument is written out at the top of
-`.github/actions/enable-pgvector/action.yml`.
-
-The flag is a labelled stopgap, not a fix, and it is **not** ready to remove:
-`postgis/postgis` publishes no Debian tag on a maintained suite for Postgres
-16 — upstream's `16-3.5` is `FROM docker.io/postgres:16-bullseye` and
-reproduces the same failure. Tracked as **#832**; the argument is written out
-at the top of `.github/actions/enable-pgvector/action.yml`.
-
-Keep that edit local — the real fix is a maintained base image, which is the
-decision #832 is holding.
-
----
-
-## Setup, in order
-
-```bash
-xcode-select --install
-brew install pcre2
-nvm use 22
-
-git clone https://github.com/RodnaPamet/agri-saas.git && cd agri-saas
-npm ci
-
-cp .env.example .env          # then fill the keys marked below
-docker compose up -d postgres pgbouncer redis
-
-npm run db:generate
-npm run db:reset              # migrates AND seeds — do not run db:seed after it
-npm run dev                   # http://localhost:3000
-```
-
-`npm run db:reset` is `prisma migrate reset --force && tsx prisma/seed.ts`.
-Running `npm run db:seed` afterwards seeds a second time.
+The measurements behind the choice — image sizes, migration runs with red
+controls, the collation and PostGIS-catalog risk on a real PGDATA — are in
+`docs/postgis-base-image-options.md`.
 
 ### Keys `.env.example` does not fill for you
 
