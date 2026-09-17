@@ -36,6 +36,16 @@ HEALTH_ORIGIN="${HEALTH_ORIGIN:-https://35-187-80-26.sslip.io}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOCAL_COMPOSE="${SCRIPT_DIR}/${COMPOSE_BASENAME}"
 REMOTE_COMPOSE="${REMOTE_DIR}/${COMPOSE_BASENAME}"
+
+# The `db` service has `build: context: ./deploy/postgres`, so the compose file
+# alone is NOT the deployable unit — the Dockerfile beside it decides what the
+# production database image IS. This script copied only the compose file until
+# 2026-09-17, and `check-drift.sh` hashed only the compose file, so the VM's
+# copy drifted undetected: measured that day, the VM held a 2026-06-27 version
+# that predated the `Acquire::Check-Valid-Until` flags entirely, three months
+# behind the repo, with drift green throughout.
+LOCAL_DB_CTX="${SCRIPT_DIR}/postgres"
+REMOTE_DB_CTX="${REMOTE_DIR}/deploy/postgres"
 TS="$(date +%Y%m%d-%H%M%S)"
 
 log() { printf '\033[36m[apply]\033[0m %s\n' "$*"; }
@@ -61,6 +71,21 @@ ssh_vm "sudo cp -a '${REMOTE_COMPOSE}' '${REMOTE_COMPOSE}.bak.${TS}'"
 log "copying ${LOCAL_COMPOSE} → VM"
 gcloud compute scp "$LOCAL_COMPOSE" "${VM_NAME}:/tmp/${COMPOSE_BASENAME}.new" --zone "$VM_ZONE"
 ssh_vm "sudo mv '/tmp/${COMPOSE_BASENAME}.new' '${REMOTE_COMPOSE}' && sudo chown root:root '${REMOTE_COMPOSE}'"
+
+# …and the db build context, for the reason above. Backed up the same way the
+# compose file is, so the rollback command at the end restores a matched pair.
+log "backing up remote ${REMOTE_DB_CTX}/Dockerfile → .bak.${TS}"
+ssh_vm "sudo cp -a '${REMOTE_DB_CTX}/Dockerfile' '${REMOTE_DB_CTX}/Dockerfile.bak.${TS}' 2>/dev/null || true"
+log "copying ${LOCAL_DB_CTX}/Dockerfile → ${VM_NAME}:${REMOTE_DB_CTX}/Dockerfile"
+gcloud compute scp "${LOCAL_DB_CTX}/Dockerfile" "${VM_NAME}:/tmp/Dockerfile.db.new" --zone "$VM_ZONE"
+ssh_vm "sudo mkdir -p '${REMOTE_DB_CTX}' && sudo mv '/tmp/Dockerfile.db.new' '${REMOTE_DB_CTX}/Dockerfile' && sudo chown root:root '${REMOTE_DB_CTX}/Dockerfile'"
+
+# NOTE: copying the Dockerfile does NOT rebuild the image. `docker compose up -d`
+# below reuses `agrent-db:local` if it exists, so a base-image change needs an
+# explicit `docker compose -f <compose> build db` and a database cutover — see
+# docs/runbooks/postgis-trixie-cutover.md. That is deliberate: rebuilding a
+# production database image as a side effect of a compose apply is exactly the
+# surprise this script should not spring.
 
 # ── 3. Validate ──────────────────────────────────────────────────────────
 log "validating on VM: docker compose config"

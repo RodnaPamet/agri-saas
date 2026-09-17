@@ -44,7 +44,39 @@ if [ -z "$REMOTE_SHA" ]; then
     exit 2
 fi
 
+# The db build context, which decides what the production database image IS.
+# Hashing only the compose file let the VM's Dockerfile sit three months behind
+# the repo with this check green (measured 2026-09-17: repo dd44f03d… vs VM
+# 4940b1d6…). A compose file that is in sync says nothing about the image the
+# `db` service builds from it.
+LOCAL_DF="${SCRIPT_DIR}/postgres/Dockerfile"
+REMOTE_DF="${REMOTE_DIR}/deploy/postgres/Dockerfile"
+DF_DRIFT=0
+if [ -f "$LOCAL_DF" ]; then
+    LOCAL_DF_SHA="$(sha256sum "$LOCAL_DF" | awk '{print $1}')"
+    REMOTE_DF_SHA="$(gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" \
+        --command "sudo sha256sum '${REMOTE_DF}'" 2>/dev/null | awk '{print $1}')" || REMOTE_DF_SHA=""
+    if [ -z "$REMOTE_DF_SHA" ]; then
+        err "could not read ${REMOTE_DF} on ${VM_NAME} — absent, or unreadable."
+        DF_DRIFT=1
+    elif [ "$LOCAL_DF_SHA" != "$REMOTE_DF_SHA" ]; then
+        err "DRIFT — deploy/postgres/Dockerfile differs (local ${LOCAL_DF_SHA:0:12}, remote ${REMOTE_DF_SHA:0:12})."
+        err "  The db service builds from it. Reconcile with deploy/apply.sh, and note that"
+        err "  copying it does NOT rebuild the image — see docs/runbooks/postgis-trixie-cutover.md."
+        DF_DRIFT=1
+    else
+        ok "in sync — deploy/postgres/Dockerfile matches (${LOCAL_DF_SHA:0:12})"
+    fi
+else
+    err "missing $LOCAL_DF — the db build context is not where this script expects it."
+    DF_DRIFT=1
+fi
+
 if [ "$LOCAL_SHA" = "$REMOTE_SHA" ]; then
+    if [ "$DF_DRIFT" -ne 0 ]; then
+        err "compose file is in sync but the db build context is NOT."
+        exit 1
+    fi
     ok "in sync — ${COMPOSE_BASENAME} matches ${VM_NAME}:${REMOTE_COMPOSE} (${LOCAL_SHA:0:12})"
     exit 0
 fi
