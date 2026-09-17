@@ -248,15 +248,37 @@ describe('OI-3 — receivers.yml routing', () => {
 });
 
 describe('OI-3 — external uptime contract', () => {
+    /**
+     * REWRITTEN 2026-09-17 (#854), and what it used to assert is the point.
+     *
+     * This block pinned the inflect-compliance design: every monitor must
+     * target `/api/livez` and NOT `/api/readyz`, expect `"status":"alive"`,
+     * and route production to PagerDuty with a staging monitor to Slack.
+     *
+     * All of that was wrong for THIS product, and the guard was enforcing it.
+     * agrent is one GCE VM with ONE app container — no pods, no replicas, no
+     * load balancer. `livez` is dependency-free, so it answers 200 while the
+     * database is down and the app cannot serve; probing it exclusively made
+     * a dependency outage undetectable BY CONSTRUCTION. There is no staging
+     * deployment and no PagerDuty service.
+     *
+     * So a structural ratchet was holding an imported architecture in place
+     * and would have failed the correct fix. Recorded rather than quietly
+     * replaced, because "the guard said so" is exactly how an imported
+     * assumption survives review.
+     */
     interface UptimeMonitor {
         name: string;
         url: string;
         method: string;
         interval_seconds: number;
-        expect: { status_code: number; body_contains?: string; ssl_valid?: boolean };
-        on_failure: { severity: string; route_to: string };
+        timeout_seconds: number;
+        expect: { status_class?: string; body_contains?: string; ssl_valid?: boolean };
+        locations_observed?: string[];
+        on_failure: { alert_policy: string; alert_policy_id: string; condition: string };
     }
     interface UptimeFile {
+        metadata: { product: string; provider: string };
         monitors: UptimeMonitor[];
     }
 
@@ -270,46 +292,72 @@ describe('OI-3 — external uptime contract', () => {
         expect(u.monitors.length).toBeGreaterThan(0);
     });
 
-    it('every monitor targets /api/livez (NOT /api/readyz)', () => {
+    it('describes THIS product, not the one it was inherited from', () => {
         const u = loadUptime();
+        expect(u.metadata.product).toBe('agri-saas');
+        // The file named `app.example.com` and `inflect-livez-production` for
+        // months. A monitor spec that names another product's hostname is not
+        // a spec, it is a leftover.
         for (const m of u.monitors) {
-            expect(m.url).toMatch(/\/api\/livez$/);
-            expect(m.url).not.toMatch(/\/api\/readyz/);
+            expect(m.url).toContain('app.agrent.bg');
+            expect(m.name).not.toMatch(/inflect/i);
         }
     });
 
-    it('every monitor expects status 200 + the stable livez body substring', () => {
+    it('every monitor targets /api/readyz — a dependency outage must fail the check', () => {
         const u = loadUptime();
         for (const m of u.monitors) {
-            expect(m.expect.status_code).toBe(200);
-            // The exact substring matches the livez route's response body
-            expect(m.expect.body_contains).toBe('"status":"alive"');
+            expect(m.url).toMatch(/\/api\/readyz$/);
         }
     });
 
-    it('production monitor escalates to pagerduty (critical), staging to slack (warning)', () => {
+    it('every monitor asserts on the READY body, not merely a 2xx', () => {
         const u = loadUptime();
-        const prod = u.monitors.find((m) => m.name.includes('production'));
-        const stag = u.monitors.find((m) => m.name.includes('staging'));
-        expect(prod).toBeDefined();
-        expect(stag).toBeDefined();
-        expect(prod!.on_failure.severity).toBe('critical');
-        expect(prod!.on_failure.route_to).toBe('pagerduty');
-        expect(stag!.on_failure.severity).toBe('warning');
-        expect(stag!.on_failure.route_to).toBe('slack');
+        for (const m of u.monitors) {
+            expect(m.expect.status_class).toBe('2xx');
+            // `readyz` can answer 200 while reporting a degraded dependency.
+            // Matching the body is what makes the check dependency-aware
+            // rather than a liveness probe wearing a different path.
+            expect(m.expect.body_contains).toBe('"status":"ready"');
+        }
     });
 
-    it('production monitor checks SSL validity (catches expired certs at the user-visible boundary)', () => {
+    it('every monitor validates SSL at the user-visible boundary', () => {
         const u = loadUptime();
-        const prod = u.monitors.find((m) => m.name.includes('production'))!;
-        expect(prod.expect.ssl_valid).toBe(true);
+        for (const m of u.monitors) expect(m.expect.ssl_valid).toBe(true);
     });
 
-    it('production monitor probes from multiple regions (avoid single-pop false-positives)', () => {
+    it('every monitor probes from more than one region', () => {
         const u = loadUptime();
-        const prod = u.monitors.find((m) => m.name.includes('production'))! as UptimeMonitor & {
-            locations: string[];
-        };
-        expect(prod.locations.length).toBeGreaterThan(1);
+        for (const m of u.monitors) {
+            // One region failing is a partition to that region; the alert
+            // condition is expressed in regions and needs more than one.
+            expect((m.locations_observed ?? []).length).toBeGreaterThan(1);
+        }
+    });
+
+    it('every monitor names the alert policy it fires, by id', () => {
+        const u = loadUptime();
+        for (const m of u.monitors) {
+            expect(m.on_failure.alert_policy).toBeTruthy();
+            // The id is what lets an operator find the policy without guessing
+            // from a display name that anyone can edit in the console.
+            expect(m.on_failure.alert_policy_id).toMatch(/^\d+$/);
+        }
+    });
+
+    it('the file states the gap that remains, whatever that gap currently is', () => {
+        // The honest half, and it has already moved once. Until a channel was
+        // attached this asserted /no notification channel/i. That became false
+        // the moment one was wired, and the assertion had to move WITH the
+        // fact rather than be deleted with it — which is what forced every
+        // document to be corrected in the same change instead of one of them
+        // being missed.
+        //
+        // What is true now: alerts reach an inbox, and there is no rota and no
+        // pager. A reader who takes this file as "someone is on call" would be
+        // wrong, and this fails if the caveat is removed without one existing.
+        const raw = read('infra/alerts/external-uptime.yml');
+        expect(raw).toMatch(/no rota|not a rota|nobody is on call/i);
     });
 });

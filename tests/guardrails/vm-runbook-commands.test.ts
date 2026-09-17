@@ -321,21 +321,37 @@ describe('production VM runbook — it does not imply a detection capability', (
         expect(banner).toMatch(/no uptime check|no alert|nothing (here )?detects/i);
     });
 
-    it('the "does not have" inventory names the detection gap and its issue', () => {
+    it('the "does not have" inventory names the remaining detection gap and its issue', () => {
         const inventory = section(src(), '\n## What this deployment does not have');
         expect(inventory.length).toBeGreaterThan(500);
         expect(inventory).toMatch(/#854/);
-        expect(inventory).toMatch(/Nothing pages anyone/i);
-        expect(inventory).toMatch(/Detection today is a human noticing/i);
+        // This assertion has moved twice in one day, deliberately, and the
+        // movement is the record:
+        //   before  "Nothing pages anyone" / "Detection today is a human
+        //           noticing"  — true while nothing probed production
+        //   then    "no notification channel"  — true for the hour between
+        //           the uptime check landing and an address being supplied
+        //   now     no rota  — an email channel is attached and proved to
+        //           deliver, so an alert reaches an inbox; nobody is on call
+        // Each time the assertion followed the fact instead of being deleted
+        // with it, which is what forces every document to be corrected in the
+        // same change rather than one of them being quietly missed.
+        expect(inventory).toMatch(/no rota|not a rota|nobody is on call/i);
     });
 
-    it('never quotes a detection or acknowledge time as if one were measured', () => {
-        // A stated "detected within N minutes" anywhere in this document
-        // would be fiction. The 4-hour RTO is allowed — it is a
-        // time-to-restore budget, and SLO 7 says so.
+    it('never quotes an ALERT-TO-HUMAN time as if one were measured', () => {
+        // This used to forbid any stated detection time, because there was no
+        // detector and every such number was fiction. Since #854 a detection
+        // time is MEASURED — a 60s probe from six regions, alerting on
+        // sustained multi-region failure — so quoting one is now honest and
+        // the prohibition would forbid the truth.
+        //
+        // What remains fiction is the half after the alert: the policy has no
+        // notification channel and there is no rota, so any acknowledge or
+        // page-to-human budget is still made up. That is what this pins now.
         const s = src();
-        expect(s).not.toMatch(/detect(ed|ion)[^.\n]{0,40}\b\d+\s*(minutes|mins|hours)\b/i);
-        expect(s).not.toMatch(/acknowledge[^.\n]{0,30}\b15\s*minutes\b/i);
+        expect(s).not.toMatch(/acknowledge[^.\n]{0,30}\b\d+\s*(minutes|mins|hours)\b/i);
+        expect(s).not.toMatch(/paged?[^.\n]{0,30}\bwithin\b[^.\n]{0,20}\b\d+\s*(minutes|mins|hours)\b/i);
     });
 });
 

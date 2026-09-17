@@ -1,109 +1,101 @@
-# External uptime monitoring — provider-agnostic spec.
+# External uptime monitoring — what is DEPLOYED for agrent, and why.
 #
-# OI-3 source-of-truth: external uptime monitoring against /api/livez.
-# This file documents the contract that the operator wires into their
-# uptime monitoring tool of choice.
+# This file used to be a provider-agnostic spec for `inflect-compliance`,
+# naming `app.example.com`, a staging monitor, UptimeRobot/Pingdom/Statuscake/
+# Route 53, and PagerDuty routing. None of it was ever provisioned, and its
+# reasoning came from a Kubernetes deployment this product does not have.
+# Rewritten 2026-09-17 (#854) to record what actually runs.
 #
-# Why /api/livez (and NOT /api/readyz):
-#   - livez is dependency-free and ALWAYS returns 200 when the process
-#     is running. It proves the FULL service chain works:
-#     DNS → load balancer → ingress controller → pod → app process.
-#   - readyz returns 503 when ANY internal dependency is down. From an
-#     external monitor's perspective, that's noise — internal RDS
-#     blips mark the pod NotReady internally (k8s rotates traffic),
-#     but the user-perceived service is still up via other healthy
-#     pods. External uptime should fire only when the WHOLE service
-#     is unreachable.
-#   - Distinct from Kubernetes-internal probes (which DO use readyz
-#     and DO want dependency-awareness).
+# ─── WHY /api/readyz, NOT /api/livez ────────────────────────────────────
 #
-# Wiring this into your uptime tool of choice:
+# The previous version of this file said, at length, to probe `/api/livez`
+# and NOT `/api/readyz`:
 #
-#   UptimeRobot:
-#     curl -X POST 'https://api.uptimerobot.com/v2/newMonitor' \
-#       -d "api_key=${UPTIMEROBOT_API_KEY}" \
-#       -d "type=2" \           # HTTP(S)
-#       -d "url=<from spec>" \
-#       -d "interval=60" \
-#       -d "friendly_name=<from spec>"
+#   "readyz returns 503 when ANY internal dependency is down. From an
+#    external monitor's perspective, that's noise — internal RDS blips mark
+#    the pod NotReady internally (k8s rotates traffic), but the user-perceived
+#    service is still up via other healthy pods."
 #
-#   Pingdom: pingdomcli check create --url <from spec> --interval 1
+# Every clause of that is false here. agrent is ONE GCE VM running docker
+# compose with ONE app container (`deploy/docker-compose.vm.yml`). There are
+# no pods, no replicas, no load balancer and no RDS. Nothing rotates traffic
+# away from a degraded instance because there is nowhere to rotate it to.
 #
-#   Statuscake: equivalent via their API
+# So a `readyz` 503 is not noise — it is users getting errors. And probing
+# only `livez` would MISS a database outage entirely: `livez` is
+# dependency-free and answers 200 whenever the process is running, so the app
+# can be completely unable to serve while the monitor stays green. That is the
+# same silent-success shape this repo keeps finding, imported wholesale from
+# another product's architecture.
 #
-#   AWS Route 53 Health Checks: aws route53 create-health-check ...
-#                                  with --health-check-config
-#                                  HTTPSPort=443,Type=HTTPS,
-#                                  ResourcePath=/api/livez,
-#                                  FullyQualifiedDomainName=<host>
+# `livez` remains the right probe for a multi-replica deployment. If agrent
+# ever grows one, revisit this — and re-derive the reasoning rather than
+# reinstating the paragraph above.
 #
-# All four monitors below should route to the SAME PagerDuty service
-# as the in-cluster critical alerts (so on-call doesn't context-switch
-# between two tools to triage a service-down event).
+# ─── WHAT IS DEPLOYED ───────────────────────────────────────────────────
+#
+# GCP Cloud Monitoring, project hazel-design-419410. Not a third-party tool:
+# the project already had monitoring.googleapis.com enabled and zero checks
+# configured, so this needed an account nobody had to create.
 
 apiVersion: v1
 kind: ExternalUptimeContract
 metadata:
-  description: |
-    Inflect Compliance — external uptime monitor spec. Provider-agnostic;
-    operators implement these monitors in UptimeRobot / Pingdom /
-    Statuscake / Route 53 Health Checks and route alarms to PagerDuty.
+  product: agri-saas
+  deployment: single GCE VM (agrent, europe-west1-b), docker compose, no replicas
+  provider: GCP Cloud Monitoring
+  issue: '854'
+  verified: '2026-09-17'
 
 monitors:
-  # ─── Production ────────────────────────────────────────────────────
-  - name: inflect-livez-production
-    url: https://app.example.com/api/livez
+  - name: agrent-readyz
+    gcp_uptime_check_id: agrent-readyz-oKY0R5q09QU
+    url: https://app.agrent.bg/api/readyz
     method: GET
-    interval_seconds: 60                          # 1 minute
+    interval_seconds: 60
     timeout_seconds: 10
     expect:
-      status_code: 200
-      body_contains: '"status":"alive"'           # stable substring from livez response body
-      ssl_valid: true                             # also catches expired certs externally
-    locations:                                    # multi-region prevents single-pop false-positives
-      - us-east
-      - us-west
-      - eu-west
-      - ap-southeast
-    on_failure:
-      consecutive_failures_to_alarm: 2            # 2 minutes total before paging
-      severity: critical
-      route_to: pagerduty
-      pagerduty_dedup_key_template: "external-uptime:inflect-livez-production"
-      include_response_body_in_alarm: true        # so on-call sees the actual response
-
-  # ─── Staging ───────────────────────────────────────────────────────
-  - name: inflect-livez-staging
-    url: https://staging.example.com/api/livez
-    method: GET
-    interval_seconds: 300                         # 5 minutes — staging is lower priority
-    timeout_seconds: 10
-    expect:
-      status_code: 200
-      body_contains: '"status":"alive"'
+      status_class: 2xx
+      body_contains: '"status":"ready"'
       ssl_valid: true
-    locations:
-      - us-east
+    # GCP's global setting probes from six regions. Recorded because a
+    # single-region check cannot tell an outage from a network partition,
+    # and because the alert threshold below is expressed in regions.
+    locations_observed:
+      - apac-singapore
+      - eur-belgium
+      - sa-brazil-sao_paulo
+      - usa-iowa
+      - usa-oregon
+      - usa-virginia
     on_failure:
-      consecutive_failures_to_alarm: 3            # 15 minutes — staging tolerance
-      severity: warning
-      route_to: slack                             # warnings only — no page
-      include_response_body_in_alarm: true
+      alert_policy: 'agrent production is not ready (#854)'
+      alert_policy_id: '7476065850461018137'
+      # More than one region failing, sustained 60s. One region failing is a
+      # network partition to that region; two is the service.
+      condition: COUNT_FALSE > 1 over a 300s window, for 60s
+      auto_close_seconds: 1800
 
-# ─── Routing notes ──────────────────────────────────────────────────
-# Critical external-uptime alerts → PagerDuty.
-# This must be the SAME PagerDuty service as the in-cluster critical
-# alerts (`infra/alerts/receivers.yml::pagerduty-critical`). On-call
-# triages from one place.
+# ─── NOTIFICATION ──────────────────────────────────────────────────────
 #
-# Warning external-uptime alerts → Slack #alerts-warnings.
-# Same channel as in-cluster warnings (`receivers.yml::slack-warnings`).
+# The alert policy is ENABLED and has one email notification channel attached
+# (`agrent on-call`, channel id 11199896282881593035). The address lives in GCP
+# project config and deliberately NOT in this file: the repository is public.
 #
-# When both an in-cluster critical AND the external monitor fire for
-# the same outage:
-#   - PagerDuty deduplicates by (incident.key + service). Use distinct
-#     dedup keys (`external-uptime:...` vs the in-cluster alert's
-#     default key) so both surfaces see the incident. Don't suppress
-#     one — they're independent failure-domain signals (in-cluster =
-#     "the cluster sees it broken"; external = "the user sees it
-#     broken"). Sometimes only one fires.
+# A verification email was sent through the channel on 2026-09-17 to prove the
+# path delivers, rather than inferring it from the API accepting the config.
+#
+# WHAT THIS STILL IS NOT: a rota, or a pager. One address, one person, and
+# email. So detection latency is bounded (~2 minutes) and time from the alert
+# landing in an inbox to a human acting on it is NOT — nobody is on call, and
+# an outage at 03:00 waits for someone to wake up and read email. Do not write
+# an acknowledge or response time anywhere on the strength of this channel.
+#
+# ─── WHAT THIS DOES NOT COVER ───────────────────────────────────────────
+#
+#   - Staging. There is no staging deployment for this product.
+#   - Certificate expiry beyond what `ssl_valid` catches at probe time.
+#   - Anything about the worker: `readyz` reports the app tier's view of
+#     redis, not whether the BullMQ worker is consuming. A wedged worker is
+#     still invisible — that is #809, and it is a different probe.
+#   - Whether an alert reaches a human out of hours. There is no rota.
