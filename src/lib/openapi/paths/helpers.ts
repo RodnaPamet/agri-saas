@@ -18,8 +18,11 @@
  *
  * So: sidecar modules, one per domain, sharded to stay reviewable — and a
  * guard (`tests/guards/openapi-paths-complete.test.ts`) that compares the
- * registered paths against the route files on disk, so a route without a spec
- * fails CI rather than going quietly undocumented.
+ * registered paths against the route files on disk, so a NEW route without a
+ * spec fails CI rather than going quietly undocumented. The existing tail sits
+ * on a shrinking baseline beside that guard; it is gated, not yet described.
+ *
+ * Both sentences above described the guard for weeks before it existed.
  *
  * ## The minimum honest operation
  *
