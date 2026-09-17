@@ -14,12 +14,15 @@ services:
     build:
       context: .
       dockerfile: deploy/postgres/Dockerfile
-    # This tag REPEATS the base image's version: `16-3.4` is the tag in
+    # This tag REPEATS the base image's version: `16-trixie` is the tag in
     # `.github/postgis-image`, the single source of truth, spelled inside a
-    # local image name. Bump the pin and bump this too — no
-    # `postgis/postgis:` search can find this copy, and nothing
-    # enforces agreement automatically yet (#860).
-    image: agri-saas-postgres:16-3.4-pgvector
+    # local image name. Bump the pin and bump this too — no `postgres:`
+    # search finds this copy, and nothing enforces agreement automatically
+    # yet (#860). The `-postgis-pgvector` suffix is not decoration: the base
+    # is now a STOCK postgres image, so unlike the old `postgis/postgis`
+    # base both extensions come from this Dockerfile rather than one of them
+    # being baked in.
+    image: agri-saas-postgres:16-trixie-postgis-pgvector
     container_name: agri-saas-test-db
     environment:
       POSTGRES_USER: test

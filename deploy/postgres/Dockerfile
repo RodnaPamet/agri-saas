@@ -1,27 +1,34 @@
-# PostGIS + pgvector for local dev — spatial parcel geometry (PostGIS) AND
-# RAG embeddings (pgvector) in one Postgres. Built FROM the vetted official
-# postgis image + pgvector from PGDG (the apt repo the image already trusts),
-# mirroring the CI `.github/actions/enable-pgvector` step so dev and CI match.
+# PostGIS + pgvector for dev, CI's restore drill, and the production VM's
+# `agrent-db` — spatial parcel geometry (PostGIS) AND RAG embeddings
+# (pgvector) in one Postgres, both installed from PGDG, the official
+# PostgreSQL apt repo the base image already trusts.
 #
 # The tag below MUST equal the line in `.github/postgis-image`, the single
 # source of truth — `FROM` takes no runtime lookup, so this is a literal by
-# necessity. tests/guards/postgis-image-single-source.test.ts fails CI if the
-# two disagree.
-FROM postgis/postgis:16-3.4
-
-# `Acquire::Check-Valid-Until=false` is REQUIRED here for exactly the reason
-# it is required in `.github/actions/enable-pgvector/action.yml` — see that
-# file for the full argument and for why it is not ready to come out (#832).
-# In short: the base is Debian bullseye, whose security Release file froze at
-# `Valid-Until: Mon, 07 Sep 2026 21:13:04 UTC`, so a plain `apt-get update`
-# exits 100 and this build fails outright.
+# necessity. Nothing enforces that agreement automatically yet (#860).
 #
-# #833 added the flag to the CI action ONLY. This file and
-# `infra/scripts/restore-test-gcp.sh` run the same `apt-get update` against
-# the same frozen suite and were left without it, so from 2026-09-07 the dev
-# stack (`docker-compose up -d`), the VM's `agrent-db:local` build
-# (`deploy/docker-compose.vm.yml`) and the monthly restore drill could not
-# build at all. Verified: exit 100 without the flag, exit 0 with it.
-RUN apt-get -o Acquire::Check-Valid-Until=false update \
-    && apt-get install -y --no-install-recommends postgresql-16-pgvector \
+# THE BASE IS A STOCK POSTGRES IMAGE, NOT `postgis/postgis` (#832). The old
+# base was `postgis/postgis:16-3.4`, which is Debian bullseye, whose security
+# `Release` file froze on 2026-09-07 — past which a plain `apt-get update`
+# exited 100 and this build failed outright. Debian re-signed that suite on
+# 2026-09-12 with no `Valid-Until` at all, so the break has lapsed; bullseye
+# is still `oldoldstable` with its LTS ended 2026-08-31, and an index kept
+# valid by ad-hoc re-signing is a worse foundation than a supported suite. `postgis/postgis` publishes no
+# Debian tag on a maintained suite for Postgres 16 (its `16-3.5` is
+# `FROM postgres:16-bullseye` and reproduces the same failure), and its only
+# trixie tag forces a Postgres MAJOR bump. So PostGIS moves from "baked into
+# the base" to "installed here", which is why this file now installs two
+# packages where it used to install one.
+#
+# Trixie's regular security support runs to 2028-08-09, so the
+# `Acquire::Check-Valid-Until=false` flag this RUN used to carry is GONE
+# rather than moved. Measurements behind the choice — image size, migrations
+# with red controls, the collation and PostGIS-catalog risk on a real PGDATA
+# — are in docs/postgis-base-image-options.md.
+FROM postgres:16-trixie
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        postgresql-16-postgis-3 \
+        postgresql-16-pgvector \
     && rm -rf /var/lib/apt/lists/*

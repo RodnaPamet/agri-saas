@@ -1,13 +1,14 @@
-name: Enable pgvector
+name: Enable PostGIS and pgvector
 description: >-
-  Install the pgvector extension into the running postgis/postgis service
-  container from PGDG (the official PostgreSQL apt repo the postgis image
-  already trusts), so `CREATE EXTENSION vector` works in the RAG migration.
-  Keeps the vetted postgis image — no new image in the trust boundary.
+  Install the postgis and pgvector extensions into the running postgres
+  service container from PGDG (the official PostgreSQL apt repo), so
+  `CREATE EXTENSION postgis` works for the parcel-geometry migrations and
+  `CREATE EXTENSION vector` works in the RAG migration. The service image is
+  the stock `postgres` image; PGDG is the one apt repo added on top.
 runs:
   using: composite
   steps:
-    - name: Install postgresql-16-pgvector into the postgis service container
+    - name: Install postgresql-16-postgis-3 + postgresql-16-pgvector into the postgres service container
       shell: bash
       run: |
         set -euo pipefail
@@ -62,42 +63,33 @@ runs:
         fi
         cid="${cids[0]}"
 
-        # ── Why `Acquire::Check-Valid-Until=false` is still here ────────
+        # ── The `Acquire::Check-Valid-Until=false` flag is GONE (#832) ──
         #
-        # It is REQUIRED, not defensive. It is also still a STOPGAP — and
-        # the WHY NOT YET note below is why that stopgap is not ready to
-        # come out in this change, or in any change that is only a tag edit.
+        # It was required, not defensive: the old base was Debian bullseye,
+        # whose security `Release` file stopped being refreshed on
+        # 2026-09-07T21:13:04Z, past which `apt-get update` exited 100 and
+        # every job using this action failed. Debian re-signed that suite on
+        # 2026-09-12 with no `Valid-Until` field, so the flag has been a
+        # no-op since — it was load-bearing for five days. The note that stood here said
+        # the flag would come out "when #832 lands a maintained-Debian base,
+        # where a red run has one cause". This is that change: the base is
+        # now `postgres:16-trixie`, whose suite has regular security support
+        # until 2028-08-09. A stale index is no longer being worked around
+        # because the index is not stale.
         #
-        # The image is Debian bullseye, and bullseye-security's Release file
-        # stopped being refreshed on 2026-09-07T21:13:04Z:
+        # That note also said migrating "means publishing our own image ...
+        # a registry and supply-chain decision, not a tag edit". Half right.
+        # Publishing our own image is a real option (A' in
+        # docs/postgis-base-image-options.md §9) and it is NOT required:
+        # PGDG carries both postgresql-16-postgis-3 and
+        # postgresql-16-pgvector for trixie, so a stock `postgres` service
+        # container plus this step is sufficient. Measured cost of adding
+        # PostGIS here: 36s -> 50s per job, six jobs, in parallel.
         #
-        #   Date:        Mon, 31 Aug 2026 21:13:04 UTC
-        #   Valid-Until: Mon, 07 Sep 2026 21:13:04 UTC
-        #
-        # Past that instant `apt-get update` exits 100 — "Release file ... is
-        # expired" — so this step, and every job that uses it, fails.
-        #
-        # It reads as a security relaxation and is not one. The suite is
-        # FROZEN, so there are no newer security updates being withheld; the
-        # index is simply stale. And `postgresql-16-pgvector` comes from
-        # PGDG, a separate and still-maintained repo, so its freshness is
-        # unaffected. What the flag buys is that a frozen debian-security
-        # index stops failing the whole `update`.
-        #
-        # WHY NOT YET (#832) — checked 2026-09-10, and the reason is not
-        # inertia. `postgis/postgis` publishes NO Debian tag on a maintained
-        # suite for Postgres 16: upstream's 16-3.5 Dockerfile is literally
-        # `FROM docker.io/postgres:16-bullseye`, and `16-3.5` reproduces this
-        # exact exit 100. The only trixie-based tag is `18-3.6`, which forces
-        # a Postgres MAJOR bump (out of scope), and `16-3.5-alpine` cannot
-        # supply pgvector for PG16 at all — Alpine's `postgresql-pgvector`
-        # depends on `postgresql18`. Migrating therefore means publishing our
-        # own image (postgres:16-trixie + PGDG postgis + pgvector, both of
-        # which are available there), which is a registry and supply-chain
-        # decision, not a tag edit.
-        #
-        # So: do NOT "clean this up". Removing the flag re-breaks every job
-        # that touches this action. When #832 lands a maintained-Debian base,
-        # the flag comes out in THAT change, where a red run has one cause.
-        docker exec "$cid" sh -c 'apt-get -o Acquire::Check-Valid-Until=false update -qq && apt-get install -y -qq postgresql-16-pgvector'
-        echo "pgvector installed into container $cid"
+        # What DID stay true from that note: `postgis/postgis` still
+        # publishes no Debian tag on a maintained suite for Postgres 16 —
+        # its 16-3.5 is `FROM postgres:16-bullseye` and reproduces the same
+        # exit 100. That is why the base is a plain postgres image now
+        # rather than a newer postgis/postgis tag.
+        docker exec "$cid" sh -c 'apt-get update -qq && apt-get install -y -qq postgresql-16-postgis-3 postgresql-16-pgvector'
+        echo "postgis + pgvector installed into container $cid"

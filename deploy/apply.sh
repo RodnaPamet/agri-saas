@@ -36,10 +36,44 @@ HEALTH_ORIGIN="${HEALTH_ORIGIN:-https://35-187-80-26.sslip.io}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOCAL_COMPOSE="${SCRIPT_DIR}/${COMPOSE_BASENAME}"
 REMOTE_COMPOSE="${REMOTE_DIR}/${COMPOSE_BASENAME}"
+
+# The `db` service has `build: context: ./deploy/postgres`, so the compose file
+# alone is NOT the deployable unit — the Dockerfile beside it decides what the
+# production database image IS. This script copied only the compose file until
+# 2026-09-17, and `check-drift.sh` hashed only the compose file, so the VM's
+# copy drifted undetected: measured that day, the VM held a 2026-06-27 version
+# that predated the `Acquire::Check-Valid-Until` flags entirely, three months
+# behind the repo, with drift green throughout.
+LOCAL_DB_CTX="${SCRIPT_DIR}/postgres"
+REMOTE_DB_CTX="${REMOTE_DIR}/deploy/postgres"
 TS="$(date +%Y%m%d-%H%M%S)"
 
 log() { printf '\033[36m[apply]\033[0m %s\n' "$*"; }
 err() { printf '\033[31m[apply] ERROR:\033[0m %s\n' "$*" >&2; }
+
+# ── COMPOSE_BASENAME is an allowlist, not a free variable ────────────────
+#
+# This script's job is one file: the repo-canonical prod compose. The override
+# existed as a bare default, so `COMPOSE_BASENAME=docker-compose.prod.yml
+# deploy/apply.sh` was a supported invocation — and that file hardcodes a
+# database name this stack does not use. The sequence is copy-up, `docker
+# compose config` (which validates SYNTAX, not that the database exists),
+# `up -d`, and only THEN health-verify, so the outage lands before anything
+# notices. check-drift.sh would never have warned either: it only ever reads
+# whatever this variable points at, so drift stays green on a file it does not
+# look at.
+#
+# Refuse by default. The escape hatch is deliberately awkward to type, because
+# reaching for it should be a decision and not a reflex.
+CANONICAL_COMPOSE="docker-compose.vm.yml"
+if [ "$COMPOSE_BASENAME" != "$CANONICAL_COMPOSE" ] \
+   && [ "${I_KNOW_THIS_IS_NOT_THE_CANONICAL_COMPOSE:-0}" != "1" ]; then
+    err "refusing to act on '${COMPOSE_BASENAME}' — the canonical compose is '${CANONICAL_COMPOSE}'."
+    err "  Every running container on the prod VM is labelled with that file."
+    err "  If you genuinely mean another one, set"
+    err "  I_KNOW_THIS_IS_NOT_THE_CANONICAL_COMPOSE=1 and say why in your notes."
+    exit 2
+fi
 
 [ -f "$LOCAL_COMPOSE" ] || { err "missing $LOCAL_COMPOSE"; exit 1; }
 
@@ -61,6 +95,21 @@ ssh_vm "sudo cp -a '${REMOTE_COMPOSE}' '${REMOTE_COMPOSE}.bak.${TS}'"
 log "copying ${LOCAL_COMPOSE} → VM"
 gcloud compute scp "$LOCAL_COMPOSE" "${VM_NAME}:/tmp/${COMPOSE_BASENAME}.new" --zone "$VM_ZONE"
 ssh_vm "sudo mv '/tmp/${COMPOSE_BASENAME}.new' '${REMOTE_COMPOSE}' && sudo chown root:root '${REMOTE_COMPOSE}'"
+
+# …and the db build context, for the reason above. Backed up the same way the
+# compose file is, so the rollback command at the end restores a matched pair.
+log "backing up remote ${REMOTE_DB_CTX}/Dockerfile → .bak.${TS}"
+ssh_vm "sudo cp -a '${REMOTE_DB_CTX}/Dockerfile' '${REMOTE_DB_CTX}/Dockerfile.bak.${TS}' 2>/dev/null || true"
+log "copying ${LOCAL_DB_CTX}/Dockerfile → ${VM_NAME}:${REMOTE_DB_CTX}/Dockerfile"
+gcloud compute scp "${LOCAL_DB_CTX}/Dockerfile" "${VM_NAME}:/tmp/Dockerfile.db.new" --zone "$VM_ZONE"
+ssh_vm "sudo mkdir -p '${REMOTE_DB_CTX}' && sudo mv '/tmp/Dockerfile.db.new' '${REMOTE_DB_CTX}/Dockerfile' && sudo chown root:root '${REMOTE_DB_CTX}/Dockerfile'"
+
+# NOTE: copying the Dockerfile does NOT rebuild the image. `docker compose up -d`
+# below reuses `agrent-db:local` if it exists, so a base-image change needs an
+# explicit `docker compose -f <compose> build db` and a database cutover — see
+# docs/runbooks/postgis-trixie-cutover.md. That is deliberate: rebuilding a
+# production database image as a side effect of a compose apply is exactly the
+# surprise this script should not spring.
 
 # ── 3. Validate ──────────────────────────────────────────────────────────
 log "validating on VM: docker compose config"
