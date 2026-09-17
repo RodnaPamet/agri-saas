@@ -9,8 +9,9 @@ services:
     # This tag REPEATS the base image's version: `16-trixie` is the tag in
     # `.github/postgis-image`, the single source of truth, spelled inside a
     # local image name. Bump the pin and bump this too — no `postgres:`
-    # search finds this copy, and nothing enforces agreement automatically
-    # yet (#860). The `-postgis-pgvector` suffix is not decoration: the base
+    # search finds this copy, which is why
+    # tests/guards/postgis-image-single-source.test.ts checks this EMBEDDED
+    # tag against the pin by name rather than by a `postgres:` scan (#860). The `-postgis-pgvector` suffix is not decoration: the base
     # is now a STOCK postgres image, so unlike the old `postgis/postgis`
     # base both extensions come from this Dockerfile rather than one of them
     # being baked in.
