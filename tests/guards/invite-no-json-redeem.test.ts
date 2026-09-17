@@ -19,31 +19,48 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { collectSourceFiles } from '../helpers/collect-files';
+
 const ROOT = path.resolve(__dirname, '../..');
-const INVITE_PAGES_DIR = path.join(ROOT, 'src', 'app', 'invite');
+const INVITE_PAGES_ROOT = 'src/app/invite';
 
 // A backtick template literal that is EXACTLY `/api/invites/${…}` or
 // `/api/org/invite/${…}` — i.e. the bare redeem endpoint with no
 // `/accept-redirect` or `/start-signin` suffix before the closing backtick.
 const BARE_REDEEM_RE = /`\/api\/(?:invites|org\/invite)\/\$\{[^}]+\}`/g;
 
-function walkTsx(dir: string): string[] {
-    if (!fs.existsSync(dir)) {
-        throw new Error(`scan root does not exist: ${dir} — a renamed root would scan zero files and pass (#875)`);
-    }
-    const out: string[] = [];
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) out.push(...walkTsx(full));
-        else if (entry.name.endsWith('.tsx') || entry.name.endsWith('.ts')) out.push(full);
-    }
-    return out;
+/**
+ * The invite pages, absolute (the report below relativises against ROOT).
+ *
+ * `collectSourceFiles` throws on a missing root (#875) AND on an empty result
+ * (#865) — the second is the one that matters here. The existence check this
+ * replaces proved the DIRECTORY was there and said nothing about whether the
+ * walk found any pages, and `expect(offenders).toEqual([])` is satisfied by a
+ * walk that found none.
+ *
+ * The floor is 2 on purpose. This guard covers exactly two entry points — the
+ * tenant invite page (`/api/invites/:token`) and the org one
+ * (`/api/org/invite/:token`), both named in the docblock above. If one of them
+ * disappears from the selection, half the guard is gone, and a floor of 1 would
+ * not say so.
+ */
+function invitePageFiles(): string[] {
+    return collectSourceFiles({ roots: [INVITE_PAGES_ROOT], floor: 2 });
 }
 
 describe('Invite flow never navigates to the raw-JSON redeem endpoint', () => {
+    /**
+     * Control. The scan below expects no offenders, which an empty file list
+     * also satisfies. This is a small population, so the assertion is small —
+     * but a population of zero is the failure it exists to catch.
+     */
+    it('the selector selects — the invite pages are scanned', () => {
+        expect(invitePageFiles().length).toBeGreaterThan(1);
+    });
+
     it('no invite page form/link targets the bare /api/invites/:token (JSON) endpoint', () => {
         const offenders: string[] = [];
-        for (const file of walkTsx(INVITE_PAGES_DIR)) {
+        for (const file of invitePageFiles()) {
             const lines = fs.readFileSync(file, 'utf8').split('\n');
             lines.forEach((line, i) => {
                 for (const m of line.matchAll(BARE_REDEEM_RE)) {

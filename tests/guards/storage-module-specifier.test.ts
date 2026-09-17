@@ -36,8 +36,10 @@
  * If `storage.ts` is ever collapsed into the directory, delete this guard
  * in the same diff — the ambiguity it exists for will be gone.
  */
-import { readFileSync, readdirSync, statSync, existsSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
+
+import { collectSourceFiles } from '../helpers/collect-files';
 
 const ROOT = join(__dirname, '..', '..');
 const SRC = join(ROOT, 'src');
@@ -45,14 +47,19 @@ const SRC = join(ROOT, 'src');
 /** The directory that legitimately refers to its own files. */
 const STORAGE_DIR = join('src', 'lib', 'storage');
 
-function walk(dir: string): string[] {
-    const out: string[] = [];
-    for (const entry of readdirSync(dir)) {
-        const full = join(dir, entry);
-        if (statSync(full).isDirectory()) out.push(...walk(full));
-        else if (full.endsWith('.ts') || full.endsWith('.tsx')) out.push(full);
-    }
-    return out;
+/**
+ * Every `.ts`/`.tsx` file under `src/`, absolute — the call site strips the
+ * ROOT prefix, because `findIndexSpecifiers` keys its storage-directory
+ * exemption on the repo-relative path.
+ *
+ * Collected through `collectSourceFiles` so an EMPTY result fails (#865). The
+ * live assertion here is `toEqual({ offenders: [] })`; the mutation proofs
+ * below feed the detector hand-written fixtures, so they stay green whatever
+ * the walk does. Nothing in this file would have noticed a walk that stopped
+ * returning files. The floor sits well under the 1958 present today.
+ */
+function srcFiles(): string[] {
+    return collectSourceFiles({ roots: ['src'], floor: 1000 });
 }
 
 /** Exported for the mutation proof. */
@@ -76,6 +83,16 @@ export function findIndexSpecifiers(
 }
 
 describe('storage module specifier', () => {
+    /**
+     * Control. `findIndexSpecifiers` is proven against hand-written fixtures
+     * below, which stay green whatever the walk does — so the fixtures prove
+     * the DETECTOR and this proves the POPULATION. Both are needed: a working
+     * detector over an empty list is still a guard that cannot fail.
+     */
+    it('the selector selects — src/ is scanned, not an empty list', () => {
+        expect(srcFiles().length).toBeGreaterThan(1000);
+    });
+
     it('the ambiguity this guard exists for is real', () => {
         // If either of these stops being true the guard is either
         // pointless or wrong, and the docblock above needs re-reading.
@@ -91,7 +108,7 @@ describe('storage module specifier', () => {
     });
 
     it('no file outside src/lib/storage/ imports @/lib/storage/index', () => {
-        const files = walk(SRC).map((full) => ({
+        const files = srcFiles().map((full) => ({
             rel: full.replace(ROOT + '/', ''),
             text: readFileSync(full, 'utf8'),
         }));

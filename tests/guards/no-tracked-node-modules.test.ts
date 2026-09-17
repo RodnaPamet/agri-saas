@@ -20,6 +20,8 @@
 import { execFileSync } from 'node:child_process';
 import * as path from 'path';
 
+import { collectTrackedFiles } from '../helpers/collect-files';
+
 const ROOT = path.resolve(__dirname, '../..');
 
 function git(args: string[]): string {
@@ -27,12 +29,33 @@ function git(args: string[]): string {
 }
 
 describe('node_modules is never tracked', () => {
+    /**
+     * Control. This guard's healthy answer is an EMPTY result, which makes it
+     * uniquely vulnerable: a `git()` that returns nothing — wrong arguments, a
+     * broken binary, the wrong cwd — is indistinguishable from the pass. So
+     * prove the command can return something on a query that must not be empty.
+     */
+    it('the selector selects — git ls-files answers a query that cannot be empty', () => {
+        expect(git(['ls-files', '--', 'package.json'])).toContain('package.json');
+    });
+
     it('no tracked path is or lives under node_modules', () => {
         // `ls-files` lists the index, so this catches the symlink blob, a
         // committed directory, and any stray file beneath one.
-        const tracked = git(['ls-files', '--', 'node_modules', '*/node_modules'])
-            .split('\n')
-            .filter(Boolean);
+        //
+        // This is the inverted case the shared collector exists to keep
+        // honest (#865). Everywhere else an empty selection is the defect;
+        // here it is the PASS, so the floor is 0 — and `expectEmptyBecause`
+        // is what makes that a stated decision rather than a floor nobody
+        // got round to setting. Do NOT raise it to 1: a floor of 1 would
+        // demand that node_modules BE tracked, inverting the guard.
+        const tracked = collectTrackedFiles({
+            roots: ['node_modules', '*/node_modules'],
+            floor: 0,
+            expectEmptyBecause:
+                'this guard asserts node_modules is NOT tracked, so zero matching ' +
+                'index entries is the healthy answer, not a broken selector',
+        }).map((abs) => path.relative(ROOT, abs).replace(/\\/g, '/'));
 
         expect(tracked).toEqual([]);
     });

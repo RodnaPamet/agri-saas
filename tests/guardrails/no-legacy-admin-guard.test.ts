@@ -24,6 +24,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { collectSourceFiles } from '../helpers/collect-files';
+
 const SRC_DIR = path.resolve(__dirname, '../../src');
 const REMOVED_MODULE = path.resolve(SRC_DIR, 'lib/auth/require-admin.ts');
 
@@ -49,16 +51,18 @@ function stripComments(src: string): string {
         .replace(/(^|[^:])\/\/.*$/gm, '$1');
 }
 
-function collectSourceFiles(dir: string, acc: string[] = []): string[] {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-            collectSourceFiles(full, acc);
-        } else if (/\.(ts|tsx)$/.test(entry.name)) {
-            acc.push(full);
-        }
-    }
-    return acc;
+/**
+ * Every `.ts`/`.tsx` file under `src/`, as absolute paths (the call site below
+ * relativises against SRC_DIR for its report).
+ *
+ * Collected through `collectSourceFiles` so an EMPTY result fails (#865). This
+ * ratchet's only real assertion is `expect(violations).toEqual([])`, which a
+ * collector returning nothing satisfies for free — a renamed `src/` or a
+ * broken walk would have retired the ban on the legacy admin guard silently.
+ * The floor sits well under the 1958 files present today.
+ */
+function srcFiles(): string[] {
+    return collectSourceFiles({ roots: ['src'], floor: 1000 });
 }
 
 /** Returns the banned tokens found in real (non-comment) code. */
@@ -79,7 +83,7 @@ describe('No legacy admin guard', () => {
 
     test('no src file references the legacy role-tier guard', () => {
         const violations: string[] = [];
-        for (const file of collectSourceFiles(SRC_DIR)) {
+        for (const file of srcFiles()) {
             const hits = scanForLegacyGuard(fs.readFileSync(file, 'utf-8'));
             if (hits.length > 0) {
                 violations.push(`${path.relative(SRC_DIR, file)} → ${hits.join(', ')}`);
