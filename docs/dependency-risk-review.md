@@ -86,17 +86,19 @@ declared in `dependencies`.
 | **Maintenance** | Active (last publish 2026-03), not deprecated. |
 | **Decision** | **Reviewed — correctly classified, at latest, no action.** |
 
-### nodemailer — `^9.0.0`
+### nodemailer — `^10.0.10`
 
 | | |
 |---|---|
 | **Direct?** | Yes (also a peer of `next-auth@4`, pinned to the root version via the `overrides` block — `"nodemailer": "$nodemailer"`). |
 | **Runtime use** | `src/lib/mailer.ts` — `NodemailerProvider` wraps `nodemailer.createTransport` for production SMTP; selected by `initMailerFromEnv()` when `SMTP_HOST` is set. Underpins all transactional email. |
 | **Classification** | `dependencies` — **correct**. The mailer ships and runs in production. |
-| **Version** | Bumped `8.0.11 → 9.0.0` (Dependabot, 2026-06). `9.0.0` is `latest`. The v9 major is a maintenance break — it drops support for end-of-life Node versions and removes the long-deprecated built-in `xoauth2` token generator and a few legacy options. None of those are reachable from our usage. |
-| **Exposure** | Handles SMTP credentials + outbound network egress. nodemailer has a CVE history (header-injection classes); v9 is the current hardened line. The code passes only structured fields (`to`, `subject`, `text`/`html`, `bcc`, `attachments`) to `sendMail` — no raw header construction, no `xoauth2`. The v9 surface our two call sites touch (`createTransport` SMTP options + `sendMail` structured fields) is unchanged from v8; `npm run typecheck` is clean against the installed v9 + `@types/nodemailer@^8`. |
-| **Maintenance** | Actively maintained; v9 is the current major line. |
-| **Decision** | **Reviewed — v9 major bump verified safe for our usage; reviewed major raised 8 → 9.** |
+| **Version** | Bumped `9.1.1 → 10.0.10` (2026-09-17). The v10 major is a REBUILD, not a maintenance break: the project migrated to TypeScript and now publishes a dual ESM/CJS build with its own bundled `.d.ts`. `v9` was `main: lib/nodemailer.js` with no `types` and no `exports` map; `v10` is `main: ./dist/cjs/nodemailer.js`, `types: ./dist/cjs/nodemailer.d.ts`, and a full `exports` map. Node 20+ is now required (we run 22, and the Dockerfile is `node:22-alpine`). Runtime dependencies: still **zero**. Dependabot's PR proposed `10.0.3`; it was raised to `10.0.10` before merge because seven patches had shipped in between, several of them on the TypeScript declarations and on DKIM / SMTP connection processing — i.e. the transport and credential path this entry exists to watch. |
+| **Exposure** | Handles SMTP credentials + outbound network egress. nodemailer has a CVE history (header-injection classes). The code passes only structured fields (`to`, `subject`, `text`/`html`, `bcc`, `attachments`) to `sendMail` — no raw header construction, no `xoauth2`. Our own surface is three lines in `src/lib/mailer.ts` and top-level only (`import nodemailer`, `import type { Transporter }`, `nodemailer.createTransport`), so the `exports` map cannot reach it. **The deep-import risk is `next-auth@4`, not us**: `next-auth/providers/email.d.ts` imports six nodemailer internals by path (`nodemailer/lib/{json-transport,sendmail-transport,ses-transport,smtp-pool,smtp-transport,stream-transport}/index.js`), and our `overrides` block forces next-auth onto the ROOT nodemailer version even though it peers `^7.0.7`. Under v10 those paths resolve only through the new `exports` map. That they still resolve is MEASURED, not assumed — `Typecheck`, `Build`, `Lint`, `E2E`, `Docker Build & Scan` and `Trivy` are all green on the bump. |
+| **Maintenance** | Actively maintained; v10 is the current major line, shipping patches frequently (10.0.0 → 10.0.10 inside one release cycle). |
+| **Install-time scripts** | v10 declares `prepare: "npm run build"`. This does **not** execute for us. Per npm's own documentation `prepare` runs before pack/publish, on a local `npm install` with no arguments inside the package's own directory, and when a dependency is installed **from git** — never for a published registry tarball, which is how we install it. Recorded because the opposite was assumed when this bump was first triaged. |
+| **Follow-up** | `@types/nodemailer@^8` is still a devDependency and is now redundant: v10 bundles its own declarations, and the `@types` package describes the v8 API. Typecheck is green with both present, so this is not a blocker — but a stale `@types` shadowing a package's own types is a latent trap and should be removed in its own diff. |
+| **Decision** | **Reviewed — v10 major bump verified safe for our usage; reviewed major raised 9 → 10, at patch 10.0.10.** |
 
 ## Summary
 
@@ -105,7 +107,7 @@ declared in `dependencies`.
 | `js-yaml` | `dependencies` ✓ | `5.2.2` = latest | Reviewed — v5 bump safe |
 | `jszip` | `dependencies` ✓ | `3.10.1` = latest | No action |
 | `pdfkit` | `dependencies` ✓ | `0.18.0` = latest | No action |
-| `nodemailer` | `dependencies` ✓ | `9.0.0` = latest | Reviewed — v9 bump safe |
+| `nodemailer` | `dependencies` ✓ | `10.0.10` = latest | Reviewed — v10 bump safe |
 
 `npm audit --omit=dev --audit-level=moderate` reports **0
 vulnerabilities** in production dependencies. No package is

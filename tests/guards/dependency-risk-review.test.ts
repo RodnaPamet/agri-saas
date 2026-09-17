@@ -58,7 +58,7 @@ const pkg = JSON.parse(
 const REVIEWED: Record<string, { major: number }> = {
     jszip: { major: 3 },
     pdfkit: { major: 0 },
-    nodemailer: { major: 9 },
+    nodemailer: { major: 10 },
 };
 
 /**
