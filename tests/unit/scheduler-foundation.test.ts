@@ -455,24 +455,51 @@ describe('Scheduler', () => {
         expect(summary.results).toEqual([]);
     });
 
+    /** The single executor registered by the test below. */
+    const REGISTERED_JOB = 'health-check' as const;
+
     test('validateRegistrations reports missing executors', async () => {
         const { executorRegistry } = await import('../../src/app-layer/jobs/executor-registry');
         executorRegistry._reset();
 
-        // Register only one job
-        executorRegistry.register('health-check', async () => ({} as JobRunResult));
+        // Register exactly one job — every OTHER scheduled job must then be
+        // reported missing, and this one must not be.
+        executorRegistry.register(REGISTERED_JOB, async () => ({} as JobRunResult));
 
         const { scheduler } = await import('../../src/app-layer/jobs/scheduler');
         const validation = scheduler.validateRegistrations();
 
         expect(validation.valid).toBe(false);
         expect(validation.missing.length).toBeGreaterThan(0);
-        // health-check is not in SCHEDULED_JOBS so this shouldn't affect it
-        // but all schedule-defined jobs should be missing
+
+        // `health-check` USED to be absent from SCHEDULED_JOBS, and this test
+        // relied on that: it registered the one executor it knew could not
+        // collide with the loop below. #809 schedules `health-check` every two
+        // minutes to drive the worker heartbeat, so the sentinel is now a
+        // scheduled job like any other.
+        //
+        // That is worth more than it cost. A registered-but-unscheduled job
+        // proves nothing about `validateRegistrations` — it would be absent
+        // from `missing` whether the function consulted the registry or not.
+        // Now the registered job IS scheduled, so its absence from `missing`
+        // is the discriminating observation, and it is asserted below.
         const { SCHEDULED_JOBS } = await import('../../src/app-layer/jobs/schedules');
-        for (const schedule of SCHEDULED_JOBS) {
-            expect(validation.missing).toContain(schedule.name);
-        }
+        const expectedMissing = SCHEDULED_JOBS.map((s) => s.name).filter((n) => n !== REGISTERED_JOB);
+
+        // Positive control: an empty list would assert nothing at all.
+        expect(expectedMissing.length).toBeGreaterThan(0);
+
+        // Asserted as a set difference rather than a loop of `toContain`, so
+        // there is no iteration to gut: a loop over an empty array passes
+        // while checking nothing, which is the defect class this repo keeps
+        // finding in its own guards.
+        const reported = new Set(validation.missing);
+        expect(expectedMissing.filter((n) => !reported.has(n))).toEqual([]);
+
+        // The one job that HAS an executor must not be reported missing.
+        // This is the discriminating assertion — without it the test passes
+        // whether or not `validateRegistrations` consults the registry.
+        expect(validation.missing).not.toContain(REGISTERED_JOB);
     });
 });
 

@@ -22,6 +22,7 @@ import 'dotenv/config';
 import { Worker, Job } from 'bullmq';
 import Redis from 'ioredis';
 import pino from 'pino';
+import { beat } from '../src/app-layer/jobs/worker-heartbeat';
 import {
     QUEUE_NAME,
     SOIL_QUEUE_NAME,
@@ -216,6 +217,17 @@ soilWorker.on('failed', (job, error) => {
 });
 soilWorker.on('error', (error) => {
     log.error({ err: error }, 'soil worker error');
+});
+
+// The heartbeat, written from a BullMQ event rather than a timer — a
+// setInterval keeps ticking through a severed Redis connection and would
+// report a wedged worker as healthy (#809). Reaching this line means the
+// worker pulled a job, ran it and came back.
+worker.on('completed', () => {
+    void beat(connection);
+});
+soilWorker.on('completed', () => {
+    void beat(connection);
 });
 
 worker.on('failed', (job, error) => {

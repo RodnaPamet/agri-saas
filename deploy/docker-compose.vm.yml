@@ -161,6 +161,27 @@ services:
       DATA_ENCRYPTION_KEY: "${DATA_ENCRYPTION_KEY:?DATA_ENCRYPTION_KEY is required}"
     volumes:
       - uploads:/data/uploads
+    # Proves the worker is CONSUMING, not merely running (#809). This service
+    # had no healthcheck at all, so `docker inspect` reported health=none while
+    # app/db/pgbouncer/redis reported healthy — and a wedged worker (blocked
+    # event loop, dead Redis connection, every concurrency slot held by a hung
+    # handler) keeps its container `running` with the web tier green.
+    #
+    # The probe READS a Redis key that worker.ts refreshes from BullMQ's
+    # `completed` event, so a pass means a job was pulled, run and returned. It
+    # enqueues nothing: a probe that created work would pass while the worker's
+    # own consumption was dead, testing Redis instead of the worker.
+    #
+    # start_period covers the slowest legitimate cold start: scheduler.mjs runs
+    # to completion, worker.mjs subscribes, and the `health-check` repeatable
+    # (every 2 min) fires and completes. The key's TTL is 8 min — four missed
+    # beats — so retries here are about transient Redis blips, not staleness.
+    healthcheck:
+      test: ["CMD-SHELL", "node dist/worker-healthcheck.mjs || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 300s
     networks:
       - internal
 
