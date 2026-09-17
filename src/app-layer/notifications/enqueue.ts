@@ -14,27 +14,11 @@ import { logger } from '@/lib/observability/logger';
 import type { Locale } from '@/lib/i18n/locales';
 import {
     buildTaskAssignedEmail,
-    buildEvidenceExpiringEmail,
-    buildPolicyApprovalRequestedEmail,
-    buildPolicyDecisionEmail,
-    buildVendorAssessmentInvitationEmail,
-    buildVendorAssessmentReminderEmail,
-    buildVendorAssessmentSubmittedEmail,
-    buildVendorAssessmentReviewedEmail,
     buildAccessReviewReminderEmail,
     buildAccessReviewOverdueEscalationEmail,
-    buildExceptionExpiringEmail,
     type TaskAssignedPayload,
-    type EvidenceExpiringPayload,
-    type PolicyApprovalRequestedPayload,
-    type PolicyDecisionPayload,
-    type VendorAssessmentInvitationPayload,
-    type VendorAssessmentReminderPayload,
-    type VendorAssessmentSubmittedPayload,
-    type VendorAssessmentReviewedPayload,
     type AccessReviewReminderPayload,
     type AccessReviewOverdueEscalationPayload,
-    type ExceptionExpiringPayload,
 } from './templates';
 
 export interface EnqueueEmailInput {
@@ -60,16 +44,8 @@ export interface EnqueueEmailInput {
     entityId: string;
     payload:
         | TaskAssignedPayload
-        | EvidenceExpiringPayload
-        | PolicyApprovalRequestedPayload
-        | PolicyDecisionPayload
-        | VendorAssessmentInvitationPayload
-        | VendorAssessmentReminderPayload
-        | VendorAssessmentSubmittedPayload
-        | VendorAssessmentReviewedPayload
         | AccessReviewReminderPayload
-        | AccessReviewOverdueEscalationPayload
-        | ExceptionExpiringPayload;
+        | AccessReviewOverdueEscalationPayload;
     sendAfter?: Date;
     requestId?: string;
 }
@@ -155,59 +131,30 @@ async function buildEmailContent(
     type: EmailNotificationType,
     payload:
         | TaskAssignedPayload
-        | EvidenceExpiringPayload
-        | PolicyApprovalRequestedPayload
-        | PolicyDecisionPayload
-        | VendorAssessmentInvitationPayload
-        | VendorAssessmentReminderPayload
-        | VendorAssessmentSubmittedPayload
-        | VendorAssessmentReviewedPayload
         | AccessReviewReminderPayload
-        | AccessReviewOverdueEscalationPayload
-        | ExceptionExpiringPayload,
+        | AccessReviewOverdueEscalationPayload,
     locale: Locale,
 ): Promise<{ subject: string; bodyText: string; bodyHtml: string }> {
     switch (type) {
-        // ── LIVE arms: localised (#694) ──
+        // EVERY arm here is reachable. Verified by enumerating the type
+        // passed at every `enqueueEmail` call site — there are three, in
+        // `usecases/task.ts`, `jobs/access-review-reminder.ts` and
+        // `jobs/access-review-overdue-escalation.ts`.
+        //
+        // Nine arms were deleted in #807. They covered types no producer
+        // ever passed to `enqueueEmail`: POLICY_* / VENDOR_ASSESSMENT_* /
+        // EXCEPTION_EXPIRING lost their models in the GRC teardown, and
+        // EVIDENCE_EXPIRING has a live producer that does NOT come through
+        // here — `jobs/retention-notifications.ts` writes its own
+        // `notificationOutbox` row with strings it localises inline.
+        //
+        // Those enum VALUES still exist in `EmailNotificationType` and must:
+        // `EVIDENCE_EXPIRING` is still written to the outbox by that job, and
+        // removing a Postgres enum value is a destructive migration for no
+        // gain. What is gone is the unreachable code that claimed to render
+        // them.
         case 'TASK_ASSIGNED':
             return buildTaskAssignedEmail(payload as TaskAssignedPayload, locale);
-        // ── UNREACHABLE arms, left English and synchronous (#694) ──
-        //
-        // No producer passes any of these types to `enqueueEmail`. Verified by
-        // grepping every `type: '<T>'` literal outside this file:
-        // POLICY_* / VENDOR_ASSESSMENT_* / EXCEPTION_EXPIRING lost their models
-        // in the GRC teardown, and EVIDENCE_EXPIRING has a live producer that
-        // does NOT come through here — `retention-notifications.ts:169` writes
-        // its own `notificationOutbox` row with inline strings, so this arm and
-        // `buildEvidenceExpiringEmail` are both dead.
-        //
-        // An `async` function auto-wraps a synchronous return, so they need no
-        // change. Deleting them is tracked in #807; doing it here would
-        // bury a localisation diff under a 400-line removal.
-        case 'EVIDENCE_EXPIRING':
-            return buildEvidenceExpiringEmail(payload as EvidenceExpiringPayload);
-        case 'POLICY_APPROVAL_REQUESTED':
-            return buildPolicyApprovalRequestedEmail(payload as PolicyApprovalRequestedPayload);
-        case 'POLICY_APPROVED':
-            return buildPolicyDecisionEmail({ ...(payload as PolicyDecisionPayload), decision: 'APPROVED' });
-        case 'POLICY_REJECTED':
-            return buildPolicyDecisionEmail({ ...(payload as PolicyDecisionPayload), decision: 'REJECTED' });
-        case 'VENDOR_ASSESSMENT_INVITATION':
-            return buildVendorAssessmentInvitationEmail(
-                payload as VendorAssessmentInvitationPayload,
-            );
-        case 'VENDOR_ASSESSMENT_REMINDER':
-            return buildVendorAssessmentReminderEmail(
-                payload as VendorAssessmentReminderPayload,
-            );
-        case 'VENDOR_ASSESSMENT_SUBMITTED':
-            return buildVendorAssessmentSubmittedEmail(
-                payload as VendorAssessmentSubmittedPayload,
-            );
-        case 'VENDOR_ASSESSMENT_REVIEWED':
-            return buildVendorAssessmentReviewedEmail(
-                payload as VendorAssessmentReviewedPayload,
-            );
         case 'ACCESS_REVIEW_REMINDER':
             return buildAccessReviewReminderEmail(
                 payload as AccessReviewReminderPayload,
@@ -217,10 +164,6 @@ async function buildEmailContent(
             return buildAccessReviewOverdueEscalationEmail(
                 payload as AccessReviewOverdueEscalationPayload,
                 locale,
-            );
-        case 'EXCEPTION_EXPIRING':
-            return buildExceptionExpiringEmail(
-                payload as ExceptionExpiringPayload,
             );
         default:
             throw new Error(`Unknown notification type: ${type}`);
