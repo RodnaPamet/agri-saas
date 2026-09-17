@@ -76,6 +76,36 @@ caddy, pgbouncer, redis, db). Docker commands on the VM need `sudo`.
 `/opt/agrent/.env` and the Redis `--requirepass` value are real
 secrets — **never echo them**.
 
+**The `health-check` schedule is load-bearing — do not "tidy it away".**
+`worker` reported `health=none` next to four healthy siblings until #809,
+because a wedged worker (blocked event loop, dead Redis connection, every
+concurrency slot held by a hung handler) keeps its container `running` with
+the web tier green. The container healthcheck runs
+`dist/worker-healthcheck.mjs`, which READS a Redis key that `scripts/worker.ts`
+refreshes from BullMQ's `completed` event — never a `setInterval`, which keeps
+ticking through a severed connection and would report a wedged worker as
+healthy. So a pass means a job was pulled, run and returned.
+
+Events need jobs, which is why `health-check` runs every two minutes. It looks
+like a no-op ping — its executor had sat in `executor-registry.ts` since the
+queue was built with **nothing ever dispatching it** — but deleting that
+schedule makes a perfectly HEALTHY idle worker report unhealthy. It also means
+a green healthcheck proves the SCHEDULER's repeatables are still registered,
+since `scheduler.mjs` runs before `worker.mjs` in the same command. The key's
+TTL is 8 minutes against that 2-minute cron — four missed beats — so the
+container does not flap on one slow one.
+`tests/guards/worker-heartbeat-wiring.test.ts` pins all four links, and
+`tests/integration/bullmq-real-api.test.ts` EXECUTES the chain against a real
+Redis, because a guard asserting source text proves nothing about behaviour.
+
+**Ordering matters when changing it:** the image must carry the probe BEFORE
+the compose healthcheck runs it, or the worker is marked unhealthy for a
+missing file — a signal wrong in the alarming direction, worse than the
+`health=none` it replaces. Merge → GHCR publishes → Watchtower pulls → verify
+`dist/worker-healthcheck.mjs` exists IN THE RUNNING CONTAINER → then
+`deploy/apply.sh`. Note `docker image inspect …:latest` on the VM reads the
+LOCAL cache, not the registry; compare digests or read Watchtower's log.
+
 **The repo is canonical; drift is DETECTABLE, not policy.** The compose
 STRUCTURE lives at **`deploy/docker-compose.vm.yml`** in the repo and is
 kept byte-identical to the VM. Watchtower auto-updates ONLY the `app` +
