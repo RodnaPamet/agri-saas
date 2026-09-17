@@ -142,19 +142,6 @@ const DORMANT_FLOORS: DormantFloor[] = [
             'is the shape that decayed twice, so the review is the whole mitigation.',
         review: '2027-01-16',
     },
-    {
-        key: '@hono/node-server',
-        reason:
-            'The server adapter that arrived on the same dropped @prisma/dev edge as `hono`; ' +
-            'likewise absent from the lockfile at any version. Unlike `hono` it has NO row in ' +
-            "docs/dependency-policy.md's security table, so what ^1.19.13 is a floor against is " +
-            'undocumented — which is the precise state a dormant floor decays from. On review: ' +
-            'either document the advisory it answers, or delete the entry. Dated with the ' +
-            'dead-entry deletions and NOT with `hono`: the thing missing here is a paragraph ' +
-            'somebody can write today, and an undocumented dormant floor is exactly the shape ' +
-            'that decayed twice, so it does not get the long cadence its documented sibling gets.',
-        review: '2026-10-16',
-    },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -206,46 +193,8 @@ interface Waiver {
 }
 
 /** Shared prose for the twelve dead `@visx/*` subkeys — one defect, twelve entries. */
-const VISX_DEAD_SUBKEY =
-    'Dead subkey: this @visx package does not declare the peer the override names, so npm ' +
-    'has never applied it. Only @visx/bounds and @visx/tooltip declare react-dom, and ' +
-    '@visx/curve / @visx/scale (d3 wrappers with no JSX) declare no react peer at all. ' +
-    "docs/dependency-policy.md says \"each @visx/* package's react / react-dom pinned to the " +
-    'root version\"; that is true for 10 of the 22 subkeys and false for these 12. The fix is ' +
-    'to DELETE the dead subkeys — a pure package.json edit that cannot change resolution, ' +
-    'since npm was never applying them — and it is deliberately not in this guard\'s diff so ' +
-    'the guard lands without a dependency change. Waived only until that PR, which is what ' +
-    'the review date below names — nothing else has to happen first.';
-
 const WAIVERS: Waiver[] = [
     // ── B: overrides that cannot act ─────────────────────────────────────
-    { check: 'B', target: '@visx/axis > react-dom', reason: VISX_DEAD_SUBKEY, review: '2026-10-16' },
-    { check: 'B', target: '@visx/clip-path > react-dom', reason: VISX_DEAD_SUBKEY, review: '2026-10-16' },
-    { check: 'B', target: '@visx/curve > react', reason: VISX_DEAD_SUBKEY, review: '2026-10-16' },
-    { check: 'B', target: '@visx/curve > react-dom', reason: VISX_DEAD_SUBKEY, review: '2026-10-16' },
-    { check: 'B', target: '@visx/event > react-dom', reason: VISX_DEAD_SUBKEY, review: '2026-10-16' },
-    { check: 'B', target: '@visx/gradient > react-dom', reason: VISX_DEAD_SUBKEY, review: '2026-10-16' },
-    { check: 'B', target: '@visx/group > react-dom', reason: VISX_DEAD_SUBKEY, review: '2026-10-16' },
-    { check: 'B', target: '@visx/responsive > react-dom', reason: VISX_DEAD_SUBKEY, review: '2026-10-16' },
-    { check: 'B', target: '@visx/scale > react', reason: VISX_DEAD_SUBKEY, review: '2026-10-16' },
-    { check: 'B', target: '@visx/scale > react-dom', reason: VISX_DEAD_SUBKEY, review: '2026-10-16' },
-    { check: 'B', target: '@visx/shape > react-dom', reason: VISX_DEAD_SUBKEY, review: '2026-10-16' },
-    { check: 'B', target: '@visx/text > react-dom', reason: VISX_DEAD_SUBKEY, review: '2026-10-16' },
-    {
-        check: 'B',
-        target: 'npm > undici',
-        reason:
-            'npm@11.19.0 declares no `undici` in dependencies / peerDependencies / ' +
-            'optionalDependencies — it is a transitive of one of its 65 bundleDependencies — ' +
-            'and the only copy npm resolves (node_modules/npm/node_modules/undici) is ' +
-            'inBundle:true, i.e. bytes shipped inside the npm tarball that npm installs as ' +
-            'published. The entry has therefore never moved anything, on either count, and ' +
-            '`npm` here is a devDependency-only CLI. Fix: delete it, or replace it with a ' +
-            'check on the npm version actually shipped; leaving it reads as a mitigation. ' +
-            'Same date as the dead @visx subkeys: one deletion PR covers both, and neither ' +
-            'edit can change a resolved version.',
-        review: '2026-10-16',
-    },
 
     // ── C: floors that exclude nothing ───────────────────────────────────
     {
@@ -428,12 +377,13 @@ describe('overrides — the analysis is looking at something', () => {
         //
         // These are POPULATION floors, and unlike a count of findings they do
         // not fall when a defect is fixed — only when the overrides table
-        // itself shrinks, which is a deliberate act. But one such act is
-        // already dated in WAIVERS below: deleting the twelve dead @visx
-        // subkeys and `npm > undici` takes this to 33 edges / 15 nested. The
-        // floors sit under THAT, because a population floor which the very fix
-        // this file schedules would turn red is the same trap as counting
-        // findings — see the mutation block near the end of the file.
+        // itself shrinks, which is a deliberate act. That act has now happened:
+        // deleting the twelve dead @visx subkeys, `npm > undici` and the
+        // undocumented `@hono/node-server` floor took this from 46 edges / 28
+        // nested to 33 / 15. The floors were already set under THAT, because a
+        // population floor which the very fix this file scheduled would turn
+        // red is the same trap as counting findings — which is why this
+        // assertion did not have to move when the deletion landed.
         expect(analysis.edges.length).toBeGreaterThan(25);
         expect(analysis.edges.filter((e) => e.parent !== null).length).toBeGreaterThan(10);
     });

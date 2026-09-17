@@ -259,51 +259,34 @@
         "picomatch": "^4.0.7",
         "valibot": "^1.4.2",
         "protobufjs": "^8.6.6",
-        "@hono/node-server": "^1.19.13",
         "hono": "^4.12.27",
         "tmp": "^0.2.7",
         "postcss": "$postcss",
         "@grpc/grpc-js": "^1.14.4",
         "find-my-way": "^9.7.0",
         "@visx/axis": {
-            "react": "$react",
-            "react-dom": "$react-dom"
+            "react": "$react"
         },
         "@visx/clip-path": {
-            "react": "$react",
-            "react-dom": "$react-dom"
-        },
-        "@visx/curve": {
-            "react": "$react",
-            "react-dom": "$react-dom"
+            "react": "$react"
         },
         "@visx/event": {
-            "react": "$react",
-            "react-dom": "$react-dom"
+            "react": "$react"
         },
         "@visx/gradient": {
-            "react": "$react",
-            "react-dom": "$react-dom"
+            "react": "$react"
         },
         "@visx/group": {
-            "react": "$react",
-            "react-dom": "$react-dom"
+            "react": "$react"
         },
         "@visx/responsive": {
-            "react": "$react",
-            "react-dom": "$react-dom"
-        },
-        "@visx/scale": {
-            "react": "$react",
-            "react-dom": "$react-dom"
+            "react": "$react"
         },
         "@visx/shape": {
-            "react": "$react",
-            "react-dom": "$react-dom"
+            "react": "$react"
         },
         "@visx/text": {
-            "react": "$react",
-            "react-dom": "$react-dom"
+            "react": "$react"
         },
         "@visx/tooltip": {
             "react": "$react",
@@ -324,9 +307,6 @@
         },
         "cosmiconfig": {
             "js-yaml": "^4.3.2"
-        },
-        "npm": {
-            "undici": "^6.27.0"
         },
         "sharp": "$sharp",
         "nwsapi": ">=2.2.16 <2.2.25",
