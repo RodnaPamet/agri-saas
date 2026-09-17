@@ -69,6 +69,33 @@ export interface ScheduleDefinition {
  */
 export const ALL_SCHEDULES: ScheduleDefinition[] = [
     {
+        /**
+         * The worker's heartbeat driver (#809), and the ONLY reason this
+         * schedule is this frequent.
+         *
+         * `worker.ts` refreshes a Redis heartbeat key from BullMQ's
+         * `completed` event, so the key proves the worker actually pulled a
+         * job and ran it — not merely that its process exists. Events need
+         * jobs, though, and a quiet queue produces none. This cron guarantees
+         * one every two minutes so an IDLE worker still beats.
+         *
+         * The executor has existed in `executor-registry.ts` since the queue
+         * was built and nothing had ever dispatched it — a registered
+         * ping/pong returning 'pong' to nobody. Scheduling it costs one
+         * trivial job every two minutes and turns it into the liveness signal
+         * the container healthcheck reads.
+         *
+         * Because the beat depends on THIS repeatable being registered, a
+         * scheduler that never ran also shows up as a stale key. That is
+         * deliberate: `scheduler.mjs` runs before `worker.mjs` in the same
+         * container command, so a scheduler failure is a worker failure.
+         */
+        name: 'health-check',
+        pattern: '*/2 * * * *',   // every 2 minutes
+        description: 'Drive the worker heartbeat — proves the worker is consuming, not merely running (#809)',
+        defaultPayload: {},
+    },
+    {
         name: 'promotion-lead-retention',
         pattern: '30 3 * * *',    // daily at 03:30 UTC
         description:

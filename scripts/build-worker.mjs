@@ -46,5 +46,13 @@ await build({
     entryPoints: ['scripts/scheduler.ts'],
     outfile: 'dist/scheduler.mjs',
 });
+// The worker's container healthcheck (#809). Bundled here rather than run
+// with tsx because the runner image ships no source tree and no
+// devDependencies — the same reason worker.mjs and scheduler.mjs are bundled.
+await build({
+    ...common,
+    entryPoints: ['scripts/worker-healthcheck.ts'],
+    outfile: 'dist/worker-healthcheck.mjs',
+});
 
-console.log('✓ built dist/worker.mjs + dist/scheduler.mjs');
+console.log('✓ built dist/worker.mjs + dist/scheduler.mjs + dist/worker-healthcheck.mjs');
