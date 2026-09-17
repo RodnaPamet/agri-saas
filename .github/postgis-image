@@ -53,15 +53,21 @@
 # `postgres:` reference search can find — bump this file and leave those two
 # tags behind and they lie about the base, with CI green.
 #
-# NOTHING ENFORCES ANY OF THIS AUTOMATICALLY. Until 2026-09-17 the paragraph
-# here said `tests/guards/postgis-image-single-source.test.ts` "fails CI the
-# instant any of them disagrees", and described a "Direction D" that parses
-# every compose file. That guard has never existed — verified against
-# origin/main with a positive control on the search, twice, by two sessions.
-# The claim was worse than the gap: a reader had every reason to believe the
-# eleven literals were protected. They are not. Bumping this file means
-# grepping for the old tag and changing every site by hand, and the count
-# above is prose that can rot like any other. Tracked as #860.
+# ENFORCED BY tests/guards/postgis-image-single-source.test.ts (#860).
+# Direction A: every consumer above must agree with the line below, in all
+# three shapes — the six `image:` lines and two `FROM`s exactly, the doc table
+# row, and the two compose tags that encode this file's TAG inside a LOCAL
+# image name. Direction B sweeps every tracked file for any OTHER Postgres or
+# PostGIS image reference, so a TWELFTH site cannot be absorbed silently; a
+# reference that is deliberately different is registered there with a reason.
+# The count in this paragraph is asserted against the consumer list, so the
+# prose cannot drift from it.
+#
+# That guard was claimed here for weeks before it existed. This paragraph said
+# it "fails CI the instant any of them disagrees" and described a Direction D
+# that parses every compose file; the file was never written, and the claim was
+# worse than the gap — a reader had every reason to believe these literals were
+# protected. Corrected 2026-09-17, then made true.
 #
 # BEFORE YOU BUMP THIS: the package list in `deploy/postgres/Dockerfile` and
 # in the `infra/scripts/restore-test-gcp.sh` heredoc must stay in step, and a
