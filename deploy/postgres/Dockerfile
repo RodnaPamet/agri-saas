@@ -5,7 +5,8 @@
 #
 # The tag below MUST equal the line in `.github/postgis-image`, the single
 # source of truth — `FROM` takes no runtime lookup, so this is a literal by
-# necessity. Nothing enforces that agreement automatically yet (#860).
+# necessity. `tests/guards/postgis-image-single-source.test.ts` fails
+# CI if this literal and that file disagree (#860).
 #
 # THE BASE IS A STOCK POSTGRES IMAGE, NOT `postgis/postgis` (#832). The old
 # base was `postgis/postgis:16-3.4`, which is Debian bullseye, whose security

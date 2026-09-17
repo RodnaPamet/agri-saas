@@ -425,8 +425,14 @@ echo "  ✓ ${STACK_DIR} present and carries DATA_ENCRYPTION_KEY"
 # more than anywhere else, and why trixie (supported to 2028-08-09) is worth
 # more here than the bytes it saves.
 #
-# Nothing enforces agreement with deploy/postgres/Dockerfile automatically
-# yet (#860).
+# tests/guards/postgis-image-single-source.test.ts pins the TAG in this
+# heredoc against .github/postgis-image (#860), so the base image cannot
+# drift silently.
+#
+# The PACKAGE LIST is NOT enforced. This heredoc and deploy/postgres/Dockerfile
+# can still disagree about which extensions get installed, and the only thing
+# that would show it is a restore drill failing to build a Postgres to restore
+# INTO — which reads as a failed restore rather than as a broken copy.
 if [ -n "${PG_IMAGE}" ]; then
     RESTORE_IMAGE="${PG_IMAGE}"
     sudo docker pull "\$RESTORE_IMAGE" >/dev/null
