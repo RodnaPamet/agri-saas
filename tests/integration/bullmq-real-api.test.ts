@@ -219,4 +219,96 @@ describe('bullmq real-API smoke', () => {
             expect(after.some((s) => s.name === 'smoke-nightly')).toBe(false);
         }, 30_000);
     });
+
+    /**
+     * The worker heartbeat (#809), end to end against a real Redis.
+     *
+     * The wiring guard (`tests/guards/worker-heartbeat-wiring.test.ts`) pins
+     * all four links as SOURCE TEXT and executes none of them. That is the
+     * right tool for "the link is present" and no proof at all that a
+     * `health-check` job actually reaches `completed` — and if it does not,
+     * nothing ever beats and the container is unhealthy forever while every
+     * static check stays green.
+     *
+     * The specific doubt worth settling: the schedule enqueues
+     * `health-check` with an EMPTY payload, so a dispatch path that needed a
+     * `tenantId` would throw, emit `failed` instead of `completed`, and break
+     * the chain at the one link a regex cannot see.
+     */
+    describe('worker heartbeat', () => {
+        let queue: Queue | undefined;
+        let worker: Worker | undefined;
+
+        afterAll(async () => {
+            await worker?.close().catch(() => undefined);
+            await queue?.close().catch(() => undefined);
+        });
+
+        it('the REAL health-check executor succeeds on the REAL schedule payload', async () => {
+            if (!redisAvailable) return;
+
+            const { executorRegistry } = await import('../../src/app-layer/jobs/executor-registry');
+            const { ALL_SCHEDULES } = await import('../../src/app-layer/jobs/schedules');
+
+            const schedule = ALL_SCHEDULES.find((s) => s.name === 'health-check');
+            // Positive control: without this, a renamed schedule makes the
+            // assertion below run on `undefined` and prove nothing.
+            expect(schedule).toBeDefined();
+
+            const result = await executorRegistry.execute(
+                'health-check',
+                schedule!.defaultPayload ?? {},
+                { updateProgress: () => undefined },
+            );
+
+            // `processJob` throws when `success` is false, which is what turns
+            // a job into `failed` rather than `completed`.
+            expect(result.success).toBe(true);
+        }, 30_000);
+
+        it('a completed job writes the heartbeat key the probe reads, with a TTL', async () => {
+            if (!redisAvailable) return;
+
+            const { beat, WORKER_HEARTBEAT_KEY, WORKER_HEARTBEAT_TTL_SECONDS } = await import(
+                '../../src/app-layer/jobs/worker-heartbeat'
+            );
+
+            const client = conn();
+            await client.del(WORKER_HEARTBEAT_KEY);
+            // Positive control: prove the key is absent BEFORE the job, so a
+            // leftover key from another run cannot pass this for us.
+            expect(await client.get(WORKER_HEARTBEAT_KEY)).toBeNull();
+
+            queue = new Queue(QUEUE + '-hb', { connection: conn() });
+            const beatConnection = conn();
+
+            worker = new Worker(QUEUE + '-hb', async () => ({ ok: true }), {
+                connection: conn(),
+                concurrency: 5,
+            });
+
+            // The wiring under test, copied from scripts/worker.ts.
+            const beaten = new Promise<void>((resolve, reject) => {
+                worker!.on('completed', () => {
+                    void beat(beatConnection).then(resolve, reject);
+                });
+                worker!.on('failed', (_j, err) => reject(err ?? new Error('job failed')));
+            });
+
+            await queue.add('health-check', {});
+            await beaten;
+
+            const value = await client.get(WORKER_HEARTBEAT_KEY);
+            expect(value).not.toBeNull();
+            expect(Number(value)).toBeGreaterThan(0);
+
+            // A key with no expiry would report healthy forever after the
+            // worker died — ioredis returns -1 for "no TTL".
+            const ttl = await client.ttl(WORKER_HEARTBEAT_KEY);
+            expect(ttl).toBeGreaterThan(0);
+            expect(ttl).toBeLessThanOrEqual(WORKER_HEARTBEAT_TTL_SECONDS);
+
+            await client.del(WORKER_HEARTBEAT_KEY);
+        }, 30_000);
+    });
 });
