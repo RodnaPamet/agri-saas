@@ -94,7 +94,15 @@ describe('Infrastructure Regression Guards', () => {
             // `policy-review-reminder`, and `sharepoint-subscription-renew`
             // — the POLICY half of the SharePoint integration. The evidence
             // delta-sync schedule STAYS (work-order A4).
-            expect(SCHEDULED_JOBS).toHaveLength(21);
+            //
+            // 21 → 22 (#809): `health-check` is now SCHEDULED. Its executor
+            // had existed in `executor-registry.ts` since the queue was built
+            // and nothing had ever dispatched it — a registered ping/pong
+            // returning 'pong' to nobody. Scheduling it every two minutes is
+            // what makes the worker's container healthcheck possible: the
+            // heartbeat is written from BullMQ's `completed` event, so an IDLE
+            // worker emits nothing and would look wedged without a job to run.
+            expect(SCHEDULED_JOBS).toHaveLength(22);
         });
 
         test('scheduled job names match expected set', () => {
@@ -130,6 +138,11 @@ describe('Infrastructure Regression Guards', () => {
                 // Exchange — daily global sweep flipping ACTIVE listings past
                 // their expiresAt to EXPIRED (+ audit row per transition).
                 'exchange-expiry-sweep',
+                // #809 — every 2 minutes, drives the worker heartbeat that
+                // the container healthcheck reads. Deleting this schedule
+                // makes a HEALTHY idle worker report unhealthy, because the
+                // beat hangs off a job completing.
+                'health-check',
                 // Land administration (roadmap 3/3) — daily cross-tenant
                 // sweep firing LEASE_EXPIRING alerts for parcel leases
                 // (аренда/наем) ending within 30 days.
