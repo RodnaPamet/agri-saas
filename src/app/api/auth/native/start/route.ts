@@ -95,8 +95,18 @@ async function handleStart(req: NextRequest): Promise<NextResponse> {
 
     // Hand off to the real NextAuth flow. `callbackUrl` brings the browser back
     // to /complete once a session cookie exists.
-    const signIn = new URL(`/api/auth/signin/${provider}`, url.origin);
-    signIn.searchParams.set('callbackUrl', new URL('/api/auth/native/complete', url.origin).toString());
+    // The PUBLIC origin, not the request's. Behind the production reverse
+    // proxy `req.url` is the container's own address — measured 2026-09-17,
+    // this route answered 307 to `https://0.0.0.0:3000/api/auth/signin/google`,
+    // which the device following the redirect cannot reach. Caddy does forward
+    // `Host` and `X-Forwarded-Proto`, and APP_URL/NEXTAUTH_URL/AUTH_URL are all
+    // correct in the container; this route simply was not reading them.
+    //
+    // `sso/oidc/callback/route.ts` already resolves it this way. The `||`
+    // fallback keeps local dev (where APP_URL is unset) on the request origin.
+    const baseUrl = env.APP_URL || url.origin;
+    const signIn = new URL(`/api/auth/signin/${provider}`, baseUrl);
+    signIn.searchParams.set('callbackUrl', new URL('/api/auth/native/complete', baseUrl).toString());
 
     const res = NextResponse.redirect(signIn);
     res.cookies.set(HANDOFF_COOKIE, JSON.stringify({ redirectUri, codeChallenge }), {
