@@ -144,8 +144,18 @@ export interface DueItem {
 
 /** Health check / smoke test job */
 export interface HealthCheckPayload {
-    /** ISO timestamp of when the job was enqueued */
-    enqueuedAt: string;
+    /**
+     * ISO timestamp of when the job was enqueued.
+     *
+     * OPTIONAL because the job's only real producer does not send it: the
+     * `health-check` schedule (#809) enqueues `defaultPayload`, which is `{}`
+     * for every entry in `ALL_SCHEDULES`. Nothing caught the mismatch because
+     * `defaultPayload` is typed `Record<string, unknown>`, so no schedule is
+     * checked against its job's payload type. The executor only echoes this
+     * value back, so absent is harmless — but the declaration should say what
+     * is actually sent.
+     */
+    enqueuedAt?: string;
     /** Optional message for testing */
     message?: string;
 }

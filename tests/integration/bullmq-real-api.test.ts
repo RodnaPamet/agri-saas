@@ -255,10 +255,14 @@ describe('bullmq real-API smoke', () => {
             // assertion below run on `undefined` and prove nothing.
             expect(schedule).toBeDefined();
 
+            // Pin what the scheduler actually enqueues, then execute exactly
+            // that — so this test cannot drift from production's payload.
+            expect(schedule!.defaultPayload).toEqual({});
+
             const result = await executorRegistry.execute(
                 'health-check',
-                schedule!.defaultPayload ?? {},
-                { updateProgress: () => undefined },
+                {},
+                { updateProgress: async () => undefined },
             );
 
             // `processJob` throws when `success` is false, which is what turns
