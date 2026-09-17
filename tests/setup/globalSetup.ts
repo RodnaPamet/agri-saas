@@ -14,6 +14,7 @@ import { Client } from 'pg';
 import {
     migrateTestDb,
     getBaseTestDatabaseUrl,
+    assertIsTestDatabase,
     getDbName,
     adminConnectionString,
     PER_WORKER_MARKER,
@@ -23,15 +24,34 @@ interface GlobalConfig { maxWorkers?: number }
 
 export default async function globalSetup(globalConfig?: GlobalConfig) {
     const base = getBaseTestDatabaseUrl();
+
+    // FIRST, before anything reads or writes. Everything below this line
+    // migrates, terminates connections on, clones and DROPs databases derived
+    // from `base`. The check this replaced sat at the END of this function,
+    // after all of it — so it could not have prevented a single one of them.
+    assertIsTestDatabase(base, 'globalSetup');
+
     const baseName = getDbName(base);
 
     console.log(`\n[test-setup] Database URL: ${base.replace(/:[^@]*@/, ':***@')}`);
     console.log(`[test-setup] Running migrations on base DB...`);
-    try {
-        migrateTestDb();
+    // The success line is CONDITIONAL on success. It used to print
+    // unconditionally while `migrateTestDb` swallowed its own failure, so
+    // "Migration failed (DB may not be running)" and "Migrations complete"
+    // appeared four lines apart in the same run — a healthy path and a broken
+    // path with identical observables.
+    //
+    // An unreachable database is still tolerated: guard and unit suites run
+    // without one, and DB_AVAILABLE skips the suites that need it. A
+    // migration that FAILS against a reachable database is not tolerated,
+    // because DB_AVAILABLE is a liveness probe and cannot see it.
+    if (migrateTestDb() === 'migrated') {
         console.log(`[test-setup] Migrations complete`);
-    } catch (err) {
-        console.warn(`[test-setup] Migration skipped: ${err}`);
+    } else {
+        console.warn(
+            `[test-setup] Migrations NOT run — database unreachable. ` +
+                `Suites that need a database will skip (DB_AVAILABLE=false).`,
+        );
     }
 
     const maxWorkers = globalConfig?.maxWorkers ?? 1;
@@ -74,7 +94,4 @@ export default async function globalSetup(globalConfig?: GlobalConfig) {
     fs.mkdirSync(path.dirname(PER_WORKER_MARKER), { recursive: true });
     fs.writeFileSync(PER_WORKER_MARKER, JSON.stringify(marker));
 
-    if (!base.includes('test')) {
-        console.warn(`[test-setup] WARNING: DATABASE_URL does not look like a test database!`);
-    }
 }

@@ -109,7 +109,7 @@ OTel spans on `api.request` carry `rate_limit.scope` as an attribute when a 429 
 
 ## Verification runbook
 
-Each section can be run against the live dev DB (port 5434 direct) and the running Next.js server.
+Each section can be run against the live dev DB (port 5437 direct) and the running Next.js server.
 
 ### V.1 — Cross-tenant isolation (RLS)
 

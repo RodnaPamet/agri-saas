@@ -48,8 +48,8 @@ npx playwright test tests/e2e/core-flow.spec.ts
 
 # Docker (local dev stack — FIVE services, and docker-compose.yml declares no
 # `profiles:`, so this starts all of them: postgres (PostGIS + pgvector, built
-# from deploy/postgres/Dockerfile, :5434 for migrations), pgbouncer (the
-# runtime DATABASE_URL, :5433), redis, clamav, ollama).
+# from deploy/postgres/Dockerfile, :5437 for migrations), pgbouncer (the
+# runtime DATABASE_URL, :5436), redis, clamav, ollama).
 docker-compose up -d
 # Ollama ships no model — pull the dev default once:
 #   docker compose exec ollama ollama pull qwen3:1.7b

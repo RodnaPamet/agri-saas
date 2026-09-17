@@ -20,10 +20,18 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import * as path from 'path';
 import * as fs from 'fs';
 import { execSync } from 'child_process';
+import type { ExecSyncOptions } from 'child_process';
 
 /**
  * The base/template test database URL.
- * Priority: DATABASE_URL_TEST env > .env.test > test container default > .env > fallback.
+ * Priority: DATABASE_URL_TEST env > .env.test > test container default.
+ *
+ * `.env` is deliberately NOT a source. It names the DEV database, and reading
+ * it here is what let a test run migrate a database nobody meant to touch —
+ * see the container-default comment below for the incident. If none of the
+ * three sources above is set, tests point at the test container and fail
+ * loudly when it is not running, which is the correct outcome: a missing test
+ * database is not a licence to use a live one.
  */
 export function getBaseTestDatabaseUrl(): string {
     // 1. Explicit test env var (set by CI scripts or jest.setup.js)
@@ -38,25 +46,56 @@ export function getBaseTestDatabaseUrl(): string {
         if (match?.[1]) return match[1];
     } catch { /* no .env.test */ }
 
-    // 3. Test container default (docker-compose.test.yml → port 5434).
+    // 3. Test container default (docker-compose.test.yml → port 5435).
     //    Repo-SPECIFIC database name on purpose. This used to be
     //    `inflect_test`, which is the same name the inflect-compliance
     //    checkout uses on the same host+port — so a run that fell through
     //    to this fallback silently applied THIS repo's migrations to the
     //    other product's database (observed: a failed migration left
     //    behind in inflect's test DB).
-    const testContainerUrl = 'postgresql://test:test@127.0.0.1:5435/agri_saas_test?schema=public';
+    //
+    //    That rename did not close the hole, because this branch used to
+    //    only DECLARE the value while a later branch returned `.env` first —
+    //    so the fix was unreachable whenever a `.env` existed, which is
+    //    always. A fix documented as taking precedence is worthless if an
+    //    earlier branch returns before it. It now returns.
+    return 'postgresql://test:test@127.0.0.1:5435/agri_saas_test?schema=public';
+}
 
-    // 4. Parse from .env (dev database)
-    const envPath = path.resolve(__dirname, '../../.env');
-    try {
-        const content = fs.readFileSync(envPath, 'utf8');
-        const match = content.match(/^DATABASE_URL="(.*)"/m);
-        if (match?.[1]) return match[1];
-    } catch { /* no .env */ }
+/**
+ * Databases a test run is allowed to create, migrate, clone and DROP.
+ *
+ * An ALLOWLIST, not a denylist. The predicate this replaced was
+ * `base.includes('test')`, which is a denylist wearing an allowlist's
+ * clothes: `inflect_compliance_test`, `agrent_production_testbed`,
+ * `latest_backup`, `protest_db` and `contest_db` all pass it. Naming a
+ * database we recognise means a database nobody anticipated fails CLOSED.
+ *
+ * `_w<n>` is the per-worker TEMPLATE clone globalSetup creates.
+ */
+const ALLOWED_TEST_DB = /^(agri_saas_test|ci_testdb)(_w\d+)?$/;
 
-    // Return test container URL as preferred fallback over hard-coded dummy
-    return testContainerUrl;
+/**
+ * Throw unless `url` names a database this repo's tests own.
+ *
+ * Call this BEFORE anything that writes — migrating, terminating
+ * connections, creating or dropping. A check that runs after the damage
+ * guards nothing.
+ */
+export function assertIsTestDatabase(url: string, what: string): void {
+    const name = getDbName(url);
+    if (ALLOWED_TEST_DB.test(name)) return;
+    const safe = url.replace(/:[^@]*@/, ':***@');
+    throw new Error(
+        `${what}: refusing to run against database "${name}".\n` +
+            `  resolved URL: ${safe}\n` +
+            `  allowed:      agri_saas_test, ci_testdb (plus _w<n> worker clones)\n` +
+            `A test run migrates, clones and DROPs databases. Pointing it at a ` +
+            `database it does not own has destroyed another product's data in ` +
+            `this repo's history.\n` +
+            `Fix: start the test container (docker compose -f docker-compose.test.yml up -d), ` +
+            `or export DATABASE_URL_TEST=postgresql://test:test@127.0.0.1:5435/agri_saas_test?schema=public`,
+    );
 }
 
 // ─── Per-worker DB isolation (flake fix 2026-06) ──────────────────────
@@ -142,20 +181,41 @@ export function getTestDatabaseUrl(): string {
  * Run prisma migrate deploy against the test database.
  * Should be called in globalSetup or once before all integration tests.
  */
-export function migrateTestDb(): void {
+export type MigrationRunner = (cmd: string, opts: ExecSyncOptions) => unknown;
+
+export function migrateTestDb(run: MigrationRunner = execSync): 'migrated' | 'unreachable' {
     // Always migrate the BASE/template DB — globalSetup TEMPLATE-clones
     // it into per-worker DBs, so the migration only needs to run once.
     const url = getBaseTestDatabaseUrl();
+    assertIsTestDatabase(url, 'migrateTestDb');
+    // DIRECT_DATABASE_URL must be pinned too, not just DATABASE_URL:
+    // prisma.config.ts reads `DIRECT_DATABASE_URL ?? DATABASE_URL`, so an
+    // exported DIRECT_DATABASE_URL (direnv, a sourced .env, a compose env)
+    // silently outranks the URL we just resolved and validated. jest.setup.js
+    // pins it only in WORKERS — globalSetup runs before any worker — and it
+    // is written to stand aside for an exported value, so it cannot help here.
     try {
-        execSync('npx prisma migrate deploy', {
+        run('npx prisma migrate deploy', {
             cwd: path.resolve(__dirname, '../..'),
-            env: { ...process.env, DATABASE_URL: url },
+            env: { ...process.env, DATABASE_URL: url, DIRECT_DATABASE_URL: url },
             stdio: 'pipe',
             timeout: 60_000,
         });
+        return 'migrated';
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.warn(`[test-db] Migration failed (DB may not be running): ${msg.slice(0, 200)}`);
+        // UNREACHABLE is tolerated on purpose: this repo runs guard and unit
+        // suites with no database at all, and `DB_AVAILABLE`
+        // (tests/integration/db-helper.ts) already skips the suites that need
+        // one. The caller must not claim the migration succeeded.
+        if (/P1001|ECONNREFUSED|ENOTFOUND|Can't reach database server/i.test(msg)) {
+            return 'unreachable';
+        }
+        // Any OTHER failure is a real migration error. Tolerating it is what
+        // let suites run against a database that IS reachable but was never
+        // migrated — the dangerous half, because DB_AVAILABLE is a liveness
+        // probe and cannot see a failed migration.
+        throw err;
     }
 }
 

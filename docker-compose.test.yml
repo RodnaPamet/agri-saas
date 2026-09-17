@@ -1,5 +1,6 @@
 # Test-only Postgres instance for local CI.
-# Port 5434 avoids collision with dev DB (5433).
+# Port 5435 avoids collision with the dev DB (5436/5437) and with the
+# inflect-compliance stack (5433/5434).
 # Usage: docker compose -f docker-compose.test.yml up -d
 services:
   postgres-test:
@@ -28,11 +29,12 @@ services:
       # one repo's migrations land in the other's database.
       POSTGRES_DB: agri_saas_test
     ports:
-      # 5435, not 5434. The inflect-compliance stack on this machine
-      # binds 5434, and its Postgres has NO PostGIS — so when that stack
-      # is up, agri-saas silently connects to a database where every
-      # geometry migration fails. Distinct database NAMES (agri_saas_test
-      # vs inflect_test) were not enough; the port has to differ too.
+      # 5435, distinct from BOTH the inflect-compliance stack (5433/5434)
+      # and this repo's own dev stack (5436/5437). inflect's Postgres has
+      # NO PostGIS, so when that stack held a port we also used, agri-saas
+      # silently connected to a database where every geometry migration
+      # fails. Distinct database NAMES were not enough; the port has to
+      # differ too.
       - "5435:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U test -d agri_saas_test"]
@@ -46,7 +48,7 @@ services:
 
   redis-test:
     image: redis:7-alpine
-    container_name: inflect-test-redis
+    container_name: agri-saas-test-redis
     command: redis-server --appendonly no --save ""
     ports:
       - "6380:6379"
@@ -60,7 +62,7 @@ services:
 
   clamav-test:
     image: clamav/clamav:1.4
-    container_name: inflect-test-clamav
+    container_name: agri-saas-test-clamav
     ports:
       - "3311:3310"
     healthcheck:

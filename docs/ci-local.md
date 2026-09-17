@@ -79,25 +79,25 @@ npm run e2e:local -- --headed
 | Setting | Value |
 |---------|-------|
 | Image | `postgres:16-alpine` |
-| Port | `5434` (avoids collision with dev DB on 5433) |
+| Port | `5435` (avoids the dev DB on 5436/5437 and the inflect-compliance stack on 5433/5434) |
 | User | `test` |
 | Password | `test` |
-| Database | `inflect_test` |
+| Database | `agri_saas_test` |
 | Storage | tmpfs (in-memory, wiped on container stop) |
 
 The DB uses `tmpfs` so data is stored in RAM — fast and always clean on restart.
 
 ## Troubleshooting
 
-### Port 5434 already in use
+### Port 5435 already in use
 
 ```bash
 # Stop any existing test container
 npm run db:test:down
 
-# Or kill the process on port 5434
-# Windows: netstat -ano | findstr :5434
-# macOS/Linux: lsof -i :5434
+# Or kill the process on port 5435
+# Windows: netstat -ano | findstr :5435
+# macOS/Linux: lsof -i :5435
 ```
 
 ### Env validation errors
