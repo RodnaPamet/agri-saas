@@ -106,8 +106,16 @@ every 60s from six regions, requiring a 2xx whose body contains
 process. Alert policy `agrent production is not ready (#854)` fires on
 sustained failure from more than one region. Detection latency is
 therefore about two minutes, and a detection time MAY now be written
-down — but only that one. An email notification channel is attached and was
-proved to deliver. **There is still no rota and no pager** — one
+down — but only that one. An email notification channel is attached, and on
+2026-09-17 it was proved to deliver END TO END rather than assumed: a
+throwaway uptime check pointed at a path that returns 401 by design,
+routed to the SAME channel, produced a real alert email, and both
+throwaway resources were then deleted. The control that makes that
+result readable was asserting the throwaway check was genuinely
+FAILING (8 failing samples across 3 probe regions) — otherwise "no
+email" and "the test never fired" are the same observation. GCP
+reports no `verificationStatus` on an email channel, so nothing short
+of a delivered message settles it. **There is still no rota and no pager** — one
 address, one person, email — so
 `docs/slos.md` SLO 7's 4 hours is still time-to-restore from the moment
 a person starts, and the 15-minute PagerDuty acknowledge in
