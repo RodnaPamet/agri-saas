@@ -9,26 +9,28 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { collectSourceFiles } from '../helpers/collect-files';
+
 const SRC_DIR = path.resolve(__dirname, '..', '..', 'src');
 const PRISMA_DIR = path.resolve(__dirname, '..', '..', 'prisma');
 
-/** Recursively collect .ts/.tsx files */
-function collectFiles(dir: string, exts = ['.ts', '.tsx']): string[] {
-    const results: string[] = [];
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') {
-            results.push(...collectFiles(full, exts));
-        } else if (entry.isFile() && exts.some(ext => entry.name.endsWith(ext))) {
-            results.push(full);
-        }
-    }
-    return results;
+/**
+ * Every `.ts`/`.tsx` file under `src/`, absolute (each test relativises against
+ * SRC_DIR for its report).
+ *
+ * Collected through `collectSourceFiles` so an EMPTY result fails (#865). All
+ * four scans below end in `expect(violations).toEqual([])`, which is satisfied
+ * by a collector that found nothing — a renamed `src/` would have retired the
+ * whole AuditLog-immutability check without turning anything red.
+ * The floor sits well under the 1958 files present today.
+ */
+function srcFiles(): string[] {
+    return collectSourceFiles({ roots: ['src'], floor: 1000 });
 }
 
 describe('AuditLog Immutability Guardrails', () => {
     test('no application code calls auditLog.update or auditLog.updateMany', () => {
-        const files = collectFiles(SRC_DIR);
+        const files = srcFiles();
         const violations: string[] = [];
 
         for (const file of files) {
@@ -45,7 +47,7 @@ describe('AuditLog Immutability Guardrails', () => {
     });
 
     test('no application code calls auditLog.delete or auditLog.deleteMany', () => {
-        const files = collectFiles(SRC_DIR);
+        const files = srcFiles();
         const violations: string[] = [];
 
         for (const file of files) {
@@ -61,7 +63,7 @@ describe('AuditLog Immutability Guardrails', () => {
     });
 
     test('no raw SQL UPDATE on AuditLog table in application code', () => {
-        const files = collectFiles(SRC_DIR);
+        const files = srcFiles();
         const violations: string[] = [];
 
         for (const file of files) {
@@ -78,7 +80,7 @@ describe('AuditLog Immutability Guardrails', () => {
     });
 
     test('no raw SQL DELETE on AuditLog table in application code', () => {
-        const files = collectFiles(SRC_DIR);
+        const files = srcFiles();
         const violations: string[] = [];
 
         for (const file of files) {

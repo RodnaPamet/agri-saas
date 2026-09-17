@@ -1,6 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { collectSourceFiles } from '../helpers/collect-files';
+
 /**
  * CSP Style Guardrails — CI regression scanner.
  *
@@ -24,23 +26,26 @@ import * as path from 'path';
 
 const SRC_DIR = path.resolve(__dirname, '../../src');
 
-function collectFiles(dir: string, extensions: string[]): string[] {
-    const results: string[] = [];
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
-    for (const entry of entries) {
-        const fullPath = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-            if (entry.name === 'node_modules' || entry.name === '.next') continue;
-            results.push(...collectFiles(fullPath, extensions));
-        } else if (extensions.some(ext => entry.name.endsWith(ext))) {
-            results.push(fullPath);
-        }
-    }
-    return results;
+/**
+ * Every `.ts`/`.tsx`/`.js`/`.jsx` file under `src/`, absolute (each scan below
+ * relativises against SRC_DIR for its report).
+ *
+ * Collected through `collectSourceFiles` so an EMPTY result fails (#865). All
+ * three scans over this list report by building a `violations` array and
+ * calling `fail()` only when it is non-empty, which is precisely the shape a
+ * collector returning nothing satisfies for free: no files, no violations, no
+ * CSP guard. The floor sits well under the 1958 files present today.
+ */
+function srcFiles(): string[] {
+    return collectSourceFiles({
+        roots: ['src'],
+        extensions: ['.ts', '.tsx', '.js', '.jsx'],
+        floor: 1000,
+    });
 }
 
 describe('CSP Style Guardrails', () => {
-    const tsxFiles = collectFiles(SRC_DIR, ['.ts', '.tsx', '.js', '.jsx']);
+    const tsxFiles = srcFiles();
 
     describe('<style> tags', () => {
         // Files that legitimately emit a <style> tag inside a server-side

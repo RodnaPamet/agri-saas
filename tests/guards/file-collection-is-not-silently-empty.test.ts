@@ -60,7 +60,8 @@ const HELPER = /helpers\/collect-files/;
 /**
  * Files that still collect their own. MAY ONLY SHRINK — delete a line in the
  * same PR that migrates its file. Recorded 223, the complete population
- * at the time this guard landed.
+ * at the time this guard landed; 216 after BATCH 1 (the security/architecture
+ * group) moved onto the shared collector.
  */
 const HAND_ROLLED_COLLECTORS: readonly string[] = [
     'tests/guards/action-label-vocabulary.test.ts',
@@ -71,7 +72,6 @@ const HAND_ROLLED_COLLECTORS: readonly string[] = [
     'tests/guards/app-router-module-exports.test.ts',
     'tests/guards/async-params-route-typing.test.ts',
     'tests/guards/audit-gate-no-ci-overrides.test.ts',
-    'tests/guards/audit-immutability-guardrails.test.ts',
     'tests/guards/audit-structured-events.test.ts',
     'tests/guards/automation-catalog-emitter-coverage.test.ts',
     'tests/guards/automation-event-catalog-coherence.test.ts',
@@ -94,7 +94,6 @@ const HAND_ROLLED_COLLECTORS: readonly string[] = [
     'tests/guards/create-button-uniformity.test.ts',
     'tests/guards/csp-nonce-component-scripts-patch.test.ts',
     'tests/guards/csp-script-guardrails.test.ts',
-    'tests/guards/csp-style-guardrails.test.ts',
     'tests/guards/dashboard-anatomy.test.ts',
     'tests/guards/datatable-fillbody-coverage.test.ts',
     'tests/guards/datatable-mobile-fallback.test.ts',
@@ -144,7 +143,6 @@ const HAND_ROLLED_COLLECTORS: readonly string[] = [
     'tests/guards/inline-notice-discipline.test.ts',
     'tests/guards/inline-subtitle-budget.test.ts',
     'tests/guards/invite-email-locale-wiring.test.ts',
-    'tests/guards/invite-no-json-redeem.test.ts',
     'tests/guards/ios-input-autozoom.test.ts',
     'tests/guards/k6-threshold-binding.test.ts',
     'tests/guards/legacy-badge-eradication.test.ts',
@@ -180,7 +178,6 @@ const HAND_ROLLED_COLLECTORS: readonly string[] = [
     'tests/guards/no-raw-tables-in-app-pages.test.ts',
     'tests/guards/no-raw-white-foreground.test.ts',
     'tests/guards/no-renegade-bg-tokens.test.ts',
-    'tests/guards/no-tracked-node-modules.test.ts',
     'tests/guards/no-unsafe-any.test.ts',
     'tests/guards/no-untyped-api-response.test.ts',
     'tests/guards/no-usestate-any.test.ts',
@@ -226,7 +223,6 @@ const HAND_ROLLED_COLLECTORS: readonly string[] = [
     'tests/guards/state-primitives-discipline.test.ts',
     'tests/guards/status-badge-discipline.test.ts',
     'tests/guards/status-badge-no-brand.test.ts',
-    'tests/guards/storage-module-specifier.test.ts',
     'tests/guards/swr-error-branch.test.ts',
     'tests/guards/tab-count-discipline.test.ts',
     'tests/guards/toast-vocabulary.test.ts',
@@ -265,13 +261,11 @@ const HAND_ROLLED_COLLECTORS: readonly string[] = [
     'tests/guardrails/loading-states.test.ts',
     'tests/guardrails/logging-import-hygiene.test.ts',
     'tests/guardrails/membership-identity.test.ts',
-    'tests/guardrails/module-import-boundaries.test.ts',
     'tests/guardrails/no-auto-join.test.ts',
     'tests/guardrails/no-compact-filter-bar.test.ts',
     'tests/guardrails/no-direct-stock-writes.test.ts',
     'tests/guardrails/no-emoji-icons.test.ts',
     'tests/guardrails/no-explicit-any-ratchet.test.ts',
-    'tests/guardrails/no-legacy-admin-guard.test.ts',
     'tests/guardrails/no-secrets.test.ts',
     'tests/guardrails/offline-pwa-coverage.test.ts',
     'tests/guardrails/org-audit-coverage.test.ts',

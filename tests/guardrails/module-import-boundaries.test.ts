@@ -18,9 +18,10 @@
  * mirroring `no-explicit-any-ratchet`. Remove a cross-import ⇒ delete its
  * baseline entry in the same PR.
  */
-import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+
+import { collectTrackedFiles } from '../helpers/collect-files';
 
 const ROOT = path.resolve(__dirname, '../..');
 const APP_LAYER = 'src/app-layer';
@@ -62,9 +63,24 @@ function baselineKey(from: string, to: string): string {
     return `${from} -> ${to}`;
 }
 
+/**
+ * The app-layer sources this ratchet reads, repo-relative — `classify()` and the
+ * BASELINE keys are both written in repo-relative form, so the shape is
+ * load-bearing and the absolute paths the helper returns are converted back.
+ *
+ * Collected through `collectTrackedFiles` so an empty result FAILS (#865).
+ * `git ls-files <missing-path>` exits 0 with no output, so a renamed
+ * `src/app-layer` would have made every assertion below pass over nothing. The
+ * floor is set well under the 318 files present today: it has to survive
+ * ordinary churn while still catching a selection that collapsed.
+ */
 function listAppLayerFiles(): string[] {
-    const out = execFileSync('git', ['ls-files', '-z', APP_LAYER], { cwd: ROOT, encoding: 'utf8' });
-    return out.split('\0').filter((f) => f.endsWith('.ts') && !f.endsWith('.d.ts'));
+    return collectTrackedFiles({
+        roots: [APP_LAYER],
+        extensions: ['.ts'],
+        exclude: (rel) => rel.endsWith('.d.ts'),
+        floor: 200,
+    }).map((abs) => path.relative(ROOT, abs).replace(/\\/g, '/'));
 }
 
 /** Resolve an import specifier to a repo-relative path under src/, or null. */
