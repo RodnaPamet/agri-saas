@@ -89,10 +89,16 @@ describe('getBaseTestDatabaseUrl', () => {
 
 describe('migrateTestDb', () => {
     const saved = { t: process.env.DATABASE_URL_TEST, d: process.env.DIRECT_DATABASE_URL };
-    let calls: Array<{ cmd: string; env: NodeJS.ProcessEnv }> = [];
+    let calls: Array<{ cmd: string; env: NodeJS.ProcessEnv | undefined }> = [];
     const runner = (cmd: string, opts: { env?: NodeJS.ProcessEnv }) => {
-        calls.push({ cmd, env: opts.env ?? {} });
+        calls.push({ cmd, env: opts.env });
         return '';
+    };
+    /** Fails loudly rather than widening `getDbName` to accept undefined. */
+    const envUrl = (env: NodeJS.ProcessEnv | undefined, key: string): string => {
+        const v = env?.[key];
+        if (!v) throw new Error(`migrateTestDb did not pass ${key} to the runner`);
+        return v;
     };
     beforeEach(() => {
         calls = [];
@@ -114,8 +120,8 @@ describe('migrateTestDb', () => {
         process.env.DIRECT_DATABASE_URL = 'postgresql://u:p@127.0.0.1:5439/decoy_direct_db?schema=public';
         migrateTestDb(runner);
         const env = calls[0].env;
-        expect(getDbName(env.DATABASE_URL)).toBe('agri_saas_test');
-        expect(getDbName(env.DIRECT_DATABASE_URL)).toBe('agri_saas_test');
+        expect(getDbName(envUrl(env, 'DATABASE_URL'))).toBe('agri_saas_test');
+        expect(getDbName(envUrl(env, 'DIRECT_DATABASE_URL'))).toBe('agri_saas_test');
     });
 
     /** A success line that is not conditional on success is decoration. */
