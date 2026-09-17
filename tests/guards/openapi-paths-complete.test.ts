@@ -155,8 +155,19 @@ describe('every API route is described, exempt, or on a shrinking baseline', () 
         it('every route file exports at least one HTTP method', () => {
             // Control on `methodsExported`. A file reporting zero would mean the
             // pattern is wrong, not that the route is empty.
-            const silent = FILES.filter((f) => methodsExported(f).length === 0);
-            expect(silent).toEqual([]);
+            //
+            // Asserted as a POSITIVE TOTAL, not as an absence of zeros. The
+            // first version of this was `FILES.filter((f) => methodsExported(f)
+            // .length === 0)` and `selector-teeth` killed it: gutting
+            // `methodsExported` to `new Set()` leaves `.length` UNDEFINED,
+            // `undefined === 0` is false, so nothing was flagged and the
+            // control reported every file healthy while the function returned
+            // nothing at all. Summing makes the same gut produce NaN, and
+            // `NaN > 400` is false — so the hole fails instead of passing.
+            const counts = FILES.map((f) => methodsExported(f).length);
+            const total = counts.reduce((a, b) => a + b, 0);
+            expect(total).toBeGreaterThan(400); // 498 today
+            expect(counts.filter((n) => !(n > 0))).toEqual([]);
         });
 
         it('every REGISTERED path maps back to a route file that exists', () => {
