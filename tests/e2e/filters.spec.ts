@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { loginAndGetTenant, safeGoto } from './e2e-utils';
+import { loginAndGetTenant, safeGoto, waitForHydration } from './e2e-utils';
 
 /**
  * FilterToolbar contract — Tasks (farm-tasks) and Assets.
@@ -42,7 +42,14 @@ test.describe('FilterToolbar — Tasks', () => {
     test('picking a status filter pushes it into the URL', async ({ page }) => {
         tenantSlug = await loginAndGetTenant(page);
         await safeGoto(page, `/t/${tenantSlug}/farm-tasks`);
-        await page.waitForLoadState('networkidle').catch(() => {});
+        // HYDRATE, do not wait for the network. `networkidle` here was
+        // swallowed (`.catch(() => {})`), so it could time out entirely
+        // and the click still went ahead — and `waitFor({ state:
+        // 'visible' })` proves the button is PAINTED, not that React has
+        // attached its onClick. A click on a detached handler does
+        // nothing and the test then waits for a dialog that never opens
+        // (#748; the same shape cost #993 three retries on two PRs).
+        await waitForHydration(page, '[data-filter-trigger]');
 
         await page.getByRole('button', { name: /^filter$/i }).first().click();
         await expect(page.getByRole('listbox').first()).toBeVisible({ timeout: 10000 });
@@ -63,7 +70,14 @@ test.describe('FilterToolbar — Tasks', () => {
     test('picking a due filter pushes it into the URL', async ({ page }) => {
         tenantSlug = await loginAndGetTenant(page);
         await safeGoto(page, `/t/${tenantSlug}/farm-tasks`);
-        await page.waitForLoadState('networkidle').catch(() => {});
+        // HYDRATE, do not wait for the network. `networkidle` here was
+        // swallowed (`.catch(() => {})`), so it could time out entirely
+        // and the click still went ahead — and `waitFor({ state:
+        // 'visible' })` proves the button is PAINTED, not that React has
+        // attached its onClick. A click on a detached handler does
+        // nothing and the test then waits for a dialog that never opens
+        // (#748; the same shape cost #993 three retries on two PRs).
+        await waitForHydration(page, '[data-filter-trigger]');
 
         await page.getByRole('button', { name: /^filter$/i }).first().click();
         await expect(page.getByRole('listbox').first()).toBeVisible({ timeout: 10000 });
@@ -90,7 +104,14 @@ test.describe('FilterToolbar — Assets', () => {
         // same enum values — see the file docblock.
         const tenantSlug = await loginAndGetTenant(page);
         await safeGoto(page, `/t/${tenantSlug}/assets`);
-        await page.waitForLoadState('networkidle').catch(() => {});
+        // HYDRATE, do not wait for the network. `networkidle` here was
+        // swallowed (`.catch(() => {})`), so it could time out entirely
+        // and the click still went ahead — and `waitFor({ state:
+        // 'visible' })` proves the button is PAINTED, not that React has
+        // attached its onClick. A click on a detached handler does
+        // nothing and the test then waits for a dialog that never opens
+        // (#748; the same shape cost #993 three retries on two PRs).
+        await waitForHydration(page, '[data-filter-trigger]');
 
         // The assets toolbar puts a Columns and a KPI dropdown in its
         // `actions` slot, so target the FilterToolbar trigger by its
