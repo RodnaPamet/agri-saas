@@ -18,7 +18,7 @@
  * reachable-Save contract end-to-end.
  */
 import { test, expect, type Page } from '@playwright/test';
-import { safeGoto, loginAndGetTenant } from '../e2e-utils';
+import { safeGoto, loginAndGetTenant, waitForHydration } from '../e2e-utils';
 
 /**
  * The create dialog, scoped so it cannot resolve to a DIFFERENT dialog.
@@ -60,6 +60,15 @@ test.describe('mobile forms — FAB launches create @mobile', () => {
         page,
     }) => {
         await safeGoto(page, `/t/${tenantSlug}/farm-tasks`);
+        // HYDRATE BEFORE CLICKING. This spec had none, and that is the
+        // second half of why it failed: `waitForHydration`'s own docblock
+        // names the symptom exactly — "clicking a button whose onClick is
+        // still detached fires the click against a no-op DOM node and the
+        // test then waits forever for a side effect that never happens".
+        // The side effect here is `setShowNew(true)`, so the drawer never
+        // opens and the failure surfaces as "dialog not found".
+        // `mobile/lists.spec.ts` already does this; this file did not.
+        await waitForHydration(page, 'main');
         const main = page.getByRole('main');
         await expect(
             main.getByRole('heading', { name: 'Tasks', level: 1 }),
@@ -95,6 +104,7 @@ test.describe('mobile forms — FAB launches create @mobile', () => {
             page,
         }) => {
             await safeGoto(page, `/t/${tenantSlug}/${slug}`);
+            await waitForHydration(page, 'main');
 
             // The mobile FAB is shown (md:hidden → visible at phone width).
             const fab = page.getByTestId('fab');
@@ -121,6 +131,7 @@ test.describe('mobile forms — FAB launches create @mobile', () => {
         //     create button carries a stable id. On mobile the button-
         //     variants `md` size floors at min-h-[44px]; desktop stays h-9.
         await safeGoto(page, `/t/${tenantSlug}/planning`);
+        await waitForHydration(page, 'main');
         const planBtn = page.getByRole('main').locator('#new-crop-plan-btn');
         await expect(planBtn).toBeVisible({ timeout: 30_000 });
         const planBox = await planBtn.boundingBox();
@@ -133,6 +144,7 @@ test.describe('mobile forms — FAB launches create @mobile', () => {
         // (2) A DEFAULT-size (md) Input — the locations create form's Name
         //     field. Same responsive floor as the Button (R20-PR-A parity).
         await safeGoto(page, `/t/${tenantSlug}/locations`);
+        await waitForHydration(page, 'main');
         await page.getByTestId('fab').click();
         // Exact, not merely sufficient: this create form carries a stable id.
         const dialog = page
