@@ -20,7 +20,19 @@ test.describe('Admin Area Regression', () => {
         const slug = await loginAndGetTenant(page, ADMIN_USER);
         await safeGoto(page, `/t/${slug}/admin`, { waitUntil: 'domcontentloaded' });
 
-        await expect(page.locator('h1')).toBeVisible({ timeout: 30000 });
+        // The App Router keeps the outgoing tree mounted while the incoming
+        // one streams in, so mid-transition BOTH render
+        // `<h1 data-testid="page-header-title">Administration</h1>` and a bare
+        // `locator('h1')` is a strict-mode violation, not a wait. The
+        // `networkidle` that used to sit above hid that by running this late.
+        //
+        // Waiting for the count to SETTLE is the same barrier without blocking
+        // on requests this test does not care about, and it asserts the
+        // one-header invariant rather than stepping around it with `.first()`,
+        // which would pass just as happily on a page that really did render
+        // two.
+        await expect(page.getByTestId('page-header-title')).toHaveCount(1, { timeout: 30000 });
+        await expect(page.getByTestId('page-header-title')).toBeVisible();
 
         for (const id of ['members-pill-btn', 'sso-pill-btn', 'scim-pill-btn', 'security-pill-btn']) {
             await expect(page.locator(`#${id}`)).toBeVisible({ timeout: 5000 });
