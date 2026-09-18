@@ -4,6 +4,7 @@ import { ClientDataRetentionSweep } from '@/components/offline/ClientDataRetenti
 import { headers } from 'next/headers';
 import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages } from 'next-intl/server';
+import { preloadFaces } from '@/lib/fonts/preload';
 import { Providers } from './providers';
 import { ServiceWorkerRegistrar } from '@/components/pwa/ServiceWorkerRegistrar';
 import { WebVitalsReporter } from '@/components/pwa/WebVitalsReporter';
@@ -77,6 +78,47 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         // prefers-color-scheme on the client and flips the attribute if needed.
         <html lang={locale} data-theme="dark" suppressHydrationWarning>
             <head>
+                {/*
+                    Preload the BODY face so first text paint does not wait for
+                    the stylesheet to be parsed before the font request starts
+                    (#796). Derived from `fonts.lock.json`, never hardcoded:
+                    `vendor-fonts.mjs` names files from the css2 response, so an
+                    upstream subset change RENAMES them and a stale href would
+                    preload a 404 — costing a request, warming nothing, and
+                    invisible on screen because `font-display: swap` paints the
+                    fallback either way.
+
+                    Only Inter, and only the subsets this locale can render: all
+                    72 faces are 1.9 MB, so preloading them all would be
+                    strictly worse than preloading none. Onest and Bricolage
+                    fall back to Inter, which is preloaded.
+
+                    NO nonce attribute HERE, deliberately. A font preload is
+                    governed by `font-src`, not `script-src`, so it does not
+                    need one — and adding one would shift the text window that
+                    `tests/guards/csp-webpack-nonce-bridge-hydration.test.ts`
+                    scans, reddening that guard for a reason unrelated to fonts.
+
+                    (That guard finds its window by searching this file for two
+                    literal tokens. An earlier draft of THIS COMMENT quoted both
+                    verbatim to explain the hazard, which moved the window onto
+                    the comment itself and failed the guard — prose and data
+                    sharing one channel. They are described here, not quoted.)
+
+                    `crossOrigin` is required even same-origin: fonts are
+                    fetched in CORS mode, and a preload whose mode differs from
+                    the real request is fetched twice.
+                */}
+                {preloadFaces(locale).map((face) => (
+                    <link
+                        key={face.href}
+                        rel="preload"
+                        as="font"
+                        type="font/woff2"
+                        href={face.href}
+                        crossOrigin="anonymous"
+                    />
+                ))}
                 {/*
                     2026-05-14 — CSP `strict-dynamic` + webpack chunk
                     loader bridge. Next.js auto-applies the request
