@@ -16,10 +16,15 @@
  * Two open defects need an answer that survives that:
  *   • #930 — an auth-parked write can never be unblocked, because nothing can
  *     safely decide that the session which was refused is now good.
- *   • #932 — the service-worker drain has no attribution concept at all
- *     (`queuedByUserId` appears zero times in `public/sw.js`), so on a shared
- *     device it replays A's queued work under B's cookie, into an append-only
- *     hash-chained audit trail.
+ *   • #932 — the service-worker drain had no attribution concept at all, so on
+ *     a shared device it replayed A's queued work under B's cookie into an
+ *     append-only hash-chained audit trail. CLOSED by #956: the worker calls
+ *     this route through its own `swResolveWhoami` and skips foreign items.
+ *     Its consumer is the reason this route exists.
+ *   • #1005 — the PAGE is now the weaker half. `getCurrentUserId()` is
+ *     document-derived, and the deletion guard in `supersedeQueuedWrites`
+ *     failed OPEN on an unknown owner (fixed); the drain owner and the enqueue
+ *     stamp still read it.
  *
  * Both need a verified id, and neither can trust a rendered page for it.
  *
