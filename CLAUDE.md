@@ -716,14 +716,27 @@ to evict. Three rules, all load-bearing — see
   `tests/unit/offline/outbox-user-binding.test.ts` drives the enqueue cases
   from one table. Legacy items with no attribution still flush, and a drain
   with no known user still drains everything. **The service worker is a
-  separate case, and the rule above structurally cannot reach it:**
-  `public/sw.js` cannot import from `src/`, so its Background Sync drain is a
-  parallel REIMPLEMENTATION of the flush (`public/sw.js`'s own
-  `flushOutbox`, not the one in `sync.ts`) with no attribution concept at all
-  — zero occurrences of `queuedByUserId`, `foreign` or `owner`. So the
-  binding is enforced on the PAGE drain only, and `attribution()` living in
-  `src/` is exactly why: two implementations drifting is the same shape as
-  #786, one level up.
+  separate case and `public/sw.js` cannot import from `src/`**, so its
+  Background Sync drain is a parallel REIMPLEMENTATION of the flush
+  (`public/sw.js`'s own `flushOutbox`, not the one in `sync.ts`). Two
+  implementations drifting is the same shape as #786, one level up, which is
+  why `attribution()` lives in `src/` and why the worker's copy has to be
+  checked against it rather than assumed.
+  **It DOES enforce the binding now** (#956): `public/sw.js` resolves identity
+  from the SERVER via its own `swResolveWhoami`, skips an item whose
+  `queuedByUserId` is not the signed-in operator's, and posts `foreignHeld` so
+  held work is visible rather than silent. Its three-way outcome — `user` /
+  `signed-out` / `unknown` — never collapses unknown into signed-out, so a
+  captive portal's 200-with-HTML reschedules instead of sending. This
+  paragraph said the opposite until #1005; if you are here to "add" worker
+  attribution, read `public/sw.js:919` and `:1009` first.
+  **The PAGE is now the weaker half**, which is the inversion #1005 fixes:
+  `getCurrentUserId()` is fed from the server-rendered layout — the document
+  the worker replays from cache — and it still feeds the drain owner
+  (`use-offline-sync.ts`), the enqueue stamp and the snapshot. `enqueue`
+  CANNOT use a network probe (queueing happens precisely when offline), so
+  those are not one fix; what #1005 closed is the deletion guard in
+  `supersedeQueuedWrites`, which failed OPEN on an unknown owner.
 
 - **The idempotency handle is minted BEFORE the first attempt, and every
   outbox-bound request builds its headers through `outboxHeaders()`.** Until
