@@ -559,6 +559,11 @@ jobs:
       # never collide across shards. The intra-shard run stays
       # `--runInBand` for the "one DB per worker" invariant.
       - name: "Run tests: unit + integration (shard)"
+        env:
+          # The guards run in THIS sharded pass too, so the ratchet delta
+          # check (#914) needs its base here as well as in the shard-1 step.
+          RATCHET_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          RATCHET_DELTA_REQUIRE_BASE: "1"
         # Invoke jest via `node --max-old-space-size=8192` (mirrors the
         # Typecheck job's tsc call). The runner's default ~2 GB V8 heap is
         # too small for the `--runInBand` suite and OOMs ("Reached heap
@@ -609,10 +614,15 @@ jobs:
       # so it needs that one commit present. The default checkout is depth 1,
       # where it is not.
       #
-      # Fetched here rather than by raising the job's `fetch-depth`, because
-      # `tests/guards/` runs on SHARD 1 ONLY (see the step below) — a job-level
-      # fetch-depth: 0 would make all six shards pay for 3,173 commits to
-      # serve one. `--filter=blob:none` keeps it to commits and trees: the
+      # EVERY shard, not just shard 1. `tests/guards/` runs inside the sharded
+      # matrix as well — this job is "unit + integration + architectural
+      # guards" — so the floor guard can land on any shard, and it landed on
+      # 2/6. The shard-1 step below is an ADDITIONAL explicit guards run, not
+      # the only one. Scoping this to shard 1 made the guard fail on whichever
+      # other shard happened to host it.
+      #
+      # Still cheap, and still not `fetch-depth: 0`: this fetches ONE commit at
+      # depth 1 with `--filter=blob:none`, not 3,173 commits of history. The
       # check counts FILES via `git ls-tree` and reads two constants, so it
       # never needs the blobs.
       #
@@ -622,7 +632,6 @@ jobs:
       # Failing here instead would report it as a checkout error rather than
       # as the ratchet being unverifiable.
       - name: Fetch the PR base commit for the ratchet delta check
-        if: matrix.shard == 1
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
