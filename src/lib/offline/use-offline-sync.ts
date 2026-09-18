@@ -27,7 +27,6 @@ import {
     type OutboxItem,
 } from './outbox';
 import { indexedDbAvailable } from './idb-outbox';
-import { getCurrentUserId } from './current-user';
 import { flushOutbox, fetchSender, unblockAuthParks, type FlushSummary } from './sync';
 import {
     acknowledgeLoss,
@@ -38,6 +37,7 @@ import {
     runExclusiveFlush,
     subscribeToOutbox,
 } from './outbox-state';
+import { getCurrentUserId } from './current-user';
 import { resolveWhoami } from './whoami';
 import type { DurabilityVerdict, LostWorkRecord } from './durability';
 import { haptic } from '@/lib/haptics';
@@ -208,12 +208,67 @@ export function useOfflineSync(): OfflineSync {
             // `signed-out` and `unknown` both do nothing. Treating unknown as
             // verified would unblock on a captive portal's 200-with-HTML;
             // treating it as signed-out costs only a later retry.
-            if (getOutboxSnapshot().blockedAuth > 0) {
-                const who = await resolveWhoami();
-                if (who.kind === 'user') await unblockAuthParks(store, who.userId);
+            // ONE probe, used for BOTH decisions (#1005). It was called only
+            // when there was something to unblock, and the drain owner came
+            // from `getCurrentUserId()` fourteen lines below the comment
+            // explaining why that value cannot be trusted. The worker has
+            // asked the server since #956; the page now does too.
+            //
+            // Why it must be the server and not the document, in the case that
+            // matters: on a cached shell-fallback render the document can carry
+            // operator A's id while B is signed in. Feeding that to the drain
+            // does not merely fail to protect A — it makes B's OWN queued work
+            // look foreign and holds it. Server truth is what makes the
+            // fail-closed skip in `sync.ts` correct rather than harmful.
+            // GATE THE PROBE ON AMBIGUITY, so the ordinary flush costs no
+            // extra request. The document id is only DANGEROUS when it
+            // disagrees with what is in the queue: if every attributed item
+            // was queued by the id the document reports, there is nothing a
+            // server round-trip could correct. The risky case — a cached
+            // shell-fallback saying operator A while B is signed in — always
+            // shows up as an item whose `queuedByUserId` differs from it.
+            //
+            // Found because the probe was unconditional at first and a test
+            // counting fetches saw THREE where it expected two. That was a
+            // test artefact, but the request it revealed was real and on every
+            // flush.
+            const documentId = getCurrentUserId();
+            const queued = await store.all();
+            const ambiguous =
+                getOutboxSnapshot().blockedAuth > 0 ||
+                queued.some((i) => i.queuedByUserId && i.queuedByUserId !== documentId);
+
+            const who = ambiguous ? await resolveWhoami() : ({ kind: 'unknown', reason: 'not-probed' } as const);
+
+            // THREE outcomes, three answers — collapsing them to two is what
+            // makes this either unsafe or a stall:
+            //
+            //   user        the server said who. Best answer; use it.
+            //   signed-out  the server LOOKED and said nobody. null, so
+            //               `sync.ts` holds every attributed item rather than
+            //               replaying it under whatever cookie is current.
+            //   unknown     we could not ask (offline, 500, captive portal).
+            //               Fall back to the document id — exactly the previous
+            //               behaviour, so this can never be a REGRESSION on the
+            //               ambiguous case.
+            //
+            // An earlier draft passed null for `unknown` too. That made every
+            // flush depend on a whoami round-trip succeeding: a 500 on this one
+            // route, with the write API perfectly healthy, would have held
+            // queued farm work indefinitely. Fixing misattribution by inventing
+            // a stall is not a fix.
+            const ownerUserId =
+                who.kind === 'user' ? who.userId : who.kind === 'signed-out' ? null : documentId;
+
+            if (who.kind === 'user' && getOutboxSnapshot().blockedAuth > 0) {
+                await unblockAuthParks(store, who.userId);
             }
 
-            const summary = await flushOutbox(store, fetchSender(), getCurrentUserId());
+            // `signed-out` and `unknown` both pass null, and `sync.ts` then
+            // holds every ATTRIBUTED item rather than replaying it under
+            // whatever cookie happens to be current. Unattributed legacy rows
+            // still drain, so nothing pre-#786 is stranded.
+            const summary = await flushOutbox(store, fetchSender(), ownerUserId);
             // Refresh pending + the photo sub-count + conflicts — a flush can
             // drain photos/mutations AND park a 409 the resolution UI must show.
             await refresh();
