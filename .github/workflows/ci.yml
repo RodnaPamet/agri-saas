@@ -198,7 +198,14 @@ jobs:
 
       - name: "Do the guards this PR changes have live selectors?"
         env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          # THREE sources, one per event kind this workflow triggers on
+          # (#992). `merge_group` was missing, and its absence was silent: the
+          # job ran in the merge queue, found BASE empty, and took an `exit 0`
+          # path — reporting success having mutation-audited NOTHING. That is
+          # the empty-selection defect this job exists to catch, in the job's
+          # own base resolution, and it landed in the one event whose purpose
+          # is testing the UNION of independently-green PRs.
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
           # One jest run per mutation at ~7s. A PR touching a dozen guards is
           # minutes; a bulk conversion touching 88 is hours.
           #
@@ -214,9 +221,27 @@ jobs:
           MAX_GUARDS: "12"
         run: |
           set -euo pipefail
-          if [ -z "${BASE:-}" ]; then
-            echo "no base sha for this event; nothing to diff"
-            exit 0
+          # A base is GUARANTEED on pull_request and merge_group. If it is
+          # missing there, something is misconfigured and the audit cannot
+          # run — which must be loud, not a pass. The only legitimately
+          # baseless case is the first push to a new branch, where
+          # `event.before` is all-zeros and there is genuinely nothing to diff
+          # against.
+          ZERO="0000000000000000000000000000000000000000"
+          if [ -z "${BASE:-}" ] || [ "${BASE}" = "${ZERO}" ]; then
+            case "${GITHUB_EVENT_NAME}" in
+              pull_request|merge_group)
+                echo "::error::no base sha on a ${GITHUB_EVENT_NAME} event (BASE='${BASE:-}')."
+                echo "::error::The selector audit cannot run, and reporting success here would"
+                echo "::error::be a green tick over an audit that examined nothing — the exact"
+                echo "::error::defect this job exists to find. Failing instead."
+                exit 1
+                ;;
+              *)
+                echo "::notice::${GITHUB_EVENT_NAME} carries no base (BASE='${BASE:-}') — first push to a branch; nothing to diff."
+                exit 0
+                ;;
+            esac
           fi
           # BOTH guard directories. This pathspec was 'tests/guards/*.test.ts'
           # alone until 2026-09-17, so tests/guardrails — 102 of the 621 guard
