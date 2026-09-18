@@ -15,7 +15,7 @@
  * All selectors use existing id attributes — no data-testid additions.
  */
 import { test, expect } from './fixtures';
-import { safeGoto } from './e2e-utils';
+import { safeGoto, waitForHydration } from './e2e-utils';
 
 test.describe('Epic 54 — Evidence upload modal', () => {
     test('clicking Upload File opens the modal without navigating away', async ({
@@ -24,7 +24,14 @@ test.describe('Epic 54 — Evidence upload modal', () => {
     }) => {
         await safeGoto(authedPage, `/t/${isolatedTenant.tenantSlug}/evidence`);
         await authedPage.waitForSelector('#add-evidence-btn', { timeout: 15000 });
-        await authedPage.waitForLoadState('networkidle').catch(() => {});
+        // HYDRATE, do not wait for the network. `networkidle` here was
+        // swallowed (`.catch(() => {})`), so it could time out entirely
+        // and the click still went ahead — and `waitFor({ state:
+        // 'visible' })` proves the button is PAINTED, not that React has
+        // attached its onClick. A click on a detached handler does
+        // nothing and the test then waits for a dialog that never opens
+        // (#748; the same shape cost #993 three retries on two PRs).
+        await waitForHydration(authedPage, '#add-evidence-btn');
         const listUrl = authedPage.url();
 
         await authedPage.click('#add-evidence-btn');
@@ -46,7 +53,14 @@ test.describe('Epic 54 — Evidence upload modal', () => {
         await authedPage.reload({ waitUntil: 'domcontentloaded' });
         const openBtn = authedPage.locator('#add-evidence-btn').first();
         await openBtn.waitFor({ state: 'visible', timeout: 15_000 });
-        await authedPage.waitForLoadState('networkidle').catch(() => {});
+        // HYDRATE, do not wait for the network. `networkidle` here was
+        // swallowed (`.catch(() => {})`), so it could time out entirely
+        // and the click still went ahead — and `waitFor({ state:
+        // 'visible' })` proves the button is PAINTED, not that React has
+        // attached its onClick. A click on a detached handler does
+        // nothing and the test then waits for a dialog that never opens
+        // (#748; the same shape cost #993 three retries on two PRs).
+        await waitForHydration(authedPage, '#add-evidence-btn');
         await openBtn.click();
         await expect(authedPage.locator('#upload-form')).toBeVisible({
             timeout: 60_000,
@@ -66,7 +80,14 @@ test.describe('Epic 54 — Evidence upload modal', () => {
         await authedPage.reload({ waitUntil: 'domcontentloaded' });
         const openBtn = authedPage.locator('#add-evidence-btn').first();
         await openBtn.waitFor({ state: 'visible', timeout: 15_000 });
-        await authedPage.waitForLoadState('networkidle').catch(() => {});
+        // HYDRATE, do not wait for the network. `networkidle` here was
+        // swallowed (`.catch(() => {})`), so it could time out entirely
+        // and the click still went ahead — and `waitFor({ state:
+        // 'visible' })` proves the button is PAINTED, not that React has
+        // attached its onClick. A click on a detached handler does
+        // nothing and the test then waits for a dialog that never opens
+        // (#748; the same shape cost #993 three retries on two PRs).
+        await waitForHydration(authedPage, '#add-evidence-btn');
         await openBtn.click();
         await expect(authedPage.locator('#upload-form')).toBeVisible({
             timeout: 60_000,
@@ -116,7 +137,14 @@ test.describe('Epic 54 — Evidence upload modal', () => {
         await authedPage.reload({ waitUntil: 'domcontentloaded' });
         const openBtn = authedPage.locator('#add-evidence-btn').first();
         await openBtn.waitFor({ state: 'visible', timeout: 15_000 });
-        await authedPage.waitForLoadState('networkidle').catch(() => {});
+        // HYDRATE, do not wait for the network. `networkidle` here was
+        // swallowed (`.catch(() => {})`), so it could time out entirely
+        // and the click still went ahead — and `waitFor({ state:
+        // 'visible' })` proves the button is PAINTED, not that React has
+        // attached its onClick. A click on a detached handler does
+        // nothing and the test then waits for a dialog that never opens
+        // (#748; the same shape cost #993 three retries on two PRs).
+        await waitForHydration(authedPage, '#add-evidence-btn');
         await openBtn.click();
         await expect(authedPage.locator('#upload-form')).toBeVisible({
             timeout: 60_000,
