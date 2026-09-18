@@ -1669,6 +1669,31 @@ jobs:
         uses: github/codeql-action/autobuild@v4.37.9
 
       - name: Perform CodeQL Analysis
+        # BOUND THE STEP, NOT THE JOB (#748). This is the only job in the
+        # pipeline with a genuine kill under current config: measured over 100
+        # main runs, `CodeQL SAST` is median 277s against a 900s job budget,
+        # but two runs were CANCELLED at 905s — 101% of budget. A cancelled job
+        # keeps no log buffer, so it reports neither pass nor fail and there is
+        # nothing to diagnose.
+        #
+        # 13m (780s) is chosen so the STEP budget always fires FIRST: every
+        # other step in this job maxes at 81s combined, measured (Initialize 67s
+        # + Autobuild 5s + checkout 4s + setup 3s + posts ~2s), so 780 + 81 =
+        # 861s < the 900s job budget. The step fails with its log intact and
+        # `ci-failure-issue.yml` files it; the job never reaches `cancelled`.
+        #
+        # This DELIBERATELY reddens one run in 100 — run 35261306119 took 875s
+        # and currently succeeds. That is the point rather than a cost: 875s
+        # against a 277s median is the pathology, and the alternative (raising
+        # the job budget to absorb it) is what this issue exists to avoid. Note
+        # the observed max is CENSORED — the two killed runs' true duration is
+        # unknown, so 905s is a lower bound, not a measurement of how long they
+        # wanted.
+        #
+        # A step budget works on a `uses:` step — there is no shell to wrap
+        # here, which is exactly why the Docker build at :1734 uses the same
+        # mechanism.
+        timeout-minutes: 13
         uses: github/codeql-action/analyze@v4.37.9
         with:
           category: "/language:${{ matrix.language }}"
@@ -1699,7 +1724,26 @@ jobs:
     # former standalone `trivy` job) so the image is built ONCE and
     # scanned in place — no redundant rebuild. +5 min over the old
     # 25-min build budget covers the gating scan + SARIF upload.
-    timeout-minutes: 30
+    #
+    # 30 → 35 (#748). Measured over 100 main runs this job is median 952s
+    # against 1800s but reached 1772s — 98% of budget — and its job/step pair
+    # was UNSATISFIABLE: a 24m (1440s) build step inside a 30m (1800s) job
+    # requires every other step to finish inside 360s, and overhead has reached
+    # 761s. When that happens the JOB budget fires first, so the step budget
+    # below can never do its job and the run reports `cancelled` — no log
+    # buffer, neither pass nor fail.
+    #
+    # Lowering the step budget cannot fix it: it would have to drop below the
+    # observed 1286s build max, reddening runs that legitimately pass. So the
+    # overhead steps are bounded individually (below) and the job is given
+    # room, which makes the existing 24m step bound REACHABLE. 2100s is 18%
+    # above the observed job max.
+    #
+    # Step budgets are individual caps, not a summed allowance: the property
+    # that matters is that any ONE hanging step hits its own bound before the
+    # job does. Build 24m + measured worst-case overhead ~6m = 30m < 35m;
+    # Trivy gate 6m + a median build ~16m + rest ~4m = 26m < 35m.
+    timeout-minutes: 35
 
     steps:
       - uses: actions/checkout@v7
@@ -1713,12 +1757,16 @@ jobs:
       # documented runner-image paths only — deliberately NOT a
       # third-party action (supply-chain surface).
       - name: Free runner disk space (issue #1005)
+        # measured max 119s over 8 successful jobs; 5m is ~2.5x (#748)
+        timeout-minutes: 5
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           sudo docker image prune --all --force 2>/dev/null || true
           df -h /
 
       - name: Set up Docker Buildx
+        # measured max 11s (#748)
+        timeout-minutes: 3
         uses: docker/setup-buildx-action@v4
 
       - name: Build Docker image (no push)
@@ -1814,6 +1862,9 @@ jobs:
         # own, via overrides — the floor is a guarantee, not the sole
         # reason the CVE is absent.)
       - name: "Gate: Trivy vulnerability scan (critical+high)"
+        # measured max 107s. It pulls a vulnerability DB, so it is the
+        # other step here with a real network dependency (#748)
+        timeout-minutes: 6
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: "inflect-compliance:ci-${{ github.sha }}"
@@ -1826,6 +1877,8 @@ jobs:
 
       # ── SARIF upload for GitHub Security tab (informational) ──
       - name: "Trivy SARIF report (all severities)"
+        # measured max 60s (#748)
+        timeout-minutes: 5
         if: always()
         uses: aquasecurity/trivy-action@v0.36.0
         with:
