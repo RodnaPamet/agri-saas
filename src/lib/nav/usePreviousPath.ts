@@ -18,7 +18,7 @@
  *   - leaving a tenant clears it; a tenant-A page never appears as the
  *     back destination on a tenant-B view
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 
 export const PREV_PATH_KEY_PREFIX = 'inflect:nav:prev:';
 
@@ -83,16 +83,35 @@ export function clearPreviousPath(tenantSlug: string): void {
  * `<NavigationTracker>` component is responsible for KEEPING the value
  * current — this hook only reads.
  */
+/**
+ * `useSyncExternalStore` needs a stable subscribe function, and this store
+ * has no change events to subscribe TO: `<NavigationTracker>` writes the
+ * slot on navigation, and by the time a new route renders this hook has
+ * already re-read it. So the subscription is a no-op that never fires —
+ * which preserves the previous behaviour exactly (read on mount and on
+ * `tenantSlug` change, never live-update mid-render).
+ *
+ * Module scope, not inline: a fresh function identity each render makes
+ * React re-subscribe on every commit.
+ */
+const subscribeToNothing = (): (() => void) => () => {};
+
 export function usePreviousPath(tenantSlug: string | null): string | null {
-    const [prev, setPrev] = useState<string | null>(null);
+    // Read through `useSyncExternalStore` rather than `useState` + a
+    // `useEffect` that calls `setPrev`. The effect form is a synchronous
+    // setState inside an effect, which React flags
+    // (`react-hooks/set-state-in-effect`) because it schedules a second
+    // render pass on every mount purely to move a value that was already
+    // available. This is the API React provides for reading an external
+    // mutable source — here `sessionStorage`.
+    const getSnapshot = useCallback(
+        () => (tenantSlug ? readPreviousPath(tenantSlug) : null),
+        [tenantSlug],
+    );
 
-    useEffect(() => {
-        if (!tenantSlug) {
-            setPrev(null);
-            return;
-        }
-        setPrev(readPreviousPath(tenantSlug));
-    }, [tenantSlug]);
-
-    return prev;
+    // The SERVER snapshot is `null`, matching the old `useState(null)`
+    // initial value, so hydration sees what it saw before and cannot
+    // mismatch. `readPreviousPath` also guards `typeof window`, so this is
+    // belt and braces on purpose.
+    return useSyncExternalStore(subscribeToNothing, getSnapshot, () => null);
 }

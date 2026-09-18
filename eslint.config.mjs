@@ -41,6 +41,15 @@ const config = [
             'node_modules/**',
             'coverage/**',
             'playwright-report/**',
+            // esbuild output from `npm run build:worker` / `build:seed`
+            // (`dist/worker.mjs`, `scheduler.mjs`, `seed.mjs`,
+            // `worker-healthcheck.mjs`). Bundled artefacts, not source —
+            // and `dist/` is gitignored, so CI's fresh checkout never has
+            // them while a developer who has run the worker build does.
+            // That asymmetry made `npm run lint` FAIL locally and PASS in
+            // CI on identical code: measured 122 vs 121, the whole
+            // difference being one warning inside `dist/worker.mjs`.
+            'dist/**',
         ],
     },
     {

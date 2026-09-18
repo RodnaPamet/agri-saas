@@ -98,7 +98,7 @@ export const LIMITS: Limits = {
     // separate "nothing is wrong" from "nothing was examined", so it sits well
     // below the real count and still catches a config that stops resolving.
     fileFloor: 3400,
-    warningCeiling: 121,
+    warningCeiling: 120,
     suppressionCeiling: 1580,
     unjustifiedCeiling: 461,
     // The 13 error-severity mutes that exist today. `no-explicit-any` is
