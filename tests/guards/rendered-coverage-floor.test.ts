@@ -24,6 +24,7 @@
  *
  * See docs/verification-policy.md and docs/frontend-assurance-model.md.
  */
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -233,6 +234,72 @@ function registrySize(): number {
     return (src.match(/primitive:\s*'/g) ?? []).length;
 }
 
+/**
+ * The commit this branch is measured AGAINST.
+ *
+ * CI supplies it explicitly (`RATCHET_BASE_SHA`), using the same expression
+ * the selector-teeth job already proved:
+ * `github.event.pull_request.base.sha || github.event.before`. That is better
+ * than deriving one here — GitHub knows the PR's base exactly, while
+ * `merge-base --fork-point` is a guess that goes wrong on a branch that is
+ * behind, reporting a PEER's merged work as YOUR deletions.
+ *
+ * Locally there is no such env, so fall back to a merge-base against
+ * `origin/main`. A developer running jest is not the enforcement point; CI is.
+ */
+function baseSha(): string | null {
+    const fromCi = process.env.RATCHET_BASE_SHA?.trim();
+    if (fromCi && /^[0-9a-f]{7,40}$/i.test(fromCi)) return fromCi;
+    try {
+        const sha = execFileSync('git', ['merge-base', 'origin/main', 'HEAD'], {
+            cwd: ROOT,
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore'],
+        }).trim();
+        return /^[0-9a-f]{40}$/i.test(sha) ? sha : null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * The same population `countFiles` counts, as it was at `sha`.
+ *
+ * `git ls-tree` WITHOUT `-r` on purpose: `countFiles` uses `readdirSync`,
+ * which is not recursive, so a recursive count here would compare two
+ * different populations and produce a delta out of thin air. Measured today:
+ * `tests/e2e` is 47 non-recursive and 61 recursive — the 14 specs under
+ * `tests/e2e/mobile` and `tests/e2e/security` are invisible to this floor
+ * (tracked separately in #994, deliberately NOT changed here).
+ */
+function countFilesAt(sha: string, rel: string, suffix: string): number | null {
+    try {
+        const out = execFileSync('git', ['ls-tree', '--name-only', sha, `${rel}/`], {
+            cwd: ROOT,
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore'],
+        });
+        return out.split('\n').filter((f) => f.trim().endsWith(suffix)).length;
+    } catch {
+        return null;
+    }
+}
+
+/** A floor constant as it read at `sha`, so the DELTA can be compared. */
+function floorAt(sha: string, name: string): number | null {
+    try {
+        const src = execFileSync('git', ['show', `${sha}:tests/guards/rendered-coverage-floor.test.ts`], {
+            cwd: ROOT,
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore'],
+        });
+        const m = src.match(new RegExp(`const ${name} = (\\d+);`));
+        return m ? Number(m[1]) : null;
+    } catch {
+        return null;
+    }
+}
+
 describe('rendered / browser coverage floor — staged upward ratchet', () => {
     const rendered = countFiles('tests/rendered', '.test.tsx');
     const e2e = countFiles('tests/e2e', '.spec.ts');
@@ -254,21 +321,119 @@ describe('rendered / browser coverage floor — staged upward ratchet', () => {
         expect(count).toBeGreaterThanOrEqual(floor);
     });
 
-    it.each([
-        ['RENDERED_TEST_FLOOR', rendered, RENDERED_TEST_FLOOR, SLACK.rendered],
-        ['E2E_SPEC_FLOOR', e2e, E2E_SPEC_FLOOR, SLACK.e2e],
-        ['REGISTRY_FLOOR', registry, REGISTRY_FLOOR, SLACK.registry],
-    ])('%s has no accumulated slack — raise it as coverage grows', (name, count, floor, slack) => {
-        if (count - floor > slack) {
-            throw new Error(
-                `${name} is ${floor} but the live count is ${count} ` +
-                    `(slack ${count - floor} > ${slack}). Raise ${name} to ` +
-                    `${count} in this PR so the added verification is locked ` +
-                    `in as the new minimum — an upward ratchet only works if ` +
-                    `the floor tracks the gains.`,
-            );
-        }
-        expect(count - floor).toBeLessThanOrEqual(slack);
+    describe('the floor moves with the gain THIS PR introduces (#914)', () => {
+        /**
+         * The old rule fired on `count - floor > slack`, i.e. on the slack MAIN
+         * had accumulated. A PR that added tests and did not bump the floor was
+         * GREEN; the red landed later on whoever happened to cross the
+         * threshold — frequently a PR that added no rendered tests at all.
+         * #912 is the worked example: it had to raise the floor because main
+         * went red on debt created by three earlier PRs that all passed.
+         *
+         * The signal arrived at someone other than the cause, which is this
+         * repo's recurring shape.
+         *
+         * Firing on the PR's own delta fixes the attribution BY CONSTRUCTION:
+         *   - a PR that adds tests without bumping goes red in its own CI,
+         *     first time, every time;
+         *   - a PR that adds none can never go red for someone else's
+         *     omission;
+         *   - nobody is forced to rebase because a peer merged, because the
+         *     assertion never references main's absolute count. That is why
+         *     this is not simply `slack = 0`, which would redden every
+         *     in-flight test-adding PR the moment any other one merged, and
+         *     churn on a guard is how guards get waived.
+         */
+        const base = baseSha();
+
+        it('the counting helpers actually work — control on the delta below', () => {
+            // selector-teeth proved this was needed: gutting `countFilesAt`,
+            // `floorAt` or `baseSha` to null landed in the "no base" path, and
+            // the delta check then passed having compared nothing. All three
+            // SURVIVED every mutation. The degradation that keeps local runs
+            // working is the same shape as a vacuous pass, so the helpers have
+            // to be exercised against something that ALWAYS resolves.
+            //
+            // HEAD is that thing, and asserting equality with the live counts
+            // does double duty: it pins the ls-tree/readdirSync equivalence
+            // this check depends on. `ls-tree` without `-r` must agree with
+            // `readdirSync` exactly, or every delta is noise.
+            expect(countFilesAt('HEAD', 'tests/rendered', '.test.tsx')).toBe(rendered);
+            expect(countFilesAt('HEAD', 'tests/e2e', '.spec.ts')).toBe(e2e);
+            expect(floorAt('HEAD', 'RENDERED_TEST_FLOOR')).toBe(RENDERED_TEST_FLOOR);
+            expect(floorAt('HEAD', 'E2E_SPEC_FLOOR')).toBe(E2E_SPEC_FLOOR);
+        });
+
+        it('a base commit is resolvable in this repository', () => {
+            // Gutting `baseSha()` to null makes every assertion below inert
+            // while staying green, so "no base" cannot be treated as an
+            // acceptable resting state here. Both CI contexts can resolve one
+            // (the guards step is handed RATCHET_BASE_SHA; the selector-teeth
+            // job checks out with fetch-depth: 0), and so can any clone with
+            // an `origin/main`.
+            expect(baseSha()).toMatch(/^[0-9a-f]{7,40}$/i);
+        });
+
+        it('the base commit was resolved — otherwise nothing below is checked', () => {
+            // A skip that looks like a pass is the defect this guard family
+            // exists to catch, so absence is REPORTED, and in CI it is fatal.
+            if (!base) {
+                const detail =
+                    'no base commit: RATCHET_BASE_SHA is unset and `git merge-base origin/main HEAD` ' +
+                    'failed (a shallow clone has no merge-base). The per-PR delta check below did NOT run.';
+                if (process.env.RATCHET_DELTA_REQUIRE_BASE === '1') {
+                    throw new Error(
+                        `${detail}\n  CI sets RATCHET_BASE_SHA and needs history (fetch-depth: 0), ` +
+                            `so here this is a configuration failure, not an environment fact.`,
+                    );
+                }
+                console.warn(`[rendered-coverage-floor] ${detail}`);
+            }
+            expect(true).toBe(true);
+        });
+
+        it.each([
+            ['RENDERED_TEST_FLOOR', 'tests/rendered', '.test.tsx', rendered, RENDERED_TEST_FLOOR],
+            ['E2E_SPEC_FLOOR', 'tests/e2e', '.spec.ts', e2e, E2E_SPEC_FLOOR],
+        ])('%s rises by at least what this PR adds', (name, dir, suffix, headCount, headFloor) => {
+            if (!base) return; // reported by the test above
+            const baseCount = countFilesAt(base, dir as string, suffix as string);
+            const baseFloor = floorAt(base, name as string);
+            if (baseCount === null || baseFloor === null) {
+                // The base RESOLVED but its objects are not readable — the
+                // shallow-clone case, where `RATCHET_BASE_SHA` names a commit
+                // the local repo never fetched. Silently returning here would
+                // be a vacuous pass WITH the require-flag on, which is the
+                // exact hole this guard is about, so it is fatal in CI.
+                const detail =
+                    `${name}: base ${base.slice(0, 9)} is set but unreadable ` +
+                    `(count=${baseCount}, floor=${baseFloor}) — the delta was NOT checked.`;
+                if (process.env.RATCHET_DELTA_REQUIRE_BASE === '1') {
+                    throw new Error(
+                        `${detail}\n  Deepen the checkout (fetch-depth: 0) so the base commit is present.`,
+                    );
+                }
+                console.warn(`[rendered-coverage-floor] ${detail}`);
+                return;
+            }
+
+            const gained = (headCount as number) - baseCount;
+            if (gained <= 0) return; // removals are covered by the floor test above
+
+            const raised = (headFloor as number) - baseFloor;
+            if (raised < gained) {
+                throw new Error(
+                    `${name}: this PR adds ${gained} ${suffix} file(s) under ${dir} ` +
+                        `(${baseCount} → ${headCount}) but raises the floor by only ${raised} ` +
+                        `(${baseFloor} → ${headFloor}).\n` +
+                        `  Raise ${name} to ${baseFloor + gained} in THIS PR so the added ` +
+                        `verification is locked in as the new minimum.\n` +
+                        `  Measured against ${base.slice(0, 9)} — your PR's base, not main's ` +
+                        `current tip, so a peer merging cannot make this fire.`,
+                );
+            }
+            expect(raised).toBeGreaterThanOrEqual(gained);
+        });
     });
 
     it('the floors are a genuine population, not a vacuous zero', () => {
