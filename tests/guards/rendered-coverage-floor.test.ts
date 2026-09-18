@@ -215,15 +215,34 @@ const RENDERED_TEST_FLOOR = 235;
 // driven the freeze→share→anonymous-view journey that is now gone.
 //
 // Upward-only from 44.
-const E2E_SPEC_FLOOR = 44;
+const E2E_SPEC_FLOOR = 61;
 const REGISTRY_FLOOR = 5;
 
 /** Max a live count may exceed its floor before the floor must rise. */
 const SLACK = { rendered: 8, e2e: 4, registry: 3 } as const;
 
+/**
+ * Every matching file under `rel`, RECURSIVELY.
+ *
+ * `readdirSync` is not recursive, and that mattered (#994): Playwright's
+ * `testDir` is `./tests/e2e`, so it runs every spec beneath it — but this
+ * floor counted only the top level. Measured before the fix: 47 counted
+ * against 61 present, so the 13 specs in `tests/e2e/mobile/` and the 1 in
+ * `tests/e2e/security/` were invisible to the ratchet. Every one of them
+ * could have been deleted without moving it, including the offline-eviction,
+ * offline-photo and 44px touch-target specs that cover the operator's actual
+ * device.
+ *
+ * `tests/rendered` has no subdirectories, so its count is unchanged at 235;
+ * the hole was live only for e2e.
+ */
 function countFiles(rel: string, suffix: string): number {
-    const dir = path.join(ROOT, rel);
-    return fs.readdirSync(dir).filter((f) => f.endsWith(suffix)).length;
+    const walk = (dir: string): string[] =>
+        fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+            const full = path.join(dir, e.name);
+            return e.isDirectory() ? walk(full) : [full];
+        });
+    return walk(path.join(ROOT, rel)).filter((f) => f.endsWith(suffix)).length;
 }
 
 function registrySize(): number {
@@ -274,7 +293,11 @@ function baseSha(): string | null {
  */
 function countFilesAt(sha: string, rel: string, suffix: string): number | null {
     try {
-        const out = execFileSync('git', ['ls-tree', '--name-only', sha, `${rel}/`], {
+        // `-r` to match `countFiles` above, which is recursive since #994.
+        // These two MUST agree: the delta is (head - base), so counting the
+        // head recursively and the base flat would report 14 phantom new e2e
+        // specs on the very PR that widened it.
+        const out = execFileSync('git', ['ls-tree', '-r', '--name-only', sha, `${rel}/`], {
             cwd: ROOT,
             encoding: 'utf8',
             stdio: ['ignore', 'pipe', 'ignore'],
@@ -358,10 +381,32 @@ describe('rendered / browser coverage floor — staged upward ratchet', () => {
             // does double duty: it pins the ls-tree/readdirSync equivalence
             // this check depends on. `ls-tree` without `-r` must agree with
             // `readdirSync` exactly, or every delta is noise.
-            expect(countFilesAt('HEAD', 'tests/rendered', '.test.tsx')).toBe(rendered);
-            expect(countFilesAt('HEAD', 'tests/e2e', '.spec.ts')).toBe(e2e);
-            expect(floorAt('HEAD', 'RENDERED_TEST_FLOOR')).toBe(RENDERED_TEST_FLOOR);
-            expect(floorAt('HEAD', 'E2E_SPEC_FLOOR')).toBe(E2E_SPEC_FLOOR);
+            // Always true, and enough to kill a gutted helper: null/undefined
+            // fails both of these.
+            expect(countFilesAt('HEAD', 'tests/rendered', '.test.tsx')).toBeGreaterThan(0);
+            expect(countFilesAt('HEAD', 'tests/e2e', '.spec.ts')).toBeGreaterThan(0);
+            expect(floorAt('HEAD', 'RENDERED_TEST_FLOOR')).toBeGreaterThan(0);
+            expect(floorAt('HEAD', 'E2E_SPEC_FLOOR')).toBeGreaterThan(0);
+
+            // The EQUIVALENCE — ls-tree at HEAD agreeing exactly with the
+            // working tree — only holds when the tree is clean, so it is
+            // asserted only then. The first version asserted it
+            // unconditionally and failed on any UNCOMMITTED floor edit, which
+            // is precisely the change this guard tells you to make ("raise it
+            // in THIS PR"). CI never saw it because CI's tree is committed;
+            // the only people it punished were the ones following the
+            // instruction.
+            const dirty = execFileSync('git', ['status', '--porcelain'], {
+                cwd: ROOT,
+                encoding: 'utf8',
+                stdio: ['ignore', 'pipe', 'ignore'],
+            }).trim();
+            if (dirty === '') {
+                expect(countFilesAt('HEAD', 'tests/rendered', '.test.tsx')).toBe(rendered);
+                expect(countFilesAt('HEAD', 'tests/e2e', '.spec.ts')).toBe(e2e);
+                expect(floorAt('HEAD', 'RENDERED_TEST_FLOOR')).toBe(RENDERED_TEST_FLOOR);
+                expect(floorAt('HEAD', 'E2E_SPEC_FLOOR')).toBe(E2E_SPEC_FLOOR);
+            }
         });
 
         it('a base commit is resolvable in this repository', () => {
