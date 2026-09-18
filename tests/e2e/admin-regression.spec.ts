@@ -19,7 +19,6 @@ test.describe('Admin Area Regression', () => {
     test('admin page shows all pill buttons', async ({ page }) => {
         const slug = await loginAndGetTenant(page, ADMIN_USER);
         await safeGoto(page, `/t/${slug}/admin`, { waitUntil: 'domcontentloaded' });
-        await page.waitForLoadState('networkidle').catch(() => {});
 
         await expect(page.locator('h1')).toBeVisible({ timeout: 30000 });
 
@@ -37,7 +36,6 @@ test.describe('Admin Area Regression', () => {
     test('SCIM admin page renders token management', async ({ page }) => {
         const slug = await loginAndGetTenant(page, ADMIN_USER);
         await safeGoto(page, `/t/${slug}/admin/scim`, { waitUntil: 'domcontentloaded' });
-        await page.waitForLoadState('networkidle').catch(() => {});
 
         await expect(page.getByRole('heading', { name: /SCIM Provisioning/i })).toBeVisible({ timeout: 60000 });
         await expect(page.locator('#scim-endpoint-url')).toBeVisible({ timeout: 30000 });

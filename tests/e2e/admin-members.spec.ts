@@ -19,7 +19,6 @@ test.describe('Admin Member Management', () => {
         const tenantSlug = await loginAndGetTenant(page, ADMIN_USER);
 
         await safeGoto(page, `/t/${tenantSlug}/admin/members`, { waitUntil: 'domcontentloaded' });
-        await page.waitForLoadState('networkidle').catch(() => {});
 
         // Page loads with header
         await expect(page.getByRole('heading', { name: /Members/i })).toBeVisible({ timeout: 30000 });
@@ -33,7 +32,6 @@ test.describe('Admin Member Management', () => {
         const tenantSlug = await loginAndGetTenant(page, ADMIN_USER);
 
         await safeGoto(page, `/t/${tenantSlug}/admin/members`, { waitUntil: 'domcontentloaded' });
-        await page.waitForLoadState('networkidle').catch(() => {});
         await expect(page.locator('#members-table')).toBeVisible({ timeout: 30000 });
 
         // Click invite button
@@ -50,7 +48,6 @@ test.describe('Admin Member Management', () => {
         const tenantSlug = await loginAndGetTenant(page, ADMIN_USER);
 
         await safeGoto(page, `/t/${tenantSlug}/admin`, { waitUntil: 'domcontentloaded' });
-        await page.waitForLoadState('networkidle').catch(() => {});
 
         await expect(page.locator('#members-pill-btn')).toBeVisible({ timeout: 15000 });
     });

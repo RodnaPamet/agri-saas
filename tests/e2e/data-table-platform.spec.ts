@@ -150,7 +150,6 @@ test.describe('DataTable Platform — Row click navigation', () => {
     test('Assets row double-click navigates to detail', async ({ page }) => {
         tenantSlug = await loginAndGetTenant(page);
         await page.goto(`/t/${tenantSlug}/assets`);
-        await page.waitForLoadState('networkidle').catch(() => {});
         await page.waitForSelector('h1', { timeout: 15000 });
 
         // Seed provisions 3 tenant assets.
@@ -174,7 +173,6 @@ test.describe('DataTable Platform — Row click navigation', () => {
     test('Tasks row double-click navigates to detail', async ({ page }) => {
         tenantSlug = await loginAndGetTenant(page);
         await page.goto(`/t/${tenantSlug}/farm-tasks`);
-        await page.waitForLoadState('networkidle').catch(() => {});
         await page.waitForSelector('h1', { timeout: 15000 });
 
         // Seed provisions 4 tenant tasks.

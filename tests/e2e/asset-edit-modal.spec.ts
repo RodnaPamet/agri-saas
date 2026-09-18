@@ -48,7 +48,6 @@ async function createAsset(page: Page, slug: string): Promise<void> {
     await page.waitForSelector('#asset-name-input', { timeout: 15000 });
     await page.fill('#asset-name-input', `Edit Modal Asset ${uid}`);
     await page.click('#create-asset-submit');
-    await page.waitForLoadState('networkidle').catch(() => {});
     await page.waitForSelector('#asset-title-heading', { timeout: 30000 });
 }
 
