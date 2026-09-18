@@ -261,7 +261,18 @@ export async function flushOutbox(
         // exactly the kind of thing a reader would act on.
         //
         // So: skip, never send, never drop. It waits for its owner.
-        if (ownerUserId && item.queuedByUserId && item.queuedByUserId !== ownerUserId) {
+        //
+        // FAIL CLOSED (#1005). This read `ownerUserId && item.queuedByUserId
+        // && …`, where a null owner short-circuits to falsy and NOTHING is
+        // skipped — so the one case where the code cannot tell whose work it
+        // is was the case where it sent all of it. Same shape as the deletion
+        // guard in `supersedeQueuedWrites`, fixed in the same issue.
+        //
+        // An ATTRIBUTED item is now sent only when the owner is KNOWN to
+        // match. An unattributed one still sends: those are pre-#786 legacy
+        // rows, both drains treat them as sendable, and refusing them would
+        // strand work that has no owner to wait for.
+        if (item.queuedByUserId && item.queuedByUserId !== ownerUserId) {
             foreign++;
             continue;
         }

@@ -196,13 +196,28 @@ describe('back-compat and the no-owner case', () => {
         expect(res.foreign).toBe(0);
     });
 
-    it('drains everything when the drain has no known user', async () => {
-        // The service worker replays from IndexedDB with no session
-        // context. Passing null preserves exactly the previous behaviour.
+    it('HOLDS an attributed item when the drain has no known user (#1005)', async () => {
+        // This test used to assert the opposite — "drains everything" — and
+        // justified it with "the service worker replays from IndexedDB with no
+        // session context. Passing null preserves exactly the previous
+        // behaviour."
+        //
+        // That reason stopped being true at #956: `public/sw.js` resolves
+        // identity from the server via `swResolveWhoami` and refuses to flush
+        // without it. Nothing passes null because it has no session any more;
+        // null now means identity is genuinely UNRESOLVED, and replaying A's
+        // work under whatever cookie is current is the misattribution the skip
+        // exists to prevent.
+        //
+        // The behaviour was preserved deliberately once. It is changed
+        // deliberately now, because its premise is gone.
         const store = new InMemoryOutboxStore();
         seed(store, { id: 'a-item', queuedByUserId: 'usr_a' });
         const res = await flushOutbox(store, async () => OK, null);
-        expect(res.sent).toBe(1);
+        expect(res.sent).toBe(0);
+        expect(res.foreign).toBe(1);
+        // Held, never dropped — it waits for its owner.
+        expect((await store.all()).map((i) => i.id)).toEqual(['a-item']);
     });
 });
 
