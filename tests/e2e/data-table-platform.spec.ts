@@ -28,11 +28,16 @@ test.describe('DataTable Platform — Cross-page regression', () => {
         minHeaders?: number;
     }) {
         await page.goto(`/t/${tenantSlug}${path}`);
-        await page.waitForLoadState('networkidle').catch(() => {});
 
-        // Wait for heading
+        // Wait for heading. The count is allowed to SETTLE first: during an
+        // App Router transition the outgoing and incoming trees are both
+        // mounted, so a bare `locator('h1')` is a strict-mode violation rather
+        // than a wait, and strict mode throws immediately — the 15s never
+        // applies. #1010 hit exactly this once its `networkidle` (which had
+        // been hiding it by running late) was removed.
         if (opts?.heading) {
-            await expect(page.locator('h1')).toContainText(opts.heading, { timeout: 15000 });
+            await expect(page.locator('h1')).toHaveCount(1, { timeout: 15_000 });
+            await expect(page.locator('h1')).toContainText(opts.heading, { timeout: 15_000 });
         } else {
             await page.waitForSelector('h1', { timeout: 15000 });
         }
@@ -63,16 +68,14 @@ test.describe('DataTable Platform — Cross-page regression', () => {
             expect(tableVisible || emptyVisible).toBe(true);
         }
 
-        // Verify no legacy skeleton on the page
-        const skeletonTableRow = await page.locator('.data-table tbody .animate-pulse').count();
-        // After load, there should be no skeleton rows (DataTable handles loading internally)
-        if (skeletonTableRow > 0) {
-            // This is acceptable during loading transitions, but after networkidle should be 0
-            // Allow a brief grace period for slow renders
-            await page.waitForTimeout(1000);
-            const afterWait = await page.locator('.data-table tbody .animate-pulse').count();
-            expect(afterWait).toBe(0);
-        }
+        // No legacy skeleton rows once the table has loaded. This was a
+        // count, then a flat 1s sleep, then a recount — which asks "were they
+        // gone after exactly one second". The auto-waiting matcher asks the
+        // question actually intended, returns as soon as they clear, and does
+        // not spend the second when they already had.
+        await expect(page.locator('.data-table tbody .animate-pulse')).toHaveCount(0, {
+            timeout: 15_000,
+        });
     }
 
     // GRC teardown phase 2 — the Practices and Policies list tests were

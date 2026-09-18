@@ -14,7 +14,7 @@
  * the same way and is seeded — rather than deleted.
  */
 import { test, expect } from '@playwright/test';
-import { loginAndGetTenant, safeGoto } from './e2e-utils';
+import { loginAndGetTenant, safeGoto, waitForHydration } from './e2e-utils';
 
 test.describe('Search affordances', () => {
     test('assets search lives inside the filter dropdown; ⌘K still opens', async ({
@@ -24,15 +24,23 @@ test.describe('Search affordances', () => {
         await safeGoto(page, `/t/${tenantSlug}/assets`, {
             waitUntil: 'domcontentloaded',
         });
-        await page.waitForLoadState('networkidle').catch(() => {});
 
         const main = page.getByRole('main');
+
+        // A positive control before the absence. `toHaveCount(0)` is satisfied
+        // by a page that has not rendered at all, so the claim below only
+        // means something once the toolbar it is ABOUT is on screen. The
+        // `networkidle` removed above delayed that check without conditioning
+        // it, which is a slower way of not checking.
+        const filterTrigger = main.locator('[data-filter-trigger]').first();
+        await expect(filterTrigger).toBeVisible({ timeout: 15_000 });
 
         // No standalone search bar on the page.
         await expect(main.locator('input[type="search"]')).toHaveCount(0);
 
         // Open the Filter dropdown — the live content search lives within.
-        await main.locator('[data-filter-trigger]').first().click();
+        await waitForHydration(page, '[data-filter-trigger]');
+        await filterTrigger.click();
         const search = page.locator('#assets-search input');
         await expect(search).toBeVisible();
 

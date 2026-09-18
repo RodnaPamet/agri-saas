@@ -70,11 +70,15 @@ test.describe('Admin SSO Configuration', () => {
         // Next.js 14 dev server crash, but the admin/layout.tsx guard
         // renders a ForbiddenPage client-side.
         await safeGoto(page, `/t/${tenantSlug}/admin/sso`, { waitUntil: 'domcontentloaded' });
-        await page.waitForLoadState('networkidle').catch(() => {});
 
-        // The SSO config content should NOT be visible to a non-admin
-        const hasSsoConfig = await page.getByRole('heading', { name: /SSO/i }).isVisible().catch(() => false);
-        const hasSaveBtn = await page.getByRole('button', { name: /Save Configuration/i }).isVisible().catch(() => false);
-        expect(hasSsoConfig && hasSaveBtn).toBe(false);
+        // Same shape as admin-members: two INSTANT `isVisible()` reads and an
+        // `expect(a && b).toBe(false)` that a blank page satisfies twice over.
+        // Prove the guard rendered before asserting what it withheld.
+        await expect(async () => {
+            if (!new URL(page.url()).pathname.includes('/admin/sso')) return; // redirected — allowed
+            await expect(page.locator('#forbidden-heading')).toBeVisible();
+        }).toPass({ timeout: 15_000 });
+
+        await expect(page.getByRole('button', { name: /Save Configuration/i })).toHaveCount(0);
     });
 });

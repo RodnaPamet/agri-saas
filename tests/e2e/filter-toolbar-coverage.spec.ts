@@ -21,7 +21,6 @@ test.describe('FilterToolbar coverage', () => {
         await safeGoto(page, `/t/${tenantSlug}/farm-tasks?status=OPEN`, {
             waitUntil: 'domcontentloaded',
         });
-        await page.waitForLoadState('networkidle').catch(() => {});
 
         // The URL pre-applied the filter — the page must accept
         // that round-trip without erroring.

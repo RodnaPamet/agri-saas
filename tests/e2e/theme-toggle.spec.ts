@@ -64,13 +64,14 @@ test.describe('Epic 51 — theme toggle', () => {
         await safeGoto(page, `/t/${tenantSlug}/dashboard`, {
             waitUntil: 'domcontentloaded',
         });
-        await page.waitForLoadState('networkidle').catch(() => {});
 
-        // SSR baseline is dark.
-        const initialTheme = await page.evaluate(
-            () => document.documentElement.dataset.theme,
-        );
-        expect(initialTheme).toBe('dark');
+        // SSR baseline is dark. Asserted through an auto-waiting matcher
+        // rather than `page.evaluate` + `toBe`: the evaluate is an instant
+        // read, which is what made the `networkidle` above it load-bearing.
+        // The attribute is server-rendered, so this resolves immediately.
+        await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark', {
+            timeout: 15_000,
+        });
 
         // Open the command palette (the sidebar footer's inline
         // Search button is the desktop opener; the same affordance

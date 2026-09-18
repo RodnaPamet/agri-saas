@@ -8,7 +8,7 @@
  * the current tenant's row is shown.
  */
 import { test, expect } from '@playwright/test';
-import { loginAndGetTenant, safeGoto } from './e2e-utils';
+import { loginAndGetTenant, safeGoto, waitForHydration } from './e2e-utils';
 
 test.describe('Tenant switcher', () => {
     test('opens from the top chrome and lists the current tenant', async ({
@@ -18,12 +18,15 @@ test.describe('Tenant switcher', () => {
         await safeGoto(page, `/t/${tenantSlug}/dashboard`, {
             waitUntil: 'domcontentloaded',
         });
-        await page.waitForLoadState('networkidle').catch(() => {});
 
         const trigger = page.locator(
             '[data-testid="top-chrome-tenant-switcher"]',
         );
         await expect(trigger).toBeVisible({ timeout: 15_000 });
+        // Visible is not clickable. The `networkidle` removed above was
+        // buying hydration time incidentally; name the element being clicked
+        // instead, since `main` hydrates long before top chrome does.
+        await waitForHydration(page, '[data-testid="top-chrome-tenant-switcher"]');
         await trigger.click();
 
         // The current tenant's row exists in the popover. Other
