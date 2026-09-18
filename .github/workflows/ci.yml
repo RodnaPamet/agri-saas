@@ -552,6 +552,36 @@ jobs:
       - name: Apply Prisma migrations
         run: ./node_modules/.bin/prisma migrate deploy
 
+      # EVERY shard, not just shard 1. `tests/guards/` runs inside the sharded
+      # matrix as well — this job is "unit + integration + architectural
+      # guards" — so the floor guard can land on any shard, and it landed on
+      # 2/6. The shard-1 step below is an ADDITIONAL explicit guards run, not
+      # the only one. Scoping this to shard 1 made the guard fail on whichever
+      # other shard happened to host it.
+      #
+      # Still cheap, and still not `fetch-depth: 0`: this fetches ONE commit at
+      # depth 1 with `--filter=blob:none`, not 3,173 commits of history. The
+      # check counts FILES via `git ls-tree` and reads two constants, so it
+      # never needs the blobs.
+      #
+      # `|| true` is deliberate and is NOT a swallowed failure: if the fetch
+      # does not land, the guard itself fails loudly under
+      # RATCHET_DELTA_REQUIRE_BASE=1 with a message naming the depth problem.
+      # Failing here instead would report it as a checkout error rather than
+      # as the ratchet being unverifiable.
+      - name: Fetch the PR base commit for the ratchet delta check
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -uo pipefail
+          if [ -n "${BASE:-}" ] && [ "${BASE}" != "0000000000000000000000000000000000000000" ]; then
+            if git fetch --no-tags --filter=blob:none --depth=1 origin "${BASE}"; then
+              echo "fetched base ${BASE}"
+            else
+              echo "::warning::could not fetch base ${BASE} — the ratchet delta check will fail loudly in the guard, which is where it belongs"
+            fi
+          fi
+
       # ── Jest: unit + integration tests (sharded) ──
       # Each matrix worker runs Jest's deterministic 1-of-N hash split.
       # `--shard=${{ matrix.shard }}/${{ matrix.total }}` keeps each
@@ -559,6 +589,11 @@ jobs:
       # never collide across shards. The intra-shard run stays
       # `--runInBand` for the "one DB per worker" invariant.
       - name: "Run tests: unit + integration (shard)"
+        env:
+          # The guards run in THIS sharded pass too, so the ratchet delta
+          # check (#914) needs its base here as well as in the shard-1 step.
+          RATCHET_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          RATCHET_DELTA_REQUIRE_BASE: "1"
         # Invoke jest via `node --max-old-space-size=8192` (mirrors the
         # Typecheck job's tsc call). The runner's default ~2 GB V8 heap is
         # too small for the `--runInBand` suite and OOMs ("Reached heap
@@ -605,8 +640,23 @@ jobs:
       #   2. `npx jest tests/contracts/ -u`     (updates per-schema snapshots)
       #   3. Commit both files together. Reviewer sees the diff
       #      against the previous contract and approves explicitly.
+      # The ratchet delta check (#914) measures this PR against ITS OWN BASE,
+      # so it needs that one commit present. The default checkout is depth 1,
+      # where it is not.
+      #
       - name: "Run tests: architectural guards"
         if: matrix.shard == 1
+        env:
+          # The PR's own base — the same expression the selector-teeth job
+          # uses. NOT `merge-base --fork-point`, which guesses and inverts on
+          # a branch that is behind, reporting a peer's merged work as your
+          # deletions.
+          RATCHET_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          # Here the base is guaranteed, so a missing or unreadable one is a
+          # configuration failure, not an environment fact. Without this the
+          # delta check would degrade to a silent skip — the defect it exists
+          # to remove, one level up.
+          RATCHET_DELTA_REQUIRE_BASE: "1"
         run: node --max-old-space-size=8192 ./node_modules/jest/bin/jest.js tests/guards/ --runInBand --forceExit --no-coverage
 
       - name: "Gate: API contract tests"
