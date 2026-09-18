@@ -148,9 +148,11 @@ reports no `verificationStatus` on an email channel, so nothing short
 of a delivered message settles it. **There is still no rota and no pager** — one
 address, one person, email — so
 `docs/slos.md` SLO 7's 4 hours is still time-to-restore from the moment
-a person starts, and the 15-minute PagerDuty acknowledge in
-`docs/incident-response.md` still describes intended policy, not
-behaviour. Do not write an acknowledge or
+a person starts. **#981 accepted one inbox as the posture** rather than
+building a rota, so `docs/incident-response.md` now DESCRIBES it: the
+15-minute PagerDuty acknowledge is gone from the severity table instead
+of being annotated as aspirational, because a caveat under a wrong table
+loses to the table for a reader mid-incident. Do not write an acknowledge or
 alert-to-human time into any doc: an inbox is not an on-call rota. `infra/alerts/external-uptime.yml` records what runs
 and why the probe is `readyz` rather than `livez` — the previous spec's
 reasoning was imported from a multi-pod Kubernetes deployment and is

@@ -19,14 +19,16 @@
 > alert policy with an attached email channel fires on sustained
 > multi-region failure. So an outage reaches an inbox within a couple of
 > minutes. **There is still no rota and no pager** — one address, one
-> person, email — so nothing wakes anyone at 03:00, and every acknowledge
-> and routing claim below remains intended policy rather than behaviour.
+> person, email — so nothing wakes anyone at 03:00. That one inbox is the
+> ACCEPTED posture, not a gap awaiting a pager (#981): the severity table
+> below now describes it instead of the PagerDuty rota it used to promise.
 >
 > | section | status |
 > |---|---|
 > | [1. App Down](#1-app-down) | **corrected (#842)** — VM commands, verified against the running instance |
 > | [6. Rollback](#6-rollback) | **corrected (#842)** — VM procedure, verified |
-> | Quick reference, Severity, Dashboards, Common first steps | describe PagerDuty / Grafana / Alertmanager that are **not deployed** |
+> | [Severity definitions](#severity-definitions) | **corrected (#981)** — describes the one email channel that is deployed |
+> | Quick reference, Dashboards, Common first steps | describe PagerDuty / Grafana / Alertmanager that are **not deployed** |
 > | 2. Database, 3. Redis, 4. Queue Backlog, 5. Certificate Expiry | `kubectl` / `aws` / `cert-manager` commands against infrastructure that **does not exist** — treat as unverified |
 > | [7. Data Breach Response](#7-data-breach-response) | partially corrected in #808; the `AuditLog` and KEK-rotation halves are real, the AWS commands are not |
 >
@@ -48,7 +50,7 @@
 
 | You see... | Page severity | First-look dashboard | Playbook |
 |---|---|---|---|
-| External uptime monitor 503 | **CRITICAL** (PagerDuty) | [App Overview](#dashboards) | [App Down](#1-app-down) |
+| External uptime monitor 503 | **CRITICAL** (email) | [App Overview](#dashboards) | [App Down](#1-app-down) |
 | `ApiP95LatencyCritical` (>2s) | **CRITICAL** | App Overview + Database | [Database Unavailable / Slow](#2-database-unavailable--slow) |
 | `DatabaseConnectionPoolExhausted` | **CRITICAL** | Database | [Database Unavailable / Slow](#2-database-unavailable--slow) |
 | `RedisMemoryHighCritical` (>95%) | **CRITICAL** | Redis | [Redis OOM / Degraded Queueing](#3-redis-oom--degraded-queueing) |
@@ -58,30 +60,50 @@
 | Bad deploy detected (smoke fail / 5xx spike post-merge) | varies | App Overview | [Rollback](#6-rollback) |
 | Suspected unauthorised data access | **CRITICAL** + escalate | n/a | [Data Breach Response](#7-data-breach-response) |
 
-**On-call channel**: PagerDuty service `inflect-compliance-prod`. The integration key + Slack webhook live in the cluster's Alertmanager Secret (env-var-substituted via `${PAGERDUTY_SERVICE_KEY}` and `${SLACK_WEBHOOK_URL}` in `infra/alerts/receivers.yml`).
+**On-call channel**: one email address. GCP Cloud Monitoring notification
+channel `agrent on-call` (id `11199896282881593035`), attached to alert policy
+`agrent production is not ready (#854)`. The address lives in GCP project
+config and deliberately not in this public repository.
+
+`infra/alerts/receivers.yml` describes a PagerDuty service and a Slack webhook
+for an Alertmanager that is not deployed. It is a design document, not a
+routing table — nothing reads it. (It also named the service
+`inflect-compliance-prod`, which belongs to a different product entirely.)
 
 ---
 
 ## Severity definitions
 
-| Severity | Routing | Response time (acknowledge) | Resolution time budget |
+| Severity | Routing | Acknowledge | Resolution budget, once a human starts |
 |---|---|---|---|
-| **CRITICAL** | PagerDuty page → on-call | 15 minutes | 4 hours (SLO 7 — RTO) |
-| **WARNING** | Slack `#alerts-warnings` | Next business day | One sprint |
+| **CRITICAL** | Email to `agrent on-call` — one address, one person | **none: nothing escalates** | 4 hours (SLO 7 — RTO) |
+| **WARNING** | Nowhere — no warning-level alert is wired up | — | One sprint |
 
-**Severity is set by the alert rule's `labels.severity` field, not by the responder.** If you need to escalate a warning to critical, file a manual PagerDuty incident referencing the alert.
+**Only one alert exists**, and it is not in `infra/alerts/rules.yml`: the GCP
+alert policy behind the uptime check. The `labels.severity` field those rules
+carry is not read by anything, so severity here is a description of how bad a
+symptom is, not a routing instruction.
 
-> **⚠ This table is intended policy, not current behaviour — see #854.**
-> The routing column is not deployed: there is no PagerDuty service, no
-> Alertmanager, no Slack alert webhook and no rota, so no alert rule
-> sets a severity. Detection itself is no longer the gap — since
-> 2026-09-17 a GCP uptime check and alert policy email one named person
-> when `/api/readyz` fails from more than one region. But an inbox is not
-> an on-call rota: the 15-minute acknowledge budget still measures
-> nothing, because nothing escalates and nobody is paged. The 4-hour
-> resolution budget is real, but it runs from the moment a person
-> starts, which is why `docs/slos.md` SLO 7 reads its RTO as
-> time-to-restore rather than time-to-recover.
+**There is no acknowledge budget, and that is deliberate.** A 15-minute
+acknowledge was written here when this document assumed a PagerDuty rota. The
+rota was never deployed, but the figure outlived that discovery by five months:
+it measured nothing, while reading — to anyone who opened this runbook
+mid-incident — like a commitment somebody had made. An unenforced budget is
+worse than an absent one, because it tells the reader a clock is being watched
+when no clock exists.
+
+So the honest statement is the one below, and it is what #981 decided to accept
+rather than close:
+
+> **Out of hours, detection is fast and response is not.** The alert lands in
+> an inbox within about two minutes of the service failing from more than one
+> region. Nothing then pages, escalates, or re-notifies. The next step happens
+> when a person next reads that inbox — which at 03:00 means the morning.
+
+The 4-hour resolution budget above is real, but it is clocked from that
+moment — not from the outage — which is why `docs/slos.md` SLO 7 reads its RTO
+as time-to-restore rather than time-to-recover. If you need the acknowledge
+half bounded too, that is a rota, and a rota is people before it is tooling.
 
 ---
 
@@ -103,7 +125,11 @@ Every alert annotation carries a `dashboard:` field linking straight to the righ
 
 ## Common first steps (every incident)
 
-1. **Acknowledge in PagerDuty** within 15 minutes (silences re-pages, signals to the team that someone owns it).
+1. **There is nothing to acknowledge.** No pager, no re-pages, no ownership
+   signal — if you are reading the alert email, you are the responder. Note
+   the time you started: SLO 7's 4-hour budget runs from here, not from the
+   outage. Be aware the GCP alert **auto-closes 30 minutes** after the check
+   recovers, so a closed incident is not evidence anyone acted.
 2. **Open the dashboard** linked from the alert annotation.
 3. **Check the deploy timeline**: `gh run list --workflow=Deploy --limit=5`. A new incident immediately after a deploy almost always points at the deploy as cause.
 4. **Decide between** mitigation (rollback / scale) vs investigation (debug live):
@@ -117,14 +143,18 @@ Every alert annotation carries a `dashboard:` field linking straight to the righ
 
 **Trigger**: the site is unreachable, or a user reports 5xx / connection refused.
 
-> **How this incident actually starts: a human notices.** There is no
-> external uptime monitor, no alert and no pager — verified 2026-09-10,
-> tracked as **#854**. Nothing in this document detects an outage; every
-> minute between the app dying and someone opening the site is
-> unmeasured and uncapped, and the 4-hour RTO in `docs/slos.md` SLO 7
-> is time-to-restore *from the moment you start*, not from the moment
-> it broke. Read any "page severity" or "acknowledge within 15 minutes"
-> below as the intended policy, not as a description of today.
+> **How this incident actually starts: an email arrives.** Since 2026-09-17
+> (**#854**) a GCP uptime check probes `/api/readyz` every 60s from six
+> regions, and alert policy `agrent production is not ready (#854)` emails
+> `agrent on-call` when more than one region fails for 60s. Detection is
+> bounded at roughly two minutes.
+>
+> **What is not bounded is you reading it.** One address, one person, email,
+> no rota and no pager — nothing escalates and nothing re-notifies, so out of
+> hours this still starts when a human next looks. That posture is accepted
+> rather than open (**#981**), which is why nothing in this document states an
+> acknowledge time. The 4-hour RTO in `docs/slos.md` SLO 7 is time-to-restore
+> *from the moment you start*, not from the moment it broke.
 
 **What it means**: `/api/livez` cannot be reached. Either the `agrent-app` container is dead or restart-looping, Caddy is not proxying, or the VM itself is down.
 
@@ -206,7 +236,13 @@ gcloud compute ssh agrent --zone europe-west1-b --command "df -h /; free -h"
 - `curl https://app.agrent.bg/api/livez` returns 200 from your machine.
 - `curl -s https://app.agrent.bg/api/readyz | jq '{status, version, checks}'` — `status: "ready"`, database and redis `ok`, and `version` is the commit SHA you expect.
 - `SMOKE_URL=https://app.agrent.bg node scripts/smoke-prod.mjs` passes.
-- There is no external uptime monitor to go green, and no PagerDuty incident to auto-resolve. Confirm by hand.
+- The external uptime check goes green on its own: `agrent-readyz-oKY0R5q09QU`
+  probes every 60s from six regions, so expect recovery to register within a
+  couple of minutes, and the GCP alert to auto-close 30 minutes after the
+  condition clears. There is no PagerDuty incident to resolve — that alert
+  policy and the email channel are the whole of the routing. **Auto-close is
+  not confirmation**: a flapping service closes and re-fires, so confirm
+  recovery with the three checks above rather than with a quiet inbox.
 
 ---
 
@@ -681,13 +717,13 @@ Within 7 days:
 
 ## Communication templates
 
-### PagerDuty incident (auto-generated by the alerting pipeline)
+### The alert email (GCP Cloud Monitoring)
 
-The PagerDuty incident description is auto-populated by the alert
-annotation. **Do not edit the alert annotation in flight** — that
-would cause every future fire of the same alert to inherit your
-in-incident notes. Use the PagerDuty incident's own `Notes` field
-for the running commentary.
+The only notification this deployment sends. It carries the policy name, the
+failing regions and a console link to the incident; there is no description
+field to edit and nowhere in it to record commentary. Keep running notes in
+the post-mortem file instead — `docs/post-mortems/<YYYY-MM-DD>-<short-title>.md`,
+created at the start of the incident rather than after it.
 
 ### Status page update — initial
 

@@ -240,6 +240,9 @@ posture actually deployed. The AWS scripts (`restore-test.sh`,
 
 **Still open:** RPO is 24h, and since 2026-09-10 (#842) that is the
 stated objective rather than a missed 1-hour target. Tightening it needs
-continuous WAL archiving or a managed Postgres; neither is funded. The
-larger open item is that nothing detects an outage in the first place
-(#854).
+continuous WAL archiving or a managed Postgres; neither is funded.
+Detection is no longer the larger open item — a GCP uptime check and alert
+policy have emailed an outage to one address since 2026-09-17 (#854). What
+remains is that nobody is paged: response out of hours waits for someone to
+read that inbox, accepted as the posture in #981 rather than tracked as a
+gap.

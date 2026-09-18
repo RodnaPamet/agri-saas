@@ -349,17 +349,29 @@ describe('OI-3 — SLOs (docs/slos.md)', () => {
         expect(rto).not.toMatch(/aws secretsmanager/);
     });
 
-    it('SLO 7 states that detection is uninstrumented and names the issue tracking it', () => {
-        // #854 — nothing detects a production outage: no monitoring, no
-        // alerting, no pager, no uptime check. An RTO that silently
-        // assumes a 15-minute acknowledge is an RTO measured from a
-        // moment nobody observes.
+    it('SLO 7 separates bounded detection from unbounded response, and names both issues', () => {
+        // This assertion has moved twice, and the movement is the point.
+        //
+        // Until 2026-09-17 it required SLO 7 to say detection was
+        // UNINSTRUMENTED, which was then true (#854). The uptime check made
+        // that false, and #981 accepted one email inbox as the posture rather
+        // than building a rota — so the claim that has to survive here is no
+        // longer "nothing detects" but "detection is bounded and response is
+        // not". Deleting the assertion with the fact would have let the RTO
+        // read as end-to-end.
+        //
+        // `/unbounded/` alone cannot tell the two versions apart: the old text
+        // said detection was unbounded, the new one says acknowledgement is.
+        // Which noun it attaches to is checked by
+        // tests/guards/incident-docs-state-the-deployed-posture.test.ts, which
+        // parses the tables rather than grepping the prose.
         const rto = section(read('docs/slos.md'), '## SLO 7: RTO');
         expect(rto).not.toBe('');
         expect(rto.length).toBeGreaterThan(1500);
         expect(rto).toMatch(/#854/);
+        expect(rto).toMatch(/#981/);
         expect(rto).toMatch(/human noticing|someone notices|a human next looks/i);
-        expect(rto).toMatch(/not instrumented|uninstrumented|unbounded/i);
+        expect(rto).toMatch(/unbounded|no budget|carries no budget/i);
     });
 
     it('declares the repository SLO that uses OI-3 part 2 metrics', () => {
@@ -477,14 +489,26 @@ describe('OI-3 — Incident response runbook (docs/incident-response.md)', () =>
         expect(appDown).toMatch(/curl[^`]*\/api\/livez/);
     });
 
-    it('App Down playbook says plainly that detection is a human noticing', () => {
-        // #854. The playbook opens the incident, so it is where the
-        // reader forms their belief about how the incident was found.
+    it('App Down playbook says plainly how the incident actually starts', () => {
+        // The playbook opens the incident, so it is where the reader forms
+        // their belief about how it was found. That belief has changed once
+        // and the assertion had to change with it: until 2026-09-17 the
+        // honest statement was "a human notices" (#854), and asserting it
+        // kept the document from implying an alert. An uptime check now
+        // emails within ~2 minutes, so the same assertion would hold the
+        // document at a claim that understates what exists — a responder who
+        // believes nobody was told does not go looking for the email.
+        //
+        // What must survive is the SPLIT: detection bounded, response not.
         const appDown = section(read(DOC), '\n## 1. App Down');
         expect(appDown).not.toBe('');
         expect(appDown.length).toBeGreaterThan(1500);
-        expect(appDown).toMatch(/human noticing|a human notices/i);
         expect(appDown).toMatch(/#854/);
+        expect(appDown).toMatch(/#981/);
+        // detection half — named concretely enough to be checkable
+        expect(appDown).toMatch(/uptime check|alert policy/i);
+        // response half — still nobody on call
+        expect(appDown).toMatch(/no rota|no pager|nobody is on call/i);
     });
 
     it('Rollback playbook gives the VM rollback path, with the image tag and the apply script', () => {
@@ -600,7 +624,10 @@ describe('OI-3 — Incident response runbook (docs/incident-response.md)', () =>
         expect(templatesSection).not.toBe('');
         expect(templatesSection.length).toBeGreaterThan(2000);
         const templates = [
-            'PagerDuty incident',
+            // Was 'PagerDuty incident' — a template for a system that is not
+            // deployed. The GCP alert email is the only notification this
+            // deployment sends (#981).
+            'The alert email',
             'Status page update — initial',
             'Status page update — mitigation in progress',
             'Status page update — resolved',
@@ -618,21 +645,28 @@ describe('OI-3 — Incident response runbook (docs/incident-response.md)', () =>
         const sev = section(read(DOC), '\n## Severity definitions');
         expect(sev).not.toBe('');
         expect(sev.length).toBeGreaterThan(200);
-        expect(sev).toMatch(/CRITICAL[\s\S]{0,200}PagerDuty/);
-        expect(sev).toMatch(/WARNING[\s\S]{0,200}Slack/);
+        // Both tiers still exist; what changed is where they go. CRITICAL
+        // routes to the one email channel that is attached to the one alert
+        // policy that exists, and WARNING routes nowhere at all (#981).
+        expect(sev).toMatch(/CRITICAL[\s\S]{0,200}[Ee]mail/);
+        expect(sev).toMatch(/WARNING/);
+        // The routing cells are checked properly — as CELLS, not as a
+        // 200-character window over prose — in
+        // tests/guards/incident-docs-state-the-deployed-posture.test.ts.
     });
 
-    it('Severity definitions do NOT present the 15-minute acknowledge as a real budget', () => {
-        // #854. The table's 15-minute acknowledge and its 4-hour
-        // resolution budget are both routed through a PagerDuty service
-        // that does not exist. Keeping the table is fine — it is the
-        // intended policy — but it must not read as a description of
-        // what happens today.
+    it('Severity definitions state that nothing escalates', () => {
+        // This used to require the section to CAVEAT its 15-minute
+        // acknowledge, because the table was kept as intended policy. #981
+        // resolved that the other way: one inbox is the posture, so the
+        // table now describes it and the acknowledge budget is gone rather
+        // than annotated. A caveat under a wrong table is weaker than a
+        // right table — the reader mid-incident reads the table.
         const sev = section(read(DOC), '\n## Severity definitions');
         expect(sev).not.toBe('');
         expect(sev.length).toBeGreaterThan(200);
-        expect(sev).toMatch(/#854/);
-        expect(sev).toMatch(/not deployed|does not exist|nothing pages/i);
+        expect(sev).toMatch(/#981/);
+        expect(sev).toMatch(/nothing escalates|no acknowledge budget|nobody is paged/i);
     });
 
     it('Operational alignment section names every prior-epic deliverable', () => {

@@ -9,13 +9,17 @@
 > a deployment this product has never had — see
 > [What this deployment does not have](#what-this-deployment-does-not-have).
 >
-> **How you found out about this incident: a human noticed.** Nothing
-> here detects an outage. There is no uptime check, no alert, no pager
-> and no rota — verified 2026-09-10 and tracked as **#854**. If you are
-> reading this because a monitor fired, the monitor is not one of ours.
-> Every procedure below starts its clock the moment you start; the
-> interval before that is unmeasured, and `docs/slos.md` SLO 7's
-> 4 hours is time-to-restore, not time-to-recover.
+> **How you found out about this incident.** Probably an email: since
+> 2026-09-17 (**#854**) a GCP uptime check probes `/api/readyz` every 60s
+> from six regions and alert policy `agrent production is not ready
+> (#854)` mails `agrent on-call` when more than one region fails for 60s.
+> Detection is bounded at roughly two minutes.
+>
+> **There is still no pager and no rota**, and #981 accepted that rather
+> than closing it. Nothing escalates and nothing re-notifies, so out of
+> hours the alert waits in an inbox. Every procedure below starts its
+> clock the moment you start; the interval before that is unbounded, and
+> `docs/slos.md` SLO 7's 4 hours is time-to-restore, not time-to-recover.
 >
 > Summary table: `docs/deployment.md` §
 > "Kubernetes (Helm) — NOT the production path". Backup/restore detail:
