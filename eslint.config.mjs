@@ -50,6 +50,24 @@ const config = [
             // CI on identical code: measured 122 vs 121, the whole
             // difference being one warning inside `dist/worker.mjs`.
             'dist/**',
+            // Agent/workflow git worktrees are created INSIDE the repo at
+            // `.claude/worktrees/<run>/`. They are gitignored, but ESLint
+            // walks `.` and does not read .gitignore, so it descends into
+            // them. Two failure modes, both measured:
+            //
+            //   1. a worktree removed mid-run makes the gate CRASH rather
+            //      than fail — `lint ceiling failed to run: ENOENT …
+            //      .claude/worktrees/wf_…/src/lib/auth/native/auth-codes.ts`
+            //   2. a worktree that LINGERS (one whose agent changed files is
+            //      kept, not auto-removed) adds a second full copy of the
+            //      tree — ~3,900 files — so every count roughly doubles and
+            //      every ceiling blows for a reason that has nothing to do
+            //      with the diff.
+            //
+            // Same reasoning as `dist/**` directly above: a gate that
+            // disagrees with itself depending on what else is running gets
+            // diagnosed as flaky and then ignored.
+            '.claude/**',
         ],
     },
     {
