@@ -31,7 +31,7 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
-import { loginAndGetTenant, safeGoto } from './e2e-utils';
+import { loginAndGetTenant, safeGoto, waitForHydration } from './e2e-utils';
 
 const ADMIN_USER = { email: 'admin@acme.com', password: 'password123' };
 
@@ -70,7 +70,6 @@ test.describe('Epic 56 — tooltip + copy primitives', () => {
         await safeGoto(page, `/t/${tenantSlug}/assets`, {
             waitUntil: 'domcontentloaded',
         });
-        await page.waitForLoadState('networkidle').catch(() => {});
 
         // Select the first row to make the SelectionToolbar visible.
         // The shared DataTable wraps its Radix Checkbox in a
@@ -88,6 +87,14 @@ test.describe('Epic 56 — tooltip + copy primitives', () => {
             .locator('[title="Select"]')
             .first();
         await firstRowSelect.waitFor({ state: 'visible', timeout: 30_000 });
+        // Visible is not clickable: this row is server-rendered before React
+        // attaches, so a click can land on markup and do nothing. The
+        // `networkidle` removed above was buying that time incidentally, which
+        // is why it looked redundant next to the `waitFor` and was not. Name
+        // the element being CLICKED — hydration is top-down, so fibers on this
+        // node mean the handler-owning ancestor is live, and waiting on `main`
+        // would return long before the table body attached.
+        await waitForHydration(page, 'tbody tr [title="Select"]');
         await firstRowSelect.click();
 
         const toolbar = page.locator('[data-testid="selection-toolbar"]');
@@ -121,7 +128,6 @@ test.describe('Epic 56 — tooltip + copy primitives', () => {
         await safeGoto(page, `/t/${tenantSlug}/admin/scim`, {
             waitUntil: 'domcontentloaded',
         });
-        await page.waitForLoadState('networkidle').catch(() => {});
 
         // The <code> starts as a loading placeholder and fills in once
         // `GET /admin/scim` resolves; wait for a real URL rather than a
@@ -156,7 +162,6 @@ test.describe('Epic 56 — tooltip + copy primitives', () => {
         await safeGoto(page, `/t/${tenantSlug}/farm-tasks`, {
             waitUntil: 'domcontentloaded',
         });
-        await page.waitForLoadState('networkidle').catch(() => {});
 
         // First task ROW link inside the farm-tasks table (the title cell is a
         // TableTitleCell <Link>). Not the page-level header / FAB nav buttons
@@ -165,6 +170,10 @@ test.describe('Epic 56 — tooltip + copy primitives', () => {
             .locator('[data-testid="farm-tasks-table"] tbody tr a[href*="/farm-tasks/"]')
             .first();
         await expect(firstTask).toBeVisible({ timeout: 30_000 });
+        // Same reason as the selection-toolbar test above: a click on an
+        // unhydrated <Link> is a no-op that surfaces later as a navigation
+        // that never happened.
+        await waitForHydration(page, '[data-testid="farm-tasks-table"] tbody tr a[href*="/farm-tasks/"]');
         await firstTask.click();
         await page.waitForURL(/farm-tasks\/[a-z0-9]+$/i, {
             waitUntil: 'domcontentloaded',

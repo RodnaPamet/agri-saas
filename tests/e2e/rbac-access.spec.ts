@@ -20,13 +20,22 @@ test.describe('RBAC Access Control', () => {
         let attempts = 2;
         while (attempts > 0) {
             await safeGoto(page, `/t/${tenantSlug}/admin/rbac`, { waitUntil: 'domcontentloaded' });
-            await page.waitForLoadState('networkidle').catch(() => {});
 
-            const hasContent = await page.locator('text=Permission Matrix').first().isVisible().catch(() => false);
-            if (hasContent) break;
+            // An auto-waiting probe instead of `networkidle` + an INSTANT
+            // `isVisible()`. The instant check is what made the full network
+            // wait load-bearing, and it still raced it; this returns the
+            // moment the content appears and costs nothing when it is already
+            // there. The retry stays because only a re-navigation recovers a
+            // dev-server 500 — no assertion can.
+            const rendered = await page
+                .locator('text=Permission Matrix')
+                .first()
+                .waitFor({ state: 'visible', timeout: 15_000 })
+                .then(() => true)
+                .catch(() => false);
+            if (rendered) break;
 
             attempts--;
-            if (attempts > 0) await page.waitForTimeout(5000);
         }
 
         await expect(page.locator('text=Roles').first()).toBeVisible({ timeout: 15000 });
@@ -41,9 +50,24 @@ test.describe('RBAC Access Control', () => {
         // Next.js 14 dev server crash, but the admin/layout.tsx guard
         // renders a ForbiddenPage client-side.
         await safeGoto(page, `/t/${tenantSlug}/admin/rbac`, { waitUntil: 'domcontentloaded' });
-        await page.waitForLoadState('networkidle').catch(() => {});
 
-        // The RBAC admin content should NOT be visible to a non-admin
+        // A positive control, before the absence. On its own
+        // `not.toBeVisible()` passes on a blank page, a 500, a redirect to
+        // /login and a page that simply has not rendered yet — every way this
+        // test could be meaningless is indistinguishable from its pass, and
+        // the `networkidle` that used to stand here made that MORE likely to
+        // look fine rather than less, because it only delayed the same
+        // unconditioned check.
+        //
+        // The test name allows two outcomes, so the control accepts either:
+        // still on the admin route showing the forbidden UX, or navigated
+        // away from it. `toPass` retries an OBSERVATION here, never an action.
+        await expect(async () => {
+            if (!new URL(page.url()).pathname.includes('/admin/rbac')) return; // redirected — allowed
+            await expect(page.locator('#forbidden-heading')).toBeVisible();
+        }).toPass({ timeout: 15_000 });
+
+        // ...and only now is the absence meaningful.
         await expect(page.locator('text=Permission Matrix')).not.toBeVisible();
     });
 
@@ -54,7 +78,12 @@ test.describe('RBAC Access Control', () => {
 
         // With defense-in-depth (noStore + fail-closed filter), the admin link
         // should never be in the DOM for a reader user. No hydration wait needed.
-        const adminLink = page.locator('aside [data-testid="nav-admin"]');
-        await expect(adminLink).not.toBeVisible();
+        // Same shape as above: assert the nav itself rendered, or "the admin
+        // link is not visible" is also satisfied by there being no nav at all.
+        await expect(page.locator('aside')).toBeVisible({ timeout: 15_000 });
+        // `toHaveCount(0)` rather than `not.toBeVisible()` because the claim in
+        // the comment above is that it is never in the DOM, which is the
+        // stronger property and the one worth pinning.
+        await expect(page.locator('aside [data-testid="nav-admin"]')).toHaveCount(0);
     });
 });

@@ -33,7 +33,6 @@ test.describe('Onboarding Wizard', () => {
     test('admin starts onboarding and sees the wizard', async ({ page }) => {
         const slug = await signInAs(page, tenant);
         await gotoAndVerify(page, `/t/${slug}/onboarding`, 'main');
-        await page.waitForLoadState('networkidle').catch(() => {});
 
         // The onboarding page uses dynamic import (ssr: false) + API fetch.
         // Wait for either the welcome screen OR the wizard OR completed state to render.
@@ -58,23 +57,30 @@ test.describe('Onboarding Wizard', () => {
         await gotoAndVerify(page, `/t/${slug}/onboarding`, 'main');
 
         // Start onboarding if on welcome screen
+        // `isVisible()` does not wait — the `{ timeout }` argument is ignored.
+        // Each of these was therefore an INSTANT read, which is what made the
+        // `networkidle` after every click load-bearing: the wait was standing
+        // in for the auto-waiting the probe itself should have been doing.
+        // `waitFor` keeps the conditional shape exactly, returns as soon as the
+        // control appears, and costs nothing when it is already there.
+        const appears = (l: import('@playwright/test').Locator, ms: number) =>
+            l.waitFor({ state: 'visible', timeout: ms }).then(() => true).catch(() => false);
+
         const startBtn = page.locator('button:has-text("Start Setup")');
-        if (await startBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+        if (await appears(startBtn, 3000)) {
             await startBtn.click();
-            await page.waitForLoadState('networkidle').catch(() => {});
         }
 
         // Fill company name
         const nameInput = page.locator('[data-testid="company-name"]');
-        if (await nameInput.isVisible({ timeout: 5000 }).catch(() => false)) {
+        if (await appears(nameInput, 5000)) {
             await nameInput.fill('Acme Corporation');
         }
 
         // Click Continue
         const continueBtn = page.locator('button:has-text("Continue")');
-        if (await continueBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+        if (await appears(continueBtn, 5000)) {
             await continueBtn.click();
-            await page.waitForLoadState('networkidle').catch(() => {});
         }
     });
 
@@ -82,10 +88,13 @@ test.describe('Onboarding Wizard', () => {
         const slug = await signInAs(page, tenant);
         await gotoAndVerify(page, `/t/${slug}/onboarding`, 'main');
 
-        // Should NOT show the welcome screen — should show the wizard with progress
-        await page.waitForLoadState('networkidle').catch(() => {});
+        // Should NOT show the welcome screen — should show the wizard with progress.
+        // Auto-waiting probe rather than `networkidle` + an instant `isVisible()`.
         const wizardEl = page.locator('[data-testid="onboarding-wizard"]');
-        const hasWizard = await wizardEl.isVisible({ timeout: 5000 }).catch(() => false);
+        const hasWizard = await wizardEl
+            .waitFor({ state: 'visible', timeout: 5000 })
+            .then(() => true)
+            .catch(() => false);
 
         if (hasWizard) {
             // Verify we resumed — at least 1 step should be complete
@@ -106,8 +115,12 @@ test.describe('Onboarding Wizard', () => {
         const slug = await loginAsAdmin(page, { email: 'viewer@acme.com', password: 'password123' });
 
         await gotoAndVerify(page, `/t/${slug}/onboarding`, 'main');
-        await page.waitForLoadState('networkidle').catch(() => {});
 
+        // `textContent` is an instant read and the assertion below is satisfied
+        // by the ABSENCE of 'Setup Wizard', so an unrendered page would pass it.
+        // The positive control is `gotoAndVerify` above, which waits for `main`
+        // to be visible and for hydration — that, not `networkidle`, is what
+        // makes the read below meaningful.
         const pageContent = await page.textContent('body');
         const blocked = pageContent?.includes('Access Restricted') || pageContent?.includes('administrator');
         // Either blocked with message or redirected — both are acceptable
