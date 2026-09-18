@@ -346,6 +346,34 @@ describe('rendered / browser coverage floor — staged upward ratchet', () => {
          */
         const base = baseSha();
 
+        it('the counting helpers actually work — control on the delta below', () => {
+            // selector-teeth proved this was needed: gutting `countFilesAt`,
+            // `floorAt` or `baseSha` to null landed in the "no base" path, and
+            // the delta check then passed having compared nothing. All three
+            // SURVIVED every mutation. The degradation that keeps local runs
+            // working is the same shape as a vacuous pass, so the helpers have
+            // to be exercised against something that ALWAYS resolves.
+            //
+            // HEAD is that thing, and asserting equality with the live counts
+            // does double duty: it pins the ls-tree/readdirSync equivalence
+            // this check depends on. `ls-tree` without `-r` must agree with
+            // `readdirSync` exactly, or every delta is noise.
+            expect(countFilesAt('HEAD', 'tests/rendered', '.test.tsx')).toBe(rendered);
+            expect(countFilesAt('HEAD', 'tests/e2e', '.spec.ts')).toBe(e2e);
+            expect(floorAt('HEAD', 'RENDERED_TEST_FLOOR')).toBe(RENDERED_TEST_FLOOR);
+            expect(floorAt('HEAD', 'E2E_SPEC_FLOOR')).toBe(E2E_SPEC_FLOOR);
+        });
+
+        it('a base commit is resolvable in this repository', () => {
+            // Gutting `baseSha()` to null makes every assertion below inert
+            // while staying green, so "no base" cannot be treated as an
+            // acceptable resting state here. Both CI contexts can resolve one
+            // (the guards step is handed RATCHET_BASE_SHA; the selector-teeth
+            // job checks out with fetch-depth: 0), and so can any clone with
+            // an `origin/main`.
+            expect(baseSha()).toMatch(/^[0-9a-f]{7,40}$/i);
+        });
+
         it('the base commit was resolved — otherwise nothing below is checked', () => {
             // A skip that looks like a pass is the defect this guard family
             // exists to catch, so absence is REPORTED, and in CI it is fatal.
