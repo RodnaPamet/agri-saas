@@ -605,8 +605,45 @@ jobs:
       #   2. `npx jest tests/contracts/ -u`     (updates per-schema snapshots)
       #   3. Commit both files together. Reviewer sees the diff
       #      against the previous contract and approves explicitly.
+      # The ratchet delta check (#914) measures this PR against ITS OWN BASE,
+      # so it needs that one commit present. The default checkout is depth 1,
+      # where it is not.
+      #
+      # Fetched here rather than by raising the job's `fetch-depth`, because
+      # `tests/guards/` runs on SHARD 1 ONLY (see the step below) — a job-level
+      # fetch-depth: 0 would make all six shards pay for 3,173 commits to
+      # serve one. `--filter=blob:none` keeps it to commits and trees: the
+      # check counts FILES via `git ls-tree` and reads two constants, so it
+      # never needs the blobs.
+      #
+      # `|| true` is deliberate and is NOT a swallowed failure: if the fetch
+      # does not land, the guard itself fails loudly under
+      # RATCHET_DELTA_REQUIRE_BASE=1 with a message naming the depth problem.
+      # Failing here instead would report it as a checkout error rather than
+      # as the ratchet being unverifiable.
+      - name: Fetch the PR base commit for the ratchet delta check
+        if: matrix.shard == 1
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -uo pipefail
+          if [ -n "${BASE:-}" ] && [ "${BASE}" != "0000000000000000000000000000000000000000" ]; then
+            git fetch --no-tags --filter=blob:none --depth=1 origin "${BASE}" || true
+          fi
+
       - name: "Run tests: architectural guards"
         if: matrix.shard == 1
+        env:
+          # The PR's own base — the same expression the selector-teeth job
+          # uses. NOT `merge-base --fork-point`, which guesses and inverts on
+          # a branch that is behind, reporting a peer's merged work as your
+          # deletions.
+          RATCHET_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          # Here the base is guaranteed, so a missing or unreadable one is a
+          # configuration failure, not an environment fact. Without this the
+          # delta check would degrade to a silent skip — the defect it exists
+          # to remove, one level up.
+          RATCHET_DELTA_REQUIRE_BASE: "1"
         run: node --max-old-space-size=8192 ./node_modules/jest/bin/jest.js tests/guards/ --runInBand --forceExit --no-coverage
 
       - name: "Gate: API contract tests"
