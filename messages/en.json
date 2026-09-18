@@ -4587,6 +4587,7 @@
       "loadingParcels": "Loading parcels…",
       "selectParcel": "Select parcel",
       "noParcels": "No parcels in this location",
+      "parcelsUnavailable": "Couldn't load parcels — check your connection",
       "method": "Method",
       "plantingMethod": "Planting method",
       "firstSowDate": "First sow date",

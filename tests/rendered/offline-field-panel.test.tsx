@@ -132,6 +132,33 @@ describe('OfflineFieldPanel — offline operator flow', () => {
         await waitFor(() => expect(screen.getByText('Offline')).toBeInTheDocument());
     });
 
+    it('offline with NO snapshot says "No signal", not "not found" (#885)', async () => {
+        // The supervisor-assigns-mid-field case: a job the operator never
+        // opened online, so there is no snapshot and SWR has nothing. The panel
+        // used to say the field op did not EXIST — a confident wrong answer, on
+        // the one surface whose entire purpose is working without signal.
+        //
+        // No snapshot saved on purpose.
+        setOnline(false);
+
+        render(<OfflineFieldPanel taskId="task-unseen" />);
+
+        expect(await screen.findByText('No signal')).toBeInTheDocument();
+        expect(screen.queryByText(/not found/i)).not.toBeInTheDocument();
+    });
+
+    it('ONLINE with no snapshot still says "not found" — control on the above', async () => {
+        // Without this, the panel could answer "No signal" to everything and
+        // the test above would still pass. A genuinely missing job online must
+        // still read as missing.
+        setOnline(true);
+
+        render(<OfflineFieldPanel taskId="task-unseen" />);
+
+        expect(await screen.findByText(/not found/i)).toBeInTheDocument();
+        expect(screen.queryByText('No signal')).not.toBeInTheDocument();
+    });
+
     it('mark offline → queued + optimistic + snapshot; syncs the PATCH on reconnect', async () => {
         swrReturn = { data: fieldOp(), isLoading: false, mutate: jest.fn(async () => {}) };
         render(<OfflineFieldPanel taskId="task-1" />);
