@@ -68,7 +68,12 @@ test.describe('mobile forms — FAB launches create @mobile', () => {
         // The side effect here is `setShowNew(true)`, so the drawer never
         // opens and the failure surfaces as "dialog not found".
         // `mobile/lists.spec.ts` already does this; this file did not.
-        await waitForHydration(page, 'main');
+        // Name the element being CLICKED, not the shell. `main` hydrates
+        // almost immediately — long before a nested client component attaches
+        // its handlers — so waiting on it can return true while the button is
+        // still server-rendered HTML. Hydration is top-down, so React fibers
+        // on the clicked node mean its handler-owning ancestor is live.
+        await waitForHydration(page, '#new-farm-task-btn');
         const main = page.getByRole('main');
         await expect(
             main.getByRole('heading', { name: 'Tasks', level: 1 }),
@@ -104,7 +109,7 @@ test.describe('mobile forms — FAB launches create @mobile', () => {
             page,
         }) => {
             await safeGoto(page, `/t/${tenantSlug}/${slug}`);
-            await waitForHydration(page, 'main');
+            await waitForHydration(page, '[data-testid="fab"]');
 
             // The mobile FAB is shown (md:hidden → visible at phone width).
             const fab = page.getByTestId('fab');
@@ -131,7 +136,7 @@ test.describe('mobile forms — FAB launches create @mobile', () => {
         //     create button carries a stable id. On mobile the button-
         //     variants `md` size floors at min-h-[44px]; desktop stays h-9.
         await safeGoto(page, `/t/${tenantSlug}/planning`);
-        await waitForHydration(page, 'main');
+        await waitForHydration(page, '#new-crop-plan-btn');
         const planBtn = page.getByRole('main').locator('#new-crop-plan-btn');
         await expect(planBtn).toBeVisible({ timeout: 30_000 });
         const planBox = await planBtn.boundingBox();
@@ -144,7 +149,7 @@ test.describe('mobile forms — FAB launches create @mobile', () => {
         // (2) A DEFAULT-size (md) Input — the locations create form's Name
         //     field. Same responsive floor as the Button (R20-PR-A parity).
         await safeGoto(page, `/t/${tenantSlug}/locations`);
-        await waitForHydration(page, 'main');
+        await waitForHydration(page, '[data-testid="fab"]');
         await page.getByTestId('fab').click();
         // Exact, not merely sufficient: this create form carries a stable id.
         const dialog = page
