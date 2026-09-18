@@ -429,10 +429,17 @@ echo "  ✓ ${STACK_DIR} present and carries DATA_ENCRYPTION_KEY"
 # heredoc against .github/postgis-image (#860), so the base image cannot
 # drift silently.
 #
-# The PACKAGE LIST is NOT enforced. This heredoc and deploy/postgres/Dockerfile
-# can still disagree about which extensions get installed, and the only thing
-# that would show it is a restore drill failing to build a Postgres to restore
-# INTO — which reads as a failed restore rather than as a broken copy.
+# The PACKAGE LIST is enforced too, since #979. That same guard parses the
+# `apt-get install` set out of THIS heredoc and out of deploy/postgres/Dockerfile
+# and requires them equal, so the two cannot disagree about which extensions get
+# installed. It reads the heredoc specifically, not this file: `docker.io` is
+# installed further up to prepare the VM, and the guard asserts that name never
+# appears in the parsed set.
+#
+# Worth keeping in mind when editing below: this heredoc is nested inside an
+# UNQUOTED outer heredoc, so its `\`-continuations collapse to one physical
+# line when REMOTE_SCRIPT is built. A `#` comment inside the RUN would therefore
+# comment out everything after it.
 if [ -n "${PG_IMAGE}" ]; then
     RESTORE_IMAGE="${PG_IMAGE}"
     sudo docker pull "\$RESTORE_IMAGE" >/dev/null
