@@ -196,17 +196,52 @@ export async function loginAndGetTenant(
     if (!match) throw new Error('Could not extract tenant slug from ' + page.url());
     const slug = match[1];
 
-    // Verify the page actually rendered — reload if server was still compiling.
+    // Verify the page actually rendered — reload if the server was still
+    // compiling.
+    //
+    // This looked for `aside` until #996, and `aside` is the AppShell SIDEBAR,
+    // declared `hidden md:flex` (AppShell.tsx:200). Every mobile Playwright
+    // project runs below `md`, so the probe was false on all three attempts,
+    // the loop ran to exhaustion, and the helper returned having verified
+    // NOTHING — on exactly the viewport where a half-rendered page is most
+    // likely. Operator mode renders no sidebar at all, so it could not pass
+    // for the MECHANISATOR persona on ANY viewport either.
+    //
+    // `main` is rendered unconditionally by AppShell (line 228, outside every
+    // `!operator` branch), so it holds for every persona and every width. The
+    // bottom tab bar would NOT do — it is `variant === 'tenant' && !operator`.
     let renderRetries = 3;
+    let rendered = false;
     while (renderRetries > 0) {
-        const hasSidebar = await page.locator('aside').isVisible().catch(() => false);
-        if (hasSidebar) break;
+        // WAIT, do not sample. `isVisible()` answers instantly, so a page
+        // that renders a second later reads as "not rendered". That was
+        // harmless while the probe targeted `aside` and could never succeed
+        // anyway; now that exhaustion THROWS, an instantaneous probe would
+        // trade one flake for another.
+        rendered = await page
+            .locator('main')
+            .waitFor({ state: 'visible', timeout: 10_000 })
+            .then(() => true)
+            .catch(() => false);
+        if (rendered) break;
         renderRetries--;
         if (renderRetries > 0) {
             await page.waitForLoadState('networkidle').catch(() => {});
             await safeGoto(page, `/t/${slug}/dashboard`, { waitUntil: 'domcontentloaded' });
             await page.waitForLoadState('networkidle').catch(() => {});
         }
+    }
+
+    // Loudly, not silently. The old loop fell through on exhaustion, so a
+    // genuinely unrendered page proceeded exactly like a rendered one and the
+    // failure surfaced later, somewhere else, as a mystery. A check that
+    // cannot fail is not a check.
+    if (!rendered) {
+        throw new Error(
+            `Logged in as ${slug} but <main> never rendered after 3 attempts at ` +
+                `/t/${slug}/dashboard. The page did not render — failing here rather ` +
+                `than letting the next assertion report it as its own problem.`,
+        );
     }
 
     return slug;
