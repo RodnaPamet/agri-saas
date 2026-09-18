@@ -4587,6 +4587,7 @@
       "loadingParcels": "Зареждане на парцели…",
       "selectParcel": "Изберете парцел",
       "noParcels": "Няма парцели в този обект",
+      "parcelsUnavailable": "Парцелите не се заредиха — проверете връзката",
       "method": "Метод",
       "plantingMethod": "Метод на засаждане",
       "firstSowDate": "Дата на първо засяване",

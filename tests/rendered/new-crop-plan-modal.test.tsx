@@ -666,17 +666,29 @@ describe('NewCropPlanModal — parcel picker', () => {
         expect(options).toEqual(['Нива 1 (12.5 ha)', 'Градина (0.4 ha)', 'Ъгъл']);
     });
 
-    it('falls back to an empty list when the parcel fetch fails', async () => {
+    it('says the parcels could not be LOADED, not that there are none (#862)', async () => {
         // Break: an unhandled rejection here leaves `parcelsLoading` true, so
-        // the picker is disabled forever after one flaky read.
+        // the picker is disabled forever after one flaky read. That is still
+        // this test's purpose and is still asserted below.
+        //
+        // What changed is the TEXT. It used to expect "No parcels in this
+        // location" — the observable at the time, and a confident wrong answer:
+        // a failed read and a location that genuinely has no parcels produced
+        // the same sentence. The request carries `?simplify=0.01`, which the
+        // service-worker cache can never satisfy, so offline this branch is the
+        // NORMAL one and the operator is told their fields do not exist.
         const u = user();
         apiGet.mockRejectedValue(new Error('offline'));
         renderModal();
         await pick(u, 'Location', 'Home farm');
 
         await waitFor(() =>
-            expect(comboboxFor('Parcel')).toHaveTextContent('No parcels in this location'),
+            expect(comboboxFor('Parcel')).toHaveTextContent(
+                "Couldn't load parcels — check your connection",
+            ),
         );
+        // The original intent, unchanged: one flaky read must not disable the
+        // picker forever.
         expect(comboboxFor('Parcel')).not.toBeDisabled();
     });
 

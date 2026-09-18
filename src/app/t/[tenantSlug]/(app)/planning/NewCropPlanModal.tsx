@@ -88,6 +88,8 @@ export function NewCropPlanModal({
     const [parcelId, setParcelId] = useState('');
     const [parcels, setParcels] = useState<ParcelRow[]>([]);
     const [parcelsLoading, setParcelsLoading] = useState(false);
+    /** The last parcel load FAILED — distinct from "this location has none". */
+    const [parcelsFailed, setParcelsFailed] = useState(false);
     const [method, setMethod] = useState('DIRECT_SOW');
     const [firstSowDate, setFirstSowDate] = useState<Date | null>(new Date());
     const [successions, setSuccessions] = useState('1');
@@ -257,13 +259,23 @@ export function NewCropPlanModal({
         apiGet<{ parcels: ParcelRow[] }>(buildUrl(`/locations/${locationId}/parcels?simplify=0.01`))
             .then((res) => {
                 if (cancelled) return;
+                setParcelsFailed(false);
                 const sorted = [...(res.parcels ?? [])].sort(
                     (a, b) => (b.areaHa ?? 0) - (a.areaHa ?? 0) || a.name.localeCompare(b.name),
                 );
                 setParcels(sorted);
             })
             .catch(() => {
-                if (!cancelled) setParcels([]);
+                // A FAILED fetch is not an empty list (#862). Collapsing the
+                // two moved the picker from "Loading parcels…" to "No parcels"
+                // within a second — a confident wrong answer to an operator
+                // who has parcels. The request carries `?simplify=0.01`, so the
+                // service-worker cache can never satisfy it either; offline,
+                // this branch is the NORMAL one.
+                if (!cancelled) {
+                    setParcels([]);
+                    setParcelsFailed(true);
+                }
             })
             .finally(() => {
                 if (!cancelled) setParcelsLoading(false);
@@ -525,9 +537,11 @@ export function NewCropPlanModal({
                                             ? t('selectLocationFirst')
                                             : parcelsLoading
                                               ? t('loadingParcels')
-                                              : parcelOptions.length
-                                                ? t('selectParcel')
-                                                : t('noParcels')
+                                              : parcelsFailed
+                                                ? t('parcelsUnavailable')
+                                                : parcelOptions.length
+                                                  ? t('selectParcel')
+                                                  : t('noParcels')
                                     }
                                     aria-label={t('parcel')}
                                     matchTriggerWidth

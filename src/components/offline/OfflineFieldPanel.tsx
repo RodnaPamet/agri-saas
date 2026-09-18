@@ -244,7 +244,25 @@ export function OfflineFieldPanel({ taskId }: { taskId: string }) {
     );
 
     if (isLoading && !view) return <div className="p-6 text-base text-content-secondary">{t('loadingFieldOp')}</div>;
-    if (!view) return <div className="p-6 text-base text-content-secondary">{t('fieldOpNotFound')}</div>;
+    if (!view) {
+        // "Not found" and "never cached" are DIFFERENT answers, and this panel
+        // exists for the case that produces the second one (#885/#862). A
+        // supervisor assigns a job to an operator already in the field; the
+        // operator opens it having never loaded it online; `DATA_CACHE` has
+        // nothing. Telling them the job does not EXIST is a confident wrong
+        // answer — the same defect class as "no records" for a queue that has
+        // work.
+        //
+        // The copy already existed in both locales and had no caller.
+        return online ? (
+            <div className="p-6 text-base text-content-secondary">{t('fieldOpNotFound')}</div>
+        ) : (
+            <div className="p-6">
+                <p className="text-base font-medium text-content-emphasis">{t('needsConnectionTitle')}</p>
+                <p className="mt-1 text-base text-content-secondary">{t('needsConnectionBody')}</p>
+            </div>
+        );
+    }
 
     return (
         // Content cross-fades in once the field op loads (skeleton/loader →
