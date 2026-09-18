@@ -305,7 +305,7 @@ describe('production VM runbook — it does not imply a detection capability', (
     // is where a false belief about detection would be formed.
     const src = () => readRepoFile(DOC);
 
-    it('the opening banner states plainly that a human noticed', () => {
+    it('the opening banner states plainly how the operator found out', () => {
         // NOT `src().slice(0, src().indexOf('\n## 0.'))`. That spelling
         // stood here until 2026-09-10: with `## 0.` renamed it returned
         // the whole runbook, and every assertion below — including the
@@ -317,8 +317,16 @@ describe('production VM runbook — it does not imply a detection capability', (
         // stops at must not have been dragged in with it.
         expect(banner).not.toMatch(/^## 1\. Deploy/m);
         expect(banner).toMatch(/#854/);
-        expect(banner).toMatch(/a human noticed|a human notices|human noticing/i);
-        expect(banner).toMatch(/no uptime check|no alert|nothing (here )?detects/i);
+        // Until 2026-09-17 this required "a human noticed", which was then
+        // true and kept the runbook from implying an alert existed. The
+        // uptime check made it false, so the assertion moves rather than
+        // being deleted: an operator who believes nobody was notified does
+        // not go looking for the email that is already waiting.
+        expect(banner).toMatch(/uptime check|alert policy/i);
+        // The half that did NOT change, and the reason #981 could accept
+        // this posture instead of closing it.
+        expect(banner).toMatch(/#981/);
+        expect(banner).toMatch(/no pager|no rota|nobody is on call/i);
     });
 
     it('the "does not have" inventory names the remaining detection gap and its issue', () => {
