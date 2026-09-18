@@ -552,6 +552,36 @@ jobs:
       - name: Apply Prisma migrations
         run: ./node_modules/.bin/prisma migrate deploy
 
+      # EVERY shard, not just shard 1. `tests/guards/` runs inside the sharded
+      # matrix as well — this job is "unit + integration + architectural
+      # guards" — so the floor guard can land on any shard, and it landed on
+      # 2/6. The shard-1 step below is an ADDITIONAL explicit guards run, not
+      # the only one. Scoping this to shard 1 made the guard fail on whichever
+      # other shard happened to host it.
+      #
+      # Still cheap, and still not `fetch-depth: 0`: this fetches ONE commit at
+      # depth 1 with `--filter=blob:none`, not 3,173 commits of history. The
+      # check counts FILES via `git ls-tree` and reads two constants, so it
+      # never needs the blobs.
+      #
+      # `|| true` is deliberate and is NOT a swallowed failure: if the fetch
+      # does not land, the guard itself fails loudly under
+      # RATCHET_DELTA_REQUIRE_BASE=1 with a message naming the depth problem.
+      # Failing here instead would report it as a checkout error rather than
+      # as the ratchet being unverifiable.
+      - name: Fetch the PR base commit for the ratchet delta check
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -uo pipefail
+          if [ -n "${BASE:-}" ] && [ "${BASE}" != "0000000000000000000000000000000000000000" ]; then
+            if git fetch --no-tags --filter=blob:none --depth=1 origin "${BASE}"; then
+              echo "fetched base ${BASE}"
+            else
+              echo "::warning::could not fetch base ${BASE} — the ratchet delta check will fail loudly in the guard, which is where it belongs"
+            fi
+          fi
+
       # ── Jest: unit + integration tests (sharded) ──
       # Each matrix worker runs Jest's deterministic 1-of-N hash split.
       # `--shard=${{ matrix.shard }}/${{ matrix.total }}` keeps each
@@ -614,32 +644,6 @@ jobs:
       # so it needs that one commit present. The default checkout is depth 1,
       # where it is not.
       #
-      # EVERY shard, not just shard 1. `tests/guards/` runs inside the sharded
-      # matrix as well — this job is "unit + integration + architectural
-      # guards" — so the floor guard can land on any shard, and it landed on
-      # 2/6. The shard-1 step below is an ADDITIONAL explicit guards run, not
-      # the only one. Scoping this to shard 1 made the guard fail on whichever
-      # other shard happened to host it.
-      #
-      # Still cheap, and still not `fetch-depth: 0`: this fetches ONE commit at
-      # depth 1 with `--filter=blob:none`, not 3,173 commits of history. The
-      # check counts FILES via `git ls-tree` and reads two constants, so it
-      # never needs the blobs.
-      #
-      # `|| true` is deliberate and is NOT a swallowed failure: if the fetch
-      # does not land, the guard itself fails loudly under
-      # RATCHET_DELTA_REQUIRE_BASE=1 with a message naming the depth problem.
-      # Failing here instead would report it as a checkout error rather than
-      # as the ratchet being unverifiable.
-      - name: Fetch the PR base commit for the ratchet delta check
-        env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: |
-          set -uo pipefail
-          if [ -n "${BASE:-}" ] && [ "${BASE}" != "0000000000000000000000000000000000000000" ]; then
-            git fetch --no-tags --filter=blob:none --depth=1 origin "${BASE}" || true
-          fi
-
       - name: "Run tests: architectural guards"
         if: matrix.shard == 1
         env:
