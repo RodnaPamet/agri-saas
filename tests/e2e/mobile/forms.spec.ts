@@ -17,8 +17,37 @@
  * (hard to drive a soft keyboard in Playwright); this covers the launch +
  * reachable-Save contract end-to-end.
  */
-import { test, expect } from '@playwright/test';
-import { safeGoto, loginAndGetTenant } from '../e2e-utils';
+import { test, expect, type Page } from '@playwright/test';
+import { safeGoto, loginAndGetTenant, waitForHydration } from '../e2e-utils';
+
+/**
+ * The create dialog, scoped so it cannot resolve to a DIFFERENT dialog.
+ *
+ * `page.getByRole('dialog')` is ambiguous on a phone viewport. FOUR
+ * components in this app render `role="dialog"` there — `SidebarNav` (the
+ * mobile navigation drawer), `command-palette`, `InstallPrompt` and
+ * `coach-mark` — so "the dialog" is whichever one happens to be in the tree.
+ *
+ * That is what failed here, and it was NOT a timing flake. The accessibility
+ * snapshot at the failure shows exactly one dialog and it is the navigation
+ * drawer:
+ *
+ *     - dialog "Navigation menu":
+ *       - button "Close navigation"
+ *       - navigation "Main navigation": …
+ *
+ * `toBeVisible()` passed — that drawer IS visible — and then
+ * `.getByRole('textbox')` found nothing inside it, because a nav drawer has
+ * no text input. The assertion that failed was three lines downstream of the
+ * one that picked the wrong element.
+ *
+ * Filtering on a descendant `form` disambiguates: measured, none of those
+ * four components contains a `<form>`, while every create flow here is a
+ * `Modal.Form`. Where a create form carries a stable id, prefer that — it is
+ * exact rather than merely sufficient.
+ */
+const createDialog = (page: Page) =>
+    page.getByRole('dialog').filter({ has: page.locator('form') });
 
 test.describe('mobile forms — FAB launches create @mobile', () => {
     let tenantSlug: string;
@@ -31,6 +60,15 @@ test.describe('mobile forms — FAB launches create @mobile', () => {
         page,
     }) => {
         await safeGoto(page, `/t/${tenantSlug}/farm-tasks`);
+        // HYDRATE BEFORE CLICKING. This spec had none, and that is the
+        // second half of why it failed: `waitForHydration`'s own docblock
+        // names the symptom exactly — "clicking a button whose onClick is
+        // still detached fires the click against a no-op DOM node and the
+        // test then waits forever for a side effect that never happens".
+        // The side effect here is `setShowNew(true)`, so the drawer never
+        // opens and the failure surfaces as "dialog not found".
+        // `mobile/lists.spec.ts` already does this; this file did not.
+        await waitForHydration(page, 'main');
         const main = page.getByRole('main');
         await expect(
             main.getByRole('heading', { name: 'Tasks', level: 1 }),
@@ -44,7 +82,7 @@ test.describe('mobile forms — FAB launches create @mobile', () => {
 
         // Tap it → the create modal opens as a bottom drawer (role=dialog).
         await createBtn.click();
-        const dialog = page.getByRole('dialog');
+        const dialog = createDialog(page);
         await expect(dialog).toBeVisible({ timeout: 15_000 });
 
         // The pinned footer's primary action is present + reachable — Save
@@ -66,6 +104,7 @@ test.describe('mobile forms — FAB launches create @mobile', () => {
             page,
         }) => {
             await safeGoto(page, `/t/${tenantSlug}/${slug}`);
+            await waitForHydration(page, 'main');
 
             // The mobile FAB is shown (md:hidden → visible at phone width).
             const fab = page.getByTestId('fab');
@@ -81,7 +120,7 @@ test.describe('mobile forms — FAB launches create @mobile', () => {
 
             // Tap it → the primary create flow opens as a bottom drawer.
             await fab.click();
-            await expect(page.getByRole('dialog')).toBeVisible({ timeout: 15_000 });
+            await expect(createDialog(page)).toBeVisible({ timeout: 15_000 });
         });
     }
 
@@ -92,6 +131,7 @@ test.describe('mobile forms — FAB launches create @mobile', () => {
         //     create button carries a stable id. On mobile the button-
         //     variants `md` size floors at min-h-[44px]; desktop stays h-9.
         await safeGoto(page, `/t/${tenantSlug}/planning`);
+        await waitForHydration(page, 'main');
         const planBtn = page.getByRole('main').locator('#new-crop-plan-btn');
         await expect(planBtn).toBeVisible({ timeout: 30_000 });
         const planBox = await planBtn.boundingBox();
@@ -104,8 +144,12 @@ test.describe('mobile forms — FAB launches create @mobile', () => {
         // (2) A DEFAULT-size (md) Input — the locations create form's Name
         //     field. Same responsive floor as the Button (R20-PR-A parity).
         await safeGoto(page, `/t/${tenantSlug}/locations`);
+        await waitForHydration(page, 'main');
         await page.getByTestId('fab').click();
-        const dialog = page.getByRole('dialog');
+        // Exact, not merely sufficient: this create form carries a stable id.
+        const dialog = page
+            .getByRole('dialog')
+            .filter({ has: page.locator('#new-location-form') });
         await expect(dialog).toBeVisible({ timeout: 15_000 });
         const nameInput = dialog.getByRole('textbox').first();
         await expect(nameInput).toBeVisible({ timeout: 15_000 });
