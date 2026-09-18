@@ -23,7 +23,6 @@ test.describe('Admin SSO Configuration', () => {
         const tenantSlug = await loginAndGetTenant(page, ADMIN_USER);
 
         await safeGoto(page, `/t/${tenantSlug}/admin`, { waitUntil: 'domcontentloaded' });
-        await page.waitForLoadState('networkidle').catch(() => {});
 
         await expect(page.locator('#sso-pill-btn')).toBeVisible({ timeout: 15000 });
     });
@@ -34,7 +33,6 @@ test.describe('Admin SSO Configuration', () => {
 
         await safeGoto(page, `/t/${tenantSlug}/admin/sso`, { waitUntil: 'domcontentloaded' });
         // Wait for fetchProviders() — tabs are hidden behind a loading skeleton until API returns
-        await page.waitForLoadState('networkidle').catch(() => {});
 
         // Page header — wait up to 60s for first cold-compile
         await expect(page.getByRole('heading', { name: /SSO & Identity/i })).toBeVisible({ timeout: 60000 });
@@ -55,7 +53,6 @@ test.describe('Admin SSO Configuration', () => {
         const tenantSlug = await loginAndGetTenant(page, ADMIN_USER);
 
         await safeGoto(page, `/t/${tenantSlug}/admin/sso`, { waitUntil: 'domcontentloaded' });
-        await page.waitForLoadState('networkidle').catch(() => {});
         await expect(page.locator('#sso-tab-saml')).toBeVisible({ timeout: 30000 });
 
         await page.locator('#sso-tab-saml').click();

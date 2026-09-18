@@ -42,7 +42,6 @@ async function createAsset(page: Page, slug: string): Promise<void> {
         r--;
         if (r > 0) await page.waitForTimeout(5000);
     }
-    await page.waitForLoadState('networkidle').catch(() => {});
     await page.waitForSelector('#asset-name-input', { timeout: 30000 });
     // `name` is the only required field — `type` / `status` default to
     // TRACTOR / ACTIVE in useNewAssetForm.

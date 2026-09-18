@@ -81,7 +81,6 @@ test.describe('Core Lifecycle Flow', () => {
             // `name` is the only required field — `type` and `status`
             // carry defaults (TRACTOR / ACTIVE) in useNewAssetForm.
             await page.goto(`/t/${tenantSlug}/assets/new`);
-            await page.waitForLoadState('networkidle').catch(() => {});
             await page.waitForSelector('#asset-name-input', { timeout: 60000 });
 
             await page.fill('#asset-name-input', ASSET_NAME);
@@ -89,7 +88,6 @@ test.describe('Core Lifecycle Flow', () => {
 
             // The modal's onSuccess pushes to the new asset's detail page.
             await page.waitForURL('**/assets/**', { timeout: 30000 });
-            await page.waitForLoadState('networkidle').catch(() => {});
             await page.waitForSelector('#asset-title-heading', { timeout: 60000 });
             await expect(page.locator('#asset-title-heading')).toContainText(
                 ASSET_NAME,
@@ -116,7 +114,6 @@ test.describe('Core Lifecycle Flow', () => {
         // ── C) Upload tenant-wide Evidence ──
         await test.step('C — upload evidence from the evidence list', async () => {
             await page.goto(`/t/${tenantSlug}/evidence`);
-            await page.waitForLoadState('networkidle').catch(() => {});
             await page.waitForSelector('h1', { timeout: 60000 });
 
             await page.click('#add-evidence-btn');
@@ -143,7 +140,6 @@ test.describe('Core Lifecycle Flow', () => {
         // ── D) Attach Evidence to the Asset ──
         await test.step('D — attach evidence to the asset', async () => {
             await page.goto(`/t/${tenantSlug}/assets/${assetId}`);
-            await page.waitForLoadState('networkidle').catch(() => {});
             // Attached evidence lives on its own tab. Wait for the tab
             // trigger itself (EntityDetailLayout renders `id={`tab-${key}`}`)
             // so a slow detail fetch can't race the click.
@@ -193,7 +189,6 @@ test.describe('Core Lifecycle Flow', () => {
             // a row here proves the FK was persisted rather than only
             // reflected in post-mutation client state.
             await page.goto(`/t/${tenantSlug}/assets/${assetId}`);
-            await page.waitForLoadState('networkidle').catch(() => {});
             await page.waitForSelector('#tab-evidence', { timeout: 60000 });
             await page.click('#tab-evidence');
 
