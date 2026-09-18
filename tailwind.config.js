@@ -23,8 +23,15 @@ module.exports = {
                 // Cyrillic, so it never lands on text. Body stays Inter.
                 display: ['Bricolage Grotesque', 'Inter', 'system-ui', 'sans-serif'],
                 // Heading face — Onest (`font-heading`) — for page + section
-                // headings; carries full Cyrillic for the Bulgarian UI. Both
-                // loaded via the Google-Fonts @import at the top of globals.css.
+                // headings; carries full Cyrillic for the Bulgarian UI. Both are
+                // SELF-HOSTED since #779 — vendored into `public/fonts/` and
+                // declared by the generated `src/styles/fonts.css`, which
+                // `globals.css` imports by RELATIVE path. The Google-Fonts
+                // `@import` this used to name is gone, and with it the ordering
+                // hazard that 500'd every page when it drifted below the
+                // Tailwind import. Inter's Latin cut (and Cyrillic on `bg`) is
+                // additionally `<link rel=preload>`ed from the root layout,
+                // derived from `fonts.lock.json` (#796).
                 heading: ['Onest', 'Inter', 'system-ui', 'sans-serif'],
             },
             colors: {

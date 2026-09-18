@@ -190,4 +190,52 @@ test.describe('self-hosted web fonts', () => {
         // ── 3. Nothing left the origin ─────────────────────────────────────
         expect(external, 'a self-hosted font page must reach no third party').toEqual([]);
     });
+
+    test('the preloaded faces are real, same-origin, and actually fetched (#796)', async ({
+        page,
+    }) => {
+        // EXTENDS this file rather than adding a spec: `E2E_SPEC_FLOOR` has
+        // headroom for exactly one new top-level spec, and since #914 a new
+        // one would also have to raise the floor in the same PR.
+        const fontResponses: { url: string; status: number }[] = [];
+        page.on('response', (res) => {
+            const u = res.url();
+            if (u.includes('/fonts/') && u.endsWith('.woff2')) {
+                fontResponses.push({ url: u, status: res.status() });
+            }
+        });
+
+        await page.goto('/login', { waitUntil: 'networkidle' });
+
+        const preloads = await page
+            .locator('link[rel="preload"][as="font"]')
+            .evaluateAll((els) =>
+                els.map((el) => ({
+                    href: (el as HTMLLinkElement).getAttribute('href') ?? '',
+                    crossOrigin: (el as HTMLLinkElement).getAttribute('crossorigin'),
+                    type: (el as HTMLLinkElement).getAttribute('type'),
+                })),
+            );
+
+        // CONTROL. Every assertion below is satisfied by an empty list, and a
+        // page that preloads nothing renders perfectly — `font-display: swap`
+        // paints the fallback. Absence has no symptom, so it is asserted.
+        expect(preloads.length, 'the page rendered no font preload at all').toBeGreaterThan(0);
+
+        for (const p of preloads) {
+            expect(p.href, 'preload must be same-origin').toMatch(/^\/fonts\//);
+            expect(p.type).toBe('font/woff2');
+            // Fonts are fetched in CORS mode even same-origin; a preload whose
+            // mode differs from the real request is fetched TWICE.
+            expect(p.crossOrigin, `preload ${p.href} lacks crossorigin`).toBe('anonymous');
+        }
+
+        // A preload that 404s is worse than no preload: it costs a request,
+        // warms nothing, and is invisible because the fallback still paints.
+        for (const p of preloads) {
+            const hit = fontResponses.find((r) => r.url.endsWith(p.href));
+            expect(hit, `preloaded ${p.href} was never fetched`).toBeDefined();
+            expect(hit!.status, `preloaded ${p.href} returned ${hit?.status}`).toBe(200);
+        }
+    });
 });
