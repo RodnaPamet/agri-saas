@@ -30,6 +30,7 @@ import {
     type OutboxStore,
     type SupersedeTarget,
 } from '@/lib/offline/outbox';
+import { setCurrentUserId } from '@/lib/offline/current-user';
 
 /** put semantics: replace by id, insert if absent — like IndexedDB. */
 class UpsertOutboxStore implements OutboxStore {
@@ -128,5 +129,67 @@ describe.each([
         const first = await enqueue(store, editInput({ a: 1 }));
         const { removed } = await submitSuperseding(store, { a: 2 });
         expect(removed).toEqual([first.id]);
+    });
+
+    // ── #1005: the foreign guard must fail CLOSED ──
+    //
+    // `getCurrentUserId()` is fed from the server-rendered layout, and
+    // `public/sw.js` replays that document from cache — so on a shared phone
+    // it can be ABSENT, or be operator A's while B is signed in. The guard
+    // used to read `!(owner && i.queuedByUserId && i.queuedByUserId !== owner)`,
+    // where a null owner short-circuits to falsy and `!(falsy)` is TRUE for
+    // every item. Every foreign write became deletable at exactly the moment
+    // the code could not tell whose it was.
+    //
+    // None of the 12 tests above covered a null owner, which is why it shipped.
+    describe('the foreign guard with identity UNKNOWN (#1005)', () => {
+        afterEach(() => setCurrentUserId(null));
+
+        it('supersedes NOTHING when the owner is unknown and the victim is attributed', async () => {
+            setCurrentUserId('operator-a');
+            const theirs = await enqueue(store, editInput({ rate: 'theirs' }));
+
+            // The document no longer says who is signed in.
+            setCurrentUserId(null);
+            const { removed } = await submitSuperseding(store, { rate: 'mine' });
+
+            expect(removed).toEqual([]);
+            const ids = (await store.all()).map((i) => i.id);
+            expect(ids).toContain(theirs.id);
+        });
+
+        it('still supersedes the operator\'s OWN queued write — control on the above', async () => {
+            // Without this, "supersede nothing, ever" passes the test above and
+            // breaks the feature. The guard has to DISCRIMINATE, not refuse.
+            setCurrentUserId('operator-a');
+            const mine = await enqueue(store, editInput({ rate: 'first' }));
+            const { removed } = await submitSuperseding(store, { rate: 'second' });
+
+            expect(removed).toEqual([mine.id]);
+            expect(await store.all()).toHaveLength(1);
+        });
+
+        it('never supersedes a KNOWN other operator\'s write', async () => {
+            setCurrentUserId('operator-a');
+            const theirs = await enqueue(store, editInput({ rate: 'theirs' }));
+
+            setCurrentUserId('operator-b');
+            const { removed } = await submitSuperseding(store, { rate: 'mine' });
+
+            expect(removed).toEqual([]);
+            expect((await store.all()).map((i) => i.id)).toContain(theirs.id);
+        });
+
+        it('still supersedes a LEGACY row carrying no attribution', async () => {
+            // Pre-#786 rows have no `queuedByUserId`. Both drains treat those as
+            // sendable, so refusing to supersede them would strand duplicates.
+            setCurrentUserId(null);
+            const legacy = await enqueue(store, editInput({ rate: 'legacy' }));
+            expect(legacy.queuedByUserId).toBeUndefined();
+
+            setCurrentUserId('operator-a');
+            const { removed } = await submitSuperseding(store, { rate: 'new' });
+            expect(removed).toEqual([legacy.id]);
+        });
     });
 });

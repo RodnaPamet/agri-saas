@@ -418,6 +418,23 @@ export async function enqueue(
  *     that happened; #923 exists precisely to stop those disappearing.
  *   • not foreign — never touch another operator's queued work, the same
  *     predicate the drain skips on.
+ *
+ * THAT LAST CLAUSE USED TO FAIL OPEN, which is the opposite of what a guard
+ * should do (#1005). It read:
+ *
+ *     !(owner && i.queuedByUserId && i.queuedByUserId !== owner)
+ *
+ * With `owner` null — `getCurrentUserId()` is fed from the server-rendered
+ * layout, and `public/sw.js` replays that document from cache, so on a shared
+ * phone it can be absent or be operator A's while B is signed in — the `owner
+ * &&` short-circuits to falsy and `!(falsy)` is TRUE for every item. Every
+ * foreign write became eligible for deletion at exactly the moment the code
+ * could not tell whose it was.
+ *
+ * It now requires a KNOWN owner that matches. Unknown identity supersedes
+ * nothing: a duplicate of an absolute-state write is the same state written
+ * twice, while deleting a queued write destroys the only copy — the asymmetry
+ * this function's own comment above is built on.
  */
 export async function supersedeQueuedWrites(
     store: OutboxStore,
@@ -431,7 +448,11 @@ export async function supersedeQueuedWrites(
             i.id !== keepId &&
             !i.conflict &&
             !i.blocked &&
-            !(owner && i.queuedByUserId && i.queuedByUserId !== owner),
+            // FAIL CLOSED. An item is superseded only when this operator is
+            // KNOWN to own it, or when it carries no attribution at all (a
+            // legacy row, which both drains already treat as sendable). With
+            // no known owner, nothing foreign is touched.
+            (i.queuedByUserId === undefined || (owner !== null && i.queuedByUserId === owner)),
     );
     for (const v of victims) await store.remove(v.id);
     return victims.map((v) => v.id);
