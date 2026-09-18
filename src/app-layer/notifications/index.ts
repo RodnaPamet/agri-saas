@@ -13,8 +13,10 @@ export {
 } from './settings';
 export {
     buildTaskAssignedEmail,
+    buildEvidenceExpiringEmail,
     type EmailTemplateResult,
     type TaskAssignedPayload,
+    type EvidenceExpiringPayload,
 } from './templates';
 export {
     buildDeadlineDigestEmail,

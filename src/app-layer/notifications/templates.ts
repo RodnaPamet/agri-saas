@@ -13,6 +13,56 @@ export interface EmailTemplateResult {
     bodyHtml: string;
 }
 
+// ─── Evidence Expiring ───
+
+/**
+ * #807. `jobs/retention-notifications.ts` used to build these strings inline
+ * and write `notificationOutbox` directly, bypassing `enqueueEmail`. That made
+ * `buildEmailContent`'s EVIDENCE_EXPIRING arm unreachable — #987 deleted the
+ * old English builder for exactly that reason.
+ *
+ * This one is derived from the strings the JOB was sending, not recovered from
+ * git history: those are the localised ones (#694), and the deleted builder
+ * was English and synchronous. Same two i18n keys, so no new message keys and
+ * no `bg.json` gap.
+ */
+export interface EvidenceExpiringPayload {
+    title: string;
+    daysRemaining: number;
+}
+
+export async function buildEvidenceExpiringEmail(
+    payload: EvidenceExpiringPayload,
+    locale: Locale,
+): Promise<EmailTemplateResult> {
+    const { title, daysRemaining } = payload;
+    // The job flagged <= 7 days with a warning glyph in the SUBJECT only.
+    // Preserved verbatim: it is what recipients already recognise in an inbox.
+    const urgencyTag = daysRemaining <= 7 ? '⚠️ ' : '';
+
+    // Resolved to locals before interpolation, per the escaping convention —
+    // `${escapeHtml(await t(...))}` hides the call from the guard's extractor.
+    const subject = await translateFor(locale, 'notificationEmail.evidenceExpiring.subject', {
+        days: daysRemaining,
+        title,
+    });
+    const body = await translateFor(locale, 'notificationEmail.evidenceExpiring.body', {
+        days: daysRemaining,
+        title,
+    });
+    const signature = await translateFor(locale, 'notificationEmail.signature');
+
+    return {
+        subject: `${urgencyTag}${subject}`,
+        bodyText: [body, '', signature].join('\n'),
+        bodyHtml: `
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
+  <p style="color: #444; line-height: 1.5;">${escapeHtml(body)}</p>
+  <p style="color: #999; font-size: 12px; margin-top: 24px;">${escapeHtml(signature)}</p>
+</div>`.trim(),
+    };
+}
+
 // ─── Task Assigned ───
 
 export interface TaskAssignedPayload {
