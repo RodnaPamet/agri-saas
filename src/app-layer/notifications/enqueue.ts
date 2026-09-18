@@ -14,9 +14,11 @@ import { logger } from '@/lib/observability/logger';
 import type { Locale } from '@/lib/i18n/locales';
 import {
     buildTaskAssignedEmail,
+    buildEvidenceExpiringEmail,
     buildAccessReviewReminderEmail,
     buildAccessReviewOverdueEscalationEmail,
     type TaskAssignedPayload,
+    type EvidenceExpiringPayload,
     type AccessReviewReminderPayload,
     type AccessReviewOverdueEscalationPayload,
 } from './templates';
@@ -44,6 +46,7 @@ export interface EnqueueEmailInput {
     entityId: string;
     payload:
         | TaskAssignedPayload
+        | EvidenceExpiringPayload
         | AccessReviewReminderPayload
         | AccessReviewOverdueEscalationPayload;
     sendAfter?: Date;
@@ -131,6 +134,7 @@ async function buildEmailContent(
     type: EmailNotificationType,
     payload:
         | TaskAssignedPayload
+        | EvidenceExpiringPayload
         | AccessReviewReminderPayload
         | AccessReviewOverdueEscalationPayload,
     locale: Locale,
@@ -141,12 +145,15 @@ async function buildEmailContent(
         // `usecases/task.ts`, `jobs/access-review-reminder.ts` and
         // `jobs/access-review-overdue-escalation.ts`.
         //
-        // Nine arms were deleted in #807. They covered types no producer
-        // ever passed to `enqueueEmail`: POLICY_* / VENDOR_ASSESSMENT_* /
-        // EXCEPTION_EXPIRING lost their models in the GRC teardown, and
-        // EVIDENCE_EXPIRING has a live producer that does NOT come through
-        // here — `jobs/retention-notifications.ts` writes its own
-        // `notificationOutbox` row with strings it localises inline.
+        // Nine arms were deleted in #807 because no producer passed those
+        // types to `enqueueEmail`: POLICY_* / VENDOR_ASSESSMENT_* /
+        // EXCEPTION_EXPIRING lost their models in the GRC teardown.
+        //
+        // EVIDENCE_EXPIRING came BACK in the second half of #807. It was
+        // deleted with the others because its producer bypassed this file
+        // entirely, building strings inline and writing `notificationOutbox`
+        // directly; that producer now goes through `enqueueEmail` like every
+        // other, so this arm is reachable and the two paths are one.
         //
         // Those enum VALUES still exist in `EmailNotificationType` and must:
         // `EVIDENCE_EXPIRING` is still written to the outbox by that job, and
@@ -155,6 +162,8 @@ async function buildEmailContent(
         // them.
         case 'TASK_ASSIGNED':
             return buildTaskAssignedEmail(payload as TaskAssignedPayload, locale);
+        case 'EVIDENCE_EXPIRING':
+            return buildEvidenceExpiringEmail(payload as EvidenceExpiringPayload, locale);
         case 'ACCESS_REVIEW_REMINDER':
             return buildAccessReviewReminderEmail(
                 payload as AccessReviewReminderPayload,

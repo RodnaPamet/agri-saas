@@ -10,11 +10,11 @@
  */
 import { Prisma } from '@prisma/client';
 import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
-import { translateFor } from '@/lib/i18n/server-messages';
 import { formatDate } from '@/lib/format-date';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { TERMINAL_WORK_ITEM_STATUSES } from '../domain/work-item-status';
+import { enqueueEmail } from '../notifications/enqueue';
 import { isNotificationsEnabled } from '../notifications/settings';
 import { emitAutomationEvent } from '../automation';
 import type { RequestContext } from '../types';
@@ -170,35 +170,26 @@ export async function runEvidenceRetentionNotifications(
 
                 for (const m of members) {
                     if (!m.user.email) continue;
-                    // This producer writes its own outbox row rather than
-                    // going through `enqueueEmail` — so `buildEmailContent`'s
-                    // EVIDENCE_EXPIRING arm is unreachable and the strings are
-                    // built here. Localised in place (#694); unifying the two
-                    // paths is tracked in #807.
-                    const locale = resolveRecipientLocale(m.user.uiLanguage);
-                    const urgencyTag = daysLeft <= 7 ? '⚠️ ' : '';
-                    const subject = await translateFor(
-                        locale,
-                        'notificationEmail.evidenceExpiring.subject',
-                        { days: daysLeft, title: ev.title },
-                    );
-                    const bodyText = await translateFor(
-                        locale,
-                        'notificationEmail.evidenceExpiring.body',
-                        { days: daysLeft, title: ev.title },
-                    );
-                    await prisma.notificationOutbox.create({
-                        data: {
-                            tenantId: ev.tenantId,
-                            type: 'EVIDENCE_EXPIRING',
-                            toEmail: m.user.email,
-                            subject: `${urgencyTag}${subject}`,
-                            bodyText,
-                            bodyHtml: null,
-                            dedupeKey: `${ev.tenantId}:EVIDENCE_EXPIRING:${m.user.email}:${ev.id}:${new Date().toISOString().slice(0, 10)}`,
-                        },
-                    }).catch(() => {
-                        // Silently skip duplicates (P2002)
+                    // Goes through `enqueueEmail` like every other producer
+                    // (#807). This used to build the strings inline and write
+                    // `notificationOutbox` directly, which left
+                    // `buildEmailContent`'s EVIDENCE_EXPIRING arm unreachable —
+                    // #987 deleted that arm as dead, and the second half of
+                    // #807 restored it around THESE strings.
+                    //
+                    // The dedupe key is unchanged: `buildDedupeKey` produces
+                    // `tenantId:type:email:entityId:YYYY-MM-DD`, byte-identical
+                    // to the literal this replaced, so the daily re-send still
+                    // re-sends daily and an already-sent day still dedupes.
+                    // P2002 is handled inside `enqueueEmail`, which returns
+                    // null rather than throwing.
+                    await enqueueEmail(prisma, {
+                        tenantId: ev.tenantId,
+                        type: 'EVIDENCE_EXPIRING',
+                        toEmail: m.user.email,
+                        locale: resolveRecipientLocale(m.user.uiLanguage),
+                        entityId: ev.id,
+                        payload: { title: ev.title, daysRemaining: daysLeft },
                     });
                 }
             }
