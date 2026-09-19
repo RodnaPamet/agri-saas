@@ -77,6 +77,26 @@ function scanForPatterns(content: string, patterns: RegExp[]): string[] {
 }
 
 describe('Guardrail: No client-side filtering in list pages', () => {
+    // ── Controls (#971) ──────────────────────────────────────────────
+    // Three ratchets in this file do `readFile(...)` then
+    // `scanForPatterns(content, ...)` and expect no flags. Both helpers
+    // survived being gutted, and either one returning nothing produces the
+    // same empty result — a page that was never read and a page with no
+    // client-side filtering are the same green.
+    it('control: readFile returns real source and scanForPatterns can flag it', () => {
+        const content = readFile(LIST_CLIENT_FILES[0]);
+        expect(content).not.toBeNull();
+        expect((content ?? '').length).toBeGreaterThan(0);
+        expect(content).toMatch(/\bimport\b/);
+
+        // The detector half, on a line the patterns are written to catch.
+        const flagged = scanForPatterns(
+            'const shown = rows.filter((r) => r.name.includes(query));',
+            CLIENT_FILTER_PATTERNS,
+        );
+        expect(flagged.length).toBeGreaterThan(0);
+    });
+
     for (const relPath of LIST_CLIENT_FILES) {
         it(`${path.basename(relPath, '.tsx')} should not .filter() server data on client`, () => {
             const content = readFile(relPath);
