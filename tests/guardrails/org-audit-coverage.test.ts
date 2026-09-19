@@ -100,8 +100,22 @@ function findOrgInviteMutators(): { file: string; relPath: string; src: string }
     return hits;
 }
 
-function isExempt(relPath: string): boolean {
-    return EXEMPT_FILES.some((e) => e.file === relPath);
+/**
+ * Is this file exempt from the org-audit requirement?
+ *
+ * The list is a parameter with a default rather than a closed-over const, so
+ * the behaviour can be exercised while EXEMPT_FILES is empty. Without that,
+ * `isExempt` returns false for every input, `return false` reproduces it
+ * exactly, and there is no assertion that can tell the real implementation
+ * from a gutted one — which is what `selector-teeth` reported (#971).
+ *
+ * Callers pass one argument; only the control below passes two.
+ */
+function isExempt(
+    relPath: string,
+    list: ReadonlyArray<{ file: string; reason: string }> = EXEMPT_FILES,
+): boolean {
+    return list.some((e) => e.file === relPath);
 }
 
 // ─── 2) Discovery — OrgAuditAction enum values ─────────────────────
@@ -147,11 +161,17 @@ describe('Epic B — org audit coverage guardrail', () => {
         // moment an exemption is added, it must match that file and only
         // that file. A collapsed `isExempt` would otherwise exempt the whole
         // scan the first time the list gains an entry.
+        // An honest record of today: nothing is exempt.
         expect(EXEMPT_FILES).toEqual([]);
         expect(isExempt('src/anything/at/all.ts')).toBe(false);
+
+        // And the MECHANISM, exercised through `isExempt` itself against a
+        // probe list. This is the assertion that has teeth: a collapsed
+        // `isExempt` fails the first line, where asserting only against the
+        // empty real list could not tell it from the original.
         const probe = [{ file: 'src/probe/only.ts', reason: 'control' }];
-        expect(probe.some((e) => e.file === 'src/probe/only.ts')).toBe(true);
-        expect(probe.some((e) => e.file === 'src/probe/other.ts')).toBe(false);
+        expect(isExempt('src/probe/only.ts', probe)).toBe(true);
+        expect(isExempt('src/probe/other.ts', probe)).toBe(false);
     });
 
     it('discovers at least one OrgMembership-mutating usecase (sanity)', () => {
