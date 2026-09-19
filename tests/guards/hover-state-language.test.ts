@@ -88,6 +88,170 @@ function walk(dir: string): string[] {
 }
 
 describe('Hover-state language (Roadmap-3 PR-3)', () => {
+    // ── Controls (#971) ──────────────────────────────────────────────
+    //
+    // `selector-teeth` gutted `walk` and NOT ONE test failed. Its only
+    // call site is the `for (const file of walk(...))` loop below, so an
+    // empty return makes that loop run zero times: `offenders` stays
+    // empty, the throw never fires, and `expect(offenders).toHaveLength(0)`
+    // passes. "826 files scanned, every hover is on-canon" and "no file
+    // was ever opened" were the same green.
+    //
+    // Exactly ONE gut is ever scored here: the declared `: string[]`
+    // return type is what stops `'' / 0 / null / undefined / false /
+    // new Set() / new Map() / {}` from compiling, so the tool skips them
+    // rather than scoring them. That annotation — not any assertion —
+    // was this guard's entire defence, and `''` / `Set` / `Map` would
+    // all have sailed through the `for…of` seam had it been loosened.
+    //
+    // The `fs.existsSync` throw INSIDE `walk` (#875) does not cover it
+    // either: gutting replaces the WHOLE function, so that floor never
+    // runs. A check one layer down cannot protect a caller that stops
+    // calling it — which is why it is asserted below at the call site.
+
+    it('control: walk returns the real population under both scan roots, and excludes what it claims to', () => {
+        const files = ['src/app', 'src/components'].flatMap((root) =>
+            walk(path.join(ROOT, root)),
+        );
+
+        // Measured 2026-09-19: 826 files (214 under src/app + 613 under
+        // src/components, less the one `.tsx` inside an excluded
+        // `__tests__` directory). The floor sits far below that, so
+        // ordinary feature PRs never move it — and it is what would kill
+        // `''` / `new Set()` / `new Map()` if the return annotation were
+        // ever loosened, since none of them has a `.length` over 400.
+        expect(files.length).toBeGreaterThan(400);
+        expect(files.every((f) => /\.(tsx|jsx)$/.test(f))).toBe(true);
+
+        const rels = files.map((f) =>
+            path.relative(ROOT, f).split(path.sep).join('/'),
+        );
+        expect(rels.filter((r) => r.startsWith('..'))).toEqual([]);
+        // BOTH roots must contribute. Half a scan reported as a whole
+        // one is the same defect one size down.
+        expect(rels.some((r) => r.startsWith('src/app/'))).toBe(true);
+        expect(rels.some((r) => r.startsWith('src/components/'))).toBe(true);
+
+        // RECURSION — the one behaviour a constant return cannot
+        // express. Measured: the deepest page sits 9 segments below the
+        // repo root (`src/app/t/[tenantSlug]/(app)/grain/bins/[binId]/…`),
+        // and a top-level-only walk returns 16 files, not 826.
+        expect(
+            Math.max(...rels.map((r) => r.split('/').length)),
+        ).toBeGreaterThanOrEqual(5);
+
+        // The exclusions must BITE, and the SECOND enumeration is the
+        // point: `readdirSync({ recursive: true })` walks the same two
+        // roots without walk's filters, so the pair of numbers says what
+        // walk dropped instead of asserting that it dropped something.
+        const excludedDirs = ['node_modules', '__tests__'];
+        const everyTsx = ['src/app', 'src/components'].flatMap((root) =>
+            fs
+                .readdirSync(path.join(ROOT, root), { recursive: true })
+                .map((e) => `${root}/${String(e).split(path.sep).join('/')}`)
+                .filter((r) => /\.(tsx|jsx)$/.test(r)),
+        );
+        const excluded = everyTsx.filter((r) =>
+            r.split('/').some((seg) => excludedDirs.includes(seg)),
+        );
+        // Measured: exactly one — the co-located hooks test under
+        // `src/components/ui/hooks/__tests__`. At zero the exclusion has
+        // stopped being exercised, and this says so rather than passing
+        // over an empty set.
+        expect(excluded.length).toBeGreaterThan(0);
+        expect(rels.filter((r) => excluded.includes(r))).toEqual([]);
+        // Both directions of the difference, reported as PATHS rather
+        // than as an 826-entry set diff nobody can read.
+        const expected = new Set(
+            everyTsx.filter((r) => !excluded.includes(r)),
+        );
+        const got = new Set(rels);
+        expect(rels.filter((r) => !expected.has(r))).toEqual([]);
+        expect([...expected].filter((r) => !got.has(r))).toEqual([]);
+    });
+
+    it('control: walk refuses a missing scan root instead of reporting zero files (#875)', () => {
+        // This floor lives INSIDE walk, so the gut that empties the
+        // function deletes the floor with it. Asserted out here, on the
+        // call the tests actually make, it survives that mutation.
+        expect(() =>
+            walk(path.join(ROOT, 'src/app-renamed-by-a-refactor')),
+        ).toThrow(/scan root does not exist/);
+        // …and the two roots this guard names are the ones that exist,
+        // so the throw above is live defence rather than documentation.
+        for (const root of ['src/app', 'src/components']) {
+            expect(fs.existsSync(path.join(ROOT, root))).toBe(true);
+        }
+    });
+    it('control: BANNED_PATTERNS catches a planted off-canon hover and leaves the canonical vocabulary alone', () => {
+        const hits = (line: string) =>
+            BANNED_PATTERNS.filter(({ rx }) => rx.test(line)).length;
+
+        // POSITIVE CONTROL, derived from REAL product source. Nothing in
+        // `src/` matches a banned pattern today — that is this guard
+        // being green — so the positive is MANUFACTURED by rewriting one
+        // token of a real canonical line. It cannot go stale: a product
+        // that stopped using `hover:bg-bg-muted/50` reddens the
+        // derivation instead of quietly leaving nothing to mutate.
+        const walked = ['src/app', 'src/components'].flatMap((root) =>
+            walk(path.join(ROOT, root)),
+        );
+        // `flatMap` WRAPS a non-array return instead of throwing, where the
+        // guard's own `for (const file of walk(...))` rejects it outright. So a
+        // walker gutted to a NUMBER survives this seam and reaches
+        // `fs.readFileSync` as a FILE DESCRIPTOR — and fd 0 is stdin, which
+        // under jest never reaches EOF. The read blocks forever, selector-teeth
+        // spawns jest with no timeout, and the job burns its whole 15-minute
+        // budget in silence (#748). Reject the shape here so that mutation
+        // fails fast, the way it already does for the guard itself.
+        expect(walked.every((file) => typeof file === 'string')).toBe(true);
+        const canonicalLines = walked
+            .flatMap((file) => fs.readFileSync(file, 'utf-8').split('\n'))
+            .filter((line) => line.includes('hover:bg-bg-muted/50'));
+        // Measured 2026-09-19: 22 lines (4 under src/app, 18 under
+        // src/components).
+        expect(canonicalLines.length).toBeGreaterThan(5);
+
+        // The NEAR-MISS direction first: `/50` is one character from
+        // `/30`, and all 22 real lines must stay clean. A pattern
+        // widened to `hover:bg-bg-` would light up every one of them.
+        expect(canonicalLines.filter((line) => hits(line) > 0)).toEqual([]);
+
+        // The same real line, one token changed. Each banned spelling is
+        // caught, and caught EXACTLY once — so a pattern list that
+        // collapsed onto its cheapest member is caught too.
+        for (const banned of [
+            'hover:bg-bg-elevated/30',
+            'hover:bg-bg-default/30',
+            'hover:bg-neutral-50',
+        ]) {
+            expect(
+                hits(canonicalLines[0].replace('hover:bg-bg-muted/50', banned)),
+            ).toBe(1);
+        }
+
+        // The rest of the vocabulary the docblock declares canonical
+        // stays legal, plus one near miss the ban deliberately does not
+        // reach (`bg-neutral-50` with no `hover:` prefix is the raw-
+        // palette guard's business, not this one's).
+        for (const legal of [
+            'hover:bg-bg-muted',
+            'hover:bg-bg-muted/50',
+            'hover:bg-transparent',
+            'hover:bg-bg-success',
+            'bg-neutral-50',
+        ]) {
+            expect(hits(`<div className="rounded ${legal} p-2" />`)).toBe(0);
+        }
+
+        // And every pattern carries the fix it wants — the `canonical`
+        // string is the only thing a contributor sees in the failure.
+        expect(BANNED_PATTERNS.length).toBeGreaterThanOrEqual(3);
+        for (const { canonical } of BANNED_PATTERNS) {
+            expect(canonical).toMatch(/hover:bg-/);
+        }
+    });
+
     it('zero off-canon hover backgrounds in src/app + src/components', () => {
         const offenders: Hit[] = [];
         for (const root of ['src/app', 'src/components']) {

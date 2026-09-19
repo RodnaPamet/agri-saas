@@ -81,6 +81,138 @@ function isAllowed(token: string): boolean {
 }
 
 describe('Hover recipe discipline (Roadmap-5 PR-5)', () => {
+    // ── Controls (#971) ──────────────────────────────────────────────
+    //
+    // `isAllowed` is this file's ONLY module-level selector, and it is the
+    // whole verdict: the scan pushes an offender exactly when
+    // `!isAllowed(token)`. Gutted to any TRUTHY constant — `[]`, `{}`,
+    // `new Set()`, `new Map()` — every token in the product is allowed,
+    // `offenders` stays empty and `expect(offenders).toEqual([])` passes.
+    // 837 files opened, 119 live `hover:bg-bg-*` tokens read, none
+    // classified, green.
+    //
+    // Which filter kills what, because the three are not interchangeable:
+    //   · TYPECHECK kills NOTHING. tsconfig.json sets `isolatedModules`, so
+    //     ts-jest compiles via `transpileModule` with no semantic
+    //     diagnostics — the `: boolean` annotation skips no gut.
+    //   · THE SEAM kills NOTHING. `if (!isAllowed(token))` is a bare
+    //     truthiness test: every gut is legal there, it only flips polarity.
+    //   · THE ASSERTION kills the five FALSY guts (`''` / `0` / `null` /
+    //     `undefined` / `false`) — they make all 119 tokens offenders and
+    //     the throw fires. Nothing kills the four truthy ones.
+    //
+    // So the dangerous direction is ALLOW-EVERYTHING, and unusually the gut
+    // set reaches it. The load-bearing half below is therefore the REFUSAL
+    // half: a classifier that cannot say "no" is the vacuous pass.
+
+    it('control: isAllowed accepts both canonical recipes and every semantic tone', () => {
+        // The docblock promises TWO recipes; pin the count so a third one
+        // cannot arrive without this file noticing.
+        expect(CANONICAL_MUTED.size).toBe(2);
+        for (const token of CANONICAL_MUTED) {
+            expect(isAllowed(token)).toBe(true);
+        }
+        // Derived from the list rather than restated, so a semantic tone
+        // added tomorrow is covered the moment it is added — in both
+        // spellings the docblock promises (bare, and with an `/N` opacity).
+        expect(SEMANTIC_PREFIXES.length).toBeGreaterThan(0);
+        for (const prefix of SEMANTIC_PREFIXES) {
+            expect(isAllowed(prefix)).toBe(true);
+            expect(isAllowed(`${prefix}/80`)).toBe(true);
+        }
+    });
+
+    it('control: isAllowed REFUSES every off-recipe tone, and near-misses with it', () => {
+        // The seven drift tones the docblock records as migrated away. These
+        // are the assertions the four TRUTHY guts cannot pass: without them
+        // `isAllowed` can be a constant and this guard still reports "no
+        // off-recipe hovers".
+        for (const token of [
+            'hover:bg-bg-muted/40',
+            'hover:bg-bg-muted/30',
+            'hover:bg-bg-elevated',
+            'hover:bg-bg-elevated/20',
+            'hover:bg-bg-elevated/50',
+            'hover:bg-bg-elevated/80',
+            'hover:bg-bg-subtle',
+        ]) {
+            expect(isAllowed(token)).toBe(false);
+        }
+        // Near-miss, and the one loosening a constant gut cannot express: a
+        // semantic prefix is honoured on an EXACT match or an `/N` opacity,
+        // never as a bare string prefix. HOVER_RE's `[a-z]+` means
+        // `hover:bg-bg-errorx` is a token the scanner really can produce, so
+        // the `p + '/'` boundary is what stops it riding in on
+        // `hover:bg-bg-error`.
+        for (const prefix of SEMANTIC_PREFIXES) {
+            expect(isAllowed(`${prefix}x`)).toBe(false);
+        }
+    });
+
+    it('control: the live population is non-empty, and a real token gone off-recipe is refused', () => {
+        // The guard's own walk + HOVER_RE live INSIDE its `it()`, where
+        // selector-teeth cannot reach them — and where "119 tokens
+        // classified" and "zero files opened" are the same green. Re-derive
+        // the population here so the main assertion has a denominator.
+        const files: string[] = [];
+        const collect = (dir: string) => {
+            for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+                const full = path.join(dir, e.name);
+                if (e.isDirectory()) {
+                    if (e.name === 'node_modules' || e.name === '.next') continue;
+                    collect(full);
+                    continue;
+                }
+                if (/\.tsx$/.test(e.name)) files.push(full);
+            }
+        };
+        collect(path.join(ROOT, 'src'));
+        // Measured 2026-09-19: 837 `.tsx` files under `src/`, 69 carrying a
+        // hover token after the same comment-strip the guard applies, 119
+        // occurrences. The floors sit far below, so ordinary feature PRs
+        // never move them.
+        expect(files.length).toBeGreaterThan(400);
+
+        const tokens: string[] = [];
+        const carriers: string[] = [];
+        for (const file of files) {
+            const stripped = fs
+                .readFileSync(file, 'utf-8')
+                .replace(/\/\*[\s\S]*?\*\//g, '')
+                .replace(/\/\/[^\n]*/g, '');
+            const matches = stripped.match(HOVER_RE);
+            if (!matches) continue;
+            tokens.push(...matches);
+            carriers.push(path.relative(ROOT, file).split(path.sep).join('/'));
+        }
+        expect(tokens.length).toBeGreaterThan(50);
+        // RECURSION — the one behaviour a constant return cannot express.
+        // Both trees the tokens live in must be reached (measured: 26
+        // carriers under src/app, 43 under src/components), and the deepest
+        // sit six segments down.
+        expect(carriers.some((c) => c.startsWith('src/app/'))).toBe(true);
+        expect(carriers.some((c) => c.startsWith('src/components/'))).toBe(true);
+        // The call site the guard actually makes, over real input. A failure
+        // here means the same thing as the main test failing.
+        expect(tokens.every((t) => isAllowed(t))).toBe(true);
+
+        // POSITIVE CONTROL, manufactured from real product source. No file
+        // under `src/` matches the banned pattern today — that is what this
+        // ratchet has achieved — and there is no exemption list to derive
+        // one from, so the offending input is built by mutating a stem the
+        // product genuinely ships: a live canonical muted token plus the
+        // off-recipe `/40` opacity the docblock records (3 sites, migrated).
+        // Derived, so it cannot go stale if that recipe is ever renamed.
+        const liveStem = tokens.find(
+            (t) => CANONICAL_MUTED.has(t) && !t.includes('/'),
+        );
+        expect(liveStem).toBe('hover:bg-bg-muted');
+        const offRecipe = `${liveStem}/40`;
+        // The scanner really would produce this token …
+        expect(offRecipe.match(HOVER_RE)).toEqual([offRecipe]);
+        // … and the classifier really does refuse it.
+        expect(isAllowed(offRecipe)).toBe(false);
+    });
     it('no .tsx file under src/ uses an off-recipe hover:bg-bg-* token', () => {
         const offenders: Offence[] = [];
         const walk = (dir: string) => {
