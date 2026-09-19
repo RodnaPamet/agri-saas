@@ -386,4 +386,32 @@ describe('New page token discipline', () => {
         });
         expect(existing.length).toBeGreaterThanOrEqual(4);
     });
+
+    it('control: readFile returns the page source, not an empty string', () => {
+        // The check above proves each page is READABLE. It cannot prove the
+        // read returned anything, because `''` does not throw — so
+        // `selector-teeth` (#971) found `readFile` survives being gutted to
+        // `''`: every page then reads as empty, every scan below finds no
+        // violations, and all three anti-drift tests pass having examined
+        // nothing.
+        //
+        // That is the same hole the tally guard above closes from the other
+        // side, and the reason a "no violations found" result needs a
+        // companion that says the input was real.
+        for (const rel of MIGRATED_PAGES) {
+            let src: string;
+            try {
+                src = readFile(rel);
+            } catch {
+                continue; // absent pages are the tally check's business
+            }
+            expect(src.length).toBeGreaterThan(0);
+            // Non-empty is not enough on its own: a single character would
+            // satisfy it. These are React route files, so every one of them
+            // has to import something and export something — the cheapest
+            // assertion that the CONTENT is a page rather than a stub.
+            expect(src).toMatch(/\bimport\b/);
+            expect(src).toMatch(/\bexport\b/);
+        }
+    });
 });
