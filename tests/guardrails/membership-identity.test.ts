@@ -65,6 +65,24 @@ describe('Schema: User model has no deprecated fields', () => {
 // ─── Code Guardrails ────────────────────────────────────────────────
 
 describe('No code reads deprecated User.tenantId / User.role', () => {
+    it('control: getFiles returns the source tree these ratchets scan', async () => {
+        // Three ratchets in this file iterate `getFiles(...)` and assert the
+        // collected violations are empty. An empty file list collects nothing
+        // and passes — `selector-teeth` (#971) confirmed `getFiles` survives
+        // being gutted to `[]`, `''`, `new Set()` and `new Map()`, which
+        // would report the deprecated `User.tenantId` / `User.role` surface
+        // clean without reading a single file.
+        //
+        // The schema assertions in the describe above cannot cover it: they
+        // read `schema.prisma` directly and never go through `getFiles`.
+        const ts = await getFiles('**/*.ts');
+        const tsx = await getFiles('**/*.{ts,tsx}');
+        expect(ts.length).toBeGreaterThan(200);
+        expect(tsx.length).toBeGreaterThan(ts.length); // the pattern must discriminate
+        expect(ts.every((f) => typeof f === 'string' && f.length > 0)).toBe(true);
+        expect(ts.some((f) => f.endsWith('.ts'))).toBe(true);
+    });
+
     /**
      * Files allowed to reference .tenantId (but NOT on User):
      * - These reference tenantId on TenantMembership, RequestContext, session, etc.

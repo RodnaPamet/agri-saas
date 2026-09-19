@@ -61,6 +61,34 @@ describe('No console.* in backend server code', () => {
         return firstLine?.includes("'use client'") || firstLine?.includes('"use client"') || false;
     }
 
+    it('control: getFiles returns the source tree it is meant to scan', async () => {
+        // Both ratchets in this file are "iterate every file, collect
+        // violations, expect none". An empty file list collects nothing and
+        // passes — `selector-teeth` (#971) confirmed `getFiles` survives
+        // being gutted to `[]`, `''`, `new Set()` and `new Map()`.
+        //
+        // Nothing else here can catch that: the allowlists above are
+        // subtractive, so they stay satisfied by a smaller population, and
+        // the assertion at the end is `expect(violations).toEqual([])`, which
+        // an unscanned tree satisfies perfectly.
+        const tsx = await getFiles('**/*.{ts,tsx}');
+        const ts = await getFiles('**/*.ts');
+        // src/ is ~2000 files; the floors are deliberately an order of
+        // magnitude below that, so ordinary deletions never move them.
+        expect(tsx.length).toBeGreaterThan(200);
+        expect(ts.length).toBeGreaterThan(200);
+        // The pattern must actually discriminate, or `getFiles` could be
+        // returning one fixed list regardless of what it was asked for.
+        expect(tsx.length).toBeGreaterThan(ts.length);
+        // And the entries must be readable relative paths, not absolute or
+        // empty strings that `readSrcFile` would then join into nonsense.
+        for (const f of [tsx[0], ts[0]]) {
+            expect(typeof f).toBe('string');
+            expect(f.length).toBeGreaterThan(0);
+            expect(path.isAbsolute(f)).toBe(false);
+        }
+    });
+
     it('no console.log/warn/error/info in server-side src/ files', async () => {
         const tsFiles = await getFiles('**/*.{ts,tsx}');
         const violations: string[] = [];
