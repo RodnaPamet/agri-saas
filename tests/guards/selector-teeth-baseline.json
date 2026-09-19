@@ -36,9 +36,6 @@
     "the rest of the 286 selectors the rewrite recovered have not been swept."
   ],
   "known": {
-    "tests/guardrails/parcel-authoring-coverage.test.ts": [
-      "walk"
-    ],
     "tests/guards/action-label-vocabulary.test.ts": [
       "walk"
     ],
