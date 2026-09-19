@@ -1187,6 +1187,7 @@ jobs:
           CI: "true"
 
       - name: Run E2E tests
+        id: e2e
         # Skip the a11y spec here — run as the gate above. The functional
         # suite spans many files, so `--shard=i/2` splits them evenly.
         #
@@ -1213,8 +1214,13 @@ jobs:
         # pathological case and leaves ~6m for the uploads.
         run: |
           status=0
+          # `pipefail` so the tee below cannot mask Playwright's exit code: a
+          # pipeline reports its LAST command, and `tee` essentially always
+          # succeeds. Without it every overrun would look like a pass.
+          set -o pipefail
           timeout --signal=INT --kill-after=60s 25m \
-            npx playwright test --grep-invert "a11y" --shard=${{ matrix.shard }}/2 || status=$?
+            npx playwright test --grep-invert "a11y" --shard=${{ matrix.shard }}/2 \
+            2>&1 | tee "${RUNNER_TEMP}/e2e-shard-${{ matrix.shard }}.log" || status=$?
 
           if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
             echo "::error::E2E shard ${{ matrix.shard }} exceeded its 25-minute budget."
@@ -1225,6 +1231,61 @@ jobs:
           exit "$status"
         env:
           CI: "true"
+
+      # ── #748 part 2: a non-green shard must NAME what failed ──
+      #
+      # #991 fixed the half that made `fc71d0ff` unreadable: the shell budget
+      # above turns an overrun into a step FAILURE, so the log and artifacts
+      # survive where a job-level cancellation discarded them. What it did not
+      # fix is the half the issue actually asks for — "a cancelled shard should
+      # not be able to swallow real failures silently". The failing spec names
+      # are in the log, and nowhere else: not in the checks UI, not in the job
+      # summary, not as annotations. Reading them still costs a scroll through
+      # 25 minutes of output, or an artifact download, which is exactly the
+      # cost that let two genuine failures go unlooked-at.
+      #
+      # `always()` is load-bearing and is the whole reason this step exists
+      # separately: a cancelled job skips every step without it.
+      - name: Name the failing specs
+        if: always()
+        env:
+          E2E_OUTCOME: ${{ steps.e2e.outcome }}
+        run: |
+          LOG="${RUNNER_TEMP}/e2e-shard-${{ matrix.shard }}.log"
+          if [ ! -f "$LOG" ]; then
+            echo "::warning::No Playwright log for shard ${{ matrix.shard }} (outcome=${E2E_OUTCOME}). The run died before writing one."
+            exit 0
+          fi
+
+          # Playwright's `list` reporter (playwright.config.ts: CI uses
+          # [['list'], ['html']]) marks a failed test with U+2718. Matched
+          # against real output from run 35408549372, not from the docs.
+          mapfile -t FAILED < <(grep -F '✘' "$LOG" | sed 's/^[[:space:]]*//' | sort -u)
+
+          if [ "${#FAILED[@]}" -gt 0 ]; then
+            {
+              echo "### E2E shard ${{ matrix.shard }} — ${#FAILED[@]} failing spec line(s)"
+              echo
+              echo '```'
+              printf '%s\n' "${FAILED[@]}"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            for line in "${FAILED[@]}"; do
+              echo "::error::${line}"
+            done
+            exit 0
+          fi
+
+          # The empty case is the one that matters. "Found no failures" and
+          # "my pattern no longer matches" produce identical output, and this
+          # step exists precisely because a silent non-answer once read as a
+          # pass. So when the shard did NOT succeed and this found nothing,
+          # say so loudly rather than printing reassuring silence.
+          if [ "${E2E_OUTCOME}" != "success" ]; then
+            echo "::warning::E2E shard ${{ matrix.shard }} did not succeed (outcome=${E2E_OUTCOME}) but no '✘' line was found in its log."
+            echo "::warning::Either it failed before running a test (setup, build, web server), or this extractor's marker is stale — check the log tail below before trusting it."
+            tail -n 40 "$LOG" || true
+          fi
 
       # ── Artifacts (always on non-success) ──
       # `failure() || cancelled()`, not `failure()`: the header has always
