@@ -77,6 +77,28 @@ function scanForLegacyGuard(code: string): string[] {
 }
 
 describe('No legacy admin guard', () => {
+    // ── Controls (#971) ──────────────────────────────────────────────
+    // `srcFiles` survived being gutted, even though it routes through
+    // `collectSourceFiles({ floor: 1000 })` which throws on an empty
+    // selection — gutting replaces the WRAPPER, so the floor one layer down
+    // never runs. The scan below then reports no legacy-guard references
+    // having read no files.
+    test('control: srcFiles returns the real source tree', () => {
+        const files = srcFiles();
+        expect(files.length).toBeGreaterThan(1000);
+        expect(files.every((f) => path.isAbsolute(f))).toBe(true);
+    });
+
+    test('control: scanForLegacyGuard detects a banned identifier in real code', () => {
+        // Proves the detector half too: the scan is `files x detector`, and
+        // either returning nothing yields the same empty violation list.
+        const id = BANNED_IDENTIFIERS[0];
+        expect(scanForLegacyGuard(`import { ${id} } from 'x';`)).toContain(id);
+        // ...and that a commented mention does NOT count, which is the whole
+        // reason `stripComments` sits in front of it.
+        expect(scanForLegacyGuard(`// ${id} was removed here`)).toEqual([]);
+    });
+
     test('the legacy require-admin module no longer exists', () => {
         expect(fs.existsSync(REMOVED_MODULE)).toBe(false);
     });

@@ -63,6 +63,22 @@ function relFromRepo(abs: string): string {
 }
 
 describe('Epic 53 — no CompactFilterBar references', () => {
+    // ── Controls (#971) ──────────────────────────────────────────────
+    // `walk` survived being gutted: no files means no CompactFilterBar
+    // references means a pass. `relFromRepo` survived `undefined` — it only
+    // shapes the violation message, so it is not a hole, but the message IS
+    // the remedy instruction, so it earns a cheap assertion rather than a
+    // baseline entry.
+    it('control: walk finds the trees this guard scans, and relFromRepo names them', () => {
+        const files = walk(path.resolve(__dirname, '../../src'), []);
+        expect(files.length).toBeGreaterThan(200);
+        expect(files.every((f) => path.isAbsolute(f))).toBe(true);
+        const rel = relFromRepo(files[0]);
+        expect(typeof rel).toBe('string');
+        expect(rel.length).toBeGreaterThan(0);
+        expect(path.isAbsolute(rel)).toBe(false);
+    });
+
     it('no source or test file mentions CompactFilterBar outside the allowlist', () => {
         const offenders: string[] = [];
         for (const root of ROOTS) {
