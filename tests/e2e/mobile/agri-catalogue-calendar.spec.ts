@@ -32,8 +32,28 @@
 import { test, expect, type Page } from '@playwright/test';
 import { safeGoto, loginAndGetTenant } from '../e2e-utils';
 
+/**
+ * Wait for the month GRID, not for the network to fall idle.
+ *
+ * `calendar-month-nav` and `calendar-side-panel` render regardless of query
+ * state (CalendarClient.tsx:263 / :334, both outside the `calQuery.isPending`
+ * branch), so asserting them cannot stand in for this. While the query is
+ * pending the client renders `CalendarMonthSkeleton`, which emits no event
+ * anchors at all — so the INSTANT `externalAnchors.count()` probe below would
+ * read zero and the `rel=noopener` loop would assert nothing, passing.
+ *
+ * `[data-ymd]` is a real day cell, present only once the grid has replaced the
+ * skeleton. `waitFor` auto-waits, returns immediately on the common path where
+ * the RSC payload already seeded the cache, and out-waits the `networkidle` it
+ * replaces. It throws rather than swallowing: a calendar that never rendered
+ * should fail here, not as somebody else's assertion further down.
+ */
 async function settle(page: Page): Promise<void> {
-    await page.waitForLoadState('networkidle').catch(() => undefined);
+    await page
+        .getByRole('main')
+        .locator('[data-ymd]')
+        .first()
+        .waitFor({ state: 'visible', timeout: 15_000 });
 }
 
 interface CalendarEventLike {

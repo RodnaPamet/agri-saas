@@ -25,7 +25,7 @@
  */
 import { test, expect } from './fixtures';
 import { type BrowserContext, type Page } from '@playwright/test';
-import { safeGoto } from './e2e-utils';
+import { safeGoto, waitForHydration } from './e2e-utils';
 
 /**
  * Sign in with email+password via the #credentials-form and return
@@ -132,8 +132,10 @@ test.describe('Invitation journey (Epic 1)', () => {
             const page = await ctx.newPage();
             try {
                 await safeGoto(page, invitePath, { waitUntil: 'domcontentloaded' });
-                await page.waitForLoadState('networkidle').catch(() => {});
-
+                // `networkidle` removed: the auto-waiting matcher below already
+                // out-waits it (30s), and it is also the positive control for the
+                // `.not.toBeVisible()` absence check at the end of this step — a
+                // blank page or a /login redirect fails here first. Refs #748.
                 await expect(
                     page.locator('text=You have been invited'),
                 ).toBeVisible({ timeout: 30_000 });
@@ -158,10 +160,15 @@ test.describe('Invitation journey (Epic 1)', () => {
             const page = await ctx.newPage();
             try {
                 await safeGoto(page, invitePath, { waitUntil: 'domcontentloaded' });
-                await page.waitForLoadState('networkidle').catch(() => {});
                 await page.waitForSelector('a[href*="start-signin"]', {
                     timeout: 30_000,
                 });
+                // HYDRATE, do not wait for the network. The `networkidle` here was
+                // swallowed (`.catch(() => {})`), so it could time out entirely and
+                // the click still went ahead — and `waitForSelector` proves the link
+                // is PAINTED, not that React has attached to it. Name the CLICKED
+                // element, never `main`. Refs #748.
+                await waitForHydration(page, 'a[href*="start-signin"]');
 
                 await page.click('a[href*="start-signin"]');
                 await page.waitForURL(/\/login/, { timeout: 30_000 });
@@ -291,8 +298,10 @@ test.describe('Invitation journey (Epic 1)', () => {
             await safeGoto(page, '/invite/not-a-real-token-00000000000', {
                 waitUntil: 'domcontentloaded',
             });
-            await page.waitForLoadState('networkidle').catch(() => {});
-
+            // `networkidle` removed: the auto-waiting matcher below out-waits it
+            // (30s) AND is the positive control for the two `.not.toBeVisible()`
+            // absence checks after it — a blank page, a 500 or a /login redirect
+            // fails here rather than passing them vacuously. Refs #748.
             await expect(
                 page.getByText(/Invite not available/i),
             ).toBeVisible({ timeout: 30_000 });

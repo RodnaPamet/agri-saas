@@ -11,10 +11,24 @@
  * `horizontal-drift.spec.ts`; this spec adds the practice-interaction check.
  */
 import { test, expect, type Page } from '@playwright/test';
-import { safeGoto, loginAndGetTenant } from '../e2e-utils';
+import { safeGoto, loginAndGetTenant, waitForHydration } from '../e2e-utils';
 
-async function settle(page: Page): Promise<void> {
-    await page.waitForLoadState('networkidle').catch(() => undefined);
+// Not `networkidle`: /trends and /news both read through `useTenantSWR` and the
+// session polls, so network-quiet is a signal that often never arrives — the
+// 30s default timeout is then swallowed by the `.catch` below and paid on every
+// green run, four times over. What the callers actually need is React hydration
+// of the control they are about to click: `if (await oneYear.count())` is an
+// INSTANT probe, and `TabSelect`'s `onSelect` is a client handler, so a click on
+// server-rendered markup is a no-op and the `aria-selected` assertion that
+// follows burns its full timeout instead. The default names the two clicked
+// controls (never `main`, which hydrates long before these nested panels);
+// whichever page is loaded, one of them matches. Still never throws, so the
+// deliberate data-agnostic `count()` skip keeps working.
+async function settle(
+    page: Page,
+    hydrateSelector = '#trends-range-1y, #trends-news-filter-policy',
+): Promise<void> {
+    await waitForHydration(page, hydrateSelector, 15_000).catch(() => undefined);
 }
 
 async function expectNoDrift(page: Page): Promise<void> {
