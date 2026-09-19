@@ -59,7 +59,7 @@
     "    Review when that happens, or 2026-12-19, whichever comes first.",
     "",
     "  The other 17 findings from that sweep are NOT here: each got a real",
-    "  control instead. A baseline entry is the exception, not the pattern."
+    "  control instead. A baseline entry is the exception, not the pattern.\n\n  UPDATED 2026-09-19 by the #971 tests/guards sweep.\n    \u00b7 e2e-isolation:scan ADDED — the SECOND case where a control is not\n      possible rather than merely absent, and it fails the same way\n      module-import-boundaries:scan does.\n\n      `scan()` returns [] TODAY because no spec offends: BASELINE is empty\n      and the tree is clean. So the `[]` gut REPRODUCES THE TRUE VALUE and\n      is not a mutation of this program at all — a failed probe, not a hole\n      found. Eight of the nine guts (0, false, null, undefined, {}, \u0027\u0027, Set,\n      Map) have no `.filter`/`.map` and throw at the consuming seam, so ONE\n      of nine survives, and that one is degenerate.\n\n      A control cannot close it here: the only thing that reddens a gutted\n      `scan()` is a real offending spec ON DISK, and planting one under\n      tests/e2e mid-run hands every sibling guard that walks that directory\n      a transient file.\n\n      What IS asserted instead, in the file: the chain re-runs over the same\n      corpus and reports a real count of spec files, test spans and candidate\n      bindings, each CLEARED by detectCascade, plus the same chain FLAGGING a\n      cascade planted into real spec source. Delete this entry the moment a\n      genuine offender lands — the guard will finally have something to find.\n      Review then, or 2026-12-19, whichever comes first."
   ],
   "known": {
     "tests/guardrails/module-import-boundaries.test.ts": [
@@ -95,6 +95,9 @@
       "isExempt",
       "walk",
       "findOffenders"
+    ],
+    "tests/guards/e2e-isolation.test.ts": [
+      "scan"
     ],
     "tests/guards/generated-columns.test.ts": [
       "walk"
