@@ -97,6 +97,76 @@ function countNativeSelects(): { total: number; byFile: Record<string, number> }
 }
 
 describe('Epic 55 — native <select> ratchet', () => {
+    // ── Controls (#971) ───────────────────────────────────────────────
+    //
+    // `selector-teeth` gutted this file's module-level selectors. Two guts
+    // survive: `stripComments` -> '' (survives ALL 15 tests, including the
+    // migrated-surface sentinels, which assert on stripComments(entry.src)
+    // and not on entry.src) and `walk` -> [] (survives all three ratchet
+    // tests; only the sentinel block catches it, incidentally). BASELINE is
+    // 0 and src carries no live native <select>, so every assertion below
+    // the controls is satisfied by an empty selection.
+
+    it('control: stripComments removes comment prose and PRESERVES code', () => {
+        // Over-stripping is the silent direction. A stripper returning ''
+        // satisfies every other assertion in this file.
+        const both = '/* <select> */ const keep = "<select>";';
+        expect((both.match(/<select\b/g) || []).length).toBe(2);
+        expect((stripComments(both).match(/<select\b/g) || []).length).toBe(1);
+        expect(stripComments(both)).toMatch(/const keep/);
+        // A line comment is stripped, the code on the next line is not.
+        const lineCase = '// mentions <select>\nconst keep = "<select>";';
+        expect((stripComments(lineCase).match(/<select\b/g) || []).length).toBe(1);
+        // Near-miss: the `[^:]` in the line-comment arm is what stops a URL
+        // being eaten as a comment, taking the rest of the line with it.
+        expect(
+            stripComments('const u = "https://example.com"; const s = "<select>";'),
+        ).toMatch(/<select>/);
+    });
+
+    it('control: the comment exemption BITES on real product source', () => {
+        // Derived, not hard-coded, so a rename cannot empty this control.
+        // Measured 2026-09-19: 5 files under the scan roots mention <select>,
+        // all of them in comments, none in code.
+        const carriers = SOURCES.filter((s) => /<select\b/.test(s.src));
+        expect(carriers.length).toBeGreaterThanOrEqual(3);
+        for (const c of carriers) {
+            expect(stripComments(c.src)).not.toMatch(/<select\b/);
+            // …and the file did not strip to nothing, which is the only way
+            // the line above can be green for the wrong reason.
+            expect(stripComments(c.src).length).toBeGreaterThan(500);
+        }
+    });
+    it('control: walk collects a real, recursive, extension-filtered population', () => {
+        // Measured 2026-09-19: src/app/t = 190 files, src/components = 690.
+        // Floors sit well below reality so ordinary churn never touches them.
+        const appFiles = walk(path.join(SRC_ROOT, 'app', 't'), []);
+        const componentFiles = walk(path.join(SRC_ROOT, 'components'), []);
+        expect(appFiles.length).toBeGreaterThan(80);
+        expect(componentFiles.length).toBeGreaterThan(300);
+        // Its own extension filter must bite, or the population silently grows.
+        expect(
+            [...appFiles, ...componentFiles].every((f) => /\.tsx?$/.test(f)),
+        ).toBe(true);
+        // RECURSION — a constant return cannot produce a nested path.
+        // Measured: 573 of the 690 component files live under components/ui/**.
+        expect(
+            componentFiles.filter((f) =>
+                f.startsWith(path.join(SRC_ROOT, 'components', 'ui') + path.sep),
+            ).length,
+        ).toBeGreaterThan(200);
+        // The out-parameter contract: walk APPENDS to the array it is given.
+        expect(walk(path.join(SRC_ROOT, 'components'), ['SEED'])[0]).toBe('SEED');
+    });
+
+    it('control: walk throws on a missing scan root (#875) instead of scanning nothing', () => {
+        // This throw lives INSIDE walk, so gutting walk deletes it along with
+        // everything else. Assert it where a caller can actually see it.
+        expect(() =>
+            walk(path.join(SRC_ROOT, 'app', '__no_such_scan_root__'), []),
+        ).toThrow(/scan root does not exist/);
+    });
+
     it('count of native <select> elements does not grow beyond the baseline', () => {
         const { total, byFile } = countNativeSelects();
         if (total > BASELINE_NATIVE_SELECTS) {
@@ -113,9 +183,72 @@ describe('Epic 55 — native <select> ratchet', () => {
         expect(total).toBeLessThanOrEqual(BASELINE_NATIVE_SELECTS);
     });
 
+    it('control: SOURCES is a real population that BOTH scan roots contribute to', () => {
+        // The value every test in this file consumes. `for (… of SOURCES)`
+        // makes an empty population a silent PASS, and nothing else floors it.
+        // Measured 2026-09-19: 880 entries — 190 under app/t, 690 under components.
+        expect(SCAN_ROOTS.length).toBe(2);
+        expect(SOURCES.length).toBeGreaterThan(400);
+        expect(
+            SOURCES.filter((s) => s.file.startsWith(path.join('app', 't') + path.sep))
+                .length,
+        ).toBeGreaterThan(80);
+        // The src/components half is the WIDENING this guard's docblock records.
+        // Losing it narrows the scan by 78% with every assertion still green.
+        expect(
+            SOURCES.filter((s) => s.file.startsWith('components' + path.sep)).length,
+        ).toBeGreaterThan(300);
+        // Keying relative to src/ is what keeps the two roots from colliding.
+        expect(new Set(SOURCES.map((s) => s.file)).size).toBe(SOURCES.length);
+        // A file with no text cannot hold a <select>, so an all-empty read
+        // would be an empty selection wearing a full population's clothes.
+        expect(SOURCES.every((s) => s.src.length > 0)).toBe(true);
+    });
+
     it('baseline constant is a plausible non-negative integer', () => {
         expect(Number.isInteger(BASELINE_NATIVE_SELECTS)).toBe(true);
         expect(BASELINE_NATIVE_SELECTS).toBeGreaterThanOrEqual(0);
+    });
+
+    it('control: the counter agrees with an independent recount of SOURCES', () => {
+        const { total, byFile } = countNativeSelects();
+        expect(typeof total).toBe('number');
+        let expected = 0;
+        for (const s of SOURCES) {
+            expected += (stripComments(s.src).match(/<select\b/g) || []).length;
+        }
+        expect(total).toBe(expected);
+        // The per-file map must account for the whole total, not a subset.
+        expect(Object.values(byFile).reduce((a, b) => a + b, 0)).toBe(total);
+    });
+
+    it('control: the detector finds a planted <select> and ignores near-misses', () => {
+        // BASELINE is 0 and src carries no live native <select>, so nothing
+        // else here ever proves the pattern can MATCH. Manufacture the
+        // positive out of real file text so it cannot go stale.
+        const carrier = SOURCES.find((s) => /<select\b/.test(s.src));
+        if (!carrier) {
+            throw new Error(
+                'No file under the scan roots mentions <select> — this control ' +
+                    'has no subject, and the comment-exemption claim is untestable.',
+            );
+        }
+        const before = (stripComments(carrier.src).match(/<select\b/g) || []).length;
+        const planted =
+            carrier.src + '\nexport const planted = <select id="planted" />;\n';
+        const after = (stripComments(planted).match(/<select\b/g) || []).length;
+        expect(after - before).toBe(1);
+        // Near-misses that must NOT count — the last one is a string this
+        // codebase really contains (decision-select-${d.id}).
+        const misses = [
+            '<Select id="x" />',
+            '<selectable />',
+            '< select />',
+            'data-testid="decision-select-1"',
+        ];
+        for (const miss of misses) {
+            expect(stripComments(miss)).not.toMatch(/<select\b/);
+        }
     });
 
     it('the baseline is not stale — no file holds an unaccounted select', () => {
