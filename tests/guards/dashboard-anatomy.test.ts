@@ -123,6 +123,141 @@ describe('Dashboard architecture ratchet (Polish PR-1)', () => {
         expect(offenders).toHaveLength(0);
     });
 
+    // ── Controls (#971) ──────────────────────────────────────────────
+    //
+    // `selector-teeth` gutted `findDashboardFiles` to a constant and nothing
+    // failed. Only the EMPTY-ITERABLE guts survive — `[]`, `''`, `new Set()`,
+    // `new Map()` — because the sole call site is
+    // `for (const rel of findDashboardFiles())`: zero iterations leaves
+    // `offenders` empty, so the `throw` is skipped and `toHaveLength(0)`
+    // passes. The non-iterable guts (`0`, `null`, `undefined`, `false`, `{}`)
+    // already throw at the for-of, so those were never the gap.
+    //
+    // Worse than an unasserted population: MEASURED on this tree, none of the
+    // three files the collector returns carries `<Heading level={1}>`, so
+    // line 101 `continue`s on every one of them and the offender branch has
+    // NEVER executed. "Scanned three dashboards, found nothing" and "scanned
+    // nothing" were the same green, and so was "the regexes match nothing at
+    // all". These controls bracket both seams — one proves the collector sees
+    // a real recursive population, one proves its exclusions subtract from
+    // that population, one proves the three detector regexes discriminate
+    // against real product source. No gut of the collector satisfies all
+    // three.
+    //
+    // MEASURED 2026-09-19 (this worktree): the inline regex matches 4 files
+    // under src/app; `findDashboardFiles()` returns 3 after EXEMPT_FILES;
+    // deepest result sits 5 segments below src/app; 53 files under src/app
+    // match HEADING_RE; exactly 1 file both imports and renders the shell.
+    // Every floor below is set far under those numbers so a feature PR that
+    // adds, moves or retires a dashboard never has to touch one.
+    it('control: findDashboardFiles selects a real, recursive population', () => {
+        const files = findDashboardFiles();
+
+        // Floor, not an exact count — 3 today.
+        expect(files.length).toBeGreaterThanOrEqual(2);
+
+        for (const rel of files) {
+            expect(fs.existsSync(path.resolve(ROOT, rel))).toBe(true);
+            expect(rel.startsWith('src/app/')).toBe(true);
+            expect(/\.(tsx|jsx)$/.test(rel)).toBe(true);
+            expect(rel).toContain('/dashboard/');
+        }
+
+        // Recursion is the one behaviour the gut set cannot express. A `walk`
+        // that stopped descending would still return `src/app/dashboard/
+        // page.tsx` (depth 2) and silently drop the tenant dashboard at
+        // `src/app/t/[tenantSlug]/(app)/dashboard/page.tsx` (depth 5).
+        // Requiring 3 proves it descended past the first level.
+        const deepest = Math.max(
+            ...files.map((rel) => rel.split('/').length - 2),
+        );
+        expect(deepest).toBeGreaterThanOrEqual(3);
+    });
+
+    it('control: the exclusion lists subtract from a live selection', () => {
+        const files = findDashboardFiles();
+
+        // EXEMPT_FILES — derived from the allowlist itself rather than a
+        // hard-coded path, so it cannot go stale. "Absent from the result" is
+        // satisfied by an empty result, which is exactly the gutted case;
+        // the floor in the control above is what makes this a real
+        // subtraction from a non-empty set.
+        expect(files.length).toBeGreaterThanOrEqual(2);
+        for (const rel of EXEMPT_FILES) {
+            expect(fs.existsSync(path.resolve(ROOT, rel))).toBe(true);
+            // It sits inside the tree the collector scans and carries the
+            // directory the collector keys on — i.e. it is a file the scan
+            // WOULD have returned, not a decorative entry.
+            expect(rel.startsWith('src/app/')).toBe(true);
+            expect(rel).toContain('/dashboard/');
+            expect(files).not.toContain(rel);
+        }
+
+        // EXEMPT_FILE_PATTERNS — bites on the suffixes it names and spares
+        // everything else. Gutted always-`true` the scan returns [] (covered
+        // above); gutted always-`false` it would sweep a co-located
+        // `DashboardClient.test.tsx` into the population, a direction no
+        // value in the gut set can express.
+        for (const name of [
+            'DashboardClient.test.tsx',
+            'DashboardClient.spec.tsx',
+            'DashboardClient.stories.tsx',
+            'loading.tsx',
+        ]) {
+            expect(EXEMPT_FILE_PATTERNS.some((rx) => rx.test(name))).toBe(true);
+        }
+        for (const name of ['DashboardClient.tsx', 'page.tsx']) {
+            expect(EXEMPT_FILE_PATTERNS.some((rx) => rx.test(name))).toBe(false);
+        }
+    });
+
+    it('control: the heading + DashboardLayout detectors discriminate', () => {
+        // Nothing the collector returns carries a level-1 heading today, so
+        // the offender branch above has never run and these three regexes
+        // have never been shown to match anything. Derive the positives from
+        // REAL product source rather than a fixture, so a fixture cannot rot
+        // into agreement with a broken regex.
+        const contents = fs
+            .readdirSync(path.join(ROOT, 'src/app'), { recursive: true })
+            .map(String)
+            .filter((rel) => /\.(tsx|jsx)$/.test(rel))
+            .map((rel) => fs.readFileSync(path.join(ROOT, 'src/app', rel), 'utf8'));
+
+        // MEASURED: 53 files under src/app render <Heading level={1}>.
+        expect(contents.filter((c) => HEADING_RE.test(c)).length)
+            .toBeGreaterThanOrEqual(5);
+
+        // MEASURED: exactly ONE file both imports and renders the shell
+        // (src/app/org/[orgSlug]/(app)/PortfolioDashboard.tsx). If this ever
+        // reaches zero, the shell this ratchet mandates has no live consumer
+        // — that is news, not a guard that should stay green.
+        expect(
+            contents.filter(
+                (c) =>
+                    DASHBOARD_LAYOUT_IMPORT_RE.test(c) &&
+                    DASHBOARD_LAYOUT_USE_RE.test(c),
+            ).length,
+        ).toBeGreaterThanOrEqual(1);
+
+        // Near-misses: a level-2 heading, a neighbouring module, and a
+        // component whose name merely starts with DashboardLayout must all
+        // read as clean.
+        expect(HEADING_RE.test('<Heading level={1}>Title</Heading>')).toBe(true);
+        expect(HEADING_RE.test('<Heading level={2}>Title</Heading>')).toBe(false);
+        expect(
+            DASHBOARD_LAYOUT_IMPORT_RE.test(
+                "import { DashboardLayout } from '@/components/layout/DashboardLayout';",
+            ),
+        ).toBe(true);
+        expect(
+            DASHBOARD_LAYOUT_IMPORT_RE.test(
+                "import { X } from '@/components/layout/DashboardLayoutLegacy';",
+            ),
+        ).toBe(false);
+        expect(DASHBOARD_LAYOUT_USE_RE.test('<DashboardLayout\n')).toBe(true);
+        expect(DASHBOARD_LAYOUT_USE_RE.test('<DashboardLayoutLegacy>')).toBe(false);
+    });
+
     it('exempt list is bounded and every entry exists', () => {
         for (const rel of EXEMPT_FILES) {
             const abs = path.resolve(ROOT, rel);

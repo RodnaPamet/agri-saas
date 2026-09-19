@@ -135,6 +135,102 @@ const GEAR_COMPONENT_RE = /<ColumnsDropdown\b/;
 describe('columns-dropdown gear coverage (R10-PR8)', () => {
     const APP_ROOT = path.resolve(ROOT, SCAN_DIR);
 
+    // ── Controls (#971) ──────────────────────────────────────────────
+    //
+    // `selector-teeth` gutted `walk` and NOT ONE test failed. Its only
+    // call site is the `for (const file of walk(APP_ROOT))` loop in the
+    // test below, so every EMPTY-ITERABLE gut — `[]`, `''`, `new Set()`,
+    // `new Map()` — makes that loop run zero times: `violators` stays
+    // empty, the `violators.length > 0` throw never fires, green. "174
+    // pages scanned, every <DataTable> has a gear or an exemption" and
+    // "no file was ever opened" were the same result. (The non-iterable
+    // guts — `0` / `null` / `undefined` / `false` / `{}` — throw at the
+    // for-of, so the hole is precisely the direction the tool reaches.)
+    //
+    // The `fs.existsSync` throw INSIDE `walk` (#875) does not cover it:
+    // gutting replaces the whole function, so that floor never runs — a
+    // check one layer down cannot protect a caller that stops calling
+    // it. Nor do this file's other two tests: both iterate `EXEMPTIONS`
+    // directly and never touch `walk`.
+
+    it('control: walk returns the real .tsx tree under the scan root', () => {
+        const files = walk(APP_ROOT);
+        // Kills `''` / `new Set()` / `new Map()` at the seam, instead of
+        // letting them read as a zero-length scan.
+        expect(Array.isArray(files)).toBe(true);
+        // Measured 2026-09-19: 174 `.tsx` files under
+        // `src/app/t/[tenantSlug]/(app)`. The floor sits far below that,
+        // so ordinary feature PRs never move it.
+        expect(files.length).toBeGreaterThan(100);
+
+        const rels = files.map((f) =>
+            path.relative(APP_ROOT, f).split(path.sep).join('/'),
+        );
+        expect(rels.filter((r) => r.startsWith('..'))).toEqual([]);
+
+        // The extension filter is the ONLY exclusion `walk` has, and it
+        // must actually bite. Derived rather than named: `.ts` siblings
+        // live one level inside the root (8 at that depth, measured —
+        // `*/filter-defs.ts`, `calendar/range.ts`, …).
+        const tsSiblings = fs
+            .readdirSync(APP_ROOT, { withFileTypes: true })
+            .filter((e) => e.isDirectory())
+            .flatMap((d) =>
+                fs
+                    .readdirSync(path.join(APP_ROOT, d.name), {
+                        withFileTypes: true,
+                    })
+                    .filter((e) => e.isFile() && e.name.endsWith('.ts'))
+                    .map((e) => `${d.name}/${e.name}`),
+            );
+        expect(tsSiblings.length).toBeGreaterThan(3);
+        expect(rels.filter((r) => tsSiblings.includes(r))).toEqual([]);
+        expect(rels.filter((r) => !r.endsWith('.tsx'))).toEqual([]);
+
+        // RECURSION is the part the gut set cannot express, and real
+        // product source proves it: the deepest pages sit four segments
+        // down (`grain/bins/[binId]/BinDetailClient.tsx`, measured).
+        expect(
+            Math.max(...rels.map((r) => r.split('/').length)),
+        ).toBeGreaterThanOrEqual(3);
+    });
+
+    it('control: walk reaches the pages this ratchet reasons about', () => {
+        const rels = walk(APP_ROOT).map((f) =>
+            path.relative(APP_ROOT, f).split(path.sep).join('/'),
+        );
+        const found = new Set(rels);
+
+        // POSITIVE CONTROL against real product source. Every EXEMPTIONS
+        // key is a live page that mounts `<DataTable>` with NO gear —
+        // the exact shape this ratchet exists to catch, carved out by
+        // name rather than absent. If `walk` cannot reach them, "zero
+        // violators" only means "zero files opened". Derived from
+        // EXEMPTIONS, so it cannot go stale as that list shrinks (the
+        // direction of travel the docblock states).
+        expect(
+            Object.keys(EXEMPTIONS).filter((rel) => !found.has(rel)),
+        ).toEqual([]);
+
+        // The other half of the ledger. Measured 2026-09-19: 25 files
+        // under the root mount `<DataTable>` — 22 exempt, 3 geared
+        // (assets / evidence / rent clients). A population holding the
+        // exemptions and nothing else would leave this ratchet looking
+        // only at its own carve-out list.
+        let mounts = 0;
+        let geared = 0;
+        for (const rel of rels) {
+            const src = fs.readFileSync(path.join(APP_ROOT, rel), 'utf-8');
+            if (!/<DataTable\b/.test(src)) continue;
+            mounts += 1;
+            if (GEAR_USE_RE.test(src) || GEAR_COMPONENT_RE.test(src)) {
+                geared += 1;
+            }
+        }
+        expect(mounts).toBeGreaterThan(10);
+        expect(geared).toBeGreaterThan(0);
+    });
+
     test('every file mounting <DataTable> mounts the gear or is in EXEMPTIONS', () => {
         const violators: string[] = [];
         for (const file of walk(APP_ROOT)) {

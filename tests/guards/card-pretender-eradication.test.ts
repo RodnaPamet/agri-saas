@@ -78,6 +78,133 @@ function walk(dir: string): string[] {
 }
 
 describe('Card-pretender eradication (Polish PR-3)', () => {
+    // ── Controls (#971) ──────────────────────────────────────────────
+    //
+    // `selector-teeth` gutted `walk` and every empty return SURVIVED —
+    // `[]`, `''`, `new Set()` and `new Map()` are each zero-length or an
+    // empty iterable, so the `for (const file of walk(...))` loop below
+    // runs zero times, `offenders` stays empty, and
+    // `expect(offenders).toHaveLength(0)` passes having opened no file.
+    // "Scanned 1,270 files, found no pretender" and "scanned nothing"
+    // were the same green.
+    //
+    // The `fs.existsSync` throw inside `walk` does not cover this: it
+    // catches a RENAMED root (#875), never a real root that yields
+    // nothing. Nor does the exempt-list test below — it never calls
+    // `walk`, so it is green under all four guts too.
+    //
+    // Two controls, because the population and the detector fail
+    // independently.
+
+    it('control: `walk` returns the real tree, minus exactly what it exempts', () => {
+        const walked = new Map<string, string[]>();
+        for (const dir of SCAN_DIRS) {
+            const files = walk(path.join(ROOT, dir));
+            // Kills `''` / `new Set()` / `new Map()` at the seam rather
+            // than letting them read as a zero-length scan.
+            expect(Array.isArray(files)).toBe(true);
+            // Measured 2026-09-19: src/app 584, src/components 686. The
+            // floor sits far below both, so feature PRs never move it —
+            // and it is PER ROOT, because one root going dark is
+            // invisible in a combined total.
+            expect(files.length).toBeGreaterThan(100);
+            walked.set(dir, files);
+        }
+
+        const rels = SCAN_DIRS.flatMap((dir) => walked.get(dir) ?? []).map(
+            (f) => path.relative(ROOT, f),
+        );
+        expect(rels.filter((r) => r.startsWith('..'))).toEqual([]);
+        expect(rels.filter((r) => !/\.(tsx|ts|jsx|js)$/.test(r))).toEqual([]);
+        expect(
+            rels.filter((r) => r.split(path.sep).includes('node_modules')),
+        ).toEqual([]);
+        // `src/components/ui/hooks/__tests__/` exists, so this exclusion
+        // is exercised by the real tree and not only by the probe below.
+        expect(
+            rels.filter((r) =>
+                r.split(path.sep).some((s) => s.startsWith('__')),
+            ),
+        ).toEqual([]);
+
+        // The exemptions must BITE, and `card-variants.ts` is why that
+        // matters: it is the ONE file in the repo carrying the banned
+        // recipe verbatim (`inset:` in the cva). So it doubles as the
+        // positive control this guard otherwise lacks — the detector is
+        // proved against real product source, and a `walk` that stopped
+        // honouring EXEMPT_FILES would report the primitive itself.
+        for (const rel of EXEMPT_FILES) {
+            expect(fs.existsSync(path.resolve(ROOT, rel))).toBe(true);
+            expect(rels).not.toContain(rel);
+        }
+        expect(
+            PATTERN_RE.test(
+                fs.readFileSync(
+                    path.resolve(ROOT, 'src/components/ui/card-variants.ts'),
+                    'utf8',
+                ),
+            ),
+        ).toBe(true);
+    });
+
+    it('control: a planted pretender is found; the near-misses and skipped paths are not', () => {
+        const RECIPE =
+            '<div className="rounded-lg border border-border-default bg-bg-subtle p-4">';
+        // The three shapes this ratchet's docblock says it does NOT
+        // police. If any matched, the "not policed" contract is a lie.
+        const NEAR_MISSES = [
+            '<div className="rounded-md border border-border-default bg-bg-subtle p-4">',
+            '<div className="rounded-lg border border-border-subtle bg-bg-subtle p-4">',
+            '<div className="rounded-lg border border-border-default bg-bg-default p-4">',
+        ].join('\n');
+
+        const probeRoot = fs.mkdtempSync(
+            path.join(
+                fs.realpathSync(process.env.TMPDIR || '/tmp'),
+                'card-pretender-probe-',
+            ),
+        );
+        try {
+            const write = (rel: string, body: string): void => {
+                const full = path.join(probeRoot, rel);
+                fs.mkdirSync(path.dirname(full), { recursive: true });
+                fs.writeFileSync(full, body, 'utf8');
+            };
+            // `nested/` is load-bearing: it requires RECURSION, which is
+            // the plausible-but-partial mutation the gut set cannot express.
+            write('nested/Pretender.tsx', RECIPE);
+            write('nested/Clean.tsx', NEAR_MISSES);
+            // The next four carry the SAME recipe and must be filtered
+            // out — one per rule inside `walk`.
+            write('Pretender.test.tsx', RECIPE); // EXEMPT_FILE_PATTERNS
+            write('__mocks__/Pretender.tsx', RECIPE); // `__`-prefixed dir
+            write('node_modules/dep/Pretender.tsx', RECIPE); // node_modules
+            write('nested/notes.md', RECIPE); // not a scanned extension
+
+            const found = walk(probeRoot)
+                .map((f) => path.relative(probeRoot, f))
+                .sort();
+            expect(found).toEqual([
+                path.join('nested', 'Clean.tsx'),
+                path.join('nested', 'Pretender.tsx'),
+            ]);
+
+            // …and the detector separates those two: exactly one
+            // offender, scanned the way the ratchet below scans.
+            const offenders = walk(probeRoot).filter((f) =>
+                fs
+                    .readFileSync(f, 'utf8')
+                    .split('\n')
+                    .some((line) => PATTERN_RE.test(line)),
+            );
+            expect(offenders.map((f) => path.basename(f))).toEqual([
+                'Pretender.tsx',
+            ]);
+        } finally {
+            fs.rmSync(probeRoot, { recursive: true, force: true });
+        }
+    });
+
     it('zero hand-rolled `rounded-lg border border-border-default bg-bg-subtle` outside the Card primitive', () => {
         const offenders: Hit[] = [];
         for (const dir of SCAN_DIRS) {

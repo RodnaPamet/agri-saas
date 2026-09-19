@@ -183,6 +183,73 @@ const DYNAMIC_SCRIPT_PATTERNS = [
 describe('CSP Script Guardrails', () => {
     const tsxFiles = collectFiles(SRC_DIR, ['.ts', '.tsx', '.js', '.jsx']);
 
+
+    // ── Controls (#971) ──────────────────────────────────────────────
+    //
+    // `selector-teeth` gutted `collectFiles` to `[]` / `''` / `new Set()`
+    // / `new Map()` and NO test failed: every scan below iterates
+    // `tsxFiles` with a for-of, so an empty list means zero violations
+    // and three green assertions. "Scanned 1960 files, found nothing"
+    // and "scanned nothing" were the same green.
+
+    it('control: collectFiles discovers the real src/ tree and recurses into it', () => {
+        // Floor from a MEASURED count: this call returns 1960 files today
+        // (1123 .ts + 837 .tsx; the tree carries no .js/.jsx). 800 sits far
+        // below that, so ordinary feature PRs never touch it — it fires only
+        // when discovery COLLAPSES. Asserted on `tsxFiles` itself, the value
+        // the three scans consume, not on a fresh call.
+        expect(tsxFiles.length).toBeGreaterThanOrEqual(800);
+        expect(tsxFiles.every((f) => f.startsWith(SRC_DIR + path.sep))).toBe(true);
+        expect(tsxFiles.every((f) => /\.(ts|tsx|js|jsx)$/.test(f))).toBe(true);
+
+        // Recursion is the one behaviour a constant return cannot express:
+        // a top-level-only walker still returns files. Measured max depth is
+        // 11 segments, with 1087 files at >= 4.
+        const depths = tsxFiles.map(
+            (f) => path.relative(SRC_DIR, f).split(path.sep).length,
+        );
+        expect(Math.max(...depths)).toBeGreaterThanOrEqual(4);
+        expect(depths.filter((d) => d >= 4).length).toBeGreaterThanOrEqual(100);
+
+        // The extension list is an INPUT, not decoration: narrowing it must
+        // narrow the result (837 .tsx of 1960 today).
+        const tsxOnly = collectFiles(SRC_DIR, ['.tsx']);
+        expect(tsxOnly.length).toBeGreaterThan(0);
+        expect(tsxOnly.length).toBeLessThan(tsxFiles.length);
+        expect(tsxOnly.every((f) => f.endsWith('.tsx'))).toBe(true);
+    });
+
+    it('control: collectFiles recurses, and its node_modules / .next skips bite', () => {
+        // src/ contains no node_modules and no .next directory (measured:
+        // zero), so those two `continue`s have no live instance to prove
+        // themselves against. Build one. Asserted EXACTLY rather than as a
+        // floor, so a top-level-only walk, a dropped skip and a vanished
+        // extension filter each fail differently.
+        const os = require('os');
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'csp-collect-files-'));
+        try {
+            fs.mkdirSync(path.join(root, 'deep', 'deeper'), { recursive: true });
+            fs.mkdirSync(path.join(root, 'node_modules', 'pkg'), { recursive: true });
+            fs.mkdirSync(path.join(root, '.next', 'static'), { recursive: true });
+            fs.writeFileSync(path.join(root, 'top.ts'), '');
+            fs.writeFileSync(path.join(root, 'deep', 'deeper', 'nested.tsx'), '');
+            fs.writeFileSync(path.join(root, 'notes.md'), '');
+            fs.writeFileSync(path.join(root, 'node_modules', 'pkg', 'vendor.ts'), '');
+            fs.writeFileSync(path.join(root, '.next', 'static', 'chunk.js'), '');
+
+            const found = collectFiles(root, ['.ts', '.tsx', '.js', '.jsx'])
+                .map((f) => path.relative(root, f).split(path.sep).join('/'))
+                .sort();
+
+            // nested.tsx is reachable only by recursing twice; vendor.ts and
+            // chunk.js are inside the two skipped directories; notes.md fails
+            // the extension filter.
+            expect(found).toEqual(['deep/deeper/nested.tsx', 'top.ts']);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     describe('unsafe-inline patterns', () => {
         it('should not contain any inline event handlers, javascript: URIs, dangerouslySetInnerHTML, document.write, or innerHTML assignments', () => {
             const violations = scanForPatterns(tsxFiles, UNSAFE_INLINE_PATTERNS);
@@ -215,6 +282,136 @@ describe('CSP Script Guardrails', () => {
                 );
             }
         });
+    });
+
+
+    it('control: scanForPatterns detects every shape it bans and ignores near-misses', () => {
+        // `selector-teeth` (#971): gutting this function to [] / '' / 0 /
+        // false / {} / Set / Map failed nothing, because all three call sites
+        // only ask `violations.length > 0`. The scan returns 0 violations for
+        // real input today, so "the detector works" and "the detector returns
+        // a constant" are the same green. This exercises the mechanism.
+        const os = require('os');
+        const ALL_PATTERNS = [
+            ...UNSAFE_INLINE_PATTERNS,
+            ...UNSAFE_EVAL_PATTERNS,
+            ...DYNAMIC_SCRIPT_PATTERNS,
+        ];
+
+        // One probe per banned pattern, keyed by the pattern's OWN name, so a
+        // new pattern added without a probe fails here rather than shipping
+        // an unexercised regex.
+        const PROBES: Record<string, string> = {
+            'inline-event-handler': '<div onClick="doThing()" />',
+            'javascript-uri': '<a href="javascript:void(0)">x</a>',
+            dangerouslySetInnerHTML: '<div dangerouslySetInnerHTML={{ __html: raw }} />',
+            'document.write': "document.write('<b>hi</b>');",
+            'innerHTML-assignment': 'node.innerHTML = raw;',
+            'eval()': "eval('1 + 1');",
+            'new-Function': "const f = new Function('return 1');",
+            'setTimeout-string': "setTimeout('tick()', 100);",
+            'setInterval-string': 'setInterval("tick()", 100);',
+            'createElement-script': "document.createElement('script');",
+        };
+        const names = ALL_PATTERNS.map((p) => p.name);
+        expect(Object.keys(PROBES).sort()).toEqual([...names].sort());
+
+        // Near-misses the scanner must NOT report: the three comment forms its
+        // heuristic skips, an innerHTML READ, a non-script createElement,
+        // function-valued timers, and JSX handler/href props (no quote after
+        // `=`). The comment lines also pin the skip's dangerous direction —
+        // gutted TRUE it would swallow the probes above, which the gut set
+        // never tries.
+        const NEAR_MISSES = [
+            '// dangerouslySetInnerHTML was removed here — prose only',
+            '/* document.write("x") lives in a block comment */',
+            " * eval('legacy') in a jsdoc continuation",
+            'const current = node.innerHTML;',
+            "const el = document.createElement('div');",
+            'setTimeout(() => tick(), 100);',
+            'setInterval(refresh, 1000);',
+            '<button onClick={handleClick}>ok</button>',
+            '<a href={hrefFromProps}>ok</a>',
+        ];
+
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'csp-scan-probe-'));
+        try {
+            const probeFile = path.join(dir, 'probe.tsx');
+            fs.writeFileSync(probeFile, names.map((n) => PROBES[n]).join('\n'), 'utf-8');
+            const found: Violation[] = scanForPatterns([probeFile], ALL_PATTERNS);
+
+            // Exactly one hit per line, in line order — so a scanner that
+            // stops at the first match, double-counts, or loses the `i + 1`
+            // line accounting is caught as well as one returning a constant.
+            expect(found.map((v) => v.pattern)).toEqual(names);
+            expect(found.map((v) => v.line)).toEqual(names.map((_, i) => i + 1));
+
+            const cleanFile = path.join(dir, 'near-miss.tsx');
+            fs.writeFileSync(cleanFile, NEAR_MISSES.join('\n'), 'utf-8');
+            // Paired with the positive IN THE SAME TEST on purpose: an empty
+            // result alone is what every gut already produces, so it certifies
+            // nothing standing by itself.
+            expect(scanForPatterns([cleanFile], ALL_PATTERNS)).toEqual([]);
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('control: CSP_ALLOWLIST suppresses real live violations, and carries nothing stale', () => {
+        const os = require('os');
+        const ALL_PATTERNS = [
+            ...UNSAFE_INLINE_PATTERNS,
+            ...UNSAFE_EVAL_PATTERNS,
+            ...DYNAMIC_SCRIPT_PATTERNS,
+        ];
+
+        // src/ has no live NON-exempt instance of any banned shape by
+        // construction — that is what this guard enforces — so the only real
+        // product source available as a positive is what the allowlist
+        // exempts. Scanning the same BYTES at a path the allowlist does not
+        // key on is what separates "suppressed" from "never matched", and it
+        // is also the only thing that catches a `has(...)` that answers true
+        // for everything (a direction the falsy gut set never tries).
+        //
+        // Measured: 4 of the 5 entries carry a live `dangerouslySetInnerHTML`
+        // (journal/[id]:467, knowledge/[id]:275, knowledge/satellite:199,
+        // app/layout.tsx:178). `components/ui/form.tsx` carries NONE — Epic 55
+        // replaced the call with plain text and left only a comment saying so
+        // — so that entry is named here rather than silently counted.
+        const COMMENT_ONLY = new Set(['components/ui/form.tsx']);
+
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'csp-allowlist-'));
+        try {
+            const livePositives: string[] = [];
+            for (const rel of Array.from(CSP_ALLOWLIST)) {
+                const abs = path.join(SRC_DIR, rel);
+                expect(fs.existsSync(abs)).toBe(true);
+
+                // In place: the allowlist key matches, nothing is reported.
+                expect(scanForPatterns([abs], ALL_PATTERNS)).toEqual([]);
+
+                // Same bytes, a path the allowlist does not key on.
+                const copy = path.join(dir, rel.replace(/[^A-Za-z0-9.]/g, '_'));
+                fs.writeFileSync(copy, fs.readFileSync(abs, 'utf-8'), 'utf-8');
+                if (scanForPatterns([copy], ALL_PATTERNS).length > 0) {
+                    livePositives.push(rel);
+                }
+            }
+
+            // The only difference between the two scans is the allowlist, so
+            // this is both the positive control (the detector DID find real
+            // banned product source) and proof the exemption bites. A detector
+            // gutted to a constant empties this set; an entry whose file stops
+            // carrying the shape it exempts drops out of it.
+            expect(livePositives.sort()).toEqual(
+                Array.from(CSP_ALLOWLIST)
+                    .filter((rel) => !COMMENT_ONLY.has(rel))
+                    .sort(),
+            );
+            expect(livePositives.length).toBeGreaterThanOrEqual(2);
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
     });
 
     describe('dynamic script injection', () => {
