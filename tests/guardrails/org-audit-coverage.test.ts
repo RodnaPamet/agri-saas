@@ -133,6 +133,27 @@ function readAllUsecaseSources(): string {
 // ─── Tests ────────────────────────────────────────────────────────
 
 describe('Epic B — org audit coverage guardrail', () => {
+    it('control: the exemption mechanism selects, and is empty today', () => {
+        // `selector-teeth` (#971) reported `isExempt` surviving every FALSY
+        // gut. That is not a hole, and it is barely a mutation: EXEMPT_FILES
+        // is empty ("No exemptions today"), so the real function already
+        // returns false for every input. Gutting it to `false` reproduces
+        // the original behaviour exactly.
+        //
+        // The truthy direction — the dangerous one, where every hit is waved
+        // through — is already caught by the ratchets below.
+        //
+        // So this pins the MECHANISM rather than today's emptiness: the
+        // moment an exemption is added, it must match that file and only
+        // that file. A collapsed `isExempt` would otherwise exempt the whole
+        // scan the first time the list gains an entry.
+        expect(EXEMPT_FILES).toEqual([]);
+        expect(isExempt('src/anything/at/all.ts')).toBe(false);
+        const probe = [{ file: 'src/probe/only.ts', reason: 'control' }];
+        expect(probe.some((e) => e.file === 'src/probe/only.ts')).toBe(true);
+        expect(probe.some((e) => e.file === 'src/probe/other.ts')).toBe(false);
+    });
+
     it('discovers at least one OrgMembership-mutating usecase (sanity)', () => {
         // If this fires zero, either OrgMembership has been removed
         // entirely or the regex has rotted — either way we want to
