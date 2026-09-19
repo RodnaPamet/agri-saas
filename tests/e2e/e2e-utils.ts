@@ -287,19 +287,43 @@ export async function gotoAndVerify(
     let attempts = maxAttempts;
     while (attempts > 0) {
         await safeGoto(page, url, { waitUntil: 'domcontentloaded' });
-        await page.waitForLoadState('networkidle').catch(() => {});
+
+        // An auto-waiting probe, not `networkidle` + an instant `isVisible()`.
+        // `isVisible()` answers "is it visible in this exact millisecond", so
+        // the blanket network wait above it was not redundant — it was the
+        // only thing giving the page time, and it still raced the check it was
+        // protecting. `waitFor` returns the moment the selector appears and
+        // costs nothing when it is already there.
+        //
+        // This is the helper's hot path: `workers: 1`, so every second saved
+        // here comes straight off the shard's wall clock, once per call site.
         const rendered = await page
             .locator(contentSelector)
             .first()
-            .isVisible()
+            .waitFor({ state: 'visible', timeout: 15_000 })
+            .then(() => true)
             .catch(() => false);
+
         if (rendered) {
             await waitForHydration(page, '[data-hydrated], main').catch(() => {});
             return;
         }
         attempts--;
-        if (attempts > 0) await page.waitForTimeout(3000);
+        // No sleep between attempts: the 15s probe above already gave the page
+        // far longer than the 3s that used to sit here, and a re-navigation is
+        // the only thing that recovers a dev-server 500 anyway.
     }
+
+    // Loudly, not silently — the same correction `loginAndGetTenant` above
+    // already carries, which this function was missed by. It is named
+    // *Verify*, and on exhaustion it returned exactly like a success: a page
+    // that never rendered went on to fail somewhere else, as somebody else's
+    // assertion. A check that cannot fail is not a check.
+    throw new Error(
+        `gotoAndVerify: ${url} never rendered \`${contentSelector}\` after ` +
+            `${maxAttempts} attempts. Failing here rather than letting the next ` +
+            `assertion report this as its own problem.`,
+    );
 }
 
 // ─── GAP-23 — Tenant tracker for global teardown ────────────────────

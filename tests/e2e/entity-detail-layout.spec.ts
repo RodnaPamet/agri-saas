@@ -18,7 +18,7 @@
  * `/assets/[id]` mounts exactly as the practice detail page did.
  */
 import { test, expect } from '@playwright/test';
-import { loginAndGetTenant, safeGoto } from './e2e-utils';
+import { loginAndGetTenant, safeGoto, waitForHydration } from './e2e-utils';
 
 test.describe('EntityDetailLayout', () => {
     test('asset detail page renders the shell — breadcrumbs, header, body', async ({
@@ -29,7 +29,6 @@ test.describe('EntityDetailLayout', () => {
         await safeGoto(page, `/t/${tenantSlug}/assets`, {
             waitUntil: 'domcontentloaded',
         });
-        await page.waitForLoadState('networkidle').catch(() => {});
 
         // Open a real asset — the first row of the seeded fleet.
         const firstRow = page
@@ -41,6 +40,9 @@ test.describe('EntityDetailLayout', () => {
         // (`aria-hidden`, `pointer-events-none`) — a guaranteed
         // non-interactive double-click target, unlike the leading
         // select checkbox or the title `<Link>` in the name cell.
+        // A double-click on an unhydrated row is two no-ops that surface 15s
+        // later as a URL that never changed. `networkidle` used to cover this.
+        await waitForHydration(page, '[data-testid="assets-table"] tbody tr');
         await firstRow.locator('td').last().dblclick();
         await page.waitForURL(/\/assets\/[a-zA-Z0-9-]+$/, {
             timeout: 15_000,
@@ -48,9 +50,13 @@ test.describe('EntityDetailLayout', () => {
 
         // The shell's three structural promises:
         // (1) the PageHeader subtree carrying breadcrumbs + title.
+        // 15s, matching the `waitForURL` above rather than sitting at 10s
+        // beneath it. The navigation and the detail page's first paint are
+        // the same slow-server event; budgeting them differently just means
+        // the second half is the one that reports it.
         await expect(
             page.locator('[data-testid="entity-detail-header"]'),
-        ).toBeVisible({ timeout: 10_000 });
+        ).toBeVisible({ timeout: 15_000 });
         // (2) the body wrapper. (The asset surface does not pass a
         //     `rail` — linked Tasks live in their own tab — so the
         //     rail is intentionally absent here; the AsidePanel

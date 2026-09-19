@@ -206,8 +206,10 @@ test.describe('Asset Edit Modal', () => {
         test.skip(!href, 'asset row link has no href to open');
 
         await safeGoto(page, href!);
+        // The positive control is the line above: the detail page's heading
+        // rendered, so the absence below is a claim about a page that exists.
+        // `networkidle` added nothing to that.
         await page.waitForSelector('#asset-title-heading', { timeout: 15000 });
-        await page.waitForLoadState('networkidle').catch(() => {});
         await expect(
             page.getByRole('main').locator('#edit-asset-btn'),
         ).toHaveCount(0);
