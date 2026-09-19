@@ -250,6 +250,24 @@ describe('Prisma includes name real relations', () => {
         expect(relations.size).toBeGreaterThan(50);
         expect(files.length).toBeGreaterThan(200);
         expect(relations.get('task')?.has('comments')).toBe(true);
+
+        // `allFields` had NO floor here, and that was a real hole (#971):
+        // `selector-teeth` gutted `allFieldsByDelegate()` to `new Map()` and
+        // the select check below stayed green. `findBadIncludes` does
+        // `const known = map.get(delegate); if (!known) continue;`, so an
+        // empty map SKIPS every delegate and reports nothing bad — the
+        // canonical "empty selection is a PASS".
+        //
+        // Both maps are built from the same `parseSchemaModels()` loop, so
+        // they share a key set and every relation is also a field. Asserting
+        // that structural relation floors `allFields` exactly, rather than
+        // pinning a field name that could be renamed out from under it.
+        expect(allFields.size).toBe(relations.size);
+        for (const [delegate, rels] of relations) {
+            const all = allFields.get(delegate);
+            expect(all).toBeDefined();
+            for (const rel of rels) expect(all?.has(rel)).toBe(true);
+        }
     });
 
     it('no include names a relation that does not exist', () => {
