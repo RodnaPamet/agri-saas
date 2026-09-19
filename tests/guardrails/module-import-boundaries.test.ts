@@ -153,6 +153,80 @@ describe('module-import-boundaries', () => {
         expect(stale.map((s) => baselineKey(s.from, s.to))).toEqual([]);
     });
 
+    // ── Controls (#971) ──────────────────────────────────────────────
+    //
+    // The classifier self-test below is good and proves `classify` is wired.
+    // Nothing proved the SCAN reads anything: `selector-teeth` found `scan`,
+    // `listAppLayerFiles`, `resolveImport` and `baselineKey` all survive
+    // being gutted.
+    //
+    // Note `listAppLayerFiles` already routes through `collectTrackedFiles`
+    // with `floor: 200`, which throws on an empty selection — and it
+    // survived anyway, because gutting replaces the WRAPPER and the floor one
+    // layer down never runs. A floor inside a helper cannot protect a caller
+    // that stops calling it.
+    //
+    // One honest limit: BASELINE is empty and the tree currently has zero
+    // violations, so `scan() -> []` cannot be told from "correctly found
+    // nothing" by its RESULT. These controls prove the traversal is real
+    // instead — a genuine population, containing both sides of the seam this
+    // ratchet polices, with imports its regex can actually see.
+
+    it('control: the scanned population is real and spans the seam', () => {
+        const files = listAppLayerFiles();
+        expect(files.length).toBeGreaterThan(200);
+        expect(files.every((f) => f.startsWith('src/app-layer/') && f.endsWith('.ts'))).toBe(true);
+
+        // The agri side of the seam exists.
+        const domains = new Set(files.map((f) => classify(f)));
+        expect(domains.has('agri')).toBe(true);
+
+        // ...and the sources carry imports the scanner's own regex matches,
+        // so "no violations" means "looked and found none".
+        const sample = files
+            .slice(0, 40)
+            .map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8'))
+            .join('\n');
+        expect(/(?:import|export)[^'"]*?from\s*['"]([^'"]+)['"]/.test(sample)).toBe(true);
+    });
+
+    it('the CORE side of the seam is currently empty — this ratchet has nothing to cross', () => {
+        // Measured while adding the controls above, and it changes how this
+        // file's green should be read. `classify` sorts app-layer into
+        // agri / core / platform, and today that is 28 / 0 / 291.
+        //
+        // CORE_RE matches compliance, vendor and the audit-CYCLE domain. The
+        // GRC teardown deleted all of it, so there is no core file left for
+        // an agri file to import. This ratchet therefore reports "no NEW
+        // agri⇄core imports" because one side of the boundary does not
+        // exist — not because the boundary is being respected. Its four dead
+        // selectors were never the only reason it could not fail.
+        //
+        // Pinned at 0 deliberately, so this test FAILS the moment a core
+        // file returns. That failure is the signal that the ratchet has
+        // become live work again: delete this test then, and the guard above
+        // starts doing what it was written to do.
+        const core = listAppLayerFiles().filter((f) => classify(f) === 'core');
+        expect(core).toEqual([]);
+    });
+
+    it('control: resolveImport maps the specifier shapes the scan depends on', () => {
+        expect(resolveImport('@/lib/x', 'src/app-layer/usecases/a.ts')).toBe('src/lib/x');
+        expect(resolveImport('./b', 'src/app-layer/usecases/a.ts')).toBe('src/app-layer/usecases/b');
+        // Bare specifiers must stay null: returning '' instead would make
+        // every node_modules import look like a repo path to classify.
+        expect(resolveImport('react', 'src/app-layer/usecases/a.ts')).toBeNull();
+    });
+
+    it('control: baselineKey distinguishes different edges', () => {
+        // BASELINE is empty today, so a collapsed key changes nothing YET.
+        // The moment an entry is added, a constant key would mark every
+        // violation as baselined and suppress the whole ratchet.
+        expect(baselineKey('a', 'b')).toBe(baselineKey('a', 'b'));
+        expect(baselineKey('a', 'b')).not.toBe(baselineKey('a', 'c'));
+        expect(baselineKey('a', 'b')).not.toBe(baselineKey('c', 'b'));
+    });
+
     it('classifier self-test: the domain rules are wired correctly', () => {
         expect(classify('src/app-layer/usecases/journal.ts')).toBe('agri');
         expect(classify('src/app-layer/usecases/exchange.ts')).toBe('agri');

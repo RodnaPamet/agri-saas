@@ -64,6 +64,25 @@ function walk(dir: string): string[] {
 }
 
 describe('terra-draw single seam', () => {
+    it('control: walk returns the source tree this seam check scans', () => {
+        // This is the entry #971 names as the first proven-dead selector:
+        // `walk` gutted to `[]` left 6 of 6 tests green, because the seam
+        // check is `walk('src').filter(...)` expecting no offenders and an
+        // empty walk offends nobody.
+        //
+        // Per rule 3 of selector-teeth-baseline.json — "the exemption must be
+        // deleted in the same PR" — its baseline entry goes in this diff.
+        const files = walk('src');
+        expect(files.length).toBeGreaterThan(200);
+        expect(files.every((f) => f.startsWith('src/'))).toBe(true);
+        expect(files.every((f) => /\.(ts|tsx)$/.test(f))).toBe(true);
+        // The walk's own exclusion must hold, or the population silently grows.
+        expect(files.some((f) => /\.test\.tsx?$/.test(f))).toBe(false);
+        // And MAP_CANVAS — the one file allowed to import terra-draw — must be
+        // IN the population, or the seam check is scanning past its subject.
+        expect(files).toContain(MAP_CANVAS);
+    });
+
     // Matches both static (`from 'terra-draw'`) and dynamic
     // (`import('terra-draw')`) imports — MapCanvas uses the dynamic form.
     const importRe = /(from\s+|import\s*\(\s*)['"]terra-draw(-maplibre-gl-adapter)?['"]/;

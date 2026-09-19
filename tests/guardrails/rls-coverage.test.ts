@@ -810,6 +810,38 @@ function hasForceRls(haystack: string, model: string): boolean {
 }
 
 describe('Guardrail: org-layer canonical RLS setup is drift-free', () => {
+    it('control: hasForceRls distinguishes a table that has FORCE RLS from one that does not', () => {
+        // The consumer is `if (!hasForceRls(setupSql, model)) missing.push(model)`.
+        // EVERY container type is truthy in JS, so a `hasForceRls` that stops
+        // matching and returns `{}`, `[]`, `new Set()` or `new Map()` reports
+        // that every model already has FORCE ROW LEVEL SECURITY, `missing`
+        // stays empty, and this RLS guardrail passes having verified nothing.
+        // `selector-teeth` (#971) confirmed it survives all four.
+        const withForce = 'ALTER TABLE "Parcel" FORCE ROW LEVEL SECURITY;';
+        expect(hasForceRls(withForce, 'Parcel')).toBe(true);
+        // The negative half is the one that matters: a table WITHOUT the
+        // statement must not be reported as covered.
+        expect(hasForceRls(withForce, 'Tenant')).toBe(false);
+        expect(hasForceRls('ALTER TABLE "Parcel" ENABLE ROW LEVEL SECURITY;', 'Parcel')).toBe(false);
+    });
+
+    it('control: redactDbUrl actually removes the credentials', () => {
+        // Not a coverage hole — it only shapes a log banner, and every gut
+        // the tool tried made it emit LESS. It is pinned because the failure
+        // that matters runs the other way: this repository is public, its CI
+        // logs are public, and a redactor that stops redacting writes the
+        // database password into them. That is a leak, not a flaky test.
+        const redacted = redactDbUrl('postgresql://user:hunter2@db.example.com:5432/app');
+        expect(redacted).not.toContain('hunter2');
+        expect(redacted).not.toContain('user:');
+        expect(redacted).toContain('//***@');
+        // A URL with no credentials must survive intact, or the banner stops
+        // naming which database was probed.
+        expect(redactDbUrl('postgresql://db.example.com:5432/app')).toBe(
+            'postgresql://db.example.com:5432/app',
+        );
+    });
+
     const setupPath = path.resolve(
         __dirname,
         '..',
