@@ -53,6 +53,86 @@ function flatten(
 }
 
 describe('Empty-state copy tone (Roadmap-3 PR-6)', () => {
+    // ── Controls (#971) ──────────────────────────────────────────────
+    //
+    // `selector-teeth` gutted `flatten` and NOT ONE test failed. It is this
+    // guard's only module-level selector, and its only call site is the
+    // `for (const { key, value } of flatten(messages))` loop below — so
+    // `return []` makes that loop run zero times: `offenders` stays empty,
+    // the throw never fires, `expect(offenders).toHaveLength(0)` passes.
+    // "5,446 message leaves checked, every noX title on-canon" and "no key
+    // was ever read" were the same green.
+    //
+    // Of the nine guts the tool tries, `[]` is the only one that SCORES.
+    // The five non-iterables (`0` / `null` / `undefined` / `false` / `{}`)
+    // throw at the for-of; the three the seam WOULD tolerate (`''`,
+    // `new Set()`, `new Map()`) never compile against the declared
+    // `Array<{ key: string; value: string }>`. So the return-type
+    // annotation — not any assertion in this file — was doing all the
+    // work, and the one gut it does not stop is the realistic
+    // dead-selector shape.
+
+    it('control: flatten returns the real en.json population and recurses into it', () => {
+        const messages = JSON.parse(
+            fs.readFileSync(path.join(ROOT, 'messages/en.json'), 'utf-8'),
+        );
+        const rows = flatten(messages);
+
+        // Kills `[]` at the seam the ratchet actually consumes.
+        expect(Array.isArray(rows)).toBe(true);
+        // Measured 2026-09-19: 5,446 leaf strings in messages/en.json. The
+        // floor sits far below that, so ordinary copy PRs never move it.
+        expect(rows.length).toBeGreaterThan(3000);
+
+        // RECURSION is the one behaviour a constant return cannot express,
+        // and real product source proves it: measured, en.json has NO
+        // top-level string leaf at all — every key is at least
+        // `namespace.key` — and 573 of them sit three or more levels down
+        // (`admin.apiKeys.noActiveKeys`, `tasks.detail.links.noLinksDescription`).
+        const depths = rows.map((r) => r.key.split('.').length);
+        expect(Math.min(...depths)).toBeGreaterThanOrEqual(2);
+        expect(depths.filter((d) => d >= 4).length).toBeGreaterThan(100);
+
+        // POSITIVE CONTROL, from real product source: the keys this ratchet
+        // polices must be REACHABLE. Measured 2026-09-19: 98 keys whose
+        // terminal segment matches the `noX` shape, 74 of them below the
+        // top namespace. A population without them leaves the four bans
+        // looking at nothing — indistinguishable from "every title is
+        // on-canon". Derived from the same regex the test below uses rather
+        // than from SANCTIONED, so it cannot go stale as that list shrinks.
+        const noX = rows.filter((r) =>
+            /^no[A-Z][A-Za-z]*$/.test(r.key.split('.').pop() ?? ''),
+        );
+        expect(noX.length).toBeGreaterThan(40);
+        expect(
+            noX.filter((r) => r.key.split('.').length >= 3).length,
+        ).toBeGreaterThan(10);
+    });
+
+    it('control: flatten drops arrays and non-string leaves, and keeps nothing else', () => {
+        // These two exclusions have NO live instance in messages/en.json —
+        // measured 2026-09-19: zero arrays, zero numbers, zero booleans,
+        // zero nulls — so real source cannot exercise them. `flatten` is a
+        // pure function over a plain object, so this literal IS the whole
+        // input rather than a stand-in for one.
+        const rows = flatten({
+            common: { yes: 'Yes', noData: 'No data available' },
+            list: ['dropped', 'silently'],
+            count: 3,
+            flag: true,
+            missing: null,
+            deep: { a: { b: { c: 'leaf' } } },
+        });
+        expect(rows).toEqual([
+            { key: 'common.yes', value: 'Yes' },
+            { key: 'common.noData', value: 'No data available' },
+            { key: 'deep.a.b.c', value: 'leaf' },
+        ]);
+        // The array exclusion BITES: an array's members are invisible to
+        // this ratchet, not flattened under `list.0`. If en.json ever grows
+        // one, that copy is unpoliced — this is where that is written down.
+        expect(rows.some((r) => r.key.startsWith('list'))).toBe(false);
+    });
     it('every noX-style title in messages/en.json follows the canonical voice', () => {
         const messages = JSON.parse(
             fs.readFileSync(path.join(ROOT, 'messages/en.json'), 'utf-8'),

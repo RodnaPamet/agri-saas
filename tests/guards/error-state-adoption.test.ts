@@ -46,6 +46,123 @@ function walk(dir: string, results: string[] = []): string[] {
 }
 
 describe('ErrorState adoption (R11-PR3)', () => {
+    // ── Controls (#971) ──────────────────────────────────────────────
+    //
+    // `selector-teeth` gutted `walk` and NOT ONE test failed. Its only
+    // call site is the `for (const file of walk(...))` loop below, so
+    // every EMPTY-ITERABLE gut — `[]`, `''`, `new Set()`, `new Map()` —
+    // runs that loop zero times: `offenders` stays empty, the
+    // `offenders.length > 0` throw never fires, green. (The five
+    // non-iterable guts — `0` / `null` / `undefined` / `false` / `{}` —
+    // throw at the for-of, so the hole is exactly the direction the tool
+    // reaches.) Worse, that test ends with NO `expect` at all: its only
+    // assertion is the conditional throw, so "two boundaries checked"
+    // and "no file was ever opened" are the same result.
+    //
+    // The `fs.existsSync` floor INSIDE `walk` (#875) does not cover it —
+    // gutting replaces the whole function, so that check never runs. A
+    // floor one layer down cannot protect a caller that stops calling
+    // it, which is why it is asserted explicitly below.
+    //
+    // The sibling test ('the shared ErrorState primitive ...') reads
+    // error-state.tsx directly and never touches `walk`.
+
+    const APP_ROOT = path.resolve(ROOT, 'src/app');
+
+    it('control: walk collects the real error.tsx population, recursively', () => {
+        const files = walk(APP_ROOT);
+        // Kills `''` / `new Set()` / `new Map()` at the seam instead of
+        // letting them read as a zero-length scan.
+        expect(Array.isArray(files)).toBe(true);
+
+        const fromScanRoot = files.map((f) =>
+            path.relative(APP_ROOT, f).split(path.sep).join('/'),
+        );
+        // Measured 2026-09-19: exactly TWO `error.tsx` files under
+        // `src/app`, out of 588 files in that tree. The population is
+        // small BY CONSTRUCTION — Next mints one boundary per route
+        // segment that wants one — so both are NAMED rather than covered
+        // by a floor far below reality. An empty scan and a half-scan
+        // both fail here.
+        expect(fromScanRoot).toContain('error.tsx');
+        // RECURSION is the one behaviour a constant return cannot
+        // express: this boundary sits three directories down, so reaching
+        // it means `walk` descended rather than read one directory.
+        expect(fromScanRoot).toContain('t/[tenantSlug]/(app)/error.tsx');
+        expect(files.length).toBeGreaterThanOrEqual(2);
+
+        // Its ONE filter is the exact filename, and it must BITE.
+        // `src/app/global-error.tsx` is a live near-miss from real
+        // product source that an `endsWith('error.tsx')` scan would
+        // collect — and it mounts no <ErrorState>, so collecting it would
+        // turn this ratchet red on a file it never meant to police.
+        expect(fs.existsSync(path.join(APP_ROOT, 'global-error.tsx'))).toBe(
+            true,
+        );
+        expect(fromScanRoot).not.toContain('global-error.tsx');
+        expect(files.every((f) => path.basename(f) === 'error.tsx')).toBe(true);
+
+        // EXEMPTIONS is `{}` today, so this is vacuous NOW and becomes a
+        // no-stale check the moment an entry lands: a carve-out naming a
+        // path `walk` cannot reach would silence nothing and hide that.
+        const fromRepoRoot = files.map((f) =>
+            path.relative(ROOT, f).split(path.sep).join('/'),
+        );
+        expect(
+            Object.keys(EXEMPTIONS).filter((rel) => !fromRepoRoot.includes(rel)),
+        ).toEqual([]);
+    });
+
+    it('control: walk refuses a scan root that does not exist (#875)', () => {
+        // That floor lives INSIDE `walk`, so it is dropped silently by
+        // anything that replaces the body. Asserted here, at the level
+        // that survives, it is what keeps a renamed root from reading as
+        // "zero offenders".
+        const missing = path.resolve(ROOT, 'src/app-this-path-does-not-exist');
+        expect(fs.existsSync(missing)).toBe(false);
+        expect(() => walk(missing)).toThrow(/scan root does not exist/);
+    });
+
+    it('control: the adoption check separates a compliant boundary from a stripped one', () => {
+        // No live offender exists by construction — both boundaries
+        // comply and EXEMPTIONS is empty — so the positive is
+        // MANUFACTURED from real product source: a real `error.tsx` with
+        // its import, then its mount, removed. Derived from the file's
+        // own bytes, so it cannot go stale.
+        const importRe = /from\s+['"]@\/components\/ui\/error-state['"]/;
+        const mountRe = /<ErrorState\b/;
+
+        const real = fs.readFileSync(path.join(APP_ROOT, 'error.tsx'), 'utf-8');
+        // Clean negative: the shipped file satisfies BOTH halves.
+        expect(importRe.test(real)).toBe(true);
+        expect(mountRe.test(real)).toBe(true);
+
+        // Planted positives, one half at a time. The check below is
+        // `if (!imports || !mounts)`, so EITHER miss is an offence and
+        // both must flip — and each mutation must leave the other half
+        // intact, or it proves nothing about which half was detected.
+        const noImport = real.replace(
+            importRe,
+            "from '@/components/ui/empty-state'",
+        );
+        expect(importRe.test(noImport)).toBe(false);
+        expect(mountRe.test(noImport)).toBe(true);
+
+        const noMount = real.replace(/<ErrorState\b/g, '<EmptyState');
+        expect(mountRe.test(noMount)).toBe(false);
+        expect(importRe.test(noMount)).toBe(true);
+
+        // The denominator beside the answer: the main test's silent "no
+        // offenders" is a fact about EVERY walked file, not about an
+        // empty list. Measured 2026-09-19: 2 of 2 comply.
+        const scanned = walk(APP_ROOT);
+        const compliant = scanned.filter((f) => {
+            const src = fs.readFileSync(f, 'utf-8');
+            return importRe.test(src) && mountRe.test(src);
+        });
+        expect(scanned.length).toBeGreaterThanOrEqual(2);
+        expect(compliant).toHaveLength(scanned.length);
+    });
     test('the shared ErrorState primitive preserves its canonical shape', () => {
         const src = fs.readFileSync(
             path.resolve(ROOT, 'src/components/ui/error-state.tsx'),
