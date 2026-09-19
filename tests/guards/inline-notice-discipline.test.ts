@@ -152,6 +152,80 @@ interface Hit {
 
 describe("PR-10 InlineNotice discipline", () => {
     describe("hand-rolled `bg-bg-X border border-border-X` banners eradicated", () => {
+        // ── Controls (#971) ──────────────────────────────────────────────
+        //
+        // `selector-teeth` gutted `walk` and nothing failed. Only ONE of its
+        // nine guts is ever scored: the `: string[]` annotation is what kills
+        // '' / 0 / null / undefined / false / Set / Map / {} — the TYPE, not
+        // any assertion, is all that stood between this guard and eight more
+        // vacuous passes. The gut that compiles is `[]`, and it is exactly
+        // the shape the seam cannot see: the offender loop is
+        // `for (const file of walk(...))`, so an empty array runs it zero
+        // times, `offenders` stays empty and the suite is green. "1263 files
+        // scanned, none offends" and "no file was ever opened" were the same
+        // result. The other two tests in this describe iterate EXEMPT_FILES
+        // and never call `walk` at all.
+        //
+        // The `fs.existsSync` throw INSIDE `walk` (#875) does not cover it —
+        // gutting replaces the whole body, so that floor never runs. A check
+        // one layer down cannot protect a caller that stops calling it, so it
+        // is asserted below at the CALL SITE as well.
+
+        it("control: walk returns the real population the offender loop consumes", () => {
+            const perRoot = SCAN_DIRS.map((d) => walk(path.join(ROOT, d)));
+            // Measured 2026-09-19: src/app 578 + src/components 685 = 1263.
+            // Both floors sit far below that, so ordinary feature PRs never
+            // move them — and `[]` fails both.
+            for (const files of perRoot) {
+                expect(files.length).toBeGreaterThan(100);
+            }
+            const all = perRoot.flat();
+            expect(all.length).toBeGreaterThan(400);
+
+            const rels = all.map((f) =>
+                path.relative(ROOT, f).split(path.sep).join("/"),
+            );
+            expect(rels.filter((r) => r.startsWith(".."))).toEqual([]);
+
+            // RECURSION — the one behaviour a constant return cannot express.
+            // Real product source proves it: the deepest file sits 12 segments
+            // down (src/app/api/t/[tenantSlug]/locations/[id]/basemap/[z]/[x]/
+            // [y]/route.ts, measured).
+            expect(
+                Math.max(...rels.map((r) => r.split("/").length)),
+            ).toBeGreaterThanOrEqual(8);
+
+            // The extension filter must BITE, and its subjects are DERIVED
+            // rather than named: `src/app` itself holds non-code siblings
+            // (favicon.ico, globals.css, icon.svg, global-error.module.css).
+            const nonCode = fs
+                .readdirSync(path.join(ROOT, "src/app"), { withFileTypes: true })
+                .filter((e) => e.isFile() && !/\.(tsx|ts|jsx|js)$/.test(e.name))
+                .map((e) => `src/app/${e.name}`);
+            expect(nonCode.length).toBeGreaterThan(0);
+            expect(rels.filter((r) => nonCode.includes(r))).toEqual([]);
+            expect(rels.filter((r) => !/\.(tsx|ts|jsx|js)$/.test(r))).toEqual([]);
+
+            // The scan must REACH the neighbourhood it polices, or "zero
+            // offenders" only means "zero files read". Measured: 75 files in
+            // the population carry a `bg-bg-{variant}` token on 111 lines —
+            // every one a near-miss this guard must see and not flag.
+            const withTone = all.filter((f) =>
+                /bg-bg-(error|success|warning|info)\b/.test(
+                    fs.readFileSync(f, "utf8"),
+                ),
+            );
+            expect(withTone.length).toBeGreaterThanOrEqual(20);
+        });
+
+        it("control: walk throws on a renamed scan root (#875), asserted at the call site", () => {
+            // Asserted OUT HERE because the throw lives inside the body a gut
+            // replaces. Without this the #875 floor is invisible to exactly
+            // the mutation it was written to stop.
+            expect(() =>
+                walk(path.join(ROOT, "src/__scan_root_that_does_not_exist__")),
+            ).toThrow(/scan root does not exist/);
+        });
         it("zero banner-shape blocks outside the canonical InlineNotice", () => {
             const offenders: Hit[] = [];
             for (const dir of SCAN_DIRS) {
@@ -187,14 +261,184 @@ describe("PR-10 InlineNotice discipline", () => {
             expect(offenders).toHaveLength(0);
         });
 
-        it("documents every exempt file with a reason", () => {
+                // ── Controls (#971) — isExempt ───────────────────────────────────
+        //
+        // TRIAGE, because the two directions are not the same finding.
+        //
+        // FALSY: `: boolean` means the only gut that typechecks is `false`,
+        // and that one is already killed — by the main test, not by anything
+        // deliberate. Six of the nine EXEMPT_FILES genuinely carry the banned
+        // pair on a non-comment line (9 lines, measured), so un-exempting
+        // everything makes the scan report them. That kill is a side effect
+        // of today's exemption list, which is why the biting subset is pinned
+        // below: if it ever empties, `false` becomes a silent survivor.
+        //
+        // TRUTHY is the dangerous direction and the tool CANNOT REACH IT.
+        // `{}` / `[]` / `new Set()` / `new Map()` are its truthy guts and none
+        // of them typechecks against `boolean`; the gut set never tries
+        // `true`. It is consumed as `if (isExempt(rel)) continue` INSIDE
+        // `walk`, before the isDirectory branch, so a blanket-true prunes
+        // both roots at their first entry: `walk` returns nothing, the guard
+        // reports zero offenders, green. Same vacuum as gutting `walk`,
+        // reached through its filter.
+
+        it("control: isExempt exempts what it lists and nothing else", () => {
+            // Positive half — every listed exemption is honoured.
+            for (const rel of EXEMPT_FILES) {
+                expect(isExempt(rel)).toBe(true);
+            }
+
+            // NEGATIVE half — the one a blanket-true fails. DERIVED from real
+            // product source (the .tsx files sitting directly in
+            // src/components — 8 of them once the one exemption among them is
+            // removed) rather than named, so it cannot go stale.
+            const siblings = fs
+                .readdirSync(path.join(ROOT, "src/components"), {
+                    withFileTypes: true,
+                })
+                .filter((e) => e.isFile() && e.name.endsWith(".tsx"))
+                .map((e) => `src/components/${e.name}`)
+                .filter((rel) => !EXEMPT_FILES.has(rel));
+            expect(siblings.length).toBeGreaterThanOrEqual(3);
+            expect(siblings.filter((rel) => isExempt(rel))).toEqual([]);
+
+            // Each ARM bites on its own, and only on its own: the pairs below
+            // differ by exactly the thing the arm matches.
+            expect(isExempt("src/components/ui/hooks/__tests__")).toBe(true);
+            expect(isExempt("src/components/ui/hooks")).toBe(false);
+            expect(isExempt("src/components/Probe.test.tsx")).toBe(true);
+            expect(isExempt("src/components/Probe.spec.ts")).toBe(true);
+            expect(isExempt("src/components/Probe.stories.tsx")).toBe(true);
+            expect(isExempt("src/components/Probe.tsx")).toBe(false);
+        });
+
+        it("control: the exemptions remove real entries, and bite on real banned source", () => {
+            // The dir arm has a LIVE subject: two real hook tests sit under
+            // src/components/ui/hooks/__tests__ and must be absent from the
+            // scanned set. Absence alone proves nothing — the directory has to
+            // exist, and the set it is absent from has to be non-empty.
+            const hookTests = path.join(
+                ROOT,
+                "src/components/ui/hooks/__tests__",
+            );
+            expect(fs.existsSync(hookTests)).toBe(true);
+            expect(
+                fs
+                    .readdirSync(hookTests)
+                    .filter((n) => /\.test\.tsx?$/.test(n)).length,
+            ).toBeGreaterThan(0);
+
+            const scanned = SCAN_DIRS.flatMap((d) =>
+                walk(path.join(ROOT, d)),
+            ).map((f) => path.relative(ROOT, f).split(path.sep).join("/"));
+            expect(scanned.length).toBeGreaterThan(400);
+            expect(
+                scanned.filter((r) => r.split("/").includes("__tests__")),
+            ).toEqual([]);
+            expect(
+                scanned.filter((r) => /\.(test|spec|stories)\.tsx?$/.test(r)),
+            ).toEqual([]);
+
+            // What makes the `false` gut RED rather than a no-op: the file
+            // exemptions are load-bearing, not decorative. Measured
+            // 2026-09-19 — 6 of the 9 listed files carry the banned pair on a
+            // non-comment line. (The other 3 no longer match: inline-notice
+            // only inside its docstring, and the two security pages write the
+            // pair in the reverse order the regex requires. That is why this
+            // asserts a floor on the subset and NOT that all nine bite.)
+            const biting = Array.from(EXEMPT_FILES).filter((rel) => {
+                const abs = path.resolve(ROOT, rel);
+                if (!fs.existsSync(abs)) return false;
+                return fs
+                    .readFileSync(abs, "utf8")
+                    .split("\n")
+                    .some((line) => {
+                        const trimmed = line.trim();
+                        if (
+                            trimmed.startsWith("//") ||
+                            trimmed.startsWith("*")
+                        ) {
+                            return false;
+                        }
+                        return BANNED_PATTERN.test(line);
+                    });
+            });
+            expect(biting.length).toBeGreaterThanOrEqual(3);
+        });
+
+it("documents every exempt file with a reason", () => {
             for (const rel of EXEMPT_FILES) {
                 const abs = path.resolve(ROOT, rel);
                 expect(fs.existsSync(abs)).toBe(true);
             }
         });
 
-        it("exempt files are deliberately small in number", () => {
+                // ── Control (#971) — BANNED_PATTERN ──────────────────────────────
+        //
+        // `selector-teeth` never scores this one. It mutates module-level
+        // FUNCTIONS, and the detector here is a module-level const consumed by
+        // a `.test(line)` INLINE inside the it() above — the tool's own
+        // "selecting happens inside it()" blind spot, one level in. So it
+        // reports nothing about the single value that decides whether this
+        // guard can find anything: narrow it to /$^/ and every assertion in
+        // the file still passes, because the whole guard collapses to
+        // `expect([]).toHaveLength(0)`.
+        //
+        // Positive control from REAL PRODUCT SOURCE, derived from the guard's
+        // own exemption list rather than hand-written: these lines are the
+        // markup EXEMPT_FILES exists to excuse, so they cannot drift out of
+        // sync with the product the way a pasted fixture would.
+
+        it("control: BANNED_PATTERN matches real banned source and ignores near-misses", () => {
+            const offending: string[] = [];
+            for (const rel of EXEMPT_FILES) {
+                const abs = path.resolve(ROOT, rel);
+                if (!fs.existsSync(abs)) continue;
+                for (const line of fs.readFileSync(abs, "utf8").split("\n")) {
+                    const trimmed = line.trim();
+                    if (trimmed.startsWith("//") || trimmed.startsWith("*")) {
+                        continue;
+                    }
+                    if (BANNED_PATTERN.test(line)) offending.push(line);
+                }
+            }
+            // Measured 2026-09-19: 9 such lines across 6 of the 9 files.
+            expect(offending.length).toBeGreaterThanOrEqual(3);
+
+            // Near-misses. Each differs from a real hit by exactly one thing
+            // the regex claims to require, so a widened pattern fails here
+            // before it starts flagging the 75 population files that
+            // legitimately use these tokens apart.
+            expect(BANNED_PATTERN.test("p-3 bg-bg-error rounded-lg")).toBe(
+                false,
+            );
+            expect(
+                BANNED_PATTERN.test("border border-border-error rounded-lg"),
+            ).toBe(false);
+            // Cross-variant pair — the \1 backreference is what rejects it.
+            expect(
+                BANNED_PATTERN.test(
+                    "bg-bg-error border border-border-success",
+                ),
+            ).toBe(false);
+            // Two separate class strings, not one line of markup — the
+            // [^\"'`] clause is what rejects it.
+            expect(
+                BANNED_PATTERN.test(
+                    "bg-bg-error\" gap \"border-border-error",
+                ),
+            ).toBe(false);
+            // Order matters, and this is a REAL shape from
+            // security/mfa/page.tsx — pinned so a future "tidy-up" of the
+            // pattern has to decide about it deliberately.
+            expect(
+                BANNED_PATTERN.test(
+                    "border border-border-error bg-bg-error flex",
+                ),
+            ).toBe(false);
+        });
+
+it("exempt files are deliberately small in number", () => {
             // 1 canonical primitive + ≤14 documented non-banner uses
             // (stat panels, sync-result rows, status pills, segmented
             // toggle buttons, the ForbiddenPage icon frame, and one
