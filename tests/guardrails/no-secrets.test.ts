@@ -299,6 +299,40 @@ describe('Epic C.2 — repository-wide secret-leak guardrail', () => {
         expect(selfScan).toBeUndefined();
     });
 
+    it('control: isBaselineHit is selective, not a blanket exemption', () => {
+        // The assertion below is `findings.filter(f => !isBaselineHit(...))`.
+        // EVERY container type is truthy in JS, so an `isBaselineHit` that
+        // stops matching and returns `{}`, `[]`, `new Set()` or `new Map()`
+        // marks every secret-shaped finding as an accepted baseline entry
+        // and the repo-wide secret guardrail reports clean. `selector-teeth`
+        // (#971) confirmed it survives all four.
+        //
+        // The planted-secret sanity suite below cannot catch it: that runs
+        // the SCANNER against fixtures and never goes through the baseline
+        // filter.
+        const known = REPO_BASELINE[0];
+        expect(isBaselineHit(known.file, known.pattern)).toBe(true);
+        // ...and the negative half, which is the one that actually matters:
+        // a finding nobody has accepted must NOT be treated as baselined.
+        expect(isBaselineHit('src/definitely/not/baselined.ts', known.pattern)).toBe(false);
+        expect(isBaselineHit(known.file, 'Pattern That Does Not Exist')).toBe(false);
+    });
+
+    it('control: isBinaryFile identifies binaries, and only binaries', () => {
+        // This one survived only its FALSY guts, and the direction is why:
+        // "nothing is binary" makes the scan read more files, not fewer, so
+        // it errs toward over-reporting. It is pinned anyway because the
+        // opposite mutation — everything is binary — would skip the entire
+        // tree, and nothing else here would notice.
+        // Real files, because an UNREADABLE path falls through the null-byte
+        // sniff into the catch and is reported binary so the scan skips it —
+        // a deliberate safe-skip, and the reason a fabricated path is the
+        // wrong probe here.
+        expect(isBinaryFile(path.join(REPO_ROOT, 'package.json'))).toBe(false);
+        expect(isBinaryFile(path.join(REPO_ROOT, 'tests/guardrails/no-secrets.test.ts'))).toBe(false);
+        expect(isBinaryFile('/nonexistent/thing.png')).toBe(true); // by extension, no read needed
+    });
+
     it('produces no NEW secret-shaped findings outside the documented baseline', () => {
         const novel = findings.filter(
             (f) => !isBaselineHit(f.file, f.pattern),
