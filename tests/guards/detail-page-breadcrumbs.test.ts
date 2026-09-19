@@ -125,6 +125,15 @@ describe("detail-page breadcrumbs coverage", () => {
 
     it("control: the breadcrumbs detector flags a planted offender derived from real source (#971)", () => {
         const files = SCAN_DIRS.flatMap((dir) => walk(path.join(ROOT, dir)));
+        // `flatMap` WRAPS a non-array return instead of throwing, where the
+        // guard's own `for (const file of walk(...))` rejects it outright. So
+        // a walker gutted to a NUMBER survives this seam and reaches
+        // `fs.readFileSync` as a FILE DESCRIPTOR — and fd 0 is stdin, which
+        // under jest never reaches EOF. The read blocks forever, selector-teeth
+        // spawns jest with no timeout, and the job burns its whole 15-minute
+        // budget in silence (#748). Reject the shape here so that mutation
+        // fails fast, the way it already does for the guard itself.
+        expect(files.every((file) => typeof file === "string")).toBe(true);
         const detailPages = files.filter((file) =>
             ENTITY_DETAIL_RE.test(fs.readFileSync(file, "utf8")),
         );
@@ -235,6 +244,15 @@ describe("detail-page breadcrumbs coverage", () => {
         // how much of the population the exclusions cover: the cap test
         // reads EXEMPT_FILES.size and never calls isExempt.
         const files = SCAN_DIRS.flatMap((dir) => walk(path.join(ROOT, dir)));
+        // `flatMap` WRAPS a non-array return instead of throwing, where the
+        // guard's own `for (const file of walk(...))` rejects it outright. So
+        // a walker gutted to a NUMBER survives this seam and reaches
+        // `fs.readFileSync` as a FILE DESCRIPTOR — and fd 0 is stdin, which
+        // under jest never reaches EOF. The read blocks forever, selector-teeth
+        // spawns jest with no timeout, and the job burns its whole 15-minute
+        // budget in silence (#748). Reject the shape here so that mutation
+        // fails fast, the way it already does for the guard itself.
+        expect(files.every((file) => typeof file === "string")).toBe(true);
         const detailPages = files.filter((file) =>
             ENTITY_DETAIL_RE.test(fs.readFileSync(file, "utf8")),
         );
