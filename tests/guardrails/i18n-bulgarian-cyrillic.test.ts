@@ -94,6 +94,37 @@ export function findLatinCopy(value: unknown): string[] {
 describe('i18n — bg.json is Bulgarian (Cyrillic), not English', () => {
     const bg = flatten(JSON.parse(fs.readFileSync(BG, 'utf-8')));
 
+    it('control: flatten yields the whole catalogue, not an empty map', () => {
+        // The detector self-tests below are thorough and prove `findLatinCopy`
+        // fires in both directions — but they call it DIRECTLY, so they stay
+        // green no matter what the ratchet actually iterates.
+        //
+        // The ratchet itself is `for (const [key, value] of bg)`. An empty
+        // `bg` runs that loop zero times, collects no offenders, and passes:
+        // `selector-teeth` (#971) confirmed `flatten` survives being gutted to
+        // `[]`, `''`, `new Set()` and `new Map()`. A catalogue ratchet that
+        // checks nothing is worse than none, because the green is taken as
+        // evidence that bg.json is clean.
+        //
+        // Measured: 5446 leaf keys, all nested, under 75 top-level namespaces.
+        // The floor is deliberately far below that — this asserts "a real
+        // catalogue", not a key count that every translation PR must bump.
+        expect(bg.size).toBeGreaterThan(1000);
+
+        // It must also FLATTEN. Returning the top level unflattened would
+        // clear the size floor while leaving 75 object values that
+        // `findLatinCopy` cannot meaningfully read.
+        const dotted = [...bg.keys()].filter((k) => k.includes('.'));
+        expect(dotted.length).toBeGreaterThan(1000);
+
+        // And every value must be a LEAF: an object here means the recursion
+        // stopped early, which would silently shrink the scanned population.
+        const objectValued = [...bg.entries()].filter(
+            ([, v]) => v !== null && typeof v === 'object' && !Array.isArray(v),
+        );
+        expect(objectValued).toEqual([]);
+    });
+
     it('has no pure-English (Latin-only) values outside the allow-list', () => {
         const offenders: string[] = [];
         for (const [key, value] of bg) {

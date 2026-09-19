@@ -203,6 +203,47 @@ describe('GAP-19 — i18n completeness', () => {
         expect(localeFiles.length).toBeGreaterThan(0);
     });
 
+    it('control: readLocale returns a real catalogue, not an empty map', () => {
+        // The check above proves a locale FILE exists. Nothing proved the
+        // read returned its contents — and every comparison in this suite is
+        // a set difference, so two empty maps agree perfectly: no missing
+        // keys, no orphans, no placeholder drift, all green.
+        //
+        // `selector-teeth` (#971) confirmed `readLocale` survives being
+        // gutted to `[]`, `new Set()` and `new Map()` (the falsy guts throw
+        // in `.keys()` and were already loud). Measured: 5446 leaf keys per
+        // locale, so the floor below sits far under the real count and no
+        // translation PR has to move it.
+        expect(en.size).toBeGreaterThan(1000);
+        for (const localeName of localeFiles) {
+            expect(readLocale(localeName).size).toBeGreaterThan(1000);
+        }
+    });
+
+    it('control: the failure message names the key that failed', () => {
+        // `groupByNamespace`, `formatMissing`, `formatOrphan` and
+        // `formatDrift` all survived every gut, and unlike `readLocale` that
+        // is NOT a hole in what this suite checks — they build the error
+        // text, so gutting them changes what a failure SAYS, never whether
+        // it fails.
+        //
+        // They earn one control between them rather than a baseline entry,
+        // for the reason #748 kept running into: a report nobody can act on
+        // is close to no report. These messages are the entire remedy
+        // instructions for a failing translation, so "which key" has to
+        // survive in them.
+        const missing = formatMissing(['alpha.one'], new Map([['alpha.one', 'A']]), 'MISSING:');
+        expect(missing).toContain('alpha.one');
+        expect(missing).toContain('[alpha]'); // namespace grouping survived too
+
+        const orphan = formatOrphan(['beta.two'], 'bg', new Map([['beta.two', 'Б']]));
+        expect(orphan).toContain('beta.two');
+
+        const drift = formatDrift([{ key: 'gamma.three', en: ['count'], locale: ['brой'] }], 'bg');
+        expect(drift).toContain('gamma.three');
+        expect(drift).toContain('count');
+    });
+
     const en = readLocale('en');
 
     for (const localeName of localeFiles) {

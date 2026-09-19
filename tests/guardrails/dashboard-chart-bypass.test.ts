@@ -26,6 +26,7 @@
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 const APP_ROOT = path.resolve(
@@ -142,6 +143,60 @@ describe('Epic 59 — chart / progress bypass guard', () => {
         for (const p of pages) {
             expect(fs.existsSync(p)).toBe(true);
         }
+    });
+
+    // ── Controls (#971) ──────────────────────────────────────────────
+    //
+    // The discovery check above proves the guard SEES the tree. Nothing
+    // proved it can DETECT anything in it, and `selector-teeth` found the
+    // gap: `scanFile` survived being gutted to `[]`, `''`, `new Set()` and
+    // `new Map()`, because no violations means `expect(all).toEqual([])`
+    // passes. "Scanned 200 files, found nothing" and "scanned nothing" were
+    // the same green.
+    //
+    // `isSuppressed` survived every gut in BOTH directions, which takes a
+    // little more explaining: gutted truthy it suppresses everything, so the
+    // scan reports nothing; gutted falsy it suppresses nothing, which changes
+    // no result either, because no file in `src/` uses the annotation today.
+    // The suppression path is real code that nothing exercises.
+    //
+    // So these two bracket it: one proves a violation IS caught, the other
+    // proves the annotation is what stops it. Neither passes on the other's
+    // mutation.
+    const PROBES = [
+        "import { TrendLine } from '@/components/ui/TrendLine';",
+        '<polyline points="0,0 1,1" />',
+        'style={{ width: `${pct}%` }}',
+    ];
+
+    const withProbeFile = <T,>(contents: string, fn: (file: string) => T): T => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chart-bypass-probe-'));
+        const file = path.join(dir, 'probe.tsx');
+        fs.writeFileSync(file, contents, 'utf-8');
+        try {
+            return fn(file);
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    };
+
+    it('control: scanFile detects every pattern it claims to ban', () => {
+        const found = withProbeFile(PROBES.join('\n'), (f) => scanFile(f));
+        // One per probe line — not "at least one", so a scanner that finds
+        // the cheapest pattern and stops is caught too.
+        expect(found).toHaveLength(PROBES.length);
+        const patterns = found.map((v) => v.pattern).join(' | ');
+        expect(patterns).toMatch(/TrendLine/);
+        expect(patterns).toMatch(/polyline/);
+        expect(patterns).toMatch(/width/);
+    });
+
+    it('control: the chart-bypass-ok annotation is what suppresses a hit', () => {
+        // The same three violations, each preceded by the annotation. If this
+        // returns [] while the test above returns 3, suppression is doing the
+        // work — and neither result is reachable by gutting either helper.
+        const annotated = PROBES.map((l) => `// ${SUPPRESSION_TAG} intentional, under test\n${l}`).join('\n');
+        expect(withProbeFile(annotated, (f) => scanFile(f))).toEqual([]);
     });
 
     it('no page bypasses the shared chart / progress platform', () => {
