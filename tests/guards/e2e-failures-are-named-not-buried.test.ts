@@ -130,6 +130,42 @@ describe('a non-green E2E shard names its failures', () => {
         expect(namer).toMatch(/::warning::/);
     });
 
+    it('a ✘ is only an ERROR when the shard did not succeed', () => {
+        // Measured on run 35427726541: a SUCCESSFUL shard 1 emitted two
+        // `::error::` annotations for specs that had failed once and passed
+        // on retry. `retries: 2`, so the list reporter prints a ✘ per failed
+        // ATTEMPT — a green shard routinely contains them.
+        //
+        // A step that reports failures on passing runs gets ignored, which is
+        // the same ending as the silence it was written to fix. So the error
+        // branch must be gated on the outcome, not on the marker alone.
+        // Anchor on the EMISSION, not on any mention of it: the step's own
+        // comments explain why the error branch is gated, so `indexOf
+        // ('::error::')` finds the prose first and reports the opposite of
+        // the truth. Strip `#` comment lines before locating anything — the
+        // same reason `worker-heartbeat-wiring` carries a `code()` helper.
+        const namer = (stepNamed(NAME_STEP)?.run ?? '')
+            .split('\n')
+            .filter((l) => !l.trim().startsWith('#'))
+            .join('\n');
+        const errIdx = namer.indexOf('echo "::error::');
+        const gateIdx = namer.indexOf('"${E2E_OUTCOME}" != "success"');
+        expect(errIdx).toBeGreaterThan(-1);
+        expect(gateIdx).toBeGreaterThan(-1);
+        // The gate must OPEN the branch the annotation sits in.
+        expect(gateIdx).toBeLessThan(errIdx);
+    });
+
+    it('a ✘ on a GREEN shard is still reported, as a flake', () => {
+        // The other direction. Dropping the green branch entirely would
+        // satisfy the assertion above and silently discard flake evidence —
+        // and `gh run rerun` already overwrites the job conclusion, so the
+        // run that saw the flake is the only place the record can live.
+        const namer = stepNamed(NAME_STEP)?.run ?? '';
+        expect(namer).toMatch(/::notice::/);
+        expect(namer).toMatch(/retry/i);
+    });
+
     it('the naming step can see the test step outcome it branches on', () => {
         // `steps.e2e.outcome` resolves only if the run step carries that id.
         const namer = stepNamed(NAME_STEP);

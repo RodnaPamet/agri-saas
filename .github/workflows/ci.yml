@@ -1258,33 +1258,65 @@ jobs:
           fi
 
           # Playwright's `list` reporter (playwright.config.ts: CI uses
-          # [['list'], ['html']]) marks a failed test with U+2718. Matched
+          # [['list'], ['html']]) marks a failed ATTEMPT with U+2718. Matched
           # against real output from run 35408549372, not from the docs.
-          mapfile -t FAILED < <(grep -F '✘' "$LOG" | sed 's/^[[:space:]]*//' | sort -u)
+          #
+          # ATTEMPT, not test — and the distinction is the whole of the logic
+          # below. `retries: 2`, so a spec that fails once and passes on retry
+          # prints a ✘ for the failed attempt and a ✓ for the pass, and the
+          # shard still goes green. The first version of this step annotated
+          # those as errors: measured on run 35427726541, a SUCCESSFUL shard 1
+          # emitted two `::error::` for specs that had passed on retry. A step
+          # that cries wolf on every green run is one people learn to ignore,
+          # which is the same ending as the silence it was written to fix.
+          #
+          # So the outcome decides what a ✘ MEANS: a failure when the shard
+          # did not succeed, a flake when it did.
+          mapfile -t MARKED < <(grep -F '✘' "$LOG" | sed 's/^[[:space:]]*//' | sort -u)
 
-          if [ "${#FAILED[@]}" -gt 0 ]; then
-            {
-              echo "### E2E shard ${{ matrix.shard }} — ${#FAILED[@]} failing spec line(s)"
-              echo
-              echo '```'
-              printf '%s\n' "${FAILED[@]}"
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-            for line in "${FAILED[@]}"; do
-              echo "::error::${line}"
-            done
-            exit 0
-          fi
-
-          # The empty case is the one that matters. "Found no failures" and
-          # "my pattern no longer matches" produce identical output, and this
-          # step exists precisely because a silent non-answer once read as a
-          # pass. So when the shard did NOT succeed and this found nothing,
-          # say so loudly rather than printing reassuring silence.
           if [ "${E2E_OUTCOME}" != "success" ]; then
+            if [ "${#MARKED[@]}" -gt 0 ]; then
+              {
+                echo "### E2E shard ${{ matrix.shard }} — ${#MARKED[@]} failing spec line(s)"
+                echo
+                echo '```'
+                printf '%s\n' "${MARKED[@]}"
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+              for line in "${MARKED[@]}"; do
+                echo "::error::${line}"
+              done
+              exit 0
+            fi
+
+            # The empty case is the one that matters. "Found no failures" and
+            # "my pattern no longer matches" produce identical output, and this
+            # step exists precisely because a silent non-answer once read as a
+            # pass. So when the shard did NOT succeed and this found nothing,
+            # say so loudly rather than printing reassuring silence.
             echo "::warning::E2E shard ${{ matrix.shard }} did not succeed (outcome=${E2E_OUTCOME}) but no '✘' line was found in its log."
             echo "::warning::Either it failed before running a test (setup, build, web server), or this extractor's marker is stale — check the log tail below before trusting it."
             tail -n 40 "$LOG" || true
+            exit 0
+          fi
+
+          # Green shard. Any ✘ here passed on retry, so it is a FLAKE: not a
+          # failure, but not nothing either. `gh run rerun` overwrites a job's
+          # conclusion, so re-running to get unblocked deletes the only record
+          # that a spec ever failed — which biases every stability figure taken
+          # from the run list downwards. A notice costs nothing on a clean run
+          # and leaves the evidence attached to the run that saw it.
+          if [ "${#MARKED[@]}" -gt 0 ]; then
+            {
+              echo "### E2E shard ${{ matrix.shard }} — ${#MARKED[@]} spec(s) failed then passed on retry"
+              echo
+              echo '```'
+              printf '%s\n' "${MARKED[@]}"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            for line in "${MARKED[@]}"; do
+              echo "::notice::flaky (passed on retry): ${line}"
+            done
           fi
 
       # ── Artifacts (always on non-success) ──
