@@ -296,6 +296,58 @@ describe('Epic C.1 — API permission coverage guardrail', () => {
         expect(PRIVILEGED_ROUTES.length).toBeGreaterThan(0);
     });
 
+    it('every generated route test is named after the route it checks', () => {
+        // `relPathFromRepo` feeds the `%s` in the two `test.each` titles
+        // below, and nothing else — so `selector-teeth` reported it as a
+        // survivor of every gut it has: an empty title changes no assertion.
+        //
+        // It is worth a control rather than a baseline entry, because these
+        // are 110 generated tests. Blank titles do not weaken what they
+        // check, they make the FAILURE unreadable — "%s wraps its handlers"
+        // with nothing in front of it names no file to go and fix, which is
+        // the same "cancelled reads as noise" problem one layer down.
+        const names = PRIVILEGED_ROUTES.map((r) => relPathFromRepo(r));
+        expect(names.length).toBeGreaterThan(0);
+        for (const n of names) {
+            expect(typeof n).toBe('string');
+            expect(n.length).toBeGreaterThan(0);
+            // Repo-relative, not absolute: an absolute path would still be
+            // non-empty while leaking the runner's home directory into the
+            // title of every test.
+            expect(path.isAbsolute(n)).toBe(false);
+        }
+    });
+
+    it('exclusions cannot swallow the population this guardrail scans', () => {
+        // The route tests below open with `if (lookupExclusion(...)) return;`,
+        // so anything that makes that lookup truthy for every route skips
+        // every permission check while the suite stays green. And EVERY
+        // container type is truthy in JS — `{}`, `[]`, `new Set()`,
+        // `new Map()` all are — so a helper that stops finding anything and
+        // starts returning an empty container converts this guardrail into
+        // 110 passing tests that assert nothing about permission enforcement.
+        //
+        // Found by `selector-teeth` (#971): `lookupExclusion` survived being
+        // gutted to each of those four, because nothing here measured how
+        // much of the population the exclusions actually cover.
+        //
+        // The sanity check above cannot catch it: it counts DISCOVERED
+        // routes, and discovery still works fine while every one of them is
+        // waved through.
+        const excluded = PRIVILEGED_ROUTES.filter((r) =>
+            lookupExclusion(path.relative(path.join(REPO_ROOT, 'src/app'), r)),
+        );
+        const checked = PRIVILEGED_ROUTES.length - excluded.length;
+
+        // Exclusions are the exception, by design: each one carries a written
+        // reason in EXCLUDED_ROUTES. If they ever outnumber the routes being
+        // enforced, either the guardrail has been hollowed out or the
+        // product's permission model changed enough to need re-deciding —
+        // both of which should stop a build rather than pass quietly.
+        expect(checked).toBeGreaterThan(excluded.length);
+        expect(checked).toBeGreaterThan(0);
+    });
+
     test.each(
         PRIVILEGED_ROUTES.map((r) => [relPathFromRepo(r), r] as const),
     )('%s wraps its handlers with requirePermission(...)', (relFromRepo, full) => {
