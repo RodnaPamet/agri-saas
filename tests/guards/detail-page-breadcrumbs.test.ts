@@ -81,6 +81,88 @@ function walk(dir: string): string[] {
 }
 
 describe("detail-page breadcrumbs coverage", () => {
+    it("control: walk discovers the real tree it claims to scan (#971)", () => {
+        const scans = SCAN_DIRS.map((dir) => {
+            const root = path.join(ROOT, dir);
+            return { root, files: walk(root) };
+        });
+        const files = scans.flatMap((s) => s.files);
+
+        // Floors measured 2026-09-19: 190 source files under src/app/t.
+        // Set far below reality so ordinary churn never trips them — only
+        // an empty selection does, which is exactly what the guard's
+        // `expect(offenders).toHaveLength(0)` reads as a pass.
+        expect(files.length).toBeGreaterThanOrEqual(100);
+
+        // Every entry is a real file carrying an extension the walker
+        // claims to collect, so a fabricated or stale list fails here too.
+        for (const file of files) {
+            expect(fs.statSync(file).isFile()).toBe(true);
+            expect(file).toMatch(/\.(tsx|ts|jsx|js)$/);
+        }
+
+        // RECURSION — the one behaviour a constant return cannot express.
+        // Every detail page sits 4-5 directories below the scan root
+        // (…/[tenantSlug]/(app)/<section>/[id]/page.tsx), so a walker that
+        // reads only the top directory returns none of the pages this
+        // ratchet exists to check.
+        const deepest = Math.max(
+            ...scans.flatMap((s) =>
+                s.files.map(
+                    (f) => path.relative(s.root, f).split(path.sep).length - 1,
+                ),
+            ),
+        );
+        expect(deepest).toBeGreaterThanOrEqual(3);
+
+        // The #875 guard is part of the mechanism, not decoration: a
+        // renamed scan root must throw rather than quietly scan zero files.
+        // A constant return never throws.
+        expect(() => walk(path.join(ROOT, "src/app/t-renamed-away"))).toThrow(
+            /scan root does not exist/,
+        );
+    });
+
+    it("control: the breadcrumbs detector flags a planted offender derived from real source (#971)", () => {
+        const files = SCAN_DIRS.flatMap((dir) => walk(path.join(ROOT, dir)));
+        const detailPages = files.filter((file) =>
+            ENTITY_DETAIL_RE.test(fs.readFileSync(file, "utf8")),
+        );
+
+        // Measured 8 on 2026-09-19. `offenders` coming back empty is also
+        // what a guard that found NOTHING TO CHECK reports, so the checked
+        // population needs a floor of its own.
+        expect(detailPages.length).toBeGreaterThanOrEqual(5);
+
+        const isOffender = (content: string) =>
+            ENTITY_DETAIL_RE.test(content) && !BREADCRUMBS_RE.test(content);
+
+        for (const file of detailPages) {
+            const clean = fs.readFileSync(file, "utf8");
+
+            // Clean negative: the shipped page is not an offender.
+            expect(isOffender(clean)).toBe(false);
+
+            // Planted positive, derived from the LIVE file so it cannot go
+            // stale (there is no real offender — offenders is 0 by
+            // construction and EXEMPT_FILES is empty): the same page with
+            // every breadcrumbs spelling renamed away.
+            const planted = clean.replace(/[Bb]readcrumbs/g, "navTrail");
+            expect(BREADCRUMBS_RE.test(planted)).toBe(false);
+            expect(isOffender(planted)).toBe(true);
+
+            // Near-miss: a file that only MENTIONS the shell in an import
+            // or a comment never renders it, so it is out of scope rather
+            // than an offender. The live instance of that shape is
+            // src/app/t/[tenantSlug]/(app)/processes/ProcessesClient.tsx,
+            // whose comment names EntityDetailLayout and breadcrumbs both.
+            const mentionOnly = planted.replace(
+                /<EntityDetailLayout\b/g,
+                "EntityDetailLayout",
+            );
+            expect(isOffender(mentionOnly)).toBe(false);
+        }
+    });
     it("every page rendering <EntityDetailLayout> also passes breadcrumbs", () => {
         const offenders: Hit[] = [];
         for (const dir of SCAN_DIRS) {
@@ -101,6 +183,72 @@ describe("detail-page breadcrumbs coverage", () => {
             );
         }
         expect(offenders).toHaveLength(0);
+    });
+
+    it("control: isExempt excludes what it declares, and nothing else (#971)", () => {
+        // The exclusion arms are dead code against the live tree — src/app/t
+        // has no __tests__ / __mocks__ / node_modules directory, no
+        // .test|.spec|.stories file, and EXEMPT_FILES is empty — so the five
+        // FALSY guts of this function change no result. That is a failed
+        // probe, not a passing guard, and the fix is to drive the mechanism
+        // with inputs derived from the lists themselves rather than to assert
+        // today's emptiness.
+        for (const dirName of Array.from(EXEMPT_DIR_NAMES)) {
+            expect(
+                isExempt(path.join("src", "app", "t", dirName, "page.tsx")),
+            ).toBe(true);
+        }
+
+        const EXEMPT_SAMPLES = [
+            "src/app/t/[tenantSlug]/(app)/journal/[id]/page.test.tsx",
+            "src/app/t/[tenantSlug]/(app)/journal/[id]/page.test.ts",
+            "src/app/t/[tenantSlug]/(app)/journal/[id]/page.spec.tsx",
+            "src/app/t/[tenantSlug]/(app)/journal/[id]/page.stories.tsx",
+        ];
+        for (const sample of EXEMPT_SAMPLES) {
+            expect(isExempt(sample)).toBe(true);
+        }
+        // …and every declared pattern is represented above, so a fourth
+        // pattern cannot be added and left unexercised.
+        for (const pattern of EXEMPT_FILE_PATTERNS) {
+            expect(EXEMPT_SAMPLES.some((s) => pattern.test(s))).toBe(true);
+        }
+
+        // The exclusions are exact matches, not substring denylists: a
+        // directory merely STARTING with __tests__, a file merely ENDING in
+        // 'test.tsx', and a real product page must all stay in scope.
+        for (const inScope of [
+            "src/app/t/[tenantSlug]/(app)/contests/latest.tsx",
+            "src/app/t/[tenantSlug]/(app)/__tests__helpers/page.tsx",
+            "src/app/t/[tenantSlug]/(app)/journal/[id]/page.tsx",
+        ]) {
+            expect(isExempt(inScope)).toBe(false);
+        }
+    });
+
+    it("control: the exclusions cannot swallow the population this guard scans (#971)", () => {
+        // `if (isExempt(rel)) continue;` is the seam, and EVERY empty
+        // container the mutation tool reaches — {}, [], new Set(), new Map()
+        // — is TRUTHY there. A gutted isExempt therefore skips every entry,
+        // walk returns [] at every level, and the ratchet passes having
+        // checked no detail page at all. Nothing else in this file measures
+        // how much of the population the exclusions cover: the cap test
+        // reads EXEMPT_FILES.size and never calls isExempt.
+        const files = SCAN_DIRS.flatMap((dir) => walk(path.join(ROOT, dir)));
+        const detailPages = files.filter((file) =>
+            ENTITY_DETAIL_RE.test(fs.readFileSync(file, "utf8")),
+        );
+
+        // Floors measured 2026-09-19 (190 files, 8 detail pages), set far
+        // below reality. Without them the loop below is vacuous and passes.
+        expect(files.length).toBeGreaterThanOrEqual(100);
+        expect(detailPages.length).toBeGreaterThanOrEqual(5);
+
+        // Asserted on the value the guard itself consumes, not a fresh walk
+        // one layer down: every page this ratchet checks must be non-exempt.
+        for (const file of detailPages) {
+            expect(isExempt(path.relative(ROOT, file))).toBe(false);
+        }
     });
 
     it("exempt list is deliberately bounded", () => {

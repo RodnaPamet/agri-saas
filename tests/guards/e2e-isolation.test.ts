@@ -233,6 +233,86 @@ function scan(): Offender[] {
 
 describe('E2E test isolation — no cross-test `let` cascade', () => {
     const offenders = scan();
+    // ── Controls (#971) ──────────────────────────────────────────────
+    //
+    // `selector-teeth` gutted `specFiles()` and nothing went red. The seam
+    // is `for (const file of specFiles())` inside `scan()`: the five
+    // non-iterable guts (0, false, null, undefined, {}) throw at the
+    // for-of — and since `scan()` runs in the describe BODY that throw
+    // takes the whole file down, loudly. The four that survive — [], '',
+    // new Set(), new Map() — all iterate zero times, and an empty corpus
+    // yields exactly the `offenders: []` the real 47-file corpus yields.
+    // Nothing here measured the population, so "scanned 47 specs, found
+    // nothing" and "scanned nothing" were the same green.
+    //
+    // That is the #865 empty-selection defect. This file is still listed in
+    // HAND_ROLLED_COLLECTORS in
+    // tests/guards/file-collection-is-not-silently-empty.test.ts, which
+    // RECORDS the class rather than asserting on it, and specFiles() has
+    // not moved onto tests/helpers/collect-files.ts (which refuses an empty
+    // result). Until it does, these two assert it here.
+    it('control: specFiles() selects the whole real top-level spec corpus (#971)', () => {
+        const scanned = specFiles();
+
+        // Derived independently of the helper, so a gutted specFiles() has a
+        // contradicting number standing next to it rather than a floor it
+        // also satisfies.
+        const independent = fs
+            .readdirSync(E2E_DIR, { withFileTypes: true })
+            .filter((e) => e.isFile() && e.name.endsWith('.spec.ts'))
+            .map((e) => e.name)
+            .sort();
+
+        // Measured 2026-09-19: 47 top-level spec files. The floor sits far
+        // below that — it is here to catch E2E_DIR resolving somewhere with
+        // no specs in it, the one case where both sides agree on empty.
+        expect(independent.length).toBeGreaterThanOrEqual(20);
+        expect(scanned).toEqual(independent);
+        for (const file of scanned) {
+            expect(fs.statSync(path.join(E2E_DIR, file)).isFile()).toBe(true);
+        }
+
+        // The `.spec.ts` filter is doing real work: the same directory holds
+        // the fixtures and helpers every spec imports, and selecting those
+        // would feed non-spec source to the cascade detector.
+        const everything = fs.readdirSync(E2E_DIR);
+        expect(everything).toContain('fixtures.ts');
+        expect(everything).toContain('e2e-utils.ts');
+        expect(scanned).not.toContain('fixtures.ts');
+        expect(scanned).not.toContain('e2e-utils.ts');
+    });
+
+    it('control: the only spec files this ratchet skips are NESTED ones (#971)', () => {
+        const walk = (dir: string, acc: string[]): string[] => {
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+                const full = path.join(dir, entry.name);
+                if (entry.isDirectory()) walk(full, acc);
+                else if (entry.isFile() && entry.name.endsWith('.spec.ts')) {
+                    acc.push(path.relative(E2E_DIR, full));
+                }
+            }
+            return acc;
+        };
+
+        const everySpec = walk(E2E_DIR, []);
+        const scanned = new Set(specFiles());
+        const unscanned = everySpec.filter((rel) => !scanned.has(rel));
+
+        // `readdirSync` is not recursive, so the population this ratchet
+        // judges is the TOP LEVEL only. Measured 2026-09-19: 61 spec files
+        // exist, 47 are scanned, and the 14 outside are tests/e2e/mobile (13)
+        // + tests/e2e/security (1) — five of which declare a top-level `let`
+        // the cascade detector has never looked at. No gut can surface this:
+        // every gut in the harness SHRINKS the population, and the direction
+        // that hurts here is a population that is non-empty but incomplete.
+        expect(everySpec.length).toBeGreaterThanOrEqual(scanned.size);
+        for (const rel of unscanned) {
+            expect(rel.includes(path.sep)).toBe(true);
+        }
+        // Bounded so the blind spot cannot grow unnoticed. It may only
+        // shrink — making the walk recursive takes it to zero.
+        expect(unscanned.length).toBeLessThanOrEqual(20);
+    });
 
     it('no spec assigns a top-level `let`/`var` in one test and reads it in another', () => {
         const baselineFiles = new Set(BASELINE.map((b) => b.file));
@@ -272,6 +352,110 @@ describe('E2E test isolation — no cross-test `let` cascade', () => {
         // `isolatedTenant`. These two anchors are load-bearing.
         expect(fixturesSrc).toMatch(/base\.extend</);
         expect(fixturesSrc).toMatch(/isolatedTenant:/);
+    });
+
+    // ── Control (#971) ───────────────────────────────────────────────
+    //
+    // `selector-teeth` gutted `scan()` to a constant and nothing went red.
+    // Read that as a FAILED PROBE, not a hole found: `scan()` genuinely
+    // returns [] today — BASELINE is empty and no spec offends — so `[]`
+    // reproduces the true value and is not a mutation at all. The seam is
+    // `offenders.filter(...)` / `offenders.map(...)`, and the other eight
+    // guts (0, false, null, undefined, {}, '', Set, Map) have no `.filter`,
+    // so they throw inside the two tests above. One of nine survived.
+    //
+    // No assertion at this call site can show whether that empty is EARNED:
+    // the only thing that reddens a gutted `scan()` is a real offending
+    // spec ON DISK, and planting one under tests/e2e mid-run would hand
+    // every sibling guard that walks that directory a transient file. So
+    // this control re-runs scan()'s own chain over the same corpus and
+    // asserts what it had to DO — a real count of files, test spans and
+    // candidate bindings, each one CLEARED by detectCascade — plus the same
+    // chain flagging a cascade planted into real spec source.
+    it('control: `offenders` is an EARNED empty — the chain judged a real population (#971)', () => {
+        let totalSpans = 0;
+        let filesWithTwoTests = 0;
+        const blind: string[] = [];
+        const candidates: {
+            file: string;
+            raw: string;
+            src: string;
+            spans: Array<[number, number]>;
+            bindings: string[];
+        }[] = [];
+
+        for (const file of specFiles()) {
+            const raw = fs.readFileSync(path.join(E2E_DIR, file), 'utf8');
+            const src = stripNoise(raw);
+            const spans = testBodySpans(src);
+            totalSpans += spans.length;
+            if (spans.length === 0) blind.push(file);
+            if (spans.length < 2) continue;
+            filesWithTwoTests++;
+            const bindings = topLevelMutableBindings(src, spans);
+            if (bindings.length > 0) {
+                candidates.push({ file, raw, src, spans, bindings });
+            }
+        }
+
+        // Measured 2026-09-19: 113 test spans across 47 specs, 21 files with
+        // >= 2 tests, 6 files carrying 7 top-level mutable bindings. Floors
+        // sit far below, so ordinary churn never trips them.
+        expect(totalSpans).toBeGreaterThanOrEqual(40);
+        expect(filesWithTwoTests).toBeGreaterThanOrEqual(8);
+        expect(candidates.length).toBeGreaterThanOrEqual(3);
+        expect(
+            candidates.reduce((n, c) => n + c.bindings.length, 0),
+        ).toBeGreaterThanOrEqual(3);
+
+        // A spec the chain finds NO tests in is invisible to this ratchet.
+        // Measured 2026-09-19: exactly one — asset-evidence.spec.ts, which
+        // holds five test() calls the chain cannot see. stripNoise strips
+        // line comments BEFORE strings, so the `//` inside
+        // 'https://example.com/evidence-doc' eats the rest of the line
+        // including the closing apostrophe; the file is left with an odd
+        // number of apostrophes and the single-quote pass then mis-pairs
+        // across everything after it (test( count through the passes:
+        // 6 -> 5 -> 5 -> 5 -> 0). Recorded so it cannot spread; may only
+        // shrink.
+        expect(blind.length).toBeLessThanOrEqual(1);
+
+        // Each candidate binding is one detectCascade had to JUDGE — and
+        // cleared. That is what makes the [] at the call site mean anything.
+        for (const c of candidates) {
+            for (const name of c.bindings) {
+                expect(detectCascade(name, c.src, c.spans)).toBeNull();
+            }
+        }
+
+        // ...and the same chain, on that same REAL source plus one cascade
+        // planted on the file's OWN binding, flags it. Derived from the
+        // corpus rather than a fixture, so it cannot go stale.
+        for (const c of candidates) {
+            const name = c.bindings[0];
+            const planted = stripNoise(
+                `${c.raw}\n` +
+                    `test('planted writer', async () => { ${name} = 'planted'; });\n` +
+                    `test('planted reader', async () => { expect(${name}).toBe('planted'); });\n`,
+            );
+            const plantedSpans = testBodySpans(planted);
+            expect(plantedSpans.length).toBe(c.spans.length + 2);
+            expect(topLevelMutableBindings(planted, plantedSpans)).toContain(name);
+            expect(detectCascade(name, planted, plantedSpans)).not.toBeNull();
+        }
+
+        // Tie it back to the value the tests above actually consume:
+        // `offenders` must be an array, and every entry must be a binding
+        // this re-run also saw. A guard whose offenders do not correspond to
+        // its own population is reporting on something else.
+        expect(Array.isArray(offenders)).toBe(true);
+        for (const o of offenders) {
+            expect(
+                candidates.some(
+                    (c) => c.file === o.file && c.bindings.includes(o.binding),
+                ),
+            ).toBe(true);
+        }
     });
 
     // In-file regression proof: the detector must catch the pattern.
