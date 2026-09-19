@@ -62,28 +62,21 @@ import { pathToFileURL } from 'node:url';
  * @type {Array<{id: string, package: string, reason: string, review: string}>}
  */
 const REAL_EXEMPT = [
-    {
-        id: 'GHSA-vwc7-r8mq-g2x9',
-        package: 'adm-zip',
-        reason:
-            'Unreachable from application code, and there is nothing to upgrade to. ' +
-            'The advisory needs adm-zip to extract an ATTACKER-CONTROLLED archive ' +
-            '(entries symlinking outside the destination). Measured: the only ' +
-            'require of adm-zip in the tree is ' +
-            'node_modules/onnxruntime-node/script/install-utils.js:11, reached from ' +
-            "that package's `postinstall: node ./script/install` — it unpacks the " +
-            'ONNX native binary from a URL the vendor itself supplies, inside the ' +
-            'build container. onnxruntime-node\'s runtime entry is dist/index.js, ' +
-            'which never requires it; src/app-layer/ai/vision/onnx-provider.ts uses ' +
-            'the package for INFERENCE only. No application path hands adm-zip a ' +
-            'zip. And the range >=0.5.9 <=0.6.0 covers every published version — ' +
-            'latest IS 0.6.0 — so no floor can fix this; the only npm-suggested fix ' +
-            'is onnxruntime-node@1.21.1 with isSemVerMajor:true, a MAJOR DOWNGRADE ' +
-            'of a production ML runtime, which is the shape #800 correctly rejected ' +
-            'for mysql2/prisma. Re-check for a patched adm-zip on the review date.',
-        review: '2026-10-09',
-    },
     // Intentionally empty.
+    //
+    // The adm-zip entry (GHSA-vwc7-r8mq-g2x9) that lived here was removed
+    // when adm-zip 0.6.1 shipped. Its own rationale had predicted this:
+    // "the range >=0.5.9 <=0.6.0 covers every published version — latest IS
+    // 0.6.0 — so no floor can fix this ... Re-check for a patched adm-zip on
+    // the review date." 0.6.1 is that patch, and it also closes
+    // GHSA-7q85-xj36-vmfc (high, uncontrolled memory allocation, published
+    // 2026-09-18), which was NOT exempt and blocked the gate outright —
+    // rule 1 working as designed: a new advisory on an already-exempt
+    // package still stops the merge.
+    //
+    // Per rule 3 the deletion ships in the SAME PR as the upgrade: once the
+    // advisory stops appearing, a surviving entry is a permanent blind spot,
+    // and the stale check fails the build until it goes.
     //
     // The two `image-size` advisories (GHSA-w3rx-r6r6-pgpr,
     // GHSA-5p2g-fcmc-qvqq) that lived here reached the production tree
