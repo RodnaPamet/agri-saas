@@ -143,6 +143,55 @@ function findKeyboardShortcutCalls(src: string): string[] {
 describe('Keyboard shortcut conventions', () => {
     const allFiles = walk(SRC);
 
+    // ── Controls (#971) ──────────────────────────────────────────────
+    //
+    // This guard is a CHAIN — `walk` finds files, `stripComments` cleans
+    // them, `findKeyboardShortcutCalls` detects call sites — and every link
+    // fails the same silent way: return nothing, and the two ratchets below
+    // collect no violations and pass. `selector-teeth` (#971) found all
+    // three survive being gutted, so the guard could report a clean
+    // keyboard-shortcut surface having looked at no files, no code, or no
+    // calls. One control per link, because a control on the last one only
+    // proves the last one.
+
+    it('control: walk finds the source tree', () => {
+        const files = walk(SRC);
+        expect(files.length).toBeGreaterThan(200);
+        expect(files.every((f) => path.isAbsolute(f))).toBe(true);
+        expect(files.every((f) => /\.(tsx?|jsx?)$/.test(f))).toBe(true);
+        // The hook itself must be in the population, or the allowlist above
+        // is excluding a file the scan never reached anyway.
+        expect(files).toContain(path.join(SRC, 'lib/hooks/use-keyboard-shortcut.tsx'));
+    });
+
+    it('control: stripComments keeps code and removes comments', () => {
+        // Both directions: gutting it truthy-but-empty kills detection,
+        // gutting it to a pass-through kills the documented exemption that
+        // lets JSDoc mention `useKeyboardShortcut` without registering.
+        const kept = stripComments("useKeyboardShortcut('k', fn);");
+        expect(kept).toContain('useKeyboardShortcut');
+        expect(stripComments("// useKeyboardShortcut('k', fn);")).not.toContain('useKeyboardShortcut');
+        expect(stripComments("/* useKeyboardShortcut('k', fn); */")).not.toContain('useKeyboardShortcut');
+        // The documented carve-out: a slash-slash INSIDE a string literal is
+        // not a comment, and eating it would swallow the rest of the call.
+        expect(stripComments("const u = 'https://x.dev'; useKeyboardShortcut('k', fn);")).toContain(
+            'useKeyboardShortcut',
+        );
+    });
+
+    it('control: findKeyboardShortcutCalls finds real calls and ignores commented ones', () => {
+        const found = findKeyboardShortcutCalls(
+            "useKeyboardShortcut('k', fn, { description: 'Open' });",
+        );
+        expect(found).toHaveLength(1);
+        expect(found[0]).toContain('description');
+        // A commented call must not register — that is the reason the
+        // stripComments step exists in this chain at all.
+        expect(
+            findKeyboardShortcutCalls("// useKeyboardShortcut('k', fn, { description: 'Open' });"),
+        ).toEqual([]);
+    });
+
     it('no raw document/window keydown listeners outside the shared hook', () => {
         const violations: { file: string; snippet: string }[] = [];
         for (const file of allFiles) {
