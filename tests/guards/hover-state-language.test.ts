@@ -193,8 +193,19 @@ describe('Hover-state language (Roadmap-3 PR-3)', () => {
         // token of a real canonical line. It cannot go stale: a product
         // that stopped using `hover:bg-bg-muted/50` reddens the
         // derivation instead of quietly leaving nothing to mutate.
-        const canonicalLines = ['src/app', 'src/components']
-            .flatMap((root) => walk(path.join(ROOT, root)))
+        const walked = ['src/app', 'src/components'].flatMap((root) =>
+            walk(path.join(ROOT, root)),
+        );
+        // `flatMap` WRAPS a non-array return instead of throwing, where the
+        // guard's own `for (const file of walk(...))` rejects it outright. So a
+        // walker gutted to a NUMBER survives this seam and reaches
+        // `fs.readFileSync` as a FILE DESCRIPTOR — and fd 0 is stdin, which
+        // under jest never reaches EOF. The read blocks forever, selector-teeth
+        // spawns jest with no timeout, and the job burns its whole 15-minute
+        // budget in silence (#748). Reject the shape here so that mutation
+        // fails fast, the way it already does for the guard itself.
+        expect(walked.every((file) => typeof file === 'string')).toBe(true);
+        const canonicalLines = walked
             .flatMap((file) => fs.readFileSync(file, 'utf-8').split('\n'))
             .filter((line) => line.includes('hover:bg-bg-muted/50'));
         // Measured 2026-09-19: 22 lines (4 under src/app, 18 under
