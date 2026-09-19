@@ -148,6 +148,47 @@ describe("empty/loading primitive-only", () => {
         expect(violations).toHaveLength(0);
     });
 
+    // ── Control (#971): the scan is a POPULATION, not an empty list ──
+    //
+    // `selector-teeth` gutted `walk` and nothing failed. The seam is the
+    // `for (const file of walk(...))` above: `0`, `null`, `undefined`,
+    // `false` and `{}` throw "is not iterable" there and were already
+    // caught — but `[]`, `""`, `new Set()` and `new Map()` all iterate
+    // ZERO times, so "scanned 214 files and found no inline empty state"
+    // and "scanned nothing" are the same green.
+    //
+    // The existsSync throw inside `walk` (#875) cannot see this: it proves
+    // the ROOT EXISTS, one layer below the yield. A root that exists while
+    // the walk returns nothing sails straight past it. The three
+    // PENDING_MIGRATIONS tests cannot see it either — that list is empty,
+    // so each of them loops zero times.
+    //
+    // Floors are MEASURED (2026-09-19: 214 .tsx under src/app, max depth 7)
+    // and set far below reality so ordinary churn never moves them.
+    it("control: the scanned population is non-empty, recursive and .tsx-only", () => {
+        const scanned = walk(path.join(ROOT, SCAN_DIR));
+        expect(scanned.length).toBeGreaterThan(100);
+
+        // Recursion is the one behaviour a constant return cannot express.
+        // A walk that reads only the top directory yields nothing nested,
+        // so depth is the discriminator between "descended" and "listed".
+        const depths = scanned.map(
+            (f) =>
+                path
+                    .relative(path.join(ROOT, SCAN_DIR), f)
+                    .split(path.sep).length,
+        );
+        expect(Math.max(...depths)).toBeGreaterThanOrEqual(4);
+
+        // Every yielded entry is a real, readable .tsx — a walk that starts
+        // returning directory names or stale paths fails here rather than
+        // quietly shrinking what the ratchet reads.
+        for (const file of scanned) {
+            expect(file.endsWith(".tsx")).toBe(true);
+            expect(fs.existsSync(file)).toBe(true);
+        }
+    });
+
     it("PENDING_MIGRATIONS entries point at real files", () => {
         for (const entry of PENDING_MIGRATIONS) {
             const full = path.join(ROOT, entry.file);
@@ -159,10 +200,129 @@ describe("empty/loading primitive-only", () => {
         }
     });
 
+    // ── Control (#971): the exclusion bites, and only where it claims ──
+    //
+    // `isExempt` is consumed as `if (isExempt(rel)) continue` INSIDE `walk`,
+    // against DIRECTORIES as well as files and before the recursion — so a
+    // truthy return prunes the tree at its first level and `walk` yields
+    // nothing at all. Four of the nine guts ({}, [], new Set(), new Map())
+    // are truthy objects, so that direction is reachable even though the
+    // gut set never tries bare `true`; the floor below is what catches it.
+    //
+    // The falsy guts survive for a different reason, and it is not the
+    // guard's fault: measured, the exemption list bites ZERO times under
+    // src/app (no __tests__ / __mocks__ directories, no .test / .spec /
+    // .stories .tsx there), so "exempt nothing" changes no result. That
+    // half is a mutation that does not mutate — which is exactly why the
+    // classes are exercised EXPLICITLY below instead of being trusted to
+    // turn up in the scanned tree.
+    it("control: isExempt excludes every class it lists and nothing else", () => {
+        // The floor and the loop must live in ONE test: an empty selection
+        // passes a for-loop, so without the floor a truthy gut satisfies it.
+        const scanned = walk(path.join(ROOT, SCAN_DIR));
+        expect(scanned.length).toBeGreaterThan(100);
+        for (const file of scanned) {
+            expect(isExempt(path.relative(ROOT, file))).toBe(false);
+        }
+
+        for (const dirName of EXEMPT_DIR_NAMES) {
+            expect(isExempt(path.join("src", "app", dirName, "page.tsx"))).toBe(
+                true,
+            );
+        }
+
+        const EXEMPT_FILE_SAMPLES = [
+            path.join("src", "app", "x", "page.test.tsx"),
+            path.join("src", "app", "x", "page.spec.tsx"),
+            path.join("src", "app", "x", "page.stories.tsx"),
+        ];
+        for (const sample of EXEMPT_FILE_SAMPLES) {
+            expect(isExempt(sample)).toBe(true);
+        }
+        // …and every listed pattern is actually exercised by one of them, so
+        // a pattern added to EXEMPT_FILE_PATTERNS without a sample fails here
+        // instead of riding along unexercised.
+        for (const rx of EXEMPT_FILE_PATTERNS) {
+            expect(EXEMPT_FILE_SAMPLES.some((s) => rx.test(s))).toBe(true);
+        }
+
+        // The near-miss: same directory, same basename, not a test file.
+        expect(isExempt(path.join("src", "app", "x", "page.tsx"))).toBe(false);
+    });
+
     it("PENDING_MIGRATIONS entries each have a non-trivial note", () => {
         for (const entry of PENDING_MIGRATIONS) {
             expect(entry.note.length).toBeGreaterThan(40);
         }
+    });
+
+    // ── Control (#971): the DETECTOR, not today's emptiness ──
+    //
+    // At the `const count = findInlineEmptyStates(content); if (count === 0)`
+    // seam, strict equality means EIGHT of the nine guts (null, undefined,
+    // false, "", [], {}, new Set(), new Map()) make every scanned file a
+    // violation and turn this suite red. Only `0` survives — and `0` is what
+    // the function already returns for all 214 scanned files, so that
+    // mutation does not mutate: the probe failed, the guard did not pass.
+    //
+    // What IS unproven is the regex. Nothing in the repo has ever run it
+    // against a positive, so a tightening that goes one notch too far — or a
+    // JSX shape it no longer recognises — reads exactly like a clean product.
+    // These two bracket it: a live positive from real product source, and
+    // the claimed vocabulary plus the near-misses R8-PR2 excluded on purpose.
+    it("control: the detector finds the banned shape in real product source", () => {
+        // The primitive this ratchet exists to force adoption of writes the
+        // banned shape in its OWN docblock, and lives OUTSIDE SCAN_DIR — so
+        // it is a live positive that can never become a violation.
+        const primitive = path.join(
+            ROOT,
+            "src/components/ui/inline-empty-state.tsx",
+        );
+        expect(fs.existsSync(primitive)).toBe(true);
+        const source = fs.readFileSync(primitive, "utf8");
+        // That docblock names THIS guard, which is what binds the two: if the
+        // example is rewritten the positive disappears, and this fails loudly
+        // instead of the control quietly asserting nothing.
+        expect(source).toContain("empty-loading-primitive-only.test.ts");
+        expect(findInlineEmptyStates(source)).toBeGreaterThan(0);
+    });
+
+    it("control: every terminator and tag it claims bites, and near-misses do not", () => {
+        const TERMINATORS = [
+            "yet",
+            "found",
+            "here",
+            "available",
+            "recorded",
+            "completed",
+            "linked",
+        ];
+        for (const terminator of TERMINATORS) {
+            expect(
+                findInlineEmptyStates(
+                    `<div className="p-8 text-center text-content-subtle text-sm">No tasks ${terminator}</div>`,
+                ),
+            ).toBe(1);
+        }
+        expect(findInlineEmptyStates('<p className="x">Zero items found</p>')).toBe(1);
+        expect(findInlineEmptyStates("<span>No links yet</span>")).toBe(1);
+        expect(findInlineEmptyStates("<div>No crop plans yet</div>")).toBe(1);
+        // It COUNTS, it does not merely detect — the failure message reports a
+        // per-file number, so a detector that stops at the first hit is caught.
+        expect(
+            findInlineEmptyStates("<div>No tasks yet</div>\n<p>No comments yet</p>"),
+        ).toBe(2);
+
+        // Near-misses the R8-PR2 tightening excludes ON PURPOSE: a per-row cell
+        // marker with no terminator, and a tag outside the list. A detector
+        // "fixed" by widening it back fails here.
+        expect(findInlineEmptyStates("<span>No content</span>")).toBe(0);
+        expect(findInlineEmptyStates("<span>No runs</span>")).toBe(0);
+        expect(findInlineEmptyStates("<td>No tasks yet</td>")).toBe(0);
+        // …and the sanctioned path is never a violation.
+        expect(
+            findInlineEmptyStates('<InlineEmptyState title="No tasks yet" />'),
+        ).toBe(0);
     });
 
     it("PENDING_MIGRATIONS entries actually have inline empty states (otherwise drop them)", () => {
