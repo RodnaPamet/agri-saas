@@ -33,9 +33,38 @@
     "examined nothing — because its describe/it gate matched RegExp.prototype.test",
     "and doc-comment prose, then never decremented. generated-columns:walk survives",
     "EVERY gut the tool has. Neither is new debt; both are newly VISIBLE debt, and",
-    "the rest of the 286 selectors the rewrite recovered have not been swept."
+    "the rest of the 286 selectors the rewrite recovered have not been swept.",
+    "",
+    "UPDATED 2026-09-19 by the #971 guardrails sweep (102 files).",
+    "  · parcel-authoring-coverage:walk REMOVED — it now has a control, per rule 3.",
+    "    The tool confirms: 'all 2 selector(s) have teeth'.",
+    "  · module-import-boundaries:scan ADDED, and it is the one case in the sweep",
+    "    where a control is not possible today rather than merely absent.",
+    "",
+    "    `classify` sorts src/app-layer into agri / core / platform. Measured:",
+    "    28 / 0 / 291. CORE_RE matches compliance, vendor and the audit-CYCLE",
+    "    domain, all of which the GRC teardown deleted. So the ratchet polices a",
+    "    seam with ONE SIDE, BASELINE is empty, and the tree has zero violations",
+    "    — `scan() -> []` is therefore indistinguishable from 'correctly found",
+    "    nothing' BY ITS RESULT. No assertion can separate them without a fixture",
+    "    tree the guard has no way to accept.",
+    "",
+    "    What IS asserted instead, in the file: the traversal is real (>200",
+    "    repo-relative .ts files, the agri side present, sources carrying imports",
+    "    the scanner's own regex matches), `resolveImport` maps the specifier",
+    "    shapes, `baselineKey` distinguishes edges, and — pinned at zero — that",
+    "    the core side is empty. That last one FAILS the moment a core file",
+    "    returns, which is the signal to delete this entry and give `scan` a",
+    "    real control, because the ratchet will finally have something to find.",
+    "    Review when that happens, or 2026-12-19, whichever comes first.",
+    "",
+    "  The other 17 findings from that sweep are NOT here: each got a real",
+    "  control instead. A baseline entry is the exception, not the pattern."
   ],
   "known": {
+    "tests/guardrails/module-import-boundaries.test.ts": [
+      "scan"
+    ],
     "tests/guards/action-label-vocabulary.test.ts": [
       "walk"
     ],
