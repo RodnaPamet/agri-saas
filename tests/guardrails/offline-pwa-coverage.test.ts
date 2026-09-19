@@ -451,6 +451,22 @@ function walk(dir: string): string[] {
 }
 
 describe('outbox single seam', () => {
+    it('control: walk returns the source tree this seam check scans', () => {
+        // The check below is `walk('src').filter(...)` and expects no
+        // offenders. An empty walk offends nobody — `selector-teeth` (#971)
+        // confirmed `walk` survives being gutted to `[]`, so the outbox seam
+        // could report clean having listed no files at all.
+        const files = walk('src');
+        expect(files.length).toBeGreaterThan(200);
+        expect(files.every((f) => f.startsWith('src/'))).toBe(true);
+        expect(files.every((f) => /\.(ts|tsx)$/.test(f))).toBe(true);
+        // Its own filter must hold: test files are excluded by construction.
+        expect(files.some((f) => /\.test\.tsx?$/.test(f))).toBe(false);
+        // And the offline lib — the one place allowed to touch the raw store —
+        // must be IN the population, or the seam check is scanning past it.
+        expect(files.some((f) => f.startsWith('src/lib/offline/'))).toBe(true);
+    });
+
     it('only the offline lib references the raw outbox store', () => {
         const offenders = walk('src')
             .filter((rel) => !rel.startsWith(path.join('src', 'lib', 'offline')))
