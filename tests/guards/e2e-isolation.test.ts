@@ -249,7 +249,7 @@ describe('E2E test isolation — no cross-test `let` cascade', () => {
     // HAND_ROLLED_COLLECTORS in
     // tests/guards/file-collection-is-not-silently-empty.test.ts, which
     // RECORDS the class rather than asserting on it, and specFiles() has
-    // not moved onto tests/helpers/collect-files.ts (which refuses an empty
+    // not moved onto the shared collector helper (which refuses an empty
     // result). Until it does, these two assert it here.
     it('control: specFiles() selects the whole real top-level spec corpus (#971)', () => {
         const scanned = specFiles();

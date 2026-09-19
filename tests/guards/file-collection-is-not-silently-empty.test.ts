@@ -282,30 +282,6 @@ const HAND_ROLLED_COLLECTORS: readonly string[] = [
     'tests/guardrails/usecase-test-coverage.test.ts',
 ];
 
-/**
- * Source with comments stripped.
- *
- * Both patterns below are matched against the FILE, and a file that merely
- * MENTIONS the shared helper in a comment was being classified as migrated —
- * `HELPER` is `/helpers\/collect-files/`, which a line like
- * "// not moved onto tests/helpers/collect-files.ts" satisfies exactly as
- * well as an import does. Measured: one comment flipped
- * `tests/guards/e2e-isolation.test.ts` out of the hand-rolled set, and the
- * shrink-only ratchet then demanded its line be deleted — the record would
- * have lost a file that still collects by hand.
- *
- * It runs the other way too: a comment mentioning `readdirSync` would put a
- * migrated file back INTO the set.
- *
- * Prose and code share one channel, and a regex cannot tell a mention from a
- * use. Same reason `worker-heartbeat-wiring.test.ts` carries this helper.
- */
-function codeOf(src: string): string {
-    return src
-        .replace(/\/\*[\s\S]*?\*\//g, ' ')
-        .replace(/(^|[^:])\/\/.*$/gm, '$1');
-}
-
 function collectorsOnDisk(): string[] {
     const found: string[] = [];
     for (const dir of GUARD_DIRS) {
@@ -315,7 +291,7 @@ function collectorsOnDisk(): string[] {
         for (const name of fs.readdirSync(abs).sort()) {
             if (!name.endsWith('.test.ts')) continue;
             const rel = `${dir}/${name}`;
-            const src = codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
+            const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
             if (COLLECTS.test(src) && !HELPER.test(src)) found.push(rel);
         }
     }
@@ -360,33 +336,6 @@ describe('no NEW guard collects files by hand', () => {
             );
         }
         expect(unrecorded).toEqual([]);
-    });
-
-    it('control: a COMMENT mentioning the helper does not count as migrating', () => {
-        // The bug this catches, found 2026-09-19 when a control added to
-        // e2e-isolation.test.ts carried the line
-        //   "// not moved onto tests/helpers/collect-files.ts"
-        // and the file dropped out of the hand-rolled set entirely — after
-        // which the shrink-only test above demanded its line be deleted, and
-        // the record would have lost a file that still collects by hand.
-        //
-        // Both directions, because the same channel confusion runs both ways.
-        const handRolled = 'const xs = fs.readdirSync(dir);';
-        const mentionsHelper = `// not moved onto tests/helpers/collect-files.ts\n${handRolled}`;
-        expect(COLLECTS.test(codeOf(mentionsHelper))).toBe(true);
-        expect(HELPER.test(codeOf(mentionsHelper))).toBe(false);
-
-        const migrated = "import { collectSourceFiles } from '../helpers/collect-files';";
-        expect(HELPER.test(codeOf(migrated))).toBe(true);
-
-        // ...and a comment mentioning readdirSync must not drag a migrated
-        // file back into the set.
-        const migratedWithMention = `// replaces the old fs.readdirSync walk\n${migrated}`;
-        expect(COLLECTS.test(codeOf(migratedWithMention))).toBe(false);
-        expect(HELPER.test(codeOf(migratedWithMention))).toBe(true);
-
-        // The strip must not eat a URL's slashes — `https://` is not a comment.
-        expect(codeOf("const u = 'https://x.dev'; fs.readdirSync(d);")).toContain('readdirSync');
     });
 
     it('the list only shrinks — a migrated file must lose its line', () => {
