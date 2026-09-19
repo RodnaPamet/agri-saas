@@ -118,6 +118,51 @@ function findAsAnyHits(): Hit[] {
 }
 
 describe('Epic C — `as any` count ratchet', () => {
+    // ── Controls (#971) ──────────────────────────────────────────────
+    //
+    // This file already has a "proves the detector is real" test, and it is
+    // a good one — but it runs the heuristic over a SYNTHETIC string.
+    // `findAsAnyHits()` takes no arguments and scans `src/` itself, so
+    // nothing here touched the real traversal: `selector-teeth` (#971) found
+    // both `listTsFiles` and `findAsAnyHits` survive being gutted.
+    //
+    // All three existing tests then pass on a scan of nothing. The ceiling
+    // (`count <= 4`) is satisfied by 0. The drift sentinel only fires when
+    // slack > 5, and a gutted scan gives slack 4. The detector sanity test
+    // never calls the traversal at all.
+    //
+    // The consequence is worse than a green on an unscanned tree: the
+    // documented remedy for slack is to LOWER CURRENT_BASELINE, so a
+    // silently-empty scan invites someone to ratchet the ceiling to 0 and
+    // lock in a false floor that every future cast then has to beat.
+
+    it('control: the ratchet walks a real source tree', () => {
+        const files = listTsFiles(SRC_DIR);
+        expect(files.length).toBeGreaterThan(200);
+        expect(files.every((f) => path.isAbsolute(f))).toBe(true);
+        expect(files.every((f) => /\.tsx?$/.test(f) && !f.endsWith('.d.ts'))).toBe(true);
+    });
+
+    it('control: findAsAnyHits agrees with an independent scan of the same tree', () => {
+        // Mirrors the documented heuristic — skip `*` and `//` continuation
+        // lines, count every occurrence on a line — computed here rather
+        // than trusted from the helper. A gutted `findAsAnyHits` returns 0
+        // while this still returns the real number, so the two disagree.
+        //
+        // This stays correct if the codebase ever reaches zero casts: both
+        // sides go to 0 together and still agree. It is the DIVERGENCE that
+        // is the signal, not the value.
+        let independent = 0;
+        for (const abs of listTsFiles(SRC_DIR)) {
+            for (const line of fs.readFileSync(abs, 'utf8').split('\n')) {
+                const stripped = line.trim();
+                if (stripped.startsWith('*') || stripped.startsWith('//')) continue;
+                independent += (line.match(new RegExp(AS_ANY_RE.source, 'g')) ?? []).length;
+            }
+        }
+        expect(findAsAnyHits().length).toBe(independent);
+    });
+
     it(`total \`as any\` count in src/ stays at or below ${CURRENT_BASELINE}`, () => {
         const hits = findAsAnyHits();
         const count = hits.length;
