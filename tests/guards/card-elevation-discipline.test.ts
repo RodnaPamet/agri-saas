@@ -97,6 +97,55 @@ function scanCardWithShadowOverride(
 }
 
 describe("v2-PR-9 Card elevation ratchet", () => {
+    // ── Controls (#971) ──────────────────────────────────────────────
+    //
+    // This guard is a CHAIN — `walk` collects files, `isExempt` filters them
+    // (from INSIDE walk), `scanCardWithShadowOverride` detects — and every
+    // link fails the same silent way. `selector-teeth` found all three
+    // survive being gutted.
+    //
+    // `walk` already throws on a missing root (#875), and survived anyway:
+    // gutting replaces the WHOLE function, so that check never runs. A floor
+    // inside a helper cannot protect a caller that stops calling it — this is
+    // the third instance of that shape in this sweep.
+    //
+    // `isExempt` is the dangerous one, because it is consumed as
+    // `if (isExempt(rel)) continue` inside the walk: a truthy return exempts
+    // EVERY path and the scan collects nothing at all.
+
+    it("control: walk returns a real population, and excludes what it claims to", () => {
+        const files = SCAN_DIRS.flatMap((d) => walk(path.join(ROOT, d)));
+        expect(files.length).toBeGreaterThan(50);
+        expect(files.every((f) => /\.(tsx|ts|jsx|js)$/.test(f))).toBe(true);
+        // Its own exclusions must hold, or the population silently grows.
+        expect(files.some((f) => /\.(test|spec|stories)\.tsx?$/.test(f))).toBe(false);
+        // And the file the guard is ABOUT must be reachable: Card consumers
+        // live under the scan root, so a population without any is a scan
+        // that cannot find what it polices.
+        expect(files.some((f) => f.endsWith(".tsx"))).toBe(true);
+    });
+
+    it("control: isExempt exempts the listed file and nothing else", () => {
+        expect(isExempt("src/components/ui/card.tsx")).toBe(true);
+        // The negative half is what matters: a blanket-true isExempt empties
+        // the walk, and "no offenders" is exactly what that produces.
+        expect(isExempt("src/components/dashboard/SomeWidget.tsx")).toBe(false);
+        expect(isExempt("src/app/t/[tenantSlug]/(app)/assets/page.tsx")).toBe(false);
+    });
+
+    it("control: the scanner detects a shadow override and ignores a clean Card", () => {
+        const offending = scanCardWithShadowOverride(
+            '<Card className="rounded-lg shadow-md p-4">\n  <div />\n</Card>',
+        );
+        expect(offending).toHaveLength(1);
+        expect(offending[0].classNameValue).toContain("shadow-md");
+        // Both negatives: a Card without a shadow, and a shadow on something
+        // that is not a Card. Either being flagged would make this guard
+        // noisy; neither being detectable would make it useless.
+        expect(scanCardWithShadowOverride('<Card className="rounded-lg p-4" />')).toEqual([]);
+        expect(scanCardWithShadowOverride('<div className="shadow-md" />')).toEqual([]);
+    });
+
     describe("no `shadow-*` className overrides on Card consumers", () => {
         it("zero shadow utilities on `<Card>` outside primitives", () => {
             const offenders: {

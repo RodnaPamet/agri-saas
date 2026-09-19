@@ -24,9 +24,23 @@ import * as path from 'node:path';
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
-/** Re-read rather than imported, so the guard sees the SOURCE, not a bundle. */
-function apiKeyAuthEnabled(): boolean {
-    const src = read('src/lib/auth/api-key-availability.ts');
+/**
+ * Re-read rather than imported, so the guard sees the SOURCE, not a bundle.
+ *
+ * The source is a PARAMETER with the real file as its default, so the parse
+ * can be exercised both ways (#971). Without that, this returns the switch's
+ * actual value — `false` — for every call, `return false` reproduces it
+ * exactly, and no assertion can tell the implementation from a gutted one.
+ * `selector-teeth` reported exactly that.
+ *
+ * The direction that would actually hurt is the opposite one. Every test below
+ * is `if (!apiKeyAuthEnabled()) { ...assert... }`, so a function stuck at TRUE
+ * skips all of them and the suite passes having checked nothing — and `true`
+ * is not in the tool's gut set, which is falsy/empty values only. A predicate
+ * whose hazard is the truthy side cannot be found by that tool at all, which
+ * is why the control below drives both branches explicitly.
+ */
+function apiKeyAuthEnabled(src: string = read('src/lib/auth/api-key-availability.ts')): boolean {
     const m = src.match(/export const API_KEY_AUTH_ENABLED\s*=\s*(true|false)/);
     if (!m) {
         throw new Error(
@@ -41,6 +55,27 @@ function apiKeyAuthEnabled(): boolean {
 describe('the API-key feature switch', () => {
     it('is readable, and this guard knows which way it is set', () => {
         expect(typeof apiKeyAuthEnabled()).toBe('boolean');
+    });
+
+    it('control: the parse reports BOTH settings, not a constant', () => {
+        // Drives the branch the tool cannot reach. A predicate pinned at
+        // `true` would skip every conditional assertion in this file; one
+        // pinned at `false` is indistinguishable from today's real value.
+        expect(apiKeyAuthEnabled('export const API_KEY_AUTH_ENABLED = true;')).toBe(true);
+        expect(apiKeyAuthEnabled('export const API_KEY_AUTH_ENABLED = false;')).toBe(false);
+        // And it still THROWS when the switch is absent, which is what stops
+        // this guard silently protecting nothing after a rename.
+        expect(() => apiKeyAuthEnabled('export const SOMETHING_ELSE = true;')).toThrow(
+            /API_KEY_AUTH_ENABLED not found/,
+        );
+    });
+
+    it('control: the switch is currently OFF, so the assertions below run', () => {
+        // An honest record of today's value. The conditional tests in this
+        // file are no-ops if the switch is ever turned on, so this is the
+        // line that fails and forces them to be revisited rather than
+        // quietly skipped.
+        expect(apiKeyAuthEnabled()).toBe(false);
     });
 
     it('creation is refused while the switch is off', () => {

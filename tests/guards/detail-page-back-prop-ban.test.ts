@@ -53,6 +53,68 @@ function stripComments(src: string): string {
 const PRIMITIVE_BLOCK_RE =
     /<(?:EntityDetailLayout|PageHeader)\b[\s\S]*?(?:>|\/>)/g;
 
+    // ── Control: `walk` must actually select a population (#971) ─────────
+    //
+    // `walk` is the ONLY producer of the file list this ban scans, consumed at
+    // `for (const file of walk(APP_ROOT))` below. Gut it to an empty ITERABLE
+    // ([], '', new Set(), new Map()) and the loop runs zero times: `offenders`
+    // stays empty, the guard passes, and nothing was looked at. (The
+    // non-iterable guts — 0, null, undefined, false, {} — throw at the for-of
+    // and are already caught; only the empty-iterable ones survive.)
+    //
+    // The `fs.existsSync` throw above covers a renamed ROOT and nothing else —
+    // not the recursion, not the `.tsx` filter, not the count.
+    //
+    // Floors are MEASURED on main (2026-09-19) and set far below reality so no
+    // feature PR has to move them.
+    test('walk() selects a real, recursive .tsx population under src/app', () => {
+        const scanned = walk(APP_ROOT);
+
+        // Measured: 214 .tsx files under src/app.
+        expect(scanned.length).toBeGreaterThan(100);
+
+        // Shape: absolute, inside the scan root, .tsx only, no duplicates.
+        for (const file of scanned) {
+            expect(path.isAbsolute(file)).toBe(true);
+            expect(file.startsWith(APP_ROOT + path.sep)).toBe(true);
+            expect(file.endsWith('.tsx')).toBe(true);
+        }
+        expect(new Set(scanned).size).toBe(scanned.length);
+
+        // RECURSION — the one behaviour no gut VALUE can express. A walk that
+        // stopped recursing would return just the 7 files sitting directly in
+        // src/app and still look like a healthy non-empty list. Measured: 191
+        // files sit 4+ path segments below APP_ROOT.
+        const nested = scanned.filter(
+            (file) => path.relative(APP_ROOT, file).split(path.sep).length >= 4,
+        );
+        expect(nested.length).toBeGreaterThan(50);
+    });
+
+    // ── Positive control: the population reaches the JSX this guard bans ──
+    //
+    // A file COUNT alone is satisfied by a walk returning 214 files the
+    // detector can never see. This exercises the whole
+    // walk -> stripComments -> PRIMITIVE_BLOCK_RE pipeline against REAL
+    // product source. Measured on main: 13 files under src/app mount
+    // <EntityDetailLayout>/<PageHeader>, yielding 28 opening-tag blocks.
+    test('the scanned population contains real <EntityDetailLayout>/<PageHeader> JSX', () => {
+        let filesWithBlocks = 0;
+        let blocks = 0;
+
+        for (const file of walk(APP_ROOT)) {
+            const matched = stripComments(
+                fs.readFileSync(file, 'utf-8'),
+            ).match(PRIMITIVE_BLOCK_RE);
+            if (!matched) continue;
+            filesWithBlocks += 1;
+            blocks += matched.length;
+        }
+
+        expect(filesWithBlocks).toBeGreaterThan(5);
+        expect(blocks).toBeGreaterThan(10);
+    });
+
 describe('detail-page STATIC back prop ban (R10-PR9, smart-nav revision)', () => {
     test('no <EntityDetailLayout>/<PageHeader> in src/app passes a STATIC back={{ href … }}', () => {
         const offenders: { file: string; snippet: string }[] = [];
@@ -80,6 +142,71 @@ describe('detail-page STATIC back prop ban (R10-PR9, smart-nav revision)', () =>
                 `${offenders.length} site(s) pass a STATIC back={{ href … }} to <EntityDetailLayout>/<PageHeader>:\n${sample}\n\nFix: use breadcrumbs for IA ancestry, and/or the smart form \`back={{ smart: true }}\` (referrer-aware). The static back is redundant with breadcrumbs.`,
             );
         }
+    });
+
+    // ── Control: `stripComments` must strip COMMENTS, not the corpus (#971) ─
+    //
+    // Consumed as `stripComments(readFileSync(...)).match(PRIMITIVE_BLOCK_RE)`.
+    // Every gut but one throws `.match is not a function` and is already
+    // caught (0, null, undefined, false, {}, [], Set, Map — none of those have
+    // `.match`). The survivor is `''`: `''.match(...)` returns null, all 214
+    // files hit the `continue`, and the guard passes having read every file
+    // and looked at none.
+    //
+    // The gut set only reaches "strip everything". The direction it CANNOT
+    // reach is the one a real refactor produces — a regex that eats live code
+    // (make the block-comment pattern greedy and everything between the first
+    // `/*` and the last `*/` vanishes, JSX included). So both halves are
+    // asserted: comments go, code stays.
+    test('stripComments removes comments and preserves the code the ban reads', () => {
+        const banned = "back={{ href: '/t/acme/locations', label: 'Locations' }}";
+        const blockCommented = `/**\n * ${banned}\n */\nconst keep = 1;`;
+        const lineCommented = `// ${banned}\nconst keep = 1;`;
+
+        // Planted positives: the banned shape written as a comment must NOT
+        // survive — that is the entire reason this helper exists.
+        expect(stripComments(blockCommented)).not.toContain('href');
+        expect(stripComments(lineCommented)).not.toContain('href');
+
+        // Clean negatives: the surrounding code survives both strips.
+        expect(stripComments(blockCommented)).toContain('const keep = 1;');
+        expect(stripComments(lineCommented)).toContain('const keep = 1;');
+
+        // Near-miss: the same shape as LIVE JSX must survive, or the detector
+        // can never see a violation in the first place.
+        const live = `        <EntityDetailLayout\n            ${banned}\n        >`;
+        expect(stripComments(live)).toContain('href');
+    });
+
+    test('stripComments leaves the real src/app corpus readable', () => {
+        // Against real product source, not fixtures: a fixture cannot show
+        // that the stripper leaves the PRODUCT intact enough to scan.
+        let originalBytes = 0;
+        let strippedBytes = 0;
+        let shrank = 0;
+        let backPropSites = 0;
+
+        for (const file of walk(APP_ROOT)) {
+            const source = fs.readFileSync(file, 'utf-8');
+            const stripped = stripComments(source);
+            originalBytes += source.length;
+            strippedBytes += stripped.length;
+            if (stripped.length < source.length) shrank += 1;
+            // Derived from the product, never hardcoded to a path: whatever
+            // call sites pass a `back` prop today must still carry it AFTER
+            // stripping. Measured on main: 1 (the sanctioned
+            // `back={{ smart: true }}` on the location detail page). If this
+            // ever reaches 0, re-derive it — a ban whose subject has no live
+            // call site is news, not noise.
+            if (/\sback=\{/.test(stripped)) backPropSites += 1;
+        }
+
+        // It really strips: measured, 211 of 214 files shrink.
+        expect(shrank).toBeGreaterThan(100);
+        // It does not strip the corpus away: measured ratio 0.831.
+        expect(strippedBytes).toBeGreaterThan(originalBytes * 0.5);
+        // And the exact shape this guard reads survives the stripper.
+        expect(backPropSites).toBeGreaterThan(0);
     });
 
     test('EntityDetailLayout primitive still exposes the back?: prop (interface, not call sites)', () => {
