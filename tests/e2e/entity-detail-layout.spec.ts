@@ -50,9 +50,13 @@ test.describe('EntityDetailLayout', () => {
 
         // The shell's three structural promises:
         // (1) the PageHeader subtree carrying breadcrumbs + title.
+        // 15s, matching the `waitForURL` above rather than sitting at 10s
+        // beneath it. The navigation and the detail page's first paint are
+        // the same slow-server event; budgeting them differently just means
+        // the second half is the one that reports it.
         await expect(
             page.locator('[data-testid="entity-detail-header"]'),
-        ).toBeVisible({ timeout: 10_000 });
+        ).toBeVisible({ timeout: 15_000 });
         // (2) the body wrapper. (The asset surface does not pass a
         //     `rail` — linked Tasks live in their own tab — so the
         //     rail is intentionally absent here; the AsidePanel

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { loginAndGetTenant } from './e2e-utils';
+import { loginAndGetTenant, waitForHydration } from './e2e-utils';
 
 /**
  * DataTable Platform E2E — Validates that all migrated list pages render
@@ -168,8 +168,13 @@ test.describe('DataTable Platform — Row click navigation', () => {
         // ignores double-clicks on both). Using `.last()` rather than a
         // fixed index also survives the Code column being hidden by
         // default, which would shift every positional index by one.
+        // #1010 removed the `networkidle` that used to sit above this, and
+        // nothing replaced the hydration it was incidentally buying: a
+        // double-click on a server-rendered row is two no-ops, and the failure
+        // surfaces 10s later as a URL that never changed. Name the row.
+        await waitForHydration(page, '[data-testid="assets-table"] tbody tr');
         await rows.first().locator('td').last().dblclick();
-        await page.waitForURL(/\/assets\/[a-zA-Z0-9-]+$/, { timeout: 10_000 });
+        await page.waitForURL(/\/assets\/[a-zA-Z0-9-]+$/, { timeout: 15_000 });
         await expect(page.locator('#asset-title-heading')).toBeVisible({ timeout: 10_000 });
     });
 
@@ -182,8 +187,10 @@ test.describe('DataTable Platform — Row click navigation', () => {
         const rows = page.getByRole('main').locator('[data-testid="farm-tasks-table"] tbody tr');
         await expect(rows.first()).toBeVisible({ timeout: 15_000 });
 
+        // Same as the Assets case above.
+        await waitForHydration(page, '[data-testid="farm-tasks-table"] tbody tr');
         await rows.first().locator('td').last().dblclick();
-        await page.waitForURL(/\/farm-tasks\/[a-zA-Z0-9-]+$/, { timeout: 10_000 });
+        await page.waitForURL(/\/farm-tasks\/[a-zA-Z0-9-]+$/, { timeout: 15_000 });
         await expect(page.locator('#task-title')).toBeVisible({ timeout: 10_000 });
     });
 });
