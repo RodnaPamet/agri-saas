@@ -160,9 +160,18 @@ test.describe('mobile map — phone-native operator map @mobile', () => {
             return;
         }
 
-        await toggle.first().click();
-        // Let any viewport fetch / source mount settle.
-        await page.waitForTimeout(500);
+        const cadastreToggle = toggle.first();
+        await cadastreToggle.click();
+        // Was `waitForTimeout(500)`. The `page.evaluate` below is INSTANT and
+        // never waits, so the sleep was the only thing giving the overlay time
+        // to mount — and the overflow check that follows asserts an ABSENCE,
+        // which a page with no overlay passes vacuously. `aria-pressed` is the
+        // same `cadastreOn` state that gates the overlay source props
+        // (locations/[locationId]/page.tsx:1026 / :1037), so this auto-waiting
+        // matcher is both the wait and the positive control.
+        await expect(cadastreToggle).toHaveAttribute('aria-pressed', 'true', {
+            timeout: 15_000,
+        });
 
         const overflow = await page.evaluate(() => ({
             scrollWidth: document.documentElement.scrollWidth,

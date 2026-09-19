@@ -110,8 +110,10 @@ test.describe('Desktop viewport (1280×720)', () => {
         slug = await signInAs(page, tenant);
         await gotoAndVerify(page, `/t/${slug}/dashboard`, 'aside');
 
-        // Wait for CSS parsing and hydration to finalize layout
-        await page.waitForLoadState('networkidle').catch(() => {});
+        // No networkidle wait: gotoAndVerify(..., 'aside') above already
+        // waits for <aside> to be VISIBLE and then for hydration, and the
+        // next statement is an auto-waiting toBeVisible({ timeout: 10000 })
+        // on that same element. The swallowed wait only ever cost wall clock.
 
         // Desktop sidebar should be visible
         const sidebar = page.locator('aside');

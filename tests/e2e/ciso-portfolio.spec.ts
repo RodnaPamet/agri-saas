@@ -194,7 +194,9 @@ test.describe('CISO portfolio journey (Epic O-4)', () => {
         await expect(page.locator('aside').first()).toBeVisible({
             timeout: 30_000,
         });
-        await page.waitForLoadState('networkidle').catch(() => { /* best-effort */ });
+        // No networkidle wait: the assets-table assertion below auto-waits
+        // up to 30s and is the positive control for the count-0 check, so a
+        // swallowed networkidle only ever added dead wall-clock (#748).
 
         // Sanity-check the page actually rendered its list before
         // concluding the button is absent — otherwise a blank error page

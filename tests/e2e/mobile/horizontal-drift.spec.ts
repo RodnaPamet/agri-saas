@@ -21,7 +21,7 @@
  * < 768px). Picked up via the `@mobile` tag (see playwright.config.ts).
  */
 import { test, expect, type Page } from '@playwright/test';
-import { safeGoto, loginAndGetTenant } from '../e2e-utils';
+import { safeGoto, loginAndGetTenant, waitForHydration } from '../e2e-utils';
 
 /**
  * Assert the page has no horizontal drift. `documentElement.scrollWidth`
@@ -41,7 +41,23 @@ async function expectNoHorizontalDrift(page: Page, label: string): Promise<void>
 
 /** Let streaming content + map tile loads settle before measuring. */
 async function settle(page: Page): Promise<void> {
-    await page.waitForLoadState('networkidle').catch(() => undefined);
+    // POSITIVE CONTROL first. Every caller measures with an instant probe
+    // (`page.evaluate` in expectNoHorizontalDrift, `evaluateAll` in
+    // firstDetailHref, `.count()` in the modal steps) and the assertion they
+    // feed is absence-shaped — `scrollWidth <= clientWidth + 1` is satisfied by
+    // a blank page, a 500, or a redirect to /login. Prove something painted
+    // before anything is allowed to measure it.
+    await page.waitForFunction(
+        () => (document.body?.innerText ?? '').trim().length > 0,
+        undefined,
+        { timeout: 15_000 },
+    );
+    // KEEP the network wait until each call site waits for ITS OWN page's
+    // content: `safeGoto` lands on `domcontentloaded`, and late-arriving markup
+    // can only make this assertion FAIL, so measuring early is a false green
+    // rather than a flake. Bounded explicitly — the swallowed default is up to
+    // 30s per route, ~28 routes x 2 device projects, which is the #748 cost.
+    await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => undefined);
 }
 
 // Key field surfaces. One line per page — this is the extension point.
@@ -188,8 +204,25 @@ test.describe('mobile horizontal-drift ratchet @mobile', () => {
             await safeGoto(page, `/t/${tenantSlug}/exchange`);
             const trigger = page.getByRole('button', { name: /offer/i }).first();
             if (await trigger.count()) {
+                // The trigger is server-rendered, so it is in the DOM before
+                // React attaches onClick; an unhydrated click is a silent
+                // no-op and the modal never opens.
+                // Tolerant: the id is INFERRED here (the element counted and
+                // clicked above is a role locator), so a divergence must not
+                // hard-fail a test that used to pass. The overlay assertion
+                // below is the real control — an unhydrated click fails there,
+                // with a message that names the modal rather than the wait.
+                await waitForHydration(page, '#new-offer-btn').catch(() => undefined);
                 await trigger.click().catch(() => undefined);
-                await page.waitForTimeout(300);
+                // The 300ms sleep was the ONLY thing giving the modal time to
+                // mount: what follows is `page.evaluate`, which does not wait.
+                // Wait on the overlay instead — auto-waiting, and it doubles as
+                // the positive control this step lacks (`.click().catch()`
+                // swallows a failed click, after which the drift assertion
+                // measures a page with no modal on it and passes).
+                // `[data-modal-overlay]` is presentation-agnostic: <Modal>
+                // renders it in both the Dialog and the mobile Drawer branch.
+                await expect(page.locator('[data-modal-overlay]').first()).toBeVisible({ timeout: 5_000 });
             }
             await expectNoHorizontalDrift(page, 'exchange + create-offer modal');
         });
@@ -198,8 +231,24 @@ test.describe('mobile horizontal-drift ratchet @mobile', () => {
             await settle(page);
             const trigger = page.locator('#new-journal-btn');
             if (await trigger.count()) {
+                // Server-rendered button: it is in the DOM before React
+                // attaches onClick, and an unhydrated click is a silent no-op.
+                // Tolerant: the id is INFERRED here (the element counted and
+                // clicked above is a role locator), so a divergence must not
+                // hard-fail a test that used to pass. The overlay assertion
+                // below is the real control — an unhydrated click fails there,
+                // with a message that names the modal rather than the wait.
+                await waitForHydration(page, '#new-journal-btn').catch(() => undefined);
                 await trigger.click().catch(() => undefined);
-                await page.waitForTimeout(300);
+                // The 300ms sleep was the ONLY thing giving the modal time to
+                // mount: what follows is `page.evaluate`, which does not wait.
+                // The overlay wait auto-waits AND is the positive control this
+                // step lacks — `.click().catch()` swallows a failed click, and
+                // a step that measures no modal at all passes silently.
+                // `[data-modal-overlay]` is rendered by both <Modal> branches
+                // (Dialog and the mobile Drawer), which is what these phone
+                // projects actually get.
+                await expect(page.locator('[data-modal-overlay]').first()).toBeVisible({ timeout: 5_000 });
             }
             await expectNoHorizontalDrift(page, 'journal + create-entry modal');
         });
@@ -231,7 +280,17 @@ test.describe('mobile horizontal-drift ratchet @mobile', () => {
         await expectNoHorizontalDrift(page, 'location map (cadastre off)');
         if (await toggle.isEnabled()) {
             await toggle.click().catch(() => undefined);
-            await page.waitForTimeout(400); // let the raster source mount + tiles settle
+            // The 400ms sleep fed an INSTANT probe (`page.evaluate` inside
+            // expectNoHorizontalDrift), so deleting it alone would measure the
+            // overlay-OFF page and pass. Wait on the toggle's own state
+            // instead: `aria-pressed` flips on the same React render that
+            // mounts the cadastre <Source>, and toHaveAttribute auto-waits.
+            // It is also the positive control this step never had —
+            // `.click().catch(() => undefined)` swallows a failed click, after
+            // which 'cadastre on' measures a map with the overlay off.
+            // Tiles need no wait: they paint into the MapLibre canvas, whose
+            // box is fixed by its container, so they cannot move scrollWidth.
+            await expect(toggle).toHaveAttribute('aria-pressed', 'true', { timeout: 5_000 });
         }
         await expectNoHorizontalDrift(page, 'location map (cadastre on)');
     });

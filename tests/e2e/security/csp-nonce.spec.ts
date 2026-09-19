@@ -42,7 +42,7 @@
  *     what the response body shows.
  */
 import { test, expect, type APIResponse } from '@playwright/test';
-import { loginAndGetTenant } from '../e2e-utils';
+import { loginAndGetTenant, waitForHydration } from '../e2e-utils';
 // Detector lives in tests/helpers so a jest unit test can mutation-prove it
 // (tests/unit/security/csp-nonce.test.ts). A green Playwright run proves the
 // PAGES were clean; only the mutation proof shows the detector would have
@@ -133,7 +133,17 @@ test.describe('CSP nonce is applied to server-rendered scripts @security', () =>
 
         const slug = await loginAndGetTenant(page);
         await page.goto(`/t/${slug}/dashboard`);
-        await page.waitForLoadState('networkidle').catch(() => undefined);
+        // POSITIVE CONTROL, not a sleep. What follows is an ABSENCE assertion
+        // (`toEqual([])`) fed by an INSTANT `page.evaluate`, so it passes just as
+        // happily on a blank page, a 500, or a bounce to /login — and the
+        // `networkidle` this replaces was the only thing giving the shell time to
+        // load and RUN its scripts (`goto` defaults to `waitUntil: 'load'`).
+        // Proving <main> rendered and then hydrated proves the client bundle
+        // actually executed, which is exactly what a blocked
+        // `script-src 'nonce-…'` would prevent: that failure now surfaces here
+        // instead of passing as an empty violation list.
+        await expect(page.locator('main').first()).toBeVisible({ timeout: 30_000 });
+        await waitForHydration(page, 'main');
 
         violations.push(
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
