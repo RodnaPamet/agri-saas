@@ -83,6 +83,50 @@ describe('StatusBadge brand-orange ban (R10-PR10)', () => {
         expect(block).toMatch(/error:/);
     });
 
+    /**
+     * CONTROL for `stripComments` — it had NO TEETH (survived all nine guts).
+     *
+     * The scan below reads `stripComments(readFileSync(file))` and then tests
+     * a regex against the result. Gut the masker to ANY constant and every
+     * file's content becomes that constant, the regex matches nothing,
+     * `offenders` stays empty, and the ban reports a clean tree having
+     * examined no source at all (#971).
+     *
+     * Asserted two-sided, which is the only form that works for a masker:
+     *   expect(stripped.length).toBeGreaterThan(0)      it did not eat everything
+     *   expect(stripped.length).toBeLessThan(raw.length) it did strip something
+     * Either assertion ALONE passes for a degenerate stripper — the first for
+     * an identity function, the second for one returning ''.
+     */
+    test('control: stripComments removes comments and keeps code', () => {
+        const raw = [
+            'const a = 1; // trailing line comment',
+            '/* a block',
+            '   comment spanning lines */',
+            'const b = <StatusBadge variant="ok" />;',
+        ].join('\n');
+        const stripped = stripComments(raw);
+
+        // Both halves, or the control is worthless.
+        expect(stripped.length).toBeGreaterThan(0);
+        expect(stripped.length).toBeLessThan(raw.length);
+
+        // The code survives...
+        expect(stripped).toContain('const a = 1;');
+        expect(stripped).toContain('<StatusBadge variant="ok" />');
+        // ...and the prose does not.
+        expect(stripped).not.toContain('trailing line comment');
+        expect(stripped).not.toContain('comment spanning lines');
+
+        // Grounded in the tree as well: run it over real source and show it
+        // returns substantive content rather than a constant.
+        const realFile = path.resolve(ROOT, 'src/components/ui/status-badge.tsx');
+        const realRaw = fs.readFileSync(realFile, 'utf-8');
+        const realStripped = stripComments(realRaw);
+        expect(realStripped.length).toBeGreaterThan(200);
+        expect(realStripped).toContain('variant');
+    });
+
     test('no JSX call site passes <StatusBadge variant="brand">', () => {
         const offenders: string[] = [];
         const scanRoots = ['src/app', 'src/components'];
