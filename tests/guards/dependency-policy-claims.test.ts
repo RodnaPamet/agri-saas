@@ -683,6 +683,49 @@ describe('docs/dependency-policy.md — machine-checkable claims', () => {
             expect(rangeFloor('>=2.2.16 <2.2.25')).toEqual([2, 2, 16]);
             expect(rangeFloor('$react')).toBeNull();
         });
+
+        /**
+         * CONTROLS for `fmt` and `globToRegExp` — both had NO TEETH (#971).
+         *
+         * Neither is reachable from a passing run, which is exactly why the
+         * mutation survived all nine guts:
+         *
+         *   `fmt` is used ONLY inside failure messages (three call sites, all
+         *   building the text of an error that a clean tree never raises). Gut
+         *   it and nothing observable changes while the policy holds.
+         *
+         *   `globToRegExp` runs only on the `key.includes('*')` branch of
+         *   `matchingOverrideKeys`, so it is skipped entirely unless a
+         *   documented row uses a wildcard.
+         *
+         * Both are pure functions, so a literal input exercises the real code
+         * path with nothing to rot — and a constant-returning gut fails
+         * immediately.
+         */
+        it('formats a version tuple for the failure messages', () => {
+            expect(fmt([4, 0, 7])).toBe('4.0.7');
+            expect(fmt([0, 2, 7])).toBe('0.2.7');
+            expect(fmt([10, 0, 0])).toBe('10.0.0');
+        });
+
+        it('turns a wildcard override key into a matcher that both accepts and rejects', () => {
+            const re = globToRegExp('@types/*');
+            expect(re.test('@types/node')).toBe(true);
+            expect(re.test('@types/react-dom')).toBe(true);
+            // Anchored at both ends — a prefix match must NOT pass.
+            expect(re.test('not-@types/node')).toBe(false);
+            expect(re.test('@typesnode')).toBe(false);
+
+            // Regex metacharacters in the literal half are escaped, not live.
+            const dotted = globToRegExp('lodash.*');
+            expect(dotted.test('lodash.merge')).toBe(true);
+            expect(dotted.test('lodashXmerge')).toBe(false);
+
+            // A key with no wildcard still yields an exact matcher.
+            const exact = globToRegExp('react');
+            expect(exact.test('react')).toBe(true);
+            expect(exact.test('react-dom')).toBe(false);
+        });
     });
 
     describe('doc ↔ package.json overrides, both directions', () => {

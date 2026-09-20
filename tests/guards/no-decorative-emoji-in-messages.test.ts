@@ -80,6 +80,56 @@ function walk(obj: unknown, file: string, prefix: string, into: Offence[]) {
 }
 
 describe('No decorative emoji in messages (Roadmap-4 PR-2)', () => {
+    /**
+     * CONTROL for `walk` — it had NO TEETH (survived all nine guts).
+     *
+     * `walk` returns nothing; it PUSHES into the `offences` array handed to
+     * it. Gut its body to any constant and it pushes nothing, `offences`
+     * stays empty, and the guard reports no decorative emoji having inspected
+     * no keys at all — the void-collector form of empty-selection-is-a-pass
+     * (#971). A return-value assertion cannot reach it, so the control has to
+     * observe the SIDE EFFECT.
+     */
+    it('control: walk collects a planted emoji from a nested catalogue', () => {
+        // Recursion matters: the real catalogues nest several levels, so a
+        // walker that only reads the top object would miss almost everything.
+        const into: Offence[] = [];
+        walk(
+            { a: { b: { c: 'Harvest complete \u{1F389}' } }, plain: 'no emoji here' },
+            'synthetic.json',
+            '',
+            into,
+        );
+        expect(into).toHaveLength(1);
+        expect(into[0].key).toBe('a.b.c');
+        expect(into[0].file).toBe('synthetic.json');
+
+        // ...and it does NOT flag ordinary copy.
+        const clean: Offence[] = [];
+        walk({ x: 'Plain text', y: { z: 'Also plain' } }, 'f.json', '', clean);
+        expect(clean).toHaveLength(0);
+
+        // Grounded: the real catalogues are non-trivial, so "no offences"
+        // is a judgement over real keys rather than an empty traversal.
+        const seen: Offence[] = [];
+        const probe = JSON.parse(
+            fs.readFileSync(
+                path.join(MESSAGES_DIR, fs.readdirSync(MESSAGES_DIR).filter((f) => f.endsWith('.json'))[0]),
+                'utf-8',
+            ),
+        );
+        let keyCount = 0;
+        const count = (o: unknown): void => {
+            if (o && typeof o === 'object') {
+                for (const v of Object.values(o as Record<string, unknown>)) count(v);
+            } else keyCount += 1;
+        };
+        count(probe);
+        expect(keyCount).toBeGreaterThan(500);
+        walk({ deep: { emoji: '\u{2705} done' } }, 'probe.json', '', seen);
+        expect(seen).toHaveLength(1);
+    });
+
     it('every messages/*.json is free of decorative emoji codepoints', () => {
         const files = fs
             .readdirSync(MESSAGES_DIR)
