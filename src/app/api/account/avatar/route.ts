@@ -12,9 +12,8 @@
  * bytes and persists them.
  */
 import type { NextRequest } from 'next/server';
-import { getServerSession } from 'next-auth';
 
-import { authOptions } from '@/auth';
+import { auth } from '@/auth';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { unauthorized, badRequest } from '@/lib/errors/types';
@@ -25,7 +24,7 @@ import {
 } from '@/lib/account/avatar';
 
 export const POST = withApiErrorHandling(async (req: NextRequest) => {
-    const session = await getServerSession(authOptions);
+    const session = await auth();
     if (!session?.user?.id) throw unauthorized();
 
     const formData = await req.formData();
@@ -46,7 +45,7 @@ export const POST = withApiErrorHandling(async (req: NextRequest) => {
 });
 
 export const DELETE = withApiErrorHandling(async () => {
-    const session = await getServerSession(authOptions);
+    const session = await auth();
     if (!session?.user?.id) throw unauthorized();
 
     await removeOwnAvatar(session.user.id);
