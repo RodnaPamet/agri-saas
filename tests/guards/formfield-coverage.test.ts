@@ -132,4 +132,55 @@ describe("FormField coverage", () => {
         }
         expect(RAW_LABEL_FILE_BUDGET).toBeLessThanOrEqual(count + 5);
     });
+
+    /**
+     * CONTROL for `isExempt` — it had NO TEETH.
+     *
+     * `scripts/selector-teeth.mjs` gutted it to each of `[] '' 0 null
+     * undefined false new Set() new Map() {}` and both tests above stayed
+     * green on all nine, because neither depends on what it returns:
+     *   - gutted TRUTHY, `walk` skips every entry, the count is 0, and
+     *     `0 <= 2` passes — the ratchet certifies an empty scan;
+     *   - gutted FALSY, nothing under `src/app` matches an exclusion today
+     *     (no `__tests__` / `__mocks__` dir, no `.test|.spec|.stories` file
+     *     there), so the count is unchanged and the budget still holds.
+     *
+     * A predicate therefore needs BOTH directions asserted. Exempting
+     * something real kills every falsy gut; refusing to exempt the real
+     * scanned population kills every truthy one. Either half alone passes
+     * for a predicate that has collapsed to a constant.
+     */
+    it("isExempt exempts real excluded paths and does not exempt the scanned population", () => {
+        // It DOES exempt — one path per live exclusion rule, each on disk.
+        const exemptOnDisk = [
+            path.join("src", "components", "ui", "hooks", "__tests__"), // EXEMPT_DIR_NAMES
+            path.join("tests", "guards", "formfield-coverage.test.ts"), // /\.test\.tsx?$/
+            path.join("tests", "e2e", "tenant-switcher.spec.ts"), //       /\.spec\.tsx?$/
+        ];
+        for (const rel of exemptOnDisk) {
+            expect(fs.existsSync(path.join(ROOT, rel))).toBe(true);
+            expect(isExempt(rel)).toBe(true);
+        }
+        // The rules with no instance in the tree today are pinned anyway, so
+        // narrowing the exclusion lists fails here instead of silently.
+        expect(isExempt(path.join(SCAN_DIR, "node_modules", "page.tsx"))).toBe(true);
+        expect(isExempt(path.join(SCAN_DIR, "__mocks__", "page.tsx"))).toBe(true);
+        expect(isExempt(path.join(SCAN_DIR, "Button.stories.tsx"))).toBe(true);
+
+        // It does NOT exempt everything — a real page the ratchet must read.
+        const scannedPage = path.join(SCAN_DIR, "page.tsx");
+        expect(fs.existsSync(path.join(ROOT, scannedPage))).toBe(true);
+        expect(isExempt(scannedPage)).toBe(false);
+
+        // …and the population `walk` hands the ratchet is real and non-trivial.
+        // 214 `.tsx` files under `src/app` today; the floor sits far below so
+        // ordinary churn never trips it.
+        const scanned = walk(path.join(ROOT, SCAN_DIR));
+        expect(scanned.length).toBeGreaterThan(100);
+        for (const abs of scanned) {
+            expect(typeof abs).toBe("string");
+            expect(fs.existsSync(abs)).toBe(true);
+            expect(isExempt(path.relative(ROOT, abs))).toBe(false);
+        }
+    });
 });

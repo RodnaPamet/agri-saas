@@ -231,4 +231,103 @@ describe("FilterToolbar coverage", () => {
             expect(reason.length).toBeGreaterThan(40);
         }
     });
+
+    // ── Controls — `isExempt` had NO TEETH ────────────────────────────
+    //
+    // Measured 2026-09-20 with `scripts/selector-teeth.mjs`: gutting
+    // `isExempt` to each of the nine constants the tool tries
+    // (`[] '' 0 null undefined false new Set() new Map() {}`) left the
+    // three tests above GREEN — "3 passed, 3 total", nine times over.
+    // Nothing depended on what it returned, in EITHER direction:
+    //
+    //   • The four TRUTHY guts (`[]` / `{}` / `new Set()` / `new Map()`)
+    //     make `if (isExempt(rel)) continue` skip every entry `walk`
+    //     sees, so the walk collects nothing and the first test's "no
+    //     file mounts <DataTable> without <FilterToolbar>" becomes a
+    //     statement about the empty set. The `: boolean` return
+    //     annotation stops none of them: `tsconfig.json` sets
+    //     `isolatedModules`, so ts-jest transpiles without type-checking.
+    //   • The five FALSY guts are mutations that do not mutate *for
+    //     today's population*. Measured: `src/app` holds 214 `.tsx`
+    //     files and ZERO `node_modules` / `__tests__` / `__mocks__`
+    //     directories and ZERO `*.test.tsx` / `*.spec.tsx` /
+    //     `*.stories.tsx`, so `isExempt` already returns false for every
+    //     path this guard feeds it. Asserting today's emptiness would
+    //     prove nothing, so the first control asserts the predicate's
+    //     CONTRACT instead — against paths that genuinely are exempt and
+    //     genuinely exist on disk.
+    //
+    // The floors sit far below the measured numbers, so ordinary feature
+    // work never moves them.
+
+    it("control: isExempt exempts every shape it lists, on real paths", () => {
+        // Derived from the guard's own lists, so editing either one stays
+        // covered — and each list is floored, or the loops below pass
+        // vacuously over nothing.
+        expect(EXEMPT_DIR_NAMES.size).toBeGreaterThan(0); // measured: 3
+        for (const dirName of EXEMPT_DIR_NAMES) {
+            expect(isExempt(path.join(SCAN_DIR, dirName, "Widget.tsx"))).toBe(true);
+            expect(
+                isExempt(path.join(SCAN_DIR, "journal", dirName, "Widget.tsx")),
+            ).toBe(true);
+        }
+        expect(EXEMPT_FILE_PATTERNS.length).toBeGreaterThan(0); // measured: 3
+        for (const name of ["Widget.test.tsx", "Widget.spec.tsx", "Widget.stories.tsx"]) {
+            expect(EXEMPT_FILE_PATTERNS.some((rx) => rx.test(name))).toBe(true);
+            expect(isExempt(path.join(SCAN_DIR, "journal", name))).toBe(true);
+        }
+
+        // REAL anchors — two paths that exist on disk right now, exempt
+        // for two DIFFERENT reasons, so neither arm can be deleted (or
+        // gutted) without a red. `walk` feeds `isExempt` directory rels
+        // as well as file rels, which is why the second one is a bare
+        // directory.
+        const selfRel = path.relative(ROOT, __filename).split(path.sep).join("/");
+        expect(selfRel).toMatch(/\.test\.ts$/);
+        expect(fs.existsSync(path.join(ROOT, selfRel))).toBe(true);
+        expect(isExempt(selfRel)).toBe(true); // via EXEMPT_FILE_PATTERNS
+
+        const realTestsDir = "src/components/ui/hooks/__tests__";
+        expect(fs.existsSync(path.join(ROOT, realTestsDir))).toBe(true);
+        expect(isExempt(realTestsDir)).toBe(true); // via EXEMPT_DIR_NAMES
+    });
+
+    it("control: the exemptions cannot swallow the population this ratchet scans", () => {
+        const files = walk(path.join(ROOT, SCAN_DIR));
+
+        // Measured 2026-09-20: 214 `.tsx` files under `src/app`. A
+        // blanket-true `isExempt` empties this, and the floor is what
+        // turns that into a red rather than a quieter green. It is
+        // asserted BEFORE everything below, which would otherwise pass
+        // vacuously over an empty population.
+        expect(files.length).toBeGreaterThan(120);
+
+        // Same consumption seam as the ban itself — `for…of` (which
+        // throws on a non-iterable) over absolute paths that get read.
+        // Assert the SHAPE before touching disk: `0` is a valid file
+        // descriptor and `fs.readFileSync(0)` blocks on stdin forever.
+        for (const file of files) {
+            expect(typeof file).toBe("string");
+            expect(fs.existsSync(file)).toBe(true);
+        }
+
+        const rels = files.map((f) =>
+            path.relative(ROOT, f).split(path.sep).join("/"),
+        );
+        expect(rels.filter((r) => isExempt(r))).toEqual([]);
+
+        // Every EXEMPTIONS entry under the scan root must be REACHED by
+        // the walk and must NOT be predicate-exempt — an entry the walk
+        // never reaches is cover for nothing, and the "points at real
+        // files" test above cannot tell the difference. Derived from the
+        // map, so a new entry is covered the moment it is added.
+        const scanned = Object.keys(EXEMPTIONS).filter((p) =>
+            p.startsWith(`${SCAN_DIR}/`),
+        );
+        expect(scanned.length).toBeGreaterThan(15); // measured: 28 of 29
+        for (const rel of scanned) {
+            expect(isExempt(rel)).toBe(false);
+            expect(rels).toContain(rel);
+        }
+    });
 });

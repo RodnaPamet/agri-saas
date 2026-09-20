@@ -120,6 +120,72 @@ function scanFile(content: string): {
 }
 
 describe("v2-PR-3 StatusBadge override eradication", () => {
+    /**
+     * SELECTOR CONTROL — `isExempt` has teeth.
+     *
+     * The ratchet below asserts `offenders` is EMPTY, and an empty selection
+     * is a pass. `isExempt` is the gate on the whole population: gutted to
+     * `true` it exempts every entry, `walk` returns zero files, and the
+     * ratchet passes having scanned nothing. Gutted to any falsy constant it
+     * exempts nothing, and the primitive — which owns its own className by
+     * design — is scanned as if it were a consumer. `scripts/selector-teeth.mjs`
+     * confirmed all NINE guts survived before these assertions existed.
+     *
+     * So pin both directions, on paths that are REAL:
+     *   - it exempts something that genuinely is exempt, and
+     *   - it does NOT exempt a file the ratchet must keep scanning,
+     *   - and those two answers show up in the population `walk` returns.
+     */
+    describe("selector control: isExempt", () => {
+        // The primitive itself (EXEMPT_FILES) and this guard file (the
+        // `.test.ts` arm of EXEMPT_FILE_PATTERNS) — both exist on disk.
+        const EXEMPT_REAL = [
+            "src/components/ui/status-badge.tsx",
+            path.relative(ROOT, __filename),
+        ];
+        // A real StatusBadge consumer. If this is ever exempted the ratchet
+        // stops reading the exact class of file it was written for.
+        const SCANNED_REAL = "src/components/ui/meta-strip.tsx";
+
+        it("exempts real exempt paths and refuses a real consumer", () => {
+            for (const rel of EXEMPT_REAL) {
+                expect(fs.existsSync(path.join(ROOT, rel))).toBe(true);
+                expect(isExempt(rel)).toBe(true);
+            }
+
+            const consumer = path.join(ROOT, SCANNED_REAL);
+            expect(fs.existsSync(consumer)).toBe(true);
+            expect(fs.readFileSync(consumer, "utf8")).toContain("<StatusBadge");
+            // A predicate gutted to `true` — or to any truthy constant — dies
+            // here; one gutted to a falsy constant dies on the loop above.
+            expect(isExempt(SCANNED_REAL)).toBe(false);
+        });
+
+        it("shapes a real, non-trivial scan population", () => {
+            const scanned: string[] = [];
+            for (const dir of SCAN_DIRS) scanned.push(...walk(path.join(ROOT, dir)));
+
+            // Shape BEFORE any read: `0` is a valid file descriptor, and
+            // `readFileSync(0)` blocks on stdin forever.
+            expect(Array.isArray(scanned)).toBe(true);
+            expect(scanned.every((f) => typeof f === "string")).toBe(true);
+
+            // 1271 files at the time of writing; the floor sits far below so
+            // ordinary churn never trips it, and zero can never pass.
+            expect(scanned.length).toBeGreaterThan(600);
+            expect(scanned.filter((f) => fs.existsSync(f))).toHaveLength(
+                scanned.length,
+            );
+
+            // The exemption actually removed the primitive…
+            expect(scanned).not.toContain(
+                path.join(ROOT, "src/components/ui/status-badge.tsx"),
+            );
+            // …and did not remove a file the ratchet is here to police.
+            expect(scanned).toContain(path.join(ROOT, SCANNED_REAL));
+        });
+    });
+
     describe("banned className overrides", () => {
         it("zero size/shape/padding overrides on StatusBadge", () => {
             const offenders: Hit[] = [];

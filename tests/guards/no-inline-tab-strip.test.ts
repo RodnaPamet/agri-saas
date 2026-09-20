@@ -140,4 +140,57 @@ describe("no inline tab/segmented strips", () => {
             expect(reason.length).toBeGreaterThan(50);
         }
     });
+
+    /**
+     * Control — `isExempt` had NO TEETH. Gutted to any of the nine constants
+     * `scripts/selector-teeth.mjs` tries (`[] '' 0 null undefined false
+     * new Set() new Map() {}`) the whole file stayed green at 4/4, because
+     * nothing above depends on what the predicate returns:
+     *
+     *   • a TRUTHY gut exempts EVERYTHING, so `walk` returns `[]` and the
+     *     ratchet's "no violations" passes over a scan of zero files — the
+     *     empty-selection defect, in its purest form;
+     *   • a FALSY gut exempts NOTHING, which on today's `src/app` tree is
+     *     already what the real predicate does (no `__tests__` / `__mocks__`
+     *     directory and no `.test.tsx` / `.spec.tsx` / `.stories.tsx` file
+     *     lives under the scan root), so the file list does not move either.
+     *
+     * So the control asserts both directions of the predicate against REAL
+     * on-disk paths, plus the real population the guard actually walks. The
+     * count floor is deliberately far below reality (214 `.tsx` files under
+     * `src/app` today) so ordinary churn never trips it, and it is checked
+     * BEFORE the per-file loop — an empty list would satisfy the loop.
+     */
+    it("isExempt exempts real test paths, refuses real app pages, and leaves a real population to scan", () => {
+        // Exempt for exactly ONE reason each, so neither arm can cover for the
+        // other, and both exist on disk.
+        const EXEMPT_ON_DISK: Array<[string, string]> = [
+            ["src/components/ui/hooks/__tests__", "real directory — EXEMPT_DIR_NAMES"],
+            ["tests/e2e/a11y.spec.ts", "real file — EXEMPT_FILE_PATTERNS (.spec.ts)"],
+        ];
+        // Real files the ratchet exists to scan. The first is the EXEMPTIONS
+        // entry above, whose whole point is that `walk` reaches it.
+        const SCANNED_ON_DISK: string[] = [
+            "src/app/t/[tenantSlug]/(app)/admin/api-keys/page.tsx",
+            "src/app/t/[tenantSlug]/(app)/journal/page.tsx",
+        ];
+
+        for (const [rel] of EXEMPT_ON_DISK) {
+            expect(fs.existsSync(path.join(ROOT, rel))).toBe(true);
+            expect(isExempt(rel)).toBe(true);
+        }
+        for (const rel of SCANNED_ON_DISK) {
+            expect(fs.existsSync(path.join(ROOT, rel))).toBe(true);
+            expect(isExempt(rel)).toBe(false);
+        }
+
+        const scanned = walk(path.join(ROOT, SCAN_DIR));
+        expect(scanned.length).toBeGreaterThan(100);
+        for (const file of scanned) {
+            // Shape first: a non-string would make `existsSync` lie (and `0` is
+            // a valid file descriptor).
+            expect(typeof file).toBe("string");
+            expect(fs.existsSync(file)).toBe(true);
+        }
+    });
 });
