@@ -98,6 +98,54 @@ describe('StatusBadge brand-orange ban (R10-PR10)', () => {
      * Either assertion ALONE passes for a degenerate stripper — the first for
      * an identity function, the second for one returning ''.
      */
+    /**
+     * CONTROL for `walk` — it survived the four EMPTY ITERABLES.
+     *
+     * The scan consumes it as `for (const file of walk(root))`. That seam
+     * throws on the five non-iterable guts (0 null undefined false {}) but
+     * accepts [] '' new Set() new Map() and iterates nothing, so the ban
+     * reported no brand-orange call sites having opened no files at all.
+     * The 4-of-9 signature (#971).
+     *
+     * `walk`'s own #875 throw cannot catch this: it fires only when a scan
+     * root is RENAMED. Two roots that both exist, walked by a collector that
+     * returns an empty iterable, sail straight past it.
+     *
+     * Collected through the guard's OWN for-of seam rather than flatMap —
+     * flatMap would WRAP a non-array return instead of rejecting it, making
+     * the control weaker than the code it certifies.
+     */
+    test('control: walk returns the real, recursive .tsx population', () => {
+        const scanRoots = ['src/app', 'src/components'];
+        const files: string[] = [];
+        for (const root of scanRoots) {
+            for (const file of walk(path.resolve(ROOT, root))) {
+                files.push(file);
+            }
+        }
+        // 827 .tsx files under these two roots today; the floor sits far
+        // below so ordinary churn never trips it, and only an EMPTY scan does.
+        expect(files.length).toBeGreaterThan(300);
+
+        for (const f of files) {
+            expect(typeof f).toBe('string');
+            expect(fs.statSync(f).isFile()).toBe(true);
+        }
+
+        // RECURSION — the one behaviour a constant return cannot express.
+        // Components sit several directories below the root, so a walker that
+        // read only the top level would miss almost the entire population.
+        const deepest = Math.max(
+            ...files.map((f) => path.relative(ROOT, f).split(path.sep).length),
+        );
+        expect(deepest).toBeGreaterThanOrEqual(4);
+
+        // The #875 guarantee is part of the mechanism, not decoration.
+        expect(() => walk(path.resolve(ROOT, 'src/app-renamed-away'))).toThrow(
+            /scan root does not exist/,
+        );
+    });
+
     test('control: stripComments removes comments and keeps code', () => {
         const raw = [
             'const a = 1; // trailing line comment',
