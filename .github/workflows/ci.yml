@@ -165,11 +165,21 @@ jobs:
   selector-teeth:
     name: Selector teeth
     runs-on: ubuntu-latest
-    # One jest invocation per mutation (~7s), scoped to the guard files a PR
-    # actually changes. Three guards with five selectors apiece is ~3 min; this
-    # ceiling is a runaway backstop, not a budget. A full-repo sweep is ~100
-    # minutes and deliberately NOT run here.
-    timeout-minutes: 15
+    # One jest invocation per SELECTOR x GUT, scoped to the guard files a PR
+    # actually changes. `auditFile` runs EVERY gut for every selector with no
+    # early break — deliberately, because stopping at the first kill was the
+    # tool's own instance of the defect it hunts — so the cost is
+    #
+    #     selectors  x  9 guts  x  ~5s per jest run
+    #
+    # The previous note here read "three guards with five selectors apiece is
+    # ~3 min" and set the ceiling at 15. That arithmetic omitted the gut loop:
+    # 15 selectors is 135 invocations, ~12 min, not ~3. The ceiling was 9x too
+    # low, so a "runaway backstop" was firing on ordinary PRs — #1031 touches
+    # dependency-policy-claims (26 selectors, ~20 min on its own) and could
+    # never pass. Measured 2026-09-20; a full-repo sweep is ~12 HOURS (910
+    # selectors), not ~100 minutes, and is still deliberately NOT run here.
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v7
