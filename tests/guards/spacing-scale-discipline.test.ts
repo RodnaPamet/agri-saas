@@ -111,6 +111,92 @@ function walk(dir: string): string[] {
 }
 
 describe("v2-PR-2 semantic spacing scale ratchet", () => {
+    // ── Control (#971): the exclusion bites, and only where it claims ──
+    //
+    // `isExempt` is consumed as `if (isExempt(rel)) continue` INSIDE `walk`,
+    // against DIRECTORIES as well as files and before the recursion — so a
+    // truthy return prunes both scan roots at their first level, `walk`
+    // yields nothing, and the offender loop below iterates over an empty
+    // population. `expect(offenders).toHaveLength(0)` is EXACTLY what that
+    // produces, which is why `selector-teeth` found this selector surviving
+    // all nine guts:
+    //
+    //   - the four truthy ones (`[]`, `{}`, `new Set()`, `new Map()`) empty
+    //     the scan, and an empty scan is the ratchet's own success shape;
+    //   - the five falsy ones (`''`, `0`, `null`, `undefined`, `false`) only
+    //     ADD the two files under `src/components/ui/hooks/__tests__`, and
+    //     neither of them carries a banned utility — a mutation that does
+    //     not mutate any observable of the assertion.
+    //
+    // Neither direction is reachable through the ratchet's assertion, so both
+    // are asserted here explicitly. The floor and the loop must live in ONE
+    // test: an empty selection passes a for-loop, so without the floor a
+    // truthy gut satisfies it.
+    it("control: isExempt exempts every class it lists and nothing in the scanned population", () => {
+        const scanned = SCAN_DIRS.flatMap((d) => walk(path.join(ROOT, d)));
+        // 1,272 files at the time of writing — floored far below so ordinary
+        // churn never trips it, but a pruned-to-nothing walk always does.
+        expect(scanned.length).toBeGreaterThan(400);
+        for (const file of scanned) {
+            // Shape before any filesystem call: `0` is a valid file
+            // descriptor, so a non-string path must never reach `fs`.
+            expect(typeof file).toBe("string");
+            expect(fs.existsSync(file)).toBe(true);
+            expect(isExempt(path.relative(ROOT, file))).toBe(false);
+        }
+
+        // A REAL exemption, not a synthetic one: this file is on disk under a
+        // scan root, is exempt by BOTH rules (the `__tests__` segment and the
+        // `.test.ts` pattern), and must be absent from the walk.
+        const REAL_EXEMPT = path.join(
+            "src",
+            "components",
+            "ui",
+            "hooks",
+            "__tests__",
+            "use-toast-with-undo.test.ts",
+        );
+        expect(fs.existsSync(path.join(ROOT, REAL_EXEMPT))).toBe(true);
+        expect(isExempt(REAL_EXEMPT)).toBe(true);
+        expect(scanned).not.toContain(path.join(ROOT, REAL_EXEMPT));
+
+        // Every declared class, exercised explicitly rather than trusted to
+        // turn up in the tree — the directory names below have no instance
+        // under `src/app` at all.
+        for (const dirName of EXEMPT_DIR_NAMES) {
+            expect(
+                isExempt(path.join("src", "components", dirName, "Widget.tsx")),
+            ).toBe(true);
+        }
+        const EXEMPT_FILE_SAMPLES = [
+            path.join("src", "components", "x", "Widget.test.tsx"),
+            path.join("src", "components", "x", "Widget.spec.tsx"),
+            path.join("src", "components", "x", "Widget.stories.tsx"),
+        ];
+        for (const sample of EXEMPT_FILE_SAMPLES) {
+            expect(isExempt(sample)).toBe(true);
+        }
+        // …and every listed pattern is actually exercised by one of them, so a
+        // pattern added to EXEMPT_FILE_PATTERNS without a sample fails here
+        // instead of riding along unexercised.
+        for (const rx of EXEMPT_FILE_PATTERNS) {
+            expect(EXEMPT_FILE_SAMPLES.some((s) => rx.test(s))).toBe(true);
+        }
+
+        // The near-misses: same directory, same basename, not a test file.
+        expect(isExempt(path.join("src", "components", "x", "Widget.tsx"))).toBe(
+            false,
+        );
+        expect(isExempt(path.join("src", "app", "page.tsx"))).toBe(false);
+
+        // `EXEMPT_FILES` is empty, so isExempt's first branch is inert today
+        // and no assertion above can reach it. Pinned rather than looped over:
+        // a `for (const f of EXEMPT_FILES)` would pass vacuously, which is the
+        // empty-selection defect this control exists to close. Adding an entry
+        // fails here — that failure is the prompt to assert it directly.
+        expect(EXEMPT_FILES.size).toBe(0);
+    });
+
     describe("migrated-away numerics are not reintroduced", () => {
         it("zero `gap-{2,3,4,6,8}` or `space-y-{2,3,4,6,8}` outside exempts", () => {
             const offenders: Hit[] = [];

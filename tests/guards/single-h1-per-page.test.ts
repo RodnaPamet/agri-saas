@@ -111,6 +111,69 @@ describe("single H1 per page", () => {
         expect(violations).toHaveLength(0);
     });
 
+    // ── Control: the exclusion bites, and only where it claims ──
+    //
+    // `isExempt` is consumed as `if (isExempt(rel)) continue` INSIDE `walk`,
+    // against DIRECTORIES as well as files and BEFORE the recursion — so a
+    // truthy return prunes the tree at its first level, `walk` yields nothing
+    // at all, and the ratchet above reports zero violations over zero files.
+    // Four of the nine `scripts/selector-teeth.mjs` guts ({}, [], new Set(),
+    // new Map()) are truthy objects, so that direction is reachable even
+    // though the gut set never tries a bare `true`; the floor below is what
+    // catches it.
+    //
+    // The falsy guts survive for a different reason, and it is not the
+    // guard's fault: measured, the exemption list bites ZERO times under
+    // src/app today — no `__tests__` / `__mocks__` / `node_modules`
+    // directories there, and no `.test` / `.spec` / `.stories` `.tsx` files —
+    // so "exempt nothing" changes no result. That half is a mutation that
+    // does not mutate, which is why each class is exercised EXPLICITLY below
+    // instead of being trusted to turn up in the scanned tree.
+    it("control: isExempt excludes every class it lists and nothing else", () => {
+        // The floor and the loop must live in ONE test: an empty selection
+        // passes a for-loop, so without the floor a truthy gut satisfies it.
+        // 100 sits far below the real population (214 `.tsx` files under
+        // src/app at the time of writing) so ordinary churn never trips it.
+        const scanned = walk(path.join(ROOT, SCAN_DIR));
+        expect(scanned.length).toBeGreaterThan(100);
+        for (const file of scanned) {
+            // Shape before use: a non-string here would make every assertion
+            // below meaningless, and `0` is a valid file descriptor.
+            expect(typeof file).toBe("string");
+            expect(fs.existsSync(file)).toBe(true);
+            expect(isExempt(path.relative(ROOT, file))).toBe(false);
+        }
+
+        for (const dirName of EXEMPT_DIR_NAMES) {
+            expect(isExempt(path.join("src", "app", dirName, "page.tsx"))).toBe(
+                true,
+            );
+        }
+
+        const EXEMPT_FILE_SAMPLES = [
+            path.join("src", "app", "x", "page.test.tsx"),
+            path.join("src", "app", "x", "page.spec.tsx"),
+            path.join("src", "app", "x", "page.stories.tsx"),
+        ];
+        for (const sample of EXEMPT_FILE_SAMPLES) {
+            expect(isExempt(sample)).toBe(true);
+        }
+        // …and every listed pattern is actually exercised by one of them, so
+        // a pattern added to EXEMPT_FILE_PATTERNS without a sample fails here
+        // instead of riding along unexercised.
+        for (const rx of EXEMPT_FILE_PATTERNS) {
+            expect(EXEMPT_FILE_SAMPLES.some((s) => rx.test(s))).toBe(true);
+        }
+
+        // The near-miss: same directory, same basename, not a test file.
+        expect(isExempt(path.join("src", "app", "x", "page.tsx"))).toBe(false);
+        // A real page the ratchet MUST keep scanning — one of the files the
+        // EXEMPT_FILES list names, which is a different mechanism entirely.
+        expect(
+            isExempt(path.join("src", "app", "invite", "[token]", "page.tsx")),
+        ).toBe(false);
+    });
+
     it("exempt files actually have multiple H1s (otherwise drop them from the list)", () => {
         for (const exemptPath of Object.keys(EXEMPT_FILES)) {
             const full = path.join(ROOT, exemptPath);

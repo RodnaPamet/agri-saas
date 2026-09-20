@@ -237,6 +237,104 @@ interface Violation {
 }
 
 describe("primary action budget", () => {
+    // ── Controls ─────────────────────────────────────────────────────
+    //
+    // Both ratchets below are satisfied by an EMPTY selection. The
+    // budget test collects `violations` and asserts there are none, so
+    // a `countPrimaries` that always answers 0 — or an `isExempt` that
+    // exempts the entire tree, which empties `walk` — reports a clean
+    // primary-button surface having counted nothing at all.
+    // `selector-teeth` gutted BOTH to all nine constants ([] '' 0 null
+    // undefined false new Set() new Map() {}) and NOTHING here failed.
+    //
+    // `walk`'s `scan root does not exist` throw cannot see either: it
+    // fires only when a root is RENAMED. Two roots that both exist,
+    // scanned by an over-matching exemption or counted by a detector
+    // that matches nothing, sail straight past it.
+    //
+    // Measured at this commit: 826 scanned .tsx files (src/app 214,
+    // src/components 612); 102 of them carry at least one
+    // `<Button variant="primary">`, 141 primaries in total. The floors
+    // sit far below all three, so ordinary feature PRs never move them,
+    // but a detector or an exemption going dark cannot hide.
+
+    it("control: isExempt exempts real files and does not exempt the surface", () => {
+        // Arm 1 — the EXEMPT_DIR_NAMES segment. A real file the scan
+        // must be REMOVING, asserted to exist first so "exempt" can
+        // never quietly mean "never there".
+        const inTestsDir =
+            "src/components/ui/hooks/__tests__/use-threshold-load-more.test.tsx";
+        expect(fs.existsSync(path.join(ROOT, inTestsDir))).toBe(true);
+        expect(isExempt(inTestsDir)).toBe(true);
+        expect(isExempt("src/components/ui/hooks/__tests__")).toBe(true);
+
+        // Arm 2 — EXEMPT_FILE_PATTERNS, on a real path carrying NO
+        // exempt directory segment, so the two arms are separable
+        // rather than both riding on the same `__tests__` file.
+        const byPattern = "tests/rendered/evidence-add-form.test.tsx";
+        expect(fs.existsSync(path.join(ROOT, byPattern))).toBe(true);
+        expect(
+            byPattern.split(path.sep).some((s) => EXEMPT_DIR_NAMES.has(s)),
+        ).toBe(false);
+        expect(isExempt(byPattern)).toBe(true);
+
+        // …and it does NOT exempt everything. Real files this ratchet
+        // MUST be reading — the Button primitive it is about, and a
+        // file carrying its own PRIMARY_BUDGET entry. A predicate
+        // gutted to ANY constant fails one of these two directions.
+        for (const scannedFile of [
+            "src/components/ui/button.tsx",
+            "src/app/t/[tenantSlug]/(app)/farm-tasks/FarmTasksClient.tsx",
+        ]) {
+            expect(fs.existsSync(path.join(ROOT, scannedFile))).toBe(true);
+            expect(isExempt(scannedFile)).toBe(false);
+        }
+
+        // Tie the predicate to the population `walk` actually returns.
+        const scanned = SCAN_DIRS.flatMap((dir) =>
+            walk(path.join(ROOT, dir)).map((f) => path.relative(ROOT, f)),
+        );
+        expect(scanned.length).toBeGreaterThan(400); // measured 826
+        expect(scanned).not.toContain(inTestsDir);
+        expect(scanned.filter((rel) => isExempt(rel))).toEqual([]);
+    });
+
+    it("control: countPrimaries finds real primaries on the scanned population", () => {
+        let filesWithPrimary = 0;
+        let totalPrimaries = 0;
+        for (const dir of SCAN_DIRS) {
+            for (const file of walk(path.join(ROOT, dir))) {
+                // Shape FIRST, read second: `0` is a valid file
+                // descriptor and `fs.readFileSync(0)` reads stdin and
+                // blocks forever.
+                expect(typeof file).toBe("string");
+                const content = fs.readFileSync(file, "utf8");
+                const count = countPrimaries(content);
+                expect(typeof count).toBe("number");
+                if (count > 0) {
+                    filesWithPrimary++;
+                    totalPrimaries += count;
+                }
+            }
+        }
+        expect(filesWithPrimary).toBeGreaterThan(50); // measured 102
+        expect(totalPrimaries).toBeGreaterThan(70); // measured 141
+        // It is a COUNT, not a flag — PRIMARY_BUDGET exists precisely
+        // because single files legitimately carry several.
+        expect(totalPrimaries).toBeGreaterThan(filesWithPrimary);
+        const heavy =
+            "src/app/t/[tenantSlug]/(app)/farm-tasks/[taskId]/FarmTaskDetailClient.tsx";
+        expect(fs.existsSync(path.join(ROOT, heavy))).toBe(true);
+        expect(
+            countPrimaries(fs.readFileSync(path.join(ROOT, heavy), "utf8")),
+        ).toBeGreaterThanOrEqual(2); // measured 7
+        // …and it does not count what is not there: a secondary button
+        // is not a primary one, so a constant-positive detector fails.
+        expect(
+            countPrimaries('<Button variant="secondary">Cancel</Button>'),
+        ).toBe(0);
+    });
+
     it("no file exceeds its primary-button budget", () => {
         const violations: Violation[] = [];
         for (const dir of SCAN_DIRS) {
