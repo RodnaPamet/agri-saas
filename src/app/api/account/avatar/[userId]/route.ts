@@ -19,9 +19,8 @@
  */
 import { Readable } from 'node:stream';
 import type { NextRequest } from 'next/server';
-import { getServerSession } from 'next-auth';
 
-import { authOptions } from '@/auth';
+import { auth } from '@/auth';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { unauthorized, notFound } from '@/lib/errors/types';
 import { getAvatarStream } from '@/lib/account/avatar';
@@ -31,7 +30,7 @@ export const GET = withApiErrorHandling(
         _req: NextRequest,
         { params }: { params: Promise<{ userId: string }> },
     ): Promise<Response> => {
-        const session = await getServerSession(authOptions);
+        const session = await auth();
         if (!session?.user?.id) throw unauthorized();
 
         const { userId } = await params;

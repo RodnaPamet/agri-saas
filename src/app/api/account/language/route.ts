@@ -12,10 +12,9 @@
  * locale — no round-trip through the middleware seed required.
  */
 import type { NextRequest } from 'next/server';
-import { getServerSession } from 'next-auth';
 import { z } from 'zod';
 
-import { authOptions } from '@/auth';
+import { auth } from '@/auth';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { unauthorized, badRequest } from '@/lib/errors/types';
@@ -30,7 +29,7 @@ const LanguageSchema = z.object({
 });
 
 export const PUT = withApiErrorHandling(async (req: NextRequest) => {
-    const session = await getServerSession(authOptions);
+    const session = await auth();
     if (!session?.user?.id) throw unauthorized();
 
     const parsed = LanguageSchema.safeParse(await req.json().catch(() => null));

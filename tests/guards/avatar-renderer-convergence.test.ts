@@ -123,7 +123,12 @@ describe('Avatar upload flow (avatar roadmap P3)', () => {
         const src = read(UPLOAD_ROUTE);
         expect(src).toMatch(/export const POST =/);
         expect(src).toMatch(/export const DELETE =/);
-        expect(src).toMatch(/getServerSession/);
+        // `auth()` — the wrapper in src/auth.ts, NOT next-auth's raw
+        // `getServerSession`. The wrapper adds the bearer fallback the
+        // native iOS client needs; pinning the raw helper here was
+        // enforcing a cookie-only route by accident. See
+        // tests/guards/native-bearer-auth-parity.test.ts.
+        expect(src).toMatch(/\bauth\(\)/);
         // Acts on the session user id — never a caller-supplied id —
         // so one user cannot write another's avatar.
         expect(src).toMatch(/session\.user\.id/);
@@ -136,7 +141,12 @@ describe('Avatar upload flow (avatar roadmap P3)', () => {
     it('the serve route streams a stored avatar behind auth', () => {
         const src = read(SERVE_ROUTE);
         expect(src).toMatch(/export const GET =/);
-        expect(src).toMatch(/getServerSession/);
+        // `auth()` — the wrapper in src/auth.ts, NOT next-auth's raw
+        // `getServerSession`. The wrapper adds the bearer fallback the
+        // native iOS client needs; pinning the raw helper here was
+        // enforcing a cookie-only route by accident. See
+        // tests/guards/native-bearer-auth-parity.test.ts.
+        expect(src).toMatch(/\bauth\(\)/);
         // Async-params contract (Next 15+).
         expect(src).toMatch(/params:\s*Promise</);
         expect(src).toMatch(/getAvatarStream/);
