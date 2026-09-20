@@ -186,6 +186,46 @@ describe("v2-PR-3 StatusBadge override eradication", () => {
         });
     });
 
+    /**
+     * CONTROL for `scanFile` — it survived the four EMPTY ITERABLES.
+     *
+     * The consumer below is `for (const m of scanFile(content))`. That seam
+     * throws on the five non-iterable guts (0 null undefined false {}) but
+     * accepts [] '' new Set() new Map() and simply iterates nothing — so the
+     * ratchet reported zero banned overrides having examined nothing (#971).
+     * Exactly the 4-of-9 signature the completed sweep found 35 times over.
+     *
+     * Collected through the guard's OWN seam, deliberately: a control that
+     * consumed with `flatMap` would WRAP a non-array return rather than
+     * rejecting it, making the control weaker than the code it certifies.
+     */
+    describe("selector control: scanFile", () => {
+        it("finds real StatusBadge className usages, correctly shaped", () => {
+            const hits: { line: number; classNameValue: string }[] = [];
+            for (const dir of SCAN_DIRS) {
+                for (const file of walk(path.join(ROOT, dir))) {
+                    for (const m of scanFile(fs.readFileSync(file, "utf8"))) {
+                        hits.push(m);
+                    }
+                }
+            }
+            // ~51 StatusBadge usages carry a className today across src/app
+            // and src/components; the floor sits far below so churn is safe.
+            expect(hits.length).toBeGreaterThan(20);
+            for (const h of hits) {
+                expect(typeof h.line).toBe("number");
+                expect(typeof h.classNameValue).toBe("string");
+                expect(h.classNameValue.length).toBeGreaterThan(0);
+            }
+        });
+
+        it("locates the shape precisely, not just in bulk", () => {
+            const one = scanFile('<StatusBadge variant="ok" className="h-8 px-2" />');
+            expect(one).toHaveLength(1);
+            expect(one[0].classNameValue).toBe("h-8 px-2");
+        });
+    });
+
     describe("banned className overrides", () => {
         it("zero size/shape/padding overrides on StatusBadge", () => {
             const offenders: Hit[] = [];

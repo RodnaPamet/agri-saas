@@ -134,6 +134,40 @@ describe("FormField coverage", () => {
     });
 
     /**
+     * CONTROL for `hasRawLabel` — it survived every FALSY gut.
+     *
+     * The guts split cleanly here. Every TRUTHY gut ([] {} Set Map) makes
+     * every file an offender, blows RAW_LABEL_FILE_BUDGET and is already RED.
+     * Every FALSY gut ('' 0 null undefined false) makes the detector match
+     * nothing: `count` is 0, `0 <= 2` passes, and "budget tracks reality"
+     * passes too because `2 <= 0 + 5`. So the ratchet certified a clean tree
+     * having detected nothing — empty selection reading as a pass (#971).
+     *
+     * Pinned with a SYNTHETIC two-sided assertion rather than a floor on the
+     * real population: exactly ONE file under src/app carries a raw label
+     * today (src/app/login/page.tsx), so a population floor would turn the
+     * migration of that last offender — the outcome this ratchet exists to
+     * produce — into a CI failure. `hasRawLabel` is a pure string predicate,
+     * so a literal input exercises the real code path with nothing to rot.
+     */
+    it("hasRawLabel matches a real raw label and refuses ordinary markup", () => {
+        expect(hasRawLabel('<label htmlFor="email">Email</label>')).toBe(true);
+        expect(hasRawLabel('<div className="field">no labels here</div>')).toBe(false);
+
+        // Tied to the tree as well: the detector and an independent regex must
+        // agree across the real population, so a narrowed detector cannot
+        // quietly stop counting while the budget still reads as satisfied.
+        let byDetector = 0;
+        let byIndependent = 0;
+        for (const file of walk(path.join(ROOT, SCAN_DIR))) {
+            const content = fs.readFileSync(file, "utf8");
+            if (hasRawLabel(content)) byDetector += 1;
+            if (/<label\s+htmlFor=/.test(content)) byIndependent += 1;
+        }
+        expect(byDetector).toBe(byIndependent);
+    });
+
+    /**
      * CONTROL for `isExempt` — it had NO TEETH.
      *
      * `scripts/selector-teeth.mjs` gutted it to each of `[] '' 0 null
