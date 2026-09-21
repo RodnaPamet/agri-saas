@@ -139,6 +139,14 @@ jobs:
       # and in practice nothing reads it in the queue — all three consumers
       # (e2e-shard, load-smoke, docker) are excluded from `merge_group`.
       code: ${{ steps.filter.outputs.code || 'true' }}
+      # `image` is true iff a change could alter the CONTAINER — its base
+      # layer, its dependency tree, or how it is assembled. Source edits are
+      # deliberately NOT in it: Trivy reports CVEs in the base image and in
+      # node_modules, neither of which an app-source change can introduce,
+      # and the `build` job already runs the same `next build` so a compile
+      # break still fails the PR. Same `|| 'true'` merge-queue default as
+      # `code`: conservative, can only cause more to run.
+      image: ${{ steps.filter.outputs.image || 'true' }}
     steps:
       - uses: actions/checkout@v7
       # Skipped on `merge_group`: a merge-queue event carries no base/head pair
@@ -157,6 +165,17 @@ jobs:
               - '!docs/**'
               - '!messages/**'
               - '!**/*.md'
+            image:
+              - 'Dockerfile'
+              - '.dockerignore'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'patches/**'
+              - 'scripts/entrypoint.sh'
+              - 'scripts/verify-image-*.mjs'
+              - 'next.config.js'
+              - 'prisma/**'
+              - '.github/workflows/ci.yml'
 
   # ═══════════════════════════════════════════════════════════════
   #  Job 1: Lint — ESLint + Next.js lint rules
@@ -1881,15 +1900,29 @@ jobs:
   #  Needs: build (no point testing Docker if app doesn't compile)
   # ═══════════════════════════════════════════════════════════════
   docker:
-    name: "Docker Build & Scan"
+    # NOT the required check — `docker-summary` below carries that name, so
+    # this job is free to skip without leaving a required check pending
+    # forever. Same split the Test/E2E shards already use.
+    name: "Docker image build + scan"
     needs: [build, changes]
-    # Runs on the weekly scan (Trivy SARIF refresh) OR whenever code changed.
-    # A content-only PR (docs/messages/md) leaves the image unchanged, so skip
-    # it — the last Trivy result stands and the cron refreshes it weekly.
-    # Also skipped in the merge queue: a ~21-minute image build and scan is the
-    # single most expensive check, and a merge collision does not manifest as a
-    # container-scan finding. It still runs on the PR and again on main.
-    if: ${{ github.event_name != 'merge_group' && (github.event_name == 'schedule' || needs.changes.outputs.code == 'true') }}
+    # Runs on the weekly scan (Trivy SARIF refresh) OR when a change could
+    # alter the IMAGE — see the `image` filter in the `changes` job.
+    #
+    # Measured 2026-09-21: this job is 19 minutes, of which the image build
+    # alone is 892s even with a warm GHA layer cache. It was gated on `code`,
+    # so every source- or test-only PR paid all of it to rebuild a container
+    # whose vulnerability surface had not moved. Three of six PRs merged that
+    # day could not have affected the image at all.
+    #
+    # What still catches an image break on a source-only PR: the `build` job
+    # compiles the same tree, ghcr-publish runs its own blocking build + Trivy
+    # before pushing, and `Image tip check` fails main if the tip has no
+    # published image. The exposure is a Dockerfile-specific break reaching
+    # main — visible before it can reach production, never after.
+    #
+    # Also skipped in the merge queue: a merge collision does not manifest as
+    # a container-scan finding.
+    if: ${{ github.event_name != 'merge_group' && (github.event_name == 'schedule' || needs.changes.outputs.image == 'true') }}
     runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}
     # Roadmap-27 CI hardening — bumped 15 → 25. semantic-release
     # bumps the package.json version on every release, which
@@ -2078,3 +2111,32 @@ jobs:
         # or fail the job loudly. Silent upload failures were
         # showing up as "Code scanning configuration error" banners
         # on the Security tab without breaking CI.
+
+  # ═══════════════════════════════════════════════════════════════
+  #  Job 9b: Docker (summary) — the REQUIRED check
+  #
+  #  `Docker Build & Scan` is a required status check on main. A
+  #  required check that never reports leaves a PR pending forever,
+  #  so the heavy job above must not carry that name once it is
+  #  allowed to skip. This job always reports, and treats `skipped`
+  #  as a pass for the same reason the E2E summary does: the image
+  #  did not change, so the last scan still describes it.
+  #
+  #  It does NOT treat `failure` as a pass — a skipped scan and a
+  #  failed one are opposite facts, and only one of them is safe.
+  # ═══════════════════════════════════════════════════════════════
+  docker-summary:
+    name: "Docker Build & Scan"
+    needs: [docker]
+    if: ${{ !cancelled() && github.event_name != 'merge_group' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aggregate image build + scan result
+        run: |
+          result="${{ needs.docker.result }}"
+          echo "docker job result: $result"
+          case "$result" in
+            success) echo "Image built and scanned clean." ; exit 0 ;;
+            skipped) echo "No image-affecting change — previous scan stands." ; exit 0 ;;
+            *) echo "::error::Docker image build/scan reported '$result'" ; exit 1 ;;
+          esac
