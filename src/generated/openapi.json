@@ -2273,8 +2273,7 @@
                   "$ref": "#/components/schemas/Parcel"
                 }
               }
-            },
-            "additionalProperties": {}
+            }
           }
         ],
         "description": "Location with its parcels. Returned by GET /locations/{id}."
@@ -2305,6 +2304,15 @@
           },
           "status": {
             "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "capacityTonnes": {
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "ownerUserId": {
             "type": [
@@ -2359,7 +2367,6 @@
           "name",
           "status"
         ],
-        "additionalProperties": {},
         "description": "Location as it appears in list views. A Location holds a set of imported Parcels (PostGIS polygons)."
       },
       "LocationListPage": {

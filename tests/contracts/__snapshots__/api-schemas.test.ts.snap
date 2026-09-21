@@ -2340,8 +2340,7 @@ exports[`API contract — per-schema snapshots schema: LocationDetail 1`] = `
             "$ref": "#/components/schemas/Parcel"
           }
         }
-      },
-      "additionalProperties": {}
+      }
     }
   ],
   "description": "Location with its parcels. Returned by GET /locations/{id}."
@@ -2375,6 +2374,15 @@ exports[`API contract — per-schema snapshots schema: LocationListItem 1`] = `
     },
     "status": {
       "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "capacityTonnes": {
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "ownerUserId": {
       "type": [
@@ -2429,7 +2437,6 @@ exports[`API contract — per-schema snapshots schema: LocationListItem 1`] = `
     "name",
     "status"
   ],
-  "additionalProperties": {},
   "description": "Location as it appears in list views. A Location holds a set of imported Parcels (PostGIS polygons)."
 }"
 `;
