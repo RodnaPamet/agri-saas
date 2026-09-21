@@ -252,7 +252,8 @@
         "typescript": "^6.0.3"
     },
     "lint-staged": {
-        "*": "bash scripts/detect-secrets.sh"
+        "*": "bash scripts/detect-secrets.sh",
+        "{src/lib/dto,src/lib/openapi,src/app-layer/schemas,src/lib/schemas}/**/*.ts": "bash scripts/check-openapi-sync.sh"
     },
     "overrides": {
         "typescript-eslint": "^8.70.0",
