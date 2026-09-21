@@ -34,8 +34,14 @@ test.describe('Admin Area Regression', () => {
         await expect(page.getByTestId('page-header-title')).toHaveCount(1, { timeout: 30000 });
         await expect(page.getByTestId('page-header-title')).toBeVisible();
 
+        // The same settle-then-assert barrier the header above uses. These
+        // pills sit in the same hydration window, and a transient double on
+        // one of them is what reddened admin-members.spec.ts in CI — the
+        // reasoning written above was applied to the header and not to these.
         for (const id of ['members-pill-btn', 'sso-pill-btn', 'scim-pill-btn', 'security-pill-btn']) {
-            await expect(page.locator(`#${id}`)).toBeVisible({ timeout: 5000 });
+            const pill = page.locator(`#${id}`);
+            await expect(pill).toHaveCount(1, { timeout: 15000 });
+            await expect(pill).toBeVisible();
         }
     });
 
