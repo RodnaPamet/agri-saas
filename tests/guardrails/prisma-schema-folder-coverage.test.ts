@@ -32,9 +32,60 @@
  * it.
  */
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
+
+/**
+ * Directories whose .ts files are not this checkout's source.
+ *
+ * `.claude/worktrees/` holds FULL CHECKOUTS of other branches — agent
+ * worktrees that git tracks but .gitignore excludes. A file found there is
+ * a copy of some other branch's source, so reporting it against this branch
+ * is a false positive twice over: the violation is not in this tree, and
+ * the fix is not in this tree either. It also can't reach CI, which checks
+ * out fresh. Scope only, never leniency: a real violation anywhere in the
+ * working tree is still reported, which the SELF-TEST below proves.
+ */
+const NON_SOURCE_DIRS = new Set(['node_modules', '.next', '.claude']);
+
+/**
+ * Files that legitimately name the legacy path: the helper owns the path
+ * constant, and this ratchet mentions it in prose and in its own fixtures.
+ */
+const PATH_OWNERS = new Set([
+    'tests/helpers/prisma-schema.ts',
+    'tests/guardrails/prisma-schema-folder-coverage.test.ts',
+]);
+
+/**
+ * Every .ts/.tsx file under `root` that READS `prisma/schema.prisma` as a
+ * real file. Matches only genuine read calls applied to a path ending in
+ * `prisma/schema.prisma`; comments and JSDoc references pass through.
+ * Returns paths relative to `root`.
+ */
+function collectLegacyPathReaders(root: string): string[] {
+    const violations: string[] = [];
+    const walk = (dir: string) => {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+            const full = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+                if (NON_SOURCE_DIRS.has(entry.name)) continue;
+                walk(full);
+                continue;
+            }
+            if (!/\.(ts|tsx)$/.test(entry.name)) continue;
+            const rel = path.relative(root, full);
+            if (PATH_OWNERS.has(rel)) continue;
+            const src = fs.readFileSync(full, 'utf-8');
+            const re = /(?:readFileSync|existsSync|statSync)\([^)]*['"][^'"]*prisma\/schema\.prisma['"][^)]*\)/g;
+            if (re.test(src)) violations.push(rel);
+        }
+    };
+    walk(root);
+    return violations;
+}
 const SCHEMA_DIR = path.resolve(REPO_ROOT, 'prisma/schema');
 
 /**
@@ -127,41 +178,14 @@ describe('GAP-09 — multi-file Prisma schema layout', () => {
     });
 
     it('no test reads the legacy monolith path as a real file (only doc comments are allowed)', () => {
+        // Walks the repo; see collectLegacyPathReaders for the scope rules.
         // Ratchet against silent drift: a future test that does
         // `fs.readFileSync('prisma/schema.prisma', ...)` would still
         // fail at runtime (the file doesn't exist) but the failure
         // mode is opaque. This guard catches the regression at the
         // code level so the message points at the fix:
         // "use readPrismaSchema() from tests/helpers/prisma-schema".
-        const violations: string[] = [];
-        const walk = (dir: string) => {
-            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-                const full = path.join(dir, entry.name);
-                if (entry.isDirectory()) {
-                    if (entry.name === 'node_modules' || entry.name === '.next') continue;
-                    walk(full);
-                    continue;
-                }
-                if (!/\.(ts|tsx)$/.test(entry.name)) continue;
-                // The helper itself owns the path constant; this
-                // ratchet's own file references the legacy path in
-                // explanatory comments only.
-                const rel = path.relative(REPO_ROOT, full);
-                if (rel === 'tests/helpers/prisma-schema.ts') continue;
-                if (rel === 'tests/guardrails/prisma-schema-folder-coverage.test.ts') continue;
-
-                const src = fs.readFileSync(full, 'utf-8');
-                // Match only real read calls — readFileSync, statSync,
-                // existsSync — applied to a path that ends in
-                // `prisma/schema.prisma`. Comments and JSDoc references
-                // pass through.
-                const re = /(?:readFileSync|existsSync|statSync)\([^)]*['"][^'"]*prisma\/schema\.prisma['"][^)]*\)/g;
-                if (re.test(src)) {
-                    violations.push(rel);
-                }
-            }
-        };
-        walk(REPO_ROOT);
+        const violations = collectLegacyPathReaders(REPO_ROOT);
 
         if (violations.length > 0) {
             throw new Error(
@@ -170,6 +194,26 @@ describe('GAP-09 — multi-file Prisma schema layout', () => {
                 '\n\nUse `readPrismaSchema()` from `tests/helpers/prisma-schema.ts` instead. ' +
                 'GAP-09 split the monolith into prisma/schema/ — Prisma reads the whole folder.',
             );
+        }
+    });
+
+    it('SELF-TEST: a real violation is caught; a .claude worktree copy of one is not', () => {
+        // Narrowing a guard's population is a change to what it can see, so
+        // it owes a POSITIVE CONTROL: the same offending line must still be
+        // reported from a real path. Without this, `.claude` could be
+        // widened later until the guard sees nothing and still reads green.
+        const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gap09-guard-'));
+        try {
+            const offending = "const s = fs.readFileSync('prisma/schema.prisma', 'utf-8');";
+            fs.writeFileSync(path.join(tmp, 'real.ts'), offending);
+            const stale = path.join(tmp, '.claude', 'worktrees', 'wf-1');
+            fs.mkdirSync(stale, { recursive: true });
+            fs.writeFileSync(path.join(stale, 'copy.ts'), offending);
+
+            const found = collectLegacyPathReaders(tmp);
+            expect(found).toEqual(['real.ts']);
+        } finally {
+            fs.rmSync(tmp, { recursive: true, force: true });
         }
     });
 });
