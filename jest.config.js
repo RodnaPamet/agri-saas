@@ -209,6 +209,16 @@ const nodeProject = {
         // project so they run exclusively under the jsdom project's
         // testMatch.
         '<rootDir>/src/.*/__tests__/',
+        // Git worktrees created under `.claude/worktrees/` carry their OWN
+        // copy of every test file. Jest collected all of them: one
+        // `tests/unit/sample-data.test.ts` became EIGHT — seven stale copies
+        // plus the real one — and because `@/` resolves against the main
+        // tree, each stale test ran against CURRENT source. That produces
+        // phantom failures for changes that are correct, and silently
+        // inflates every local count (a run reported 3226 tests where CI
+        // sees a fraction of that). CI never saw it: a fresh checkout has no
+        // worktrees, so local and CI disagreed with no way to notice.
+        '<rootDir>/.claude/',
     ],
     transform: {
         '^.+\\.(ts|tsx)$': 'ts-jest',
@@ -367,7 +377,7 @@ const jsdomProject = {
         // that span multiple primitives or pages.
         '<rootDir>/src/**/__tests__/**/*.test.{ts,tsx}',
     ],
-    testPathIgnorePatterns: ['<rootDir>/.next/', '<rootDir>/node_modules/'],
+    testPathIgnorePatterns: ['<rootDir>/.next/', '<rootDir>/node_modules/', '<rootDir>/.claude/'],
     transform: {
         '^.+\\.(ts|tsx)$': [
             'ts-jest',

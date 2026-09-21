@@ -2,10 +2,22 @@
  * "Try it with sample data" — a small, realistic, REVERSIBLE dataset
  * seeded into the farmer's OWN tenant (not a separate demo tenant).
  *
- * Every row the loader writes is tagged `isSampleData: true` on the four
- * ag models that carry the flag (Location, Parcel, InventoryLot,
- * LogEntry). The one-tap clear soft-deletes exactly those rows — tenant-
+ * Every row the loader writes is tagged `isSampleData: true` on the eight
+ * ag models that carry the flag (Location, Parcel, InventoryLot, LogEntry,
+ * and — since the grain chain was added — CropType, Season, CropPlan,
+ * Planting). The one-tap clear soft-deletes exactly those rows — tenant-
  * scoped, idempotent, nothing else touched.
+ *
+ * ── Why the planning chain is here ──
+ *
+ * The grain calculator reports NOTHING without it. It reads Plantings,
+ * resolves each one's CropPlan -> CropType to a canonical commodity, and
+ * prices that against the global market series. A tenant with sample
+ * locations, parcels, stock and journal entries still saw an empty
+ * calculator, which is the one screen where "no data" and "broken" look
+ * identical. The four planning models gained `isSampleData` in the same
+ * change so this chain is as clearable as the rest — untagged planning
+ * rows would be indistinguishable from a farmer's real season.
  *
  * Why direct prisma writes (not the createLocation / createParcel /
  * createLot usecases):
@@ -34,6 +46,15 @@ import { logEvent } from '../events/audit';
 /** Marketing-grade but illustrative — one field, a few parcels. */
 const SAMPLE_LOCATION_NAME = 'Sample field';
 const SAMPLE_PARCEL_NAMES = ['North block', 'South block', 'River strip'];
+const SAMPLE_CROP_NAME = 'Пшеница';
+/** Must be a slug the GLOBAL market series actually carries, or the
+ *  calculator prices nothing and reports a refusal instead of a figure.
+ *  'wheat' has by far the deepest price history of the available slugs. */
+const SAMPLE_COMMODITY = 'wheat';
+/** 12 ha, in m² — `Planting.areaM2` is the stored unit. */
+const SAMPLE_AREA_M2 = 120_000;
+/** 5 t/ha, a plausible Bulgarian wheat yield. */
+const SAMPLE_YIELD_KG_PER_HA = 5_000;
 
 /**
  * True iff this tenant already holds a non-deleted sample-data Location.
@@ -159,6 +180,82 @@ export async function loadSampleData(ctx: RequestContext): Promise<{ created: bo
             ],
         });
 
+        // ── The grain chain: CropType -> Season -> CropPlan -> Planting ──
+        //
+        // Without this the calculator is empty. `commodityCanonical` is what
+        // the net-worth usecase prices against the GLOBAL market series, so
+        // it must be a slug that series actually carries — 'wheat' has the
+        // deepest history of any of them. Hard-coding the canonical slug
+        // rather than deriving it from the name keeps the sample dataset
+        // working if `normalizeCommodity` ever changes how it reads Cyrillic.
+        const cropType = await db.cropType.create({
+            data: {
+                tenantId: t,
+                name: SAMPLE_CROP_NAME,
+                commodityCanonical: SAMPLE_COMMODITY,
+                isSampleData: true,
+            },
+            select: { id: true },
+        });
+
+        const year = new Date().getUTCFullYear();
+        const season = await db.season.create({
+            data: {
+                tenantId: t,
+                key: `sample-${year}`,
+                name: `${year} — примерен сезон`,
+                year,
+                // March 1 → October 31, the temperate main growing window,
+                // matching `seedDefaultSeason`'s choice rather than inventing
+                // a second convention for the same thing.
+                startDate: new Date(Date.UTC(year, 2, 1)),
+                endDate: new Date(Date.UTC(year, 9, 31)),
+                isSampleData: true,
+            },
+            select: { id: true },
+        });
+
+        const cropPlan = await db.cropPlan.create({
+            data: {
+                tenantId: t,
+                seasonId: season.id,
+                cropTypeId: cropType.id,
+                name: `${SAMPLE_CROP_NAME} ${year}`,
+                firstSowDate: new Date(Date.UTC(year, 2, 15)),
+                isSampleData: true,
+            },
+            select: { id: true },
+        });
+
+        // Attach to a sample PARCEL so the calculator's row names a field the
+        // farmer can see on the map, rather than reporting an area attached to
+        // nothing. `createMany` above does not return ids, so re-read one.
+        const parcel = await db.parcel.findFirst({
+            where: { tenantId: t, locationId: location.id, isSampleData: true, deletedAt: null },
+            select: { id: true },
+            orderBy: { name: 'asc' },
+        });
+
+        await db.planting.create({
+            data: {
+                tenantId: t,
+                cropPlanId: cropPlan.id,
+                parcelId: parcel?.id ?? null,
+                successionNumber: 1,
+                // Wheat is drilled, not transplanted. PlantingMethod is only
+                // DIRECT_SOW | TRANSPLANT — the SOWN/TRANSPLANTED spellings
+                // belong to PlantingStatus, which is a different enum.
+                method: 'DIRECT_SOW',
+                status: 'SOWN',
+                // 12 ha at 5 t/ha — a plausible Bulgarian wheat block, and
+                // enough for the calculator to report a real standing value
+                // rather than refusing for want of a yield estimate.
+                areaM2: SAMPLE_AREA_M2,
+                plannedYieldKgPerHa: SAMPLE_YIELD_KG_PER_HA,
+                isSampleData: true,
+            },
+        });
+
         await logEvent(db, ctx, {
             action: 'SAMPLE_DATA_LOADED',
             entityType: 'Location',
@@ -167,7 +264,12 @@ export async function loadSampleData(ctx: RequestContext): Promise<{ created: bo
             detailsJson: {
                 category: 'custom',
                 summary: 'Sample data loaded into tenant workspace',
-                data: { locationId: location.id, parcels: SAMPLE_PARCEL_NAMES.length },
+                data: {
+                    locationId: location.id,
+                    parcels: SAMPLE_PARCEL_NAMES.length,
+                    grainChain: true,
+                    commodity: SAMPLE_COMMODITY,
+                },
             },
         });
 
@@ -192,14 +294,26 @@ export async function clearSampleData(ctx: RequestContext): Promise<{ cleared: n
         // Each updateMany is tenant-scoped (explicit tenantId, defence in
         // depth) AND isSampleData-scoped — never touches a farmer's real
         // rows. Order is irrelevant: soft-delete leaves FK targets intact.
-        const [logEntries, lots, parcels, locations] = await Promise.all([
-            db.logEntry.updateMany({ where, data }),
-            db.inventoryLot.updateMany({ where, data }),
-            db.parcel.updateMany({ where, data }),
-            db.location.updateMany({ where, data }),
-        ]);
+        // The grain chain soft-deletes alongside the rest. Order is still
+        // irrelevant — soft-delete leaves FK targets intact, so a Planting
+        // whose CropPlan is already marked deleted is not orphaned, it is
+        // simply also marked. Every one of these carries `deletedByUserId`,
+        // so the shared `data` object applies unchanged.
+        const [logEntries, lots, parcels, locations, plantings, cropPlans, seasons, cropTypes] =
+            await Promise.all([
+                db.logEntry.updateMany({ where, data }),
+                db.inventoryLot.updateMany({ where, data }),
+                db.parcel.updateMany({ where, data }),
+                db.location.updateMany({ where, data }),
+                db.planting.updateMany({ where, data }),
+                db.cropPlan.updateMany({ where, data }),
+                db.season.updateMany({ where, data }),
+                db.cropType.updateMany({ where, data }),
+            ]);
 
-        const cleared = logEntries.count + lots.count + parcels.count + locations.count;
+        const cleared =
+            logEntries.count + lots.count + parcels.count + locations.count +
+            plantings.count + cropPlans.count + seasons.count + cropTypes.count;
 
         if (cleared > 0) {
             await logEvent(db, ctx, {
@@ -212,6 +326,10 @@ export async function clearSampleData(ctx: RequestContext): Promise<{ cleared: n
                     summary: 'Sample data cleared from tenant workspace',
                     data: {
                         cleared,
+                        plantings: plantings.count,
+                        cropPlans: cropPlans.count,
+                        seasons: seasons.count,
+                        cropTypes: cropTypes.count,
                         locations: locations.count,
                         parcels: parcels.count,
                         inventoryLots: lots.count,
