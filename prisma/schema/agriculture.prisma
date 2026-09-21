@@ -400,6 +400,17 @@ model Parcel {
   /// Human-readable soil label (USDA texture class, e.g. "Silty clay
   /// loam", or a WRB group) derived from the modelled soil profile.
   /// A MODELLED ESTIMATE from open data (SoilGrids), never a lab result.
+  /// Землище — the settlement whose land this parcel sits in, as the БАБХ
+  /// diary's per-field header names it ("Дерманци (20688)"). Backfilled from
+  /// the spatial import's `virtual_ek`; blank for КАИС-imported parcels,
+  /// which carry no equivalent.
+  landDistrict    String?
+  /// Местност — the traditional field name ("ЛЕШНИЦА, ПЪТИЩА И КАНАЛИ").
+  /// Backfilled from the spatial import's `mestnost`.
+  locality        String?
+  /// Склад за растителна продукция. No import carries it — entered by hand
+  /// or left blank, exactly as on the paper form.
+  produceStore    String?
   soilType        String?
   /// Structured soil profile — the SoilGrids-derived reading + provenance:
   /// { wrbClass?, textureClass, sandPct, siltPct, clayPct, phH2o, socGkg,

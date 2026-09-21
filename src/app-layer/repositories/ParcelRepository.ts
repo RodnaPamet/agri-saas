@@ -337,6 +337,9 @@ export class ParcelRepository {
             cropType?: string | null;
             cadastralId?: string | null;
             ekatte?: string | null;
+            landDistrict?: string | null;
+            locality?: string | null;
+            produceStore?: string | null;
             geometry?: Polygon | MultiPolygon;
         },
     ): Promise<{ areaHa: number | null }> {
@@ -345,6 +348,9 @@ export class ParcelRepository {
         if (input.cropType !== undefined) scalar.cropType = input.cropType;
         if (input.cadastralId !== undefined) scalar.cadastralId = input.cadastralId;
         if (input.ekatte !== undefined) scalar.ekatte = input.ekatte;
+        if (input.landDistrict !== undefined) scalar.landDistrict = input.landDistrict;
+        if (input.locality !== undefined) scalar.locality = input.locality;
+        if (input.produceStore !== undefined) scalar.produceStore = input.produceStore;
         if (Object.keys(scalar).length > 0) {
             await db.parcel.update({ where: { id: parcelId }, data: scalar });
         }

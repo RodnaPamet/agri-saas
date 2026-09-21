@@ -43,6 +43,12 @@ export interface UpdateParcelInput {
      * reconciliation, and the legal-entity owner (via the ownership fetch).
      */
     cadastralId?: string | null;
+    /** Землище — the ДНЕВНИК per-field header. Empty string clears it. */
+    landDistrict?: string | null;
+    /** Местност — the traditional field name. Empty string clears it. */
+    locality?: string | null;
+    /** Склад за растителна продукция. Operator-entered; no import carries it. */
+    produceStore?: string | null;
     geometry?: Polygon | MultiPolygon;
 }
 
@@ -132,8 +138,17 @@ export async function updateParcel(ctx: RequestContext, parcelId: string, input:
             }
         }
 
+        // The three ДНЕВНИК header fields are free text printed verbatim onto
+        // a legal register: sanitize, and treat blank as "clear" so an
+        // operator can empty a cell they filled by mistake.
+        const headerField = (v: string | null | undefined): string | null | undefined =>
+            v === undefined ? undefined : v && v.trim() ? sanitizePlainText(v.trim()) : null;
+
         const res = await ParcelRepository.updateOne(db, ctx, parcelId, {
             name: input.name !== undefined ? sanitizePlainText(input.name.trim()) : undefined,
+            landDistrict: headerField(input.landDistrict),
+            locality: headerField(input.locality),
+            produceStore: headerField(input.produceStore),
             cropType:
                 input.cropType !== undefined
                     ? input.cropType

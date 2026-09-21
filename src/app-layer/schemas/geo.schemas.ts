@@ -53,6 +53,12 @@ export const UpdateParcelSchema = z
         name: z.string().min(1).max(200).optional(),
         cropType: z.string().max(120).nullable().optional(),
         cadastralId: z.string().max(50).nullable().optional(),
+        // ДНЕВНИК per-field header (Прил.1 РД 11-3194/31.12.2021). No import
+        // carries Склад; Землище/Местност are backfilled from cadastral
+        // properties where present, and all three are operator-editable.
+        landDistrict: z.string().max(200).nullable().optional(),
+        locality: z.string().max(200).nullable().optional(),
+        produceStore: z.string().max(200).nullable().optional(),
         geometry: PolygonGeometrySchema.optional(),
     })
     .strip()
@@ -61,6 +67,9 @@ export const UpdateParcelSchema = z
             b.name !== undefined ||
             b.cropType !== undefined ||
             b.cadastralId !== undefined ||
+            b.landDistrict !== undefined ||
+            b.locality !== undefined ||
+            b.produceStore !== undefined ||
             b.geometry !== undefined,
         { message: 'No fields to update.' },
     );

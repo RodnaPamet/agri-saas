@@ -22,6 +22,16 @@
  *      operator cert under „чл. 84, ал. 2", agronomist under „ал. 1",
  *      disease under „Болест", pest under „Неприятел", …).
  *
+ *   4. PER-FIELD HEADER — the form is a per-field register. Both the
+ *      observation and chemical sections must actually DRAW their header
+ *      strip, and the chemical table's rows must come from ONE FIELD'S
+ *      lines, never from all of `data.sprayLines`.
+ *      (Regression class: `L.field` was declared in the original PR and
+ *      never drawn by any section — a label can exist for months while
+ *      nothing puts it on the page, and no pure-builder test can see it.
+ *      The mirror defect is worse: a per-field header above a combined
+ *      table states that every treatment listed happened on that field.)
+ *
  * Column-order changes are legitimate ONLY when the header array and the
  * row builder move together — then the pins below are updated in the
  * same diff, which is exactly the review this ratchet exists to force.
@@ -33,6 +43,8 @@ import {
     buildChemicalRows,
     buildFertilizerRows,
     buildObservationRows,
+    buildChemFieldHeaderRow,
+    buildObsFieldHeaderRow,
     htmlNotesToPlainText,
     type SprayLineData,
     type FertilizeLineData,
@@ -120,6 +132,7 @@ describe('ДНЕВНИК plain text — „Болест" receives flattened note
 // ─── 3. Columns: headers ↔ builder cells agree in count AND meaning ───
 
 const SPRAY: SprayLineData = {
+    parcelId: 'parcel-1',
     completedAt: new Date('2026-05-10T08:00:00Z'),
     targetNote: 'Житна пиявица',
     productName: 'Карате Зеон',
@@ -212,5 +225,74 @@ describe('ДНЕВНИК columns — right data under the right header', () => {
         const n = BG_LABELS.obsCols.indexOf('Неприятел');
         [swapped[b], swapped[n]] = [swapped[n], swapped[b]];
         expect(swapped[b]).not.toBe(row[b]);
+    });
+});
+
+// ─── 4. Per-field header: declared is not drawn ──────────────────────
+
+/**
+ * Comment-masked view of the generator. A guard that merely greps the raw
+ * source can be satisfied by a COMMENT naming the call it is looking for —
+ * including the comment that records its removal — so every structural
+ * assertion below reads through here instead.
+ */
+function codeOf(src: string): string {
+    return src
+        .replace(/\/\*[\s\S]*?\*\//g, ' ')
+        .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+}
+
+/** Does the generator actually draw the strip for `labelArray`? */
+function drawsStrip(src: string, labelArray: string): boolean {
+    return new RegExp(`drawFieldHeaderStrip\\([^;]*L\\.${labelArray}`).test(codeOf(src));
+}
+
+describe('ДНЕВНИК per-field header — the strip is DRAWN, not merely declared', () => {
+    it('both strips carry the form\u2019s official label counts', () => {
+        expect(BG_LABELS.obsFieldHeader).toHaveLength(5);
+        expect(BG_LABELS.chemFieldHeader).toHaveLength(11);
+    });
+
+    it('both builders emit exactly one cell per strip label', () => {
+        expect(buildObsFieldHeaderRow(null)).toHaveLength(BG_LABELS.obsFieldHeader.length);
+        expect(buildChemFieldHeaderRow(null, null)).toHaveLength(
+            BG_LABELS.chemFieldHeader.length,
+        );
+    });
+
+    it('the generator draws BOTH strips', () => {
+        expect(drawsStrip(SRC, 'obsFieldHeader')).toBe(true);
+        expect(drawsStrip(SRC, 'chemFieldHeader')).toBe(true);
+    });
+
+    it('the chemical table is built from ONE field\u2019s lines, never all of them', () => {
+        const code = codeOf(SRC);
+        // The misattribution guard: rows under a per-field header must be
+        // that field's. `buildChemicalRows(data.sprayLines)` under a strip
+        // is the exact defect this family exists to prevent.
+        expect(code).toMatch(/buildChemicalRows\(\s*group\.lines\s*\)/);
+        expect(code).not.toMatch(/buildChemicalRows\(\s*data\.sprayLines\s*\)/);
+    });
+
+    it('SELF-TEST: dropping a draw call is detected', () => {
+        const dropped = SRC.replace(/drawFieldHeaderStrip\(/g, 'noop(');
+        expect(drawsStrip(dropped, 'obsFieldHeader')).toBe(false);
+        expect(drawsStrip(dropped, 'chemFieldHeader')).toBe(false);
+    });
+
+    it('SELF-TEST: a call that survives only in a COMMENT does not satisfy the guard', () => {
+        // The exact way `L.field` hid for months — and the way a removal
+        // comment can keep a naive grep green.
+        const onlyInComments = `
+            function renderFarmRecordDiary() {
+                // drawFieldHeaderStrip(doc, y, L.obsFieldHeader, row);
+                /* was: drawFieldHeaderStrip(doc, y, L.chemFieldHeader, row); */
+            }`;
+        expect(drawsStrip(onlyInComments, 'obsFieldHeader')).toBe(false);
+        expect(drawsStrip(onlyInComments, 'chemFieldHeader')).toBe(false);
+        // POSITIVE CONTROL: the same text as live code IS detected, so the
+        // failures above are the masking working and not a broken pattern.
+        const asCode = `drawFieldHeaderStrip(doc, y, L.obsFieldHeader, row);`;
+        expect(drawsStrip(asCode, 'obsFieldHeader')).toBe(true);
     });
 });
