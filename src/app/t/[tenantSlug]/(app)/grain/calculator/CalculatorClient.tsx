@@ -104,13 +104,10 @@ import { formatDate, formatDateTime } from '@/lib/format-date';
 import {
     UNCERTAINTY,
     explainRefusal,
-    type UncertaintyState,
 } from '@/lib/grain/uncertainty';
 import { GrainSectionNav } from '../GrainSectionNav';
 import type { FarmNetWorthTotal } from '@/lib/grain/farm-total';
 import type { ExclusionEntry } from '@/lib/grain/exclusion-labels';
-import type { PerAreaFigures } from '@/lib/grain/per-area';
-import type { BreakEvenFigures } from '@/lib/grain/break-even';
 import {
     BreakEvenRow,
     CommodityStrip,
@@ -120,165 +117,31 @@ import {
 } from './components';
 import { foldMarginScales } from '@/lib/grain/margin-scale';
 
-// ─── Serialised DTOs (mirror the grain-net-worth usecase output) ────
+// ─── Serialised DTOs ────────────────────────────────────────────────
+//
+// Defined in `@/lib/grain/calculator-payload` and re-exported here so the
+// existing import sites keep working. They moved because the page is no
+// longer the only consumer: `GET /api/t/:slug/grain/calculator` serves the
+// same payload to the native client, and one mapper feeding both is the
+// only way they cannot drift apart.
+// `export … from` is a RE-EXPORT: it forwards the names without binding them
+// in this module's scope. The two this file uses in its own signatures must be
+// imported as well, or they are re-exported and simultaneously unresolvable
+// here — which is precisely how this landed as a suite that failed to LOAD
+// while the run still reported 0 failed tests.
+import type {
+    CalculatorData,
+    CalculatorExclusions,
+} from '@/lib/grain/calculator-payload';
 
-export interface CalculatorRow {
-    commodity: string;
-
-    pricePerTonne: number | null;
-    priceCurrency: string | null;
-    priceObservedAt: string | null;
-    priceSource: string | null;
-
-    standingCropAreaHa: number;
-    standingCropExpectedKg: number;
-    standingCropValue: number | null;
-    /** Per-decare figures over the terms that share this area. */
-    perArea: PerAreaFigures;
-    /** Market price against the price that clears cost. */
-    breakEven: BreakEvenFigures;
-
-    grainOnHandTonnes: number;
-    grainOnHandValue: number | null;
-
-    rentCostProduceKg: number;
-    rentCostProduceValue: number | null;
-    payrollAllocated: boolean;
-    cashCostTotal: number;
-
-    // Rendered with their COUNTS by UnvaluedNote, so they stay data rather
-    // than collapsing into `costUncertainty` — the state says the cost is
-    // a floor, these say by how many records and why.
-    unvaluedNoUnitCost: number;
-    unvaluedUnitMismatch: number;
-
-    netWorth: number | null;
-    /** English, authored by the usecase — the FALLBACK for an unknown code. */
-    netWorthUnavailableReason: string | null;
-    /** Machine-readable reason, translated client-side when recognised. */
-    netWorthUnavailableCode: string | null;
-    netWorthUnavailableParams: Record<string, string> | null;
-
-    // ── Decided server-side (see page.tsx) ──
-    //
-    // The row used to carry thirty fields shaped by what the USECASE
-    // computes, and this island assembled an answer out of them: it
-    // filtered the rent sentinel out of a currency list, worked out
-    // whether the cost was a floor, worked out whether the rent term
-    // belonged on screen. Those are decisions, and they are made where the
-    // data is now. What arrives is an answer to FORMAT.
-
-    /** Shared vocabulary — see `@/lib/grain/uncertainty`. */
-    netUncertainty: UncertaintyState;
-    costUncertainty: UncertaintyState;
-    /** Real ISO codes only; the internal rent sentinel is already gone. */
-    costCurrencyCodes: string[];
-    /** True when rent currency was the sentinel — stated in its own words. */
-    rentCurrencyUnknown: boolean;
-    /** Whether the rent-in-grain term is part of this farm's arithmetic. */
-    showProduceRent: boolean;
-    /** The cost's composition — which categories, in what order and tone. */
-    costBreakdown: CalculatorCostSlice[];
-}
-
-/** One labelled slice of the cost total, decided server-side. */
-export interface CalculatorCostSlice {
-    id: string;
-    /** i18n key under `grain.calculator` — the island resolves it. */
-    labelKey: string;
-    value: number;
-    variant: StatusBreakdownItem['variant'];
-}
-
-export type { ExclusionEntry } from '@/lib/grain/exclusion-labels';
-
-/**
- * ONE shape for every class.
- *
- * It used to be three — a bare string, `{lotId, unitKey}`,
- * `{leaseId, reason}` — which forced the renderer to branch on structure
- * to work out what it was holding, and rendered a cuid either way. Each
- * entry now carries the id (the deep links need it) and a label a person
- * recognises, resolved server-side.
- */
-export interface CalculatorExclusions {
-    plantingsMissingYieldEstimate: ExclusionEntry[];
-    plantingsUnknownCommodity: ExclusionEntry[];
-    lotsUnresolvedUnit: ExclusionEntry[];
-    lotsUnknownCommodity: ExclusionEntry[];
-    commoditiesWithNoPrice: ExclusionEntry[];
-    leasesUnresolvedRent: ExclusionEntry[];
-    leasesUnattributed: ExclusionEntry[];
-    leasesProduceRentUnpriced: ExclusionEntry[];
-    payrollUnattributable: ExclusionEntry[];
-}
-
-/** One currency's worth of money that left the bank. */
-export interface CalculatorCashOutLine {
-    currency: string;
-    amount: number;
-    categories: string[];
-}
-
-export interface CalculatorData {
-    generatedAt: string;
-    seasonId: string | null;
-    rows: CalculatorRow[];
-    /** The farm-level answer — one total per currency. Folded server-side. */
-    farm: {
-        totals: FarmNetWorthTotal[];
-        refusedWithoutCurrency: string[];
-    };
-    exclusions: CalculatorExclusions;
-    /**
-     * Farm-wide DISTINCT counts, NOT the sum of the rows'. Deliberately
-     * not an exclusion class: nothing here was excluded — the stock moved
-     * and the planting is counted, only the money is missing. Exclusions
-     * shrink the row set; this understates the cost side.
-     */
-    unvalued: { noUnitCost: number; unitMismatch: number };
-    /**
-     * `COST_METRICS.GRAIN_CASH_OUT` — what LEFT THE BANK, per currency.
-     *
-     * Rendered as its own figure and never added to any cost line. Crop
-     * cost is consumption-based and rent cost is a lease-terms accrual, so
-     * folding a purchase or a rent payment in would bill the same money
-     * twice. The page's job is to show both and say they are different
-     * questions.
-     */
-    cashOut: CalculatorCashOutLine[];
-    /**
-     * Cost that landed on land carrying no crop — a fallow parcel's share
-     * of a spread cost, and money rent on an unplanted parcel.
-     *
-     * Rendered BECAUSE the rows are short by exactly this. A spread
-     * conserves the amount across `rows + this`, so a page printing only
-     * the rows would show a cost that shrank when the farmer changed how
-     * it spreads — the one thing the allocator promises never happens.
-     */
-    unallocatedToCrop: {
-        amount: number;
-        areaHa: number;
-        parcelIds: string[];
-        currencies: string[];
-    };
-    /**
-     * `COST_METRICS.IMPUTED_LAND_CHARGE` — what the farm's OWN land would
-     * fetch as rent, at the rate its own leases establish.
-     *
-     * Beside the cost side and never inside it: no lev left the bank, and
-     * every cost figure on this page is money that did. Refused rather
-     * than zeroed when there is no observed rate, because a zero says
-     * owned land is free.
-     */
-    imputedLandCharge: {
-        perHa: number | null;
-        areaHa: number;
-        totalAmount: number | null;
-        refusalCode: string | null;
-    };
-    truncated: boolean;
-}
+export type {
+    CalculatorRow,
+    CalculatorCostSlice,
+    CalculatorExclusions,
+    CalculatorCashOutLine,
+    CalculatorData,
+    ExclusionEntry,
+} from '@/lib/grain/calculator-payload';
 
 export interface CalculatorClientProps {
     tenantSlug: string;

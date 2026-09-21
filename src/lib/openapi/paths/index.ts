@@ -14,6 +14,7 @@ import { registerJournalPaths } from './journal.paths';
 import { registerFarmTaskPaths } from './farm-tasks.paths';
 import { registerFieldOperationPaths } from './field-operations.paths';
 import { registerLocationPaths } from './locations.paths';
+import { registerGrainPaths } from './grain.paths';
 
 export function registerAllPaths(registry: OpenAPIRegistry): void {
     registerSecuritySchemes(registry);
@@ -23,4 +24,5 @@ export function registerAllPaths(registry: OpenAPIRegistry): void {
     registerFarmTaskPaths(registry);
     registerFieldOperationPaths(registry);
     registerLocationPaths(registry);
+    registerGrainPaths(registry);
 }
