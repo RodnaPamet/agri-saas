@@ -46,6 +46,12 @@ model CropType {
   notes           String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+  /// "Try it with sample data" tag — see Location.isSampleData. The grain
+  /// calculator needs the whole CropType -> Season -> CropPlan -> Planting
+  /// chain to report anything, so the sample dataset carries it; without
+  /// these flags the rows would be indistinguishable from a farmer's real
+  /// planning and `clearSampleData` could not find them.
+  isSampleData    Boolean   @default(false)
   deletedAt       DateTime?
   deletedByUserId String?
   retentionUntil  DateTime?
@@ -131,6 +137,12 @@ model Season {
   notes           String?
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
+  /// "Try it with sample data" tag — see Location.isSampleData. The grain
+  /// calculator needs the whole CropType -> Season -> CropPlan -> Planting
+  /// chain to report anything, so the sample dataset carries it; without
+  /// these flags the rows would be indistinguishable from a farmer's real
+  /// planning and `clearSampleData` could not find them.
+  isSampleData    Boolean   @default(false)
   deletedAt       DateTime?
   deletedByUserId String?
   retentionUntil  DateTime?
@@ -174,6 +186,12 @@ model CropPlan {
   notes               String?
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
+  /// "Try it with sample data" tag — see Location.isSampleData. The grain
+  /// calculator needs the whole CropType -> Season -> CropPlan -> Planting
+  /// chain to report anything, so the sample dataset carries it; without
+  /// these flags the rows would be indistinguishable from a farmer's real
+  /// planning and `clearSampleData` could not find them.
+  isSampleData    Boolean   @default(false)
   deletedAt           DateTime?
   deletedByUserId     String?
   retentionUntil      DateTime?
@@ -229,6 +247,12 @@ model Planting {
   notes               String?
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
+  /// "Try it with sample data" tag — see Location.isSampleData. The grain
+  /// calculator needs the whole CropType -> Season -> CropPlan -> Planting
+  /// chain to report anything, so the sample dataset carries it; without
+  /// these flags the rows would be indistinguishable from a farmer's real
+  /// planning and `clearSampleData` could not find them.
+  isSampleData    Boolean   @default(false)
   deletedAt           DateTime?
   deletedByUserId     String?
   retentionUntil      DateTime?
