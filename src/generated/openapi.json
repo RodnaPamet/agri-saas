@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "3.23.26",
+    "version": "3.25.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -2273,8 +2273,7 @@
                   "$ref": "#/components/schemas/Parcel"
                 }
               }
-            },
-            "additionalProperties": {}
+            }
           }
         ],
         "description": "Location with its parcels. Returned by GET /locations/{id}."
@@ -2305,6 +2304,15 @@
           },
           "status": {
             "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "capacityTonnes": {
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "ownerUserId": {
             "type": [
@@ -2359,7 +2367,6 @@
           "name",
           "status"
         ],
-        "additionalProperties": {},
         "description": "Location as it appears in list views. A Location holds a set of imported Parcels (PostGIS polygons)."
       },
       "LocationListPage": {
