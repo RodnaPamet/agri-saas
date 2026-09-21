@@ -125,4 +125,47 @@ describeFn('parcel authoring (PostGIS)', () => {
         expect(row?.cadastralId).toBeNull();
         expect(row?.ekatte).toBeNull();
     });
+
+    // ── ДНЕВНИК per-field header fields ──────────────────────────────
+    // Землище / Местност / Склад are printed verbatim onto the legally-filed
+    // register, so the write path owes the same care as the cadastral link.
+
+    const headerCols = { landDistrict: true, locality: true, produceStore: true } as const;
+
+    test('updateParcel round-trips the three ДНЕВНИК header fields', async () => {
+        const p = await createParcel(ctx(), locationId, { name: 'Hdr', geometry: square(0.01) });
+        await updateParcel(ctx(), p.id, {
+            landDistrict: 'Дерманци',
+            locality: 'Лешница',
+            produceStore: 'Склад №1',
+        });
+        const row = await prisma.parcel.findUnique({ where: { id: p.id }, select: headerCols });
+        expect(row?.landDistrict).toBe('Дерманци');
+        expect(row?.locality).toBe('Лешница');
+        expect(row?.produceStore).toBe('Склад №1');
+    });
+
+    test('updateParcel clears a header field with an empty string', async () => {
+        const p = await createParcel(ctx(), locationId, { name: 'Hdr clear', geometry: square(0.01) });
+        await updateParcel(ctx(), p.id, { locality: 'Лешница' });
+        await updateParcel(ctx(), p.id, { locality: '   ' }); // whitespace counts as blank
+        const row = await prisma.parcel.findUnique({ where: { id: p.id }, select: headerCols });
+        expect(row?.locality).toBeNull();
+    });
+
+    test('editing one field does not wipe the others', async () => {
+        // A PATCH naming only `name` must leave the header cells alone —
+        // otherwise a rename silently blanks three cells of a filed register.
+        const p = await createParcel(ctx(), locationId, { name: 'Hdr keep', geometry: square(0.01) });
+        await updateParcel(ctx(), p.id, {
+            landDistrict: 'Дерманци',
+            locality: 'Лешница',
+            produceStore: 'Склад №1',
+        });
+        await updateParcel(ctx(), p.id, { name: 'Renamed' });
+        const row = await prisma.parcel.findUnique({ where: { id: p.id }, select: headerCols });
+        expect(row?.landDistrict).toBe('Дерманци');
+        expect(row?.locality).toBe('Лешница');
+        expect(row?.produceStore).toBe('Склад №1');
+    });
 });
