@@ -4155,6 +4155,27 @@ exports[`API contract — per-schema snapshots schema: ParcelUpdateRequest 1`] =
       ],
       "maxLength": 50
     },
+    "landDistrict": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 200
+    },
+    "locality": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 200
+    },
+    "produceStore": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 200
+    },
     "geometry": {
       "oneOf": [
         {
