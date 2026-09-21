@@ -55,6 +55,20 @@ const SAMPLE_COMMODITY = 'wheat';
 const SAMPLE_AREA_M2 = 120_000;
 /** 5 t/ha, a plausible Bulgarian wheat yield. */
 const SAMPLE_YIELD_KG_PER_HA = 5_000;
+/**
+ * Carry-over grain in store, TONNES — plausible beside the 60 t standing
+ * crop the planting above implies (12 ha x 5 t/ha).
+ */
+export const SAMPLE_LOT_TONNES = 18;
+/**
+ * The crop name is also the ITEM name, and the calculator derives a lot's
+ * commodity from `normalizeCommodity(item.name)` while a CropType carries
+ * `commodityCanonical` explicitly. Exported so a test can pin that those
+ * two routes agree — if they ever diverge the standing crop and the grain
+ * on hand land in DIFFERENT rows, which looks like working software.
+ */
+export const SAMPLE_COMMODITY_NAME = SAMPLE_CROP_NAME;
+export const SAMPLE_COMMODITY_SLUG = SAMPLE_COMMODITY;
 
 /**
  * True iff this tenant already holds a non-deleted sample-data Location.
@@ -116,25 +130,59 @@ export async function loadSampleData(ctx: RequestContext): Promise<{ created: bo
             })),
         });
 
-        // ── One InventoryLot ── needs a real itemId + unitId. Reuse an
-        // existing tenant item+unit if present; otherwise create a minimal
-        // catalog Item (Item has no isSampleData flag — it is harmless
-        // residue if a clear later runs, and the lot itself IS tagged +
-        // soft-deleted on clear). Skip the lot entirely if no Unit exists
-        // (the global unit catalog hasn't been imported) — the sample
-        // dataset is still useful without it.
-        const unit = await db.unit.findFirst({ select: { id: true } });
+        // ── One InventoryLot of HARVESTED GRAIN ──
+        //
+        // This lot is the only thing exercising the calculator's "grain on
+        // hand" arm, and `grain-net-worth` imposes three conditions that all
+        // fail SILENTLY — an excluded lot is indistinguishable from no sample
+        // data at all:
+        //   1. the item's category must be HARVESTED_PRODUCE (the lot query
+        //      filters on it),
+        //   2. the lot's OWN unit must convert to tonnes, so it has to be a
+        //      WEIGHT unit — any other and the lot is dropped as
+        //      `lotsUnresolvedUnit`,
+        //   3. `normalizeCommodity(item.name)` must resolve, and must resolve
+        //      to the SAME commodity as the CropType's `commodityCanonical`,
+        //      or the standing crop and the grain on hand split across two
+        //      rows instead of describing one farm.
+        //
+        // The previous version reused whatever Item the tenant happened to
+        // have and set no quantity: on a real farm that produced a PESTICIDE
+        // lot holding zero, attached to the sample field. It satisfied none of
+        // the three.
+        //
+        // Skip the lot entirely if no weight unit exists (the global unit
+        // catalog hasn't been imported) — the rest of the dataset is still
+        // useful without it.
+        const unit =
+            (await db.unit.findFirst({ where: { key: 'kg' }, select: { id: true, key: true } })) ??
+            (await db.unit.findFirst({ where: { key: 't' }, select: { id: true, key: true } }));
         if (unit) {
+            // `quantityOnHand` is denominated in the lot's own unit, so the
+            // magnitude MUST follow the key that was actually found. Writing
+            // the kg figure against a tonne unit would store 18 000 tonnes
+            // and read back as a plausible-looking number.
+            const quantityOnHand =
+                unit.key === 't' ? SAMPLE_LOT_TONNES : SAMPLE_LOT_TONNES * 1_000;
+
+            // Item carries no isSampleData flag (it is catalog, not tenant
+            // data), so match on name+category rather than stacking a fresh
+            // duplicate on every load/clear cycle.
             let item = await db.item.findFirst({
-                where: { tenantId: t, deletedAt: null },
+                where: {
+                    tenantId: t,
+                    name: SAMPLE_CROP_NAME,
+                    category: 'HARVESTED_PRODUCE',
+                    deletedAt: null,
+                },
                 select: { id: true },
             });
             if (!item) {
                 item = await db.item.create({
                     data: {
                         tenantId: t,
-                        name: 'Sample fertiliser',
-                        category: 'FERTILIZER',
+                        name: SAMPLE_CROP_NAME,
+                        category: 'HARVESTED_PRODUCE',
                         defaultUnitId: unit.id,
                         createdByUserId: ctx.userId,
                     },
@@ -148,6 +196,7 @@ export async function loadSampleData(ctx: RequestContext): Promise<{ created: bo
                     lotCode: 'SAMPLE-LOT-001',
                     unitId: unit.id,
                     locationId: location.id,
+                    quantityOnHand,
                     isSampleData: true,
                 },
                 select: { id: true },
