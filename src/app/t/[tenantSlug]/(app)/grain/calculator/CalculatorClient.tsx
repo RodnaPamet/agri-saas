@@ -104,6 +104,7 @@ import { formatDate, formatDateTime } from '@/lib/format-date';
 import {
     UNCERTAINTY,
     explainRefusal,
+    localiseRefusalParams,
 } from '@/lib/grain/uncertainty';
 import { GrainSectionNav } from '../GrainSectionNav';
 import type { FarmNetWorthTotal } from '@/lib/grain/farm-total';
@@ -495,7 +496,9 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
     });
     const refusalText = explainRefusal(
         row.netWorthUnavailableCode,
-        row.netWorthUnavailableParams,
+        // The params carry a canonical SLUG, not a display name — passed raw
+        // this sentence reads "Няма налична пазарна цена за wheat."
+        localiseRefusalParams(row.netWorthUnavailableParams, tCommodity),
         row.netWorthUnavailableReason,
         (key, values) => tc(key, values),
     );

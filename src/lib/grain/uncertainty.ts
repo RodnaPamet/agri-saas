@@ -28,6 +28,8 @@
  * @module lib/grain/uncertainty
  */
 
+import { commodityLabel } from '@/lib/market/commodity-label';
+
 export const UNCERTAINTY = {
     /** Nothing qualifies this figure. */
     EXACT: 'exact',
@@ -200,6 +202,38 @@ export function isKnownRefusalCode(
  * a refusal with no reason at all yields null, and the usecase's own
  * contract forbids that (see the invariant in its tests).
  */
+/**
+ * Localise the interpolation values a refusal carries, before they are
+ * substituted into a translated sentence.
+ *
+ * `NO_MARKET_PRICE` carries `{ commodity }`, and that value is the CANONICAL
+ * SLUG — `wheat`, not `Пшеница` — because it is an identity everywhere else in
+ * the system. Substituted raw it produces
+ *
+ *     Няма налична пазарна цена за wheat.
+ *
+ * a Bulgarian sentence with an English key inside it. That is the same defect
+ * the Exchange list had before `commodityLabel` existed, one layer further in:
+ * there the slug WAS the rendered value, here it is a value inside one — which
+ * is why translating the sentence did not fix it, and why it sat unnoticed
+ * behind a branch no tenant had hit.
+ *
+ * Only `commodity` needs this today. `costCurrency` / `priceCurrency` are ISO
+ * codes and are correct as they stand: a currency code is not translated, it
+ * is the same three letters in every locale.
+ *
+ * `translateCommodity` is a translator scoped to `trends.commodities` — the
+ * one catalogue that covers every canonical slug in both locales.
+ */
+export function localiseRefusalParams(
+    params: Record<string, string> | null | undefined,
+    translateCommodity: (key: string) => string,
+): Record<string, string> | null {
+    if (!params) return null;
+    if (typeof params.commodity !== 'string' || !params.commodity) return params;
+    return { ...params, commodity: commodityLabel(translateCommodity, params.commodity) };
+}
+
 export function explainRefusal(
     code: string | null | undefined,
     params: Record<string, string> | null | undefined,
