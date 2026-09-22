@@ -40,6 +40,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { collectSourceFiles } from '../helpers/collect-files';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const ROOTS = ['src/app-layer', 'src/lib'];
@@ -116,29 +117,41 @@ export interface CopyHit {
     message: string;
 }
 
-/** Every user-facing English message thrown under `root`, minus coded ones. */
+/**
+ * Every user-facing English message thrown under `dirs`, minus coded ones.
+ *
+ * The file walk is `collectSourceFiles`, not a hand-rolled one. A guard's
+ * unit of work is a SELECTION, and an empty selection passes every
+ * assertion built on it — a sweep of this repo found 47 of 58 auditable
+ * guards dead that way, 37 of them the same gutted `walk`. That helper
+ * refuses to return an empty list, which is a stronger guarantee than the
+ * positive control below and is why the repo forbids a new hand-rolled
+ * collector (`file-collection-is-not-silently-empty`). I wrote one
+ * anyway; CI caught it.
+ *
+ * `floor` is 200 against a real population of 667, so an `exclude`
+ * predicate that ate most of the tree fails here rather than reporting a
+ * clean repo.
+ */
 export function collectServerAuthoredCopy(root: string, dirs: string[] = ROOTS): CopyHit[] {
+    const files = collectSourceFiles({
+        roots: dirs.map((d) => path.join(root, d)),
+        extensions: ['.ts'],
+        exclude: (rel) => /\.(test|spec)\.ts$/.test(rel),
+        floor: root === REPO_ROOT ? 200 : 1,
+    });
+
     const hits: CopyHit[] = [];
-    const walk = (dir: string): void => {
-        if (!fs.existsSync(dir)) return;
-        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-            const full = path.join(dir, entry.name);
-            if (entry.isDirectory()) {
-                walk(full);
-                continue;
-            }
-            if (!/\.ts$/.test(entry.name) || /\.(test|spec)\.ts$/.test(entry.name)) continue;
-            const src = fs.readFileSync(full, 'utf8');
-            for (const call of src.matchAll(THROWERS)) {
-                const message = call[3];
-                if (!looksLikeUserCopy(message)) continue;
-                const afterMessage = (call.index ?? 0) + call[0].length;
-                if (CARRIES_CODE.test(argsAfter(src, afterMessage))) continue; // coded — exempt
-                hits.push({ file: path.relative(root, full), message });
-            }
+    for (const full of files) {
+        const src = fs.readFileSync(full, 'utf8');
+        for (const call of src.matchAll(THROWERS)) {
+            const message = call[3];
+            if (!looksLikeUserCopy(message)) continue;
+            const afterMessage = (call.index ?? 0) + call[0].length;
+            if (CARRIES_CODE.test(argsAfter(src, afterMessage))) continue; // coded — exempt
+            hits.push({ file: path.relative(root, full), message });
         }
-    };
-    for (const d of dirs) walk(path.join(root, d));
+    }
     return hits;
 }
 
