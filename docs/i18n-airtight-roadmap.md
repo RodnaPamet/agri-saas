@@ -49,7 +49,10 @@ needs a burn-down cadence, not new machinery.
 
 ### Class B — invisible to every guard, and the largest
 
-**530 user-facing English messages authored in the server layer.**
+**502 user-facing English messages authored in the server layer** (530 when
+this was first measured; batch one drained crop-planning, evidence, farm-task,
+part of journal and the upload path, batch two the rest of journal plus field
+operations).
 
 That number is now ENFORCED by
 `tests/guards/no-server-authored-user-copy.test.ts`, and it supersedes
@@ -276,7 +279,7 @@ refilled while it is being drained.
    `tests/guards/no-server-authored-user-copy.test.ts`, a separately
    ratcheted class, the same way config props were split from JSX rather
    than folded into one inflated number.
-2. ~~Baseline it at the measured count.~~ **DONE** — 530, with a drift
+2. ~~Baseline it at the measured count.~~ **DONE** — 530, now 502, with a drift
    sentinel so slack cannot accumulate and a positive control so a broken
    walk cannot read as a clean repo. A throw carrying a CODE is exempt,
    so the ratchet rewards the migration rather than only forbidding
