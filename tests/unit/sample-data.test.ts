@@ -7,8 +7,12 @@
 import type { RequestContext } from '@/app-layer/types';
 
 const db = {
-    location: { findFirst: jest.fn(), create: jest.fn(), updateMany: jest.fn() },
-    parcel: { createMany: jest.fn(), findFirst: jest.fn(), updateMany: jest.fn() },
+    location: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
+    parcel: { create: jest.fn(), createMany: jest.fn(), findFirst: jest.fn(), updateMany: jest.fn() },
+    // Parcel.geometry is an `Unsupported` PostGIS column, so the usecase sets
+    // it through a raw UPDATE. Mocked here as a bare fn rather than under a
+    // model key — the reset loop below handles both shapes.
+    $executeRaw: jest.fn(),
     inventoryLot: { create: jest.fn(), updateMany: jest.fn() },
     logEntry: { createMany: jest.fn(), updateMany: jest.fn() },
     item: { findFirst: jest.fn(), create: jest.fn() },
@@ -24,6 +28,13 @@ jest.mock('@/lib/db-context', () => ({
     runInTenantContext: (_ctx: unknown, cb: (d: unknown) => unknown) => cb(db),
 }));
 jest.mock('@/lib/prisma', () => ({ __esModule: true, default: {} }));
+// Bounds come from the SAME helper the spatial import uses; the usecase does
+// not hand-roll a bbox, so the unit test asserts it is CALLED and the
+// integration test proves the value is real.
+const boundsForLocation = jest.fn();
+jest.mock('@/app-layer/repositories/ParcelRepository', () => ({
+    ParcelRepository: { boundsForLocation: (...a: unknown[]) => boundsForLocation(...a) },
+}));
 const logEvent = jest.fn();
 jest.mock('@/app-layer/events/audit', () => ({ logEvent: (...args: unknown[]) => logEvent(...args) }));
 
@@ -47,8 +58,19 @@ const ctx = {
 
 beforeEach(() => {
     for (const model of Object.values(db)) {
+        // `$executeRaw` sits at the top level as a bare mock; the model keys
+        // are objects of mocks. Reset both rather than assuming one shape.
+        if (typeof model === 'function') {
+            (model as jest.Mock).mockReset();
+            continue;
+        }
         for (const fn of Object.values(model)) (fn as jest.Mock).mockReset();
     }
+    boundsForLocation.mockReset();
+    boundsForLocation.mockResolvedValue([24.6, 43.45, 24.6037, 43.4536]);
+    db.parcel.create.mockImplementation(({ data }: { data: { name: string } }) =>
+        Promise.resolve({ id: `p-${data.name}` }),
+    );
     logEvent.mockReset();
 });
 
@@ -103,11 +125,29 @@ describe('loadSampleData', () => {
             }),
         );
         // Every parcel tagged + tenant-scoped + linked to the new location.
-        const parcelArg = db.parcel.createMany.mock.calls[0][0];
-        expect(parcelArg.data.length).toBeGreaterThanOrEqual(2);
-        for (const p of parcelArg.data) {
-            expect(p).toMatchObject({ tenantId: 't1', locationId: 'loc-new', isSampleData: true });
+        // Created one at a time now (not `createMany`) because each needs its
+        // id immediately for the geometry UPDATE.
+        const parcelCalls = db.parcel.create.mock.calls;
+        expect(parcelCalls.length).toBeGreaterThanOrEqual(2);
+        for (const [arg] of parcelCalls) {
+            expect(arg.data).toMatchObject({ tenantId: 't1', locationId: 'loc-new', isSampleData: true });
         }
+
+        // …and every one of them gets an outline. Without geometry the sample
+        // location cannot draw a map, a parcel tap has nothing to hit, and the
+        // vegetation overlay clips to nothing — three features that then look
+        // broken rather than empty.
+        expect(db.$executeRaw).toHaveBeenCalledTimes(parcelCalls.length);
+
+        // Bounds come from the shared helper, not a hand-written bbox beside
+        // the polygons — a second source for the same extent is how an
+        // imported location and a sample one end up framing differently.
+        expect(boundsForLocation).toHaveBeenCalled();
+        expect(db.location.update).toHaveBeenCalledWith(
+            expect.objectContaining({
+                data: { boundsJson: [24.6, 43.45, 24.6037, 43.4536] },
+            }),
+        );
         // Lot tagged + tenant-scoped, and actually HOLDING something — a
         // zero-quantity lot is read by the calculator and contributes
         // nothing, which is indistinguishable from no sample data.
