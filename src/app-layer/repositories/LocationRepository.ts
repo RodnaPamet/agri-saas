@@ -21,7 +21,28 @@ export interface LocationListParams {
     filters?: LocationFilters;
 }
 
-const OWNER_SELECT = { select: { id: true, name: true, email: true } } as const;
+/**
+ * The owner reference embedded in every location read.
+ *
+ * `email` is NOT projected, and its absence is the point. Nothing in the
+ * codebase reads `owner.email` — the only owner field any surface renders is
+ * `name` — while `/locations` is on the `PERSISTABLE_PATHS` allowlist in
+ * `swr/persistent-cache.ts`, so every field here is written to plaintext
+ * localStorage on an operator's phone. A colleague's email address was
+ * reaching disk for no consumer at all.
+ *
+ * That is the `ParcelLease.lessorName` shape CLAUDE.md already records:
+ * `User.email` is stored as `emailHash` + an encrypted column precisely
+ * BECAUSE it is personal data, and it still landed in clear on a device that
+ * can be lost, sold or handed on. Encryption at rest protects the row, not
+ * the copy a client keeps.
+ *
+ * `UserRefSchema.email` is `.nullable().optional()`, so omitting it breaks no
+ * documented contract. If a surface ever genuinely needs it, add it to that
+ * surface's own projection rather than to this shared one — and decide, at
+ * that point, whether the response is acceptable on a phone.
+ */
+const OWNER_SELECT = { select: { id: true, name: true } } as const;
 
 /**
  * Location repository — mirrors AssetRepository (tenant-scoped CRUD,
