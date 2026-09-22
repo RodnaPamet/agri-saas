@@ -166,8 +166,15 @@ export function collectServerAuthoredCopy(root: string, dirs: string[] = ROOTS):
  * first letter and 15+ characters. Both were honest for their own
  * definition; this one is the definition that is now ENFORCED, so it is
  * the number that means something.
+ *
+ * 530 → 502: batch two coded the journal (the legally-filed register) and
+ * field-operation (the spray recording that fills it). 29 call sites gained
+ * a code and the count fell by 28 — the 29th is a ternary message, which
+ * `THROWERS` never matched, so it was drained without ever being counted.
+ * That gap is worth knowing: the ratchet measures literal-message throws,
+ * so a computed message is user-facing English it cannot see.
  */
-const CURRENT_BASELINE = 530;
+const CURRENT_BASELINE = 502;
 
 /** Slack tolerated before the sentinel demands the baseline be lowered. */
 const DRIFT_ALLOWANCE = 15;

@@ -15,7 +15,7 @@ import { advancePlantingStatusForLinks } from './crop-planning';
 import { emitAutomationEvent } from '../automation';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
-import { badRequest, codedBadRequest, notFound, staleData } from '@/lib/errors/types';
+import { codedBadRequest, codedNotFound, staleData } from '@/lib/errors/types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { createLogEntryWithAudit } from './journal-write';
 import { sanitizePlainText, sanitizeRichTextHtml } from '@/lib/security/sanitize';
@@ -179,7 +179,7 @@ export async function getLogEntry(ctx: RequestContext, id: string) {
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
         const entry = await JournalRepository.getById(db, ctx, id);
-        if (!entry) throw notFound('Journal entry not found');
+        if (!entry) throw codedNotFound('JOURNAL_ENTRY_NOT_FOUND', 'Journal entry not found');
 
         // Resolve the field-operation linkage for the БАБХ "Дневник (PDF)"
         // action on the journal detail: an INPUT_APPLICATION line carries
@@ -249,7 +249,7 @@ async function createLogEntryImpl(
     // Sanitize at the boundary (Epic D.2): title is single-line plain
     // text; notes is TipTap rich-text HTML.
     const title = sanitizePlainText(data.title);
-    if (!title) throw badRequest('Title is required');
+    if (!title) throw codedBadRequest('JOURNAL_TITLE_REQUIRED', 'Title is required');
     const notes = data.notes != null ? sanitizeRichTextHtml(data.notes) : null;
 
     const input: CreateLogEntryInput = {
@@ -437,12 +437,12 @@ export async function updateLogEntry(
     };
 
     if (input.title !== undefined && !input.title) {
-        throw badRequest('Title is required');
+        throw codedBadRequest('JOURNAL_TITLE_REQUIRED', 'Title is required');
     }
 
     return runInTenantContext(ctx, async (db) => {
         const existing = await JournalRepository.getById(db, ctx, id);
-        if (!existing) throw notFound('Journal entry not found');
+        if (!existing) throw codedNotFound('JOURNAL_ENTRY_NOT_FOUND', 'Journal entry not found');
 
         await assertLinksValid(db, ctx, data.locationIds, data.equipmentIds);
 
@@ -509,7 +509,7 @@ export async function deleteLogEntry(ctx: RequestContext, id: string) {
 
     return runInTenantContext(ctx, async (db) => {
         const existing = await JournalRepository.getById(db, ctx, id);
-        if (!existing) throw notFound('Journal entry not found');
+        if (!existing) throw codedNotFound('JOURNAL_ENTRY_NOT_FOUND', 'Journal entry not found');
 
         await JournalRepository.softDelete(db, ctx, id);
 
@@ -544,8 +544,8 @@ export async function restoreLogEntry(ctx: RequestContext, id: string) {
 
     return runInTenantContext(ctx, async (db) => {
         const record = await JournalRepository.getByIdWithDeleted(db, ctx, id);
-        if (!record) throw notFound('Journal entry not found');
-        if (!record.deletedAt) throw notFound('Journal entry is not deleted');
+        if (!record) throw codedNotFound('JOURNAL_ENTRY_NOT_FOUND', 'Journal entry not found');
+        if (!record.deletedAt) throw codedNotFound('JOURNAL_ENTRY_NOT_DELETED', 'Journal entry is not deleted');
 
         const restored = await JournalRepository.restore(db, ctx, id);
 
@@ -576,8 +576,8 @@ export async function purgeLogEntry(ctx: RequestContext, id: string) {
 
     return runInTenantContext(ctx, async (db) => {
         const record = await JournalRepository.getByIdWithDeleted(db, ctx, id);
-        if (!record) throw notFound('Journal entry not found');
-        if (!record.deletedAt) throw notFound('Journal entry must be soft-deleted before purging');
+        if (!record) throw codedNotFound('JOURNAL_ENTRY_NOT_FOUND', 'Journal entry not found');
+        if (!record.deletedAt) throw codedNotFound('JOURNAL_ENTRY_NOT_SOFT_DELETED', 'Journal entry must be soft-deleted before purging');
 
         await JournalRepository.purge(db, ctx, id);
 
@@ -665,7 +665,7 @@ export async function uploadLogEntryPhoto(
 
     const { link, fileRecordId, isImage, alreadyLinked } = await runInTenantContext(ctx, async (db) => {
         const entry = await JournalRepository.getById(db, ctx, logEntryId);
-        if (!entry) throw notFound('Journal entry not found');
+        if (!entry) throw codedNotFound('JOURNAL_ENTRY_NOT_FOUND', 'Journal entry not found');
 
         // Exactly-once backstop for the concurrent-flush race: on reconnect the
         // SAME queued photo is drained by BOTH the in-page sender AND the SW
@@ -783,7 +783,7 @@ export async function attachLogEntryFile(
 
     return runInTenantContext(ctx, async (db) => {
         const entry = await JournalRepository.getById(db, ctx, logEntryId);
-        if (!entry) throw notFound('Journal entry not found');
+        if (!entry) throw codedNotFound('JOURNAL_ENTRY_NOT_FOUND', 'Journal entry not found');
 
         const file = await FileRepository.getById(db, ctx, fileRecordId);
         if (!file) throw codedBadRequest('INVALID_FILE', 'File not found or belongs to a different tenant');
@@ -819,7 +819,7 @@ export async function detachLogEntryFile(ctx: RequestContext, logEntryId: string
 
     return runInTenantContext(ctx, async (db) => {
         const link = await JournalRepository.getFileLink(db, ctx, logEntryId, fileRecordId);
-        if (!link) throw notFound('Journal entry file link not found');
+        if (!link) throw codedNotFound('JOURNAL_FILE_LINK_NOT_FOUND', 'Journal entry file link not found');
 
         await JournalRepository.detachFile(db, ctx, logEntryId, fileRecordId);
 
