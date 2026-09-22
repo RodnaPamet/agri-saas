@@ -212,6 +212,48 @@ that makes incremental adoption safe.
 So the work is: apply an existing, proven pattern to the error path, and
 add the guard that keeps it applied.
 
+## An adjacent class, recorded because it is the same shape
+
+Not a translation problem — a FORMAT one — but it belongs here because it
+fails identically: **a value authored in one representation and read by a
+client that assumed another, invisible until something displayed it.**
+
+`LogEntry.notes` is rich-text HTML. `journal.ts:245` stores
+`sanitizeRichTextHtml(data.notes)`, the usecase docblock says "title →
+plain text, notes → rich-text HTML", and the web renders it through
+`dangerouslySetInnerHTML`. The iOS app displayed it for the first time in
+2026-09 and printed the tags:
+
+```
+Бележки
+<p>Sample input-application record.</p>
+```
+
+Measured on live data: of the entries carrying notes, **2 of 2 contain
+HTML**. That is the format, not an outlier. It surfaced only when a
+screen finally displayed the field — `JournalRow` shows title, type, date
+and status and never touched it. **The first client to display a field is
+the first chance to learn what is in it.**
+
+Two consequences worth keeping, both measured against the real sanitiser:
+
+- **A literal `<` is escaped, not lost.** `температура < 5` stores as
+  `температура &lt; 5`, so the server is safe — but any client that
+  flattens the HTML must DECODE ENTITIES or it shows `&lt;` on screen.
+  `htmlNotesToPlainText` (the ДНЕВНИК path) already does.
+- **Newlines survive storage and collapse on render.** `ред едно\nред
+  две` passes the sanitiser unchanged, then renders as one line under
+  `prose` (no `whitespace-pre-line`). A multi-paragraph note typed on a
+  plain-text client is stored faithfully and displayed as a run-on
+  paragraph on the web — both clients defensible, the record different in
+  each.
+
+The resolution is the same principle as the rest of this document: the
+field has a declared representation, so **the producer emits it** rather
+than each consumer guessing. Normalising server-side would mean deciding
+whether a `\n` inside an HTML field is a paragraph break, and applying
+that guess retroactively to rows of a legally-filed register.
+
 ## Roadmap
 
 ### Phase 1 — stop the bleeding (the guard comes first)
