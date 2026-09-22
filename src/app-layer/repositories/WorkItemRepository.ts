@@ -338,6 +338,25 @@ export class WorkItemRepository {
         return db.task.update({ where: { id }, data: updateData });
     }
 
+    /**
+     * The task as `setStatus` returns it — scalar columns, no relations.
+     *
+     * Exists so the ALREADY-APPLIED path of `setTaskStatus` can answer with
+     * the same shape as the path that writes. It previously returned the row
+     * loaded by `getById`, which carries `assignee`, `createdBy`, `reviewer`,
+     * `comments`, `links`, `watchers` and `_count` — so a replay answered with
+     * 32 keys where a real change answered with 25 (measured by the native
+     * client, 2026-09-22).
+     *
+     * That divergence is worse than it sounds: the replay is the path that
+     * only runs when the connection is bad, so the FATTER payload was served
+     * exactly when bandwidth was worst, and on the branch least likely to be
+     * exercised in testing.
+     */
+    static async findBareById(db: PrismaTx, ctx: RequestContext, id: string) {
+        return db.task.findFirst({ where: { id, tenantId: ctx.tenantId } });
+    }
+
     static async setStatus(db: PrismaTx, ctx: RequestContext, id: string, status: string, resolution?: string | null) {
         const existing = await db.task.findFirst({ where: { id, tenantId: ctx.tenantId } });
         if (!existing) return null;

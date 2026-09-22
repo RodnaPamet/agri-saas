@@ -389,7 +389,11 @@ export async function setTaskStatus(ctx: RequestContext, taskId: string, status:
         const fromStatus = existing.status;
 
         // A replay of a write that already landed — see isAlreadyApplied.
-        if (isAlreadyApplied(existing, status, resolution)) return existing;
+        // Re-read BARE so the replay answers in the same shape as the write;
+        // `existing` came from getById and carries every relation.
+        if (isAlreadyApplied(existing, status, resolution)) {
+            return WorkItemRepository.findBareById(db, ctx, taskId);
+        }
 
         // Audit Coherence S8 (2026-05-24) — state-machine gate runs
         // BEFORE the type-relevance check. Catches no-op + illegal
