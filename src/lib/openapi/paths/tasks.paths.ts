@@ -35,32 +35,42 @@ const TaskParams = z.object({
 });
 
 /**
- * The single most important sentence in this file.
+ * `GET /tasks` returns one key in both branches — and it did not until
+ * this change, which is the reason the comment is this long.
  *
- * `GET /tasks` returns TWO DIFFERENT SHAPES, keyed differently, decided by
- * whether the request carries pagination:
+ *     GET /tasks            -> { rows, truncated }
+ *     GET /tasks?limit=50   -> { rows, nextCursor }
  *
- *     GET /tasks              -> { rows: Task[], truncated: boolean }
- *     GET /tasks?limit=50     -> { items: Task[], pageInfo: {...} }
+ * Documenting this endpoint is what surfaced the divergence: the paginated
+ * branch used to return the use case's `{ items, pageInfo }` verbatim while
+ * the bare branch returned `{ rows, truncated }`. Two shapes from one
+ * endpoint, keyed differently.
  *
- * `rows` and `items`. Same endpoint. A client that decodes one and then
- * adds `?limit` to the URL gets an empty list and no error, because the
- * key it is looking for is simply absent — the failure is a screen that
- * renders "no tasks" over a tenant that has hundreds.
+ * What makes that worse than an inconsistency is WHEN it springs. A client
+ * decodes `rows`, everything works, and months later someone adds `?limit`
+ * for paging — a change with nothing to do with decoding. The key silently
+ * becomes `items`, the array is absent, and the screen shows "no tasks"
+ * over a tenant with hundreds. No error, no decode failure, no log line.
+ * The bug is not in the code that adds pagination; it was planted in the
+ * decoder and detonates there.
  *
- * Note also that `/journal` splits the same way but the OTHER way round:
- * its paginated branch is `{ rows, nextCursor }`. So "the paginated
- * branch is keyed `rows`" is true there and false here. Read this per
- * endpoint; do not carry the answer across.
+ * Nothing consumed the old shape — `useCursorPagination`, this app's own
+ * accumulator, reads `rows`/`nextCursor`, so `/tasks` was not paginable by
+ * the client that would have paginated it. The journal route already
+ * reshaped for exactly that reason; tasks now matches.
+ *
+ * The difference that remains is honest and worth reading: `truncated`
+ * means rows were DROPPED by a backfill cap and the UI must say so;
+ * `nextCursor` means there are more and here is how to ask.
  */
 const LIST_SHAPE_WARNING =
-    'TWO RESPONSE SHAPES. Without `limit`/`cursor`: `{ rows, truncated }` — a ' +
-    'backfill-capped list where `truncated: true` means rows were dropped and the ' +
-    'UI must say so. With `limit` or `cursor`: `{ items, pageInfo }` — note the key ' +
-    'is `items`, NOT `rows`. A client that decodes one shape and later adds `?limit` ' +
-    'silently reads an absent key and renders an empty list over a full tenant. ' +
-    '`/journal` splits the same way but keys its paginated branch `rows`, so the ' +
-    'answer does not carry between endpoints.';
+    'Both branches are keyed `rows`. Without `limit`/`cursor`: `{ rows, truncated }` — a ' +
+    'backfill-capped list where `truncated: true` means rows were DROPPED and the UI must ' +
+    'say so, not silently show fewer. With `limit` or `cursor`: `{ rows, nextCursor }`, the ' +
+    'shape `useCursorPagination` consumes. Until 2026-09 the paginated branch returned ' +
+    '`{ items, pageInfo }` instead, so a client that decoded `rows` and later added `?limit` ' +
+    'read an absent key and rendered an empty list with no error. If you are reading an older ' +
+    'client, check which key it expects before trusting it.';
 
 export function registerTaskPaths(registry: OpenAPIRegistry): void {
     op(registry, {
