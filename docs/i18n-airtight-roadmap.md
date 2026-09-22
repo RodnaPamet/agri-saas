@@ -49,7 +49,17 @@ needs a burn-down cadence, not new machinery.
 
 ### Class B — invisible to every guard, and the largest
 
-**382 user-facing English messages authored in the server layer.**
+**530 user-facing English messages authored in the server layer.**
+
+That number is now ENFORCED by
+`tests/guards/no-server-authored-user-copy.test.ts`, and it supersedes
+the 382 this document carried first. Both were honest for their own
+definition — 382 came from a grep requiring a capital first letter and
+15+ characters; 530 counts any message of two or more latin words that is
+not an ALL-CAPS identifier. **The enforced definition is the one that
+means anything**, so it is the one quoted here.
+
+By helper, on the narrower count that produced 382:
 
 | helper | call sites |
 |---|---|
@@ -261,11 +271,16 @@ that guess retroactively to rows of a legally-filed register.
 Do this **before** translating anything. Otherwise the backlog is
 refilled while it is being drained.
 
-1. Widen the hard-coded-string scan to `src/app-layer/` and `src/lib/`,
-   counting user-facing throws — a new, separately ratcheted class, the
-   same way config props were split from JSX rather than folded into one
-   inflated number.
-2. Baseline it at the measured count. It may only fall.
+1. ~~Widen the hard-coded-string scan to `src/app-layer/` and `src/lib/`,
+   counting user-facing throws~~ — **DONE**:
+   `tests/guards/no-server-authored-user-copy.test.ts`, a separately
+   ratcheted class, the same way config props were split from JSX rather
+   than folded into one inflated number.
+2. ~~Baseline it at the measured count.~~ **DONE** — 530, with a drift
+   sentinel so slack cannot accumulate and a positive control so a broken
+   walk cannot read as a clean repo. A throw carrying a CODE is exempt,
+   so the ratchet rewards the migration rather than only forbidding
+   growth.
 3. Give `badRequest` / `notFound` / `forbidden` / `conflict` an optional
    `code` parameter. Optional is deliberate: a required one is a 382-site
    change that cannot be reviewed.
