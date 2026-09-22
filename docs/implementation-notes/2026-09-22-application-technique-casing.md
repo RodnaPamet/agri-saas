@@ -46,7 +46,23 @@ and how to reverse it.
 **To reverse:** `UPDATE "Task" SET "applicationTechnique" = 'Dron' WHERE id =
 'cmr3vmtlw000001p1l9j2yqj9';`
 
-## What this does NOT fix, deliberately
+## Superseded, same day
+
+Both carve-outs below were closed within hours, by owner decision. Kept because
+the reasoning for leaving them open is still the reasoning for how they were
+closed — and a note whose "deliberately not fixed" section is silently wrong is
+worse than no note.
+
+- **`dron` → `drone`.** Owner chose to align the two rows with the vocabulary
+  slug AND localise the register, so the ДНЕВНИК now prints **Дрон**. That is a
+  change to recorded CONTENT, which is exactly why it needed an instruction
+  rather than an inference.
+- **Recurrence.** `applicationTechnique` is normalised on write now (trimmed and
+  lower-cased) so the column cannot hold `Dron` beside `dron` again. The field
+  stays free text — the vocabulary is a picker, not a constraint, and
+  production already proved values outside it occur.
+
+## What this did NOT fix at the time, deliberately
 
 **`dron` is not the vocabulary slug.** The seven options the UI offers are
 `boom · ground · airblast · knapsack · spreader · drone · other` — the slug is
