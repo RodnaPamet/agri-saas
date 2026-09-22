@@ -42,10 +42,66 @@ import { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
+import { Prisma } from '@prisma/client';
+import type { Polygon } from 'geojson';
+import { repairedGeometrySql, areaHectaresNonNullSql } from '@/lib/db/geo';
+import { ParcelRepository } from '../repositories/ParcelRepository';
 
 /** Marketing-grade but illustrative — one field, a few parcels. */
 const SAMPLE_LOCATION_NAME = 'Sample field';
 const SAMPLE_PARCEL_NAMES = ['North block', 'South block', 'River strip'];
+
+/**
+ * SYNTHETIC parcel outlines — invented rectangles, not anyone's real field.
+ *
+ * Without geometry a sample location cannot demonstrate the product at all:
+ * the schematic map, the parcel tap and the whole vegetation-index overlay
+ * have nothing to draw, and `boundsJson` stays null so a client frames the
+ * location at its no-data fallback. That was the state until now — three
+ * parcels, zero drawable — and it reads as a broken map rather than as
+ * absent data.
+ *
+ * Placed on the Danubian plain near Dolna Mitropolia: arable, unremarkable,
+ * and deliberately nowhere near any tenant's real holdings. Real parcel
+ * geometry must never be committed to this repository — it is public.
+ *
+ * **They total ~12 ha on purpose.** `SAMPLE_AREA_M2` declares a 12 ha
+ * planting and the calculator's 60 t standing crop is 12 ha x 5 t/ha, so
+ * parcels of any other size would make the sample data contradict its own
+ * arithmetic on the one screen a reader is most likely to check it against.
+ * Roughly 4 ha each: two blocks and a narrower strip, sharing edges the way
+ * real blocks do.
+ *
+ * Rings are closed and wound counter-clockwise; `repairedGeometrySql` runs
+ * `ST_MakeValid` over them regardless, and PostGIS computes the stored
+ * `areaHa` from the polygon itself rather than from arithmetic here.
+ */
+const SAMPLE_PARCEL_GEOMETRY: readonly Polygon[] = [
+    // North block — ~4.05 ha
+    {
+        type: 'Polygon',
+        coordinates: [[
+            [24.6000, 43.4518], [24.6025, 43.4518],
+            [24.6025, 43.4536], [24.6000, 43.4536], [24.6000, 43.4518],
+        ]],
+    },
+    // South block — ~4.05 ha, sharing the north block's southern edge
+    {
+        type: 'Polygon',
+        coordinates: [[
+            [24.6000, 43.4500], [24.6025, 43.4500],
+            [24.6025, 43.4518], [24.6000, 43.4518], [24.6000, 43.4500],
+        ]],
+    },
+    // River strip — ~3.89 ha, narrower and taller, along the eastern edge
+    {
+        type: 'Polygon',
+        coordinates: [[
+            [24.6025, 43.4500], [24.6037, 43.4500],
+            [24.6037, 43.4536], [24.6025, 43.4536], [24.6025, 43.4500],
+        ]],
+    },
+];
 const SAMPLE_CROP_NAME = 'Пшеница';
 /** Must be a slug the GLOBAL market series actually carries, or the
  *  calculator prices nothing and reports a refusal instead of a figure.
@@ -119,16 +175,46 @@ export async function loadSampleData(ctx: RequestContext): Promise<{ created: bo
             select: { id: true },
         });
 
-        // ── 2-3 Parcels (illustrative names; geometry is nullable) ──
-        await db.parcel.createMany({
-            data: SAMPLE_PARCEL_NAMES.map((name, i) => ({
-                tenantId: t,
-                locationId: location.id,
-                name,
-                cropType: i === 0 ? 'Wheat' : i === 1 ? 'Barley' : 'Grass',
-                isSampleData: true,
-            })),
-        });
+        // ── 2-3 Parcels, WITH synthetic outlines ──
+        //
+        // Created one at a time rather than via `createMany` because the row
+        // id is needed immediately to write `geometry`: it is an `Unsupported`
+        // PostGIS column, so Prisma cannot set it and `createMany` returns no
+        // ids. Same create-then-raw-UPDATE shape `ParcelRepository` uses for
+        // a real import — `areaHa` is computed BY POSTGIS from the polygon,
+        // never hand-written, so the stored area cannot drift from the shape.
+        for (const [i, name] of SAMPLE_PARCEL_NAMES.entries()) {
+            const parcelRow = await db.parcel.create({
+                data: {
+                    tenantId: t,
+                    locationId: location.id,
+                    name,
+                    cropType: i === 0 ? 'Wheat' : i === 1 ? 'Barley' : 'Grass',
+                    isSampleData: true,
+                },
+                select: { id: true },
+            });
+            const geomSql = repairedGeometrySql(SAMPLE_PARCEL_GEOMETRY[i]);
+            await db.$executeRaw(
+                Prisma.sql`UPDATE "Parcel"
+                    SET "geometry" = ${geomSql},
+                        "areaHa" = ${areaHectaresNonNullSql(geomSql)}
+                    WHERE "id" = ${parcelRow.id} AND "tenantId" = ${t}`,
+            );
+        }
+
+        // Location bounds, derived from the parcels just written rather than
+        // from a bbox spelled out beside the polygons — the same call the
+        // spatial import uses, so a sample location frames exactly like an
+        // imported one. Null bounds is what left a client with nothing to
+        // frame and sent it to its no-data fallback.
+        const sampleBounds = await ParcelRepository.boundsForLocation(db, ctx, location.id);
+        if (sampleBounds) {
+            await db.location.update({
+                where: { id: location.id },
+                data: { boundsJson: sampleBounds as unknown as Prisma.InputJsonValue },
+            });
+        }
 
         // ── One InventoryLot of HARVESTED GRAIN ──
         //
