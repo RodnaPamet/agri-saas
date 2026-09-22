@@ -68,6 +68,8 @@ afterAll(async () => {
     try {
         await prisma.$transaction(async (tx) => {
             await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
+            await tx.$executeRawUnsafe(`DELETE FROM "TaskWatcher" WHERE "tenantId" = $1`, TENANT_ID);
+            await tx.$executeRawUnsafe(`DELETE FROM "Task" WHERE "tenantId" = $1`, TENANT_ID);
             await tx.$executeRawUnsafe(`DELETE FROM "Location" WHERE "tenantId" = $1`, TENANT_ID);
         });
     } catch {
@@ -122,5 +124,45 @@ describeFn('what reaches a device (DB)', () => {
         expect(watchers![0].user?.name).toBe('Иван Собственик');
         expect(Object.keys(watchers![0].user!)).not.toContain('email');
         expect(JSON.stringify(watchers)).not.toContain(EMAIL);
+    });
+
+    it('the task LIST keeps assignee.email — deliberately, by owner decision', async () => {
+        // The counterweight to the two tests above, and the reason this file
+        // is about a RULE rather than a purge.
+        //
+        // `/farm-tasks` is on the same allowlist and ships `assignee.email` to
+        // the same disk. It was examined alongside the other two on
+        // 2026-09-22 and KEPT, by the owner, because unlike them it is read:
+        // the list search matches on it, and it is the display fallback when a
+        // name is null on both the web and the native client.
+        //
+        // Asserting its PRESENCE is the point. Without this, the next sweep
+        // for PII on persisted paths finds an email in a cached payload, reads
+        // #1062 removing two of exactly that shape, and removes this one too —
+        // silently breaking search and both clients' fallback. A decision
+        // nothing enforces is a decision that gets re-made by someone with
+        // less context.
+        //
+        // Executed, not scanned — same reason as the two above: a structural
+        // check on the select passes the moment the shape moves.
+        const c = ctx();
+        const task = await prisma.task.create({
+            data: {
+                tenantId: TENANT_ID,
+                title: `Assignee probe ${TAG}`,
+                createdByUserId: ownerId,
+                assigneeUserId: ownerId,
+            },
+            select: { id: true },
+        });
+
+        const rows = await runInTenantContext(c, (db) => WorkItemRepository.list(db, c));
+        const row = rows.find((r) => r.id === task.id) as
+            | { assignee?: Record<string, unknown> | null }
+            | undefined;
+
+        expect(row?.assignee).toBeTruthy();
+        expect(row!.assignee!.name).toBe('Иван Собственик');
+        expect(row!.assignee!.email).toBe(EMAIL);
     });
 });
