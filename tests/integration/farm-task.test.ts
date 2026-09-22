@@ -174,6 +174,21 @@ describeFn('farm tasks (DB)', () => {
         expect(replayed!.status).toBe('IN_PROGRESS');
     });
 
+    test('a listed row carries the field the list is SORTED by', async () => {
+        // `WorkItemRepository.list` orders by `[{ priority: 'asc' }, …]` and
+        // `taskListSelect` did not project `priority`, so every caller got rows
+        // ordered by something it could not see. The native client found it by
+        // having one urgency signal where the product has two: severity alone,
+        // with no way to show or re-sort by priority.
+        //
+        // This asserts the VALUE, not the key's presence — `toHaveProperty`
+        // would pass on an undefined a missing projection also produces.
+        const queue = await listMyFarmTasks(operatorCtx());
+        const row = queue.find((t) => t.id === taskId);
+        expect(row).toBeDefined();
+        expect((row as { priority?: string }).priority).toBe('P1');
+    });
+
     test('an invalid (foreign-tenant) equipment link is rejected with no orphan task', async () => {
         const ctx = ownerCtx();
         const before = await prisma.task.count({ where: { tenantId: TENANT_ID } });

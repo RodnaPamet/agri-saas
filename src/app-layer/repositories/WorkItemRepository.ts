@@ -44,6 +44,15 @@ const taskListSelect = {
     title: true,
     type: true,
     severity: true,
+    // `priority` is projected because the list is ORDERED by it
+    // (`[{ priority: 'asc' }, { createdAt: 'desc' }]`), is filterable
+    // (`where.priority`) and is indexed for exactly that
+    // (`@@index([tenantId, priority, createdAt])`). Omitting it meant the
+    // server sorted every list by a field no caller could see, so a client
+    // could neither show the reason for the order nor re-sort on it — the
+    // native client found this by having one urgency signal (severity) where
+    // the product has two.
+    priority: true,
     status: true,
     dueAt: true,
     createdAt: true,

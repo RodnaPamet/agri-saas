@@ -193,20 +193,55 @@ function decryptOnRead(
  * of the model. We map back here so `decryptResultDeep` can locate
  * the right manifest entry.
  *
- * Add a row when you introduce a managed model with a different
- * relation key. Generic walking of every key is intentionally NOT
- * done — it would over-eagerly inspect non-PII relations on every
- * read, which is a perf regression for a tiny ergonomic gain.
+ * Generic walking of every key is intentionally NOT done — it would
+ * over-eagerly inspect non-PII relations on every read, which is a perf
+ * regression for a tiny ergonomic gain. So this is an ALLOWLIST, and an
+ * allowlist of relation keys has exactly one failure mode: a key nobody
+ * added returns CIPHERTEXT to the caller, silently, because a missing
+ * entry is indistinguishable from a relation with no PII on it.
+ *
+ * That is not hypothetical. `assignee` was mapped and `createdBy` was not,
+ * so the task LIST decrypted the assignee's name while the task DETAIL
+ * rendered `v1:FTDt/A1v/…` on screen under "Създадена от" — 54 characters
+ * of base64 where a colleague's name belongs. Measured on a live tenant by
+ * the native client, 2026-09-22.
+ *
+ * The instruction that used to sit here — "add a row when you introduce a
+ * managed model with a different relation key" — was the whole defence, and
+ * it failed the ordinary way instructions fail. Twelve User relations had
+ * accumulated unmapped. `tests/guards/pii-relation-key-coverage.test.ts`
+ * now DERIVES this table's required contents from the Prisma schema and
+ * fails in both directions, so forgetting is no longer possible and a dead
+ * entry cannot linger either: `inviter`, `invitedByUser` and `creator` were
+ * all mapped here and none of the three exists in the schema at all.
+ *
+ * Exported for that guard.
  */
-const RELATION_KEY_TO_MODEL: Record<string, string> = {
-    user: 'User',
-    inviter: 'User',
-    invitedBy: 'User',
-    invitedByUser: 'User',
-    creator: 'User',
-    owner: 'User',
+export const RELATION_KEY_TO_MODEL: Record<string, string> = {
+    // --- User ---
+    actor: 'User',
     assignee: 'User',
-    identityLink: 'UserIdentityLink',
+    closedBy: 'User',
+    completedBy: 'User',
+    createdBy: 'User',
+    decidedBy: 'User',
+    deletedBy: 'User',
+    executedBy: 'User',
+    invitedBy: 'User',
+    owner: 'User',
+    ownerUser: 'User',
+    reviewer: 'User',
+    subjectUser: 'User',
+    target: 'User',
+    uploadedBy: 'User',
+    user: 'User',
+    // --- the other managed models, reached as back-references off User ---
+    // `identityLink` was mapped for years and is not a relation key; the
+    // field is `identityLinks`, a list. A singular guess never matched, so
+    // that entry decrypted nothing from the day it was written.
+    identityLinks: 'UserIdentityLink',
+    notificationOutbox: 'NotificationOutbox',
+    accounts: 'Account',
 };
 
 /**
@@ -569,6 +604,15 @@ export function withPiiEncryptionExtension<T extends { $extends: any }>(
  * Useful for testing and introspection.
  * @internal
  */
+/**
+ * The models this middleware manages. Exported so
+ * `tests/guards/pii-relation-key-coverage.test.ts` can derive which relation
+ * keys MUST appear in `RELATION_KEY_TO_MODEL` straight from the Prisma
+ * schema, rather than from a second hand-maintained list that could drift
+ * from this one exactly the way the relation map drifted from the schema.
+ */
+export const PII_MANAGED_MODELS: readonly string[] = Object.keys(PII_FIELD_MAP);
+
 export function _getPiiFieldMap(model: string): readonly PiiFieldSpec[] | undefined {
     return PII_FIELD_MAP[model];
 }
