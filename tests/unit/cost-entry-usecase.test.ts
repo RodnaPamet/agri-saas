@@ -462,11 +462,9 @@ describe('uploadCostInvoice', () => {
 
     it('REJECTS a disallowed MIME type before writing anything', async () => {
         const exe = new File([new Uint8Array([1])], 'x.exe', { type: 'application/x-msdownload' });
-        // `badRequest(code, detail)` puts the CODE on `.message`, so match
-        // the code rather than the prose — the prose is the second arg.
-        await expect(uploadCostInvoice(ctx, 'ce-1', exe)).rejects.toThrow(
-            'FILE_TYPE_NOT_ALLOWED',
-        );
+        // The code is on `.code` now (it used to be put on `.message`,
+        // which is the inversion this suite documented and worked around).
+        await expect(uploadCostInvoice(ctx, 'ce-1', exe)).rejects.toMatchObject({ code: 'FILE_TYPE_NOT_ALLOWED' });
         expect(mockWrite).not.toHaveBeenCalled();
     });
 

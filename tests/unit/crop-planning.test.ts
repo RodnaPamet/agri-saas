@@ -346,7 +346,7 @@ describe('generatePlantings', () => {
 
     it('throws if the plan has no maturity-bearing variety', async () => {
         mockDb.cropPlan.findFirst.mockResolvedValue({ ...basePlan, variety: null });
-        await expect(generatePlantings(editorCtx, 'plan-1')).rejects.toThrow(/CROP_PLAN_NOT_READY/);
+        await expect(generatePlantings(editorCtx, 'plan-1')).rejects.toMatchObject({ code: 'CROP_PLAN_NOT_READY' });
         expect(mockDb.planting.createMany).not.toHaveBeenCalled();
         expect(createTask).not.toHaveBeenCalled();
     });
@@ -763,7 +763,7 @@ describe('catalog CRUD', () => {
         mockDb.cropType.findFirst.mockResolvedValue(null);
         await expect(
             createCropVariety(editorCtx, { cropTypeId: 'foreign', name: 'Cherry' }),
-        ).rejects.toThrow(/INVALID_CROP_TYPE/);
+        ).rejects.toMatchObject({ code: 'INVALID_CROP_TYPE' });
         expect(mockDb.cropVariety.create).not.toHaveBeenCalled();
     });
 
@@ -922,7 +922,7 @@ describe('createCropPlan validation chain', () => {
                 name: 'X',
                 firstSowDate: '2026-04-01T00:00:00Z',
             }),
-        ).rejects.toThrow(/INVALID_VARIETY/);
+        ).rejects.toMatchObject({ code: 'INVALID_VARIETY' });
         expect(mockDb.cropPlan.create).not.toHaveBeenCalled();
     });
 
@@ -939,7 +939,7 @@ describe('createCropPlan validation chain', () => {
                 name: 'X',
                 firstSowDate: '2026-04-01T00:00:00Z',
             }),
-        ).rejects.toThrow(/PARCEL_LOCATION_MISMATCH/);
+        ).rejects.toMatchObject({ code: 'PARCEL_LOCATION_MISMATCH' });
     });
 });
 
@@ -953,14 +953,14 @@ describe('updateCropPlan relation validation', () => {
     it('rejects a re-pointed variety from another tenant', async () => {
         mockDb.cropPlan.findFirst.mockResolvedValue({ id: 'plan-1' });
         mockDb.cropVariety.findFirst.mockResolvedValue(null);
-        await expect(updateCropPlan(editorCtx, 'plan-1', { cropVarietyId: 'foreign' })).rejects.toThrow(/INVALID_VARIETY/);
+        await expect(updateCropPlan(editorCtx, 'plan-1', { cropVarietyId: 'foreign' })).rejects.toMatchObject({ code: 'INVALID_VARIETY' });
         expect(mockDb.cropPlan.update).not.toHaveBeenCalled();
     });
 
     it('rejects a re-pointed parcel from another tenant', async () => {
         mockDb.cropPlan.findFirst.mockResolvedValue({ id: 'plan-1' });
         mockDb.parcel.findFirst.mockResolvedValue(null);
-        await expect(updateCropPlan(editorCtx, 'plan-1', { parcelId: 'foreign' })).rejects.toThrow(/INVALID_PARCEL/);
+        await expect(updateCropPlan(editorCtx, 'plan-1', { parcelId: 'foreign' })).rejects.toMatchObject({ code: 'INVALID_PARCEL' });
         expect(mockDb.cropPlan.update).not.toHaveBeenCalled();
     });
 
@@ -969,7 +969,7 @@ describe('updateCropPlan relation validation', () => {
         mockDb.parcel.findFirst.mockResolvedValue({ id: 'parcel-1', locationId: 'other-loc' });
         await expect(
             updateCropPlan(editorCtx, 'plan-1', { parcelId: 'parcel-1', locationId: 'loc-1' }),
-        ).rejects.toThrow(/PARCEL_LOCATION_MISMATCH/);
+        ).rejects.toMatchObject({ code: 'PARCEL_LOCATION_MISMATCH' });
     });
 
     it('applies a valid firstSowDate + in-location parcel move', async () => {

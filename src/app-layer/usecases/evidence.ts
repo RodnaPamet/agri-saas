@@ -4,7 +4,7 @@ import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/commo
 import { logEvent } from '../events/audit';
 import { validateFile, uploadFile } from '@/lib/storage';
 import { scanUploadedBuffer } from '@/lib/storage/av-scan';
-import { notFound, badRequest, forbidden } from '@/lib/errors/types';
+import { badRequest, codedBadRequest, forbidden, notFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { cachedListRead, bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 import type { EvidenceType, ReviewCadence } from '@prisma/client';
@@ -122,7 +122,7 @@ export async function createEvidence(
             fileSize = uploadResult.size;
             content = uploadResult.fileName;
         } catch (err: unknown) {
-            throw badRequest('FILE_VALIDATION_ERROR', err instanceof Error ? err.message : 'File upload failed');
+            throw codedBadRequest('FILE_VALIDATION_ERROR', err instanceof Error ? err.message : 'File upload failed');
         }
     }
 
@@ -504,10 +504,10 @@ export async function uploadEvidenceFile(
     // we hold them.
     const declaredMime = file.type || 'application/octet-stream';
     if (!isAllowedMime(declaredMime)) {
-        throw badRequest('FILE_TYPE_NOT_ALLOWED', `MIME type "${declaredMime}" is not allowed`);
+        throw codedBadRequest('FILE_TYPE_NOT_ALLOWED', `MIME type "${declaredMime}" is not allowed`);
     }
     if (!isAllowedSize(file.size)) {
-        throw badRequest('FILE_TOO_LARGE', `File exceeds maximum size of ${FILE_MAX_SIZE_BYTES} bytes`);
+        throw codedBadRequest('FILE_TOO_LARGE', `File exceeds maximum size of ${FILE_MAX_SIZE_BYTES} bytes`);
     }
 
     const storage = getStorageProvider();
@@ -526,8 +526,7 @@ export async function uploadEvidenceFile(
     const { resolved: mimeType, detected, corrected } = reconcileMimeType(declaredMime, buffer);
     if (corrected) {
         if (!isAllowedMime(mimeType)) {
-            throw badRequest(
-                'FILE_TYPE_NOT_ALLOWED',
+            throw codedBadRequest('FILE_TYPE_NOT_ALLOWED',
                 `File content is "${mimeType}", which is not allowed`,
             );
         }
@@ -558,7 +557,7 @@ export async function uploadEvidenceFile(
                 where: { id: taskId, tenantId: ctx.tenantId },
                 select: { id: true },
             });
-            if (!task) throw badRequest('INVALID_TASK', 'Task not found or belongs to a different tenant');
+            if (!task) throw codedBadRequest('INVALID_TASK', 'Task not found or belongs to a different tenant');
         }
 
         // Validate asset belongs to the same tenant
@@ -567,7 +566,7 @@ export async function uploadEvidenceFile(
                 where: { id: assetId, tenantId: ctx.tenantId },
                 select: { id: true },
             });
-            if (!asset) throw badRequest('INVALID_ASSET', 'Asset not found or belongs to a different tenant');
+            if (!asset) throw codedBadRequest('INVALID_ASSET', 'Asset not found or belongs to a different tenant');
         }
 
         // ─── SHA-256 Dedup ───
