@@ -63,17 +63,27 @@ const OPTS = { domain: 'cost-invoice' as const, fallbackName: 'invoice', compone
 /**
  * Run and return the rejection.
  *
- * These paths call `badRequest(CODE, humanText)`, and `badRequest`'s first
- * argument is the MESSAGE — so the stable machine code lands on `.message`
- * and the sentence a person reads lands on `.details`. Asserting both keeps
- * the two from being swapped, which would ship an error whose code is prose.
+ * This docblock used to read: "these paths call `badRequest(CODE,
+ * humanText)`, and `badRequest`'s first argument is the MESSAGE — so the
+ * stable machine code lands on `.message` and the sentence a person reads
+ * lands on `.details`." Every clause of that was TRUE, and the conclusion
+ * it defended was that an operator should read an identifier.
+ *
+ * It even ended "asserting both keeps the two from being swapped, which
+ * would ship an error whose code is prose" — guarding against the mirror
+ * of a defect that was already live in the other direction.
+ *
+ * These paths now call `codedBadRequest(code, message)`: the code is on
+ * `.code`, the sentence a person reads is on `.message`. Both are still
+ * asserted, for the reason the old comment gave — it is the swap that
+ * matters, and it is now being checked against the right arrangement.
  */
 async function rejection(p: Promise<unknown>) {
     try {
         await p;
         throw new Error('expected a rejection, got none');
     } catch (e) {
-        return e as Error & { details?: unknown };
+        return e as Error & { code?: string; details?: unknown };
     }
 }
 
