@@ -58,6 +58,27 @@ const taskListSelect = {
     createdAt: true,
     updatedAt: true,
     assigneeUserId: true,
+    /**
+     * `email` is projected here DELIBERATELY, and the decision is the owner's
+     * (2026-09-22). Do not remove it as PII over-projection — two sibling
+     * projections were trimmed for exactly that reason in #1062 and this one
+     * was examined and KEPT, so the trail points the wrong way without this.
+     *
+     * It is read, in two places that both degrade badly without it:
+     *   - the web list's search haystack matches on it, so an admin can find a
+     *     colleague by address when two people share a name; and
+     *   - it is the display fallback when `name` is null, on the web
+     *     (`row.assignee?.name ?? row.assignee?.email`) and in the native
+     *     client's `Assignee.displayName`.
+     *
+     * The cost is real and was weighed rather than overlooked: `/farm-tasks`
+     * is on `PERSISTABLE_PATHS`, so this address is written to plaintext
+     * storage on the operator's device, and the native client's response cache
+     * stores raw bytes. The rule that came out of it is worth keeping: a
+     * payload carries personal data when something RENDERS it, and not
+     * otherwise. `owner.email` on locations and `watchers[].user.email` on the
+     * task detail both failed that test; this one passed it.
+     */
     assignee: { select: { id: true, name: true, email: true } },
 } as const;
 
