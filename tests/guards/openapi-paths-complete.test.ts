@@ -76,7 +76,7 @@ const EXEMPT_ROUTE_FILES = new Set(['src/app/api/auth/[...nextauth]/route.ts']);
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 
 /** Lowered in the same diff that removes entries. See the baseline's _README. */
-const UNDOCUMENTED_CEILING = 326;
+const UNDOCUMENTED_CEILING = 321;
 
 interface Baseline {
     _README: string[];
