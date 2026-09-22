@@ -18,6 +18,12 @@
  * This is an EXECUTING test against a real database, because the question is
  * what a query RETURNS. A structural scan of the select would pass the moment
  * someone re-added the field through a spread or a different include.
+ *
+ * The web's allowlist is not the whole exposure. The native client's response
+ * cache stores RAW RESPONSE BYTES, so a field reaches that device's disk even
+ * when nothing decodes it — "my model ignores it" is not "it did not arrive".
+ * So the question this file asks is the broader one: what does a payload
+ * carry that nothing renders?
  */
 import { PrismaClient, Role, MembershipStatus } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -26,6 +32,7 @@ import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
 import { LocationRepository } from '@/app-layer/repositories/LocationRepository';
+import { WorkItemRepository } from '@/app-layer/repositories/WorkItemRepository';
 import { runInTenantContext } from '@/lib/db-context';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
@@ -71,7 +78,7 @@ afterAll(async () => {
 
 const ctx = () => makeRequestContext('OWNER', { userId: ownerId, tenantId: TENANT_ID, tenantSlug: TAG });
 
-describeFn('what the persisted endpoints put on a phone (DB)', () => {
+describeFn('what reaches a device (DB)', () => {
     it('/locations embeds an owner NAME and no email', async () => {
         const rows = await runInTenantContext(ctx(), (db) => LocationRepository.list(db, ctx()));
         expect(rows.length).toBeGreaterThan(0);
@@ -89,5 +96,31 @@ describeFn('what the persisted endpoints put on a phone (DB)', () => {
         // Belt and braces: the address must not reach the payload by any
         // other route either (a spread, a second include, a serialiser).
         expect(JSON.stringify(rows)).not.toContain(EMAIL);
+    });
+
+    it('a task detail embeds watcher NAMES and no emails', async () => {
+        // Nothing renders a watcher on either client — the web has no watcher
+        // surface at all, the native app shows `_count` only — yet every task
+        // detail shipped `{ id, name, email }` per watcher. It is empty across
+        // the tenant today, which is exactly why nobody saw it: the first farm
+        // to add a watcher would have been the first to leak one.
+        const c = ctx();
+        const task = await prisma.task.create({
+            data: { tenantId: TENANT_ID, title: `Watcher probe ${TAG}`, createdByUserId: ownerId },
+            select: { id: true },
+        });
+        await prisma.taskWatcher.create({
+            data: { tenantId: TENANT_ID, taskId: task.id, userId: ownerId },
+        });
+
+        const detail = await runInTenantContext(c, (db) => WorkItemRepository.getById(db, c, task.id));
+        const watchers = (detail as { watchers?: { user?: Record<string, unknown> }[] } | null)?.watchers;
+
+        // Positive control: the watcher and its user were actually projected,
+        // so `not.toContain('email')` is not passing on an empty array.
+        expect(watchers?.length).toBe(1);
+        expect(watchers![0].user?.name).toBe('Иван Собственик');
+        expect(Object.keys(watchers![0].user!)).not.toContain('email');
+        expect(JSON.stringify(watchers)).not.toContain(EMAIL);
     });
 });
