@@ -28,6 +28,7 @@ import { sanitizePlainText } from '@/lib/security/sanitize';
 import { createPdfDocument, UNICODE_FONT, UNICODE_FONT_BOLD } from '@/lib/pdf/pdfKitFactory';
 import { getStorageProvider, buildTenantObjectKey } from '@/lib/storage';
 import type { ReportMeta } from '@/lib/pdf/types';
+import { techniqueLabelBg } from '@/lib/agro/application-techniques';
 
 // ─────────────────────────────────────────────────────────────────────
 // Bulgarian labels (document language is BG regardless of UI locale)
@@ -357,7 +358,7 @@ export function buildChemicalRows(lines: SprayLineData[]): string[][] {
             l.productName,
             l.dose,
             toDka(l.areaHa),
-            l.applicationTechnique ?? '',
+            techniqueLabelBg(l.applicationTechnique),
             l.quarantineDays != null ? String(l.quarantineDays) : '',
             earliestHarvest,
             l.operatorCertNo ?? '',

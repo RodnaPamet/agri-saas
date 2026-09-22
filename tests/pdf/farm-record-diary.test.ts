@@ -173,6 +173,31 @@ describe('farm-record-diary — pure row builders', () => {
         expect(rows[1][9]).toBe('');
     });
 
+    it('the Техника column renders a slug in Bulgarian and passes anything else through', () => {
+        // `applicationTechnique` is free text on a legally-filed register and
+        // the column used to print RAW — production held `Dron` and `dron`,
+        // neither of which is the vocabulary slug. Known slugs are now
+        // localised; everything else is shown exactly as recorded, because a
+        // filed register must report what was entered rather than a guess.
+        const line = { ...SPRAY[0] };
+        const [slug] = buildChemicalRows([{ ...line, applicationTechnique: 'drone' }]);
+        expect(slug[6]).toBe('Дрон');
+
+        // Case-folded — rows predate the write-side normalisation.
+        const [upper] = buildChemicalRows([{ ...line, applicationTechnique: 'Drone' }]);
+        expect(upper[6]).toBe('Дрон');
+
+        // Unknown value: unchanged, not blanked.
+        const [freeText] = buildChemicalRows([
+            { ...line, applicationTechnique: 'самоделна пръскачка' },
+        ]);
+        expect(freeText[6]).toBe('самоделна пръскачка');
+
+        // Absent: an empty cell, not the string "null".
+        const [absent] = buildChemicalRows([{ ...line, applicationTechnique: null }]);
+        expect(absent[6]).toBe('');
+    });
+
     test('buildFertilizerRows: дка conversion + composition', () => {
         const rows = buildFertilizerRows(FERT);
         expect(rows).toHaveLength(1);
