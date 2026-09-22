@@ -552,6 +552,27 @@ exports[`API contract — per-schema snapshots schema: AuthRegisterRequest 1`] =
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: BottomTabOrder 1`] = `
+"{
+  "type": [
+    "array",
+    "null"
+  ],
+  "items": {
+    "type": "string"
+  },
+  "maxItems": 12,
+  "description": "Ordered tenant-relative route suffixes — \`/dashboard\`, \`/farm-tasks\`, \`/grain/costs\`. Validated for SHAPE only: up to 12 unique non-empty strings, never against a list of known tabs, so a tab shipped by a newer client saves against an older server. It is a PREFERENCE, not a grant — resolve it against the surfaces the member may actually reach on EVERY render, because a role can change after the write. \`null\` and \`[]\` are different states (see schema).",
+  "example": [
+    "/dashboard",
+    "/farm-tasks",
+    "/locations",
+    "/journal",
+    "/exchange"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: CadastreImportAccepted 1`] = `
 "{
   "type": "object",
@@ -747,6 +768,73 @@ exports[`API contract — per-schema snapshots schema: Contract 1`] = `
   ],
   "additionalProperties": {},
   "description": "Grain marketing/supply contract — a forward SALE of produce or PURCHASE of inputs against a counterparty. volumeTonnes/pricePerTonne are decimal strings; terms/pricingNotes are encrypted at rest and returned decrypted."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: CurrentUser 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "user": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "email": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "role": {
+          "type": "string"
+        },
+        "bottomTabOrder": {
+          "$ref": "#/components/schemas/BottomTabOrder"
+        }
+      },
+      "required": [
+        "id",
+        "email",
+        "name",
+        "role",
+        "bottomTabOrder"
+      ]
+    },
+    "tenant": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "slug"
+      ]
+    }
+  },
+  "required": [
+    "user",
+    "tenant"
+  ]
 }"
 `;
 
@@ -4546,6 +4634,20 @@ exports[`API contract — per-schema snapshots schema: RawErrorResponse 1`] = `
     "error"
   ],
   "description": "Non-canonical error body used by the spatial-import and cadastre-import routes: a bare message string, with no \`code\`, \`requestId\` or \`details\`."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: SetBottomTabOrderRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "order": {
+      "$ref": "#/components/schemas/BottomTabOrder"
+    }
+  },
+  "required": [
+    "order"
+  ]
 }"
 `;
 
