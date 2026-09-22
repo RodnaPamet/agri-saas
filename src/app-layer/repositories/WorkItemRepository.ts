@@ -237,7 +237,20 @@ export class WorkItemRepository {
                     include: { createdBy: { select: { id: true, name: true, email: true } } },
                 },
                 watchers: {
-                    include: { user: { select: { id: true, name: true, email: true } } },
+                    // `{ id, name }`, no email. NOTHING renders a watcher on
+                    // either client — the web has no watcher surface at all and
+                    // the native app shows `_count` only — so a full list of
+                    // people's email addresses was being shipped on every task
+                    // detail open, for no consumer, to a device that caches
+                    // whole responses. It is empty across the tenant today,
+                    // which is why nobody saw it; the first farm to add a
+                    // watcher would have been the first to leak one.
+                    //
+                    // Raised by the native client, which could not tell what
+                    // this carried precisely BECAUSE it had not modelled it —
+                    // "does anything consume this field" is a question the
+                    // consumer cannot always answer, so it belongs here.
+                    include: { user: { select: { id: true, name: true } } },
                 },
                 _count: { select: { links: true, comments: true, watchers: true, evidence: true } },
             },
