@@ -107,7 +107,6 @@ const ROLE_VARIANT: Record<string, 'error' | 'info' | 'warning' | 'neutral'> = {
     AUDITOR: 'warning',
     READER: 'neutral',
 };
-const ROLE_CB_OPTIONS: ComboboxOption[] = ROLES.map(r => ({ value: r, label: r }));
 const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'error' | 'neutral'> = {
     ACTIVE: 'success',
     INVITED: 'warning',
@@ -221,6 +220,29 @@ function MemberRowActions({
 
 export default function MembersAdminPage() {
     const t = useTranslations('admin.members');
+    // Tenant roles and membership statuses were rendered as the RAW ENUM —
+    // a Bulgarian admin read "OWNER" and "ACTIVE". `authEnums` is the shared
+    // vocabulary for both, so the phone and the web cannot drift into two
+    // wordings the way crop names did.
+    const tEnum = useTranslations('authEnums');
+    /** Enum → label, degrading to the raw value rather than a key path. */
+    const roleLabel = (r: string) => (tEnum.has(`role.${r}`) ? tEnum(`role.${r}`) : r);
+    const statusLabel = (v: string) =>
+        tEnum.has(`membershipStatus.${v}`) ? tEnum(`membershipStatus.${v}`) : v;
+    // Built here rather than at module scope: the labels need a translator and
+    // a hook cannot run at module scope. Memoized on `tEnum` rather than on
+    // `roleLabel` — the latter is a fresh closure every render, and an
+    // unmemoized value in this scope makes the React Compiler bail out of
+    // preserving the memoization on the callbacks below ("Compilation
+    // Skipped: Existing memoization could not be preserved"), which is an
+    // ESLint ERROR here, not a warning.
+    const roleOptions = useMemo<ComboboxOption[]>(
+        () => ROLES.map((r) => ({
+            value: r,
+            label: tEnum.has(`role.${r}`) ? tEnum(`role.${r}`) : r,
+        })),
+        [tEnum],
+    );
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const triggerUndoToast = useToastWithUndo();
@@ -669,9 +691,9 @@ export default function MembersAdminPage() {
                                     <Combobox
                                         hideSearch
                                         id={`role-select-${m.id}`}
-                                        selected={ROLE_CB_OPTIONS.find(o => o.value === pendingRole) ?? null}
+                                        selected={roleOptions.find(o => o.value === pendingRole) ?? null}
                                         setSelected={(opt) => setPendingRole(opt?.value ?? pendingRole)}
-                                        options={ROLE_CB_OPTIONS}
+                                        options={roleOptions}
                                         matchTriggerWidth
                                         buttonProps={{ className: 'text-xs py-1 px-2 w-full sm:w-28' }}
                                     />
@@ -729,7 +751,7 @@ export default function MembersAdminPage() {
                                     }}
                                     id={`role-badge-${m.id}`}
                                 >
-                                    {m.role}
+                                    {roleLabel(m.role)}
                                     {m.status === 'ACTIVE' && <ChevronDown className="w-3.5 h-3.5 ml-0.5" />}
                                 </button>
                             </Tooltip>
@@ -754,7 +776,7 @@ export default function MembersAdminPage() {
                 accessorKey: 'status',
                 cell: ({ row }) => (
                     <StatusBadge variant={STATUS_VARIANT[row.original.status] || 'neutral'} icon={null} size="sm">
-                        {row.original.status}
+                        {statusLabel(row.original.status)}
                     </StatusBadge>
                 ),
                 meta: { mobileCard: { slot: 'status' } },
@@ -963,9 +985,9 @@ export default function MembersAdminPage() {
                             <Combobox
                                 hideSearch
                                 id="invite-role-select"
-                                selected={ROLE_CB_OPTIONS.find(o => o.value === inviteRole) ?? null}
+                                selected={roleOptions.find(o => o.value === inviteRole) ?? null}
                                 setSelected={(opt) => setInviteRole(opt?.value ?? 'READER')}
-                                options={ROLE_CB_OPTIONS}
+                                options={roleOptions}
                                 matchTriggerWidth
                             />
                         </div>
