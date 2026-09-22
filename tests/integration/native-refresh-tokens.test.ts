@@ -22,6 +22,7 @@ import {
     rotateRefreshToken,
     revokeTokensForSession,
     hashToken,
+    REFRESH_REPLAY_GRACE_SECONDS,
 } from '@/lib/auth/native/refresh-tokens';
 
 const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
@@ -120,27 +121,56 @@ describeFn('native refresh tokens', () => {
         });
     });
 
-    describe('replay is treated as theft, not as a retry', () => {
-        it('replaying a SPENT token is refused AND burns the whole lineage + session', async () => {
+    describe('replay: a lost answer is absorbed, theft still burns', () => {
+        it('a re-presented token is HONOURED while its successor is unspent', async () => {
+            // The production defect, 2026-09-22: the owner's session was killed
+            // 1.02s after a LEGITIMATE rotation because the app asked twice. An
+            // unspent successor is the evidence that the first answer never
+            // landed, so this must not be read as theft.
             const s = await makeSession();
             const first = await issueFor(s);
             const second = await rotateRefreshToken(first.raw);
             if (!second.ok) throw new Error('setup: first rotation should succeed');
 
-            // The thief presents the token the legitimate client already spent.
+            const retry = await rotateRefreshToken(first.raw);
+            expect(retry.ok).toBe(true);
+            if (!retry.ok) return;
+            expect(retry.raw).not.toBe(first.raw);
+            expect(retry.raw).not.toBe(second.raw);
+
+            // The session is untouched, which is the entire point: the
+            // operator is still signed in.
+            const session = await db.userSession.findUnique({
+                where: { id: s.id },
+                select: { revokedAt: true },
+            });
+            expect(session!.revokedAt).toBeNull();
+
+            // And what the client just received actually works.
+            expect((await rotateRefreshToken(retry.raw)).ok).toBe(true);
+        });
+
+        it('once the successor has been SPENT, replaying its parent burns the lineage + session', async () => {
+            // Unchanged contract, and the reason the grace above is safe: a
+            // client that spent the successor demonstrably RECEIVED it, so a
+            // later presentation of its parent is theft evidence.
+            const s = await makeSession();
+            const first = await issueFor(s);
+            const second = await rotateRefreshToken(first.raw);
+            if (!second.ok) throw new Error('setup: first rotation should succeed');
+            const third = await rotateRefreshToken(second.raw);
+            if (!third.ok) throw new Error('setup: second rotation should succeed');
+
             const replay = await rotateRefreshToken(first.raw);
             expect(replay.ok).toBe(false);
             if (replay.ok) return;
             expect(replay.reason).toBe('replayed');
 
-            // The successor the LEGITIMATE client holds is dead too. That is
-            // deliberate: we cannot tell thief from victim, so both are signed
-            // out rather than left sharing a session.
-            const successor = await rotateRefreshToken(second.raw);
-            expect(successor.ok).toBe(false);
+            // The token the LEGITIMATE client holds is dead too. Deliberate:
+            // once the lineage forks, thief and victim are indistinguishable,
+            // so both are signed out rather than left sharing a session.
+            expect((await rotateRefreshToken(third.raw)).ok).toBe(false);
 
-            // And the session itself is revoked, so the ACCESS token dies with
-            // it at its next refresh — not just the refresh credential.
             const session = await db.userSession.findUnique({
                 where: { id: s.id },
                 select: { revokedAt: true, revokedReason: true },
@@ -149,18 +179,74 @@ describeFn('native refresh tokens', () => {
             expect(session!.revokedReason).toBe('security:refresh-replayed');
         });
 
-        it('a CONCURRENT double-spend leaves exactly one winner, and burns the family', async () => {
+        it('past the grace window a replay burns, even with the successor unspent', async () => {
+            // The bound. An unspent successor is ALSO the normal state between
+            // refreshes, so without a window a spent token would stay usable
+            // for as long as a quiet client sat on an unused one.
+            const s = await makeSession();
+            const first = await issueFor(s);
+            const second = await rotateRefreshToken(first.raw);
+            if (!second.ok) throw new Error('setup: first rotation should succeed');
+
+            await db.nativeRefreshToken.update({
+                where: { tokenHash: hashToken(first.raw) },
+                data: {
+                    consumedAt: new Date(Date.now() - (REFRESH_REPLAY_GRACE_SECONDS + 1) * 1000),
+                },
+            });
+
+            const replay = await rotateRefreshToken(first.raw);
+            expect(replay.ok).toBe(false);
+            if (!replay.ok) expect(replay.reason).toBe('replayed');
+
+            const session = await db.userSession.findUnique({
+                where: { id: s.id },
+                select: { revokedReason: true },
+            });
+            expect(session!.revokedReason).toBe('security:refresh-replayed');
+        });
+
+        it('a CONCURRENT double-spend never leaves two live credentials', async () => {
             // The atomic-claim proof. A check-then-act implementation passes
             // every sequential test above and fails this one.
+            //
+            // The OUTCOME is deliberately not asserted. Two simultaneous
+            // rotations may both read the token as unspent (one wins the claim,
+            // the loser burns the family) or the second may arrive just after
+            // the first committed (absorbed by the grace path above). The race
+            // decides which, so pinning a winner COUNT would make this flaky
+            // rather than strict.
+            //
+            // What must hold either way is the property the atomic claim
+            // exists for: the token is spent exactly once, and the session is
+            // never left holding two independently-usable credentials. Under
+            // check-then-act both callers mint a successor from the same
+            // parent and this count is 2.
             const s = await makeSession();
             const first = await issueFor(s);
 
-            const [a, b] = await Promise.all([
+            await Promise.all([
                 rotateRefreshToken(first.raw),
                 rotateRefreshToken(first.raw),
             ]);
-            const winners = [a, b].filter((r) => r.ok);
-            expect(winners).toHaveLength(1);
+
+            const spent = await db.nativeRefreshToken.findUnique({
+                where: { tokenHash: hashToken(first.raw) },
+                select: { consumedAt: true, replacedById: true },
+            });
+            expect(spent!.consumedAt).not.toBeNull();
+            expect(spent!.replacedById).not.toBeNull();
+
+            const live = await db.nativeRefreshToken.count({
+                where: { userSessionId: s.id, consumedAt: null, revokedAt: null },
+            });
+            expect(live).toBeLessThanOrEqual(1);
+
+            const rows = await db.nativeRefreshToken.findMany({
+                where: { userSessionId: s.id },
+                select: { familyId: true },
+            });
+            expect(new Set(rows.map((r) => r.familyId)).size).toBe(1);
         });
     });
 
