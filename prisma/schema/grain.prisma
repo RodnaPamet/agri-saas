@@ -207,6 +207,17 @@ model YieldRecord {
   /// Commodity harvested, e.g. "Wheat" — plaintext. Free text, as on
   /// Contract: it is what was recorded at the weighbridge.
   commodity       String?
+  /// Offline exactly-once. The outbox replays a queued write with its item id
+  /// as the `Idempotency-Key`; the usecase dedupes on (tenantId,
+  /// clientMutationId) and returns the ORIGINAL row instead of minting a
+  /// second one. Nullable so a normal online write is unconstrained — every
+  /// NULL is unique to Postgres. Mirrors `LogEntry.clientMutationId` and
+  /// `Task.clientMutationId`.
+  ///
+  /// This is a FINANCIAL record, which is why it is worth the column: without
+  /// it a lost response followed by a retry silently books the same cost
+  /// twice and changes net worth, and nothing on the server would refuse it.
+  clientMutationId String?
   /// Canonical commodity slug derived from `commodity` — the join key to
   /// MarketPriceSeries. See Contract.commodityCanonical.
   commodityCanonical String?
@@ -261,6 +272,7 @@ model YieldRecord {
   @@index([tenantId, harvestedAt])
   /// Join key to MarketPriceSeries.
   @@index([tenantId, commodityCanonical])
+  @@unique([tenantId, clientMutationId])
 }
 
 /// A single cost a farmer entered, with an optional invoice.
@@ -298,6 +310,17 @@ model CostEntry {
   id              String       @id @default(cuid())
   tenantId        String
   category        CostCategory
+  /// Offline exactly-once. The outbox replays a queued write with its item id
+  /// as the `Idempotency-Key`; the usecase dedupes on (tenantId,
+  /// clientMutationId) and returns the ORIGINAL row instead of minting a
+  /// second one. Nullable so a normal online write is unconstrained — every
+  /// NULL is unique to Postgres. Mirrors `LogEntry.clientMutationId` and
+  /// `Task.clientMutationId`.
+  ///
+  /// This is a FINANCIAL record, which is why it is worth the column: without
+  /// it a lost response followed by a retry silently books the same cost
+  /// twice and changes net worth, and nothing on the server would refuse it.
+  clientMutationId String?
   /// Plaintext — cost figures are SUMmed in-DB, and Decimal columns cannot
   /// carry the Epic B ciphertext (a "v2:"-prefixed base64 STRING) anyway.
   /// Listing it in the encryption manifest would fail SILENTLY: the
@@ -391,6 +414,7 @@ model CostEntry {
   @@index([tenantId, leaseId])
   @@index([tenantId, itemId])
   @@index([tenantId, invoiceFileId])
+  @@unique([tenantId, clientMutationId])
 }
 
 

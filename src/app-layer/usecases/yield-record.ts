@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { RequestContext } from '../types';
+import { isUniqueViolation } from '@/lib/errors/prisma';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { canConvert, convert } from '@/lib/units/unit-conversion';
 import { tonnesPerHectare } from '@/lib/grain/moisture';
@@ -242,12 +243,65 @@ export async function getYieldRecord(ctx: RequestContext, id: string) {
     return toDto(row);
 }
 
-export async function createYieldRecord(ctx: RequestContext, input: CreateYieldRecordInput) {
-    return traceAgUsecase('yield-record.createYieldRecord', ctx, () => createYieldRecordImpl(ctx, input));
+/**
+ * Create a yield record, at most once per `idempotencyKey`.
+ *
+ * A yield feeds net worth through `netTonnesStd`, so a replayed outbox item
+ * that books the harvest twice moves a number the operator trusts. Mirrors
+ * `createLogEntry` and `createCostEntry`.
+ */
+export async function createYieldRecord(
+    ctx: RequestContext,
+    input: CreateYieldRecordInput,
+    idempotencyKey?: string | null,
+) {
+    return traceAgUsecase('yield-record.createYieldRecord', ctx, async () => {
+        try {
+            return await createYieldRecordImpl(ctx, input, idempotencyKey);
+        } catch (err) {
+            // Race backstop — see createCostEntry.
+            if (idempotencyKey && isUniqueViolation(err)) {
+                const existing = await findByClientMutationId(ctx, idempotencyKey);
+                if (existing) return existing;
+            }
+            throw err;
+        }
+    });
 }
 
-async function createYieldRecordImpl(ctx: RequestContext, input: CreateYieldRecordInput) {
+/**
+ * The row a previous attempt at this same write already created, or null —
+ * returned through `toDto` so the replay answer is shape-identical to the
+ * create answer.
+ *
+ * That is not a nicety. A dedupe that returns the bare row gives the caller a
+ * different payload on the retry than on the first attempt, and the retry is
+ * the path that only runs when the connection is bad — so the odd shape
+ * arrives exactly where it is least likely to have been tested. The
+ * typechecker caught this one: `tPerHa` is computed by `toDto` and was
+ * missing from the replay.
+ */
+async function findByClientMutationId(ctx: RequestContext, clientMutationId: string) {
+    const row = await runInTenantContext(ctx, (db) =>
+        db.yieldRecord.findFirst({
+            where: { tenantId: ctx.tenantId, clientMutationId, deletedAt: null },
+            include: YIELD_INCLUDE,
+        }),
+    );
+    return row ? toDto(row) : null;
+}
+
+async function createYieldRecordImpl(
+    ctx: RequestContext,
+    input: CreateYieldRecordInput,
+    idempotencyKey?: string | null,
+) {
     assertCanWrite(ctx);
+
+    if (idempotencyKey) {
+        const existing = await findByClientMutationId(ctx, idempotencyKey);
+        if (existing) return existing;
+    }
 
     const commodity = input.commodity != null ? sanitizePlainText(input.commodity) : null;
     const valuationNotes = input.valuationNotes != null ? sanitizePlainText(input.valuationNotes) : null;
@@ -295,6 +349,7 @@ async function createYieldRecordImpl(ctx: RequestContext, input: CreateYieldReco
                 moisturePct: input.moisturePct ?? null,
                 areaHa: input.areaHa ?? null,
                 valuationNotes,
+                clientMutationId: idempotencyKey ?? null,
             },
             include: YIELD_INCLUDE,
         });
