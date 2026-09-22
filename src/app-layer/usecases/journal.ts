@@ -15,7 +15,7 @@ import { advancePlantingStatusForLinks } from './crop-planning';
 import { emitAutomationEvent } from '../automation';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
-import { notFound, badRequest, staleData } from '@/lib/errors/types';
+import { badRequest, codedBadRequest, notFound, staleData } from '@/lib/errors/types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { createLogEntryWithAudit } from './journal-write';
 import { sanitizePlainText, sanitizeRichTextHtml } from '@/lib/security/sanitize';
@@ -133,14 +133,14 @@ async function assertLinksValid(
         const valid = await JournalRepository.validLocationIds(db, ctx, locationIds);
         const missing = locationIds.filter((id) => !valid.has(id));
         if (missing.length) {
-            throw badRequest('INVALID_LOCATION', `Location not found or belongs to a different tenant: ${missing[0]}`);
+            throw codedBadRequest('INVALID_LOCATION', `Location not found or belongs to a different tenant: ${missing[0]}`);
         }
     }
     if (equipmentIds && equipmentIds.length) {
         const valid = await JournalRepository.validEquipmentIds(db, ctx, equipmentIds);
         const missing = equipmentIds.filter((id) => !valid.has(id));
         if (missing.length) {
-            throw badRequest('INVALID_EQUIPMENT', `Equipment not found or belongs to a different tenant: ${missing[0]}`);
+            throw codedBadRequest('INVALID_EQUIPMENT', `Equipment not found or belongs to a different tenant: ${missing[0]}`);
         }
     }
 }
@@ -284,7 +284,7 @@ async function createLogEntryImpl(
             const validIds = new Set(found.map((p) => p.id));
             const missing = ids.filter((id) => !validIds.has(id));
             if (missing.length) {
-                throw badRequest('INVALID_PLANTING', `Planting not found or belongs to a different tenant: ${missing[0]}`);
+                throw codedBadRequest('INVALID_PLANTING', `Planting not found or belongs to a different tenant: ${missing[0]}`);
             }
         }
 
@@ -619,10 +619,10 @@ export async function uploadLogEntryPhoto(
     // contract as the evidence upload — see the note there.
     const declaredMime = file.type || 'application/octet-stream';
     if (!isAllowedMime(declaredMime)) {
-        throw badRequest('FILE_TYPE_NOT_ALLOWED', `MIME type "${declaredMime}" is not allowed`);
+        throw codedBadRequest('FILE_TYPE_NOT_ALLOWED', `MIME type "${declaredMime}" is not allowed`);
     }
     if (!isAllowedSize(file.size)) {
-        throw badRequest('FILE_TOO_LARGE', `File exceeds maximum size of ${FILE_MAX_SIZE_BYTES} bytes`);
+        throw codedBadRequest('FILE_TOO_LARGE', `File exceeds maximum size of ${FILE_MAX_SIZE_BYTES} bytes`);
     }
 
     const storage = getStorageProvider();
@@ -635,8 +635,7 @@ export async function uploadLogEntryPhoto(
     const { resolved: mimeType, detected, corrected } = reconcileMimeType(declaredMime, buffer);
     if (corrected) {
         if (!isAllowedMime(mimeType)) {
-            throw badRequest(
-                'FILE_TYPE_NOT_ALLOWED',
+            throw codedBadRequest('FILE_TYPE_NOT_ALLOWED',
                 `File content is "${mimeType}", which is not allowed`,
             );
         }
@@ -779,7 +778,7 @@ export async function attachLogEntryFile(
         if (!entry) throw notFound('Journal entry not found');
 
         const file = await FileRepository.getById(db, ctx, fileRecordId);
-        if (!file) throw badRequest('INVALID_FILE', 'File not found or belongs to a different tenant');
+        if (!file) throw codedBadRequest('INVALID_FILE', 'File not found or belongs to a different tenant');
 
         const existingLink = await JournalRepository.getFileLink(db, ctx, logEntryId, fileRecordId);
         if (existingLink) return existingLink;

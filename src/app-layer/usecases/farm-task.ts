@@ -1,6 +1,6 @@
 import type { WorkItemStatus } from '@prisma/client';
 import { RequestContext } from '../types';
-import { badRequest } from '@/lib/errors/types';
+import { badRequest, codedBadRequest } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { JournalRepository } from '../repositories/JournalRepository';
 import { WorkItemRepository } from '../repositories/WorkItemRepository';
@@ -37,7 +37,7 @@ export interface CreateFarmTaskInput {
 function assertAllOwned(label: string, requested: string[], valid: Set<string>) {
     const missing = requested.filter((id) => !valid.has(id));
     if (missing.length) {
-        throw badRequest('INVALID_LINK', `${label} not found or belongs to a different tenant: ${missing[0]}`);
+        throw codedBadRequest('INVALID_LINK', `${label} not found or belongs to a different tenant: ${missing[0]}`);
     }
 }
 
@@ -82,7 +82,7 @@ export async function createFarmTask(
     }
 
     const typeDef = getFarmTaskType(input.farmTaskType);
-    if (!typeDef) throw badRequest('INVALID_FARM_TASK_TYPE', `Unknown farm task type: ${input.farmTaskType}`);
+    if (!typeDef) throw codedBadRequest('INVALID_FARM_TASK_TYPE', `Unknown farm task type: ${input.farmTaskType}`);
 
     const locationIds = input.locationIds ?? [];
     const parcelIds = input.parcelIds ?? [];

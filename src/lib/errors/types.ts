@@ -50,22 +50,22 @@ export class AppError extends Error {
 // while preserving the same code/status/expose semantics as the base AppError.
 
 export class ValidationError extends AppError {
-    constructor(message: string, details?: unknown) {
-        super(message, 'BAD_REQUEST', 400, true, details);
+    constructor(message: string, details?: unknown, code = 'BAD_REQUEST') {
+        super(message, code, 400, true, details);
         this.name = 'ValidationError';
     }
 }
 
 export class NotFoundError extends AppError {
-    constructor(message: string = 'Not Found') {
-        super(message, 'NOT_FOUND', 404, true);
+    constructor(message: string = 'Not Found', code = 'NOT_FOUND') {
+        super(message, code, 404, true);
         this.name = 'NotFoundError';
     }
 }
 
 export class ForbiddenError extends AppError {
-    constructor(message: string = 'Forbidden') {
-        super(message, 'FORBIDDEN', 403, true);
+    constructor(message: string = 'Forbidden', code = 'FORBIDDEN') {
+        super(message, code, 403, true);
         this.name = 'ForbiddenError';
     }
 }
@@ -78,8 +78,8 @@ export class UnauthorizedError extends AppError {
 }
 
 export class ConflictError extends AppError {
-    constructor(message: string = 'Conflict', details?: unknown) {
-        super(message, 'CONFLICT', 409, true, details);
+    constructor(message: string = 'Conflict', details?: unknown, code = 'CONFLICT') {
+        super(message, code, 409, true, details);
         this.name = 'ConflictError';
     }
 }
@@ -150,6 +150,39 @@ export const notFound = (message: string = 'Not Found') =>
 
 export const conflict = (message: string = 'Conflict') =>
     new ConflictError(message);
+
+// ── Coded failures ──
+//
+// A CODE is what a client can translate; the message is the English
+// fallback for a code the client does not recognise. Same contract as
+// `explainRefusal` in `@/lib/grain/uncertainty`, and the shape CLAUDE.md
+// already mandates for email: "a value shown to a recipient must not be a
+// pre-rendered sentence".
+//
+// Code FIRST, deliberately. Twenty-five call sites across five usecases
+// were already written that way — badRequest('INVALID_CROP_TYPE', 'Crop
+// type not found…')` — against a `(message, details)` signature, which
+// put the CODE in the message field and buried the sentence in `details`.
+// An operator on the phone read `"message":"INVALID_CROP_TYPE"`. The
+// convention was right and only the function it called was wrong, so
+// these helpers take the arguments in the order people were already
+// writing them and the migration is a rename.
+//
+// See docs/i18n-airtight-roadmap.md. `tests/guards/no-server-authored-
+// user-copy.test.ts` exempts a coded throw from its ratchet, so reaching
+// for one of these lowers the count rather than merely not raising it.
+
+export const codedBadRequest = (code: string, message: string, details?: unknown) =>
+    new ValidationError(message, details, code);
+
+export const codedNotFound = (code: string, message: string) =>
+    new NotFoundError(message, code);
+
+export const codedForbidden = (code: string, message: string) =>
+    new ForbiddenError(message, code);
+
+export const codedConflict = (code: string, message: string, details?: unknown) =>
+    new ConflictError(message, details, code);
 
 export const rateLimited = (message: string = 'Too many requests') =>
     new RateLimitedError(message);

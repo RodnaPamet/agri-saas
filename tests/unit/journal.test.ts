@@ -212,7 +212,7 @@ describe('createLogEntry', () => {
                 title: 'x',
                 locationIds: ['loc-ok', 'loc-foreign'],
             }),
-        ).rejects.toThrow(/INVALID_LOCATION/);
+        ).rejects.toMatchObject({ code: 'INVALID_LOCATION' });
         expect(JournalRepository.createLogEntry).not.toHaveBeenCalled();
     });
 

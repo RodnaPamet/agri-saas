@@ -4,7 +4,7 @@ import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { createTask, addTaskLink } from './task';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { badRequest, codedBadRequest, notFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { cachedListRead, bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 import {
@@ -310,7 +310,7 @@ export async function createCropVariety(ctx: RequestContext, input: CreateCropVa
             where: { id: input.cropTypeId, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true },
         });
-        if (!cropType) throw badRequest('INVALID_CROP_TYPE', 'Crop type not found or belongs to a different tenant');
+        if (!cropType) throw codedBadRequest('INVALID_CROP_TYPE', 'Crop type not found or belongs to a different tenant');
 
         const variety = await db.cropVariety.create({
             data: {
@@ -472,18 +472,18 @@ export async function createCropPlan(ctx: RequestContext, input: CreateCropPlanI
             where: { id: input.seasonId, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true },
         });
-        if (!season) throw badRequest('INVALID_SEASON', 'Season not found or belongs to a different tenant');
+        if (!season) throw codedBadRequest('INVALID_SEASON', 'Season not found or belongs to a different tenant');
         const cropType = await db.cropType.findFirst({
             where: { id: input.cropTypeId, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true },
         });
-        if (!cropType) throw badRequest('INVALID_CROP_TYPE', 'Crop type not found or belongs to a different tenant');
+        if (!cropType) throw codedBadRequest('INVALID_CROP_TYPE', 'Crop type not found or belongs to a different tenant');
         if (input.cropVarietyId) {
             const variety = await db.cropVariety.findFirst({
                 where: { id: input.cropVarietyId, tenantId: ctx.tenantId, deletedAt: null },
                 select: { id: true },
             });
-            if (!variety) throw badRequest('INVALID_VARIETY', 'Variety not found or belongs to a different tenant');
+            if (!variety) throw codedBadRequest('INVALID_VARIETY', 'Variety not found or belongs to a different tenant');
         }
         // A plan may target a specific parcel. Validate it belongs to the
         // tenant and — when a location is also given — that it sits within
@@ -493,9 +493,9 @@ export async function createCropPlan(ctx: RequestContext, input: CreateCropPlanI
                 where: { id: input.parcelId, tenantId: ctx.tenantId, deletedAt: null },
                 select: { id: true, locationId: true },
             });
-            if (!parcel) throw badRequest('INVALID_PARCEL', 'Parcel not found or belongs to a different tenant');
+            if (!parcel) throw codedBadRequest('INVALID_PARCEL', 'Parcel not found or belongs to a different tenant');
             if (input.locationId && parcel.locationId !== input.locationId) {
-                throw badRequest('PARCEL_LOCATION_MISMATCH', 'Parcel does not belong to the selected location');
+                throw codedBadRequest('PARCEL_LOCATION_MISMATCH', 'Parcel does not belong to the selected location');
             }
         }
 
@@ -575,16 +575,16 @@ export async function updateCropPlan(ctx: RequestContext, id: string, input: Upd
                 where: { id: input.cropVarietyId, tenantId: ctx.tenantId, deletedAt: null },
                 select: { id: true },
             });
-            if (!variety) throw badRequest('INVALID_VARIETY', 'Variety not found or belongs to a different tenant');
+            if (!variety) throw codedBadRequest('INVALID_VARIETY', 'Variety not found or belongs to a different tenant');
         }
         if (input.parcelId) {
             const parcel = await db.parcel.findFirst({
                 where: { id: input.parcelId, tenantId: ctx.tenantId, deletedAt: null },
                 select: { id: true, locationId: true },
             });
-            if (!parcel) throw badRequest('INVALID_PARCEL', 'Parcel not found or belongs to a different tenant');
+            if (!parcel) throw codedBadRequest('INVALID_PARCEL', 'Parcel not found or belongs to a different tenant');
             if (input.locationId && parcel.locationId !== input.locationId) {
-                throw badRequest('PARCEL_LOCATION_MISMATCH', 'Parcel does not belong to the selected location');
+                throw codedBadRequest('PARCEL_LOCATION_MISMATCH', 'Parcel does not belong to the selected location');
             }
         }
 
@@ -856,8 +856,7 @@ async function generatePlantingsImpl(ctx: RequestContext, cropPlanId: string) {
         // with no daysToMaturity) cannot produce dated plantings.
         const maturity = plan.variety?.daysToMaturity ?? null;
         if (maturity == null || maturity <= 0) {
-            throw badRequest(
-                'CROP_PLAN_NOT_READY',
+            throw codedBadRequest('CROP_PLAN_NOT_READY',
                 'This plan needs a variety with daysToMaturity set before plantings can be generated.',
             );
         }
