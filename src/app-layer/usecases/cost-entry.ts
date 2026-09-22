@@ -1,6 +1,7 @@
 import { Prisma, type CostAllocationBasis, type CostCategory } from '@prisma/client';
 import { withDeleted } from '@/lib/soft-delete';
 import { RequestContext } from '../types';
+import { isUniqueViolation } from '@/lib/errors/prisma';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
@@ -359,8 +360,51 @@ async function assertFksBelongToTenant(
     }
 }
 
-export async function createCostEntry(ctx: RequestContext, input: CreateCostEntryInput) {
+/**
+ * Create a cost entry, at most once per `idempotencyKey`.
+ *
+ * A CostEntry is a financial record, and the offline outbox replays a queued
+ * write whenever a response is lost. Without a dedupe that retry books the
+ * same cost a second time — silently, because both writes succeed and only
+ * the net-worth figure moves. Mirrors `createLogEntry`.
+ */
+export async function createCostEntry(
+    ctx: RequestContext,
+    input: CreateCostEntryInput,
+    idempotencyKey?: string | null,
+) {
+    try {
+        return await createCostEntryImpl(ctx, input, idempotencyKey);
+    } catch (err) {
+        // Race backstop: two replays of the same queued item arrive together,
+        // both miss the pre-check, and the loser hits the unique index. Its
+        // answer is the winner's row, not a 500.
+        if (idempotencyKey && isUniqueViolation(err)) {
+            const existing = await runInTenantContext(ctx, (db) =>
+                CostEntryRepository.findByClientMutationId(db, ctx, idempotencyKey),
+            );
+            if (existing) return toDto(existing);
+        }
+        throw err;
+    }
+}
+
+async function createCostEntryImpl(
+    ctx: RequestContext,
+    input: CreateCostEntryInput,
+    idempotencyKey?: string | null,
+) {
     assertCanWrite(ctx);
+
+    if (idempotencyKey) {
+        const existing = await runInTenantContext(ctx, (db) =>
+            CostEntryRepository.findByClientMutationId(db, ctx, idempotencyKey),
+        );
+        // `toDto`, not the bare row: it is what converts `amount` from a
+        // Prisma Decimal to a number, so returning the row raw would answer a
+        // retry with a STRING where the first attempt sent a number.
+        if (existing) return toDto(existing);
+    }
 
     assertSingleDomainLink(input);
     assertAllocationBasis(input);
@@ -389,6 +433,7 @@ export async function createCostEntry(ctx: RequestContext, input: CreateCostEntr
             itemId: input.itemId ?? null,
             allocationBasis: input.allocationBasis ?? 'TARGET',
             createdByUserId: ctx.userId ?? null,
+            clientMutationId: idempotencyKey ?? null,
         });
 
         // Inside the same transaction as the entry: a subset written after

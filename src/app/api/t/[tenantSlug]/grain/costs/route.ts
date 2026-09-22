@@ -80,7 +80,12 @@ export const POST = withApiErrorHandling(
             const params = await paramsPromise;
             const ctx = await getTenantCtx(params, req);
             await assertModuleEnabled(ctx, 'GRAIN');
-            const record = await createCostEntry(ctx, body);
+            // Offline exactly-once — the outbox replays a queued write with
+            // its item id as the Idempotency-Key, and both of these are
+            // FINANCIAL records: an undeduped retry books the same figure
+            // twice and moves net worth with nothing erroring.
+            const idempotencyKey = req.headers.get('Idempotency-Key') || undefined;
+            const record = await createCostEntry(ctx, body, idempotencyKey);
             return jsonResponse(record, { status: 201 });
         },
     ),
