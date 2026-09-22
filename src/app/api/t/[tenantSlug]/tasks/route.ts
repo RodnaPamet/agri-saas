@@ -50,7 +50,26 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
                 linkedEntityId: query.linkedEntityId,
             },
         });
-        return jsonResponse(result);
+        // Emit the `{ rows, nextCursor }` shape the client
+        // `useCursorPagination` accumulator consumes — the same reshape the
+        // journal route already does, and for the same reason.
+        //
+        // This branch used to return the use case's own `{ items, pageInfo }`
+        // verbatim while the NON-paginated branch below returns `{ rows,
+        // truncated }`. Two shapes from one endpoint, keyed differently, and
+        // the divergence only springs LATER: a client decodes `rows` today,
+        // adds `?limit` months afterwards for paging, and silently reads an
+        // absent key — an empty array, no error, "no tasks" over a tenant
+        // with hundreds. The bug is not in the code that adds pagination; it
+        // was planted here and detonates there.
+        //
+        // Nothing consumed the old shape. `useCursorPagination` cannot read
+        // it — it wants `rows`/`nextCursor` — so `/tasks` was not paginable
+        // by this app's own hook at all.
+        return jsonResponse({
+            rows: result.items,
+            nextCursor: result.pageInfo.nextCursor ?? null,
+        });
     }
 
     // PR-9 — backfill cap. Mirrors the seven other list-page routes.
