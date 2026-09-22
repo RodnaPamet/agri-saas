@@ -72,7 +72,16 @@ describe('Audit S8 — Task & Issue Remediation', () => {
                 src.indexOf('export async function setTaskStatus') + 2500,
             );
             expect(setBlock).toMatch(/checkWorkItemTransition\(fromStatus,\s*status\)/);
-            expect(setBlock).toMatch(/throw badRequest\(formatTransitionError/);
+            // The refusal is CODED as of the i18n batch-two work: the English
+            // from `formatTransitionError` stays as the fallback, with
+            // `transitionErrorCode` beside it so a client can translate
+            // "Illegal work-item transition: IN_PROGRESS → OPEN." instead of
+            // showing it to a Bulgarian operator. Both halves are asserted —
+            // dropping the message would lose the fallback, and dropping the
+            // code would silently undo the translation work.
+            expect(setBlock).toMatch(/throw codedBadRequest\(/);
+            expect(setBlock).toMatch(/transitionErrorCode\(transitionErr\)/);
+            expect(setBlock).toMatch(/formatTransitionError\(transitionErr\)/);
         });
 
         it('task.ts wires the gate into bulkSetTaskStatus (all-or-nothing)', () => {

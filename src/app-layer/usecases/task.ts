@@ -10,7 +10,7 @@ import { createAssignmentNotification } from '../notifications/assignment';
 import { sendWebPushToUser } from '@/lib/notifications/web-push';
 import { runInTenantContext } from '@/lib/db-context';
 import { env } from '@/env';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { badRequest, codedBadRequest, notFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { validateTaskMetadata } from '../schemas/json-columns.schemas';
 import { logger } from '@/lib/observability/logger';
@@ -19,6 +19,8 @@ import type { PrismaTx } from '@/lib/db-context';
 import {
     checkWorkItemTransition,
     formatTransitionError,
+    transitionErrorCode,
+    transitionErrorParams,
     isTerminalStatus,
 } from '../domain/work-item-status';
 import { getSlaStatus } from '../services/sla';
@@ -395,7 +397,13 @@ export async function setTaskStatus(ctx: RequestContext, taskId: string, status:
         // OPEN → CLOSED skipping RESOLVED) so the only paths that
         // reach the repository write are documented transitions.
         const transitionErr = checkWorkItemTransition(fromStatus, status);
-        if (transitionErr) throw badRequest(formatTransitionError(transitionErr));
+        if (transitionErr) {
+            throw codedBadRequest(
+                transitionErrorCode(transitionErr),
+                formatTransitionError(transitionErr),
+                transitionErrorParams(transitionErr),
+            );
+        }
 
         // Audit Coherence S8 — every terminal write requires a non-
         // empty `resolution` text. The auditor reads it from the
