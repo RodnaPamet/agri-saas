@@ -33,10 +33,12 @@ jest.mock('@/lib/db-context', () => ({
 
 const getById = jest.fn();
 const setStatus = jest.fn();
+const findBareById = jest.fn();
 jest.mock('../../src/app-layer/repositories/WorkItemRepository', () => ({
     WorkItemRepository: {
         getById: (...a: any[]) => getById(...a),
         setStatus: (...a: any[]) => setStatus(...a),
+        findBareById: (...a: any[]) => findBareById(...a),
     },
 }));
 
@@ -66,8 +68,13 @@ const TASK = {
 describe('setTaskStatus — an already-applied replay', () => {
     beforeEach(() => {
         jest.clearAllMocks();
-        getById.mockResolvedValue({ ...TASK });
+        // `getById` is the FAT read — it carries every relation. That is the
+        // whole reason the replay used to answer in a different shape from the
+        // write, so the mock has to reproduce the difference or the shape
+        // assertion below would pass against the bug.
+        getById.mockResolvedValue({ ...TASK, assignee: { id: 'user-1' }, comments: [], _count: { comments: 0 } });
         setStatus.mockResolvedValue({ ...TASK });
+        findBareById.mockResolvedValue({ ...TASK });
     });
 
     it('returns the current task instead of throwing a 400 no-op', async () => {
@@ -75,6 +82,20 @@ describe('setTaskStatus — an already-applied replay', () => {
         // The SAME body the first, successful drain sent.
         const out = await setTaskStatus(ctx, 't1', 'RESOLVED', 'sprayed and logged');
         expect(out).toMatchObject({ id: 't1', status: 'RESOLVED' });
+    });
+
+    it('answers in the SAME SHAPE as a real write, not the fat read', async () => {
+        // Measured by the native client 2026-09-22: a real change returned 25
+        // keys and a replay returned 32, because the arm handed back the row
+        // `getById` had loaded. The replay is the path that only runs when the
+        // connection is bad, so the fatter payload was served exactly when
+        // bandwidth was worst.
+        const ctx = makeRequestContext('ADMIN', { userId: 'user-1' });
+        const out = await setTaskStatus(ctx, 't1', 'RESOLVED', 'sprayed and logged');
+        expect(findBareById).toHaveBeenCalled();
+        expect(Object.keys(out!)).not.toContain('assignee');
+        expect(Object.keys(out!)).not.toContain('comments');
+        expect(Object.keys(out!)).not.toContain('_count');
     });
 
     it('writes no second audit row and emits no second automation event', async () => {
