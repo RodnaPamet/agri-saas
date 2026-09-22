@@ -78,6 +78,10 @@ function stripLeadingHeading(html: string): string {
 
 export default function SatelliteImageryGuidePage() {
     const t = useTranslations('satelliteImagery');
+    // Legend captions are KEYS on the index definition, shared with the
+    // native client via `agroEnums.indexLegend.*` — see
+    // `vegetation-indices.ts`. They used to be English literals here.
+    const tLegend = useTranslations('agroEnums.indexLegend');
     const locale = useLocale();
     const router = useRouter();
     const tenantHref = useTenantHref();
@@ -206,12 +210,12 @@ export default function SatelliteImageryGuidePage() {
                                 legend paints, with the low/high captions. */}
                             <div className="space-y-tight rounded-lg border border-border-subtle p-3">
                                 <div className="flex items-center gap-compact text-xs text-content-subtle">
-                                    <span>{idx.lowLabel}</span>
+                                    <span>{tLegend(idx.lowKey)}</span>
                                     <span
                                         aria-hidden="true"
                                         className={cn('h-2 w-full max-w-xs rounded-full', idx.legendGradientClass)}
                                     />
-                                    <span>{idx.highLabel}</span>
+                                    <span>{tLegend(idx.highKey)}</span>
                                 </div>
                                 {/* Already folded into articleHtml above when present. */}
                                 {!articleHtml && (

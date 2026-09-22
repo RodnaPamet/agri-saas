@@ -6218,5 +6218,13 @@
       "INVITED": "Invited",
       "REMOVED": "Removed"
     }
+  },
+  "agroEnums": {
+    "indexLegend": {
+      "dry": "Dry",
+      "high": "High",
+      "low": "Low",
+      "wet": "Wet"
+    }
   }
 }
