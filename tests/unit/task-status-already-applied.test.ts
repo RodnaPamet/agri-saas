@@ -38,7 +38,11 @@ jest.mock('../../src/app-layer/repositories/WorkItemRepository', () => ({
     WorkItemRepository: {
         getById: (...a: any[]) => getById(...a),
         setStatus: (...a: any[]) => setStatus(...a),
-        findBareById: (...a: any[]) => findBareById(...a),
+        // `unknown[]` rather than the `any[]` its neighbours use: the lint
+        // ceiling counts SUPPRESSED findings, so one more `any` under this
+        // file's disable costs exactly what a new warning costs. A passthrough
+        // mock needs no `any`.
+        findBareById: (...a: unknown[]) => findBareById(...a),
     },
 }));
 
