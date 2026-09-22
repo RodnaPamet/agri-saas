@@ -133,14 +133,22 @@ async function assertLinksValid(
         const valid = await JournalRepository.validLocationIds(db, ctx, locationIds);
         const missing = locationIds.filter((id) => !valid.has(id));
         if (missing.length) {
-            throw codedBadRequest('INVALID_LOCATION', `Location not found or belongs to a different tenant: ${missing[0]}`);
+            throw codedBadRequest(
+                'INVALID_LOCATION',
+                `Location not found or belongs to a different tenant: ${missing[0]}`,
+                { id: missing[0] },
+            );
         }
     }
     if (equipmentIds && equipmentIds.length) {
         const valid = await JournalRepository.validEquipmentIds(db, ctx, equipmentIds);
         const missing = equipmentIds.filter((id) => !valid.has(id));
         if (missing.length) {
-            throw codedBadRequest('INVALID_EQUIPMENT', `Equipment not found or belongs to a different tenant: ${missing[0]}`);
+            throw codedBadRequest(
+                'INVALID_EQUIPMENT',
+                `Equipment not found or belongs to a different tenant: ${missing[0]}`,
+                { id: missing[0] },
+            );
         }
     }
 }

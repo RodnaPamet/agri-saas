@@ -11,6 +11,11 @@ export type ApiErrorResponse = {
         message: string;       // Safe, user-facing error message
         requestId?: string;    // Correlation ID for logs
         details?: unknown;     // Optional safe details (like Zod validation issues)
+        /**
+         * Named values for a client to interpolate into its TRANSLATED
+         * message. Ids and quantities only — see `ErrorParams`.
+         */
+        params?: Readonly<Record<string, string | number>>;
     };
 };
 
@@ -18,8 +23,32 @@ export type ApiErrorResponse = {
  * Custom AppError for internal throwing.
  * Use these to safely bubble up known errors to the `withApiErrorHandling` wrapper.
  */
+/**
+ * Values a client may interpolate into a TRANSLATED message.
+ *
+ * Named keys, never positional: a Bulgarian sentence does not put the id
+ * where an English one does, and a positional `{0}` forces the translation
+ * to follow English word order — which is the class of bug the whole
+ * coded-error exercise exists to remove, reintroduced at the last step.
+ *
+ * **NEVER PERSONAL DATA.** Ids and quantities only. Names, emails, EGN and
+ * anything an operator typed are out, and this is not a style rule: the
+ * repo already learned it the expensive way. `ParcelLease.lessorName` and
+ * `lessorEik` are in ENCRYPTED_FIELDS *because* they are personal data
+ * about a third party, and they still reached plaintext `localStorage`,
+ * because persisting them required nobody's decision. A params value is the
+ * same accident — a field careful at rest, handed to a client in the clear
+ * because an error message wanted to name something.
+ *
+ * `tests/guards/error-params-carry-no-pii.test.ts` refuses a key that reads
+ * personal.
+ */
+export type ErrorParams = Readonly<Record<string, string | number>>;
+
 export class AppError extends Error {
     public readonly code: string;
+    /** See {@link ErrorParams} — named, non-personal, for translation. */
+    public readonly params?: ErrorParams;
     public readonly status: number;
     public readonly expose: boolean;
     public readonly details?: unknown;
@@ -29,11 +58,13 @@ export class AppError extends Error {
         code: string,
         status: number,
         expose: boolean = true,
-        details?: unknown
+        details?: unknown,
+        params?: ErrorParams
     ) {
         super(message);
         this.name = 'AppError';
         this.code = code;
+        this.params = params;
         this.status = status;
         this.expose = expose;
         this.details = details;
@@ -50,22 +81,22 @@ export class AppError extends Error {
 // while preserving the same code/status/expose semantics as the base AppError.
 
 export class ValidationError extends AppError {
-    constructor(message: string, details?: unknown, code = 'BAD_REQUEST') {
-        super(message, code, 400, true, details);
+    constructor(message: string, details?: unknown, code = 'BAD_REQUEST', params?: ErrorParams) {
+        super(message, code, 400, true, details, params);
         this.name = 'ValidationError';
     }
 }
 
 export class NotFoundError extends AppError {
-    constructor(message: string = 'Not Found', code = 'NOT_FOUND') {
-        super(message, code, 404, true);
+    constructor(message: string = 'Not Found', code = 'NOT_FOUND', params?: ErrorParams) {
+        super(message, code, 404, true, undefined, params);
         this.name = 'NotFoundError';
     }
 }
 
 export class ForbiddenError extends AppError {
-    constructor(message: string = 'Forbidden', code = 'FORBIDDEN') {
-        super(message, code, 403, true);
+    constructor(message: string = 'Forbidden', code = 'FORBIDDEN', params?: ErrorParams) {
+        super(message, code, 403, true, undefined, params);
         this.name = 'ForbiddenError';
     }
 }
@@ -78,8 +109,8 @@ export class UnauthorizedError extends AppError {
 }
 
 export class ConflictError extends AppError {
-    constructor(message: string = 'Conflict', details?: unknown, code = 'CONFLICT') {
-        super(message, code, 409, true, details);
+    constructor(message: string = 'Conflict', details?: unknown, code = 'CONFLICT', params?: ErrorParams) {
+        super(message, code, 409, true, details, params);
         this.name = 'ConflictError';
     }
 }
@@ -172,17 +203,25 @@ export const conflict = (message: string = 'Conflict') =>
 // user-copy.test.ts` exempts a coded throw from its ratchet, so reaching
 // for one of these lowers the count rather than merely not raising it.
 
-export const codedBadRequest = (code: string, message: string, details?: unknown) =>
-    new ValidationError(message, details, code);
+export const codedBadRequest = (
+    code: string,
+    message: string,
+    params?: ErrorParams,
+    details?: unknown,
+) => new ValidationError(message, details, code, params);
 
-export const codedNotFound = (code: string, message: string) =>
-    new NotFoundError(message, code);
+export const codedNotFound = (code: string, message: string, params?: ErrorParams) =>
+    new NotFoundError(message, code, params);
 
-export const codedForbidden = (code: string, message: string) =>
-    new ForbiddenError(message, code);
+export const codedForbidden = (code: string, message: string, params?: ErrorParams) =>
+    new ForbiddenError(message, code, params);
 
-export const codedConflict = (code: string, message: string, details?: unknown) =>
-    new ConflictError(message, details, code);
+export const codedConflict = (
+    code: string,
+    message: string,
+    params?: ErrorParams,
+    details?: unknown,
+) => new ConflictError(message, details, code, params);
 
 export const rateLimited = (message: string = 'Too many requests') =>
     new RateLimitedError(message);
@@ -231,6 +270,7 @@ export function toApiErrorResponse(error: unknown, requestId?: string): { payloa
         payload.error.code = error.code;
         payload.error.message = error.expose ? error.message : 'An error occurred';
         if (error.details) payload.error.details = error.details;
+        if (error.params) payload.error.params = error.params;
     } else if (error instanceof ZodError) {
         status = 400;
         payload.error.code = 'VALIDATION_ERROR';
