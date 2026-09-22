@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "3.26.1",
+    "version": "3.29.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -582,6 +582,24 @@
         ],
         "description": "Self-service signup payload (gated by AUTH_TEST_MODE in non-prod). The password is checked against HIBP via k-anonymity before persistence; emailVerification is initiated server-side."
       },
+      "BottomTabOrder": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "string"
+        },
+        "maxItems": 12,
+        "description": "Ordered tenant-relative route suffixes — `/dashboard`, `/farm-tasks`, `/grain/costs`. Validated for SHAPE only: up to 12 unique non-empty strings, never against a list of known tabs, so a tab shipped by a newer client saves against an older server. It is a PREFERENCE, not a grant — resolve it against the surfaces the member may actually reach on EVERY render, because a role can change after the write. `null` and `[]` are different states (see schema).",
+        "example": [
+          "/dashboard",
+          "/farm-tasks",
+          "/locations",
+          "/journal",
+          "/exchange"
+        ]
+      },
       "CadastreImportAccepted": {
         "type": "object",
         "properties": {
@@ -767,6 +785,70 @@
         ],
         "additionalProperties": {},
         "description": "Grain marketing/supply contract — a forward SALE of produce or PURCHASE of inputs against a counterparty. volumeTonnes/pricePerTonne are decimal strings; terms/pricingNotes are encrypted at rest and returned decrypted."
+      },
+      "CurrentUser": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "email": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "role": {
+                "type": "string"
+              },
+              "bottomTabOrder": {
+                "$ref": "#/components/schemas/BottomTabOrder"
+              }
+            },
+            "required": [
+              "id",
+              "email",
+              "name",
+              "role",
+              "bottomTabOrder"
+            ]
+          },
+          "tenant": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "slug": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "slug"
+            ]
+          }
+        },
+        "required": [
+          "user",
+          "tenant"
+        ]
       },
       "EmptyBody": {
         "type": "object",
@@ -4383,6 +4465,17 @@
           "error"
         ],
         "description": "Non-canonical error body used by the spatial-import and cadastre-import routes: a bare message string, with no `code`, `requestId` or `details`."
+      },
+      "SetBottomTabOrderRequest": {
+        "type": "object",
+        "properties": {
+          "order": {
+            "$ref": "#/components/schemas/BottomTabOrder"
+          }
+        },
+        "required": [
+          "order"
+        ]
       },
       "SpatialImportAccepted": {
         "type": "object",
@@ -13552,6 +13645,223 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "operationId": "getCurrentUser",
+        "summary": "The signed-in user, their primary tenant, and their preferences",
+        "description": "The launch request. Returns the caller plus their OLDEST ACTIVE membership as `tenant` — one membership, not the list, so a user who belongs to several tenants cannot pick between them here. `role` falls back to `READER` when there is no active membership, so it is not proof of access on its own. Carries `bottomTabOrder`, which is why a client needs no second round-trip before drawing its tab bar. Answers a BEARER token as well as a cookie.",
+        "tags": [
+          "Account"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller. `tenant` is null when they have no active membership.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentUser"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/account/bottom-tabs": {
+      "put": {
+        "operationId": "setBottomTabOrder",
+        "summary": "Set the caller's own bottom-row arrangement",
+        "description": "Acts ONLY on the authenticated user — there is no userId parameter, so one user can never rearrange another's bar. Send `{ \"order\": [...] }` to set it, `{ \"order\": null }` to restore the default, `{ \"order\": [] }` for a deliberately empty bar. The key is REQUIRED: a missing `order` is rejected rather than guessed at, because null and [] mean opposite things. Last-write-wins — no `If-Match`, matching the other account preferences. Read the value back from `getCurrentUser`; there is no GET here.",
+        "tags": [
+          "Account"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetBottomTabOrderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The stored arrangement, as persisted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "bottomTabOrder": {
+                      "$ref": "#/components/schemas/BottomTabOrder"
+                    }
+                  },
+                  "required": [
+                    "bottomTabOrder"
+                  ]
+                }
               }
             }
           },
