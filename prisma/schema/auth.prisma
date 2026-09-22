@@ -660,6 +660,27 @@ model User {
   /// ends up in the wrong language — see `RECIPIENT_FALLBACK_LOCALE` in
   /// `src/lib/email/inquiry-email.ts`.
   uiLanguage                    String                       @default("bg")
+
+  /// Bottom-row tab arrangement, synced across the user's devices.
+  ///
+  /// Json rather than `String[]` because a Prisma scalar list CANNOT be
+  /// nullable — it is `[]` when unset — and here `null` and `[]` must stay
+  /// distinguishable: null means "never chosen, use the default order",
+  /// `[]` means "deliberately cleared". Collapsing them would make a new
+  /// user indistinguishable from one who emptied their bar, and the two
+  /// want opposite behaviour.
+  ///
+  /// Holds an ORDERED array of tenant-relative href suffixes — the same
+  /// vocabulary `BottomTabBar` matches on (`/dashboard`, `/grain/costs`).
+  /// Validated for SHAPE only, never against a list of known tabs: a
+  /// server-side allowlist would mean every new client tab waits on a
+  /// server deploy, and the release cycles are not coupled.
+  ///
+  /// It is a PREFERENCE, not a grant. Consumers resolve it against the
+  /// permitted surfaces on every render — a role can change after the
+  /// write, and a list validated only when stored would then offer a
+  /// MECHANISATOR a tab that 403s.
+  bottomTabOrder                Json?
   accounts                      Account[]
   ownedAssets                   Asset[]                      @relation("AssetOwner")
   auditLogs                     AuditLog[]

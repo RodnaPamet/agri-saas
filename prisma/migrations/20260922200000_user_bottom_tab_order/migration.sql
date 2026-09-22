@@ -1,0 +1,13 @@
+-- Bottom-row tab arrangement, synced across a user's devices.
+--
+-- Nullable and additive: NULL means "never chosen, use the default order",
+-- which is what every existing row gets and is exactly the behaviour they
+-- have today. `[]` means "deliberately cleared" and is a different state.
+--
+-- jsonb rather than text[] because a Prisma scalar list cannot be nullable —
+-- it reads as `[]` when unset — and collapsing "never chosen" into "emptied"
+-- is unrecoverable once done.
+--
+-- The previous image ignores the column entirely, so no inverse script is
+-- required.
+ALTER TABLE "User" ADD COLUMN "bottomTabOrder" JSONB;
