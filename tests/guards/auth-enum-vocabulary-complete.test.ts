@@ -20,25 +20,32 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { readPrismaSchema } from '../helpers/prisma-schema';
 
 const ROOT = path.resolve(__dirname, '../..');
 
-/** The members of a Prisma enum, read from the schema folder. */
+/**
+ * The members of a Prisma enum.
+ *
+ * Reads through `readPrismaSchema()` rather than walking the schema folder by
+ * hand — a hand-rolled collector can be gutted to return nothing with every
+ * assertion built on it still green, which is the whole subject of
+ * `file-collection-is-not-silently-empty`. I wrote one anyway; the union of
+ * this branch with the others is what caught it.
+ */
 function prismaEnum(name: string): string[] {
-    const dir = path.join(ROOT, 'prisma/schema');
-    for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.prisma'))) {
-        const src = fs.readFileSync(path.join(dir, file), 'utf8');
-        const m = src.match(new RegExp(`^enum ${name} \\{([\\s\\S]*?)^\\}`, 'm'));
-        if (!m) continue;
-        return m[1]
-            .split('\n')
-            .map((l) => l.replace(/\/\/.*$/, '').trim())
-            .filter((l) => /^[A-Z][A-Z0-9_]*$/.test(l));
+    const src = readPrismaSchema();
+    const m = src.match(new RegExp(`^enum ${name} \\{([\\s\\S]*?)^\\}`, 'm'));
+    if (!m) {
+        throw new Error(
+            `enum ${name} not found in the Prisma schema. If it was renamed, this ` +
+                `guard is protecting nothing — update it in the same change.`,
+        );
     }
-    throw new Error(
-        `enum ${name} not found in prisma/schema. If it was renamed, this guard ` +
-            `is protecting nothing — update it in the same change.`,
-    );
+    return m[1]
+        .split('\n')
+        .map((l) => l.replace(/\/\/.*$/, '').trim())
+        .filter((l) => /^[A-Z][A-Z0-9_]*$/.test(l));
 }
 
 function messages(locale: string): Record<string, Record<string, string>> {
