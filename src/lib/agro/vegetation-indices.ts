@@ -24,10 +24,19 @@ export interface VegetationIndexUi {
     label: string;
     /** Tenant-scoped tile route, e.g. `ndvi-tiles`. */
     route: string;
-    /** Legend caption at the LOW end of the ramp. */
-    lowLabel: string;
-    /** Legend caption at the HIGH end of the ramp. */
-    highLabel: string;
+    /**
+     * Legend caption keys at the LOW / HIGH ends of the ramp, under
+     * `agroEnums.indexLegend.*`.
+     *
+     * KEYS, not English. These were literals (`'Low'`, `'Dry'`) rendered
+     * verbatim by both consumers, so a Bulgarian operator read "Low" and
+     * "High" under a legend on an otherwise translated screen — and no
+     * vocabulary existed to reach for, so the native client would have
+     * created the first one. The wording here is shared with it deliberately,
+     * the same way `authEnums` is, rather than each side inventing its own.
+     */
+    lowKey: 'low' | 'dry';
+    highKey: 'high' | 'wet';
     /**
      * Tailwind arbitrary-value background for the legend swatch — a 5-stop
      * `linear-gradient(to right, …)` that mirrors the server `getMap`
@@ -47,8 +56,8 @@ export const VEGETATION_INDICES: readonly VegetationIndexUi[] = [
         id: 'ndvi',
         label: 'NDVI',
         route: 'ndvi-tiles',
-        lowLabel: 'Low',
-        highLabel: 'High',
+        lowKey: 'low',
+        highKey: 'high',
         // RdYlGn — canopy vigour.
         legendGradientClass:
             'bg-[linear-gradient(to_right,#a50026,#f46d43,#fee08b,#a6d96a,#006837)]',
@@ -57,8 +66,8 @@ export const VEGETATION_INDICES: readonly VegetationIndexUi[] = [
         id: 'ndmi',
         label: 'NDMI',
         route: 'ndmi-tiles',
-        lowLabel: 'Dry',
-        highLabel: 'Wet',
+        lowKey: 'dry',
+        highKey: 'wet',
         // RdYlBu — canopy/soil moisture (water stress red → wet blue).
         legendGradientClass:
             'bg-[linear-gradient(to_right,#a50026,#f46d43,#fee090,#abd9e9,#313695)]',
@@ -67,8 +76,8 @@ export const VEGETATION_INDICES: readonly VegetationIndexUi[] = [
         id: 'ndre',
         label: 'NDRE',
         route: 'ndre-tiles',
-        lowLabel: 'Low',
-        highLabel: 'High',
+        lowKey: 'low',
+        highKey: 'high',
         // PRGn — red-edge chlorophyll, distinct purple→green hue.
         legendGradientClass:
             'bg-[linear-gradient(to_right,#762a83,#c2a5cf,#f7f7f7,#a6dba0,#00441b)]',
@@ -77,8 +86,8 @@ export const VEGETATION_INDICES: readonly VegetationIndexUi[] = [
         id: 'gndvi',
         label: 'GNDVI',
         route: 'gndvi-tiles',
-        lowLabel: 'Low',
-        highLabel: 'High',
+        lowKey: 'low',
+        highKey: 'high',
         // YlGn — green-band chlorophyll sensitivity.
         legendGradientClass:
             'bg-[linear-gradient(to_right,#ffffe5,#d9f0a3,#78c679,#238443,#004529)]',
@@ -87,8 +96,8 @@ export const VEGETATION_INDICES: readonly VegetationIndexUi[] = [
         id: 'evi',
         label: 'EVI',
         route: 'evi-tiles',
-        lowLabel: 'Low',
-        highLabel: 'High',
+        lowKey: 'low',
+        highKey: 'high',
         // Viridis — enhanced VI, distinct from the other greens.
         legendGradientClass:
             'bg-[linear-gradient(to_right,#440154,#3b528b,#21918c,#5ec962,#fde725)]',

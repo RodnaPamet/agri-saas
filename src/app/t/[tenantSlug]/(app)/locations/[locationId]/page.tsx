@@ -187,6 +187,10 @@ function LocationDetailBody() {
     const tCrops = useTranslations('crops');
     const tAgStatus = useTranslations('agStatus');
     const tSoil = useTranslations('ag.soil');
+    // Vegetation-index legend captions are KEYS on the index definition,
+    // not English — shared with the native client via
+    // `agroEnums.indexLegend.*`. See `vegetation-indices.ts`.
+    const tLegend = useTranslations('agroEnums.indexLegend');
     const { tenantSlug, locationId } = useParams<{ tenantSlug: string; locationId: string }>();
     const buildUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
@@ -916,12 +920,12 @@ function LocationDetailBody() {
                             ) : indexTileUrl ? (
                                 <>
                                     <span className="font-medium text-content-secondary">{activeSpec.label}</span>
-                                    <span>{activeSpec.lowLabel}</span>
+                                    <span>{tLegend(activeSpec.lowKey)}</span>
                                     <span
                                         aria-hidden="true"
                                         className={cn('h-2 w-24 rounded-full', activeSpec.legendGradientClass)}
                                     />
-                                    <span>{activeSpec.highLabel}</span>
+                                    <span>{tLegend(activeSpec.highKey)}</span>
                                     {/* The composite falls back to the latest
                                         available pass when the picked date has no
                                         imagery, so the raster on screen can be
