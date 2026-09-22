@@ -133,13 +133,22 @@ describeFn('POST /api/auth/token/refresh', () => {
         return { session: s, body: await res.json() };
     }
 
-    it('rotates: returns a NEW pair and the old refresh stops working', async () => {
+    it('rotates: returns a NEW pair, and the old token dies once its successor is spent', async () => {
         const { body } = await issuedPair();
         const r1 = await refresh(refreshReq({ refreshToken: body.refreshToken }), ROUTE_CTX);
         expect(r1.status).toBe(200);
         const rotated = await r1.json();
         expect(rotated.refreshToken).not.toBe(body.refreshToken);
 
+        // Re-presenting the old token while its successor is UNSPENT is a
+        // retry, not a replay: the client evidently never received the answer.
+        // Refusing it here is what signed the owner out mid-field on
+        // 2026-09-22 — see `reissueWithinGrace`.
+        const retry = await refresh(refreshReq({ refreshToken: body.refreshToken }), ROUTE_CTX);
+        expect(retry.status).toBe(200);
+
+        // That re-issue SPENT the successor, so the same token presented again
+        // is theft evidence and the lineage burns.
         const replay = await refresh(refreshReq({ refreshToken: body.refreshToken }), ROUTE_CTX);
         expect(replay.status).toBe(401);
     });
@@ -170,6 +179,11 @@ describeFn('POST /api/auth/token/refresh', () => {
         it('unknown, malformed, missing and replayed all return the identical response', async () => {
             const { body } = await issuedPair();
             await refresh(refreshReq({ refreshToken: body.refreshToken }), ROUTE_CTX); // spend it
+            // ...and spend its SUCCESSOR too, so re-presenting the parent below
+            // is a genuine replay rather than the retry the grace window
+            // absorbs. Without this the fourth case returns 200 and the
+            // indistinguishability claim is vacuous.
+            await refresh(refreshReq({ refreshToken: body.refreshToken }), ROUTE_CTX);
 
             const cases = await Promise.all([
                 refresh(refreshReq({ refreshToken: 'totally-unknown-token' }), ROUTE_CTX),
