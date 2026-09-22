@@ -41,7 +41,7 @@ const REQUIRED_CHECKS = [
     'Coverage (≥60%)',
 ];
 
-type Job = { name?: string; if?: unknown };
+type Job = { name?: string; if?: unknown; needs?: unknown };
 
 function loadJobs(file: string): Record<string, Job> {
     const doc = yaml.load(fs.readFileSync(file, 'utf8')) as { jobs: Record<string, Job> };
@@ -78,6 +78,37 @@ describe('required status checks always report', () => {
         // `needs.changes.outputs.*` is how this pipeline skips work for
         // irrelevant diffs. A required check gated that way never reports.
         expect(String(job.if ?? '')).not.toContain('needs.changes.outputs');
+    });
+
+    /**
+     * The property the whole summary pattern rests on.
+     *
+     * GitHub skips a dependent job when anything in its `needs` skips —
+     * so wrapping a skippable job in a summary achieves NOTHING unless
+     * the summary opts out with `always()` or `!cancelled()`. Get this
+     * wrong and gating the heavy job silently takes the REQUIRED check
+     * down with it: pending forever, which reads as "nothing has gone
+     * wrong yet" rather than as a failure.
+     *
+     * Checked statically because it cannot be checked any other way
+     * until a PR happens to touch none of the gated paths — as of
+     * 2026-09-22 no PR in the last 25 merges had, so this path had
+     * never actually run.
+     */
+    it.each(REQUIRED_CHECKS)('%s survives a skipped dependency', (check) => {
+        const found = jobFor(jobs, check);
+        expect(found).not.toBeNull();
+        const [, job] = found!;
+        if (!job.needs) return; // nothing upstream of it can skip
+        expect(String(job.if ?? '')).toMatch(/always\(\)|!\s*cancelled\(\)/);
+    });
+
+    it('SELF-TEST: a summary that would die with its dependency is detected', () => {
+        const rigged: Record<string, Job> = {
+            s: { name: 'Docker Build & Scan', needs: ['docker'], if: "${{ github.event_name != 'merge_group' }}" },
+        };
+        const [, job] = jobFor(rigged, 'Docker Build & Scan')!;
+        expect(String(job.if)).not.toMatch(/always\(\)|!\s*cancelled\(\)/);
     });
 
     it('SELF-TEST: a required name behind a path filter is detected', () => {
