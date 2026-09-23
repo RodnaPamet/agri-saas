@@ -416,6 +416,12 @@ enum EmailNotificationType {
   // dedupe at the outbox layer prevents double-fires; the
   // calendar-day trigger condition is the spam guard.
   EXCEPTION_EXPIRING
+  // Farm Risk (2026-09-23) — a farmer asked for an insurance quote on a
+  // parcel. Goes to the PLATFORM operator, not to the tenant, so it is
+  // enqueued with `audience: 'platform'` and is NOT silenced by the
+  // tenant's own notification switch: the tenant is the SUBJECT of this
+  // mail rather than its reader.
+  INSURANCE_LEAD
 }
 
 enum EmailOutboxStatus {

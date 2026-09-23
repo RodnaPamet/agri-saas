@@ -6194,6 +6194,15 @@
         "organization": "организацията",
         "workspace": "работното пространство"
       }
+    },
+    "insuranceLead": {
+      "subject": "Запитване за застраховка: {farm} — {parcel}",
+      "heading": "Запитване за застрахователна оферта",
+      "intro": "Стопанство {farm} иска оферта за следния имот.",
+      "parcelLabel": "Имот",
+      "readingLabel": "Сателитни показания",
+      "messageLabel": "Съобщение от стопанина",
+      "open": "Отвори в Agrent"
     }
   },
   "diagnostics": {

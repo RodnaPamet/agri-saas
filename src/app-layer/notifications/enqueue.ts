@@ -18,9 +18,11 @@ import {
     buildAccessReviewReminderEmail,
     buildAccessReviewOverdueEscalationEmail,
     type TaskAssignedPayload,
+    type InsuranceLeadPayload,
     type EvidenceExpiringPayload,
     type AccessReviewReminderPayload,
     type AccessReviewOverdueEscalationPayload,
+    buildInsuranceLeadEmail,
 } from './templates';
 
 export interface EnqueueEmailInput {
@@ -43,8 +45,23 @@ export interface EnqueueEmailInput {
      * convention: never restore a default that means "unknown".
      */
     locale: Locale;
+    /**
+     * Who the mail is FOR — and therefore whose switch governs it.
+     *
+     * `tenant` (the default, and every caller before #1088) respects
+     * `TenantNotificationSettings.enabled`: the tenant is the READER, so the
+     * tenant may turn it off.
+     *
+     * `platform` does not. The tenant is the SUBJECT of that mail rather than
+     * its reader — an insurance-quote ask is a farmer telling the operator
+     * something — and letting a tenant's own preference silence a signal
+     * addressed to somebody else is a category error, not a feature. It would
+     * also fail silently, which is the worst property a notification can have.
+     */
+    audience?: 'tenant' | 'platform';
     entityId: string;
     payload:
+        | InsuranceLeadPayload
         | TaskAssignedPayload
         | EvidenceExpiringPayload
         | AccessReviewReminderPayload
@@ -80,9 +97,11 @@ export async function enqueueEmail(
     input: EnqueueEmailInput,
 ): Promise<{ id: string; dedupeKey: string } | null> {
     const { tenantId, type, toEmail, locale, entityId, payload, sendAfter, requestId } = input;
+    const audience = input.audience ?? 'tenant';
 
-    // Check tenant settings — skip if disabled
-    const enabled = await isNotificationsEnabled(db, tenantId);
+    // Check tenant settings — skip if disabled. Platform-audience mail is
+    // exempt: see `audience` on EnqueueEmailInput.
+    const enabled = audience === 'platform' || (await isNotificationsEnabled(db, tenantId));
     if (!enabled) {
         if (requestId) {
             logger.debug('notification skipped — disabled for tenant', { component: 'notifications' });
@@ -133,6 +152,7 @@ export async function enqueueEmail(
 async function buildEmailContent(
     type: EmailNotificationType,
     payload:
+        | InsuranceLeadPayload
         | TaskAssignedPayload
         | EvidenceExpiringPayload
         | AccessReviewReminderPayload
@@ -162,6 +182,8 @@ async function buildEmailContent(
         // them.
         case 'TASK_ASSIGNED':
             return buildTaskAssignedEmail(payload as TaskAssignedPayload, locale);
+        case 'INSURANCE_LEAD':
+            return buildInsuranceLeadEmail(payload as InsuranceLeadPayload, locale);
         case 'EVIDENCE_EXPIRING':
             return buildEvidenceExpiringEmail(payload as EvidenceExpiringPayload, locale);
         case 'ACCESS_REVIEW_REMINDER':
