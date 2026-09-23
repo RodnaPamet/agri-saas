@@ -32,6 +32,52 @@ const COMPONENT = 'trends';
 /** Source slugs eligible to benchmark an owned price. */
 const SOURCE_EC_AGRIFOOD = 'ec-agrifood';
 const SOURCE_ALPHA_VANTAGE = 'alpha-vantage';
+
+/**
+ * The region whose quotes benchmark a farm, and the stage within it.
+ *
+ * `region` on `MarketPriceSeries` is a COUNTRY code — production carries BG,
+ * EL, RO, EU and (for Alpha Vantage) GLOBAL — while `stage` is the delivery
+ * point or market stage within it. Both matter, and until #1072 this read
+ * filtered on NEITHER.
+ *
+ * ── Why BG is a constant and not a lookup ──
+ *
+ * There is no country field to read. `FarmProfile` carries `egn`, `eik`,
+ * `registrationEkatte`, `odbhCity` and `agricultureDirectorateCity` — every
+ * one a Bulgarian registry concept — so the schema is structurally
+ * single-country and a per-tenant country column would be inventing a
+ * dimension the product does not have. This constant is the ONE place to
+ * change when that stops being true; a lookup would spread the assumption
+ * instead of naming it.
+ *
+ * ── Why no fallback to another country ──
+ *
+ * Measured on production: the 21 EC wheat series sharing 2026-07-20 span
+ * 178.00–250.00 EUR/t, bottom a Bulgarian depot and top a Greek farm gate.
+ * Benchmarking a Bulgarian farm against a Greek quote is not a degraded
+ * answer, it is a different question answered confidently — the same
+ * objection the own-listings median already carries above. A commodity with
+ * no BG series therefore yields NO reference, which `grain-net-worth`
+ * already surfaces as the `NO_MARKET_PRICE` refusal rather than a silent
+ * zero.
+ *
+ * That also excludes Alpha Vantage, whose region is GLOBAL, and excludes the
+ * RO series quoted in RON/t — so the reference can no longer arrive in a
+ * currency the caller did not expect.
+ */
+const BENCHMARK_REGION = 'BG';
+
+/**
+ * The national figure, as EC spells it — verified as the only `stage` value
+ * on production matching `%National%`. Preferred over a named delivery point
+ * because a farm is not tied to one depot, and the nine Bulgarian points for
+ * wheat disagree by tens of euros.
+ *
+ * Not every commodity has one: wheat, maize and barley do; sunflower's only
+ * BG series is `FGATE`. So this ranks candidates, it does not filter them.
+ */
+const NATIONAL_AVERAGE_STAGE = 'National Average - Not Specified';
 /** Every range the read caches under — the invalidation key space. */
 const TREND_RANGES = ['1m', '3m', '1y', 'all'] as const;
 
@@ -351,6 +397,37 @@ export async function invalidatePriceTrendsCache(
  *
  * Global data, no tenant scope. Bounded by the caller's commodity list.
  */
+/**
+ * Does a candidate beat the incumbent?
+ *
+ * Deliberately written as "strictly better on the first axis that differs",
+ * with the caller's iteration order as the final tie-break — because the
+ * previous version was
+ *
+ *     candidate.observedAt > existing.observedAt
+ *
+ * and that NEVER FIRED on this data. EC quotes every series for a week on the
+ * same date, so 21 Bulgarian and foreign wheat series shared 2026-07-20 and
+ * every comparison was false. The winner was therefore the first row Postgres
+ * happened to return, across a 178–250 EUR/t spread, in a figure a farmer
+ * plans against (#1072).
+ *
+ * A strict comparison over data that TIES is not a preference, it is a coin
+ * flip wearing one. The fix is two-part and both halves are required: rank on
+ * an axis that actually discriminates (the national figure vs a delivery
+ * point), and make the residual order deterministic — which the `orderBy` on
+ * the query now guarantees, so "first one wins" is stable rather than
+ * arbitrary.
+ */
+function isBetter(
+    candidateStage: number,
+    candidateObservedAt: Date,
+    incumbent: { stage: number; observedAt: Date },
+): boolean {
+    if (candidateStage !== incumbent.stage) return candidateStage < incumbent.stage;
+    return candidateObservedAt.getTime() > incumbent.observedAt.getTime();
+}
+
 export async function getMarketReferences(
     commodities: readonly string[],
 ): Promise<Map<string, MarketReference>> {
@@ -362,24 +439,57 @@ export async function getMarketReferences(
             commodity: { in: wanted },
             // Never benchmark against our own noticeboard — see above.
             source: { in: [SOURCE_EC_AGRIFOOD, SOURCE_ALPHA_VANTAGE] },
+            // The farm's own market. See BENCHMARK_REGION.
+            region: BENCHMARK_REGION,
         },
+        // A TOTAL ORDER, not decoration. Without it "first row wins" below is
+        // whatever the planner returned, so a vacuum or a plan change could
+        // move a displayed price with no code change (#1072).
+        orderBy: [{ commodity: 'asc' }, { id: 'asc' }],
         take: MAX_SERIES,
         select: {
+            id: true,
             commodity: true,
             source: true,
             currency: true,
             unit: true,
+            stage: true,
             points: { orderBy: { date: 'desc' }, take: 1, select: { date: true, price: true } },
         },
     });
 
+    // A `take` at or below the eligible population is a SILENT cap — the
+    // guardrail budget only looks for a MISSING `take:`, so one that is
+    // merely too small is invisible to it. This was live: 110 eligible
+    // series against MAX_SERIES = 100, dropping ten arbitrarily, and
+    // sunflower had only five series in total so a whole commodity could
+    // vanish. Saying so costs one branch and makes the next occurrence
+    // findable.
+    if (series.length === MAX_SERIES) {
+        logger.warn('trends: market-reference query hit its row cap', {
+            component: COMPONENT,
+            cap: MAX_SERIES,
+            commodities: wanted.length,
+        });
+    }
+
     const byCommodity = new Map<string, MarketReference>();
+    /**
+     * What each winner won ON — kept beside the result because
+     * `MarketReference` is the DTO and must not grow selection bookkeeping a
+     * client would then have to ignore.
+     */
+    const ranked = new Map<string, { stage: number; observedAt: Date }>();
     for (const s of series) {
         const latest = s.points[0];
         if (!latest) continue;
         // Per-tonne only. A per-bushel quote is a different base, and the
         // no-conversion invariant forbids making it look like the same one.
         if (!/\/t$/i.test(s.unit)) continue;
+
+        // National figure first, then a named delivery point. See
+        // NATIONAL_AVERAGE_STAGE.
+        const rank = s.stage === NATIONAL_AVERAGE_STAGE ? 0 : 1;
 
         const candidate: MarketReference = {
             commodity: s.commodity as MarketReference['commodity'],
@@ -389,12 +499,11 @@ export async function getMarketReferences(
             source: s.source,
         };
         const existing = byCommodity.get(s.commodity);
-        // EC wins over Alpha Vantage; among equals, the fresher observation.
-        const better =
-            !existing ||
-            (existing.source !== SOURCE_EC_AGRIFOOD && candidate.source === SOURCE_EC_AGRIFOOD) ||
-            (existing.source === candidate.source && candidate.observedAt > existing.observedAt);
-        if (better) byCommodity.set(s.commodity, candidate);
+        const existingRank = ranked.get(s.commodity);
+        if (!existing || existingRank === undefined || isBetter(rank, latest.date, existingRank)) {
+            byCommodity.set(s.commodity, candidate);
+            ranked.set(s.commodity, { stage: rank, observedAt: latest.date });
+        }
     }
     return byCommodity;
 }
