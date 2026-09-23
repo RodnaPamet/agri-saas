@@ -18,7 +18,7 @@
  * `/assets/[id]` mounts exactly as the practice detail page did.
  */
 import { test, expect } from '@playwright/test';
-import { loginAndGetTenant, safeGoto, waitForHydration } from './e2e-utils';
+import { loginAndGetTenant, safeGoto, waitForHydration, expectRouteTransition } from './e2e-utils';
 
 test.describe('EntityDetailLayout', () => {
     test('asset detail page renders the shell — breadcrumbs, header, body', async ({
@@ -44,19 +44,26 @@ test.describe('EntityDetailLayout', () => {
         // later as a URL that never changed. `networkidle` used to cover this.
         await waitForHydration(page, '[data-testid="assets-table"] tbody tr');
         await firstRow.locator('td').last().dblclick();
-        await page.waitForURL(/\/assets\/[a-zA-Z0-9-]+$/, {
-            timeout: 15_000,
-        });
 
         // The shell's three structural promises:
-        // (1) the PageHeader subtree carrying breadcrumbs + title.
-        // 15s, matching the `waitForURL` above rather than sitting at 10s
-        // beneath it. The navigation and the detail page's first paint are
-        // the same slow-server event; budgeting them differently just means
-        // the second half is the one that reports it.
-        await expect(
-            page.locator('[data-testid="entity-detail-header"]'),
-        ).toBeVisible({ timeout: 15_000 });
+        //
+        // (1) the PageHeader subtree carrying breadcrumbs + title — asserted
+        //     through `expectRouteTransition`, which gives the navigation and
+        //     the first paint ONE budget.
+        //
+        //     The previous shape had `waitForURL` at 15s and this at 15s,
+        //     with a comment correctly noting they are "the same slow-server
+        //     event". The error was not having two waits — the URL one
+        //     diagnoses an unhydrated double-click, which is a different
+        //     fault. It was the BUDGET: `waitForURL` returns as soon as the
+        //     URL changes, before the RSC payload lands, so it consumed none
+        //     of its 15s and this assertion paid for the whole transition out
+        //     of its own. It read as a 30s allowance and behaved as 15s
+        //     (#1076). The paint now gets 30s of its own.
+        await expectRouteTransition(page, {
+            content: page.locator('[data-testid="entity-detail-header"]'),
+            url: /\/assets\/[a-zA-Z0-9-]+$/,
+        });
         // (2) the body wrapper. (The asset surface does not pass a
         //     `rail` — linked Tasks live in their own tab — so the
         //     rail is intentionally absent here; the AsidePanel

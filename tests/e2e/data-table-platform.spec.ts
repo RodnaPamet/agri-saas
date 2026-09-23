@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { loginAndGetTenant, waitForHydration } from './e2e-utils';
+import { loginAndGetTenant, waitForHydration, expectRouteTransition } from './e2e-utils';
 
 /**
  * DataTable Platform E2E — Validates that all migrated list pages render
@@ -174,8 +174,15 @@ test.describe('DataTable Platform — Row click navigation', () => {
         // surfaces 10s later as a URL that never changed. Name the row.
         await waitForHydration(page, '[data-testid="assets-table"] tbody tr');
         await rows.first().locator('td').last().dblclick();
-        await page.waitForURL(/\/assets\/[a-zA-Z0-9-]+$/, { timeout: 15_000 });
-        await expect(page.locator('#asset-title-heading')).toBeVisible({ timeout: 10_000 });
+        // ONE helper, two budgets sized for what each half does (#1076). The
+        // paint had 10s here — less than the URL wait that precedes it and
+        // returns early — so the slow half was the one with the smaller
+        // allowance. This spec flaked on the same CI run that exhausted
+        // entity-detail's retries.
+        await expectRouteTransition(page, {
+            content: page.locator('#asset-title-heading'),
+            url: /\/assets\/[a-zA-Z0-9-]+$/,
+        });
     });
 
     test('Tasks row double-click navigates to detail', async ({ page }) => {
@@ -190,8 +197,11 @@ test.describe('DataTable Platform — Row click navigation', () => {
         // Same as the Assets case above.
         await waitForHydration(page, '[data-testid="farm-tasks-table"] tbody tr');
         await rows.first().locator('td').last().dblclick();
-        await page.waitForURL(/\/farm-tasks\/[a-zA-Z0-9-]+$/, { timeout: 15_000 });
-        await expect(page.locator('#task-title')).toBeVisible({ timeout: 10_000 });
+        // Same shape, same fix as the Assets case above.
+        await expectRouteTransition(page, {
+            content: page.locator('#task-title'),
+            url: /\/farm-tasks\/[a-zA-Z0-9-]+$/,
+        });
     });
 });
 
