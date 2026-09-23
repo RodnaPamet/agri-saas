@@ -7,7 +7,7 @@
 import { randomUUID, randomBytes } from 'node:crypto';
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve as resolvePath } from 'node:path';
-import { expect, request as playwrightRequest, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, request as playwrightRequest, type APIRequestContext, type Page, type Locator } from '@playwright/test';
 
 /**
  * Pick an option from one of the shared `<Combobox>` practices (Epic 55
@@ -662,4 +662,41 @@ export async function openJournalEntryModalWarm(page: Page): Promise<void> {
     // not delete it as redundant — it is the only assertion here that proves
     // the lazy chunk is no longer in flight.
     await expect(page.getByTestId('rich-text-editor')).toBeVisible();
+}
+
+/**
+ * Wait out a client-side route transition, budgeting each half for what it
+ * actually does.
+ *
+ * A Next app-router navigation updates the URL BEFORE the new route's RSC
+ * payload arrives. So `waitForURL` returns early and consumes almost none of
+ * its timeout, while whatever is asserted next pays for the entire
+ * transition out of its own budget. A spec that gives each half 15s reads as
+ * a 30s allowance and behaves as 15s for the part that takes the time.
+ *
+ * That is #1076: `entity-detail-layout` needed retries on essentially every
+ * run and finally exhausted them, blocking an unrelated dependency bump.
+ * Measured on a green CI run — attempts 1 and 2 timed out at 15s; retry 2
+ * completed the WHOLE test in 4.2s. A cold first render, fast once warm.
+ * Not a hang, and not a product defect.
+ *
+ * ── Why both waits, and in this order ──
+ *
+ * The URL wait is kept because it DIAGNOSES. A double-click on an unhydrated
+ * row is two no-ops, and that surfaces as a URL that never changed — a
+ * different fault from a page that navigated and did not paint, and the
+ * caller should not have to tell them apart from one timeout. It keeps a
+ * short budget because the failures this fixes all got PAST it.
+ *
+ * The content wait gets the generous one: 30s, matching
+ * `waitForFieldMapWarm`, the repo's existing budget for a genuinely slow
+ * first load. A real hang still fails, 15 seconds later than before, which
+ * is the cheaper of the two errors.
+ */
+export async function expectRouteTransition(
+    page: Page,
+    opts: { content: Locator; url: RegExp; navTimeout?: number; paintTimeout?: number },
+): Promise<void> {
+    await page.waitForURL(opts.url, { timeout: opts.navTimeout ?? 15_000 });
+    await expect(opts.content).toBeVisible({ timeout: opts.paintTimeout ?? 30_000 });
 }
