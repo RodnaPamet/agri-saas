@@ -49,11 +49,13 @@ jest.mock('@/lib/redis', () => ({
 }));
 
 import { NextRequest } from 'next/server';
-import { GET } from '@/app/api/t/[tenantSlug]/agro/ndmi-tiles/route';
+import { GET } from '@/app/api/t/[tenantSlug]/agro/locations/[locationId]/ndmi-tiles/route';
 
 function call(qs: string) {
-    const req = new NextRequest(`http://localhost/api/t/acme/agro/ndmi-tiles?${qs}`);
-    return GET(req, { params: Promise.resolve({ tenantSlug: 'acme' }) });
+    // `locationId` is a PATH segment now, not a query param — iOS logs the
+    // full URL including the query from its own networking layer.
+    const req = new NextRequest(`http://localhost/api/t/acme/agro/locations/loc-1/ndmi-tiles?${qs}`);
+    return GET(req, { params: Promise.resolve({ tenantSlug: 'acme', locationId: 'loc-1' }) });
 }
 
 beforeEach(() => {
@@ -72,20 +74,20 @@ beforeEach(() => {
 
 it('reports not-configured without calling GEE when creds are absent', async () => {
     isGeeConfiguredMock.mockReturnValue(false);
-    const res = await call('locationId=loc-1');
+    const res = await call('');
     expect(await res.json()).toEqual({ configured: false, tileUrl: '' });
     expect(getNdmiTileUrlMock).not.toHaveBeenCalled();
 });
 
 it('returns an empty tileUrl when the location has no mapped field', async () => {
     listLocationParcelsMock.mockResolvedValue({ bounds: null, parcels: [] });
-    const res = await call('locationId=loc-1');
+    const res = await call('');
     expect(await res.json()).toEqual({ configured: true, tileUrl: '' });
     expect(getNdmiTileUrlMock).not.toHaveBeenCalled();
 });
 
 it('generates + caches a tile URL on a cache miss', async () => {
-    const res = await call('locationId=loc-1&date=2026-06-15');
+    const res = await call('date=2026-06-15');
     const body = await res.json();
     expect(body.configured).toBe(true);
     expect(body.tileUrl).toContain('earthengine.googleapis.com');
@@ -109,7 +111,7 @@ it('returns the cached URL + cached acquisition date without calling GEE on a ca
             acquiredDate: '2026-06-09',
         }),
     );
-    const res = await call('locationId=loc-1&date=2026-06-15');
+    const res = await call('date=2026-06-15');
     const body = await res.json();
     expect(body.tileUrl).toBe('https://earthengine.googleapis.com/cached/{z}/{x}/{y}');
     expect(body.date).toBe('2026-06-09');
@@ -119,7 +121,7 @@ it('returns the cached URL + cached acquisition date without calling GEE on a ca
 
 it('degrades softly when GEE generation throws', async () => {
     getNdmiTileUrlMock.mockRejectedValue(new Error('EE getMap failed'));
-    const res = await call('locationId=loc-1&date=2026-06-15');
+    const res = await call('date=2026-06-15');
     expect(await res.json()).toEqual({
         configured: true,
         tileUrl: '',

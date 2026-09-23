@@ -318,7 +318,11 @@ function LocationDetailBody() {
         : t('dateFallback');
     const indexQ = useTenantSWR<{ configured: boolean; tileUrl: string; date?: string; error?: string }>(
         tab === 'map' && activeSpec
-            ? `/agro/${activeSpec.route}?locationId=${locationId}${imageryYmd ? `&date=${imageryYmd}` : ''}`
+            // Location id in the PATH, not the query. iOS writes the full
+            // request URL — query included — to the unified log from Apple's
+            // own networking layer, and the native client calls these same
+            // routes. `date` stays a query param: a date is not an id.
+            ? `/agro/locations/${locationId}/${activeSpec.route}${imageryYmd ? `?date=${imageryYmd}` : ''}`
             : null,
     );
     // КАИС cadastre import feature flag (server-computed; the URL is never
