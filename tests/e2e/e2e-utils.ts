@@ -107,7 +107,24 @@ export async function loginAndGetTenant(
             //   prefetch of same-origin links while the previous navigation
             //   is tearing down, and by tests that deliberately probe a
             //   forbidden route (non-admin → /admin/*, expecting 403).
-            if (text.includes('Failed to fetch RSC payload') || text.includes('ClientFetchError')) return;
+            // These two are SURFACED, not silenced — see #748. The
+            // suppression below was justified as "the browser's automatic
+            // console log for any subresource that doesn't return 2xx", and
+            // for `Failed to load resource` that holds. It does NOT hold for
+            // these two: on the entity-detail-layout:24 failures the
+            // navigation RSC request returned 200 with a complete 1913-byte
+            // body (measured from the trace of run 35452167058), so a
+            // "Failed to fetch RSC payload" there is not the non-2xx case the
+            // exemption was written for — it is the failure itself, dropped on
+            // the floor before anyone could read it.
+            //
+            // Logged under a distinct prefix rather than promoted to an error,
+            // so the genuinely benign occurrences stay greppable noise instead
+            // of failing unrelated specs.
+            if (text.includes('Failed to fetch RSC payload') || text.includes('ClientFetchError')) {
+                console.log('BROWSER CONSOLE (suppressed, see #748):', text);
+                return;
+            }
             if (text.startsWith('Failed to load resource')) return;
             console.log('BROWSER CONSOLE ERROR:', text);
         }

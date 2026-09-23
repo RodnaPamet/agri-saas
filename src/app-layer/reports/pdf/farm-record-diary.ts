@@ -28,6 +28,7 @@ import { sanitizePlainText } from '@/lib/security/sanitize';
 import { createPdfDocument, UNICODE_FONT, UNICODE_FONT_BOLD } from '@/lib/pdf/pdfKitFactory';
 import { getStorageProvider, buildTenantObjectKey } from '@/lib/storage';
 import type { ReportMeta } from '@/lib/pdf/types';
+import { techniqueLabelBg } from '@/lib/agro/application-techniques';
 
 // ─────────────────────────────────────────────────────────────────────
 // Bulgarian labels (document language is BG regardless of UI locale)
@@ -59,6 +60,12 @@ export interface DiaryLabels {
     variety: string;
     sownArea: string;
     predecessor: string;
+    landDistrict: string;
+    produceStore: string;
+    locality: string;
+    cadastralNo: string;
+    fieldNo: string;
+    sowDate: string;
     page: string;
     of: string;
     period: string;
@@ -68,6 +75,9 @@ export interface DiaryLabels {
     fertCols: string[];
     sampleCols: string[];
     inspectorCols: string[];
+    // per-field header strips (label order IS the form's)
+    obsFieldHeader: string[];
+    chemFieldHeader: string[];
 }
 
 export const BG_LABELS: DiaryLabels = {
@@ -99,6 +109,12 @@ export const BG_LABELS: DiaryLabels = {
     variety: 'Сорт/хибрид',
     sownArea: 'Засята площ (дка)',
     predecessor: 'Предшественик',
+    landDistrict: 'Землище',
+    produceStore: 'Склад за растителна продукция',
+    locality: 'Местност',
+    cadastralNo: 'Кадастрален №',
+    fieldNo: 'Поле №',
+    sowDate: 'Дата на сеитба (засаждане)',
     page: 'стр.',
     of: 'от',
     period: 'Период',
@@ -125,9 +141,9 @@ export const BG_LABELS: DiaryLabels = {
         'Техника за приложение',
         'Карантинен срок на ПРЗ',
         'Най-ранна дата за прибиране',
-        'Име и № на сертификат (чл. 84, ал. 2)',
-        'Име и № на сертификат (чл. 84, ал. 1)',
-        'Подпис',
+        'Име и фамилия на лицето и № на сертификат по чл. 83 от ЗЗР, във връзка с чл. 84, ал. 2 от ЗЗР',
+        'Име и фамилия на лицето* и № на сертификат по чл. 83 от ЗЗР, във връзка с чл. 84, ал. 1 от ЗЗР',
+        'Подпис на специалиста',
     ],
     fertCols: [
         '№',
@@ -151,6 +167,26 @@ export const BG_LABELS: DiaryLabels = {
         'Подпис',
     ],
     inspectorCols: ['Дата', 'Констатации', 'Предписания', 'Подпис на инспектор'],
+    obsFieldHeader: [
+        '№ на полето според единния регистър на площите',
+        'Култура',
+        'Сорт/хибрид',
+        'Засята площ (дка)',
+        'Предшественик',
+    ],
+    chemFieldHeader: [
+        'Населено място',
+        'Землище',
+        'Склад за растителна продукция',
+        'Местност',
+        'Кадастрален №',
+        'Поле №',
+        'Култура',
+        'Сорт/хибрид',
+        'Засята площ',
+        'Предшественик',
+        'Дата на сеитба (засаждане)',
+    ],
 };
 
 // ─────────────────────────────────────────────────────────────────────
@@ -170,7 +206,43 @@ export interface FarmProfileData {
     odbhCity: string | null;
 }
 
+/**
+ * Identity of ONE field, as the form's per-field header strip prints it.
+ * Every member is nullable: the register must show an empty cell rather
+ * than invent one, exactly as the pre-printed paper form does.
+ */
+export interface FieldHeaderData {
+    parcelId: string;
+    /** Поле № — the holding's own field number (Parcel.name). */
+    fieldNo: string | null;
+    /** Кадастрален № */
+    cadastralId: string | null;
+    /** Землище */
+    landDistrict: string | null;
+    /** Местност */
+    locality: string | null;
+    /** Склад за растителна продукция */
+    produceStore: string | null;
+    /** Култура */
+    cropType: string | null;
+    /** Сорт/хибрид */
+    variety: string | null;
+    /** Засята площ — stored in ha, PRINTED in дка. */
+    areaHa: number | null;
+    /** Предшественик — the crop grown on this parcel before the current one. */
+    predecessor: string | null;
+    /** Дата на сеитба (засаждане) */
+    sowDate: Date | null;
+}
+
 export interface SprayLineData {
+    /**
+     * Which field this treatment was carried out on. The chemical section
+     * is GROUPED by it: a per-field header strip above a table of other
+     * fields' rows would misattribute them, which is the whole defect this
+     * shape exists to prevent.
+     */
+    parcelId: string | null;
     completedAt: Date | null;
     targetNote: string | null;
     productName: string;
@@ -206,6 +278,12 @@ export interface FarmRecordData {
     sprayLines: SprayLineData[];
     fertilizeLines: FertilizeLineData[];
     observations: ObservationData[];
+    /**
+     * The fields this register covers, in print order — one header strip
+     * and one chemical table each. Empty when nothing was treated in the
+     * period; the section still prints, blank, like the paper form.
+     */
+    fields: FieldHeaderData[];
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -221,6 +299,14 @@ const DAY_MS = 86_400_000;
  * keep the query guardrail-compliant / the PDF finite.
  */
 export const MAX_OBSERVATION_ROWS = 500;
+
+/**
+ * Upper bound on per-field sheets in one location's register. Generous:
+ * a holding works tens of fields, not hundreds. Treatments on a field
+ * past the bound are NOT lost — renderFarmRecordDiary prints them under a
+ * blank header strip rather than dropping them.
+ */
+export const MAX_FIELD_SHEETS = 200;
 
 function fmtDate(d: Date | null | undefined): string {
     if (!d) return '';
@@ -272,7 +358,7 @@ export function buildChemicalRows(lines: SprayLineData[]): string[][] {
             l.productName,
             l.dose,
             toDka(l.areaHa),
-            l.applicationTechnique ?? '',
+            techniqueLabelBg(l.applicationTechnique),
             l.quarantineDays != null ? String(l.quarantineDays) : '',
             earliestHarvest,
             l.operatorCertNo ?? '',
@@ -315,6 +401,78 @@ export function buildObservationRows(obs: ObservationData[]): string[][] {
 // ─────────────────────────────────────────────────────────────────────
 
 const INK = '#0f172a';
+/**
+ * The chemical section's 11-cell per-field header strip, in the form's
+ * exact column order. `settlement` is holding-level (it is also on the
+ * cover); everything else is the field's own.
+ */
+export function buildChemFieldHeaderRow(
+    f: FieldHeaderData | null,
+    settlement: string | null,
+): string[] {
+    return [
+        settlement ?? '',
+        f?.landDistrict ?? '',
+        f?.produceStore ?? '',
+        f?.locality ?? '',
+        f?.cadastralId ?? '',
+        f?.fieldNo ?? '',
+        f?.cropType ?? '',
+        f?.variety ?? '',
+        f ? toDka(f.areaHa) : '',
+        f?.predecessor ?? '',
+        fmtDate(f?.sowDate),
+    ];
+}
+
+/** The observation section's 5-cell per-field header strip. */
+export function buildObsFieldHeaderRow(f: FieldHeaderData | null): string[] {
+    return [
+        f?.fieldNo ?? '',
+        f?.cropType ?? '',
+        f?.variety ?? '',
+        f ? toDka(f.areaHa) : '',
+        f?.predecessor ?? '',
+    ];
+}
+
+/** One field's sheet: its header strip, and the treatments carried out on it. */
+export interface FieldSprayGroup {
+    field: FieldHeaderData | null;
+    lines: SprayLineData[];
+}
+
+/**
+ * Split the period's treatments into one sheet per field.
+ *
+ * Two properties matter more than the grouping itself, because this feeds a
+ * legally-filed register:
+ *   • NO LINE IS LOST. A treatment whose field is not in `fields` — the
+ *     field list is capped at MAX_FIELD_SHEETS, the spray lines are not —
+ *     lands in a trailing group with a BLANK strip rather than being
+ *     filtered away. A vanished spray is an unrecorded chemical application.
+ *   • NO LINE IS DUPLICATED. Printing one treatment under two fields would
+ *     claim an application that never happened.
+ * `tests/pdf/farm-record-diary.test.ts` asserts both directly.
+ */
+export function groupSprayLinesByField(
+    fields: FieldHeaderData[],
+    sprayLines: SprayLineData[],
+): FieldSprayGroup[] {
+    const groups: FieldSprayGroup[] = fields.map((f) => ({
+        field: f,
+        lines: sprayLines.filter((l) => l.parcelId === f.parcelId),
+    }));
+    const knownFields = new Set(fields.map((f) => f.parcelId));
+    const orphanLines = sprayLines.filter((l) => !l.parcelId || !knownFields.has(l.parcelId));
+    // The same branch gives an idle period its one blank sheet, so the
+    // section is never absent from the document.
+    if (orphanLines.length || !groups.length) {
+        groups.push({ field: null, lines: orphanLines });
+    }
+    return groups;
+}
+
 const MUTED = '#64748b';
 const GRID = '#cbd5e1';
 const HEADER_BG = '#e2e8f0';
@@ -404,6 +562,27 @@ function drawRuledTable(
     for (let i = 0; i < blankRows; i++) drawCells(headers.map(() => ''), 16);
 
     return y;
+}
+
+/**
+ * The form's per-field header: one ruled strip of label over value. It is
+ * drawn with the table drawer because on the paper form that is exactly
+ * what it is — a one-row table above the register it describes.
+ */
+function drawFieldHeaderStrip(
+    doc: PDFKit.PDFDocument,
+    startY: number,
+    headers: string[],
+    values: string[],
+): number {
+    return drawRuledTable(
+        doc,
+        startY,
+        headers,
+        headers.map(() => ({ weight: 1 })),
+        [values],
+        0,
+    );
 }
 
 /** A row of `count` small boxed cells (ЕГН/ЕИК/ЕКАТТЕ), digits filled from `value`. */
@@ -526,11 +705,24 @@ export function renderFarmRecordDiary(
         width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
         align: 'center',
     });
+    // Scouting entries are LOCATION-scoped — LogEntry carries no parcel link
+    // — so they cannot be split per field the way treatments can. The strip is
+    // therefore filled only when the location has exactly ONE field, where the
+    // attribution is unambiguous; with several it prints blank for completion
+    // by hand, which is how the pre-printed form arrives anyway. Filling it
+    // from an arbitrary field would be the misattribution this work removes.
+    const obsField = data.fields.length === 1 ? data.fields[0] : null;
+    const obsHeaderBottom = drawFieldHeaderStrip(
+        doc,
+        doc.y + 8,
+        L.obsFieldHeader,
+        buildObsFieldHeaderRow(obsField),
+    );
     const obsRows = buildObservationRows(data.observations);
     const obsCols: RuledColumn[] = L.obsCols.map(() => ({ weight: 1 }));
     drawRuledTable(
         doc,
-        doc.y + 8,
+        obsHeaderBottom + 6,
         L.obsCols,
         obsCols,
         obsRows,
@@ -538,27 +730,39 @@ export function renderFarmRecordDiary(
     );
 
     // ── LANDSCAPE: chemical treatments (the core) ───────────────────
-    doc.addPage({ size: 'A4', layout: 'landscape' });
-    doc.font(UNICODE_FONT_BOLD).fontSize(11).fillColor(INK);
-    doc.text(L.chemicalSection, doc.page.margins.left, doc.page.margins.top, {
-        width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
-        align: 'center',
-    });
-    const chemRows = buildChemicalRows(data.sprayLines);
+    // The register is PER FIELD: one header strip and one table each, on its
+    // own sheet, as the paper form is filed. A single combined table under one
+    // strip would state that every row was carried out on that one field.
     // Column weights ~ the form's relative widths.
     const chemWeights = [0.6, 1.1, 1.3, 2.2, 1.1, 1, 1.3, 1, 1.3, 2, 2, 1];
     const chemCols: RuledColumn[] = chemWeights.map((w, i) => ({
         weight: w,
         align: i === 0 ? 'center' : 'left',
     }));
-    drawRuledTable(
-        doc,
-        doc.y + 8,
-        L.chemCols,
-        chemCols,
-        chemRows,
-        Math.max(0, 6 - chemRows.length),
-    );
+    const chemGroups = groupSprayLinesByField(data.fields, data.sprayLines);
+    for (const group of chemGroups) {
+        doc.addPage({ size: 'A4', layout: 'landscape' });
+        doc.font(UNICODE_FONT_BOLD).fontSize(11).fillColor(INK);
+        doc.text(L.chemicalSection, doc.page.margins.left, doc.page.margins.top, {
+            width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
+            align: 'center',
+        });
+        const headerBottom = drawFieldHeaderStrip(
+            doc,
+            doc.y + 8,
+            L.chemFieldHeader,
+            buildChemFieldHeaderRow(group.field, p.settlement),
+        );
+        const chemRows = buildChemicalRows(group.lines);
+        drawRuledTable(
+            doc,
+            headerBottom + 6,
+            L.chemCols,
+            chemCols,
+            chemRows,
+            Math.max(0, 6 - chemRows.length),
+        );
+    }
 
     // ── PORTRAIT: fertilizers ───────────────────────────────────────
     doc.addPage({ size: 'A4', layout: 'portrait' });
@@ -799,6 +1003,7 @@ export async function gatherFarmRecordData(
                 });
             } else {
                 sprayLines.push({
+                    parcelId: l.parcelId,
                     completedAt: l.completedAt,
                     targetNote: l.targetNote,
                     productName: l.product?.name ?? '',
@@ -848,6 +1053,106 @@ export async function gatherFarmRecordData(
             pest: null,
         }));
 
+        // ── Per-field header data ───────────────────────────────────
+        // Every field of the location gets a sheet, blank when nothing was
+        // applied to it — on this form that blank sheet IS the record that
+        // nothing was. Ordered by name so a regenerated register is stable.
+        const parcels = await db.parcel.findMany({
+            where: { tenantId: ctx.tenantId, locationId, deletedAt: null },
+            select: {
+                id: true,
+                name: true,
+                cropType: true,
+                cadastralId: true,
+                areaHa: true,
+                landDistrict: true,
+                locality: true,
+                produceStore: true,
+            },
+            orderBy: { name: 'asc' },
+            take: MAX_FIELD_SHEETS,
+        });
+
+        // Култура / Сорт / Дата на сеитба / Предшественик come from the
+        // planting history, not the parcel: Parcel.cropType is a single
+        // current-crop label with no variety, date or previous crop.
+        const parcelIds = parcels.map((pc) => pc.id);
+        const plantings = parcelIds.length
+            ? await db.planting.findMany({
+                  where: {
+                      tenantId: ctx.tenantId,
+                      parcelId: { in: parcelIds },
+                      deletedAt: null,
+                  },
+                  select: {
+                      parcelId: true,
+                      sowDate: true,
+                      transplantDate: true,
+                      variety: { select: { name: true } },
+                      cropPlan: {
+                          select: {
+                              cropType: { select: { name: true } },
+                              variety: { select: { name: true } },
+                          },
+                      },
+                  },
+              })
+            : [];
+
+        type PlantingRow = (typeof plantings)[number];
+        /** A transplanted crop has no sowDate; the form wants the date it went in. */
+        const sownOn = (pl: PlantingRow): Date | null => pl.sowDate ?? pl.transplantDate ?? null;
+
+        const historyByParcel = new Map<string, PlantingRow[]>();
+        for (const pl of plantings) {
+            if (!pl.parcelId) continue;
+            const arr = historyByParcel.get(pl.parcelId) ?? [];
+            arr.push(pl);
+            historyByParcel.set(pl.parcelId, arr);
+        }
+        // Newest first, undated last — sorted here rather than in the query
+        // because the ordering key is sowDate-or-transplantDate, not a column.
+        for (const arr of historyByParcel.values()) {
+            arr.sort((a, b) => (sownOn(b)?.getTime() ?? -Infinity) - (sownOn(a)?.getTime() ?? -Infinity));
+        }
+
+        const fields: FieldHeaderData[] = parcels.map((pc) => {
+            const history = historyByParcel.get(pc.id) ?? [];
+            // The crop this sheet is about: the most recent planting that had
+            // gone in BY THE END of the reported period. A later one belongs
+            // to the next season's register, not this one.
+            const current =
+                history.find((h) => {
+                    const d = sownOn(h);
+                    return d !== null && d <= toD;
+                }) ?? null;
+            const cropName = current?.cropPlan?.cropType?.name ?? pc.cropType ?? null;
+            // Предшественик — the most recent DIFFERENT crop before it. With
+            // nothing currently planted, the last crop grown IS the
+            // predecessor, which is why the scan starts at 0 in that case.
+            let predecessor: string | null = null;
+            for (let i = current ? history.indexOf(current) + 1 : 0; i < history.length; i++) {
+                const name = history[i].cropPlan?.cropType?.name ?? null;
+                if (name && name !== cropName) {
+                    predecessor = name;
+                    break;
+                }
+            }
+            return {
+                parcelId: pc.id,
+                fieldNo: pc.name || null,
+                cadastralId: pc.cadastralId,
+                landDistrict: pc.landDistrict,
+                locality: pc.locality,
+                produceStore: pc.produceStore,
+                cropType: cropName,
+                variety: current?.variety?.name ?? current?.cropPlan?.variety?.name ?? null,
+                areaHa: pc.areaHa != null ? Number(pc.areaHa) : null,
+                predecessor,
+                sowDate: current ? sownOn(current) : null,
+            };
+        });
+
         return {
             locationName: location?.name ?? '',
             from,
@@ -856,6 +1161,7 @@ export async function gatherFarmRecordData(
             sprayLines,
             fertilizeLines,
             observations,
+            fields,
         };
     });
 }

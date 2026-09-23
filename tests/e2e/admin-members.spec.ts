@@ -49,7 +49,21 @@ test.describe('Admin Member Management', () => {
 
         await safeGoto(page, `/t/${tenantSlug}/admin`, { waitUntil: 'domcontentloaded' });
 
-        await expect(page.locator('#members-pill-btn')).toBeVisible({ timeout: 15000 });
+        // The pill is server-rendered exactly once (admin/page.tsx is the only
+        // file in src/ that emits this id, and the shell renders {children}
+        // once). But this test asserts at `domcontentloaded` — inside the
+        // hydration window, where the subtree can momentarily exist twice. CI
+        // caught precisely that: a strict-mode violation naming two identical
+        // <a id="members-pill-btn">, with the snapshot taken moments later
+        // showing only one.
+        //
+        // So wait for the count to SETTLE rather than reaching for `.first()`,
+        // which would pass just as happily on a page that really did render
+        // two. Same barrier the header assertion in admin-regression.spec.ts
+        // already uses, for the same reason.
+        const pill = page.locator('#members-pill-btn');
+        await expect(pill).toHaveCount(1, { timeout: 15000 });
+        await expect(pill).toBeVisible();
     });
 
     test('non-admin cannot access /admin/members', async ({ page }) => {

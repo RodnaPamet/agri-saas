@@ -21,6 +21,7 @@ import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
 import { createFarmTask, listMyFarmTasks } from '@/app-layer/usecases/farm-task';
+import { setTaskStatus } from '@/app-layer/usecases/task';
 import { getCalendarEvents } from '@/app-layer/usecases/calendar';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
@@ -141,6 +142,51 @@ describeFn('farm tasks (DB)', () => {
     test('listMyFarmTasks returns the operator’s queue', async () => {
         const queue = await listMyFarmTasks(operatorCtx());
         expect(queue.map((t) => t.id)).toContain(taskId);
+    });
+
+    test('a REPLAYED status write answers in the same shape as a real one', async () => {
+        // Measured by the native client 2026-09-22: a real change returned 25
+        // keys (the bare updated row) and a replay returned 32, because the
+        // already-applied path handed back the row `getById` had loaded — with
+        // assignee, createdBy, reviewer, comments, links, watchers and _count.
+        //
+        // The replay is the path that only runs when the connection is bad, so
+        // the fatter payload was served exactly when bandwidth was worst, on
+        // the branch least likely to be exercised. A client that modelled this
+        // response would decode one and fail the other.
+        const ctx = ownerCtx();
+        const task = await createFarmTask(ctx, {
+            title: `Shape probe ${TAG}`,
+            farmTaskType: 'SCOUTING',
+        });
+
+        const changed = await setTaskStatus(ctx, task.id, 'IN_PROGRESS');
+        const replayed = await setTaskStatus(ctx, task.id, 'IN_PROGRESS');
+
+        expect(changed).not.toBeNull();
+        expect(replayed).not.toBeNull();
+        expect(Object.keys(replayed!).sort()).toEqual(Object.keys(changed!).sort());
+        // And it is the LEAN shape that won — relations stay off both.
+        expect(Object.keys(replayed!)).not.toContain('assignee');
+        expect(Object.keys(replayed!)).not.toContain('comments');
+        // The replay is still a real answer about the task, not an empty one.
+        expect(replayed!.id).toBe(task.id);
+        expect(replayed!.status).toBe('IN_PROGRESS');
+    });
+
+    test('a listed row carries the field the list is SORTED by', async () => {
+        // `WorkItemRepository.list` orders by `[{ priority: 'asc' }, …]` and
+        // `taskListSelect` did not project `priority`, so every caller got rows
+        // ordered by something it could not see. The native client found it by
+        // having one urgency signal where the product has two: severity alone,
+        // with no way to show or re-sort by priority.
+        //
+        // This asserts the VALUE, not the key's presence — `toHaveProperty`
+        // would pass on an undefined a missing projection also produces.
+        const queue = await listMyFarmTasks(operatorCtx());
+        const row = queue.find((t) => t.id === taskId);
+        expect(row).toBeDefined();
+        expect((row as { priority?: string }).priority).toBe('P1');
     });
 
     test('an invalid (foreign-tenant) equipment link is rejected with no orphan task', async () => {

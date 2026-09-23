@@ -2,7 +2,12 @@ import { isUniqueViolation } from '@/lib/errors/prisma';
 import { RequestContext } from '../types';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
-import { notFound, badRequest, forbidden, staleData } from '@/lib/errors/types';
+import {
+    codedBadRequest,
+    codedForbidden,
+    codedNotFound,
+    staleData,
+} from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { createTask } from './task';
 import { WorkItemRepository, TaskLinkRepository } from '../repositories/WorkItemRepository';
@@ -60,13 +65,13 @@ function resolveChosenInput(input: CreateFieldOperationInput): ChosenInput {
     const hasProduct = !!input.productItemId;
     const hasFertilizer = !!input.fertilizerItemId;
     if (hasProduct === hasFertilizer) {
-        throw badRequest('Choose exactly one input — a product OR a fertilizer.');
+        throw codedBadRequest('OPERATION_INPUT_AMBIGUOUS', 'Choose exactly one input — a product OR a fertilizer.');
     }
     if (hasProduct) {
-        if (input.doseValue == null || !input.doseUnitId) throw badRequest('A product dose and unit are required.');
+        if (input.doseValue == null || !input.doseUnitId) throw codedBadRequest('PRODUCT_DOSE_REQUIRED', 'A product dose and unit are required.');
         return { itemId: input.productItemId!, doseValue: input.doseValue, doseUnitId: input.doseUnitId, isFertilizer: false };
     }
-    if (input.fertilizerDoseValue == null || !input.fertilizerDoseUnitId) throw badRequest('A fertilizer dose and unit are required.');
+    if (input.fertilizerDoseValue == null || !input.fertilizerDoseUnitId) throw codedBadRequest('FERTILIZER_DOSE_REQUIRED', 'A fertilizer dose and unit are required.');
     return { itemId: input.fertilizerItemId!, doseValue: input.fertilizerDoseValue, doseUnitId: input.fertilizerDoseUnitId, isFertilizer: true };
 }
 
@@ -181,27 +186,30 @@ export async function createFieldOperation(
             where: { id: locationId, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true, name: true },
         });
-        if (!loc) throw notFound('Location not found');
+        if (!loc) throw codedNotFound('LOCATION_NOT_FOUND', 'Location not found');
 
         const valid = await ParcelRepository.validIdsForLocation(db, ctx, locationId, input.parcelIds);
         const missing = input.parcelIds.filter((id) => !valid.has(id));
-        if (missing.length) throw badRequest('Some selected parcels do not belong to this location.');
+        if (missing.length) throw codedBadRequest('PARCELS_NOT_IN_LOCATION', 'Some selected parcels do not belong to this location.');
 
         const item = await db.item.findFirst({
             where: { id: chosen.itemId, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true },
         });
-        if (!item) throw badRequest(chosen.isFertilizer ? 'Fertilizer not found.' : 'Product not found.');
+        if (!item) throw codedBadRequest(
+            chosen.isFertilizer ? 'FERTILIZER_NOT_FOUND' : 'PRODUCT_NOT_FOUND',
+            chosen.isFertilizer ? 'Fertilizer not found.' : 'Product not found.',
+        );
 
         const unit = await db.unit.findUnique({ where: { id: chosen.doseUnitId }, select: { id: true } });
-        if (!unit) throw badRequest('Dose unit not found.');
+        if (!unit) throw codedBadRequest('DOSE_UNIT_NOT_FOUND', 'Dose unit not found.');
 
         // Optional water-carrier rate: a rate value requires a unit, and the
         // unit must exist in the global catalog (like the dose unit above).
         if (waterRateValue != null) {
-            if (!waterRateUnitId) throw badRequest('A water-rate unit is required when a water rate is set.');
+            if (!waterRateUnitId) throw codedBadRequest('WATER_RATE_UNIT_REQUIRED', 'A water-rate unit is required when a water rate is set.');
             const waterUnit = await db.unit.findUnique({ where: { id: waterRateUnitId }, select: { id: true } });
-            if (!waterUnit) throw badRequest('Water-rate unit not found.');
+            if (!waterUnit) throw codedBadRequest('WATER_RATE_UNIT_NOT_FOUND', 'Water-rate unit not found.');
         }
 
         return loc;
@@ -228,7 +236,7 @@ export async function createFieldOperation(
                 select: { id: true, key: true },
             }),
         );
-        if (!found) throw notFound('Task not found');
+        if (!found) throw codedNotFound('TASK_NOT_FOUND', 'Task not found');
         task = found;
     } else {
         try {
@@ -375,7 +383,7 @@ export async function getFieldOperation(ctx: RequestContext, taskId: string) {
             where: { id: taskId, tenantId: ctx.tenantId, type: 'FIELD_OPERATION' },
             include: { assignee: { select: { id: true, name: true, email: true } } },
         });
-        if (!task) throw notFound('Field operation not found');
+        if (!task) throw codedNotFound('FIELD_OPERATION_NOT_FOUND', 'Field operation not found');
 
         const lines = await db.operationParcel.findMany({
             where: { taskId, tenantId: ctx.tenantId },
@@ -452,11 +460,11 @@ async function markOperationParcelImpl(
                 },
             },
         });
-        if (!line) throw notFound('Operation parcel not found');
+        if (!line) throw codedNotFound('OPERATION_PARCEL_NOT_FOUND', 'Operation parcel not found');
 
         const isAssignee = line.task.assigneeUserId === ctx.userId;
         if (!ctx.permissions.canWrite && !isAssignee) {
-            throw forbidden('You can only update field operations assigned to you.');
+            throw codedForbidden('OPERATION_NOT_ASSIGNED_TO_YOU', 'You can only update field operations assigned to you.');
         }
 
         const fromStatus = line.status;
@@ -744,7 +752,7 @@ export async function reviewFieldOperation(
     // covers all three readers.
     const comment = data.comment != null ? sanitizePlainText(data.comment) : data.comment;
     if (action !== 'APPROVE' && action !== 'REQUEST_CHANGES') {
-        throw badRequest('Invalid review action.');
+        throw codedBadRequest('INVALID_REVIEW_ACTION', 'Invalid review action.');
     }
 
     return runInTenantContext(ctx, async (db) => {
@@ -752,13 +760,15 @@ export async function reviewFieldOperation(
             where: { id: taskId, tenantId: ctx.tenantId },
             select: { id: true, status: true, type: true, title: true, assigneeUserId: true },
         });
-        if (!task) throw notFound('Task not found');
+        if (!task) throw codedNotFound('TASK_NOT_FOUND', 'Task not found');
         if (task.type !== 'FIELD_OPERATION') {
-            throw badRequest('Only field-operation tasks can be reviewed here.');
+            throw codedBadRequest('NOT_A_FIELD_OPERATION_TASK', 'Only field-operation tasks can be reviewed here.');
         }
         if (task.status !== 'PENDING_REVIEW') {
-            throw badRequest(
+            throw codedBadRequest(
+                'TASK_NOT_AWAITING_REVIEW',
                 `Task is ${task.status}, not awaiting review — only a PENDING_REVIEW task can be approved or sent back.`,
+                { status: task.status },
             );
         }
 

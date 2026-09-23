@@ -24,11 +24,20 @@ const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
 // Clean up test data after all tests
 const testIds: string[] = [];
+const taskIds: string[] = [];
+const tenantIds: string[] = [];
 
 afterAll(async () => {
     // Clean up test records (use raw SQL to bypass middleware)
+    // Children first — Task.createdByUserId and Task.tenantId are real FKs.
+    for (const id of taskIds) {
+        await prisma.$executeRawUnsafe('DELETE FROM "Task" WHERE "id" = $1', id).catch(() => {});
+    }
     for (const id of testIds) {
         await prisma.$executeRawUnsafe('DELETE FROM "User" WHERE "id" = $1', id).catch(() => {});
+    }
+    for (const id of tenantIds) {
+        await prisma.$executeRawUnsafe('DELETE FROM "Tenant" WHERE "id" = $1', id).catch(() => {});
     }
     await prisma.$disconnect();
 });
@@ -194,6 +203,65 @@ describeFn('PII Encryption', () => {
     });
 
     // ─── Email Lookup by Hash ───
+
+    // ─── Nested-relation decryption ───
+
+    describe('nested relations decrypt too', () => {
+        // The middleware decrypts a NESTED relation only when its key appears
+        // in `RELATION_KEY_TO_MODEL`. `assignee` was listed and `createdBy`
+        // was not, so the task list returned a colleague's name while the task
+        // detail returned `v1:FTDt/A1v/…` and the app rendered 54 characters
+        // of base64 under "Създадена от".
+        //
+        // `tests/guards/pii-relation-key-coverage.test.ts` derives the map's
+        // required contents from the schema, but that is a STRUCTURAL check —
+        // it proves the row exists and never runs `decryptNested`. This does.
+        it('a Task included via createdBy comes back as a NAME, not an envelope', async () => {
+            const tenant = await prisma.tenant.create({
+                data: { name: 'PII Nested', slug: `pii-nested-${Date.now()}` },
+                select: { id: true },
+            });
+            tenantIds.push(tenant.id);
+
+            const email = `pii-nested-${Date.now()}@example.com`;
+            const author = await prisma.user.create({
+                data: { email, name: 'Светослав Радоловски' },
+            });
+            testIds.push(author.id);
+
+            const task = await prisma.task.create({
+                data: {
+                    tenantId: tenant.id,
+                    title: 'Nested decrypt probe',
+                    createdByUserId: author.id,
+                },
+                select: { id: true },
+            });
+            taskIds.push(task.id);
+
+            // The half that makes the assertion mean something: if the column
+            // were plaintext at rest, the test below would pass with the
+            // middleware entirely removed.
+            const [raw] = await prisma.$queryRawUnsafe<Array<{ nameEncrypted: string | null }>>(
+                'SELECT "nameEncrypted" FROM "User" WHERE "id" = $1',
+                author.id,
+            );
+            expect(raw.nameEncrypted).not.toBeNull();
+            expect(isEncryptedValue(raw.nameEncrypted!)).toBe(true);
+
+            const found = await prisma.task.findUnique({
+                where: { id: task.id },
+                include: { createdBy: { select: { id: true, name: true, email: true } } },
+            });
+
+            expect(found).not.toBeNull();
+            expect(found!.createdBy).not.toBeNull();
+            // Assert the VALUE. `not.toContain('v1:')` would also pass on an
+            // undefined, which is what a dropped projection produces.
+            expect(found!.createdBy!.name).toBe('Светослав Радоловски');
+            expect(found!.createdBy!.email).toBe(email);
+        });
+    });
 
     describe('email lookup by hash', () => {
         it('can find user by emailHash', async () => {

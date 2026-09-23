@@ -67,12 +67,30 @@ describe('Audit S8 — Task & Issue Remediation', () => {
             const src = read('src/app-layer/usecases/task.ts');
             expect(src).toMatch(/import\s*\{[\s\S]*?checkWorkItemTransition[\s\S]*?\}\s*from\s*['"]\.\.\/domain\/work-item-status['"]/);
             // The gate fires BEFORE the repository write.
-            const setBlock = src.slice(
-                src.indexOf('export async function setTaskStatus'),
-                src.indexOf('export async function setTaskStatus') + 2500,
-            );
+            // Bounded by the NEXT top-level declaration, not by a character
+            // count. The 2500-char window this replaces was a real trap and
+            // `task.ts`'s own docblock warns about it: adding lines inside
+            // `setTaskStatus` pushes the gate past the end of the window and
+            // reds this guard for a reason that has nothing to do with the
+            // gate. It happened again here — the coded refusal on this branch
+            // and a bare-shape re-read on another each fit alone and overflowed
+            // together, so only the UNION of the two failed. A boundary the
+            // source actually has cannot drift that way.
+            const start = src.indexOf('export async function setTaskStatus');
+            expect(start).toBeGreaterThan(-1);
+            const after = src.indexOf('\nexport async function ', start + 1);
+            const setBlock = src.slice(start, after === -1 ? undefined : after);
             expect(setBlock).toMatch(/checkWorkItemTransition\(fromStatus,\s*status\)/);
-            expect(setBlock).toMatch(/throw badRequest\(formatTransitionError/);
+            // The refusal is CODED as of the i18n batch-two work: the English
+            // from `formatTransitionError` stays as the fallback, with
+            // `transitionErrorCode` beside it so a client can translate
+            // "Illegal work-item transition: IN_PROGRESS → OPEN." instead of
+            // showing it to a Bulgarian operator. Both halves are asserted —
+            // dropping the message would lose the fallback, and dropping the
+            // code would silently undo the translation work.
+            expect(setBlock).toMatch(/throw codedBadRequest\(/);
+            expect(setBlock).toMatch(/transitionErrorCode\(transitionErr\)/);
+            expect(setBlock).toMatch(/formatTransitionError\(transitionErr\)/);
         });
 
         it('task.ts wires the gate into bulkSetTaskStatus (all-or-nothing)', () => {

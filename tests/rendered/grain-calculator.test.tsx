@@ -93,6 +93,8 @@ import {
 } from '@/app/t/[tenantSlug]/(app)/grain/calculator/CalculatorClient';
 
 const COPY = enMessages.grain.calculator;
+/** The commodity catalogue the refusal params are resolved through. */
+const COPY_COMMODITY = enMessages.trends.commodities;
 
 /**
  * Applies the SAME derivations `calculator/page.tsx` applies.
@@ -595,10 +597,15 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         // vocabulary and any surface may legitimately repeat it, so the
         // assertion has to name which one it is about.
         expect(within(sum).getByText(COPY.netWorthUnavailableTitle)).toBeVisible();
-        // TRANSLATED from the code, not the server's English.
+        // TRANSLATED from the code, not the server's English — and so is the
+        // PARAM. `{commodity}` is the canonical slug, so substituting it raw
+        // produced a translated sentence with an untranslated key inside it
+        // ("за wheat" on the Bulgarian locale). `localiseRefusalParams`
+        // resolves it through `trends.commodities` first, which is why this
+        // expects "Maize" and not "maize".
         expect(
             screen.getByText(
-                COPY.refusal.NO_MARKET_PRICE.replace('{commodity}', 'maize'),
+                COPY.refusal.NO_MARKET_PRICE.replace('{commodity}', COPY_COMMODITY.maize),
             ),
         ).toBeVisible();
     });
@@ -1380,7 +1387,12 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         renderPage(data({ rows: [maizeRow()] }));
 
         expect(
-            screen.getByText('No market price is available for maize.'),
+            // "Maize", not "maize" — the refusal's commodity param is now
+            // resolved to its label before substitution. The fixture keeps the
+            // lowercase server prose in `netWorthUnavailableReason` on purpose:
+            // that string is the fallback for a code the client does NOT
+            // recognise, and this code IS recognised.
+            screen.getByText('No market price is available for Maize.'),
         ).toBeVisible();
         // …and never a zero in its place.
         expect(screen.queryByText('€0')).not.toBeInTheDocument();

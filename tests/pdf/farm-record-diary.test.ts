@@ -13,8 +13,13 @@ import {
     buildChemicalRows,
     buildFertilizerRows,
     buildObservationRows,
+    buildChemFieldHeaderRow,
+    buildObsFieldHeaderRow,
+    groupSprayLinesByField,
+    MAX_FIELD_SHEETS,
     BG_LABELS,
     type FarmRecordData,
+    type FieldHeaderData,
     type SprayLineData,
     type FertilizeLineData,
     type FarmProfileData,
@@ -45,6 +50,7 @@ const PROFILE: FarmProfileData = {
 
 const SPRAY: SprayLineData[] = [
     {
+        parcelId: 'parcel-1',
         completedAt: new Date('2026-05-10T08:00:00Z'),
         targetNote: 'Житна пиявица',
         productName: 'Карате Зеон',
@@ -57,6 +63,7 @@ const SPRAY: SprayLineData[] = [
         agronomistCertNo: 'AGR-456',
     },
     {
+        parcelId: 'parcel-2',
         completedAt: new Date('2026-05-20T08:00:00Z'),
         targetNote: 'Брашнеста мана',
         productName: 'Топас 100 ЕК',
@@ -67,6 +74,35 @@ const SPRAY: SprayLineData[] = [
         operatorCertNo: null,
         agronomistName: null,
         agronomistCertNo: null,
+    },
+];
+
+const FIELDS: FieldHeaderData[] = [
+    {
+        parcelId: 'parcel-1',
+        fieldNo: '001',
+        cadastralId: '73242.15.8',
+        landDistrict: 'Труд',
+        locality: 'Каменица',
+        produceStore: 'Склад №1',
+        cropType: 'Пшеница',
+        variety: 'Енола',
+        areaHa: 3.5,
+        predecessor: 'Слънчоглед',
+        sowDate: new Date('2025-10-05T00:00:00Z'),
+    },
+    {
+        parcelId: 'parcel-2',
+        fieldNo: '002',
+        cadastralId: null,
+        landDistrict: null,
+        locality: null,
+        produceStore: null,
+        cropType: 'Царевица',
+        variety: null,
+        areaHa: 2,
+        predecessor: null,
+        sowDate: null,
     },
 ];
 
@@ -89,7 +125,22 @@ function fixture(profile: FarmProfileData): FarmRecordData {
         sprayLines: SPRAY,
         fertilizeLines: FERT,
         observations: [],
+        fields: FIELDS,
     };
+}
+
+/** Render `data` and return how many pages it produced. */
+async function pageCount(data: FarmRecordData): Promise<number> {
+    const doc = createPdfDocument({
+        tenantName: 'Северна нива',
+        reportTitle: 'Дневник',
+        generatedAt: new Date(0).toISOString(),
+        fontFamily: 'unicode',
+    });
+    renderFarmRecordDiary(doc, data, BG_LABELS);
+    const count = doc.bufferedPageRange().count;
+    await collect(doc);
+    return count;
 }
 
 describe('farm-record-diary — Cyrillic font invariant (guard)', () => {
@@ -120,6 +171,31 @@ describe('farm-record-diary — pure row builders', () => {
         // Row 2: area 2 ha → 20 дка; blank certs.
         expect(rows[1][5]).toBe('20');
         expect(rows[1][9]).toBe('');
+    });
+
+    it('the Техника column renders a slug in Bulgarian and passes anything else through', () => {
+        // `applicationTechnique` is free text on a legally-filed register and
+        // the column used to print RAW — production held `Dron` and `dron`,
+        // neither of which is the vocabulary slug. Known slugs are now
+        // localised; everything else is shown exactly as recorded, because a
+        // filed register must report what was entered rather than a guess.
+        const line = { ...SPRAY[0] };
+        const [slug] = buildChemicalRows([{ ...line, applicationTechnique: 'drone' }]);
+        expect(slug[6]).toBe('Дрон');
+
+        // Case-folded — rows predate the write-side normalisation.
+        const [upper] = buildChemicalRows([{ ...line, applicationTechnique: 'Drone' }]);
+        expect(upper[6]).toBe('Дрон');
+
+        // Unknown value: unchanged, not blanked.
+        const [freeText] = buildChemicalRows([
+            { ...line, applicationTechnique: 'самоделна пръскачка' },
+        ]);
+        expect(freeText[6]).toBe('самоделна пръскачка');
+
+        // Absent: an empty cell, not the string "null".
+        const [absent] = buildChemicalRows([{ ...line, applicationTechnique: null }]);
+        expect(absent[6]).toBe('');
     });
 
     test('buildFertilizerRows: дка conversion + composition', () => {
@@ -187,5 +263,133 @@ describe('farm-record-diary — render smoke', () => {
         expect(() => renderFarmRecordDiary(doc, fixture(blank), BG_LABELS)).not.toThrow();
         const pdf = await collect(doc);
         expect(pdf.slice(0, 5).toString()).toBe('%PDF-');
+    });
+});
+
+describe('ДНЕВНИК per-field header — the strip the form is built around', () => {
+    test('buildChemFieldHeaderRow: 11 cells in the form\u2019s order, дка = ha\u00d710', () => {
+        const row = buildChemFieldHeaderRow(FIELDS[0], PROFILE.settlement);
+        expect(row).toHaveLength(BG_LABELS.chemFieldHeader.length);
+        expect(row).toHaveLength(11);
+        expect(row[0]).toBe('Труд'); // Населено място — holding-level
+        expect(row[1]).toBe('Труд'); // Землище
+        expect(row[2]).toBe('Склад №1'); // Склад за растителна продукция
+        expect(row[3]).toBe('Каменица'); // Местност
+        expect(row[4]).toBe('73242.15.8'); // Кадастрален №
+        expect(row[5]).toBe('001'); // Поле №
+        expect(row[6]).toBe('Пшеница'); // Култура
+        expect(row[7]).toBe('Енола'); // Сорт/хибрид
+        expect(row[8]).toBe('35'); // Засята площ, 3.5 ha → 35 дка
+        expect(row[9]).toBe('Слънчоглед'); // Предшественик
+        expect(row[10]).toBe('05.10.2025'); // Дата на сеитба
+    });
+
+    test('buildObsFieldHeaderRow: 5 cells, field number first', () => {
+        const row = buildObsFieldHeaderRow(FIELDS[0]);
+        expect(row).toHaveLength(BG_LABELS.obsFieldHeader.length);
+        expect(row).toHaveLength(5);
+        expect(row[0]).toBe('001');
+        expect(row[1]).toBe('Пшеница');
+        expect(row[2]).toBe('Енола');
+        expect(row[3]).toBe('35');
+        expect(row[4]).toBe('Слънчоглед');
+    });
+
+    test('a null field yields a full-width EMPTY strip — never an invented value', () => {
+        const chem = buildChemFieldHeaderRow(null, null);
+        expect(chem).toHaveLength(BG_LABELS.chemFieldHeader.length);
+        expect(chem.every((c) => c === '')).toBe(true);
+        const obs = buildObsFieldHeaderRow(null);
+        expect(obs).toHaveLength(BG_LABELS.obsFieldHeader.length);
+        expect(obs.every((c) => c === '')).toBe(true);
+    });
+
+    test('missing per-field values print blank, they do not fall back to another field', () => {
+        const row = buildChemFieldHeaderRow(FIELDS[1], PROFILE.settlement);
+        // parcel-2 has no cadastral id, землище, местност, склад, сорт,
+        // предшественик or sow date — every one of them must be empty rather
+        // than borrowed from parcel-1.
+        for (const i of [1, 2, 3, 4, 7, 9, 10]) expect(row[i]).toBe('');
+        expect(row[5]).toBe('002');
+        expect(row[6]).toBe('Царевица');
+    });
+});
+
+describe('ДНЕВНИК per-field register — one chemical sheet per field', () => {
+    test('each extra field adds exactly one sheet', async () => {
+        // No spray lines, so the field list is the ONLY thing varying. With
+        // lines present, dropping a field does not remove its sheet — the
+        // orphan guard turns it into a blank-strip sheet instead, which is
+        // the point of that guard and would mask the effect measured here.
+        const base = { ...fixture(PROFILE), sprayLines: [] };
+        const one = await pageCount({ ...base, fields: [FIELDS[0]] });
+        const two = await pageCount({ ...base, fields: FIELDS });
+        expect(two - one).toBe(1);
+    });
+
+    test('a treatment on an unknown field still prints, on a sheet of its own', async () => {
+        // The orphan guard: a legal register may not silently drop a
+        // treatment just because its field is not in `fields`.
+        const base = await pageCount({ ...fixture(PROFILE), sprayLines: [], fields: FIELDS });
+        const orphaned = await pageCount({
+            ...fixture(PROFILE),
+            sprayLines: [{ ...SPRAY[0], parcelId: 'parcel-does-not-exist' }],
+            fields: FIELDS,
+        });
+        expect(orphaned - base).toBe(1);
+    });
+
+    test('a period with no fields and no treatments still prints its section', async () => {
+        const empty = await pageCount({
+            ...fixture(PROFILE),
+            sprayLines: [],
+            fields: [],
+        });
+        const one = await pageCount({ ...fixture(PROFILE), sprayLines: [], fields: [FIELDS[0]] });
+        // One blank sheet, exactly as a single field would get.
+        expect(empty).toBe(one);
+    });
+});
+
+describe('ДНЕВНИК per-field register — no treatment disappears from a legal document', () => {
+    test('a treatment on a field beyond the sheet cap still appears in the register', () => {
+        // gatherFarmRecordData caps the FIELD list at MAX_FIELD_SHEETS; the
+        // spray lines are not capped. So a treatment carried out on a field
+        // past the bound arrives carrying a parcelId that no field matches.
+        // It has to print anyway: an unprinted spray is an unrecorded
+        // chemical application on a register the ministry reads.
+        const cappedFields = Array.from({ length: MAX_FIELD_SHEETS }, (_, i) => ({
+            ...FIELDS[0],
+            parcelId: `parcel-${i}`,
+            fieldNo: String(i + 1),
+        }));
+        const beyondTheCap = { ...SPRAY[0], parcelId: 'parcel-past-the-cap' };
+        const printed = groupSprayLinesByField(cappedFields, [beyondTheCap]).flatMap(
+            (g) => g.lines,
+        );
+        expect(printed).toContain(beyondTheCap);
+    });
+
+    test('every treatment is printed, whatever the field list', () => {
+        for (const fields of [FIELDS, [FIELDS[0]], []]) {
+            const printed = groupSprayLinesByField(fields, SPRAY).flatMap((g) => g.lines);
+            expect(printed).toHaveLength(SPRAY.length);
+            for (const line of SPRAY) expect(printed).toContain(line);
+        }
+    });
+
+    test('no treatment is printed twice', () => {
+        // A duplicated line claims an application that never happened — as
+        // wrong as a missing one, and easier to introduce.
+        const printed = groupSprayLinesByField(FIELDS, SPRAY).flatMap((g) => g.lines);
+        expect(new Set(printed).size).toBe(printed.length);
+    });
+
+    test('lines land under THEIR field, not a neighbour\u2019s', () => {
+        const groups = groupSprayLinesByField(FIELDS, SPRAY);
+        const first = groups.find((g) => g.field?.parcelId === 'parcel-1');
+        const second = groups.find((g) => g.field?.parcelId === 'parcel-2');
+        expect(first?.lines).toEqual([SPRAY[0]]);
+        expect(second?.lines).toEqual([SPRAY[1]]);
     });
 });

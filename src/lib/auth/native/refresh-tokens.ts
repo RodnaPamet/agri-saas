@@ -63,6 +63,13 @@ export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
  */
 export const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
 
+/**
+ * How long a just-spent refresh token may be re-presented without being read
+ * as theft. See `reissueWithinGrace` for why an unspent successor is the
+ * condition that actually carries the security, and this is only its bound.
+ */
+export const REFRESH_REPLAY_GRACE_SECONDS = 120;
+
 /** Raw-token entropy. 256 bits, base64url. */
 const TOKEN_BYTES = 32;
 
@@ -152,14 +159,20 @@ export async function rotateRefreshToken(rawToken: string): Promise<RotateResult
         select: {
             id: true, familyId: true, userSessionId: true, userId: true,
             tenantId: true, expiresAt: true, consumedAt: true, revokedAt: true,
+            replacedById: true,
             session: { select: { revokedAt: true, expiresAt: true } },
         },
     });
 
     if (!row) return { ok: false, reason: 'unknown' };
 
-    // Replay of a spent token — theft evidence. Burn the whole lineage.
+    // A spent token, re-presented. USUALLY theft — but a concurrent refresh and
+    // a lost response both arrive in exactly this shape, so ask whether the
+    // successor was ever used before burning the lineage.
     if (row.consumedAt) {
+        const reissued = await reissueWithinGrace(row);
+        if (reissued) return reissued;
+
         await revokeFamily(row.familyId, 'security:refresh-replayed');
         await revokeSessionRow(row.userSessionId, 'security:refresh-replayed');
         logger.warn('native-auth.refresh_replayed', {
@@ -185,10 +198,31 @@ export async function rotateRefreshToken(rawToken: string): Promise<RotateResult
         return { ok: false, reason: 'session_invalid' };
     }
 
+    return claimAndMint(row, row.session.expiresAt);
+}
+
+/** The columns a rotation needs, shared by the normal and the grace path. */
+interface ClaimableToken {
+    id: string;
+    familyId: string;
+    userSessionId: string;
+    userId: string;
+    tenantId: string | null;
+}
+
+/**
+ * Spend one token and mint its successor.
+ *
+ * Extracted so the grace path below rotates through the IDENTICAL claim — a
+ * second copy of this would be a second place for the atomicity to be wrong.
+ * The caller has already proved the session is live; `sessionExpiresAt` is
+ * passed in rather than re-read so that proof cannot drift from this write.
+ */
+async function claimAndMint(row: ClaimableToken, sessionExpiresAt: Date): Promise<RotateResult> {
     const raw = newRawToken();
     const expiresAt = capToSession(
         new Date(Date.now() + REFRESH_TOKEN_TTL_SECONDS * 1000),
-        row.session.expiresAt,
+        sessionExpiresAt,
     );
 
     // ATOMIC CLAIM. Only the caller that flips consumedAt from null wins.
@@ -197,10 +231,15 @@ export async function rotateRefreshToken(rawToken: string): Promise<RotateResult
         data: { consumedAt: new Date() },
     }));
     if (claimed.count !== 1) {
-        // Lost the race: another request spent this exact token microseconds
-        // ago. Indistinguishable from theft, and treated identically.
+        // Lost the claim. Two callers reached this exact token at once and the
+        // grace path could not absorb it — fail closed.
         await revokeFamily(row.familyId, 'security:refresh-replayed');
         await revokeSessionRow(row.userSessionId, 'security:refresh-replayed');
+        logger.warn('native-auth.refresh_claim_lost', {
+            component: 'native-auth',
+            familyId: row.familyId,
+            userSessionId: row.userSessionId,
+        });
         return { ok: false, reason: 'replayed' };
     }
 
@@ -224,6 +263,82 @@ export async function rotateRefreshToken(rawToken: string): Promise<RotateResult
         ok: true, raw, expiresAt,
         userSessionId: row.userSessionId, userId: row.userId, tenantId: row.tenantId,
     };
+}
+
+/**
+ * A spent token re-presented in good faith — or `null` when it cannot be told
+ * from theft, which is the caller's signal to burn the family.
+ *
+ * Rotation has a failure mode that looks EXACTLY like replay and is not: two
+ * requests refresh at once, and the loser presents a token the winner spent
+ * moments earlier. Measured in production 2026-09-22 — the owner's session was
+ * killed by a replay arriving **1.02 seconds** after a legitimate rotation, and
+ * a second one 8m43s after. Both burned the family, revoked the session, and
+ * put the app back on "Вход" with the operator's data still on screen.
+ *
+ * `rotateRefreshToken` called that case "indistinguishable from theft". It is
+ * distinguishable, by whether the SUCCESSOR was ever used:
+ *
+ *   - a client that spent the successor demonstrably RECEIVED it, so a later
+ *     replay of its parent is real theft evidence and still burns; but
+ *   - an UNSPENT successor means the rotation's answer never landed, and the
+ *     client is retrying with the only token it has.
+ *
+ * That rule is ENFORCED by the atomic claim in `claimAndMint`, not by the
+ * `consumedAt` guard below: a spent successor cannot be claimed, so this path
+ * fails closed on it either way. Measured — deleting that guard turns no test
+ * red, while weakening the claim's `consumedAt: null` predicate turns two red.
+ * It is kept as a cheap, explicit statement of the rule and a saved write, and
+ * it is deliberately NOT the thing standing between a thief and a session.
+ *
+ * `REFRESH_REPLAY_GRACE_SECONDS` bounds the second case, because an unspent
+ * successor is also the NORMAL state between refreshes — without a window, a
+ * spent token would stay usable for as long as a quiet client sat on an unused
+ * one. Two minutes covers a concurrent race and an immediate retry, and
+ * deliberately does NOT cover a client holding a stale COPY of a rotating
+ * credential minutes later: that is the shape theft detection is for, and its
+ * fix is one in-flight refresh per client, not a longer window here.
+ */
+async function reissueWithinGrace(row: {
+    consumedAt: Date | null;
+    replacedById: string | null;
+    familyId: string;
+    userSessionId: string;
+}): Promise<RotateResult | null> {
+    if (!row.consumedAt || !row.replacedById) return null;
+
+    const ageMs = Date.now() - row.consumedAt.getTime();
+    if (ageMs > REFRESH_REPLAY_GRACE_SECONDS * 1000) return null;
+
+    const successor = await prisma.nativeRefreshToken.findUnique({
+        where: { id: row.replacedById },
+        select: {
+            id: true, familyId: true, userSessionId: true, userId: true,
+            tenantId: true, expiresAt: true, consumedAt: true, revokedAt: true,
+            session: { select: { revokedAt: true, expiresAt: true } },
+        },
+    });
+
+    // Every one of these is a refusal to re-issue, so each falls through to the
+    // burn. A revoked successor is how an ALREADY-burnt family stays burnt:
+    // `revokeFamily` stamps every row, so a second replay cannot resurrect it.
+    // The `consumedAt` arm is redundant with the atomic claim by design — see
+    // the docblock; it is an early return, not the gate.
+    if (!successor || successor.consumedAt || successor.revokedAt) return null;
+    if (successor.expiresAt.getTime() <= Date.now()) return null;
+    if (!successor.session || successor.session.revokedAt !== null) return null;
+    if (successor.session.expiresAt.getTime() <= Date.now()) return null;
+
+    const result = await claimAndMint(successor, successor.session.expiresAt);
+    if (result.ok) {
+        logger.info('native-auth.refresh_grace_reissue', {
+            component: 'native-auth',
+            familyId: row.familyId,
+            userSessionId: row.userSessionId,
+            consumedAgeMs: ageMs,
+        });
+    }
+    return result;
 }
 
 /** Revoke every unconsumed token in a family. */

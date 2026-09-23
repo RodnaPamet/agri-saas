@@ -14,6 +14,7 @@
  */
 import { z } from '@/lib/openapi/zod';
 import { httpsUrl } from '@/lib/schemas/url';
+import { normaliseTechnique } from '@/lib/agro/application-techniques';
 
 export const EmptyBodySchema = z.object({}).strip().openapi('EmptyBody', {
     description: 'Empty request body. Used by mutation endpoints whose semantics live entirely in the URL (e.g. POST /restore on a soft-deleted resource).',
@@ -391,7 +392,17 @@ export const CreateFieldOperationSchema = z.object({
     targetNote: z.string().max(2000).nullable().optional(),
     dueAt: z.string().nullable().optional(),
     // БАБХ farm-record — "Техника за приложение" (one rig per job).
-    applicationTechnique: z.string().max(255).nullable().optional(),
+    // Normalised on write so the column cannot accumulate `Dron` beside
+    // `dron` again — it did, twice, in two casings, on the legally-filed
+    // register. `undefined` is preserved deliberately: the usecase treats it
+    // as "leave the field alone", so collapsing it to null here would clear
+    // the technique on every unrelated update.
+    applicationTechnique: z
+        .string()
+        .max(255)
+        .nullable()
+        .optional()
+        .transform((v) => (v === undefined ? undefined : normaliseTechnique(v))),
 }).strip().superRefine((val, ctx) => {
     const hasProduct = !!val.productItemId;
     const hasFertilizer = !!val.fertilizerItemId;

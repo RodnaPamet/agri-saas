@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { normalizeQ } from '@/lib/filters/query-helpers';
 import { jsonResponse } from '@/lib/api-response';
 import { jsonWithETag } from '@/lib/http/etag';
+import { toLocationListItemDTO } from '@/lib/dto/location.dto';
 
 const LocationQuerySchema = z.object({
     limit: z.coerce.number().int().min(1).max(100).optional(),
@@ -40,16 +41,19 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
             cursor: query.cursor,
             filters: { status: query.status, q: query.q, kind: query.kind },
         });
-        return jsonWithETag(req, result);
+        return jsonWithETag(req, {
+            ...result,
+            items: (result.items as Record<string, unknown>[]).map(toLocationListItemDTO),
+        });
     }
 
     const locations = await listLocations(ctx, { status: query.status, q: query.q, kind: query.kind });
-    return jsonWithETag(req, locations);
+    return jsonWithETag(req, locations.map(toLocationListItemDTO));
 });
 
 export const POST = withApiErrorHandling(withValidatedBody(CreateLocationSchema, async (req, { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> }, body) => {
     const params = await paramsPromise;
     const ctx = await getTenantCtx(params, req);
     const location = await createLocation(ctx, body);
-    return jsonResponse(location, { status: 201 });
+    return jsonResponse(toLocationListItemDTO(location), { status: 201 });
 }));

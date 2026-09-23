@@ -77,7 +77,7 @@
 import { Readable } from 'node:stream';
 
 import { env } from '@/env';
-import { badRequest } from '@/lib/errors/types';
+import { badRequest, codedBadRequest } from '@/lib/errors/types';
 import { logger } from '@/lib/observability';
 
 import { isDownloadAllowed, scanUploadedBuffer } from '@/lib/storage/av-scan';
@@ -160,17 +160,16 @@ export async function ingestUploadedFile(
 
     // Cheap rejections first — no bytes read yet.
     if (!isAllowedMime(declaredMime)) {
-        throw badRequest(
-            'FILE_TYPE_NOT_ALLOWED',
+        throw codedBadRequest('FILE_TYPE_NOT_ALLOWED',
             `MIME type "${declaredMime}" is not allowed`,
         );
     }
     const cap = opts.maxBytes ?? FILE_MAX_SIZE_BYTES;
     if (opts.maxBytes != null ? file.size > opts.maxBytes : !isAllowedSize(file.size)) {
-        throw badRequest('FILE_TOO_LARGE', `File exceeds maximum size of ${cap} bytes`);
+        throw codedBadRequest('FILE_TOO_LARGE', `File exceeds maximum size of ${cap} bytes`);
     }
     if (file.size === 0) {
-        throw badRequest('FILE_EMPTY', 'File is empty');
+        throw codedBadRequest('FILE_EMPTY', 'File is empty');
     }
 
     const storage = getStorageProvider();
@@ -185,8 +184,7 @@ export async function ingestUploadedFile(
     );
     if (corrected) {
         if (!isAllowedMime(mimeType)) {
-            throw badRequest(
-                'FILE_TYPE_NOT_ALLOWED',
+            throw codedBadRequest('FILE_TYPE_NOT_ALLOWED',
                 `File content is "${mimeType}", which is not allowed`,
             );
         }
@@ -200,7 +198,7 @@ export async function ingestUploadedFile(
 
     const extraRejection = opts.extraCheck?.({ mimeType, originalName });
     if (extraRejection) {
-        throw badRequest('FILE_TYPE_NOT_ALLOWED', extraRejection);
+        throw codedBadRequest('FILE_TYPE_NOT_ALLOWED', extraRejection);
     }
 
     const writeResult = await storage.write(pathKey, Readable.from(buffer), { mimeType });

@@ -6202,5 +6202,29 @@
       "blockedAuthHint": "The session was refused. This work will not move until the operator signs in again.",
       "blockedAuthUnclaimableHint": "Queued before this app recorded who saved each entry, so signing in again cannot resume them — there is no way to tell whose work it is. Ask an administrator to recover them."
     }
+  },
+  "authEnums": {
+    "role": {
+      "ADMIN": "Admin",
+      "AUDITOR": "Auditor",
+      "EDITOR": "Editor",
+      "MECHANISATOR": "Machine operator",
+      "OWNER": "Owner",
+      "READER": "Reader"
+    },
+    "membershipStatus": {
+      "ACTIVE": "Active",
+      "DEACTIVATED": "Deactivated",
+      "INVITED": "Invited",
+      "REMOVED": "Removed"
+    }
+  },
+  "agroEnums": {
+    "indexLegend": {
+      "dry": "Dry",
+      "high": "High",
+      "low": "Low",
+      "wet": "Wet"
+    }
   }
 }

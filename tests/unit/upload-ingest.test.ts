@@ -63,17 +63,27 @@ const OPTS = { domain: 'cost-invoice' as const, fallbackName: 'invoice', compone
 /**
  * Run and return the rejection.
  *
- * These paths call `badRequest(CODE, humanText)`, and `badRequest`'s first
- * argument is the MESSAGE — so the stable machine code lands on `.message`
- * and the sentence a person reads lands on `.details`. Asserting both keeps
- * the two from being swapped, which would ship an error whose code is prose.
+ * This docblock used to read: "these paths call `badRequest(CODE,
+ * humanText)`, and `badRequest`'s first argument is the MESSAGE — so the
+ * stable machine code lands on `.message` and the sentence a person reads
+ * lands on `.details`." Every clause of that was TRUE, and the conclusion
+ * it defended was that an operator should read an identifier.
+ *
+ * It even ended "asserting both keeps the two from being swapped, which
+ * would ship an error whose code is prose" — guarding against the mirror
+ * of a defect that was already live in the other direction.
+ *
+ * These paths now call `codedBadRequest(code, message)`: the code is on
+ * `.code`, the sentence a person reads is on `.message`. Both are still
+ * asserted, for the reason the old comment gave — it is the swap that
+ * matters, and it is now being checked against the right arrangement.
  */
 async function rejection(p: Promise<unknown>) {
     try {
         await p;
         throw new Error('expected a rejection, got none');
     } catch (e) {
-        return e as Error & { details?: unknown };
+        return e as Error & { code?: string; details?: unknown };
     }
 }
 
@@ -112,8 +122,8 @@ describe('ingestUploadedFile', () => {
         const file = fakeFile();
         const spy = jest.spyOn(file, 'arrayBuffer');
         const err = await rejection(ingestUploadedFile('t-1', file, OPTS));
-        expect(err.message).toBe('FILE_TYPE_NOT_ALLOWED');
-        expect(String(err.details)).toMatch(/is not allowed/i);
+        expect(err.code).toBe('FILE_TYPE_NOT_ALLOWED');
+        expect(String(err.message)).toMatch(/is not allowed/i);
         // Cheap rejection first: a 50 MB body must not be buffered only to
         // be thrown away.
         expect(spy).not.toHaveBeenCalled();
@@ -122,8 +132,8 @@ describe('ingestUploadedFile', () => {
 
     it('rejects an oversized file', async () => {
         const err = await rejection(ingestUploadedFile('t-1', fakeFile({ size: 5000 }), OPTS));
-        expect(err.message).toBe('FILE_TOO_LARGE');
-        expect(String(err.details)).toMatch(/maximum size/i);
+        expect(err.code).toBe('FILE_TOO_LARGE');
+        expect(String(err.message)).toMatch(/maximum size/i);
         expect(mockWrite).not.toHaveBeenCalled();
     });
 
@@ -131,10 +141,10 @@ describe('ingestUploadedFile', () => {
         const err = await rejection(
             ingestUploadedFile('t-1', fakeFile({ size: 900 }), { ...OPTS, maxBytes: 100 }),
         );
-        expect(err.message).toBe('FILE_TOO_LARGE');
+        expect(err.code).toBe('FILE_TOO_LARGE');
         // The SURFACE's cap in the text, not the global one — an operator
         // reading "exceeds 1000 bytes" for a 100-byte cap is being misled.
-        expect(String(err.details)).toContain('100');
+        expect(String(err.message)).toContain('100');
     });
 
     it('rejects an EMPTY file', async () => {
@@ -143,7 +153,7 @@ describe('ingestUploadedFile', () => {
         const err = await rejection(
             ingestUploadedFile('t-1', fakeFile({ size: 0, body: '' }), OPTS),
         );
-        expect(err.message).toBe('FILE_EMPTY');
+        expect(err.code).toBe('FILE_EMPTY');
     });
 
     it('re-applies the allowlist to what the BYTES say, not the claim', async () => {
@@ -160,8 +170,8 @@ describe('ingestUploadedFile', () => {
             return m !== 'text/html';
         };
         const err = await rejection(ingestUploadedFile('t-1', fakeFile(), OPTS));
-        expect(err.message).toBe('FILE_TYPE_NOT_ALLOWED');
-        expect(String(err.details)).toMatch(/File content is "text\/html"/);
+        expect(err.code).toBe('FILE_TYPE_NOT_ALLOWED');
+        expect(String(err.message)).toMatch(/File content is "text\/html"/);
         expect(calls).toEqual(['application/pdf', 'text/html']);
     });
 
@@ -179,8 +189,8 @@ describe('ingestUploadedFile', () => {
                 extraCheck: () => 'Only .zip archives are accepted',
             }),
         );
-        expect(err.message).toBe('FILE_TYPE_NOT_ALLOWED');
-        expect(String(err.details)).toMatch(/Only \.zip archives/);
+        expect(err.code).toBe('FILE_TYPE_NOT_ALLOWED');
+        expect(String(err.message)).toMatch(/Only \.zip archives/);
     });
 
     it('writes BEFORE scanning', async () => {

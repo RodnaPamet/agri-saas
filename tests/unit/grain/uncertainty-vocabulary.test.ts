@@ -22,6 +22,7 @@ import {
     netWorthUncertainty,
     isKnownRefusalCode,
     explainRefusal,
+    localiseRefusalParams,
     composeFarmUncertainty,
     NET_WORTH_REFUSAL_CODES,
 } from '@/lib/grain/uncertainty';
@@ -234,6 +235,61 @@ describe('explainRefusal — no refusal renders bare', () => {
         // fabricated reason. The usecase contract is what guarantees this
         // case cannot occur alongside a null netWorth.
         expect(explainRefusal(null, null, null, translate)).toBeNull();
+    });
+});
+
+describe('localiseRefusalParams — the slug inside the sentence', () => {
+    // `trends.commodities`, the catalogue that covers every canonical slug.
+    const tCommodity = Object.assign((k: string) => ({ wheat: 'Пшеница', maize: 'Царевица' })[k] ?? k, {
+        has: (k: string) => k === 'wheat' || k === 'maize',
+    });
+
+    it('translates the commodity so the sentence is not half-English', () => {
+        // The bug: `{ commodity }` is the canonical SLUG, so substituting it
+        // raw produced "Няма налична пазарна цена за wheat."
+        expect(localiseRefusalParams({ commodity: 'wheat' }, tCommodity)).toEqual({
+            commodity: 'Пшеница',
+        });
+    });
+
+    it('falls back to a title-cased slug, never the key path', () => {
+        // A commodity outside the catalogue must degrade to something
+        // readable. `Rapeseed` is worse than `Рапица` and far better than
+        // `trends.commodities.rapeseed`, which is what next-intl renders on a
+        // miss when nothing checks.
+        expect(localiseRefusalParams({ commodity: 'rapeseed' }, tCommodity)).toEqual({
+            commodity: 'Rapeseed',
+        });
+    });
+
+    it('leaves currency codes alone', () => {
+        // ISO codes are the same three letters in every locale. Translating
+        // them would be the opposite error.
+        const params = { costCurrency: 'BGN', priceCurrency: 'EUR' };
+        expect(localiseRefusalParams(params, tCommodity)).toEqual(params);
+    });
+
+    it('passes null and empty through without inventing a value', () => {
+        expect(localiseRefusalParams(null, tCommodity)).toBeNull();
+        expect(localiseRefusalParams(undefined, tCommodity)).toBeNull();
+        expect(localiseRefusalParams({ commodity: '' }, tCommodity)).toEqual({ commodity: '' });
+    });
+
+    it('composes with explainRefusal to produce a fully Bulgarian sentence', () => {
+        // The end-to-end shape, because the two functions are only correct
+        // together — this is what the calculator now calls.
+        const translate = (key: string, values?: Record<string, string>) =>
+            key === 'refusal.NO_MARKET_PRICE'
+                ? `Няма налична пазарна цена за ${values?.commodity}.`
+                : key;
+        const out = explainRefusal(
+            'NO_MARKET_PRICE',
+            localiseRefusalParams({ commodity: 'wheat' }, tCommodity),
+            'No market price is available for wheat.',
+            translate,
+        );
+        expect(out).toBe('Няма налична пазарна цена за Пшеница.');
+        expect(out).not.toContain('wheat');
     });
 });
 

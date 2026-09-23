@@ -164,6 +164,53 @@ export const WORK_ITEM_TRANSITIONS: Record<
     CANCELED: new Set(),
 };
 
+/**
+ * The machine-readable half of a transition refusal.
+ *
+ * `formatTransitionError` produces English prose, which is all a refusal
+ * carried until now — so a Bulgarian operator who lost a race (someone moved
+ * the task on the web while their phone's menu was open) met
+ * "Illegal work-item transition: IN_PROGRESS → OPEN." on screen. The code is
+ * what a client can key a translation on; the English stays as the fallback
+ * for a code it does not recognise.
+ *
+ * Note this throw was INVISIBLE to the `no-server-authored-user-copy` ratchet
+ * — its message is a function call, not a string literal, and that guard
+ * anchors on a quote directly after the helper. So coding it drains real
+ * user-facing English without moving the number, the same way the ternary in
+ * `field-operation.ts` did. The ratchet measures literal-message throws; it is
+ * a floor on the problem, not a measure of it.
+ */
+export function transitionErrorCode(err: WorkItemTransitionError): string {
+    switch (err.kind) {
+        case 'no_op':
+            return 'TASK_STATUS_UNCHANGED';
+        case 'illegal':
+            return 'ILLEGAL_TRANSITION';
+        case 'unknown_from':
+        case 'unknown_to':
+            return 'UNKNOWN_TASK_STATUS';
+    }
+}
+
+/**
+ * Params for the code above. Enum values only — a status name is not personal
+ * data, and `tests/guards/error-params-carry-no-pii.test.ts` enforces that
+ * boundary for every coded throw.
+ */
+export function transitionErrorParams(err: WorkItemTransitionError): Record<string, string> {
+    switch (err.kind) {
+        case 'no_op':
+            return { status: err.status };
+        case 'illegal':
+            return { from: err.from, to: err.to };
+        case 'unknown_from':
+            return { from: err.from };
+        case 'unknown_to':
+            return { to: err.to };
+    }
+}
+
 export type WorkItemTransitionError =
     | { kind: 'unknown_from'; from: string }
     | { kind: 'unknown_to'; to: string }

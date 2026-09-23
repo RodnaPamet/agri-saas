@@ -10,7 +10,7 @@ import { createAssignmentNotification } from '../notifications/assignment';
 import { sendWebPushToUser } from '@/lib/notifications/web-push';
 import { runInTenantContext } from '@/lib/db-context';
 import { env } from '@/env';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { badRequest, codedBadRequest, notFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { validateTaskMetadata } from '../schemas/json-columns.schemas';
 import { logger } from '@/lib/observability/logger';
@@ -19,6 +19,8 @@ import type { PrismaTx } from '@/lib/db-context';
 import {
     checkWorkItemTransition,
     formatTransitionError,
+    transitionErrorCode,
+    transitionErrorParams,
     isTerminalStatus,
 } from '../domain/work-item-status';
 import { getSlaStatus } from '../services/sla';
@@ -387,7 +389,11 @@ export async function setTaskStatus(ctx: RequestContext, taskId: string, status:
         const fromStatus = existing.status;
 
         // A replay of a write that already landed — see isAlreadyApplied.
-        if (isAlreadyApplied(existing, status, resolution)) return existing;
+        // Re-read BARE so the replay answers in the same shape as the write;
+        // `existing` came from getById and carries every relation.
+        if (isAlreadyApplied(existing, status, resolution)) {
+            return WorkItemRepository.findBareById(db, ctx, taskId);
+        }
 
         // Audit Coherence S8 (2026-05-24) — state-machine gate runs
         // BEFORE the type-relevance check. Catches no-op + illegal
@@ -395,7 +401,13 @@ export async function setTaskStatus(ctx: RequestContext, taskId: string, status:
         // OPEN → CLOSED skipping RESOLVED) so the only paths that
         // reach the repository write are documented transitions.
         const transitionErr = checkWorkItemTransition(fromStatus, status);
-        if (transitionErr) throw badRequest(formatTransitionError(transitionErr));
+        if (transitionErr) {
+            throw codedBadRequest(
+                transitionErrorCode(transitionErr),
+                formatTransitionError(transitionErr),
+                transitionErrorParams(transitionErr),
+            );
+        }
 
         // Audit Coherence S8 — every terminal write requires a non-
         // empty `resolution` text. The auditor reads it from the

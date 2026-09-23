@@ -14,6 +14,9 @@ import { registerJournalPaths } from './journal.paths';
 import { registerFarmTaskPaths } from './farm-tasks.paths';
 import { registerFieldOperationPaths } from './field-operations.paths';
 import { registerLocationPaths } from './locations.paths';
+import { registerGrainPaths } from './grain.paths';
+import { registerTaskPaths } from './tasks.paths';
+import { registerAccountPaths } from './account.paths';
 
 export function registerAllPaths(registry: OpenAPIRegistry): void {
     registerSecuritySchemes(registry);
@@ -23,4 +26,8 @@ export function registerAllPaths(registry: OpenAPIRegistry): void {
     registerFarmTaskPaths(registry);
     registerFieldOperationPaths(registry);
     registerLocationPaths(registry);
+    registerGrainPaths(registry);
+    registerTaskPaths(registry);
+    // Not tenant-scoped: the per-user preferences a client reads at launch.
+    registerAccountPaths(registry);
 }

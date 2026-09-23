@@ -235,6 +235,23 @@ export class CostEntryRepository {
         });
     }
 
+
+    /**
+     * The row a previous attempt at this same logical write already created,
+     * or null. Keyed on the UNIQUE (tenantId, clientMutationId), so a replay
+     * returns the original instead of minting a second financial record.
+     */
+    static async findByClientMutationId(db: PrismaTx, ctx: RequestContext, clientMutationId: string) {
+        return db.costEntry.findFirst({
+            where: { tenantId: ctx.tenantId, clientMutationId, deletedAt: null },
+            // COST_INCLUDE, because the caller feeds this to the same `toDto`
+            // as the create path. Without the relations the replay answer is a
+            // DIFFERENT SHAPE from the first attempt — and the replay is the
+            // path that only runs when the connection is bad, so the odd shape
+            // lands exactly where it is least likely to be noticed.
+            include: COST_INCLUDE,
+        });
+    }
     static async create(
         db: PrismaTx,
         ctx: RequestContext,

@@ -44,11 +44,41 @@ const taskListSelect = {
     title: true,
     type: true,
     severity: true,
+    // `priority` is projected because the list is ORDERED by it
+    // (`[{ priority: 'asc' }, { createdAt: 'desc' }]`), is filterable
+    // (`where.priority`) and is indexed for exactly that
+    // (`@@index([tenantId, priority, createdAt])`). Omitting it meant the
+    // server sorted every list by a field no caller could see, so a client
+    // could neither show the reason for the order nor re-sort on it — the
+    // native client found this by having one urgency signal (severity) where
+    // the product has two.
+    priority: true,
     status: true,
     dueAt: true,
     createdAt: true,
     updatedAt: true,
     assigneeUserId: true,
+    /**
+     * `email` is projected here DELIBERATELY, and the decision is the owner's
+     * (2026-09-22). Do not remove it as PII over-projection — two sibling
+     * projections were trimmed for exactly that reason in #1062 and this one
+     * was examined and KEPT, so the trail points the wrong way without this.
+     *
+     * It is read, in two places that both degrade badly without it:
+     *   - the web list's search haystack matches on it, so an admin can find a
+     *     colleague by address when two people share a name; and
+     *   - it is the display fallback when `name` is null, on the web
+     *     (`row.assignee?.name ?? row.assignee?.email`) and in the native
+     *     client's `Assignee.displayName`.
+     *
+     * The cost is real and was weighed rather than overlooked: `/farm-tasks`
+     * is on `PERSISTABLE_PATHS`, so this address is written to plaintext
+     * storage on the operator's device, and the native client's response cache
+     * stores raw bytes. The rule that came out of it is worth keeping: a
+     * payload carries personal data when something RENDERS it, and not
+     * otherwise. `owner.email` on locations and `watchers[].user.email` on the
+     * task detail both failed that test; this one passed it.
+     */
     assignee: { select: { id: true, name: true, email: true } },
 } as const;
 
@@ -228,7 +258,20 @@ export class WorkItemRepository {
                     include: { createdBy: { select: { id: true, name: true, email: true } } },
                 },
                 watchers: {
-                    include: { user: { select: { id: true, name: true, email: true } } },
+                    // `{ id, name }`, no email. NOTHING renders a watcher on
+                    // either client — the web has no watcher surface at all and
+                    // the native app shows `_count` only — so a full list of
+                    // people's email addresses was being shipped on every task
+                    // detail open, for no consumer, to a device that caches
+                    // whole responses. It is empty across the tenant today,
+                    // which is why nobody saw it; the first farm to add a
+                    // watcher would have been the first to leak one.
+                    //
+                    // Raised by the native client, which could not tell what
+                    // this carried precisely BECAUSE it had not modelled it —
+                    // "does anything consume this field" is a question the
+                    // consumer cannot always answer, so it belongs here.
+                    include: { user: { select: { id: true, name: true } } },
                 },
                 _count: { select: { links: true, comments: true, watchers: true, evidence: true } },
             },
@@ -314,6 +357,25 @@ export class WorkItemRepository {
             ...(data.metadataJson !== undefined && { metadataJson: data.metadataJson != null ? data.metadataJson : Prisma.JsonNull }),
         };
         return db.task.update({ where: { id }, data: updateData });
+    }
+
+    /**
+     * The task as `setStatus` returns it — scalar columns, no relations.
+     *
+     * Exists so the ALREADY-APPLIED path of `setTaskStatus` can answer with
+     * the same shape as the path that writes. It previously returned the row
+     * loaded by `getById`, which carries `assignee`, `createdBy`, `reviewer`,
+     * `comments`, `links`, `watchers` and `_count` — so a replay answered with
+     * 32 keys where a real change answered with 25 (measured by the native
+     * client, 2026-09-22).
+     *
+     * That divergence is worse than it sounds: the replay is the path that
+     * only runs when the connection is bad, so the FATTER payload was served
+     * exactly when bandwidth was worst, and on the branch least likely to be
+     * exercised in testing.
+     */
+    static async findBareById(db: PrismaTx, ctx: RequestContext, id: string) {
+        return db.task.findFirst({ where: { id, tenantId: ctx.tenantId } });
     }
 
     static async setStatus(db: PrismaTx, ctx: RequestContext, id: string, status: string, resolution?: string | null) {
