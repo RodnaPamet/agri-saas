@@ -771,6 +771,56 @@ exports[`API contract — per-schema snapshots schema: Contract 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: CreateInsuranceLeadRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "parcelId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "locationId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "risk": {
+      "type": "object",
+      "properties": {
+        "overall": {
+          "type": "string",
+          "maxLength": 20
+        },
+        "ndvi": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "ndmi": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "description": "Snapshot of what the farmer was shown when asking."
+    }
+  },
+  "required": [
+    "parcelId",
+    "message"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: CurrentUser 1`] = `
 "{
   "type": "object",
@@ -2207,6 +2257,23 @@ exports[`API contract — per-schema snapshots schema: ImportJobStatus 1`] = `
     "failedReason"
   ],
   "description": "Poll response for an off-thread import. Note that a not-found or wrong-tenant job answers 404 with the bare \`{ error }\` body, not this shape and not the canonical envelope."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: InquiredParcelIds 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "parcelIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "parcelIds"
+  ]
 }"
 `;
 
@@ -4163,6 +4230,79 @@ exports[`API contract — per-schema snapshots schema: ParcelMergeRequest 1`] = 
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: ParcelRisk 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "parcelId": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "areaHa": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "cropType": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "configured": {
+      "type": "boolean"
+    },
+    "ndvi": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "ndmi": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "vegetation": {
+      "$ref": "#/components/schemas/RiskLevel"
+    },
+    "moisture": {
+      "$ref": "#/components/schemas/RiskLevel"
+    },
+    "overall": {
+      "$ref": "#/components/schemas/RiskLevel"
+    },
+    "acquiredDate": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "generatedAt": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "parcelId",
+    "name",
+    "areaHa",
+    "cropType",
+    "configured",
+    "ndvi",
+    "ndmi",
+    "vegetation",
+    "moisture",
+    "overall",
+    "acquiredDate",
+    "generatedAt"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: ParcelSplitRequest 1`] = `
 "{
   "type": "object",
@@ -4634,6 +4774,19 @@ exports[`API contract — per-schema snapshots schema: RawErrorResponse 1`] = `
     "error"
   ],
   "description": "Non-canonical error body used by the spatial-import and cadastre-import routes: a bare message string, with no \`code\`, \`requestId\` or \`details\`."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: RiskLevel 1`] = `
+"{
+  "type": "string",
+  "enum": [
+    "good",
+    "watch",
+    "stress",
+    "unknown"
+  ],
+  "description": "good | watch | stress | unknown. \`unknown\` means no usable satellite reading, not a failure — render it as absence, never as a fourth severity."
 }"
 `;
 
