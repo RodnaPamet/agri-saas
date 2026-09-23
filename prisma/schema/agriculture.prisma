@@ -296,6 +296,26 @@ model Item {
   quarantinePeriodDays Int?
   activeIngredient     String?
   pppRegistrationNo    String?
+  /// Seeded ILLUSTRATIVE product, not a real labelled one.
+  ///
+  /// `scripts/import-products.ts` seeds ~22 generic archetypes per tenant —
+  /// `Generic Chlorothalonil 720 SC` and the like — deliberately, because
+  /// shipping a real proprietary label database is a licensing problem. The
+  /// design has always been that operators replace them with their own
+  /// products.
+  ///
+  /// This column exists because #1078 needed to REFUSE something on the
+  /// strength of it: a spray may not be completed against an archetype, since
+  /// the ДНЕВНИК's column 4 asks for a /търговско наименование/ and an
+  /// archetype is an active-ingredient descriptor, not a trade name.
+  ///
+  /// Provenance was already inferable three ways that agreed on every row
+  /// (`attributesJson` present, `createdByUserId` null, name `Generic %`), and
+  /// for MARKING something that would have been enough. It is not enough for
+  /// a refusal: none of the three was designed as a provenance marker, and a
+  /// false positive blocks an operator from filing real work. So the flag is
+  /// explicit, and the backfill required ALL THREE signals to agree.
+  isArchetype     Boolean      @default(false)
   attributesJson  Json?
   createdByUserId String?
   createdAt       DateTime     @default(now())

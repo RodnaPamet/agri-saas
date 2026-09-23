@@ -2,7 +2,7 @@ import { RequestContext } from '../types';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { runInTenantContext } from '@/lib/db-context';
 import { logEvent } from '../events/audit';
-import { badRequest, notFound, codedConflict } from '@/lib/errors/types';
+import { badRequest, notFound, codedBadRequest, codedConflict } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { cachedListRead } from '@/lib/cache/list-cache';
 import { Prisma, ItemCategory, QuantityMeasure } from '@prisma/client';
@@ -50,6 +50,49 @@ export interface CreateItemInput {
     quarantinePeriodDays?: number | null;
     activeIngredient?: string | null;
     pppRegistrationNo?: string | null;
+}
+
+
+/**
+ * A PESTICIDE must carry its registration number and quarantine period
+ * (#1078).
+ *
+ * Not tidiness. `quarantinePeriodDays` feeds column 8 of the ХИМИЧНИ
+ * ОБРАБОТКИ table and the earliest-harvest date derived from it in column 9;
+ * `pppRegistrationNo` is what makes the trade name in column 4 checkable. A
+ * pesticide missing them CANNOT produce a complete ДНЕВНИК, so accepting one
+ * stores a row guaranteed to file badly. The only real product ever created
+ * here was exactly that — a PESTICIDE with both fields empty, twice.
+ *
+ * Enforced in the USECASE rather than in a route schema, deliberately. The
+ * rule has to hold on UPDATE as well as create, or it is one PATCH away from
+ * nothing: the web's product form sends every field on edit, so clearing the
+ * registration number is a normal thing a form can do. A refinement on
+ * `CreateItemSchema` alone would have guarded the door and left the window
+ * open, and a second copy on the update schema is how two implementations
+ * start to drift.
+ *
+ * Other categories are unconstrained on purpose: a fertiliser has no ЗЗР
+ * registration, and demanding one would invent a rule the form does not have.
+ */
+function assertPesticideIsFilable(next: {
+    category?: string | null;
+    pppRegistrationNo?: string | null;
+    quarantinePeriodDays?: number | null;
+}): void {
+    if (next.category !== 'PESTICIDE') return;
+    const missing: string[] = [];
+    if (next.pppRegistrationNo == null || next.pppRegistrationNo.trim() === '') {
+        missing.push('pppRegistrationNo');
+    }
+    if (next.quarantinePeriodDays == null) missing.push('quarantinePeriodDays');
+    if (missing.length === 0) return;
+    throw codedBadRequest(
+        'PESTICIDE_REGULATORY_FIELDS_REQUIRED',
+        'A plant protection product needs its registration number (ПРЗ №) and ' +
+            'quarantine period — both are printed in the farm record.',
+        { missing: missing.join(',') },
+    );
 }
 
 /**
@@ -102,6 +145,7 @@ function asDuplicateNameConflict(err: unknown): never {
  */
 export async function createItem(ctx: RequestContext, input: CreateItemInput) {
     assertCanWrite(ctx);
+    assertPesticideIsFilable(input);
     return runInTenantContext(ctx, async (db) => {
         const name = sanitizePlainText(input.name.trim());
         if (!name) throw badRequest('Product name is required.');
@@ -214,9 +258,34 @@ export async function updateItem(ctx: RequestContext, itemId: string, input: Upd
     return runInTenantContext(ctx, async (db) => {
         const existing = await db.item.findFirst({
             where: { id: itemId, tenantId: ctx.tenantId, deletedAt: null },
-            select: { id: true },
+            select: {
+                id: true,
+                // For the pesticide invariant below: the check runs against
+                // the MERGED state, because a PATCH that omits a field must
+                // not be read as clearing it. Checking the patch alone would
+                // reject every partial edit of a valid pesticide.
+                category: true,
+                pppRegistrationNo: true,
+                quarantinePeriodDays: true,
+            },
         });
         if (!existing) throw notFound('Item not found.');
+
+        // The invariant holds on the RESULT of the edit, not on the patch.
+        // `undefined` means "leave alone", so it falls back to the stored
+        // value; an explicit `null` means "clear", and clearing a pesticide's
+        // registration number is exactly the edit this refuses.
+        assertPesticideIsFilable({
+            category: input.category !== undefined ? input.category : existing.category,
+            pppRegistrationNo:
+                input.pppRegistrationNo !== undefined
+                    ? input.pppRegistrationNo
+                    : existing.pppRegistrationNo,
+            quarantinePeriodDays:
+                input.quarantinePeriodDays !== undefined
+                    ? input.quarantinePeriodDays
+                    : existing.quarantinePeriodDays,
+        });
 
         const data: Prisma.ItemUpdateInput = {};
         if (input.name !== undefined) {
