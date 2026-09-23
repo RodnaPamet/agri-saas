@@ -416,6 +416,15 @@ export async function updateLogEntry(
         type: data.type,
         status: data.status,
         title: data.title !== undefined ? sanitizePlainText(data.title) : undefined,
+        // A person changing the title makes this row THEIRS, so the
+        // server's descriptor must go (#1073). Left in place it would keep
+        // asserting a composition that no longer describes the text, and any
+        // reader that resolves `titleKey` in preference to `title` — which is
+        // what the descriptor is FOR — would silently re-render the operator's
+        // edit away. Only a title edit clears it: changing an entry's notes or
+        // date does not make its auto-composed title less accurate.
+        titleKey: data.title !== undefined ? null : undefined,
+        titleParams: data.title !== undefined ? null : undefined,
         notes:
             data.notes === undefined
                 ? undefined

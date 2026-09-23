@@ -34,7 +34,39 @@ model LogEntry {
   status            LogEntryStatus @default(DONE)
   /// When the event happened. Time matters for spray records.
   occurredAt        DateTime
+  /// The entry's title as a READER sees it, and for an auto-generated entry
+  /// this is a RENDERING, not the source of truth — see `titleKey`.
+  ///
+  /// Always populated, in every case, because it is what every existing
+  /// consumer reads: the list column, the detail breadcrumb, the native
+  /// client, and the typed-confirm purge in `DeletedJournalView`, which
+  /// requires the operator to retype this exact string to arm a permanent
+  /// delete. A nullable title would break that gesture in a way no type
+  /// error would catch.
   title             String
+  /// Descriptor for an AUTO-GENERATED title: the i18n key under
+  /// `journal.autoTitle.*`, with `titleParams` supplying its values.
+  ///
+  /// Null for anything a person wrote. Non-null means `title` was composed by
+  /// the server, and a reader that can resolve the key SHOULD, because the
+  /// language a row is read in is not knowable where the row is written —
+  /// the rule `CLAUDE.md` already states for `DueItem.reason` and outbound
+  /// email. This is the same shape applied to a PERSISTED value.
+  ///
+  /// Why not just store the rendered string: an input application was
+  /// recorded as `Applied ${product} to ${parcel}` in English, and 11 of 16
+  /// live entries carried one (#1073). Fixing the composer alone would have
+  /// left those rows English forever, because a rendered sentence keeps no
+  /// trace of what it was rendered FROM.
+  ///
+  /// **Cleared on edit.** `updateLogEntry` nulls both columns when a person
+  /// changes the title, because the descriptor would otherwise go on
+  /// asserting a composition that no longer describes the text. An edited
+  /// entry is operator-authored, whatever it started as.
+  titleKey          String?
+  /// Values for `titleKey`. Ids and quantities only — never personal data,
+  /// the same rule notification params carry.
+  titleParams       Json?
   notes             String?
   /// Spray-record compliance fields (wind, temp, operator cert no.,
   /// REI/PHI). JSON until the certification module promotes what

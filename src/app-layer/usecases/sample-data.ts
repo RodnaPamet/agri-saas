@@ -307,7 +307,11 @@ export async function loadSampleData(ctx: RequestContext): Promise<{ created: bo
                     type: 'INPUT_APPLICATION',
                     status: 'DONE',
                     occurredAt: new Date(),
-                    title: 'Applied nitrogen to the north block',
+                    // Bulgarian, like every other string a Bulgarian operator is shown.
+                    // This is SEEDED text, not a server-composed title, so it
+                    // carries no descriptor and the #1073 backfill correctly
+                    // leaves it alone — it has no spray line behind it.
+                    title: 'Азотно торене — северен блок',
                     notes: '<p>Sample input-application record.</p>',
                     isSampleData: true,
                     createdByUserId: ctx.userId,

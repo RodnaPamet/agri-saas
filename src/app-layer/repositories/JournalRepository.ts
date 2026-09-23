@@ -32,6 +32,13 @@ export interface CreateLogEntryInput {
         | 'LAB_TEST'
         | 'GRAZING';
     title: string;
+    /**
+     * Descriptor for a SERVER-COMPOSED title (#1073). `title` above is then
+     * its rendering rather than the source of truth. Absent for anything a
+     * person typed — see `@/lib/journal/auto-title`.
+     */
+    titleKey?: string | null;
+    titleParams?: Prisma.InputJsonValue | null;
     occurredAt?: Date;
     status?: 'PLANNED' | 'DONE';
     notes?: string | null;
@@ -58,6 +65,13 @@ export interface CreateLogEntryInput {
 
 export interface UpdateLogEntryInput {
     type?: CreateLogEntryInput['type'];
+    /**
+     * Clearing the server's title descriptor when a person takes the title
+     * over. `null` clears, `undefined` leaves it alone — the same
+     * three-state contract the other optional fields here use.
+     */
+    titleKey?: string | null;
+    titleParams?: Prisma.InputJsonValue | null;
     title?: string;
     occurredAt?: Date;
     status?: 'PLANNED' | 'DONE';
@@ -319,6 +333,14 @@ export class JournalRepository {
                 status: input.status ?? 'DONE',
                 occurredAt: input.occurredAt ?? new Date(),
                 title: input.title,
+                // Written together with the rendering above, never apart:
+                // a descriptor whose params disagree with the stored string
+                // is worse than no descriptor at all.
+                titleKey: input.titleKey ?? null,
+                titleParams:
+                    input.titleParams === undefined || input.titleParams === null
+                        ? Prisma.DbNull
+                        : input.titleParams,
                 notes: input.notes ?? null,
                 ...(input.conditionsJson !== undefined ? { conditionsJson: input.conditionsJson } : {}),
                 operationParcelId: input.operationParcelId ?? null,

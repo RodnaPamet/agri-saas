@@ -7,6 +7,7 @@ import type { PrismaTx } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { InventoryRepository } from '../repositories/InventoryRepository';
 import { LocationRepository } from '../repositories/LocationRepository';
+import { composeInputApplicationTitle } from '@/lib/journal/auto-title';
 import { createLogEntryWithAudit } from './journal-write';
 import { ModuleSettingsRepository } from '../repositories/ModuleSettingsRepository';
 import { AuditLogRepository } from '../repositories/AuditLogRepository';
@@ -526,9 +527,21 @@ async function recordInputApplicationImpl(
         // Goes through the audited seam so the auto-generated record gets a
         // CREATE event too — these entries are freely editable, so the audit
         // trail is what makes that safe (see createLogEntryWithAudit).
+        // Composed by the SERVER, so it carries a descriptor rather than a
+        // finished sentence — `title` is the Bulgarian rendering and
+        // `titleKey`/`titleParams` are what it was rendered from. A rendered
+        // string keeps no trace of its inputs, which is precisely why the 9
+        // rows written in English before #1073 had to be rewritten by a
+        // backfill instead of fixed by this edit.
+        const composed = await composeInputApplicationTitle({
+            product: product.name,
+            parcel: parcel.name,
+        });
         const entry = await createLogEntryWithAudit(db, ctx, {
             type: 'INPUT_APPLICATION',
-            title: `Applied ${product.name} to ${parcel.name}`,
+            title: composed.title,
+            titleKey: composed.titleKey,
+            titleParams: composed.titleParams,
             operationParcelId: line.id,
             quantities:
                 consumed > 0 && productUnit
@@ -537,7 +550,13 @@ async function recordInputApplicationImpl(
                               measure: productUnit.measure,
                               value: consumed,
                               unitId: product.defaultUnitId,
-                              label: 'Applied',
+                              // Same class as the title above: server-authored
+                              // English on a row a Bulgarian operator reads.
+                              // It is a QUANTITY label, so the honest fix is
+                              // to omit it — the measure and unit already say
+                              // what the number is, and the entry type says
+                              // what happened to it.
+                              label: undefined,
                           },
                       ]
                     : [],
