@@ -139,17 +139,39 @@ function findNextPatches(): string[] {
     if (!fs.existsSync(dir)) {
         throw new Error(`scan root does not exist: ${dir} — a renamed root would scan zero files and pass (#875)`);
     }
+    // NOTE: `patches/` is kept alive by its README even with no patch in it —
+    // an empty directory is untracked by git, and a vanished scan root would
+    // make this throw rather than report zero.
     return fs.readdirSync(dir).filter((f) => /^next\+.+\.patch$/.test(f));
 }
 
 describe('CSP nonce — Next.js component-script patch', () => {
-    it('a patches/next+*.patch is present in the tree', () => {
-        // The patch is the deliverable. Without it, `npm install`
-        // produces an unpatched node_modules and the R16 chart
-        // CSP bug returns. Matched by glob rather than exact version
-        // so a routine `next` bump + `patch-package next` regeneration
-        // does not require editing this test.
-        expect(findNextPatches()).toHaveLength(1);
+    it('any next patch present targets the INSTALLED next version', () => {
+        // Was `toHaveLength(1)` — "the patch is the deliverable". Next 16.3.5
+        // fixes the nonce upstream in the sources AND all four bundles, so
+        // requiring a patch file would now require patching a fix. See
+        // `patches/README.md` for how that was verified against a pristine
+        // install.
+        //
+        // Removing that assertion loses nothing, because it was never the
+        // one carrying the guarantee: the assertions below read the actual
+        // BYTES in node_modules, so a patch deleted while it was still
+        // needed fails them. A file existing never proved it applied — #929
+        // is precisely that, a patch present in the tree and green in CI
+        // while the image shipped unpatched for ~7 weeks.
+        //
+        // What replaces it is strictly stronger on the axis that actually
+        // broke: a patch whose version has DRIFTED from the installed next
+        // silently stops applying, and the old glob deliberately tolerated
+        // exactly that.
+        const patches = findNextPatches();
+        expect(patches.length).toBeLessThanOrEqual(1);
+        if (patches.length === 1) {
+            const installed = JSON.parse(
+                fs.readFileSync(path.join(ROOT, 'node_modules/next/package.json'), 'utf8'),
+            ).version;
+            expect(patches[0]).toBe(`next+${installed}.patch`);
+        }
     });
 
     it('package.json has the `postinstall: patch-package` script', () => {
@@ -240,6 +262,20 @@ describe('CSP nonce — Next.js component-script patch', () => {
         // directly: a regenerated patch that omits a bundle fails here,
         // in the same PR that regenerates it.
         const [patchFile] = findNextPatches();
+        if (!patchFile) {
+            // No patch in the tree: Next 16.3.5 carries the nonce upstream in
+            // both sources and all four bundles (see patches/README.md). The
+            // #929 regression this test locks — a regenerated patch silently
+            // losing its bundle hunks — has no patch to lose them from.
+            //
+            // Skipping the FILE assertion is safe only because the BYTE
+            // assertions below are unconditional: `no unnonced component
+            // script survives in <runtime>` runs for all four regardless, and
+            // that is what #929 actually shipped past. This test was always
+            // the cheaper proxy for those.
+            expect(findNextPatches()).toHaveLength(0);
+            return;
+        }
         const patch = fs.readFileSync(
             path.join(ROOT, 'patches', patchFile),
             'utf8',
