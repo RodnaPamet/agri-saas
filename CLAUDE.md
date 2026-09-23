@@ -264,9 +264,11 @@ bijection for the one migration it names.
 
 **Next.js 16.3.3** (App Router) + **React 19.2** + **TypeScript 6.0**.
 `next` is pinned EXACTLY (no caret) and is deliberately EXCLUDED from the
-Dependabot `production` group, so it arrives as its own PR: we carry
-`patches/next+<version>.patch`, and every bump requires regenerating it —
-see **"Bumping Next"** immediately below.
+Dependabot `production` group, so it arrives as its own PR. We CARRIED
+`patches/next+<version>.patch` and every bump required regenerating it; since
+**16.3.5 fixes the nonce upstream** there is no patch to regenerate, but a
+bump must still re-verify the property — see **"Bumping Next"** immediately
+below.
 The React 18 → 19 bump (#67) is complete: React 19 removed
 `propTypes`, function-component `defaultProps`, string refs and
 legacy context — the codebase carries none of those.
@@ -284,11 +286,32 @@ CI if either gate is silently re-lowered (`moderate` → `high` /
 `critical`, or `CRITICAL,HIGH` → `CRITICAL`) or `next` is downgraded
 back to 14.x.
 
-**Bumping Next — the CSP nonce patch.** Next's
-`createComponentStylesAndScripts` builds a `<script>` with no `nonce`, which
-`script-src 'nonce-…' 'strict-dynamic'` blocks. Still true upstream as of
-16.3.3. `patches/next+<version>.patch` adds it, and **a Next bump is not done
-until the patch is regenerated**. The procedure, in order:
+**Bumping Next — the CSP nonce patch. FIXED UPSTREAM in 16.3.5; the patch is
+gone.** Next's `createComponentStylesAndScripts` built a `<script>` with no
+`nonce`, which `script-src 'nonce-…' 'strict-dynamic'` blocks. That was true
+from the Next 14 line through **16.3.4**, and we carried
+`patches/next+<version>.patch` to add it.
+
+**16.3.5 carries the nonce itself**, in both readable sources and all four
+prod bundles, so `patches/` now holds no patch — see `patches/README.md` for
+how that was verified (pristine `npm ci --ignore-scripts`, the guard's own
+regexes, and the ordering tell: our patch inserted `nonce` BEFORE `key:`,
+upstream puts it AFTER). Do not re-add a patch to a version that does not
+need one; you would be patching a fix.
+
+**What did not change is the property, or who checks it.** The guarantee was
+never "a patch file exists" — #929 is precisely a patch present in the tree
+and green in CI while the image shipped unpatched for ~7 weeks. It is
+`tests/guards/csp-nonce-component-scripts-patch.test.ts` (local
+`node_modules`) and `scripts/verify-image-patches.mjs` (inside the BUILT
+IMAGE), both asserting an ABSENCE of unnonced sites plus a positive control.
+The patch machinery stays wired — `postinstall: patch-package`, and the
+Dockerfile COPYs `patches/` before `npm ci` without `--ignore-scripts` — so a
+future regression is a patch away.
+
+**If a future Next regresses**, the procedure below is the one to follow. The
+guard requires any patch present to match the INSTALLED next version, because
+a patch silently drifting against a newer Next is how #929 happened:
 
 1. `npm install next@<v> --save-exact`, delete the old patch file.
 2. Add `nonce: ctx.nonce` to the component-script element in **all SIX**

@@ -93,6 +93,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as os from 'node:os';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -134,22 +135,88 @@ const UNNONCED_SCRIPT_SITE =
 const ANY_COMPONENT_SCRIPT_SITE =
     /\{src:`\$\{\w+\.assetPrefix\}[^`]*`,async:!0,key:`script-\$\{\w+\}`[,}]/g;
 
-function findNextPatches(): string[] {
-    const dir = path.join(ROOT, 'patches');
+/**
+ * Patch files under `dir` (default: the repo's `patches/`).
+ *
+ * `dir` is a parameter ONLY so the scan itself can be exercised against a
+ * fixture, and that is not tidiness — it is the fix for a real defect this
+ * file shipped. While the guard asserted `toHaveLength(1)`, gutting this
+ * function to `return []` failed that assertion and the collector had teeth.
+ * Once 16.3.5 made an empty result VALID, `return []` became indistinguishable
+ * from a working scan and `selector-teeth` reported it SURVIVED — the repo's
+ * own "an empty selection is a PASS" defect, introduced by relaxing the
+ * caller rather than by touching the collector.
+ *
+ * So the teeth moved here: the fixture test below proves this can SEE a patch
+ * and can tell one from a neighbouring file, which a gutted version cannot.
+ */
+function findNextPatches(dir: string = path.join(ROOT, 'patches')): string[] {
     if (!fs.existsSync(dir)) {
         throw new Error(`scan root does not exist: ${dir} — a renamed root would scan zero files and pass (#875)`);
     }
+    // NOTE: the repo's `patches/` is kept alive by its README even with no
+    // patch in it — an empty directory is untracked by git, and a vanished
+    // scan root would make this throw rather than quietly report zero.
     return fs.readdirSync(dir).filter((f) => /^next\+.+\.patch$/.test(f));
 }
 
 describe('CSP nonce — Next.js component-script patch', () => {
-    it('a patches/next+*.patch is present in the tree', () => {
-        // The patch is the deliverable. Without it, `npm install`
-        // produces an unpatched node_modules and the R16 chart
-        // CSP bug returns. Matched by glob rather than exact version
-        // so a routine `next` bump + `patch-package next` regeneration
-        // does not require editing this test.
-        expect(findNextPatches()).toHaveLength(1);
+    it('any next patch present targets the INSTALLED next version', () => {
+        // Was `toHaveLength(1)` — "the patch is the deliverable". Next 16.3.5
+        // fixes the nonce upstream in the sources AND all four bundles, so
+        // requiring a patch file would now require patching a fix. See
+        // `patches/README.md` for how that was verified against a pristine
+        // install.
+        //
+        // Removing that assertion loses nothing, because it was never the
+        // one carrying the guarantee: the assertions below read the actual
+        // BYTES in node_modules, so a patch deleted while it was still
+        // needed fails them. A file existing never proved it applied — #929
+        // is precisely that, a patch present in the tree and green in CI
+        // while the image shipped unpatched for ~7 weeks.
+        //
+        // What replaces it is strictly stronger on the axis that actually
+        // broke: a patch whose version has DRIFTED from the installed next
+        // silently stops applying, and the old glob deliberately tolerated
+        // exactly that.
+        const patches = findNextPatches();
+        expect(patches.length).toBeLessThanOrEqual(1);
+        if (patches.length === 1) {
+            const installed = JSON.parse(
+                fs.readFileSync(path.join(ROOT, 'node_modules/next/package.json'), 'utf8'),
+            ).version;
+            expect(patches[0]).toBe(`next+${installed}.patch`);
+        }
+    });
+
+    it('the patch scan can actually SEE a patch (positive control)', () => {
+        // The repo's `patches/` is legitimately empty since 16.3.5, so every
+        // assertion about it is now an assertion about NOTHING — and an empty
+        // selection satisfies a ceiling, a length check and a glob alike.
+        // Prove the mechanism against a fixture instead, the same way
+        // `no-server-authored-user-copy` proves an exemption no real call site
+        // exercises yet.
+        //
+        // This is what `selector-teeth` reported SURVIVED once the caller
+        // stopped requiring exactly one patch: gutting `findNextPatches` to
+        // `return []` broke nothing. It breaks this.
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'next-patch-scan-'));
+        try {
+            fs.writeFileSync(path.join(dir, 'next+16.3.4.patch'), 'diff');
+            fs.writeFileSync(path.join(dir, 'README.md'), 'not a patch');
+            fs.writeFileSync(path.join(dir, 'react+19.0.0.patch'), 'a different package');
+            expect(findNextPatches(dir)).toEqual(['next+16.3.4.patch']);
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('a missing scan root throws rather than reporting zero', () => {
+        // The #875 lesson: a renamed root scans nothing and passes. An
+        // absence must be distinguishable from a broken look.
+        expect(() => findNextPatches(path.join(os.tmpdir(), 'definitely-not-here-1073'))).toThrow(
+            /scan root does not exist/,
+        );
     });
 
     it('package.json has the `postinstall: patch-package` script', () => {
@@ -240,6 +307,20 @@ describe('CSP nonce — Next.js component-script patch', () => {
         // directly: a regenerated patch that omits a bundle fails here,
         // in the same PR that regenerates it.
         const [patchFile] = findNextPatches();
+        if (!patchFile) {
+            // No patch in the tree: Next 16.3.5 carries the nonce upstream in
+            // both sources and all four bundles (see patches/README.md). The
+            // #929 regression this test locks — a regenerated patch silently
+            // losing its bundle hunks — has no patch to lose them from.
+            //
+            // Skipping the FILE assertion is safe only because the BYTE
+            // assertions below are unconditional: `no unnonced component
+            // script survives in <runtime>` runs for all four regardless, and
+            // that is what #929 actually shipped past. This test was always
+            // the cheaper proxy for those.
+            expect(findNextPatches()).toHaveLength(0);
+            return;
+        }
         const patch = fs.readFileSync(
             path.join(ROOT, 'patches', patchFile),
             'utf8',
