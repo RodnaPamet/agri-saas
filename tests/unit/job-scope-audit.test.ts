@@ -87,7 +87,15 @@ describe('Executor Registry — tenantId propagation audit', () => {
             // encrypted message, so it needs neither a tenant axis nor a DEK.
             // Row-level isolation is still enforced — it runs as a non-app_user
             // role and passes promotion_lead_inquirer_isolation's superuser_bypass.
-            if (['health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction', 'support-scheme-extraction', 'promotion-lead-retention'].includes(jobName)) continue;
+            // process-outbox drains the mail queue for EVERY tenant in one pass,
+            // which is the only shape that delivers: the outbox is written by
+            // whichever tenant's request enqueued it, and a per-tenant sweep
+            // would need a schedule per tenant to reach them all. The tenant
+            // axis is not absent, it is PER ROW — `processOutbox` reads
+            // `row.tenantId` to resolve that tenant's notification settings and
+            // sender identity before each send, so isolation is enforced at the
+            // row rather than at the payload.
+            if (['health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction', 'support-scheme-extraction', 'promotion-lead-retention', 'process-outbox'].includes(jobName)) continue;
 
             // If the parameter is named _payload, it means tenantId is being ignored
             if (paramName.startsWith('_')) {

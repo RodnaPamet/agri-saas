@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- standard test-mock pattern. */
-
 /**
  * The outbox claim, and the schedule that made it necessary.
  *
@@ -38,13 +36,29 @@ jest.mock('@/app-layer/notifications/settings', () => ({
 
 import { processOutbox } from '@/app-layer/notifications/processOutbox';
 import { sendEmail } from '@/lib/mailer';
-import { getTenantNotificationSettings } from '@/app-layer/notifications/settings';
+import {
+    getTenantNotificationSettings,
+    type TenantNotificationSettingsData,
+} from '@/app-layer/notifications/settings';
 import { ALL_SCHEDULES } from '@/app-layer/jobs/schedules';
 
 const mockedSend = sendEmail as jest.MockedFunction<typeof sendEmail>;
 const mockedSettings = getTenantNotificationSettings as jest.MockedFunction<
     typeof getTenantNotificationSettings
 >;
+
+function settings(enabled: boolean): TenantNotificationSettingsData {
+    // Spelled out rather than cast. A blanket cast of `{ enabled: false }`
+    // type-checked while omitting the three fields `processOutbox` reads to
+    // build the `from` header — it was load-bearing for nothing but that
+    // omission, and the file-wide suppression it needed cost a lint budget.
+    return {
+        enabled,
+        defaultFromName: 'Agrent',
+        defaultFromEmail: 'no-reply@example.test',
+        complianceMailbox: null,
+    };
+}
 
 function row(overrides: Record<string, unknown> = {}) {
     return {
@@ -63,14 +77,9 @@ function row(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
     jest.clearAllMocks();
-    mockedSettings.mockResolvedValue({
-        enabled: true,
-        defaultFromName: 'Agrent',
-        defaultFromEmail: 'no-reply@example.test',
-        complianceMailbox: null,
-    } as any);
+    mockedSettings.mockResolvedValue(settings(true));
     mockPrisma.notificationOutbox.update.mockResolvedValue({});
-    mockedSend.mockResolvedValue(undefined as any);
+    mockedSend.mockResolvedValue(undefined);
 });
 
 describe('the outbox claim', () => {
@@ -130,7 +139,7 @@ describe('the outbox claim', () => {
     });
 
     it('a tenant with notifications disabled is skipped WITHOUT spending an attempt', async () => {
-        mockedSettings.mockResolvedValue({ enabled: false } as any);
+        mockedSettings.mockResolvedValue(settings(false));
         mockPrisma.notificationOutbox.findMany.mockResolvedValue([row()]);
 
         const result = await processOutbox();
@@ -161,12 +170,8 @@ describe('platform mail is not silenced by the tenant it is about', () => {
     // was never persisted. The row passed the first gate and was skipped at the
     // second on every sweep, for ever.
     beforeEach(() => {
-        mockedSettings.mockResolvedValue({
-            enabled: false, // the tenant has switched their notifications OFF
-            defaultFromName: 'Agrent',
-            defaultFromEmail: 'no-reply@example.test',
-            complianceMailbox: null,
-        } as any);
+        // The tenant has switched their notifications OFF.
+        mockedSettings.mockResolvedValue(settings(false));
         mockPrisma.notificationOutbox.updateMany.mockResolvedValue({ count: 1 });
     });
 
