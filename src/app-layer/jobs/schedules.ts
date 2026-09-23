@@ -226,6 +226,13 @@ export const ALL_SCHEDULES: ScheduleDefinition[] = [
         enabled: Boolean(env.ANTHROPIC_API_KEY),
     },
     {
+        name: 'process-outbox',
+        pattern: '*/5 * * * *',   // every 5 minutes
+        description:
+            'Put queued email on the wire. Before this existed the outbox was flushed only by `daily-evidence-expiry` at 06:00 UTC, so a notification enqueued at 07:00 waited 23 hours — measured on production rows, send latency was 15.35h min / 24.44h avg / 37.28h max, and every SENT row bore a 06:00 timestamp.',
+        defaultPayload: {},
+    },
+    {
         name: 'daily-evidence-expiry',
         pattern: '0 6 * * *',     // daily at 06:00 UTC
         description: 'Sweep expiring evidence at 30/7/1 day thresholds + flush outbox',

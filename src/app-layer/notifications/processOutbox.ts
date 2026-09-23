@@ -11,6 +11,7 @@
 import { prisma } from '@/lib/prisma';
 import { sendEmail } from '@/lib/mailer';
 import { getTenantNotificationSettings } from './settings';
+import { isPlatformAudience } from './audience';
 import { logger } from '@/lib/observability/logger';
 
 export interface ProcessOutboxOptions {
@@ -60,8 +61,40 @@ export async function processOutbox(
             }
             const settings = settingsCache.get(row.tenantId)!;
 
-            // Skip if tenant disabled notifications after enqueue
-            if (!settings.enabled) {
+            // Skip if tenant disabled notifications after enqueue.
+            //
+            // Platform mail is exempt at THIS gate as well as at the enqueue
+            // one. Checking only at enqueue let an insurance lead through the
+            // door and then silenced it here on every sweep, for ever — see
+            // `audience.ts`.
+            if (!settings.enabled && !isPlatformAudience(row.type)) {
+                skipped++;
+                continue;
+            }
+
+            // ── Claim the row before sending ──
+            //
+            // A compare-and-swap on (status, attempts). Whoever bumps
+            // `attempts` first owns the send; a concurrent runner that read the
+            // same row matches zero rows here and moves on.
+            //
+            // This is load-bearing as of the `process-outbox` schedule: before
+            // it, the only scheduled caller was `daily-evidence-expiry`, so two
+            // runners never overlapped and a read-send-then-mark loop was safe
+            // by accident. With a sweep every 5 minutes, that sweep meets the
+            // daily one at 06:00 and can meet its own next tick, and the
+            // failure mode is a DUPLICATE EMAIL to a real person — the one
+            // outcome an outbox exists to prevent.
+            //
+            // Claiming also fixes the crash window: `attempts` now increments
+            // BEFORE the send, so a process that dies mid-send has spent an
+            // attempt rather than leaving a row that retries for ever.
+            const claim = await prisma.notificationOutbox.updateMany({
+                where: { id: row.id, status: 'PENDING', attempts: row.attempts },
+                data: { attempts: row.attempts + 1 },
+            });
+            if (claim.count === 0) {
+                // Another runner has it. Not an error, and not this run's to count.
                 skipped++;
                 continue;
             }
@@ -75,28 +108,27 @@ export async function processOutbox(
                 bcc: settings.complianceMailbox || undefined,
             });
 
-
             await prisma.notificationOutbox.update({
                 where: { id: row.id },
+                // `attempts` is NOT touched here — the claim above already
+                // spent it. Bumping again would double-count every send.
                 data: {
                     status: 'SENT',
                     sentAt: new Date(),
-                    attempts: row.attempts + 1,
                 },
             });
 
             sent++;
         } catch (error: unknown) {
             const errorMessage = error instanceof Error ? error.message : String(error);
+            // The claim already spent this attempt; read it, do not add to it.
             const newAttempts = row.attempts + 1;
             const newStatus = newAttempts >= maxAttempts ? 'FAILED' : 'PENDING';
-
 
             await prisma.notificationOutbox.update({
                 where: { id: row.id },
                 data: {
                     status: newStatus,
-                    attempts: newAttempts,
                     lastError: errorMessage,
                 },
             });
