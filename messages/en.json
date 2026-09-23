@@ -3387,6 +3387,9 @@
       "purgeTitle": "Delete entry permanently",
       "purgeDescription": "This cannot be undone — the entry and its history are removed for good.",
       "purgeTypePrompt": "Type {name} to confirm"
+    },
+    "autoTitle": {
+      "inputApplication": "{product} — {parcel}"
     }
   },
   "tasks": {

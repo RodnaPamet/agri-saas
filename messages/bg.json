@@ -3387,6 +3387,9 @@
       "purgeTitle": "Окончателно изтриване на запис",
       "purgeDescription": "Това не може да бъде отменено — записът и историята му се премахват завинаги.",
       "purgeTypePrompt": "Въведете {name}, за да потвърдите"
+    },
+    "autoTitle": {
+      "inputApplication": "{product} — {parcel}"
     }
   },
   "tasks": {
