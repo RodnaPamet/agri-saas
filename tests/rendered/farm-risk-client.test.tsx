@@ -65,7 +65,7 @@ jest.mock('@/lib/tenant-context-provider', () => {
 // ─── tenant SWR — one URL-switching mock drives BOTH endpoints ────────────
 //
 // `/locations/<id>/parcels` (the list) is always resolved; the per-parcel
-// `/agro/parcel-analysis?parcelId=<id>` state is swapped per test via the
+// `/agro/parcels/<id>/analysis` state is swapped per test via the
 // module-scope `riskState` box, which the hook body reads at RENDER time.
 
 interface SwrState {
@@ -85,7 +85,7 @@ jest.mock('@/lib/hooks/use-tenant-swr', () => ({
         if (path === '/locations/loc-1/parcels') {
             return { data: PARCELS, error: undefined, isLoading: false, mutate };
         }
-        if (path && path.startsWith('/agro/parcel-analysis')) {
+        if (path && path.startsWith('/agro/parcels/')) {
             return {
                 data: riskState.data,
                 error: undefined,

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "3.29.0",
+    "version": "3.36.1",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -785,6 +785,53 @@
         ],
         "additionalProperties": {},
         "description": "Grain marketing/supply contract — a forward SALE of produce or PURCHASE of inputs against a counterparty. volumeTonnes/pricePerTonne are decimal strings; terms/pricingNotes are encrypted at rest and returned decrypted."
+      },
+      "CreateInsuranceLeadRequest": {
+        "type": "object",
+        "properties": {
+          "parcelId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "locationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "risk": {
+            "type": "object",
+            "properties": {
+              "overall": {
+                "type": "string",
+                "maxLength": 20
+              },
+              "ndvi": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "ndmi": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            },
+            "description": "Snapshot of what the farmer was shown when asking."
+          }
+        },
+        "required": [
+          "parcelId",
+          "message"
+        ]
       },
       "CurrentUser": {
         "type": "object",
@@ -2152,6 +2199,20 @@
           "failedReason"
         ],
         "description": "Poll response for an off-thread import. Note that a not-found or wrong-tenant job answers 404 with the bare `{ error }` body, not this shape and not the canonical envelope."
+      },
+      "InquiredParcelIds": {
+        "type": "object",
+        "properties": {
+          "parcelIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "parcelIds"
+        ]
       },
       "InventoryLot": {
         "type": "object",
@@ -4013,6 +4074,76 @@
         ],
         "description": "Union ≥2 of the location’s parcels into one new parcel. The originals are SOFT-DELETED and their ids stop resolving — the response carries the new parcel only."
       },
+      "ParcelRisk": {
+        "type": "object",
+        "properties": {
+          "parcelId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "areaHa": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "cropType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "ndvi": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "ndmi": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "vegetation": {
+            "$ref": "#/components/schemas/RiskLevel"
+          },
+          "moisture": {
+            "$ref": "#/components/schemas/RiskLevel"
+          },
+          "overall": {
+            "$ref": "#/components/schemas/RiskLevel"
+          },
+          "acquiredDate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "generatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "parcelId",
+          "name",
+          "areaHa",
+          "cropType",
+          "configured",
+          "ndvi",
+          "ndmi",
+          "vegetation",
+          "moisture",
+          "overall",
+          "acquiredDate",
+          "generatedAt"
+        ]
+      },
       "ParcelSplitRequest": {
         "type": "object",
         "properties": {
@@ -4465,6 +4596,16 @@
           "error"
         ],
         "description": "Non-canonical error body used by the spatial-import and cadastre-import routes: a bare message string, with no `code`, `requestId` or `details`."
+      },
+      "RiskLevel": {
+        "type": "string",
+        "enum": [
+          "good",
+          "watch",
+          "stress",
+          "unknown"
+        ],
+        "description": "good | watch | stress | unknown. `unknown` means no usable satellite reading, not a failure — render it as absence, never as a fourth severity."
       },
       "SetBottomTabOrderRequest": {
         "type": "object",
@@ -13897,6 +14038,373 @@
           },
           "404": {
             "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/agro/parcels/{parcelId}/analysis": {
+      "get": {
+        "operationId": "getParcelRiskAnalysis",
+        "summary": "Vegetation and moisture risk for one parcel",
+        "description": "Sentinel-2-derived NDVI/NDMI means and traffic-light levels. Cached server-side per (tenant, parcel, day) for 6h and served with a weak ETag — send `If-None-Match` and expect 304, because the first call of the day is a live Earth Engine query and the rest are free.\n\n`configured: false` means Earth Engine has no credentials on this deployment: every level is `unknown` and no imagery was analysed. Say so rather than showing an empty chart — this field exists so a client never claims an analysis it did not get.\n\n`acquiredDate` is the date of the SATELLITE PASS, not of the request. The composite falls back to the latest usable window, so it can be weeks old while `generatedAt` is now. Show the acquisition date; a farmer reading a three-week-old reading as today plans against weather that has since changed.\n\nThe parcel id is a PATH segment, deliberately. iOS writes the full request URL — query included — to the unified log from its own networking layer, below anything an app can suppress.",
+        "tags": [
+          "Farm risk"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "parcelId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Risk readings for the parcel.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParcelRisk"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/insurance/leads": {
+      "get": {
+        "operationId": "listInquiredParcelIds",
+        "summary": "Parcels this tenant has already asked about",
+        "description": "Ids only, ETagged. **Read this before rendering an \"ask for offer\" control.** A lead is unique per (parcel, tenant), so a second POST is refused — and the web page originally tracked \"sent\" in component state, which died on unmount, so navigating away and back re-enabled a button whose POST the database then rejected. The operator was told off for retrying something they could not see they had done. This endpoint exists because of that.",
+        "tags": [
+          "Farm risk"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Parcel ids with an existing lead.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InquiredParcelIds"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createInsuranceLead",
+        "summary": "Ask an insurer for an offer on a parcel",
+        "description": "**Irreversible.** There is no DELETE and no withdraw: a lead is unique per (parcel, tenant) and persists, so a parcel can be asked about exactly once, ever. Do not fire this against a real parcel to test the wiring — it permanently disables the control for that parcel.\n\nLead-gen only: the row is stored and a confirmation notification is written for the REQUESTER. No insurer API is called and no other tenant is contacted, which is what separates this from an exchange inquiry.\n\nA duplicate returns **409** — treat that as \"already asked\", not as a failure. Rate-limited on the inquiry tier.",
+        "tags": [
+          "Farm risk"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateInsuranceLeadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The lead was recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A lead already exists for this parcel — already asked, not an error.",
             "content": {
               "application/json": {
                 "schema": {
