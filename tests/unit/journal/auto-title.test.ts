@@ -114,3 +114,58 @@ describe('parsing a legacy English title', () => {
         expect(c.title).toContain('Generic Compound NPK 15-15-15');
     });
 });
+
+/**
+ * The descriptor has NO consumer today, and that is why this block exists.
+ *
+ * The native client renders `title` unconditionally and does not resolve
+ * `titleKey` — correctly, since this app has one language and resolving would
+ * only add a way for a stale key to paint over an operator's correction. The
+ * web does not resolve it either. So `journal.autoTitle.*` is a mechanism
+ * nothing exercises.
+ *
+ * That is precisely the shape this repo keeps getting caught by: a guard can
+ * see that a code EXISTS, it cannot see that anyone consumes it, and an
+ * unexercised mechanism rots silently. `no-server-authored-user-copy` proves
+ * its exemption against a synthetic fixture for the same reason — an
+ * exemption nothing exercises is one nobody can trust.
+ *
+ * So these assertions stand in for the consumer that does not exist yet. They
+ * would fail if the key were deleted, if a locale lost it, or if the
+ * placeholder names drifted from what the writer stores — each of which
+ * would make every descriptor already in the database unresolvable, which is
+ * the one failure the descriptor exists to prevent.
+ */
+describe('the descriptor is RESOLVABLE — the consumer that does not exist yet', () => {
+    const { translateFor } = jest.requireActual<
+        typeof import('@/lib/i18n/server-messages')
+    >('@/lib/i18n/server-messages');
+
+    it.each(['bg', 'en'] as const)('resolves in %s from stored params alone', async (locale) => {
+        // Exactly what a future reader would have: the key and the params off
+        // the row, and nothing else.
+        const stored = { product: 'Generic MAP 11-52-0', parcel: '15655-19' };
+        const rendered = await translateFor(locale, AUTO_TITLE_KEYS.inputApplication, stored);
+
+        // Not `toBe(key)` — `translateFor` returns the KEY when it cannot
+        // find a message, so a missing entry looks like a successful render
+        // to any assertion that only checks for a non-empty string.
+        expect(rendered).not.toBe(AUTO_TITLE_KEYS.inputApplication);
+        expect(rendered).toContain(stored.product);
+        expect(rendered).toContain(stored.parcel);
+    });
+
+    it('renders the same string the writer stored', async () => {
+        // The descriptor is only worth having if re-rendering reproduces the
+        // stored title. If these diverge, every backfilled row displays one
+        // thing to a resolving reader and another to a non-resolving one.
+        const params = { product: 'Generic Bt kurstaki', parcel: '15655-19' };
+        const composed = await composeInputApplicationTitle(params);
+        const reRendered = await translateFor(
+            AUTO_TITLE_FALLBACK_LOCALE,
+            composed.titleKey,
+            composed.titleParams,
+        );
+        expect(reRendered).toBe(composed.title);
+    });
+});
