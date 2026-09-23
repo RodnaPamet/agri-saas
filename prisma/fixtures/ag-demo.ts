@@ -153,13 +153,21 @@ export async function seedAgDemo(ctx: RequestContext): Promise<AgDemoResult> {
     }
 
     // ── 5 products + an opening-stock lot each ──────────────────────
+    //
+    // The two PESTICIDE rows carry a registration number and quarantine
+    // period because `createItem` now REQUIRES them for that category
+    // (#1078) — both print in the ДНЕВНИК, so a pesticide without them
+    // cannot produce a complete register. The values are illustrative, like
+    // the rest of this fixture; what matters is that the fixture exercises
+    // the same contract a real caller must satisfy rather than a laxer one.
     const productSpecs: Array<{
         name: string;
         category: 'PESTICIDE' | 'FERTILIZER' | 'AMENDMENT';
         unitId: string; lotCode: string; opening: number; reorder: number;
+        pppRegistrationNo?: string; quarantinePeriodDays?: number;
     }> = [
-        { name: 'Glyphosate 360 SL', category: 'PESTICIDE', unitId: units.litre, lotCode: 'GLY-2026-01', opening: 1000, reorder: 50 },
-        { name: 'Mancozeb 75% WP', category: 'PESTICIDE', unitId: units.kg, lotCode: 'MAN-2026-01', opening: 500, reorder: 25 },
+        { name: 'Glyphosate 360 SL', category: 'PESTICIDE', unitId: units.litre, lotCode: 'GLY-2026-01', opening: 1000, reorder: 50, pppRegistrationNo: 'DEMO-0001-ПРЗ', quarantinePeriodDays: 30 },
+        { name: 'Mancozeb 75% WP', category: 'PESTICIDE', unitId: units.kg, lotCode: 'MAN-2026-01', opening: 500, reorder: 25, pppRegistrationNo: 'DEMO-0002-ПРЗ', quarantinePeriodDays: 21 },
         { name: 'Calcium Nitrate', category: 'FERTILIZER', unitId: units.kg, lotCode: 'CAN-2026-01', opening: 2000, reorder: 200 },
         { name: 'Aqua Ammonium 28%', category: 'FERTILIZER', unitId: units.litre, lotCode: 'AQN-2026-01', opening: 1500, reorder: 100 },
         { name: 'Sulfur Granule', category: 'AMENDMENT', unitId: units.kg, lotCode: 'SUL-2026-01', opening: 800, reorder: 40 },
@@ -172,6 +180,8 @@ export async function seedAgDemo(ctx: RequestContext): Promise<AgDemoResult> {
             category: s.category,
             defaultUnitId: s.unitId,
             reorderLevel: s.reorder,
+            pppRegistrationNo: s.pppRegistrationNo ?? null,
+            quarantinePeriodDays: s.quarantinePeriodDays ?? null,
         });
         const lot = await createLot(ctx, {
             itemId: item.id,

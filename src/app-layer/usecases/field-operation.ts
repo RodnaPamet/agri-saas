@@ -458,6 +458,10 @@ async function markOperationParcelImpl(
                         applicationTechnique: true,
                     },
                 },
+                // For the archetype refusal below. Selected here rather than
+                // fetched separately so the check cannot be skipped by a
+                // caller that forgets it.
+                product: { select: { name: true, isArchetype: true } },
             },
         });
         if (!line) throw codedNotFound('OPERATION_PARCEL_NOT_FOUND', 'Operation parcel not found');
@@ -465,6 +469,35 @@ async function markOperationParcelImpl(
         const isAssignee = line.task.assigneeUserId === ctx.userId;
         if (!ctx.permissions.canWrite && !isAssignee) {
             throw codedForbidden('OPERATION_NOT_ASSIGNED_TO_YOU', 'You can only update field operations assigned to you.');
+        }
+
+        // ── A spray may not be FILED against a seeded archetype (#1078) ──
+        //
+        // The ДНЕВНИК's column 4 is headed «Употребено средство за РЗ
+        // /търговско наименование/» and the register joins this product live,
+        // so completing a line against `Generic Chlorothalonil 720 SC` files a
+        // regulated document naming a product that does not exist. The
+        // archetypes are deliberate — a real proprietary label database is a
+        // licensing problem — and the design has always been that an operator
+        // replaces them.
+        //
+        // Refused at COMPLETION, not at planning: an operator mid-season can
+        // still build a plan against a placeholder and correct it before
+        // filing, and refusing earlier would block work that is not yet a
+        // record of anything. Completion is the moment the row becomes
+        // evidence.
+        //
+        // Only on the way INTO a done state. Reverting a line to PENDING must
+        // stay possible whatever its product is, or a line filed before this
+        // guard existed could never be corrected.
+        if (status !== 'PENDING' && line.product?.isArchetype) {
+            throw codedBadRequest(
+                'PRODUCT_IS_SAMPLE_ARCHETYPE',
+                `"${line.product.name}" is a sample product, not a registered one. ` +
+                    `The farm record requires a product's trade name, so add your ` +
+                    `own product and select it before completing this operation.`,
+                { product: line.product.name },
+            );
         }
 
         const fromStatus = line.status;

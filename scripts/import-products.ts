@@ -221,6 +221,13 @@ export async function importProducts(
                 sku: p.sku,
                 defaultUnitId: unitIds[p.unitKey],
                 reorderLevel: p.reorderLevel ?? null,
+                // Marked at creation, not inferred later (#1078). Everything
+                // this script writes is a generic illustrative archetype by
+                // construction — that is the whole licensing rationale in the
+                // docblock above — so it is the one place that KNOWS, and a
+                // flag set here never has to be reconstructed from a name
+                // prefix or the absence of a creator.
+                isArchetype: true,
                 attributesJson: p.attributes,
             },
         });

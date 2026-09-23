@@ -264,6 +264,15 @@ export async function loadSampleData(ctx: RequestContext): Promise<{ created: bo
                 select: { id: true },
             });
             if (!item) {
+                // NOT `isArchetype` (#1078), despite being sample data. That
+                // flag means "a generic stand-in for a real labelled input
+                // product", and it gates a REFUSAL: a spray cannot be
+                // completed against one. This is a HARVESTED_PRODUCE — the
+                // crop a demo inventory lot holds — so it is never the input
+                // on a spray line, and marking it would add refusal risk for
+                // no benefit. The archetypes exist because of a licensing
+                // constraint on product labels; this exists to make an empty
+                // inventory screen legible.
                 item = await db.item.create({
                     data: {
                         tenantId: t,

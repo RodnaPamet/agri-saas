@@ -359,6 +359,11 @@ describe('InventoryClient — QR deep link', () => {
 describe('InventoryClient — product modal', () => {
     it('keeps create disabled until a name AND a unit are chosen', async () => {
         // Break: dropping either conjunct posts a product the API rejects.
+        //
+        // The form DEFAULTS to PESTICIDE, which since #1078 also requires a
+        // registration number and a quarantine period — so this walks the
+        // category to FERTILIZER to test the name/unit conjunction on its
+        // own. The pesticide rule has its own test below.
         const u = user();
         renderPage();
         await u.click(screen.getAllByRole('button', { name: 'New product' })[0]);
@@ -366,12 +371,43 @@ describe('InventoryClient — product modal', () => {
         const submit = await screen.findByRole('button', { name: 'Create product' });
         expect(submit).toBeDisabled();
 
+        await pick(u, 'Category', /Fertilizer/);
         fireEvent.change(screen.getByPlaceholderText('e.g. Roundup PowerMAX'), {
             target: { value: 'Urea' },
         });
         expect(submit).toBeDisabled(); // unit still unset
 
         await pick(u, 'Default unit', /Litre/);
+        await waitFor(() => expect(submit).not.toBeDisabled());
+    });
+
+    it('keeps create disabled for a PESTICIDE until the regulatory fields are given', async () => {
+        // Mirrors `assertPesticideIsFilable` on the server (#1078). Both
+        // fields print in the ДНЕВНИК — the quarantine period fills column 8
+        // and the earliest-harvest date in column 9 — so a pesticide without
+        // them cannot produce a complete register.
+        //
+        // The server is the guarantee; this only stops the first-party form
+        // sending a request it knows will be refused. Break it and the
+        // operator gets a server sentence instead of a disabled button.
+        const u = user();
+        renderPage();
+        await u.click(screen.getAllByRole('button', { name: 'New product' })[0]);
+
+        const submit = await screen.findByRole('button', { name: 'Create product' });
+        // Category already defaults to PESTICIDE.
+        fireEvent.change(screen.getByPlaceholderText('e.g. Roundup PowerMAX'), {
+            target: { value: 'Karate Zeon 5 CS' },
+        });
+        await pick(u, 'Default unit', /Litre/);
+        expect(submit).toBeDisabled(); // name + unit are not enough here
+
+        fireEvent.change(screen.getByLabelText(/registration/i), {
+            target: { value: '01234-ПРЗ' },
+        });
+        expect(submit).toBeDisabled(); // quarantine period still missing
+
+        fireEvent.change(screen.getByLabelText(/quarantine/i), { target: { value: '21' } });
         await waitFor(() => expect(submit).not.toBeDisabled());
     });
 
@@ -384,6 +420,7 @@ describe('InventoryClient — product modal', () => {
         fireEvent.change(screen.getByPlaceholderText('e.g. Roundup PowerMAX'), {
             target: { value: 'Urea' },
         });
+        await pick(u, 'Category', /Fertilizer/);
         await pick(u, 'Default unit', /Litre/);
         await u.click(screen.getByRole('button', { name: 'Create product' }));
 
@@ -391,8 +428,13 @@ describe('InventoryClient — product modal', () => {
         const [url, body] = apiPost.mock.calls[0];
         expect(url).toBe('/api/t/acme/items');
         expect(body).toEqual({
+            // FERTILIZER, not the form's PESTICIDE default: for a pesticide
+            // these fields are no longer optional, so testing "untouched
+            // optional fields serialise as null" against one would be
+            // testing a state the product can no longer be in. Urea is a
+            // fertiliser anyway.
             name: 'Urea',
-            category: 'PESTICIDE',
+            category: 'FERTILIZER',
             defaultUnitId: 'u-l',
             reorderLevel: null,
             quarantinePeriodDays: null,

@@ -204,6 +204,23 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
     const [pActiveIngredient, setPActiveIngredient] = useState('');
     const [pPppRegNo, setPPppRegNo] = useState('');
 
+    /**
+     * A PESTICIDE cannot be saved without its registration number and
+     * quarantine period (#1078).
+     *
+     * The SERVER enforces this — `assertPesticideIsFilable` in `catalog.ts`,
+     * on create and update alike — because the rule has to hold for every
+     * client. This mirrors it so the first-party form does not send a request
+     * it knows will be refused and then show the operator a server sentence;
+     * it is a courtesy, not the guarantee, and deleting it changes nothing
+     * about what can be stored.
+     *
+     * Both fields print in the ДНЕВНИК: the quarantine period fills column 8
+     * and the earliest-harvest date in column 9.
+     */
+    const pesticideFieldsMissing =
+        pCategory === 'PESTICIDE' && (!pPppRegNo.trim() || !pQuarantineDays.trim());
+
     // New lot modal
     const [showLot, setShowLot] = useState(false);
     const [lItemId, setLItemId] = useState<string>('');
@@ -677,7 +694,7 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
                     </Modal.Body>
                     <Modal.Actions>
                         <Button variant="secondary" size="sm" type="button" onClick={() => setShowProduct(false)}>{t('cancel')}</Button>
-                        <Button variant="primary" size="sm" type="submit" loading={busy} disabled={!pName || !pUnitId || busy}>{editItemId ? t('saveProduct') : t('createProduct')}</Button>
+                        <Button variant="primary" size="sm" type="submit" loading={busy} disabled={!pName || !pUnitId || pesticideFieldsMissing || busy}>{editItemId ? t('saveProduct') : t('createProduct')}</Button>
                     </Modal.Actions>
                 </Modal.Form>
             </Modal>
