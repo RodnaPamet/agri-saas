@@ -226,6 +226,18 @@ export const env = createEnv({
         SMTP_PASS: z.string().optional(),
         SMTP_FROM: z.string().default("noreply@agrent.bg"),
 
+        /**
+         * Where a farmer's "ask for an insurance offer" is mailed.
+         *
+         * An ENV VAR and not a constant because this repository is PUBLIC and
+         * the value is a real inbox. It is also deliberately OPTIONAL: with it
+         * unset the lead is still recorded and the requester still gets their
+         * confirmation — only the operator's copy is skipped, and
+         * `createInsuranceLead` logs that it was. A missing address must not
+         * cost a farmer their quote request.
+         */
+        INSURANCE_LEAD_NOTIFY_EMAIL: z.string().email().optional(),
+
         // Resend (https://resend.com) — preferred over SMTP when set. Uses
         // Resend's HTTPS API (no SMTP egress needed). RESEND_FROM must be a
         // Resend-verified sender; it falls back to SMTP_FROM when omitted.
@@ -657,6 +669,7 @@ export const env = createEnv({
         SMTP_USER: process.env.SMTP_USER,
         SMTP_PASS: process.env.SMTP_PASS,
         SMTP_FROM: process.env.SMTP_FROM,
+        INSURANCE_LEAD_NOTIFY_EMAIL: process.env.INSURANCE_LEAD_NOTIFY_EMAIL,
         RESEND_API_KEY: process.env.RESEND_API_KEY,
         RESEND_FROM: process.env.RESEND_FROM,
 

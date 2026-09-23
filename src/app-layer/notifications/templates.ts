@@ -65,6 +65,22 @@ export async function buildEvidenceExpiringEmail(
 
 // ─── Task Assigned ───
 
+export interface InsuranceLeadPayload {
+    /** Farm that asked. The operator needs to know whose land this is. */
+    tenantName: string;
+    tenantSlug: string;
+    parcelName: string;
+    locationName?: string | null;
+    cropType?: string | null;
+    areaHa?: number | null;
+    /** What the farmer typed. Free text, escaped at every render site. */
+    message: string;
+    /** The reading the farmer was looking at when they asked, if any. */
+    riskOverall?: string | null;
+    ndvi?: number | null;
+    ndmi?: number | null;
+}
+
 export interface TaskAssignedPayload {
     taskTitle: string;
     taskKey?: string | null;
@@ -151,6 +167,93 @@ export async function buildTaskAssignedEmail(
     <strong>${escapeHtml(keyLabel)}${escapeHtml(taskTitle)}</strong>
   </div>
   <a href="${escapeHtml(link)}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">${escapeHtml(viewTasks)}</a>
+  <p style="color: #999; font-size: 12px; margin-top: 24px;">${escapeHtml(signature)}</p>
+</div>`.trim(),
+    };
+}
+
+
+// ─── Insurance lead (Farm Risk, 2026-09-23) ───
+
+/**
+ * A farmer asked for an insurance quote on a parcel.
+ *
+ * Addressed to the PLATFORM OPERATOR, not to the tenant — the tenant is the
+ * subject of this mail, not its reader, which is why it is enqueued with
+ * `audience: 'platform'` and is not silenced by the tenant's own notification
+ * switch.
+ *
+ * Written in `RECIPIENT_FALLBACK_LOCALE` at the call site rather than resolved
+ * from a user row, and deliberately so: the recipient is an address from
+ * configuration with no `User` behind it, and the convention is that a
+ * producer holding only an email writes the locale EXPLICITLY so the decision
+ * shows up in the diff instead of hiding in a default.
+ *
+ * Every interpolated value is resolved to a local `const` first. The
+ * alternative — `${escapeHtml(await t('k'))}` inline — was invisible to the
+ * escaping guard until #717 widened its extractor, and the local-const form
+ * keeps each value readable at the point it is escaped.
+ */
+export async function buildInsuranceLeadEmail(
+    payload: InsuranceLeadPayload,
+    locale: Locale,
+): Promise<EmailTemplateResult> {
+    const { tenantName, tenantSlug, parcelName, locationName, cropType, areaHa, message } = payload;
+    const { riskOverall, ndvi, ndmi } = payload;
+    const t = (key: string, params?: Record<string, string | number>) =>
+        translateFor(locale, `notificationEmail.insuranceLead.${key}`, params);
+
+    const link = absoluteUrl(`/t/${tenantSlug}/farm-risk`);
+    const subject = await t('subject', { farm: tenantName, parcel: parcelName });
+    const heading = await t('heading');
+    const intro = await t('intro', { farm: tenantName });
+    const parcelLabel = await t('parcelLabel');
+    const messageLabel = await t('messageLabel');
+    const readingLabel = await t('readingLabel');
+    const openLink = await t('open');
+    const signature = await translateFor(locale, 'notificationEmail.signature');
+
+    // One line of parcel facts, skipping what is absent rather than printing
+    // "null" or an empty bracket.
+    const facts = [parcelName, locationName, cropType, areaHa != null ? `${areaHa} ha` : null]
+        .filter((v): v is string => Boolean(v))
+        .join(' · ');
+
+    // The reading the farmer was shown. Absent when Earth Engine had nothing —
+    // which is a real state, so the block is omitted rather than shown empty.
+    const reading =
+        riskOverall || ndvi != null || ndmi != null
+            ? [riskOverall, ndvi != null ? `NDVI ${ndvi}` : null, ndmi != null ? `NDMI ${ndmi}` : null]
+                  .filter((v): v is string => Boolean(v))
+                  .join(' · ')
+            : null;
+
+    return {
+        subject,
+        bodyText: [
+            intro,
+            '',
+            `${parcelLabel}: ${facts}`,
+            ...(reading ? [`${readingLabel}: ${reading}`] : []),
+            '',
+            `${messageLabel}:`,
+            message,
+            '',
+            link,
+            '',
+            signature,
+        ].join('\n'),
+        bodyHtml: `
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
+  <h2 style="color: #1a1a2e; font-size: 18px; margin-bottom: 16px;">${escapeHtml(heading)}</h2>
+  <p style="color: #444; line-height: 1.5;">${escapeHtml(intro)}</p>
+  <div style="background: #f4f6fa; border-left: 4px solid #4f46e5; padding: 12px 16px; margin: 16px 0; border-radius: 4px;">
+    <div><strong>${escapeHtml(parcelLabel)}:</strong> ${escapeHtml(facts)}</div>
+    ${reading ? `<div><strong>${escapeHtml(readingLabel)}:</strong> ${escapeHtml(reading)}</div>` : ''}
+  </div>
+  <p style="color: #444; line-height: 1.5;"><strong>${escapeHtml(messageLabel)}:</strong></p>
+  <p style="color: #444; line-height: 1.5; white-space: pre-line;">${escapeHtml(message)}</p>
+  <a href="${escapeHtml(link)}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">${escapeHtml(openLink)}</a>
   <p style="color: #999; font-size: 12px; margin-top: 24px;">${escapeHtml(signature)}</p>
 </div>`.trim(),
     };

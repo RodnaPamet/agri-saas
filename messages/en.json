@@ -6194,6 +6194,15 @@
         "organization": "organization",
         "workspace": "workspace"
       }
+    },
+    "insuranceLead": {
+      "subject": "Insurance enquiry: {farm} — {parcel}",
+      "heading": "Insurance quote request",
+      "intro": "Farm {farm} has asked for an offer on the parcel below.",
+      "parcelLabel": "Parcel",
+      "readingLabel": "Satellite readings",
+      "messageLabel": "Message from the farmer",
+      "open": "Open in Agrent"
     }
   },
   "diagnostics": {
