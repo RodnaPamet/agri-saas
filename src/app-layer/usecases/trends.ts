@@ -13,6 +13,8 @@
  * @module app-layer/usecases/trends
  */
 import prisma from '@/lib/prisma';
+import { localiseSeriesLabel } from '@/lib/market/series-labels';
+import { LOCALES, type Locale } from '@/lib/i18n/locales';
 import { getRedis } from '@/lib/redis';
 import { logger } from '@/lib/observability/logger';
 import type { MarketReference } from '@/lib/market/contract-benchmark';
@@ -132,6 +134,7 @@ function cutoffFor(range: TrendRange): Date | null {
 async function readFromDb(
     commodity: TrendCommodity,
     range: TrendRange,
+    locale: Locale,
 ): Promise<TrendPricesResponse> {
     const cutoff = cutoffFor(range);
     const series = await prisma.marketPriceSeries.findMany({
@@ -172,6 +175,15 @@ async function readFromDb(
         }
     }
 
+    // One resolution per DISTINCT label, not per series: a commodity with 30
+    // series carries at most a couple of instruments between them, and this
+    // keeps the map below synchronous rather than turning the projection into
+    // a Promise.all over every row.
+    const localisedLabels = new Map<string, string | null>();
+    for (const raw of new Set(series.map((s) => s.label ?? ''))) {
+        localisedLabels.set(raw, await localiseSeriesLabel(raw || null, locale));
+    }
+
     const mapped: TrendSeries[] = series
         .map((s) => ({
             source: s.source,
@@ -179,7 +191,7 @@ async function readFromDb(
             stage: s.stage,
             unit: s.unit,
             currency: s.currency,
-            label: s.label,
+            label: localisedLabels.get(s.label ?? '') ?? null,
             lastObservedAt: lastDates.get(s.id)?.toISOString().slice(0, 10) ?? null,
             // Restore chronological order for the chart + the delta helpers,
             // which both assume points ascend.
@@ -204,12 +216,25 @@ async function readFromDb(
 export async function getPriceTrends(
     commodity: TrendCommodity,
     range: TrendRange,
+    /**
+     * The READER's language. Required, not defaulted: the payload is cached,
+     * so a forgotten locale would not merely mis-render one response — it
+     * would poison the cache for every later reader of that commodity.
+     * `resolveRecipientLocale(user.uiLanguage)` is the caller's source, NOT
+     * the request cookie, because a native client sends a bearer token and
+     * no cookie and would silently get the unauthenticated default.
+     */
+    locale: Locale,
 ): Promise<TrendPricesResponse> {
     // v2: the payload gained `generatedAt` + per-series `lastObservedAt`. A
     // v1 entry deserialises without them, so the UI would render "as of
     // undefined" and treat every series as unjudgeable for up to the 6h TTL.
     // Bumping the version retires those entries instantly.
-    const cacheKey = `trends:prices:v2:${commodity}:${range}`;
+    // v3: series labels are now localised at read time, so the payload is
+    // language-specific and the LOCALE is part of its identity. Without it
+    // whichever language asked first would be served to everyone until the
+    // TTL expired.
+    const cacheKey = `trends:prices:v3:${locale}:${commodity}:${range}`;
     const redis = getRedis();
 
     if (redis) {
@@ -221,7 +246,7 @@ export async function getPriceTrends(
         }
     }
 
-    const payload = await readFromDb(commodity, range);
+    const payload = await readFromDb(commodity, range, locale);
 
     if (redis) {
         try {
@@ -363,7 +388,14 @@ export async function invalidatePriceTrendsCache(
     // (commodity x range) and both are small closed sets, so the exact list
     // is cheap to build and carries none of the production hazards of a
     // pattern scan on a shared Redis.
-    const keys = wanted.flatMap((c) => TREND_RANGES.map((r) => `trends:prices:v2:${c}:${r}`));
+    // Every LOCALE, not just every range — the key gained a locale segment in
+    // v3, and an invalidation that swept only one language would leave the
+    // others serving pre-invalidation data for the rest of the TTL. That is
+    // the failure mode a cache-key change causes in the invalidator rather
+    // than in the reader, so it is invisible at the call site that changed.
+    const keys = wanted.flatMap((c) =>
+        TREND_RANGES.flatMap((r) => LOCALES.map((l) => `trends:prices:v3:${l}:${c}:${r}`)),
+    );
     try {
         await redis.del(...keys);
         return keys.length;
