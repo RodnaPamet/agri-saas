@@ -42,6 +42,7 @@
  * is right for a one-off over a countable number of rows.
  */
 import { PrismaClient, Prisma } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
@@ -62,7 +63,13 @@ interface RestoreRow {
 async function main() {
     const apply = process.argv.includes('--apply');
     const revertIdx = process.argv.indexOf('--revert');
-    const prisma = new PrismaClient();
+    // Prisma 7 requires a driver adapter — a bare `new PrismaClient()` throws
+    // `PrismaClientInitializationError` before it reaches the database. That
+    // is not a detail the type system catches, and this script had it wrong
+    // until it was actually run against production.
+    const connectionString = process.env.DATABASE_URL;
+    if (!connectionString) throw new Error('DATABASE_URL is required');
+    const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
 
     try {
         if (revertIdx !== -1) {
