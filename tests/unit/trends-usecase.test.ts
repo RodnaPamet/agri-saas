@@ -42,7 +42,7 @@ beforeEach(() => {
 describe('getPriceTrends', () => {
     it('returns the empty-result shape when no series exist (Redis off)', async () => {
         mockFindMany.mockResolvedValue([]);
-        const res = await getPriceTrends('wheat', '1y');
+        const res = await getPriceTrends('wheat', '1y', 'bg');
         expect(res).toMatchObject({ commodity: 'wheat', range: '1y', series: [] });
         expect(typeof res.generatedAt).toBe('string');
         expect(mockFindMany).toHaveBeenCalledTimes(1);
@@ -79,7 +79,7 @@ describe('getPriceTrends', () => {
             },
         ]);
 
-        const res = await getPriceTrends('wheat', '3m');
+        const res = await getPriceTrends('wheat', '3m', 'bg');
 
         expect(res.commodity).toBe('wheat');
         expect(res.range).toBe('3m');
@@ -102,7 +102,7 @@ describe('getPriceTrends', () => {
         mockFindMany.mockResolvedValue([
             { source: 'alpha-vantage', region: 'GLOBAL', stage: null, unit: 'USD/t', currency: 'USD', label: 'x', points: [] },
         ]);
-        const res = await getPriceTrends('maize', '1m');
+        const res = await getPriceTrends('maize', '1m', 'bg');
         expect(res.series).toEqual([]);
     });
 
@@ -110,10 +110,12 @@ describe('getPriceTrends', () => {
         const cached = { commodity: 'barley', range: 'all', series: [{ source: 'ec-agrifood', region: 'BG', stage: null, unit: 'EUR/t', currency: 'EUR', label: null, points: [] }] };
         mockRedis = { get: jest.fn().mockResolvedValue(JSON.stringify(cached)), set: jest.fn() };
 
-        const res = await getPriceTrends('barley', 'all');
+        const res = await getPriceTrends('barley', 'all', 'bg');
 
         expect(res).toEqual(cached);
-        expect(mockRedis.get).toHaveBeenCalledWith('trends:prices:v2:barley:all');
+        // v3 keys carry the READER'S LOCALE — the payload's labels are localised
+        // at read time, so one cached body cannot serve both languages.
+        expect(mockRedis.get).toHaveBeenCalledWith('trends:prices:v3:bg:barley:all');
         expect(mockFindMany).not.toHaveBeenCalled();
         expect(mockRedis.set).not.toHaveBeenCalled();
     });
@@ -122,12 +124,12 @@ describe('getPriceTrends', () => {
         mockRedis = { get: jest.fn().mockResolvedValue(null), set: jest.fn().mockResolvedValue('OK') };
         mockFindMany.mockResolvedValue([]);
 
-        await getPriceTrends('sunflower', '1y');
+        await getPriceTrends('sunflower', '1y', 'bg');
 
         expect(mockFindMany).toHaveBeenCalledTimes(1);
         expect(mockRedis.set).toHaveBeenCalledTimes(1);
         const [key, , exFlag, ttl] = mockRedis.set.mock.calls[0];
-        expect(key).toBe('trends:prices:v2:sunflower:1y');
+        expect(key).toBe('trends:prices:v3:bg:sunflower:1y');
         expect(exFlag).toBe('EX');
         expect(ttl).toBe(21600); // 6h
     });
@@ -136,7 +138,7 @@ describe('getPriceTrends', () => {
         mockRedis = { get: jest.fn().mockRejectedValue(new Error('redis down')), set: jest.fn().mockResolvedValue('OK') };
         mockFindMany.mockResolvedValue([]);
 
-        const res = await getPriceTrends('wheat', '1y');
+        const res = await getPriceTrends('wheat', '1y', 'bg');
         expect(res).toMatchObject({ commodity: 'wheat', range: '1y', series: [] });
         expect(mockFindMany).toHaveBeenCalledTimes(1);
     });
@@ -162,7 +164,7 @@ describe('getPriceTrends', () => {
             },
         ]);
 
-        const res = await getPriceTrends('wheat', 'all');
+        const res = await getPriceTrends('wheat', 'all', 'bg');
         expect(res.series[0].points.map((p) => p.date)).toEqual([
             '2025-01-01',
             '2025-02-01',
@@ -190,7 +192,7 @@ describe('getPriceTrends', () => {
             { seriesId: 'series-1', _max: { date: d('2025-03-31') } },
         ]);
 
-        const res = await getPriceTrends('wheat', '1m');
+        const res = await getPriceTrends('wheat', '1m', 'bg');
 
         expect(res.series[0].points).toHaveLength(1);
         // Newer than any point in the returned window.
@@ -212,7 +214,7 @@ describe('getPriceTrends', () => {
         ]);
         mockGroupBy.mockResolvedValue([]);
 
-        const res = await getPriceTrends('wheat', 'all');
+        const res = await getPriceTrends('wheat', 'all', 'bg');
         expect(res.series[0].lastObservedAt).toBeNull();
     });
 });
@@ -225,10 +227,20 @@ describe('invalidatePriceTrendsCache', () => {
         mockRedis = { get: jest.fn(), set: jest.fn(), del };
 
         return invalidatePriceTrendsCache(['wheat', 'maize']).then((n) => {
-            expect(n).toBe(8); // 2 commodities x 4 ranges
+            // 2 commodities x 4 ranges x 2 LOCALES. The locale factor is the
+            // point: if this stayed at 8 the sweep would be missing a whole
+            // language's worth of keys and nothing else here would notice.
+            expect(n).toBe(16);
             const keys = del.mock.calls[0] as string[];
-            expect(keys).toContain('trends:prices:v2:wheat:1m');
-            expect(keys).toContain('trends:prices:v2:maize:all');
+            // EVERY locale, not just the caller's: an invalidation that swept
+            // one language would leave the others serving pre-invalidation
+            // data for the rest of the 6h TTL — a cache-key change whose
+            // failure lands in the INVALIDATOR, far from the line that
+            // changed.
+            expect(keys).toContain('trends:prices:v3:bg:wheat:1m');
+            expect(keys).toContain('trends:prices:v3:en:wheat:1m');
+            expect(keys).toContain('trends:prices:v3:bg:maize:all');
+            expect(keys).toContain('trends:prices:v3:en:maize:all');
         });
     });
 

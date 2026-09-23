@@ -4,6 +4,7 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonWithETag } from '@/lib/http/etag';
 import { getPriceTrends } from '@/app-layer/usecases/trends';
 import { TrendPricesQuerySchema } from '@/app-layer/schemas/trends.schemas';
+import { resolveReaderLocale } from '@/app-layer/usecases/reader-locale';
 
 /**
  * GET /api/t/[tenantSlug]/trends/prices?commodity=&range=
@@ -20,15 +21,29 @@ export const GET = withApiErrorHandling(
     ) => {
         const params = await paramsPromise;
         // Authenticate + gate tenant access (payload itself is tenant-agnostic).
-        await getTenantCtx(params, req);
+        const ctx = await getTenantCtx(params, req);
+
+        // The reader's language, from their OWN column — not the request
+        // cookie. A native client authenticates with a bearer token and sends
+        // no `NEXT_LOCALE`, so a cookie-derived locale would hand the phone
+        // the unauthenticated default (`en`) and quietly undo the point of
+        // localising the labels at all. `resolveRecipientLocale` already
+        // draws that distinction for outbound email and falls back to `bg`,
+        // which is the column default and what four of five users carry.
+        const locale = await resolveReaderLocale(ctx);
 
         const query = TrendPricesQuerySchema.parse(
             Object.fromEntries(req.nextUrl.searchParams.entries()),
         );
-        const payload = await getPriceTrends(query.commodity, query.range);
+        const payload = await getPriceTrends(query.commodity, query.range, locale);
         // Weak ETag + If-None-Match → 304. Both trends GETs are hot
         // list-reads on a mobile-first product over rural LTE, which is
         // exactly the cold-start data-cost convention's target.
+        //
+        // The ETag is derived from the PAYLOAD, which now differs by language,
+        // so it varies by locale without anything extra — worth stating
+        // because the alternative shape (hashing the query alone) would have
+        // served a cached 304 for the wrong language.
         return jsonWithETag(req, payload);
     },
 );

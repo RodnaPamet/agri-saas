@@ -6020,6 +6020,19 @@
     "noSeries": {
       "title": "No price series yet",
       "body": "Nothing is published for this commodity yet. Pick another, or ask an administrator to enter prices by hand."
+    },
+    "seriesLabel": {
+      "breadmakingCommonWheat": "Breadmaking common wheat",
+      "feedMaize": "Feed maize",
+      "feedBarley": "Feed barley",
+      "sunflowerSeed": "Sunflower seed",
+      "dieselExclTax": "Automotive gas oil (excluding duties and taxes)",
+      "dieselInclTax": "Automotive gas oil (with duties and taxes)",
+      "dap": "DAP (diammonium phosphate), spot, f.o.b. US Gulf",
+      "urea": "Urea, prill spot f.o.b. Middle East (f.o.b. Black Sea before March 2022)",
+      "referenceAlphaVantage": "Reference (Alpha Vantage)",
+      "ownListingsMedian": "Own-listings median",
+      "futuresBarchart": "Futures (Barchart, delayed)"
     }
   },
   "privacy": {
