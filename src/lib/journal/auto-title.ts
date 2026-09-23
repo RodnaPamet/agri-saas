@@ -23,6 +23,28 @@
  * change. Storing `{ key, params }` means the next language decision costs
  * nothing.
  *
+ * ── NOBODY RESOLVES THIS YET, and that is expected ──
+ *
+ * As of #1073 the descriptor has **zero consumers**. The native client
+ * renders `title` unconditionally and deliberately does not resolve
+ * `titleKey`; the web does not either. With one shipped language, resolving
+ * would duplicate work already done and add a failure the current code
+ * cannot have — a cached or stale key painting over an operator's
+ * correction.
+ *
+ * So do not read the existence of this key as evidence that any reader
+ * honours it. A guard can see that a code exists; it cannot see that anyone
+ * consumes it, and this repo has been caught by that distinction more than
+ * once. If you need to know whether a client resolves a descriptor, ask the
+ * client — the answer for this one is currently no.
+ *
+ * What the descriptor buys in the meantime is the ability to re-render rows
+ * written TODAY without another backfill over a legally-filed register. That
+ * cost is not hypothetical: it is exactly what #1073 had to pay for the 9
+ * rows whose English titles kept no trace of their inputs. The resolvability
+ * tests in `tests/unit/journal/auto-title.test.ts` stand in for the absent
+ * consumer, so the mechanism cannot rot unnoticed.
+ *
  * ── Why `title` is still written, in Bulgarian ──
  *
  * The descriptor is authoritative; `title` is its RENDERING, kept because
