@@ -155,7 +155,12 @@ function ParcelRiskCard({
 }) {
     const t = useTranslations('ag.risk');
     const tCrops = useTranslations('crops');
-    const riskQ = useTenantSWR<ParcelRisk>(`/agro/parcel-analysis?parcelId=${parcelId}`);
+    // Path segment, not a query param. iOS writes the full request URL —
+    // query included — to the unified log from Apple's own networking layer,
+    // below anything the app controls, so an id in a query string becomes an
+    // id in a device-local log for every client built on this route. The web
+    // does not have that problem; it shares the route with the one that does.
+    const riskQ = useTenantSWR<ParcelRisk>(`/agro/parcels/${parcelId}/analysis`);
     const risk = riskQ.data ?? null;
     const levelLabel = (l: RiskLevel) => t(`level.${l}`);
 
