@@ -93,6 +93,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as os from 'node:os';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -134,14 +135,28 @@ const UNNONCED_SCRIPT_SITE =
 const ANY_COMPONENT_SCRIPT_SITE =
     /\{src:`\$\{\w+\.assetPrefix\}[^`]*`,async:!0,key:`script-\$\{\w+\}`[,}]/g;
 
-function findNextPatches(): string[] {
-    const dir = path.join(ROOT, 'patches');
+/**
+ * Patch files under `dir` (default: the repo's `patches/`).
+ *
+ * `dir` is a parameter ONLY so the scan itself can be exercised against a
+ * fixture, and that is not tidiness — it is the fix for a real defect this
+ * file shipped. While the guard asserted `toHaveLength(1)`, gutting this
+ * function to `return []` failed that assertion and the collector had teeth.
+ * Once 16.3.5 made an empty result VALID, `return []` became indistinguishable
+ * from a working scan and `selector-teeth` reported it SURVIVED — the repo's
+ * own "an empty selection is a PASS" defect, introduced by relaxing the
+ * caller rather than by touching the collector.
+ *
+ * So the teeth moved here: the fixture test below proves this can SEE a patch
+ * and can tell one from a neighbouring file, which a gutted version cannot.
+ */
+function findNextPatches(dir: string = path.join(ROOT, 'patches')): string[] {
     if (!fs.existsSync(dir)) {
         throw new Error(`scan root does not exist: ${dir} — a renamed root would scan zero files and pass (#875)`);
     }
-    // NOTE: `patches/` is kept alive by its README even with no patch in it —
-    // an empty directory is untracked by git, and a vanished scan root would
-    // make this throw rather than report zero.
+    // NOTE: the repo's `patches/` is kept alive by its README even with no
+    // patch in it — an empty directory is untracked by git, and a vanished
+    // scan root would make this throw rather than quietly report zero.
     return fs.readdirSync(dir).filter((f) => /^next\+.+\.patch$/.test(f));
 }
 
@@ -172,6 +187,36 @@ describe('CSP nonce — Next.js component-script patch', () => {
             ).version;
             expect(patches[0]).toBe(`next+${installed}.patch`);
         }
+    });
+
+    it('the patch scan can actually SEE a patch (positive control)', () => {
+        // The repo's `patches/` is legitimately empty since 16.3.5, so every
+        // assertion about it is now an assertion about NOTHING — and an empty
+        // selection satisfies a ceiling, a length check and a glob alike.
+        // Prove the mechanism against a fixture instead, the same way
+        // `no-server-authored-user-copy` proves an exemption no real call site
+        // exercises yet.
+        //
+        // This is what `selector-teeth` reported SURVIVED once the caller
+        // stopped requiring exactly one patch: gutting `findNextPatches` to
+        // `return []` broke nothing. It breaks this.
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'next-patch-scan-'));
+        try {
+            fs.writeFileSync(path.join(dir, 'next+16.3.4.patch'), 'diff');
+            fs.writeFileSync(path.join(dir, 'README.md'), 'not a patch');
+            fs.writeFileSync(path.join(dir, 'react+19.0.0.patch'), 'a different package');
+            expect(findNextPatches(dir)).toEqual(['next+16.3.4.patch']);
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('a missing scan root throws rather than reporting zero', () => {
+        // The #875 lesson: a renamed root scans nothing and passes. An
+        // absence must be distinguishable from a broken look.
+        expect(() => findNextPatches(path.join(os.tmpdir(), 'definitely-not-here-1073'))).toThrow(
+            /scan root does not exist/,
+        );
     });
 
     it('package.json has the `postinstall: patch-package` script', () => {
