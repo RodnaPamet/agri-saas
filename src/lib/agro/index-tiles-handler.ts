@@ -9,7 +9,14 @@
  * own `get<Index>TileUrl` so the per-route unit tests keep mocking a single
  * named function.
  *
- *   GET ?locationId=<id>&date=<YYYY-MM-DD>
+ *   GET /agro/locations/<locationId>/<index>-tiles?date=<YYYY-MM-DD>
+ *
+ * The location id is a PATH SEGMENT, not a query param. iOS writes the full
+ * request URL — query string included — to the unified log from Apple's own
+ * networking layer, below anything an app can suppress, so an id in a query
+ * is an id in a device-local log for every client built on the route. The
+ * native client already calls these. `date` stays in the query because a
+ * date is not an identifier.
  *     → { configured: boolean, tileUrl: string, date?: string, error?: string }
  *
  * `configured:false` ⇒ this deployment has no GEE credentials (the client
@@ -36,9 +43,9 @@ import { getRedis } from '@/lib/redis';
 import { jsonResponse } from '@/lib/api-response';
 
 const QuerySchema = z.object({
-    locationId: z.string().min(1),
     // Optional inspection date; defaults to today. The composite window is
-    // the 30 days ENDING on this date.
+    // the 30 days ENDING on this date. `locationId` used to live here and is
+    // now a path segment — see the note above.
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
@@ -76,7 +83,7 @@ export async function handleIndexTiles(
     index: VegetationIndex,
     getTileUrl: (aoi: NdviAoi, win: NdviWindow, clipGeometry?: unknown) => Promise<IndexTileResult>,
     req: NextRequest,
-    paramsPromise: Promise<{ tenantSlug: string }>,
+    paramsPromise: Promise<{ tenantSlug: string; locationId: string }>,
 ) {
     const params = await paramsPromise;
     const ctx = await getTenantCtx(params, req);
@@ -93,7 +100,7 @@ export async function handleIndexTiles(
     // Resolve the location's field bounds [west, south, east, north].
     // `bounds` is a Prisma Json column — validate the tuple shape before
     // use so a malformed/absent value just skips the overlay.
-    const { bounds, parcels } = await listLocationParcels(ctx, query.locationId);
+    const { bounds, parcels } = await listLocationParcels(ctx, params.locationId);
     const box = bounds as unknown as number[] | null;
     if (!box || !Array.isArray(box) || box.length < 4) {
         // Configured, but the location has no mapped field yet.
@@ -113,7 +120,7 @@ export async function handleIndexTiles(
     // than a bare URL string, so the key generation moves `clip2` → `clip3`:
     // a `clip2` entry written by the previous deploy would `JSON.parse`-throw
     // (or worse, parse a URL-shaped string) if read under the new shape.
-    const cacheKey = `${index}:tile:${ctx.tenantId}:${query.locationId}:clip3:${end}`;
+    const cacheKey = `${index}:tile:${ctx.tenantId}:${params.locationId}:clip3:${end}`;
     const redis = getRedis();
 
     // Cache hit — return the still-valid tile URL with the date of the imagery

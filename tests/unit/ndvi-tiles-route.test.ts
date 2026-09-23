@@ -59,11 +59,13 @@ jest.mock('@/lib/redis', () => ({
 }));
 
 import { NextRequest } from 'next/server';
-import { GET } from '@/app/api/t/[tenantSlug]/agro/ndvi-tiles/route';
+import { GET } from '@/app/api/t/[tenantSlug]/agro/locations/[locationId]/ndvi-tiles/route';
 
 function call(qs: string) {
-    const req = new NextRequest(`http://localhost/api/t/acme/agro/ndvi-tiles?${qs}`);
-    return GET(req, { params: Promise.resolve({ tenantSlug: 'acme' }) });
+    // `locationId` is a PATH segment now, not a query param — iOS logs the
+    // full URL including the query from its own networking layer.
+    const req = new NextRequest(`http://localhost/api/t/acme/agro/locations/loc-1/ndvi-tiles?${qs}`);
+    return GET(req, { params: Promise.resolve({ tenantSlug: 'acme', locationId: 'loc-1' }) });
 }
 
 const TILE_URL = 'https://earthengine.googleapis.com/v1/projects/p/maps/m/tiles/{z}/{x}/{y}';
@@ -84,20 +86,20 @@ beforeEach(() => {
 
 it('reports not-configured without calling GEE when creds are absent', async () => {
     isGeeConfiguredMock.mockReturnValue(false);
-    const res = await call('locationId=loc-1');
+    const res = await call('');
     expect(await res.json()).toEqual({ configured: false, tileUrl: '' });
     expect(getNdviTileUrlMock).not.toHaveBeenCalled();
 });
 
 it('returns an empty tileUrl when the location has no mapped field', async () => {
     listLocationParcelsMock.mockResolvedValue({ bounds: null, parcels: [] });
-    const res = await call('locationId=loc-1');
+    const res = await call('');
     expect(await res.json()).toEqual({ configured: true, tileUrl: '' });
     expect(getNdviTileUrlMock).not.toHaveBeenCalled();
 });
 
 it('generates + caches a tile URL on a cache miss', async () => {
-    const res = await call('locationId=loc-1&date=2026-06-15');
+    const res = await call('date=2026-06-15');
     const body = await res.json();
     expect(body.configured).toBe(true);
     expect(body.tileUrl).toContain('earthengine.googleapis.com');
@@ -127,7 +129,7 @@ it("clips the raster to the parcels' polygons (union), not the bbox", async () =
         bounds: [10, 40, 11.3, 41],
         parcels: [{ geometry: poly }, { geometry: multi }, { geometry: null }],
     });
-    await call('locationId=loc-1&date=2026-06-15');
+    await call('date=2026-06-15');
     // The 3rd arg is the union of the parcels' polygons as one MultiPolygon —
     // so the EE composite is clipped to the fields, not the location bbox.
     expect(getNdviTileUrlMock).toHaveBeenCalledWith(
@@ -144,7 +146,7 @@ it('returns the cached URL + cached acquisition date without calling GEE on a ca
             acquiredDate: '2026-06-09',
         }),
     );
-    const res = await call('locationId=loc-1&date=2026-06-15');
+    const res = await call('date=2026-06-15');
     const body = await res.json();
     expect(body.tileUrl).toBe('https://earthengine.googleapis.com/cached/{z}/{x}/{y}');
     // The date rides along in the cache entry — a hit must not relabel stale
@@ -159,7 +161,7 @@ it('reports the EE acquisition date, not the requested date, when the two differ
     // requested window is empty (wall clock ahead of the S2 archive, or a cloudy
     // stretch) — so the composite is genuinely older than what was asked for.
     getNdviTileUrlMock.mockResolvedValue({ tileUrl: TILE_URL, acquiredDate: '2026-06-02' });
-    const res = await call('locationId=loc-1&date=2026-06-15');
+    const res = await call('date=2026-06-15');
     const body = await res.json();
     expect(body.date).toBe('2026-06-02');
     expect(body.tileUrl).toBe(TILE_URL);
@@ -174,7 +176,7 @@ it('reports the EE acquisition date, not the requested date, when the two differ
 
 it('falls back to the requested window end when EE reports no acquisition date', async () => {
     getNdviTileUrlMock.mockResolvedValue({ tileUrl: TILE_URL, acquiredDate: null });
-    const res = await call('locationId=loc-1&date=2026-06-15');
+    const res = await call('date=2026-06-15');
     const body = await res.json();
     expect(body.configured).toBe(true);
     expect(body.tileUrl).toBe(TILE_URL);
@@ -193,7 +195,7 @@ it('regenerates instead of throwing when a legacy/unreadable cache entry is read
     // key generation bumped to `clip3` precisely so this cannot happen, but the
     // handler must still fall through and regenerate rather than 500.
     redisGet.mockResolvedValue('https://earthengine.googleapis.com/legacy/{z}/{x}/{y}');
-    const res = await call('locationId=loc-1&date=2026-06-15');
+    const res = await call('date=2026-06-15');
     const body = await res.json();
     expect(body.tileUrl).toBe(TILE_URL);
     expect(body.date).toBe('2026-06-15');
@@ -209,7 +211,7 @@ it('regenerates instead of throwing when a legacy/unreadable cache entry is read
 it('regenerates when a cached entry parses but carries no tileUrl', async () => {
     // Parses cleanly, wrong shape — must not be served as a tile URL.
     redisGet.mockResolvedValue(JSON.stringify({ acquiredDate: '2026-06-09' }));
-    const res = await call('locationId=loc-1&date=2026-06-15');
+    const res = await call('date=2026-06-15');
     const body = await res.json();
     expect(body.tileUrl).toBe(TILE_URL);
     expect(getNdviTileUrlMock).toHaveBeenCalledTimes(1);
@@ -217,7 +219,7 @@ it('regenerates when a cached entry parses but carries no tileUrl', async () => 
 
 it('degrades softly when GEE generation throws', async () => {
     getNdviTileUrlMock.mockRejectedValue(new Error('EE getMap failed'));
-    const res = await call('locationId=loc-1&date=2026-06-15');
+    const res = await call('date=2026-06-15');
     expect(await res.json()).toEqual({
         configured: true,
         tileUrl: '',
@@ -228,7 +230,7 @@ it('degrades softly when GEE generation throws', async () => {
 
 it('still works (uncached) when Redis is unavailable', async () => {
     redisInstance = null;
-    const res = await call('locationId=loc-1&date=2026-06-15');
+    const res = await call('date=2026-06-15');
     const body = await res.json();
     expect(body.tileUrl).toContain('earthengine.googleapis.com');
     expect(getNdviTileUrlMock).toHaveBeenCalledTimes(1);

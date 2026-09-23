@@ -11,6 +11,6 @@ import { withApiErrorHandling } from '@/lib/errors/api';
  * cache. See `@/lib/agro/index-tiles-handler` for the response contract.
  */
 export const GET = withApiErrorHandling(
-    async (req: NextRequest, { params }: { params: Promise<{ tenantSlug: string }> }) =>
+    async (req: NextRequest, { params }: { params: Promise<{ tenantSlug: string; locationId: string }> }) =>
         handleIndexTiles('ndvi', getNdviTileUrl, req, params),
 );
