@@ -334,6 +334,13 @@ model Item {
 
   @@unique([id, tenantId])
   @@index([tenantId, category])
+  /// NOTE: a PARTIAL, CASE-INSENSITIVE unique index also guards this column —
+  /// `Item_tenantId_name_active_key` on `(tenantId, lower(name)) WHERE
+  /// deletedAt IS NULL`, created in
+  /// `20260923150000_item_name_unique_per_tenant`. Prisma expresses neither a
+  /// partial nor an expression index, so it lives in raw SQL and is recorded
+  /// here rather than declared. A duplicate insert surfaces as P2002 → 409;
+  /// `createItem` turns that into a named conflict (#1078).
   @@index([tenantId, name])
 }
 

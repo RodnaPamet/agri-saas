@@ -2,7 +2,7 @@ import { RequestContext } from '../types';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { runInTenantContext } from '@/lib/db-context';
 import { logEvent } from '../events/audit';
-import { badRequest, notFound, codedBadRequest } from '@/lib/errors/types';
+import { badRequest, notFound, codedBadRequest, codedConflict } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { cachedListRead } from '@/lib/cache/list-cache';
 import { Prisma, ItemCategory, QuantityMeasure } from '@prisma/client';
@@ -96,6 +96,49 @@ function assertPesticideIsFilable(next: {
 }
 
 /**
+ * Turn the unique-index violation into something a person can act on.
+ *
+ * The raw P2002 already becomes a 409, but with the generic body "A resource
+ * with that unique constraint already exists" and `details` carrying an index
+ * name — true, and useless to an operator who has just typed a product name.
+ *
+ * Narrow on purpose: only a violation naming the NAME index is translated,
+ * and any other constraint rethrows untouched. A catch-all here would relabel
+ * a future constraint as a name clash and send someone hunting the wrong
+ * field.
+ */
+function asDuplicateNameConflict(err: unknown): never {
+    const code = (err as { code?: unknown })?.code;
+    const target = (err as { meta?: { target?: unknown } })?.meta?.target;
+    const hitNameIndex =
+        code === 'P2002' &&
+        (typeof target === 'string'
+            ? target.includes('name')
+            : Array.isArray(target) && target.some((t) => String(t).includes('name')));
+    if (!hitNameIndex) throw err;
+    // No `params`, and no interpolation either.
+    //
+    // `error-params-carry-no-pii` forbids a `name` key outright — params
+    // leave the server in the clear and reach every client — and there is no
+    // id to send instead, because P2002 reports the INDEX that was violated,
+    // not the row already holding the value.
+    //
+    // The message does not name the product either, and that was the guard's
+    // doing rather than mine: its param scan matches the first `{…}` among a
+    // call's arguments, so `${name}` inside a template literal reads as a
+    // params object. Strictly that is imprecise — but it errs toward the safe
+    // side and it is arguably right on the merits, since an interpolated
+    // sentence leaves the server just as clear as a param does. The operator
+    // has just typed the name, so nothing is lost by not echoing it.
+    throw codedConflict(
+        'ITEM_NAME_ALREADY_EXISTS',
+        'A product with that name already exists. Open it instead of creating ' +
+            "a second one — two rows with one name split a product's history " +
+            'between them.',
+    );
+}
+
+/**
  * Create an input-product catalog entry (the thing lots are batches of).
  * Part of the inventory module — the POST /items route gates on
  * INVENTORY; the read path stays open (the spray form needs it).
@@ -109,25 +152,31 @@ export async function createItem(ctx: RequestContext, input: CreateItemInput) {
         const unit = await db.unit.findUnique({ where: { id: input.defaultUnitId }, select: { id: true } });
         if (!unit) throw badRequest('Default unit not found.');
 
-        const item = await db.item.create({
-            data: {
-                tenantId: ctx.tenantId,
-                name,
-                category: input.category as ItemCategory,
-                defaultUnitId: input.defaultUnitId,
-                sku: input.sku ? sanitizePlainText(input.sku.trim()) : null,
-                reorderLevel: input.reorderLevel ?? null,
-                quarantinePeriodDays: input.quarantinePeriodDays ?? null,
-                activeIngredient: input.activeIngredient
-                    ? sanitizePlainText(input.activeIngredient.trim())
-                    : null,
-                pppRegistrationNo: input.pppRegistrationNo
-                    ? sanitizePlainText(input.pppRegistrationNo.trim())
-                    : null,
-                createdByUserId: ctx.userId ?? null,
-            },
-            select: { id: true, name: true, category: true },
-        });
+        let item;
+        try {
+            item = await db.item.create({
+                data: {
+                    tenantId: ctx.tenantId,
+                    name,
+                    category: input.category as ItemCategory,
+                    defaultUnitId: input.defaultUnitId,
+                    sku: input.sku ? sanitizePlainText(input.sku.trim()) : null,
+                    reorderLevel: input.reorderLevel ?? null,
+                    quarantinePeriodDays: input.quarantinePeriodDays ?? null,
+                    activeIngredient: input.activeIngredient
+                        ? sanitizePlainText(input.activeIngredient.trim())
+                        : null,
+                    pppRegistrationNo: input.pppRegistrationNo
+                        ? sanitizePlainText(input.pppRegistrationNo.trim())
+                        : null,
+                    createdByUserId: ctx.userId ?? null,
+                },
+                select: { id: true, name: true, category: true },
+            });
+        } catch (err) {
+            // The partial unique index on (tenantId, lower(name)).
+            asDuplicateNameConflict(err);
+        }
 
         await logEvent(db, ctx, {
             action: 'INVENTORY_ITEM_CREATED',
@@ -258,11 +307,18 @@ export async function updateItem(ctx: RequestContext, itemId: string, input: Upd
         if (input.pppRegistrationNo !== undefined)
             data.pppRegistrationNo = input.pppRegistrationNo ? sanitizePlainText(input.pppRegistrationNo.trim()) : null;
 
-        const item = await db.item.update({
-            where: { id: existing.id },
-            data,
-            select: { id: true, name: true, category: true },
-        });
+        let item;
+        try {
+            item = await db.item.update({
+                where: { id: existing.id },
+                data,
+                select: { id: true, name: true, category: true },
+            });
+        } catch (err) {
+            // Renaming ONTO a taken name is the same collision as creating a
+            // second one, and reaches the same index.
+            asDuplicateNameConflict(err);
+        }
 
         await logEvent(db, ctx, {
             action: 'INVENTORY_ITEM_UPDATED',
