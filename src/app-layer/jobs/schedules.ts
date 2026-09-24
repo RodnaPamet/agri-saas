@@ -233,6 +233,13 @@ export const ALL_SCHEDULES: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
+        name: 'zero-success-route-check',
+        pattern: '45 6 * * *',    // daily at 06:45 UTC
+        description:
+            'Report API routes that took failures and ZERO successes over the last 24h — the shape of a client broken against an endpoint. An iOS client POSTing a body missing a required field made /api/t/{slug}/insurance/leads 400 on every call for weeks; to the one GCP uptime check on /api/readyz, a route failing 100% of the time is indistinguishable from a route nobody calls.',
+        defaultPayload: {},
+    },
+    {
         name: 'daily-evidence-expiry',
         pattern: '0 6 * * *',     // daily at 06:00 UTC
         description: 'Sweep expiring evidence at 30/7/1 day thresholds + flush outbox',

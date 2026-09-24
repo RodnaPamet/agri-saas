@@ -105,7 +105,13 @@ describe('Infrastructure Regression Guards', () => {
             // 23 since `process-outbox`: the outbox previously had no drainer
             // of its own and was flushed only by `daily-evidence-expiry`, which
             // made queued mail wait up to 37 hours.
-            expect(SCHEDULED_JOBS).toHaveLength(23);
+            // 23 → 24: `zero-success-route-check`. An iOS client POSTing a
+            // body missing a required field made
+            // /api/t/{slug}/insurance/leads 400 on EVERY call for weeks, and
+            // nothing noticed — to the one GCP uptime check on /api/readyz, a
+            // route failing 100% of the time and a route nobody calls are the
+            // same observation. This job separates them daily.
+            expect(SCHEDULED_JOBS).toHaveLength(24);
         });
 
         test('scheduled job names match expected set', () => {
@@ -199,6 +205,11 @@ describe('Infrastructure Regression Guards', () => {
                 // Agro-intel — daily Open-Meteo weather pull per Location
                 // → WeatherObservation upsert + spray/disease signal eval.
                 'weather-pull',
+                // Daily 06:45 UTC — names every API route that took failures
+                // and ZERO successes in the last 24h, read from the hourly
+                // per-route outcome counters the request wrapper writes.
+                // Sorts last ('z').
+                'zero-success-route-check',
             ]);
         });
     });

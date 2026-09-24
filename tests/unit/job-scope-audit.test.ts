@@ -95,7 +95,13 @@ describe('Executor Registry — tenantId propagation audit', () => {
             // `row.tenantId` to resolve that tenant's notification settings and
             // sender identity before each send, so isolation is enforced at the
             // row rather than at the payload.
-            if (['health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction', 'support-scheme-extraction', 'promotion-lead-retention', 'process-outbox'].includes(jobName)) continue;
+            // zero-success-route-check folds per-ROUTE request-outcome
+            // counters. The tenant slug is deliberately collapsed out of the
+            // route label (`/api/t/:tenantSlug/...`) for metric cardinality,
+            // so the counters carry no tenant axis to scope by — and a client
+            // sending a body the server will never accept is broken for every
+            // tenant that runs it, not for one.
+            if (['health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction', 'support-scheme-extraction', 'promotion-lead-retention', 'process-outbox', 'zero-success-route-check'].includes(jobName)) continue;
 
             // If the parameter is named _payload, it means tenantId is being ignored
             if (paramName.startsWith('_')) {
