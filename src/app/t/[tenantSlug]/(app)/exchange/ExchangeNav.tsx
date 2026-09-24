@@ -16,6 +16,7 @@ const ITEMS = [
     { path: '/exchange', labelKey: 'browse', exact: true },
     { path: '/exchange/my-listings', labelKey: 'myListings', exact: false },
     { path: '/exchange/my-interests', labelKey: 'myInterests', exact: false },
+    { path: '/exchange/threads', labelKey: 'messages', exact: false },
 ] as const;
 
 export function ExchangeNav() {

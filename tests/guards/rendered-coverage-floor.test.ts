@@ -177,7 +177,13 @@ const ROOT = path.resolve(__dirname, '../..');
 // FOLLOWING year") was passed as `hint`, which FormField renders behind an
 // info icon, so the one sentence that decides whether wheat is filed under
 // 2025 or 2026 was invisible by default.
-const RENDERED_TEST_FLOOR = 236;
+// 236 → 237: exchange-messaging-ui covers the two messaging screens. Its
+// value is the retraction assertion, which was added with a `body: null`
+// fixture, passed, and did NOT redden when the component was mutated to
+// `m.body ?? tombstone` — behaviourally identical for that row. The
+// fixture is adversarial now (deleted AND carrying a body) so the test
+// pins the flag rather than body-nullity.
+const RENDERED_TEST_FLOOR = 237;
 // Lowered 55 → 54 in the risk-quantification uproot (2026-08-08).
 // `ai-risk-assessment.spec.ts` and `new-risk-modal.spec.ts` were both
 // wholly about the deleted register; the specs that merely REFERENCED a

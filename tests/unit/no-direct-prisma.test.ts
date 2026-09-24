@@ -296,6 +296,17 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
         // `runInTenantContext` can't switch to the seller's tenant. Best-effort
         // + fail-open — the inquiry never rolls back on notify failure.
         'exchange.ts',
+        // Exchange messaging — same shape as `exchange.ts` above, one step
+        // further along the same conversation. `sendExchangeMessage` commits
+        // the message in the SENDER's context, then notifies the other party,
+        // who is by definition a DIFFERENT tenant: reading their
+        // `TenantMembership` rows and writing their `Notification` row are
+        // both RLS-forced under that tenant, so the notify step binds
+        // `withTenantDb(recipientTenantId, …)`. `runInTenantContext` takes the
+        // single tenant on the RequestContext and cannot switch to the
+        // recipient's. Best-effort + fail-open — a message is never rolled
+        // back because its notification failed.
+        'exchange-messaging.ts',
     ];
 
     for (const file of usecases) {
