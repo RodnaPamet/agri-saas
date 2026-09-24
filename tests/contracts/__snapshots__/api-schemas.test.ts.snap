@@ -1446,6 +1446,136 @@ exports[`API contract — per-schema snapshots schema: EvidenceUpdateRequest 1`]
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: ExchangeMessage 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "senderTenantId": {
+      "type": "string"
+    },
+    "mine": {
+      "type": "boolean"
+    },
+    "body": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "deleted": {
+      "type": "boolean"
+    },
+    "createdAt": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "senderTenantId",
+    "mine",
+    "body",
+    "deleted",
+    "createdAt"
+  ],
+  "description": "Use \`mine\` to decide which side of the thread to render a bubble on. Do NOT compare \`senderTenantId\` to your own tenant — the server already knows which party is asking and answers for it.\\n\\nA deleted message keeps its PLACE: \`deleted: true\` with a null \`body\`. Render it as removed rather than dropping it, or the other party's scrollback develops a hole where something they read used to be."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ExchangeThread 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "listingId": {
+      "type": "string"
+    },
+    "listingCommodity": {
+      "type": "string"
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "seller",
+        "inquirer"
+      ]
+    },
+    "lastMessageAt": {
+      "type": "string"
+    },
+    "closed": {
+      "type": "boolean"
+    },
+    "unreadCount": {
+      "type": "integer"
+    },
+    "messages": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/ExchangeMessage"
+      }
+    }
+  },
+  "required": [
+    "id",
+    "listingId",
+    "listingCommodity",
+    "role",
+    "lastMessageAt",
+    "closed",
+    "unreadCount",
+    "messages"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ExchangeThreadSummary 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "listingId": {
+      "type": "string"
+    },
+    "listingCommodity": {
+      "type": "string"
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "seller",
+        "inquirer"
+      ]
+    },
+    "lastMessageAt": {
+      "type": "string"
+    },
+    "closed": {
+      "type": "boolean"
+    },
+    "hasUnread": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "id",
+    "listingId",
+    "listingCommodity",
+    "role",
+    "lastMessageAt",
+    "closed",
+    "hasUnread"
+  ],
+  "description": "Threads from BOTH sides — ones this tenant opened as a buyer and ones opened against its own listings. \`role\` says which. \`hasUnread\` is a cheap staleness flag; the exact count needs the thread itself."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: FarmRecordGenerateRequest 1`] = `
 "{
   "type": "object",
@@ -5055,6 +5185,22 @@ exports[`API contract — per-schema snapshots schema: RiskLevel 1`] = `
     "unknown"
   ],
   "description": "good | watch | stress | unknown. \`unknown\` means no usable satellite reading, not a failure — render it as absence, never as a fourth severity."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: SendExchangeMessage 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "body": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8000
+    }
+  },
+  "required": [
+    "body"
+  ]
 }"
 `;
 

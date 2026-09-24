@@ -53,6 +53,11 @@ const ADOPTED_PAGES: ReadonlyArray<Adopter> = [
   // Registered against the CLIENT, which is where the shell is mounted (same
   // shape as the access-review entry below) — the server page only fetches.
   { page: "src/app/t/[tenantSlug]/(app)/grain/bins/[binId]/BinDetailClient.tsx", entity: "Grain bin" },
+  // Exchange messaging — a NEW detail page (a conversation on a listing),
+  // adopting the shell at creation as this ratchet requires. Registered
+  // against the CLIENT, where the shell is mounted; the server page only
+  // resolves the tenant and gates on the EXCHANGE module.
+  { page: "src/app/t/[tenantSlug]/(app)/exchange/threads/[threadId]/ThreadClient.tsx", entity: "Exchange thread" },
   // Wave 1 (PR-4)
   { page: "src/app/t/[tenantSlug]/(app)/assets/[id]/page.tsx", entity: "Asset" },
   { page: "src/app/t/[tenantSlug]/(app)/access-reviews/[reviewId]/AccessReviewDetailClient.tsx", entity: "Access review" },

@@ -422,6 +422,10 @@ enum EmailNotificationType {
   // tenant's own notification switch: the tenant is the SUBJECT of this
   // mail rather than its reader.
   INSURANCE_LEAD
+  /// Exchange messaging (2026-09-25) — the other party has said something in a
+  /// listing conversation. Deduped to ONE per thread per day on purpose; see
+  /// `notifyOtherParty` for why that is the opposite choice from INSURANCE_LEAD.
+  EXCHANGE_MESSAGE
 }
 
 enum EmailOutboxStatus {

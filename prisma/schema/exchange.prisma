@@ -90,6 +90,8 @@ model ExchangeListing {
 
   inquiries ExchangeInquiry[]
 
+  threads ExchangeThread[]
+
   @@index([sellerTenantId])
   @@index([side, status])
   @@index([regionCode])
@@ -140,4 +142,78 @@ model ExchangeInquiry {
   @@unique([listingId, inquirerTenantId])
   @@index([listingId])
   @@index([inquirerTenantId])
+}
+
+/// A conversation between the two parties to a listing.
+///
+/// ## Why a thread and not more inquiry rows
+///
+/// `ExchangeInquiry` is a one-shot record — a message, a contact, a status. A
+/// marketplace needs the buyer and seller to go back and forth before either
+/// commits, and stacking inquiry rows to do that would make the status field
+/// meaningless (which of five rows is "the" inquiry?) and give the operator no
+/// object to reason about.
+///
+/// ## Why two parties and not participants
+///
+/// The obvious port from a general chat system is Conversation +
+/// ConversationParticipant, with access by membership. That is the right shape
+/// when the party set is open — group chats, channels, people who met at
+/// different clubs. Here it is closed and known: a listing has exactly one
+/// seller tenant, and a thread is opened by exactly one inquirer tenant. A
+/// participant table would add a join and an access model that competes with
+/// `exchange_inquiry_party_isolation`, which already expresses precisely this
+/// two-party rule and is proven in production.
+///
+/// So: no tenantId. Neither party owns the row — that is the whole point —
+/// and the RLS policy admits BOTH, exactly as the inquiry policy does.
+model ExchangeThread {
+  id               String    @id @default(cuid())
+  listingId        String
+  /// The tenant that opened the thread. The other party is the listing's
+  /// `sellerTenantId`, which is why this row needs no tenantId of its own.
+  inquirerTenantId String
+  /// Denormalised so the inbox can sort without joining every message.
+  lastMessageAt    DateTime  @default(now())
+  /// Read pointers, one per party. Two columns rather than a participant
+  /// table because the party set is fixed at two; MONOTONIC on write, so a
+  /// second tab answering late cannot rewind the pointer and resurrect
+  /// messages the user has already read.
+  sellerLastReadAt   DateTime?
+  inquirerLastReadAt DateTime?
+  closedAt         DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  listing  ExchangeListing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  messages ExchangeMessage[]
+
+  /// One thread per (listing, inquirer). Re-opening returns the existing one.
+  @@unique([listingId, inquirerTenantId])
+  @@index([inquirerTenantId, lastMessageAt])
+  @@index([listingId])
+}
+
+/// One message in a thread.
+///
+/// `deletedAt` is a TOMBSTONE, not a removal. A hard delete leaves a hole in
+/// the other party's scrollback — they remember reading something that is now
+/// absent, which reads as data loss rather than as a retraction.
+model ExchangeMessage {
+  id             String    @id @default(cuid())
+  threadId       String
+  /// Which side sent it. Stored rather than derived so a message stays
+  /// attributable after a listing is edited or a thread is closed.
+  senderTenantId String
+  senderUserId   String
+  /// Plain text, sanitised on write. Chat is the highest-risk surface in any
+  /// product: text one tenant writes and another tenant's browser renders.
+  body           String
+  deletedAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  thread ExchangeThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([threadId, createdAt])
+  @@index([senderTenantId])
 }

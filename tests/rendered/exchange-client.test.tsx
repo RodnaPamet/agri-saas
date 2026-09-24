@@ -128,6 +128,40 @@ it('shows "Express interest" on another tenant\'s offer', async () => {
     expect(await screen.findByRole('button', { name: /express interest/i })).toBeInTheDocument();
 });
 
+it('hides "Message the seller" on your OWN offer', async () => {
+    renderClient();
+    await screen.findByTestId('exchange-map');
+    fireEvent.click(screen.getByRole('button', { name: /Barley/i })); // o3, isOwn
+    await waitFor(() => expect(screen.getByText('Quantity')).toBeInTheDocument());
+    // The server refuses a seller opening a thread on their own listing
+    // (THREAD_OWN_LISTING); the screen must not offer the action either.
+    expect(screen.queryByRole('button', { name: /message the seller/i })).not.toBeInTheDocument();
+});
+
+it('offers "Message the seller" on another tenant\'s offer', async () => {
+    renderClient();
+    await screen.findByTestId('exchange-map');
+    fireEvent.click(screen.getByRole('button', { name: /Wheat/i })); // o1, not own
+    expect(await screen.findByRole('button', { name: /message the seller/i })).toBeInTheDocument();
+});
+
+it('keeps messaging available on a CLOSED listing, where express-interest is disabled', async () => {
+    // The deliberate asymmetry between the two buttons. Opening a thread is
+    // idempotent and carries no listing-status rule server-side, so this
+    // button doubles as "back to our conversation" — disabling it alongside
+    // express-interest would strand a buyer inside a conversation they had
+    // already started. Express-interest stays disabled: it reveals contact
+    // details on an offer that is no longer live.
+    swrData = [offer({ id: 'o9', commodity: 'Sunflower', status: 'CLOSED', isOwn: false })];
+    renderClient();
+    await screen.findByTestId('exchange-map');
+    fireEvent.click(screen.getByRole('button', { name: /Sunflower/i }));
+    await waitFor(() => expect(screen.getByText('Quantity')).toBeInTheDocument());
+
+    expect(screen.getByRole('button', { name: /express interest/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /message the seller/i })).toBeEnabled();
+});
+
 it('highlights the map marker for the hovered row', async () => {
     renderClient();
     await screen.findByTestId('exchange-map');

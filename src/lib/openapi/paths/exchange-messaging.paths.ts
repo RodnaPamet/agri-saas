@@ -1,0 +1,181 @@
+/**
+ * Exchange messaging — the conversation between the two parties to a listing.
+ *
+ * Documented at birth rather than added to the undocumented baseline, which
+ * only shrinks. Three things here are not visible from the response shape and
+ * would be got wrong by anyone reading only the JSON:
+ *
+ *   1. opening a thread is IDEMPOTENT, and the status code says which happened;
+ *   2. `mine` exists so a client never compares tenant ids to decide sides;
+ *   3. a deleted message is a TOMBSTONE — it keeps its place, with a null body.
+ */
+import { z } from '@/lib/openapi/zod';
+import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
+import { op } from './helpers';
+
+const TenantParams = z.object({
+    tenantSlug: z.string().openapi({ param: { name: 'tenantSlug', in: 'path' }, example: 'acme' }),
+});
+const ThreadParams = TenantParams.extend({
+    threadId: z.string().openapi({ param: { name: 'threadId', in: 'path' } }),
+});
+
+const Message = z
+    .object({
+        id: z.string(),
+        senderTenantId: z.string(),
+        mine: z.boolean(),
+        body: z.string().nullable(),
+        deleted: z.boolean(),
+        createdAt: z.string(),
+    })
+    .openapi('ExchangeMessage', {
+        description:
+            'Use `mine` to decide which side of the thread to render a bubble on. Do NOT ' +
+            'compare `senderTenantId` to your own tenant — the server already knows which ' +
+            'party is asking and answers for it.\n\n' +
+            'A deleted message keeps its PLACE: `deleted: true` with a null `body`. Render ' +
+            'it as removed rather than dropping it, or the other party\'s scrollback ' +
+            'develops a hole where something they read used to be.',
+    });
+
+const ThreadSummary = z
+    .object({
+        id: z.string(),
+        listingId: z.string(),
+        listingCommodity: z.string(),
+        role: z.enum(['seller', 'inquirer']),
+        lastMessageAt: z.string(),
+        closed: z.boolean(),
+        hasUnread: z.boolean(),
+    })
+    .openapi('ExchangeThreadSummary', {
+        description:
+            'Threads from BOTH sides — ones this tenant opened as a buyer and ones opened ' +
+            'against its own listings. `role` says which. `hasUnread` is a cheap staleness ' +
+            'flag; the exact count needs the thread itself.',
+    });
+
+const Thread = z
+    .object({
+        id: z.string(),
+        listingId: z.string(),
+        listingCommodity: z.string(),
+        role: z.enum(['seller', 'inquirer']),
+        lastMessageAt: z.string(),
+        closed: z.boolean(),
+        unreadCount: z.number().int(),
+        messages: z.array(Message),
+    })
+    .openapi('ExchangeThread');
+
+export function registerExchangeMessagingPaths(registry: OpenAPIRegistry): void {
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/exchange/listings/{listingId}/thread',
+        operationId: 'openExchangeThread',
+        summary: 'Open the conversation for a listing',
+        description:
+            '**Idempotent.** A second call returns the thread that already exists rather ' +
+            'than creating another, so a client may call it on every "message seller" tap ' +
+            'without checking first. **201** means one was created, **200** that one was ' +
+            'already open — both carry the same body.\n\n' +
+            'A seller cannot open a thread on their OWN listing (there would be no second ' +
+            'party); that returns 400 `THREAD_OWN_LISTING`. Sellers reply to threads buyers ' +
+            'open.',
+        tags: ['Exchange messaging'],
+        params: TenantParams.extend({
+            listingId: z.string().openapi({ param: { name: 'listingId', in: 'path' } }),
+        }),
+        success: {
+            status: 201,
+            description: 'The conversation, created or already open.',
+            schema: z.object({ id: z.string(), created: z.boolean() }),
+        },
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/exchange/threads',
+        operationId: 'listExchangeThreads',
+        summary: "The caller's conversations",
+        description:
+            'Most recently active first. Deliberately NOT ETagged: an inbox whose purpose ' +
+            'is unread state should not be served from a cache.',
+        tags: ['Exchange messaging'],
+        params: TenantParams,
+        success: {
+            status: 200,
+            description: 'Conversations from both sides.',
+            schema: z.object({ threads: z.array(ThreadSummary) }),
+        },
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/exchange/threads/{threadId}',
+        operationId: 'getExchangeThread',
+        summary: 'A conversation and its messages',
+        description:
+            'Messages come back OLDEST-FIRST (reading order), but are selected newest-first ' +
+            'and reversed — so a long thread returns its END, not its beginning. Capped at ' +
+            '100 per call.',
+        tags: ['Exchange messaging'],
+        params: ThreadParams,
+        success: { status: 200, description: 'The conversation.', schema: Thread },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/exchange/threads/{threadId}/messages',
+        operationId: 'sendExchangeMessage',
+        summary: 'Send a message',
+        description:
+            'The body is HTML-sanitised on write and then length-checked, in that order — ' +
+            'so markup cannot pad a message past the limit. A closed thread returns 400 ' +
+            '`THREAD_CLOSED`.',
+        tags: ['Exchange messaging'],
+        params: ThreadParams,
+        body: z.object({ body: z.string().min(1).max(8000) }).openapi('SendExchangeMessage'),
+        success: {
+            status: 201,
+            description: 'Sent.',
+            schema: z.object({ id: z.string(), createdAt: z.string() }),
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/exchange/threads/{threadId}/read',
+        operationId: 'markExchangeThreadRead',
+        summary: "Move the caller's read pointer to now",
+        description:
+            '**Monotonic.** Safe to fire from two tabs, out of order, or repeatedly — the ' +
+            'pointer never travels backwards. That matters because an older timestamp ' +
+            'overwriting a newer one resurrects messages the user has already read, and it ' +
+            'presents as a bug in the unread badge rather than in the request that caused it.',
+        tags: ['Exchange messaging'],
+        params: ThreadParams,
+        success: {
+            status: 200,
+            description: 'The pointer, after the move.',
+            schema: z.object({ readAt: z.string() }),
+        },
+    });
+
+    op(registry, {
+        method: 'delete',
+        path: '/api/t/{tenantSlug}/exchange/messages/{messageId}',
+        operationId: 'deleteExchangeMessage',
+        summary: 'Retract a message you sent',
+        description:
+            'A TOMBSTONE, not a removal: the message keeps its place in the other party\'s ' +
+            'scrollback with a null body. Only the sender may retract; another party gets ' +
+            '403 `MESSAGE_NOT_SENDER`. Retracting twice is not an error.',
+        tags: ['Exchange messaging'],
+        params: TenantParams.extend({
+            messageId: z.string().openapi({ param: { name: 'messageId', in: 'path' } }),
+        }),
+        success: { status: 200, description: 'Retracted.', schema: z.object({ id: z.string() }) },
+    });
+}

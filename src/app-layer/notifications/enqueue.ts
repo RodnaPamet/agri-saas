@@ -20,6 +20,8 @@ import {
     buildAccessReviewOverdueEscalationEmail,
     type TaskAssignedPayload,
     type InsuranceLeadPayload,
+    buildExchangeMessageEmail,
+    type ExchangeMessagePayload,
     type EvidenceExpiringPayload,
     type AccessReviewReminderPayload,
     type AccessReviewOverdueEscalationPayload,
@@ -63,6 +65,7 @@ export interface EnqueueEmailInput {
     entityId: string;
     payload:
         | InsuranceLeadPayload
+        | ExchangeMessagePayload
         | TaskAssignedPayload
         | EvidenceExpiringPayload
         | AccessReviewReminderPayload
@@ -157,6 +160,7 @@ async function buildEmailContent(
     type: EmailNotificationType,
     payload:
         | InsuranceLeadPayload
+        | ExchangeMessagePayload
         | TaskAssignedPayload
         | EvidenceExpiringPayload
         | AccessReviewReminderPayload
@@ -200,6 +204,8 @@ async function buildEmailContent(
             return buildTaskAssignedEmail(payload as TaskAssignedPayload, locale);
         case 'INSURANCE_LEAD':
             return buildInsuranceLeadEmail(payload as InsuranceLeadPayload, locale);
+        case 'EXCHANGE_MESSAGE':
+            return buildExchangeMessageEmail(payload as ExchangeMessagePayload, locale);
         case 'EVIDENCE_EXPIRING':
             return buildEvidenceExpiringEmail(payload as EvidenceExpiringPayload, locale);
         case 'ACCESS_REVIEW_REMINDER':

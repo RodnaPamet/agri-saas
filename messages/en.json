@@ -3759,7 +3759,8 @@
       "browse": "Browse",
       "myListings": "My listings",
       "myInterests": "My interests",
-      "ariaSections": "Exchange sections"
+      "ariaSections": "Exchange sections",
+      "messages": "Messages"
     },
     "client": {
       "breadcrumbDashboard": "Dashboard",
@@ -3924,6 +3925,33 @@
       "actionFailed": "That didn't work — nothing was changed.",
       "unitTonne": "t",
       "moduleDisabledNotice": "The Exchange is switched off for your farm, so these offers are hidden from other farms. You can still withdraw them here."
+    },
+    "messaging": {
+      "messageSeller": "Message the seller",
+      "openFailed": "The conversation could not be opened.",
+      "metaRole": "Your side",
+      "metaStatus": "Status",
+      "open": "Open",
+      "breadcrumbDashboard": "Dashboard",
+      "breadcrumbExchange": "Exchange",
+      "breadcrumbCurrent": "Messages",
+      "loadError": "Could not load your messages.",
+      "inboxTitle": "Messages",
+      "inboxEmpty": "No conversations yet. Open one from a listing you are interested in.",
+      "roleSeller": "You are selling",
+      "roleInquirer": "You are asking",
+      "unread": "New",
+      "threadTitle": "Conversation",
+      "threadEmpty": "No messages yet. Say something to start.",
+      "composerPlaceholder": "Write a message…",
+      "send": "Send",
+      "sendFailed": "Could not send. Please try again.",
+      "closed": "This conversation is closed.",
+      "deleted": "Message removed",
+      "remove": "Remove",
+      "backToInbox": "Messages",
+      "you": "You",
+      "them": "Them"
     }
   },
   "grain": {
@@ -6248,6 +6276,12 @@
       "readingLabel": "Satellite readings",
       "messageLabel": "Message from the farmer",
       "open": "Open in Agrent"
+    },
+    "exchangeMessage": {
+      "subject": "New message about your {commodity} listing",
+      "heading": "New message",
+      "intro": "There is new activity in a conversation about a {commodity} listing you are part of.",
+      "open": "Open the conversation"
     }
   },
   "diagnostics": {
