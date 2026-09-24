@@ -19,6 +19,7 @@ import { registerTaskPaths } from './tasks.paths';
 import { registerAccountPaths } from './account.paths';
 import { registerFarmRiskPaths } from './farm-risk.paths';
 import { registerParcelHistoryPaths } from './parcel-history.paths';
+import { registerExchangeMessagingPaths } from './exchange-messaging.paths';
 
 export function registerAllPaths(registry: OpenAPIRegistry): void {
     registerSecuritySchemes(registry);
@@ -35,4 +36,5 @@ export function registerAllPaths(registry: OpenAPIRegistry): void {
     // The Farm Risk screen the native client is porting.
     registerFarmRiskPaths(registry);
     registerParcelHistoryPaths(registry);
+    registerExchangeMessagingPaths(registry);
 }
