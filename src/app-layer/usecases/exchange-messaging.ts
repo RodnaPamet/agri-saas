@@ -299,6 +299,16 @@ export async function sendExchangeMessage(
 
     return runInTenantContext(ctx, async (db) => {
         const { thread } = await requireParty(db, ctx, threadId);
+        // NOTHING WRITES `closedAt` TODAY — there is no close action, on any
+        // surface, so this refusal cannot currently fire and `closed` is false
+        // for every thread in production. It is here (and the screens render
+        // the state) so that adding the action later is a one-line write
+        // rather than a change that has to find every reader.
+        //
+        // Deliberately left unwired: who may unilaterally end a negotiation
+        // channel — and whether the other party can reopen it — is a product
+        // decision about the marketplace, not a detail to settle in the commit
+        // that happens to add the column.
         if (thread.closedAt) {
             throw codedBadRequest('THREAD_CLOSED', 'That conversation is closed.');
         }
