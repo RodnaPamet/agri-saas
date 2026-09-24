@@ -6248,6 +6248,12 @@
       "readingLabel": "Satellite readings",
       "messageLabel": "Message from the farmer",
       "open": "Open in Agrent"
+    },
+    "exchangeMessage": {
+      "subject": "New message about your {commodity} listing",
+      "heading": "New message",
+      "intro": "There is new activity in a conversation about a {commodity} listing you are part of.",
+      "open": "Open the conversation"
     }
   },
   "diagnostics": {

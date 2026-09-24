@@ -26,7 +26,11 @@
 import type { RequestContext } from '../types';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
-import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
+import { runInTenantContext, withTenantDb, type PrismaTx } from '@/lib/db-context';
+import { enqueueEmail } from '../notifications/enqueue';
+import { isLocale } from '@/lib/i18n/locales';
+import { RECIPIENT_FALLBACK_LOCALE } from '@/lib/email/recipient-locale';
+import { logger } from '@/lib/observability/logger';
 import { codedBadRequest, codedForbidden, codedNotFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 
@@ -193,6 +197,91 @@ export async function getExchangeThread(
     });
 }
 
+
+/**
+ * Tell the other side something was said.
+ *
+ * ── Why the OUTBOX and not a direct send ──
+ *
+ * The rest of the Exchange mails directly (`sendInquiryEmail`). This one goes
+ * through `enqueueEmail` for a property direct sending does not have: the
+ * outbox dedupe key is `tenant:type:email:entityId:DAY`, and a duplicate is
+ * skipped silently. Keyed on the THREAD, that yields exactly one nudge per
+ * conversation per recipient per day — which is what a chat notification
+ * should be. Ten messages in an afternoon is a conversation, not ten emails.
+ *
+ * ── The same mechanism, the opposite intent ──
+ *
+ * Earlier the same dedupe was a BUG for insurance leads: keyed on the parcel,
+ * a farmer correcting their land size wrote a second lead and the mail was
+ * silently dropped. The fix there was to key on the lead, so every ask mails.
+ *
+ * Both are right. An insurance lead is a discrete event the operator must
+ * action individually; a chat message is one of many in a conversation that
+ * has a single place to go and look. The question is never "dedupe or not" —
+ * it is "does each of these need its own notification".
+ *
+ * Fail-open. The message is already committed; a mail failure must not turn a
+ * successful send into an error the sender sees.
+ */
+async function notifyOtherParty(
+    senderTenantId: string,
+    thread: { id: string; inquirerTenantId: string; listing: { sellerTenantId: string; commodity: string } },
+): Promise<void> {
+    const recipientTenantId =
+        senderTenantId === thread.inquirerTenantId
+            ? thread.listing.sellerTenantId
+            : thread.inquirerTenantId;
+
+    try {
+        // The recipient's memberships are RLS-forced, so this must run in
+        // THEIR context — a context-less read returns zero rows and the
+        // notification silently goes nowhere.
+        await withTenantDb(recipientTenantId, async (db) => {
+            const admins = await db.tenantMembership.findMany({
+                where: { tenantId: recipientTenantId, status: 'ACTIVE', role: { in: ['OWNER', 'ADMIN'] } },
+                // `uiLanguage` because this crosses a tenant boundary: the
+                // reader is a different person from the writer.
+                select: { user: { select: { email: true, uiLanguage: true } }, tenant: { select: { slug: true } } },
+                take: 25,
+            });
+            if (admins.length === 0) return;
+
+            // One person may hold several admin memberships; keep the first
+            // locale seen for an address rather than mailing them twice.
+            const byEmail = new Map<string, { locale: string | null; slug: string }>();
+            for (const a of admins) {
+                const email = a.user.email;
+                if (email && !byEmail.has(email)) {
+                    byEmail.set(email, { locale: a.user.uiLanguage, slug: a.tenant.slug });
+                }
+            }
+
+            for (const [toEmail, { locale, slug }] of byEmail) {
+                await enqueueEmail(db, {
+                    tenantId: recipientTenantId,
+                    type: 'EXCHANGE_MESSAGE',
+                    toEmail,
+                    // Required, so there is no "unset" to pass through. A
+                    // recipient with no uiLanguage gets the product's own
+                    // fallback rather than the sender's language — the reader
+                    // is a different person, which is the whole point of
+                    // reading uiLanguage in the first place.
+                    locale: isLocale(locale) ? locale : RECIPIENT_FALLBACK_LOCALE,
+                    // THE THREAD, deliberately — see the docblock.
+                    entityId: thread.id,
+                    payload: { commodity: thread.listing.commodity, tenantSlug: slug, threadId: thread.id },
+                });
+            }
+        });
+    } catch (err) {
+        logger.warn('exchange.message_notify_failed', {
+            component: 'exchange-messaging',
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+}
+
 /** Post a message. Sanitised on write; bumps the thread for inbox ordering. */
 export async function sendExchangeMessage(
     ctx: RequestContext,
@@ -231,6 +320,10 @@ export async function sendExchangeMessage(
             where: { id: threadId },
             data: { lastMessageAt: now },
         });
+        // Persist, THEN notify. Never the reverse: a notification for a write
+        // that then failed tells the other party to come and read something
+        // that does not exist.
+        await notifyOtherParty(ctx.tenantId, thread);
         return { id: row.id, createdAt: row.createdAt };
     });
 }

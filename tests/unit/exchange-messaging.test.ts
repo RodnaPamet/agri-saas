@@ -20,11 +20,19 @@ const mockPrisma = {
     exchangeMessage: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
 };
 jest.mock('@/lib/prisma', () => ({ __esModule: true, prisma: mockPrisma, default: mockPrisma }));
+jest.mock('@/app-layer/events/audit', () => ({ logEvent: jest.fn() }));
+const enqueueEmail = jest.fn();
+jest.mock('@/app-layer/notifications/enqueue', () => ({
+    enqueueEmail: (...a: unknown[]) => enqueueEmail(...a),
+}));
+const mockRecipientDb = {
+    tenantMembership: { findMany: jest.fn() },
+};
 jest.mock('@/lib/db-context', () => ({
     __esModule: true,
     runInTenantContext: (_ctx: unknown, cb: (db: unknown) => unknown) => cb(mockPrisma),
+    withTenantDb: (_tenantId: string, cb: (db: unknown) => unknown) => cb(mockRecipientDb),
 }));
-jest.mock('@/app-layer/events/audit', () => ({ logEvent: jest.fn() }));
 
 import {
     openExchangeThread,
@@ -67,6 +75,10 @@ beforeEach(() => {
     mockPrisma.exchangeMessage.create.mockResolvedValue({ id: 'm1', createdAt: new Date() });
     mockPrisma.exchangeThread.create.mockResolvedValue({ id: 'th_new' });
     mockPrisma.exchangeListing.findFirst.mockResolvedValue({ id: 'lst1', sellerTenantId: SELLER });
+    enqueueEmail.mockReset();
+    mockRecipientDb.tenantMembership.findMany.mockResolvedValue([
+        { user: { email: 'seller@example.test', uiLanguage: 'bg' }, tenant: { slug: 'seller-farm' } },
+    ]);
 });
 
 describe('opening a thread', () => {
@@ -208,6 +220,53 @@ describe('sending', () => {
     it('refuses a tenant that is party to neither side', async () => {
         await expect(sendExchangeMessage(ctxFor('tnt_stranger'), 'th1', 'hi'))
             .rejects.toThrow(/not a party/i);
+    });
+});
+
+describe('notifying the other side', () => {
+    it('mails the OTHER party, not the sender', async () => {
+        await sendExchangeMessage(buyerCtx, 'th1', 'hello');
+        expect(enqueueEmail).toHaveBeenCalledTimes(1);
+        const [, input] = enqueueEmail.mock.calls[0] as [unknown, Record<string, unknown>];
+        expect(input.type).toBe('EXCHANGE_MESSAGE');
+        expect(input.tenantId).toBe(SELLER);
+    });
+
+    it('dedupes on the THREAD, so a busy conversation is one mail a day', async () => {
+        // `buildDedupeKey` composes tenant:type:email:entityId:DAY and skips a
+        // duplicate silently. Keyed on the thread that is exactly right: ten
+        // messages in an afternoon is a conversation, not ten emails.
+        //
+        // Asserted by NAME, not merely "some id" — keying this on the MESSAGE
+        // would mail per message and read as spam, and the assertion below is
+        // the only thing that would notice.
+        await sendExchangeMessage(buyerCtx, 'th1', 'hello');
+        const [, input] = enqueueEmail.mock.calls[0] as [unknown, Record<string, unknown>];
+        expect(input.entityId).toBe('th1');
+    });
+
+    it("writes in the RECIPIENT's language, not the sender's", async () => {
+        // The one Exchange channel that crosses a tenant boundary — the reader
+        // is a different person from the writer.
+        await sendExchangeMessage(buyerCtx, 'th1', 'hello');
+        const [, input] = enqueueEmail.mock.calls[0] as [unknown, Record<string, unknown>];
+        expect(input.locale).toBe('bg');
+    });
+
+    it('carries NO message preview', async () => {
+        // Deliberate: the mail is deduped per day, so by the time it is read
+        // there may be one new message or nine. Quoting one misrepresents the
+        // conversation, and keeps private text in an inbox we do not control.
+        await sendExchangeMessage(buyerCtx, 'th1', 'commercially sensitive');
+        const [, input] = enqueueEmail.mock.calls[0] as [unknown, { payload: Record<string, unknown> }];
+        expect(JSON.stringify(input.payload)).not.toContain('commercially sensitive');
+    });
+
+    it('a mail failure does NOT fail the send', async () => {
+        // The message is already committed. Turning a successful send into an
+        // error the sender sees would be the worst of both.
+        enqueueEmail.mockRejectedValue(new Error('smtp down'));
+        await expect(sendExchangeMessage(buyerCtx, 'th1', 'hello')).resolves.toBeDefined();
     });
 });
 

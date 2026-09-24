@@ -81,6 +81,14 @@ export interface InsuranceLeadPayload {
     ndmi?: number | null;
 }
 
+export interface ExchangeMessagePayload {
+    /** The commodity the listing is for — what the recipient will recognise. */
+    commodity: string;
+    /** The RECIPIENT's tenant slug, for a link that lands in their own tenant. */
+    tenantSlug: string;
+    threadId: string;
+}
+
 export interface TaskAssignedPayload {
     taskTitle: string;
     taskKey?: string | null;
@@ -194,6 +202,47 @@ export async function buildTaskAssignedEmail(
  * escaping guard until #717 widened its extractor, and the local-const form
  * keeps each value readable at the point it is escaped.
  */
+/**
+ * "There is something new in a conversation you are part of."
+ *
+ * Deliberately carries NO message preview, which is the opposite of
+ * `buildInsuranceLeadEmail`. This mail is deduped to one per thread per day
+ * (see `notifyOtherParty`), so by the time it is read there may be one new
+ * message or nine. Quoting one of them would misrepresent the conversation and
+ * invite a reply to the wrong thing. A nudge plus a link is honest; a preview
+ * would not be.
+ *
+ * It also keeps private text out of an inbox we do not control. The inquiry
+ * mail quotes its message because an inquiry IS one message; a thread is not.
+ */
+export async function buildExchangeMessageEmail(
+    payload: ExchangeMessagePayload,
+    locale: Locale,
+): Promise<EmailTemplateResult> {
+    const { commodity, tenantSlug, threadId } = payload;
+    const t = (key: string, params?: Record<string, string | number>) =>
+        translateFor(locale, `notificationEmail.exchangeMessage.${key}`, params);
+
+    const link = absoluteUrl(`/t/${tenantSlug}/exchange/threads/${threadId}`);
+    const subject = await t('subject', { commodity });
+    const heading = await t('heading');
+    const intro = await t('intro', { commodity });
+    const openLink = await t('open');
+    const signature = await translateFor(locale, 'notificationEmail.signature');
+
+    return {
+        subject,
+        bodyText: [intro, '', link, '', signature].join('\n'),
+        bodyHtml: `
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
+  <h2 style="color: #1a1a2e; font-size: 18px; margin-bottom: 16px;">${escapeHtml(heading)}</h2>
+  <p style="color: #444; line-height: 1.5;">${escapeHtml(intro)}</p>
+  <a href="${escapeHtml(link)}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">${escapeHtml(openLink)}</a>
+  <p style="color: #999; font-size: 12px; margin-top: 24px;">${escapeHtml(signature)}</p>
+</div>`.trim(),
+    };
+}
+
 export async function buildInsuranceLeadEmail(
     payload: InsuranceLeadPayload,
     locale: Locale,

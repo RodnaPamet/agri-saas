@@ -6248,6 +6248,12 @@
       "readingLabel": "Сателитни показания",
       "messageLabel": "Съобщение от стопанина",
       "open": "Отвори в Agrent"
+    },
+    "exchangeMessage": {
+      "subject": "Ново съобщение за вашата обява за {commodity}",
+      "heading": "Ново съобщение",
+      "intro": "Има нова активност в разговор за обява за {commodity}, в който участвате.",
+      "open": "Отвори разговора"
     }
   },
   "diagnostics": {
