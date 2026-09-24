@@ -69,7 +69,7 @@ export function AddWeedObservationModal({
         <Modal showModal={open} setShowModal={setOpen} size="sm">
             <div className="space-y-default p-4">
                 <Heading level={3}>{t('weedsAdd')}</Heading>
-                <FormField label={t('fieldWeeds')} hint={t('fieldWeedsHint')}>
+                <FormField label={t('fieldWeeds')} description={t('fieldWeedsHint')}>
                     <div className="flex flex-wrap gap-tight">
                         {options.map((o) => (
                             <Button

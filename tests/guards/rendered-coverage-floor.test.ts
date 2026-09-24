@@ -170,7 +170,14 @@ const ROOT = path.resolve(__dirname, '../..');
 // Raised 234 -> 235 by #933 (field-panel-failed-enqueue-reverts): a failed
 // enqueue used to leave a phantom DONE on screen and in the persisted
 // snapshot while telling the operator it had been reverted.
-const RENDERED_TEST_FLOOR = 235;
+// Raised 235 -> 236 by the parcel-archive page test: the page shipped with
+// its STRUCTURE pinned (detail shell, MetaStrip, one primary per file) and
+// nothing asserting what a farmer sees. The first run of that test found a
+// real defect — the harvest-year rule ("an autumn-sown crop belongs to the
+// FOLLOWING year") was passed as `hint`, which FormField renders behind an
+// info icon, so the one sentence that decides whether wheat is filed under
+// 2025 or 2026 was invisible by default.
+const RENDERED_TEST_FLOOR = 236;
 // Lowered 55 → 54 in the risk-quantification uproot (2026-08-08).
 // `ai-risk-assessment.spec.ts` and `new-risk-modal.spec.ts` were both
 // wholly about the deleted register; the specs that merely REFERENCED a
