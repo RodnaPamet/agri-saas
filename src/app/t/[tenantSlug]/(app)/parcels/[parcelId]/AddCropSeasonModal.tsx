@@ -56,7 +56,7 @@ export function AddCropSeasonModal({
         <Modal showModal={open} setShowModal={setOpen} size="sm">
             <div className="space-y-default p-4">
                 <Heading level={3}>{t('cropsAdd')}</Heading>
-                <FormField label={t('fieldYear')} hint={t('fieldYearHint')}>
+                <FormField label={t('fieldYear')} description={t('fieldYearHint')}>
                     <Input
                         type="number"
                         inputMode="numeric"
