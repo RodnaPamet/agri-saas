@@ -166,7 +166,13 @@ describe('Executor Registry — structural tenant-scope guards', () => {
     const EXEMPT_JOBS = ['health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction', 'support-scheme-extraction',
         // PromotionLead is CROSS-tenant (inquirerTenantId, not tenantId) and is
         // swept globally in one pass — see job-scope-audit for the full reason.
-        'promotion-lead-retention'];
+        'promotion-lead-retention',
+        // The outbox holds every tenant's queued mail in one table and must be
+        // drained in one pass; a per-tenant sweep would need a schedule per
+        // tenant to reach them all. The tenant axis is PER ROW, not per
+        // payload — `processOutbox` reads `row.tenantId` to resolve that
+        // tenant's notification settings and sender before each send.
+        'process-outbox'];
 
     test('no executor uses _payload (unused parameter = ignored tenantId)', () => {
         const pattern = /executorRegistry\.register\('[^']+',\s*async\s*\(_payload\)/g;
@@ -245,6 +251,9 @@ describe('Payload Type Contract — tenantId field audit', () => {
     const EXEMPT_PAYLOADS = ['HealthCheckPayload', 'SyncPullPayload', 'ScheduleTriggerSweepPayload', 'SharePointDeltaSyncDispatchPayload', 'SharePointSubscriptionRenewPayload', 'RiskAppetiteMonitorPayload', 'RiskSnapshotPayload', 'ReportDeliveryPayload', 'ExchangeExpirySweepPayload', 'MarketPricesPullPayload', 'MarketNewsPullPayload',
         // Global sweep over a cross-tenant table — no payload tenant axis.
         'PromotionLeadRetentionPayload',
+        // Drains the whole outbox; each ROW carries the tenantId, so a
+        // payload-level tenantId would be a narrower claim than the job makes.
+        'ProcessOutboxPayload',
         // Calendar roadmap PR 3 — same GLOBAL shape as MarketNewsPullPayload
         // above; NewsDerivedEvent/MarketNewsItem carry no tenantId.
         'NewsEventExtractionPayload',

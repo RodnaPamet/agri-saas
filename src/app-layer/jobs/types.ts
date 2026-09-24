@@ -186,6 +186,18 @@ export interface DailyEvidenceExpiryPayload {
     skipOutbox?: boolean;
 }
 
+/**
+ * Outbox flush — the job that actually puts queued email on the wire.
+ *
+ * `limit` bounds one sweep. It is a bound, not a target: the sweep runs every
+ * few minutes, so anything left over goes out on the next tick rather than
+ * making a single run unbounded.
+ */
+export interface ProcessOutboxPayload {
+    /** Max rows to drain in one sweep. Default: 100. */
+    limit?: number;
+}
+
 /** Data lifecycle — retention sweep and purge */
 export interface DataLifecyclePayload {
     tenantId?: string;
@@ -738,6 +750,7 @@ export interface JobPayloadMap {
     'embed-chunks': EmbedChunksPayload;
     'reindex-knowledge-article': ReindexKnowledgeArticlePayload;
     'daily-evidence-expiry': DailyEvidenceExpiryPayload;
+    'process-outbox': ProcessOutboxPayload;
     'data-lifecycle': DataLifecyclePayload;
     'retention-sweep': RetentionSweepPayload;
     'promotion-lead-retention': PromotionLeadRetentionPayload;
@@ -854,6 +867,16 @@ export const JOB_DEFAULTS: Record<JobName, {
         backoff: { type: 'exponential', delay: 10000 },
         removeOnComplete: 200,
         removeOnFail: 500,
+    },
+    'process-outbox': {
+        // One attempt. A failed sweep is retried by the NEXT tick five minutes
+        // later, which is sooner than any backoff would schedule it and cannot
+        // stack retries on top of a sweep that is already running again.
+        attempts: 1,
+        backoff: { type: 'exponential', delay: 5000 },
+        // 288 runs a day — keep the tail short so history stays readable.
+        removeOnComplete: 50,
+        removeOnFail: 200,
     },
     'data-lifecycle': {
         attempts: 2,

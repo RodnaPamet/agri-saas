@@ -10,6 +10,7 @@
 import type { PrismaTx } from '@/lib/db-context';
 import type { EmailNotificationType } from '@prisma/client';
 import { isNotificationsEnabled } from './settings';
+import { isPlatformAudience } from './audience';
 import { logger } from '@/lib/observability/logger';
 import type { Locale } from '@/lib/i18n/locales';
 import {
@@ -97,7 +98,10 @@ export async function enqueueEmail(
     input: EnqueueEmailInput,
 ): Promise<{ id: string; dedupeKey: string } | null> {
     const { tenantId, type, toEmail, locale, entityId, payload, sendAfter, requestId } = input;
-    const audience = input.audience ?? 'tenant';
+    // Derived from the type when the caller does not say. `INSURANCE_LEAD` is
+    // platform mail whoever enqueues it, and a default that depends on the
+    // caller remembering is a default that eventually does not hold.
+    const audience = input.audience ?? (isPlatformAudience(type) ? 'platform' : 'tenant');
 
     // Check tenant settings — skip if disabled. Platform-audience mail is
     // exempt: see `audience` on EnqueueEmailInput.
@@ -161,9 +165,21 @@ async function buildEmailContent(
 ): Promise<{ subject: string; bodyText: string; bodyHtml: string }> {
     switch (type) {
         // EVERY arm here is reachable. Verified by enumerating the type
-        // passed at every `enqueueEmail` call site — there are three, in
-        // `usecases/task.ts`, `jobs/access-review-reminder.ts` and
-        // `jobs/access-review-overdue-escalation.ts`.
+        // passed at every `enqueueEmail` call site — there are FIVE, and they
+        // map one-to-one onto the five arms:
+        //
+        //   usecases/task.ts                        TASK_ASSIGNED
+        //   jobs/access-review-reminder.ts          ACCESS_REVIEW_REMINDER
+        //   jobs/access-review-overdue-escalation.ts ACCESS_REVIEW_OVERDUE_ESCALATION
+        //   jobs/retention-notifications.ts         EVIDENCE_EXPIRING
+        //   usecases/insurance.ts                   INSURANCE_LEAD
+        //
+        // This said "three" until 2026-09-24, naming only the first three. The
+        // count was already stale when written — the paragraph below describes
+        // EVIDENCE_EXPIRING's producer moving onto `enqueueEmail`, which is the
+        // fourth — and INSURANCE_LEAD made it five without the number moving.
+        // A hand-maintained census of call sites goes stale silently, so treat
+        // this list as a claim to re-derive, not a fact to trust.
         //
         // Nine arms were deleted in #807 because no producer passed those
         // types to `enqueueEmail`: POLICY_* / VENDOR_ASSESSMENT_* /

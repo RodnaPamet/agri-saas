@@ -102,7 +102,10 @@ describe('Infrastructure Regression Guards', () => {
             // what makes the worker's container healthcheck possible: the
             // heartbeat is written from BullMQ's `completed` event, so an IDLE
             // worker emits nothing and would look wedged without a job to run.
-            expect(SCHEDULED_JOBS).toHaveLength(22);
+            // 23 since `process-outbox`: the outbox previously had no drainer
+            // of its own and was flushed only by `daily-evidence-expiry`, which
+            // made queued mail wait up to 37 hours.
+            expect(SCHEDULED_JOBS).toHaveLength(23);
         });
 
         test('scheduled job names match expected set', () => {
@@ -168,6 +171,9 @@ describe('Infrastructure Regression Guards', () => {
                 // the window, then purge past the grace. Scheduled because the
                 // privacy notice states a deletion period — a sweep nobody runs
                 // would make that statement false.
+                // Puts queued email on the wire every 5 minutes. Sorts before
+                // 'promotion-lead-retention' ("proc" < "prom").
+                'process-outbox',
                 'promotion-lead-retention',
                 // Data-integrity — daily cross-tenant stock-ledger
                 // reconciliation (hash chain + lot quantityOnHand vs

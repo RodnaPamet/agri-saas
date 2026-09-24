@@ -325,6 +325,27 @@ executorRegistry.register('reindex-knowledge-article', async (payload) => {
     );
 });
 
+// ── process-outbox ───────────────────────────────────────────────────
+//
+// Kept separate from `daily-evidence-expiry`, which also flushes: that job's
+// flush is a courtesy at the end of its own sweep, not a delivery guarantee,
+// and it runs once a day. This one exists only to deliver.
+
+executorRegistry.register('process-outbox', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { processOutbox } = await import('../notifications/processOutbox');
+    const r = await processOutbox({ limit: payload.limit ?? 100 });
+    // scanned = every row this sweep resolved; actioned = rows that left the
+    // building. `skipped` covers both a tenant that disabled notifications and
+    // a row another runner claimed first.
+    return makeResult(
+        'process-outbox', startedAt, startMs,
+        r.sent + r.failed + r.skipped, r.sent, r.skipped,
+        { sent: r.sent, failed: r.failed, skipped: r.skipped },
+    );
+});
+
 // ── daily-evidence-expiry ────────────────────────────────────────────
 
 executorRegistry.register('daily-evidence-expiry', async (payload) => {
