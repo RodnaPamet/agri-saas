@@ -15,7 +15,6 @@ import { RECIPIENT_FALLBACK_LOCALE } from '@/lib/email/recipient-locale';
 import { env } from '@/env';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
-import { conflict } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logger } from '@/lib/observability/logger';
 import { Prisma } from '@prisma/client';
@@ -65,34 +64,41 @@ export interface CreateInsuranceLeadInput {
 }
 
 /**
- * Capture an insurance quote request for a parcel. Commits the lead first; a
- * P2002 on the @@unique([parcelId, inquirerTenantId]) becomes a friendly
- * conflict (one open request per parcel per tenant). After commit, a
- * best-effort confirmation notification is written for the requester.
+ * Capture an insurance quote request for a parcel.
+ *
+ * SEVERAL asks per parcel are allowed. The unique on
+ * (parcelId, inquirerTenantId) was dropped on 2026-09-24 because the form now
+ * collects the farmer's own land size — a figure they may get wrong the first
+ * time, and previously could not correct: there is no withdraw and no edit, so
+ * a second POST simply 409'd.
+ *
+ * The operator pays for that in duplicates they must reconcile. It was the
+ * owner's call, taken over editing a lead in place, on the grounds that
+ * revising a record already actioned is worse than filing a second one.
+ *
+ * Commits the lead first, then writes two best-effort notifications: a
+ * confirmation to the requester and a copy to the platform operator.
  */
 export async function createInsuranceLead(ctx: RequestContext, input: CreateInsuranceLeadInput) {
     assertCanWrite(ctx);
     const sanitizedMessage = sanitizePlainText(input.message);
 
     const lead = await runInTenantContext(ctx, async (db) => {
-        let row;
-        try {
-            row = await db.insuranceLead.create({
-                data: {
-                    inquirerTenantId: ctx.tenantId,
-                    inquirerUserId: ctx.userId,
-                    parcelId: input.parcelId,
-                    locationId: input.locationId ?? null,
-                    message: sanitizedMessage,
-                    riskJson: (input.risk ?? undefined) as Prisma.InputJsonValue | undefined,
-                },
-            });
-        } catch (err) {
-            if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-                throw conflict('You have already requested a quote for this parcel');
-            }
-            throw err;
-        }
+        // No try/catch for P2002 any more: the unique on
+        // (parcelId, inquirerTenantId) was dropped so a farmer can re-ask with
+        // a corrected land size. There is no other unique on this table, so
+        // catching P2002 here would be catching something that cannot happen
+        // and hiding something that can.
+        const row = await db.insuranceLead.create({
+            data: {
+                inquirerTenantId: ctx.tenantId,
+                inquirerUserId: ctx.userId,
+                parcelId: input.parcelId,
+                locationId: input.locationId ?? null,
+                message: sanitizedMessage,
+                riskJson: (input.risk ?? undefined) as Prisma.InputJsonValue | undefined,
+            },
+        });
 
         await logEvent(db, ctx, {
             action: 'CREATE',
@@ -112,7 +118,7 @@ export async function createInsuranceLead(ctx: RequestContext, input: CreateInsu
 
     // Best-effort, fail-open — the lead is already committed.
     await notifyRequester(ctx);
-    await notifyOperator(ctx, input, sanitizedMessage);
+    await notifyOperator(ctx, input, sanitizedMessage, lead.id);
     return lead;
 }
 
@@ -149,6 +155,19 @@ async function notifyOperator(
     ctx: RequestContext,
     input: CreateInsuranceLeadInput,
     message: string,
+    /**
+     * The LEAD id, and not the parcel id, is what this mail is deduped on.
+     *
+     * `buildDedupeKey` composes `tenant:type:email:entityId:DAY`, so keying on
+     * the parcel meant a second ask for the same parcel on the same day
+     * produced a row in `InsuranceLead` and NO email — silently, because
+     * `enqueueEmail` skips a duplicate dedupeKey without erroring. That was
+     * harmless while an ask was once-only per parcel. The moment repeat asks
+     * were allowed it became the defect that eats exactly the message the
+     * operator needs: the corrected land size, sent the same afternoon as the
+     * first one.
+     */
+    leadId: string,
 ): Promise<void> {
     const toEmail = env.INSURANCE_LEAD_NOTIFY_EMAIL;
     if (!toEmail) {
@@ -175,7 +194,7 @@ async function notifyOperator(
                 toEmail,
                 audience: 'platform',
                 locale: RECIPIENT_FALLBACK_LOCALE,
-                entityId: input.parcelId,
+                entityId: leadId,
                 requestId: ctx.requestId,
                 payload: {
                     tenantName: tenant?.name ?? ctx.tenantSlug ?? ctx.tenantId,

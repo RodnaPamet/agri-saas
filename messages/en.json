@@ -2476,7 +2476,8 @@
         "unknown": "No data"
       },
       "ask": {
-        "alreadySent": "You have already requested a quote for this parcel.",
+        "alreadySent": "You have already asked about this parcel. You can send another request if the land size has changed.",
+      "askAgain": "Ask again",
         "open": "Ask for insurance offer",
         "sent": "Request sent",
         "sentToast": "Quote request sent. You will find it in your notifications.",

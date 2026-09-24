@@ -101,12 +101,28 @@ describe('AskInsuranceModal — the sent state', () => {
         expect(screen.getByRole('button', { name: COPY.open })).toBeEnabled();
     });
 
-    it('suppresses the trigger when the SERVER says a lead already exists', () => {
-        // The regression. Before `hasRequested` this prop did not exist and a
-        // fresh mount always offered the button, whatever the database held.
+    it('still offers the trigger when a lead exists — re-asking is allowed', () => {
+        // This test used to assert the OPPOSITE, and it kept passing through
+        // the change that reversed the behaviour: it checked only that no
+        // button carried the FIRST-ASK label, and the re-ask button carries a
+        // different one. A blind assertion, and exactly the shape that lets a
+        // behaviour change land unnoticed.
+        //
+        // The behaviour itself changed when the unique on
+        // (parcelId, inquirerTenantId) was dropped so a farmer can re-ask with
+        // a corrected land size. Suppressing the trigger would make that
+        // unreachable from the UI.
         mount(true);
-        expect(screen.queryByRole('button', { name: COPY.open })).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: COPY.askAgain })).toBeInTheDocument();
+        // …and the farmer is still told they have asked before.
         expect(screen.getByText(COPY.sent)).toBeInTheDocument();
+    });
+
+    it('offers the FIRST-ask label when no lead exists', () => {
+        // The other half, so the two labels cannot silently collapse into one.
+        mount(false);
+        expect(screen.getByRole('button', { name: COPY.open })).toBeInTheDocument();
+        expect(screen.queryByText(COPY.sent)).not.toBeInTheDocument();
     });
 
     it('survives a remount, which is what a navigation is', () => {

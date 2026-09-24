@@ -3,15 +3,15 @@
  *
  * Documented because the native client is porting this screen, and three of
  * its four calls carry a trap that a read of the response shape would not
- * reveal: an irreversible write, a 409 that means "already done" rather than
- * "failed", and a level vocabulary that is not a free-text string.
+ * reveal: a write that cannot be undone, a "have they asked already" list that
+ * must NOT be used to disable the ask, and a level vocabulary that is not a
+ * free-text string.
  *
  * The fourth call, `GET /locations/{id}/parcels`, is already described in
  * `locations.paths.ts`.
  */
 import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
-import { ApiErrorResponseSchema } from '@/lib/dto/common';
 import { op } from './helpers';
 
 const TenantParams = z.object({
@@ -83,12 +83,16 @@ export function registerFarmRiskPaths(registry: OpenAPIRegistry): void {
         operationId: 'listInquiredParcelIds',
         summary: 'Parcels this tenant has already asked about',
         description:
-            'Ids only, ETagged. **Read this before rendering an "ask for offer" control.** ' +
-            'A lead is unique per (parcel, tenant), so a second POST is refused — and the ' +
-            'web page originally tracked "sent" in component state, which died on unmount, ' +
-            'so navigating away and back re-enabled a button whose POST the database then ' +
-            'rejected. The operator was told off for retrying something they could not see ' +
-            'they had done. This endpoint exists because of that.',
+            'Ids only, ETagged. **Informational — do NOT use it to disable the ask.**\n\n' +
+            'It was written when a lead was unique per (parcel, tenant): the web page had ' +
+            'tracked "sent" in component state, which died on unmount, so navigating away ' +
+            'and back re-enabled a button whose POST the database then rejected, and the ' +
+            'operator was told off for retrying something they could not see they had ' +
+            'done.\n\n' +
+            'Since the unique was dropped on 2026-09-24 a parcel may be asked about more ' +
+            'than once, so the right use is to TELL the farmer they have asked before ' +
+            'while leaving the control active. A client that still suppresses the trigger ' +
+            'makes the re-ask unreachable.',
         tags: ['Farm risk'],
         params: TenantParams,
         success: {
@@ -104,15 +108,23 @@ export function registerFarmRiskPaths(registry: OpenAPIRegistry): void {
         operationId: 'createInsuranceLead',
         summary: 'Ask an insurer for an offer on a parcel',
         description:
-            '**Irreversible.** There is no DELETE and no withdraw: a lead is unique per ' +
-            '(parcel, tenant) and persists, so a parcel can be asked about exactly once, ' +
-            'ever. Do not fire this against a real parcel to test the wiring — it ' +
-            'permanently disables the control for that parcel.\n\n' +
-            'Lead-gen only: the row is stored and a confirmation notification is written ' +
-            'for the REQUESTER. No insurer API is called and no other tenant is contacted, ' +
-            'which is what separates this from an exchange inquiry.\n\n' +
-            'A duplicate returns **409** — treat that as "already asked", not as a failure. ' +
-            'Rate-limited on the inquiry tier.',
+            '**Irreversible, and now repeatable.** There is still no DELETE and no ' +
+            'withdraw — a lead persists once written. What changed on 2026-09-24 is that ' +
+            'the unique on (parcel, tenant) was dropped, so a parcel may carry SEVERAL ' +
+            'leads: the form collects the farmer\'s own land size, and a figure they got ' +
+            'wrong the first time could not otherwise be corrected.\n\n' +
+            'Consequences for a client:\n' +
+            '- A second POST no longer returns 409. It creates another lead and emails the ' +
+            'operator again.\n' +
+            '- **Do not disable the control** because `GET /insurance/leads` lists the ' +
+            'parcel. That endpoint is now INFORMATIONAL — suppressing the trigger makes ' +
+            'the re-ask this change exists to allow unreachable.\n' +
+            '- Still do not fire it against a real parcel to test wiring: every lead is an ' +
+            'email to the platform operator, who has to reconcile duplicates by hand.\n\n' +
+            'Lead-gen only: the row is stored, a confirmation notification is written for ' +
+            'the REQUESTER and a copy is sent to the operator. No insurer API is called ' +
+            'and no other tenant is contacted, which is what separates this from an ' +
+            'exchange inquiry. Rate-limited on the inquiry tier.',
         tags: ['Farm risk'],
         params: TenantParams,
         body: z
@@ -134,12 +146,6 @@ export function registerFarmRiskPaths(registry: OpenAPIRegistry): void {
             status: 201,
             description: 'The lead was recorded.',
             schema: z.object({ id: z.string() }).passthrough(),
-        },
-        extraResponses: {
-            409: {
-                description: 'A lead already exists for this parcel — already asked, not an error.',
-                content: { 'application/json': { schema: ApiErrorResponseSchema } },
-            },
         },
     });
 }
