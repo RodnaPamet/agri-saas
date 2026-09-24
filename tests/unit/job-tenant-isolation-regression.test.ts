@@ -172,7 +172,12 @@ describe('Executor Registry — structural tenant-scope guards', () => {
         // tenant to reach them all. The tenant axis is PER ROW, not per
         // payload — `processOutbox` reads `row.tenantId` to resolve that
         // tenant's notification settings and sender before each send.
-        'process-outbox'];
+        'process-outbox',
+        // Folds per-ROUTE request-outcome counters whose route label has the
+        // tenant slug collapsed out for cardinality — there is no tenant axis
+        // in the data, and an endpoint a client cannot satisfy is broken for
+        // every tenant calling it.
+        'zero-success-route-check'];
 
     test('no executor uses _payload (unused parameter = ignored tenantId)', () => {
         const pattern = /executorRegistry\.register\('[^']+',\s*async\s*\(_payload\)/g;
@@ -260,7 +265,12 @@ describe('Payload Type Contract — tenantId field audit', () => {
         // Same reason as its sibling above: a GLOBAL job over a GLOBAL table
         // has no tenant axis, so a tenantId field here would be a lie the type
         // system enforced.
-        'SupportSchemeExtractionPayload'];
+        'SupportSchemeExtractionPayload',
+        // Reads GLOBAL per-route request-outcome counters. The route label
+        // they are keyed by collapses the tenant slug (`/api/t/:tenantSlug/`)
+        // for cardinality, so a tenantId on this payload would name an axis
+        // the data does not have.
+        'ZeroSuccessRouteCheckPayload'];
 
     test('every non-exempt payload interface has tenantId field', () => {
         // Extract all payload interfaces

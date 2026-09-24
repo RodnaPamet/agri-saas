@@ -198,6 +198,22 @@ export interface ProcessOutboxPayload {
     limit?: number;
 }
 
+/**
+ * Zero-success route check — the daily "is a client broken against this
+ * endpoint?" sweep.
+ *
+ * No tenant axis, and that is not an omission: the counters it reads are
+ * keyed by normalised ROUTE (`/api/t/:tenantSlug/...`), with the tenant
+ * slug deliberately collapsed out for cardinality. A broken client is a
+ * property of the endpoint, not of a tenant.
+ */
+export interface ZeroSuccessRouteCheckPayload {
+    /** Hours of request-outcome history to fold. Default 24. */
+    windowHours?: number;
+    /** Failures a route needs before a zero-success window is reported. Default 5. */
+    minFailures?: number;
+}
+
 /** Data lifecycle — retention sweep and purge */
 export interface DataLifecyclePayload {
     tenantId?: string;
@@ -751,6 +767,7 @@ export interface JobPayloadMap {
     'reindex-knowledge-article': ReindexKnowledgeArticlePayload;
     'daily-evidence-expiry': DailyEvidenceExpiryPayload;
     'process-outbox': ProcessOutboxPayload;
+    'zero-success-route-check': ZeroSuccessRouteCheckPayload;
     'data-lifecycle': DataLifecyclePayload;
     'retention-sweep': RetentionSweepPayload;
     'promotion-lead-retention': PromotionLeadRetentionPayload;
@@ -875,6 +892,15 @@ export const JOB_DEFAULTS: Record<JobName, {
         attempts: 1,
         backoff: { type: 'exponential', delay: 5000 },
         // 288 runs a day — keep the tail short so history stays readable.
+        removeOnComplete: 50,
+        removeOnFail: 200,
+    },
+    'zero-success-route-check': {
+        // One attempt. The window is ROLLING, so a failed run is not lost
+        // work — tomorrow's run re-derives the same 24h of counters. A
+        // retry would only re-emit the identical warning an hour later.
+        attempts: 1,
+        backoff: { type: 'exponential', delay: 10000 },
         removeOnComplete: 50,
         removeOnFail: 200,
     },

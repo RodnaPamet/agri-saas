@@ -346,6 +346,37 @@ executorRegistry.register('process-outbox', async (payload) => {
     );
 });
 
+// ── zero-success-route-check ─────────────────────────────────────────
+//
+// GLOBAL by construction: it folds per-ROUTE request-outcome counters, and
+// the tenant slug is collapsed out of the route label for cardinality. A
+// client broken against an endpoint is a property of the endpoint.
+//
+// `itemsActioned` is the number of routes REPORTED, not a number of rows
+// changed — this job only observes. A run that could not read the counters
+// reports zero of everything with `outcomeDataAvailable: false`, which is
+// UNKNOWN, not clean.
+
+executorRegistry.register('zero-success-route-check', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runZeroSuccessRouteCheck } = await import('./zero-success-route-check');
+    const r = await runZeroSuccessRouteCheck({
+        windowHours: payload.windowHours,
+        minFailures: payload.minFailures,
+    });
+    return makeResult(
+        'zero-success-route-check', startedAt, startMs,
+        r.routesObserved, r.findings.length, r.routesObserved - r.findings.length,
+        {
+            windowHours: r.windowHours,
+            bucketsRead: r.bucketsRead,
+            outcomeDataAvailable: r.outcomeDataAvailable,
+            failingRoutes: r.findings.map((f) => `${f.method} ${f.route}`),
+        },
+    );
+});
+
 // ── daily-evidence-expiry ────────────────────────────────────────────
 
 executorRegistry.register('daily-evidence-expiry', async (payload) => {

@@ -6,6 +6,8 @@
  *   Logger:   logger, log, extractErrorMeta, createChildLogger, pinoInstance
  *   Tracing:  getTracer, traceUsecase, traceOperation, traceRepository
  *   Metrics:  recordRequestMetrics, recordRequestError
+ *   Outcomes: recordRouteOutcome, readRouteOutcomeWindow (durable per-route
+ *             request outcomes in Redis — what `zero-success-route-check` reads)
  *   Sentry:   initSentry, captureError, setSentryContext
  *   Bootstrap: initTelemetry, isTelemetryInitialized
  */
@@ -47,6 +49,13 @@ export {
     startQueueDepthReporting,
     normalizeRoute,
 } from './metrics';
+
+export {
+    recordRouteOutcome,
+    readRouteOutcomeWindow,
+    ROUTE_OUTCOME_WINDOW_HOURS,
+} from './route-outcomes';
+export type { RouteOutcomeCounts, RouteOutcomeWindow } from './route-outcomes';
 
 export {
     initSentry,

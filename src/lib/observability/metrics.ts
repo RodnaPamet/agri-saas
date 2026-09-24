@@ -6,6 +6,13 @@
  *   api.request.duration   — Histogram (method, route, status) [ms]
  *   api.request.errors     — Counter   (method, route, errorCode)
  *
+ *   `recordRequestMetrics` ALSO increments a durable per-(hour, status,
+ *   method, route) counter in Redis via `./route-outcomes`. The OTel
+ *   instruments above are noops unless OTEL_ENABLED=true with a reachable
+ *   collector, which no deployment sets — so they cannot answer "did this
+ *   route ever succeed today?". The Redis counters can, and
+ *   `zero-success-route-check` (daily job) reads them.
+ *
  * ── REPOSITORY METRICS (Epic OI-3) ──
  *   repo.method.duration     — Histogram (repo.method, outcome) [ms]
  *   repo.method.calls        — Counter   (repo.method, outcome)
@@ -95,6 +102,8 @@
  */
 
 import { metrics } from '@opentelemetry/api';
+
+import { recordRouteOutcome } from './route-outcomes';
 
 const METER_NAME = 'inflect-compliance';
 
@@ -221,6 +230,19 @@ export function recordRequestMetrics(attrs: {
 
     getRequestCount().add(1, labels);
     getRequestDuration().record(attrs.durationMs, labels);
+
+    // Durable twin of `api.request.count`. The OTel counter above is a noop
+    // unless OTEL_ENABLED=true and a collector is reachable — no deployment
+    // in `deploy/` sets either — so nothing in this process could answer
+    // "did this route ever succeed today?". This one round trip to Redis
+    // can, and lives HERE rather than at the three call sites in
+    // `withApiErrorHandling` so the two counters cannot disagree about
+    // which requests they saw. Fire-and-forget; never throws.
+    recordRouteOutcome({
+        method: attrs.method,
+        route: normalizedRoute,
+        status: attrs.status,
+    });
 }
 
 /**
