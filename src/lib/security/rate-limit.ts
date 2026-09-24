@@ -257,6 +257,43 @@ export const SCIM_IP_LIMIT: RateLimitConfig = {
 };
 
 /**
+ * Tenant API keys (`iflk_`) — the same situation as SCIM, one step riskier.
+ *
+ * The Edge carve-out lets an `iflk_` bearer past `getToken()` unauthenticated
+ * (it has to: the key is an opaque token compared against a hash, and the Edge
+ * has no database). So an anonymous caller once again reaches a credential
+ * comparison — but this time on `/api/t/`, the whole tenant API, rather than a
+ * single provisioning prefix.
+ *
+ * Two buckets for the reasons {@link SCIM_LIMIT} gives: per-bearer alone never
+ * binds against an attacker rotating a fresh guess per request, per-IP alone
+ * throttles innocent tenants sharing an egress.
+ *
+ * TIGHTER than SCIM's 300/600, deliberately. SCIM's budget is sized for Entra
+ * pushing several tenants' full user directories through one prefix on a
+ * schedule. An API key is a customer's own integration making ordinary API
+ * calls; 120/min sustained is far more than any such client needs, and the
+ * lower the ceiling the smaller the guessing oracle. Raise it when a real
+ * integration demonstrates it binds — not in advance.
+ */
+export const API_KEY_LIMIT: RateLimitConfig = {
+    maxAttempts: 120,
+    windowMs: 60 * 1000,
+};
+
+/**
+ * The per-IP ceiling for {@link API_KEY_LIMIT} — the anti-guessing floor.
+ *
+ * Double the per-bearer budget, same ratio and same reason as SCIM's: one
+ * customer may legitimately run several keys (staging and production, or two
+ * integrations) from one egress address.
+ */
+export const API_KEY_IP_LIMIT: RateLimitConfig = {
+    maxAttempts: 240,
+    windowMs: 60 * 1000,
+};
+
+/**
  * API key creation: 5 per hour per (tenant, creator user).
  *
  * Threat model: post-compromise lateral movement. A user with a

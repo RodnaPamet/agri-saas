@@ -189,7 +189,19 @@ describe('API Key Auth Module', () => {
     });
 
     test('API key prefix is defined and distinctive', () => {
-        expect(apiKeyAuth).toContain("API_KEY_PREFIX = 'iflk_'");
+        // The constant moved to `api-key-token.ts` when the Edge needed to test
+        // for it: `api-key-auth.ts` imports Prisma, so asking "is this an API
+        // key?" from the middleware would have pulled the database client into
+        // the Edge bundle. `api-key-auth.ts` re-exports it, so there is still
+        // exactly one definition — this asserts against the one that defines it.
+        const apiKeyToken = fs.readFileSync(
+            path.join(ROOT, 'src/lib/auth/api-key-token.ts'),
+            'utf8',
+        );
+        expect(apiKeyToken).toContain("API_KEY_PREFIX = 'iflk_'");
+        // …and that the auth module still surfaces it, so existing importers
+        // (and this epic's other assertions) are not silently broken.
+        expect(apiKeyAuth).toContain('API_KEY_PREFIX');
     });
 
     test('key generation creates cryptographically random keys', () => {

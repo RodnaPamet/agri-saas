@@ -32,14 +32,26 @@ import crypto from 'crypto';
 import prisma from '@/lib/prisma';
 import { getPermissionsForRole, type PermissionSet } from '@/lib/permissions';
 import { computePermissions } from '@/lib/tenant-context';
-import { forbidden } from '@/lib/errors/types';
+import { forbidden, codedForbidden } from '@/lib/errors/types';
 import type { RequestContext } from '@/app-layer/types';
 import type { TenantApiKey, Tenant } from '@prisma/client';
 
 // ─── Constants ───
 
 /** Prefix for all API keys — enables quick visual identification */
-export const API_KEY_PREFIX = 'iflk_';
+// The format lives in a dependency-free module so the Edge can import it
+// without pulling in Prisma. Imported AND re-exported: the re-export keeps
+// existing importers working, the import is what makes the constant usable
+// below (a bare `export ... from` re-exports without binding it locally).
+import { API_KEY_PREFIX, isApiKeyToken } from './api-key-token';
+import {
+    API_KEY_SCOPE_FAMILIES,
+    isScopableFamily,
+    scopeActionForMethod,
+    scopeResourceForPath,
+    type ScopeAction,
+} from './api-key-scope';
+export { API_KEY_PREFIX, isApiKeyToken };
 
 /** Length of random hex portion (48 hex = 24 bytes of entropy) */
 const KEY_RANDOM_LENGTH = 48;
@@ -72,9 +84,21 @@ const SCOPE_ACTION_MAP: Record<string, Record<string, string[]>> = {
  */
 export const VALID_SCOPES: string[] = [
     '*', // full access
-    ...Object.entries(SCOPE_ACTION_MAP).flatMap(([resource, actions]) => [
+    // One resource per tenant-API path family, so a scope names exactly the
+    // surface it unlocks. This REPLACED a four-resource vocabulary derived
+    // from SCOPE_ACTION_MAP; all four of those (evidence, tasks, reports,
+    // admin) are path families themselves, so this is a strict superset and
+    // every key ever issued keeps the meaning it was issued with.
+    //
+    // SCOPE_ACTION_MAP is still the map from a scope to a PermissionSet — it
+    // answers a different question (what does this key's `appPermissions`
+    // look like) and covers only the five domains a PermissionSet HAS.
+    // Reaching a resource is gated by the family list; what a key may do once
+    // there is gated by permissions as before.
+    ...API_KEY_SCOPE_FAMILIES.flatMap((resource) => [
         `${resource}:*`,
-        ...Object.keys(actions).map(action => `${resource}:${action}`),
+        `${resource}:read`,
+        `${resource}:write`,
     ]),
 ];
 
@@ -184,6 +208,93 @@ export function enforceApiKeyScope(
         `API key does not have scope "${resource}:${action}". ` +
         `Granted scopes: ${scopes.join(', ')}`
     );
+}
+
+/**
+ * Does this key hold `resource:action`? The boolean form of
+ * {@link enforceApiKeyScope}, for callers that must combine several checks
+ * before deciding (permission requirements come in `any`/`all` sets).
+ *
+ * Returns true for a session context, which holds no scopes: scope logic must
+ * never be the thing that refuses a logged-in user.
+ */
+export function hasApiKeyScope(
+    ctx: RequestContext,
+    resource: string,
+    action: ScopeAction,
+): boolean {
+    if (!ctx.apiKeyId || !ctx.apiKeyScopes) return true;
+    const scopes = ctx.apiKeyScopes;
+    return (
+        scopes.includes('*') ||
+        scopes.includes(`${resource}:*`) ||
+        scopes.includes(`${resource}:${action}`)
+    );
+}
+
+/**
+ * The action a dotted permission key represents.
+ *
+ * `evidence.view` and `evidence.download` are reads; everything else is a
+ * write. Unknown suffixes fall to WRITE so a new permission cannot be reached
+ * by a read-only key by default.
+ */
+export function scopeActionForPermissionKey(key: string): ScopeAction {
+    const suffix = key.split('.')[1] ?? '';
+    return suffix === 'view' || suffix === 'download' ? 'read' : 'write';
+}
+
+/**
+ * The per-REQUEST scope gate: may this API key reach this path at all?
+ *
+ * Called from `getTenantCtx`, which every tenant route reaches, so it covers
+ * the ~250 routes that gate on `assertCanWrite` and never call
+ * `requirePermission`. Without it a `tasks:write` key could write journal
+ * entries, field operations and insurance leads, because the only thing the
+ * coarse role derivation carries forward from a scope is "may write
+ * something". See `api-key-scope.ts` for the full account.
+ *
+ * ── Why `*` does not bypass the family check ──
+ *
+ * `enforceApiKeyScope` returns early for a `*` key, which is right for an
+ * action check and wrong for a REACHABILITY one. A path family absent from
+ * `API_KEY_SCOPE_FAMILIES` is not a surface someone decided a key may not
+ * reach — it is one nobody has reviewed for machine access yet, and several
+ * existing families (`sso`, `security`, `billing`) are ones a reviewer might
+ * well refuse. So the family check runs FIRST and binds every key, wildcard
+ * included: `*` means "every resource I have been granted", not "every
+ * resource that will ever exist".
+ *
+ * A session-authenticated context has no `apiKeyId` and is unaffected.
+ */
+export function assertApiKeyMayReachPath(
+    ctx: RequestContext,
+    pathname: string,
+    method: string,
+): void {
+    if (!ctx.apiKeyId) return;
+
+    const family = scopeResourceForPath(pathname);
+    if (!family) {
+        // An API key presented outside `/api/t/<slug>/...`. The Edge carve-out
+        // is bounded to that prefix, so this is unreachable over HTTP today —
+        // refusing rather than allowing keeps it that way if the bound moves.
+        throw codedForbidden(
+            'API_KEY_WRONG_SURFACE',
+            'API keys may only be used on the tenant API.',
+        );
+    }
+
+    if (!isScopableFamily(family)) {
+        throw codedForbidden(
+            'API_KEY_FAMILY_NOT_ENABLED',
+            `API keys cannot be used for "${family}". That surface has not been ` +
+            `enabled for key access.`,
+            { resource: family },
+        );
+    }
+
+    enforceApiKeyScope(ctx, family, scopeActionForMethod(method));
 }
 
 // ─── Key Generation ───
@@ -315,13 +426,7 @@ export function extractBearerToken(authHeader: string | null | undefined): strin
     return parts[1];
 }
 
-/**
- * Check if a bearer token looks like an API key (starts with prefix).
- * Used to decide whether to route to API key auth vs JWT auth.
- */
-export function isApiKeyToken(token: string): boolean {
-    return token.startsWith(API_KEY_PREFIX);
-}
+
 
 // ─── Internal Helpers ───
 

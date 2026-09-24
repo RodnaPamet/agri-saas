@@ -1,53 +1,58 @@
 /**
  * The single switch for tenant API-key authentication.
  *
- * ## Why this is off
+ * ## History, kept because it is the reason this file exists
  *
- * A tenant API key (`iflk_…`) has never authenticated a request, on any
- * deployment, since the feature shipped. `src/middleware.ts` calls
- * `getToken({ req, secret })`, which accepts an `Authorization: Bearer` header
- * but then runs the value through NextAuth's JWE `decode()`. An `iflk_` token
- * is not a JWE, so decode throws, `getToken` returns `null`, and the request is
- * refused with a generic 401 before any handler — and therefore before
- * `verifyApiKey` — runs. Confirmed over real HTTP, not by reading:
+ * A tenant API key (`iflk_…`) had never authenticated a request, on any
+ * deployment, from the day the feature shipped until 2026-09-24.
+ * `src/middleware.ts` called `getToken({ req, secret })`, which accepts an
+ * `Authorization: Bearer` header but then runs the value through NextAuth's
+ * JWE `decode()`. An `iflk_` token is not a JWE, so decode threw, `getToken`
+ * returned `null`, and the request was refused with a generic 401 before any
+ * handler — and therefore before `verifyApiKey` — ran:
  *
  * ```
  * $ curl -H 'Authorization: Bearer iflk_…' /api/t/<slug>/journal
  * 401 {"error":"Unauthorized"}
  * ```
  *
- * Meanwhile the admin UI happily minted keys, showed each one once, and told
- * the operator "Copy this key now — it will never be shown again!". A
- * credential a customer can create, is instructed to use, and which returns a
- * 401 indistinguishable from a wrong key is worse for them than no feature at
- * all: it costs a support cycle to discover it was never going to work.
+ * Meanwhile the admin UI minted keys, showed each one once, and told the
+ * operator "Copy this key now — it will never be shown again!". A credential a
+ * customer can create, is instructed to use, and which returns a 401
+ * indistinguishable from a wrong key is worse for them than no feature at all.
  *
- * So creation is closed. **Nothing is deleted** — `createApiKey`,
- * `verifyApiKey`, the scope machinery, the `TenantApiKey` model and the admin
- * list/revoke UI all remain, because revocation of already-issued keys still
- * matters and a named machine-to-machine customer would revive this.
+ * So creation was closed and this switch introduced, with a guard
+ * (`tests/guards/api-key-auth-enabled.test.ts`, named `-disabled` until the
+ * switch was flipped) that failed if anyone flipped
+ * it without building the four things that make it work.
  *
- * ## What flipping this to `true` requires
+ * ## What was built to turn it on
  *
- * It is NOT a one-line change, and `tests/guards/api-key-auth-disabled.test.ts`
- * fails if anyone treats it as one. Turning it on means:
- *
- *  1. **An Edge carve-out.** The Edge has no database and cannot verify a
- *     hashed key, so the middleware must let `iflk_`-bearing requests past
- *     unauthenticated and trust the handler — the same deliberate hole opened
- *     for SCIM, and it needs the same fail-closed guard.
- *  2. **Scope enforcement.** `enforceApiKeyScope` currently has ZERO callers.
- *     Scopes only influence a coarse role derivation; nothing checks them per
- *     operation.
- *  3. **A rate tier.** An anonymous-at-the-Edge surface that reaches a key
- *     comparison is a brute-force oracle (see `scimRateLimit.ts`).
- *  4. **End-to-end tests** that actually send the header through the
- *     middleware. The only current CI signal is a source-text grep for
- *     `API_KEY_PREFIX`, which stayed green for the entire life of the bug.
+ *  1. **The Edge carve-out.** `src/middleware.ts` now lets a request bearing
+ *     an `iflk_` token past `getToken()` unauthenticated, bounded to
+ *     `/api/t/`. The handler authenticates instead — the same deliberate hole
+ *     SCIM and the signed webhooks have, with the same fail-closed guard:
+ *     `tests/guards/tenant-api-routes-self-authenticate.test.ts`, derived from
+ *     the filesystem so a route that does not exist yet is covered the moment
+ *     it is created.
+ *  2. **Scope enforcement, per request.** `enforceApiKeyScope` had ZERO
+ *     callers. Wiring it into `requirePermission` alone would have covered ~23
+ *     of 273 tenant routes; the rest gate on `assertCanWrite`, which reads a
+ *     COARSE role derived from the key's scopes — so a `tasks:write` key could
+ *     write journal entries, field operations and insurance leads. The gate is
+ *     now `assertApiKeyMayReachPath`, called from `getTenantCtx`, which every
+ *     one of the 273 reaches. See `api-key-scope.ts`.
+ *  3. **A rate tier.** `apiKeyRateLimit.ts` — two buckets, hashed bearer and
+ *     per-IP, because the carve-out makes `/api/t/` a surface where an
+ *     anonymous caller reaches a key comparison.
+ *  4. **Tests through the middleware.** The only CI signal used to be a
+ *     source-text grep for `API_KEY_PREFIX`, which stayed green for the entire
+ *     life of the bug. `tests/unit/api-key-edge-reachability.test.ts`
+ *     puts a real header through the real middleware.
  *
  * Deliberately dependency-free so the `'use client'` admin page can import it.
  */
-export const API_KEY_AUTH_ENABLED = false;
+export const API_KEY_AUTH_ENABLED = true;
 
 /**
  * Returned to a client that tries to create a key. It DIAGNOSES rather than

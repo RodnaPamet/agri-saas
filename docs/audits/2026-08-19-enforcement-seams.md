@@ -160,6 +160,7 @@ No test loads `instrumentation.ts`. Its neighbour ten lines up got `tests/guards
 
 - **SCIM Edge reachability** — `scim-edge-reachability.test.ts` drives the real middleware; the e2e asserts a bad bearer yields the SCIM *Error schema*, the only assertion that distinguishes "handler ran" from "handler never ran". The reference fix, and the template for #2 and #8.
 - **`iflk_` API-key disable** — `api-key-auth-disabled.test.ts` drives `getTenantCtx` and asserts `verifyApiKey` was never called; deleting `context.ts:241` fails.
+  *(Superseded 2026-09-24: API-key auth was enabled; the file is now `tests/unit/api-key-auth-enabled.test.ts` and asserts the key IS verified. The seam it describes was real at the time of this audit.)*
 - **`token.error` session revocation** — `session-revocation-enforced.test.ts` drives the real middleware end to end. The harness every gap in §2 should borrow.
 - **Auth-tier rate limit** — `tests/integration/auth-ratelimit.test.ts` imports the real middleware, fires 11 requests, asserts 429 + `X-RateLimit-Limit`.
 - **Mutation-tier rate limit** — `rate-limit-rollout.test.ts` wraps a handler in the real `withApiErrorHandling`, drains 60 POSTs, asserts the 61st is 429.

@@ -98,30 +98,45 @@ All fields are `boolean`. Validated on write by `validatePermissionsJson()`.
 
 ## API Keys
 
-> **STATUS (2026-08-19): API-key authentication is DISABLED, and it never
-> worked.** A key issued here **cannot authenticate a request** and never
-> could. The Edge middleware calls `getToken()`, which runs an
-> `Authorization: Bearer` value through NextAuth's JWE decode; an `iflk_`
-> token is not a JWE, so decode throws, `getToken` returns `null`, and the
-> request is refused with a generic 401 **before any handler runs** — and
-> therefore before `verifyApiKey` is ever reached. Confirmed over real HTTP:
+> **STATUS (2026-09-24): API-key authentication is ENABLED.** It was disabled
+> from 2026-08-19 until then, and before that it had never worked at all: the
+> Edge middleware calls `getToken()`, which runs an `Authorization: Bearer`
+> value through NextAuth's JWE decode; an `iflk_` token is not a JWE, so decode
+> threw, `getToken` returned `null`, and the request was refused with a generic
+> 401 **before any handler ran** — and therefore before `verifyApiKey` was ever
+> reached. The admin UI minted keys throughout and told operators to copy them.
 >
-> ```
-> $ curl -H 'Authorization: Bearer iflk_…' /api/t/<slug>/journal
-> 401 {"error":"Unauthorized"}
-> ```
+> Four things were built to turn it on, and each has a guard so it stays built:
 >
-> Creation is closed (`POST` returns **410 Gone** with a diagnostic body) and
-> the admin page hides the create button. **Listing and revoking existing keys
-> still works** and the page stays reachable for exactly that reason.
+> 1. **An Edge carve-out** (`src/middleware.ts`), bounded to `/api/t/` and
+>    gated on the switch, letting an `iflk_` bearer past unauthenticated so the
+>    handler can verify it. Safe because every tenant route authenticates —
+>    `tests/guards/tenant-api-routes-self-authenticate.test.ts` is fail-closed
+>    and derives its inventory from the filesystem, so a route written tomorrow
+>    is covered the moment it exists.
+> 2. **Per-request scope enforcement** (`assertApiKeyMayReachPath`, called from
+>    `getTenantCtx`). This is the one that mattered most: `enforceApiKeyScope`
+>    had zero callers, and wiring it only into `requirePermission` would have
+>    covered ~23 of the 273 tenant routes. The rest gate on `assertCanWrite`,
+>    which reads a role derived coarsely from a key's scopes — so a
+>    `tasks:write` key could write journal entries, field operations and
+>    insurance leads.
+> 3. **A rate tier** (`src/lib/rate-limit/apiKeyRateLimit.ts`) — hashed-bearer
+>    and per-IP buckets, because the carve-out makes `/api/t/` a surface where
+>    an anonymous caller reaches a key comparison.
+> 4. **Tests through the middleware**
+>    (`tests/unit/api-key-edge-reachability.test.ts`). The only CI
+>    signal used to be a source-text grep for `API_KEY_PREFIX`, which stayed
+>    green for the entire life of the bug.
 >
-> Everything below describes the design as built. It is accurate about the
-> model, hashing and scopes, and **not** about the request path — that section
-> is marked where it applies. See `src/lib/auth/api-key-availability.ts` for
-> what re-enabling requires (an Edge carve-out, scope enforcement — which has
-> zero callers today — a rate tier, and an HTTP-level test through the
-> middleware). `tests/guards/api-key-auth-disabled.test.ts` fails if the switch
-> is flipped without them.
+> **Scopes now name path families.** A scope resource is the first path segment
+> after `/api/t/<slug>/`, so `journal:write` permits writes under
+> `/api/t/<slug>/journal` and nothing else. The four resources that existed
+> before (`evidence`, `tasks`, `reports`, `admin`) are all path families, so
+> every key ever issued keeps the meaning it was issued with. A family absent
+> from `API_KEY_SCOPE_FAMILIES` cannot be named by any scope and is refused —
+> **including for a `*` key**, because an unlisted family is one nobody has
+> reviewed for machine access, not one someone decided to withhold.
 
 ### Model
 
