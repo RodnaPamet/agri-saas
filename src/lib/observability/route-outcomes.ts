@@ -137,13 +137,28 @@ export function parseRouteOutcomeField(field: string): ParsedRouteOutcomeField |
 }
 
 /**
+ * Set once the client shape has already been reported unusable, so a
+ * misconfigured client logs a line per PROCESS rather than per request.
+ * The async arm below stays per-occurrence: that one reports a live Redis
+ * fault, which is transient and worth counting.
+ */
+let _warnedUnusableClient = false;
+
+/**
  * Count one finished request.
  *
- * Fire-and-forget by design: the write is never awaited on the response
- * path and never rejects into it. A single pipeline keeps it to one Redis
- * round trip, and a missing/failing Redis degrades to no counting at all
- * (which the reader reports as UNKNOWN, never as "clean" — see
- * `readRouteOutcomeWindow`).
+ * Fire-and-forget by design, and it CANNOT fail the request it is
+ * counting — neither asynchronously (the pipeline's rejection is caught)
+ * nor synchronously. The synchronous half is not theoretical: several
+ * route tests stub `@/lib/redis` with a partial double carrying only the
+ * methods they use, so `getRedis()` can return an object with no
+ * `.pipeline`, and without this guard a TypeError from the counter would
+ * surface as a failed API response. A counter that can break the response
+ * it counts is worse than no counter.
+ *
+ * A single pipeline keeps it to one Redis round trip, and a missing or
+ * unusable Redis degrades to no counting at all — which the reader
+ * reports as UNKNOWN, never as "clean" (see `readRouteOutcomeWindow`).
  */
 export function recordRouteOutcome(attrs: {
     method: string;
@@ -151,23 +166,49 @@ export function recordRouteOutcome(attrs: {
     route: string;
     status: number;
 }): void {
-    const redis = getRedis();
-    if (!redis) return;
+    try {
+        const redis = getRedis();
+        if (!redis) return;
 
-    const key = routeOutcomeBucketKey(new Date());
-    const field = routeOutcomeField(attrs.status, routeOutcomeLabel(attrs.method, attrs.route));
+        // Feature-detect rather than assume the client's shape. Several
+        // route unit tests stub `@/lib/redis` with a partial double
+        // carrying only the methods they use, so this is the ORDINARY
+        // case, not an error — returning here keeps it off the catch path
+        // below (and out of the log) entirely.
+        if (typeof redis.pipeline !== 'function') return;
 
-    void redis
-        .pipeline()
-        .hincrby(key, field, 1)
-        .expire(key, ROUTE_OUTCOME_TTL_SECONDS)
-        .exec()
-        .catch((err: unknown) => {
-            logger.warn('route-outcome counter write failed', {
-                component: 'route-outcomes',
-                error: err instanceof Error ? err.message : String(err),
+        const key = routeOutcomeBucketKey(new Date());
+        const field = routeOutcomeField(
+            attrs.status,
+            routeOutcomeLabel(attrs.method, attrs.route),
+        );
+
+        void redis
+            .pipeline()
+            .hincrby(key, field, 1)
+            .expire(key, ROUTE_OUTCOME_TTL_SECONDS)
+            .exec()
+            .catch((err: unknown) => {
+                logger.warn('route-outcome counter write failed', {
+                    component: 'route-outcomes',
+                    error: err instanceof Error ? err.message : String(err),
+                });
             });
+    } catch (err) {
+        // A client that is the wrong SHAPE is a static condition, so warn
+        // once per process instead of once per request.
+        if (_warnedUnusableClient) return;
+        _warnedUnusableClient = true;
+        logger.warn('route-outcome counter unavailable — request outcomes are not being recorded', {
+            component: 'route-outcomes',
+            error: err instanceof Error ? err.message : String(err),
         });
+    }
+}
+
+/** Test-only: forget that the client was reported unusable. */
+export function __resetRouteOutcomeWarningForTests(): void {
+    _warnedUnusableClient = false;
 }
 
 /**

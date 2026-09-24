@@ -25,9 +25,26 @@ let mockExecMode: 'ok' | 'throw' | 'null' = 'ok';
 /** Every `expire(key, ttl)` the code under test issued. */
 let mockExpireCalls: Array<{ key: string; ttl: number }> = [];
 
+/**
+ * When true, `getRedis()` returns a PARTIAL double with no `.pipeline` —
+ * the shape several route unit tests supply (`{ get, set }` only). The
+ * recorder must degrade, not throw into the response it is counting.
+ */
+let mockPartialClient = false;
+/** When true, the client HAS `pipeline` but calling it throws. */
+let mockPipelineThrows = false;
+
 jest.mock('@/lib/redis', () => ({
     getRedis: () => {
         if (mockStore === null) return null;
+        if (mockPartialClient) return { get: jest.fn(), set: jest.fn() };
+        if (mockPipelineThrows) {
+            return {
+                pipeline() {
+                    throw new TypeError('pipeline exploded');
+                },
+            };
+        }
         const store = mockStore;
         return {
             pipeline() {
@@ -78,6 +95,7 @@ jest.mock('@/lib/observability/logger', () => ({
 
 import { logger } from '@/lib/observability/logger';
 import {
+    __resetRouteOutcomeWarningForTests,
     ROUTE_OUTCOME_PREFIX,
     ROUTE_OUTCOME_TTL_SECONDS,
     foldRouteOutcomeHashes,
@@ -116,6 +134,9 @@ beforeEach(() => {
     mockStore = new Map();
     mockExecMode = 'ok';
     mockExpireCalls = [];
+    mockPartialClient = false;
+    mockPipelineThrows = false;
+    __resetRouteOutcomeWarningForTests();
     jest.clearAllMocks();
 });
 
@@ -239,6 +260,51 @@ describe('recordRouteOutcome', () => {
         const hash = mockStore!.get(routeOutcomeBucketKey(new Date()));
         // Tenant slug collapsed by normalizeRoute before it is ever stored.
         expect(hash?.get(`400|POST ${LEADS}`)).toBe(1);
+    });
+
+    it('degrades QUIETLY when the client is a partial double with no pipeline', async () => {
+        // `void expr` discards a RESULT; it catches nothing, so
+        // `redis.pipeline()` on a client without that method throws
+        // SYNCHRONOUSLY — out of `recordRequestMetrics`, out of
+        // `withApiErrorHandling`, and into the response. That is not
+        // hypothetical: it took out seven existing route suites in CI
+        // (`TypeError: redis.pipeline is not a function`), because those
+        // suites stub `@/lib/redis` with only the methods they use.
+        //
+        // A partial client is therefore the ORDINARY case, not a fault: it
+        // must degrade silently, without a per-request warn.
+        mockPartialClient = true;
+        const { recordRequestMetrics } = require('@/lib/observability/metrics');
+
+        expect(() =>
+            recordRequestMetrics({ method: 'POST', route: '/api/x', status: 400, durationMs: 1 }),
+        ).not.toThrow();
+        expect(() => recordRouteOutcome({ method: 'POST', route: LEADS, status: 400 })).not.toThrow();
+        await flush();
+
+        expect(logger.warn).not.toHaveBeenCalled();
+        expect(mockStore!.size).toBe(0);
+    });
+
+    it('does not let a synchronously throwing client reach the response path', async () => {
+        // The feature-detect above handles the shape we know about; this
+        // covers every other synchronous throw a client can produce.
+        mockPipelineThrows = true;
+        const { recordRequestMetrics } = require('@/lib/observability/metrics');
+
+        expect(() =>
+            recordRequestMetrics({ method: 'POST', route: '/api/x', status: 400, durationMs: 1 }),
+        ).not.toThrow();
+        expect(() => recordRouteOutcome({ method: 'POST', route: LEADS, status: 400 })).not.toThrow();
+        await flush();
+
+        // A wrong-shaped client is a STATIC condition ⇒ one line per
+        // process, not one per request.
+        const unavailable = (logger.warn as jest.Mock).mock.calls.filter(
+            (c: unknown[]) =>
+                c[0] === 'route-outcome counter unavailable — request outcomes are not being recorded',
+        );
+        expect(unavailable).toHaveLength(1);
     });
 
     it('never rejects into the request path when Redis fails', async () => {
