@@ -100,26 +100,31 @@ export function AskInsuranceModal({
 
     return (
         <>
-            {sent ? (
-                // A disabled control with no explanation is what sent the
-                // operator back into the modal in the first place. Say why,
-                // and keep it reachable — `disabled` drops an element out of
-                // the tab order, putting the reason out of reach of exactly
-                // the users most likely to need it.
-                <Tooltip content={t('alreadySent')}>
-                    <span
-                        className="inline-flex cursor-default items-center rounded-md border border-border-subtle px-3 py-1.5 text-sm text-content-muted"
-                        tabIndex={0}
-                        role="note"
-                    >
-                        {t('sent')}
-                    </span>
-                </Tooltip>
-            ) : (
+            {/*
+              * The control stays ACTIVE after a request, because a parcel may
+              * now carry several asks: the unique on
+              * (parcelId, inquirerTenantId) was dropped so a farmer can
+              * re-ask with a corrected land size.
+              *
+              * It previously became a non-interactive note here. That was
+              * right when a second POST would 409 — and is wrong now, because
+              * it would make the re-ask the schema change exists to permit
+              * unreachable from the UI. The note remains beside the button
+              * rather than replacing it: the farmer should know they have
+              * asked before, and still be able to ask again.
+              */}
+            <span className="inline-flex items-center gap-tight">
                 <Button variant="secondary" size="sm" type="button" onClick={() => setOpen(true)}>
-                    {t('open')}
+                    {sent ? t('askAgain') : t('open')}
                 </Button>
-            )}
+                {sent ? (
+                    <Tooltip content={t('alreadySent')}>
+                        <span className="text-xs text-content-muted" tabIndex={0} role="note">
+                            {t('sent')}
+                        </span>
+                    </Tooltip>
+                ) : null}
+            </span>
             <Modal
                 showModal={open}
                 // Every close path clears the draft, not just Cancel: the

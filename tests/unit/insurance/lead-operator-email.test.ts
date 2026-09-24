@@ -51,12 +51,15 @@ const INPUT = { parcelId: 'p1', locationId: 'l1', message: 'Интересува
 beforeEach(() => {
     jest.clearAllMocks();
     envMock.INSURANCE_LEAD_NOTIFY_EMAIL = 'ops@example.test';
-    mockDb.insuranceLead.create.mockResolvedValue({ id: 'lead-1' });
+    mockDb.insuranceLead.create.mockResolvedValue({ id: CREATED_LEAD_ID });
     mockDb.tenant.findUnique.mockResolvedValue({ name: 'Агрент', slug: 'agrent' });
     mockDb.parcel.findFirst.mockResolvedValue({
         name: '15655-19', cropType: 'wheat', areaHa: 12.4, location: { name: 'Северен блок' },
     });
 });
+
+/** The id the create returns — what the operator mail must be deduped on. */
+const CREATED_LEAD_ID = 'lead-1';
 
 describe('the operator copy', () => {
     it('is enqueued with the PLATFORM audience', async () => {
@@ -88,6 +91,27 @@ describe('the operator copy', () => {
             areaHa: 12.4,
             message: 'Интересува ме оферта',
         });
+    });
+});
+
+describe('the mail is deduped on the LEAD, not the parcel', () => {
+    it('passes the created lead id as the dedupe entity', async () => {
+        // `buildDedupeKey` composes `tenant:type:email:entityId:DAY`, and
+        // `enqueueEmail` SILENTLY skips a duplicate key. Keying on the parcel
+        // meant a second ask for the same parcel on the same day wrote an
+        // InsuranceLead row and sent NO mail.
+        //
+        // That was harmless while the unique on (parcelId, inquirerTenantId)
+        // made a second ask impossible. The moment repeat asks were allowed —
+        // so a farmer could correct their land size — it became the defect
+        // that eats precisely the message the operator needs: the corrected
+        // figure, sent the same afternoon as the first.
+        await createInsuranceLead(CTX, INPUT);
+        const [, input] = enqueueEmail.mock.calls[0] as unknown as [unknown, Record<string, unknown>];
+        expect(input.entityId).toBe(CREATED_LEAD_ID);
+        // The parcel id is what it must NOT be — asserted by name, because
+        // "some string" would pass either way.
+        expect(input.entityId).not.toBe(INPUT.parcelId);
     });
 });
 

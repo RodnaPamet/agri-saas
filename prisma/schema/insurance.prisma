@@ -19,7 +19,23 @@ model InsuranceLead {
   status           String   @default("PENDING")
   createdAt        DateTime @default(now())
 
-  @@unique([parcelId, inquirerTenantId])
+  /// NO unique on (parcelId, inquirerTenantId).
+  ///
+  /// There was one until 2026-09-24, making an ask once-only per parcel with
+  /// no withdraw and no edit — a second POST 409'd. The owner chose to allow
+  /// several asks so a farmer can re-ask with a corrected land size, which the
+  /// insurance form now collects.
+  ///
+  /// The cost of that choice is the operator's: a parcel can generate repeat
+  /// leads that have to be reconciled by hand. It is deliberate, and the
+  /// alternative (editing a lead in place) was rejected because a revision to
+  /// a record already actioned is worse than a second record.
+  ///
+  /// `listInquiredParcelIds` still reports which parcels have been asked
+  /// about, but it is now INFORMATIONAL — clients must not use it to disable
+  /// the control, or re-asking is impossible.
+  /// The access path the dropped unique used to provide.
+  @@index([parcelId, inquirerTenantId])
   @@index([inquirerTenantId])
   @@index([parcelId])
 }
