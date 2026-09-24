@@ -821,6 +821,80 @@ exports[`API contract — per-schema snapshots schema: CreateInsuranceLeadReques
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: CreateParcelCropSeason 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "year": {
+      "type": "integer",
+      "example": 2024
+    },
+    "cropType": {
+      "type": "string",
+      "minLength": 1,
+      "example": "Wheat"
+    },
+    "sownAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "harvestedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "notes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "year",
+    "cropType"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: CreateParcelWeedObservation 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "observedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "weeds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "example": [
+        "Sorghum halepense",
+        "някакъв друг плевел"
+      ]
+    },
+    "notes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "observedAt",
+    "weeds"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: CurrentUser 1`] = `
 "{
   "type": "object",
@@ -3895,6 +3969,50 @@ exports[`API contract — per-schema snapshots schema: ParcelCreated 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: ParcelCropSeason 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "year": {
+      "type": "integer"
+    },
+    "cropType": {
+      "type": "string"
+    },
+    "sownAt": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "harvestedAt": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "notes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "year",
+    "cropType",
+    "sownAt",
+    "harvestedAt",
+    "notes"
+  ],
+  "description": "\`year\` is the HARVEST year. Do not derive it from \`sownAt\`: wheat sown in October 2025 is the 2026 harvest, so deriving would misfile most autumn cropping by one year. \`sownAt\` is optional — a back-filled season is often remembered without the drilling date."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: ParcelGeo 1`] = `
 "{
   "type": "object",
@@ -3995,6 +4113,116 @@ exports[`API contract — per-schema snapshots schema: ParcelGeo 1`] = `
   ],
   "additionalProperties": {},
   "description": "A parcel as the map and the parcel list receive it — geometry as GeoJSON plus the soil and land-administration columns. Wider than the \`Parcel\` DTO, which describes the \`LocationDetail\` shape."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ParcelHistory 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "parcel": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "cropType": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "cropType"
+      ]
+    },
+    "cropSeasons": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/ParcelCropSeason"
+      }
+    },
+    "operations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/ParcelHistoryOperation"
+      }
+    },
+    "weedObservations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/ParcelWeedObservation"
+      }
+    }
+  },
+  "required": [
+    "parcel",
+    "cropSeasons",
+    "operations",
+    "weedObservations"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ParcelHistoryOperation 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "taskId": {
+      "type": "string"
+    },
+    "operationType": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "title": {
+      "type": "string"
+    },
+    "completedAt": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "productName": {
+      "type": "string"
+    },
+    "doseValue": {
+      "type": "string"
+    },
+    "doseUnit": {
+      "type": "string"
+    },
+    "targetNote": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "taskId",
+    "operationType",
+    "title",
+    "completedAt",
+    "productName",
+    "doseValue",
+    "doseUnit",
+    "targetNote"
+  ],
+  "description": "A COMPLETED field-operation line for this parcel — the same rows that record a spray or fertiliser application, which is why \\"linked completed tasks\\" and \\"what was applied\\" are one list and not two. Pending lines are absent: a plan is not history. \`doseValue\` is a decimal STRING; parsing it as a float rounds the dose."
 }"
 `;
 
@@ -4515,6 +4743,46 @@ exports[`API contract — per-schema snapshots schema: ParcelUpdated 1`] = `
     "areaHa"
   ],
   "description": "Area only. There is no \`id\` and no echoed parcel — re-read the parcel list if you need the updated row."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ParcelWeedObservation 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "observedAt": {
+      "type": "string"
+    },
+    "weedKeys": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "otherWeeds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "notes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "observedAt",
+    "weedKeys",
+    "otherWeeds",
+    "notes"
+  ],
+  "description": "\`weedKeys\` are catalogue Latin binomials and are the reportable half — group and count on these. \`otherWeeds\` is free text for a species the catalogue does not carry. Render them together; never merge them in storage."
 }"
 `;
 
