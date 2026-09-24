@@ -78,6 +78,11 @@ describe('Static Analysis: No process.env fallbacks', () => {
             // time so a test can flip the bypass without re-importing the
             // module. See src/lib/rate-limit/scimRateLimit.ts.
             if (file.endsWith('scimRateLimit.ts')) continue;
+            // Shared Edge-limiter primitives, extracted from scimRateLimit.ts
+            // when the API-key tier needed the same buckets. `isRateLimitBypassed`
+            // is the bypass predicate the exclusions above describe; it now
+            // lives here and is read at request time for exactly their reason.
+            if (file.endsWith('edge-bucket.ts')) continue;
             // GAP-10 Swagger-UI route gates prod via process.env.NODE_ENV
             // (HARD 404 in production). Same rationale as health/readyz
             // routes above — env.ts snapshot freezes at import time and

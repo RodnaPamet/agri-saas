@@ -74,8 +74,8 @@ so a revival cannot reintroduce the confusion by forgetting an argument.
 | `src/app-layer/context.ts` | gate + required tenant comparison; legacy path removed |
 | `src/app/t/[tenantSlug]/(app)/admin/api-keys/page.tsx` | create affordance hidden; notice added |
 | `docs/enterprise-identity-custom-roles-api-keys.md` | status banner; the request-path section marked unreachable |
-| `tests/guards/api-key-auth-disabled.test.ts` | NEW — the revival ratchet |
-| `tests/unit/api-key-auth-disabled.test.ts` | NEW — executing proof of the disabled path |
+| `tests/guards/api-key-auth-disabled.test.ts` | NEW — the revival ratchet *(renamed `…-enabled` on 2026-09-24 when the ratchet was satisfied and the switch turned on)* |
+| `tests/unit/api-key-auth-disabled.test.ts` | NEW — executing proof of the disabled path *(renamed `…-enabled` on 2026-09-24; now proves the enabled path)* |
 | `tests/guardrails/enterprise-identity-epic.test.ts` | two assertions INVERTED (see below) |
 
 ## Decisions

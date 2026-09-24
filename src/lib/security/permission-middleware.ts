@@ -34,6 +34,11 @@ import type { NextRequest, NextResponse } from 'next/server';
 import type { PermissionSet } from '@/lib/permissions';
 import type { RequestContext } from '@/app-layer/types';
 import { getTenantCtx } from '@/app-layer/context';
+import {
+    enforceApiKeyScope,
+    hasApiKeyScope,
+    scopeActionForPermissionKey,
+} from '@/lib/auth/api-key-auth';
 import { forbidden } from '@/lib/errors/types';
 import { appendAuditEntry } from '@/lib/audit';
 import { logger } from '@/lib/observability/logger';
@@ -221,6 +226,35 @@ export function requirePermission<
                 path: safePath(req),
             });
             throw forbidden('Permission denied');
+        }
+
+        // Scope check, for API-key contexts only (a session holds no scopes
+        // and `hasApiKeyScope` returns true for one).
+        //
+        // This is the FINER of two gates. `getTenantCtx` has already refused
+        // the request unless the key may reach this path family at all; this
+        // asks whether the key may perform the specific permission the route
+        // requires — `admin.manage` needs `admin:write`, not merely `admin:read`.
+        //
+        // It mirrors `checkPermissions`' own mode semantics rather than
+        // demanding every scope: a route satisfied by ANY of its keys must not
+        // require ALL of their scopes, or `requireAnyPermission` would be
+        // stricter for a key than the permission check it wraps.
+        const scopeChecks = keys.map((k) =>
+            hasApiKeyScope(ctx, k.split('.')[0], scopeActionForPermissionKey(k)),
+        );
+        const scopeOk =
+            mode === 'any' ? scopeChecks.some(Boolean) : scopeChecks.every(Boolean);
+        if (!scopeOk) {
+            // Re-run the failing check through `enforceApiKeyScope` so the
+            // refusal carries its message — which names the scope required and
+            // the scopes granted — rather than a bare "permission denied".
+            const failing = keys[scopeChecks.indexOf(false)];
+            enforceApiKeyScope(
+                ctx,
+                failing.split('.')[0],
+                scopeActionForPermissionKey(failing),
+            );
         }
 
         return handler(req, { params }, ctx) as Promise<TResponse>;

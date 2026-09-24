@@ -7,6 +7,8 @@ import {
     isApiReadRateLimited,
 } from '@/lib/rate-limit/apiReadRateLimit';
 import { isScimRateLimited, checkScimRateLimit } from '@/lib/rate-limit/scimRateLimit';
+import { isApiKeyRateLimited, checkApiKeyRateLimit } from '@/lib/rate-limit/apiKeyRateLimit';
+import { API_KEY_AUTH_ENABLED } from '@/lib/auth/api-key-availability';
 import { env } from '@/env';
 import {
     CLIENT_VERSION_HEADER,
@@ -114,6 +116,43 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
             const rl = await checkScimRateLimit(req);
             if (!rl.ok && rl.response) return rl.response;
         }
+        return NextResponse.next();
+    }
+
+    // ── 1b. Tenant API-key carve-out ──
+    //
+    // An `iflk_` key is an opaque token compared against a hash in the
+    // database. The Edge has no database, so it cannot verify one — and
+    // `getToken()` below runs an `Authorization: Bearer` value through
+    // NextAuth's JWE decode, which throws on a non-JWE and 401s the request
+    // before any handler. That is why a tenant API key had never
+    // authenticated a request on any deployment since the feature shipped.
+    //
+    // So this is the same deliberate hole SCIM and the signed webhooks have,
+    // with the same two obligations, both met:
+    //
+    //   - the handler authenticates instead. Every route under `/api/t/`
+    //     reaches `getTenantCtx`, which calls `tryApiKeyAuth` ->
+    //     `verifyApiKey`; `tests/guards/tenant-api-routes-self-authenticate.test.ts`
+    //     is the fail-closed proof, derived from the filesystem so a route
+    //     that does not exist yet is covered the moment it is created.
+    //   - an anonymous caller now reaches a key comparison, so it is
+    //     budgeted. `isApiKeyRateLimited` is the SAME predicate that admits
+    //     the request, deliberately: a limiter narrower than the hole it
+    //     defends is worse than none, and one definition cannot drift.
+    //
+    // Bounded to `/api/t/` and to requests actually presenting an `iflk_`
+    // bearer. Everything else — pages, `/api/admin`, a cookie session, a
+    // native JWE bearer — falls through to `getToken()` unchanged.
+    //
+    // Gated on the feature switch so that while API-key auth is OFF this hole
+    // does not exist at all, rather than existing and being unreachable.
+    if (
+        API_KEY_AUTH_ENABLED &&
+        isApiKeyRateLimited(pathname, req.headers.get('authorization'))
+    ) {
+        const rl = await checkApiKeyRateLimit(req);
+        if (!rl.ok && rl.response) return rl.response;
         return NextResponse.next();
     }
 

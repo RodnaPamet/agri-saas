@@ -6,6 +6,7 @@ import { RequestContext, OrgContext } from './types';
 import { randomUUID } from 'crypto';
 import { mergeRequestContext } from '@/lib/observability/context';
 import {
+    assertApiKeyMayReachPath,
     extractBearerToken,
     isApiKeyToken,
     verifyApiKey,
@@ -42,7 +43,16 @@ export async function getTenantCtx(
     // The URL's slug is passed and COMPARED — see tryApiKeyAuth.
     if (req) {
         const apiKeyCtx = await tryApiKeyAuth(req, params.tenantSlug);
-        if (apiKeyCtx) return apiKeyCtx;
+        if (apiKeyCtx) {
+            // The per-request scope gate. THIS is the enforcement point rather
+            // than `requirePermission`, because only ~23 of the 273 tenant
+            // routes use that wrapper — the rest gate on `assertCanWrite`,
+            // which reads a coarse role derived from the key's scopes and so
+            // grants every resource once any `:write` scope is present.
+            // `getTenantCtx` is the one function all 273 reach.
+            assertApiKeyMayReachPath(apiKeyCtx, new URL(req.url).pathname, req.method);
+            return apiKeyCtx;
+        }
     }
 
     const session = await getSessionOrThrow();
