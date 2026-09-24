@@ -17,8 +17,9 @@
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
+import Link from 'next/link';
 import useSWR from 'swr';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Sheet } from '@/components/ui/sheet';
@@ -475,6 +476,19 @@ export function ParcelDetailSheet({
                     <Sheet.Close asChild>
                         <Button variant="secondary" size="lg">{tc('close')}</Button>
                     </Sheet.Close>
+                    {/*
+                      * The entry point to the parcel archive. The sheet is where
+                      * a farmer already taps a parcel, and the archive is three
+                      * chronological lists — too much for a sheet on a phone, so
+                      * it lives on its own page and is reached from here. A page
+                      * with no link into it is not a feature.
+                      */}
+                    <Link
+                        href={`/t/${tenantSlug}/parcels/${parcel.id}`}
+                        className={buttonVariants({ variant: 'secondary', size: 'lg' })}
+                    >
+                        {t('parcelSheet.viewHistory')}
+                    </Link>
                     <Button
                         variant="primary"
                         size="lg"
