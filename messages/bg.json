@@ -5683,7 +5683,9 @@
     "Sunflower": "Слънчоглед",
     "Peas": "Грах",
     "seasonAutumn": "Есенна култура",
-    "seasonSpring": "Пролетна култура"
+    "seasonSpring": "Пролетна култура",
+    "Grass": "Тревна площ",
+    "seasonPerennial": "Многогодишна култура"
   },
   "agStatus": {
     "operation": {

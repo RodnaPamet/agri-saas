@@ -19,7 +19,17 @@ export const CROP_OPTIONS: ComboboxOption<{ season: string }>[] = [
     { value: 'Canola', label: 'Canola', meta: { season: 'Autumn crop' }, separatorAfter: true },
     { value: 'Maize', label: 'Maize', meta: { season: 'Spring crop' } },
     { value: 'Sunflower', label: 'Sunflower', meta: { season: 'Spring crop' } },
-    { value: 'Peas', label: 'Peas', meta: { season: 'Spring crop' } },
+    { value: 'Peas', label: 'Peas', meta: { season: 'Spring crop' }, separatorAfter: true },
+    // Perennial, and NOT filed under either sowing season.
+    //
+    // `Grass` was live on a parcel while absent from this catalogue, so it
+    // rendered as English on a Bulgarian screen — `cropLabel` falls back to the
+    // raw value for anything it has no key for, which is the right behaviour
+    // and was showing its seam. Filing it as an autumn or spring crop to avoid
+    // a third group would have put a false agronomic claim in the picker: a ley
+    // is sown once and stands for years, which is exactly why a farm carries it
+    // as a distinct land use rather than a rotation entry.
+    { value: 'Grass', label: 'Grass', meta: { season: 'Perennial' } },
 ];
 
 /** The set of catalogue crop values, for validating a submitted cropType. */
@@ -40,6 +50,7 @@ export interface CropTranslator {
 const SEASON_KEY: Record<string, string> = {
     'Autumn crop': 'seasonAutumn',
     'Spring crop': 'seasonSpring',
+    Perennial: 'seasonPerennial',
 };
 
 /**
