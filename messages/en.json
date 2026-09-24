@@ -2650,7 +2650,8 @@
         "deleteConfirmTitle": "Delete this parcel?",
         "deleteConfirmBody": "The parcel and its field-operation lines will be removed. This cannot be undone.",
         "deleteConfirmLabel": "Delete parcel",
-        "deleteFailed": "Could not delete the parcel"
+        "deleteFailed": "Could not delete the parcel",
+        "viewHistory": "View history"
       },
       "prescription": {
         "createFailed": "Failed to create job",
@@ -2693,6 +2694,47 @@
         "cadastreValidCount": "{count, plural, one {# valid identifier} other {# valid identifiers}}",
         "cadastreNoValid": "Enter at least one valid identifier (ЕКАТТЕ.масив.номер)."
       }
+    },
+    "parcelHistory": {
+      "title": "History",
+      "breadcrumbParcels": "Parcels",
+      "currentCrop": "Current crop",
+      "noCurrentCrop": "No crop set",
+      "cropsTitle": "Crops by year",
+      "cropsEmpty": "No crop recorded yet. Add the years you remember — the archive is meant to be filled in backwards.",
+      "cropsAdd": "Record a crop",
+      "colYear": "Harvest year",
+      "colCrop": "Crop",
+      "colSown": "Sown",
+      "colHarvested": "Harvested",
+      "opsTitle": "Completed operations",
+      "opsEmpty": "Nothing completed on this parcel yet.",
+      "colDate": "Date",
+      "colOperation": "Operation",
+      "colProduct": "Product",
+      "colDose": "Dose",
+      "weedsTitle": "Weeds identified",
+      "weedsEmpty": "No weed observations recorded.",
+      "weedsAdd": "Record weeds",
+      "colObserved": "Observed",
+      "colWeeds": "Weeds",
+      "fieldYear": "Harvest year",
+      "fieldYearHint": "An autumn-sown crop belongs to the FOLLOWING year's harvest.",
+      "fieldCrop": "Crop",
+      "fieldSown": "Sown on",
+      "fieldHarvested": "Harvested on",
+      "fieldObserved": "Observed on",
+      "fieldWeeds": "Weeds",
+      "fieldWeedsHint": "Pick from the list, or type a species it does not carry.",
+      "fieldNotes": "Notes",
+      "save": "Save",
+      "cancel": "Cancel",
+      "remove": "Remove",
+      "removeCropTitle": "Remove this crop record?",
+      "removeWeedTitle": "Remove this observation?",
+      "removeBody": "It will no longer appear in the archive.",
+      "saveFailed": "Could not save. Please try again.",
+      "otherWeed": "Other"
     }
   },
   "evidenceForm": {

@@ -40,6 +40,11 @@ interface Adopter {
  *   2. references `<EntityDetailLayout` somewhere (rendered tag).
  */
 const ADOPTED_PAGES: ReadonlyArray<Adopter> = [
+  // Parcel history (the archive) — a NEW detail page; /parcels had no
+  // [parcelId] route at all before. Registered against the page itself, which
+  // is where the shell is mounted: it is a client component that fetches its
+  // own data, so there is no separate server page to point at.
+  { page: "src/app/t/[tenantSlug]/(app)/parcels/[parcelId]/page.tsx", entity: "Parcel" },
   // Certification scheme detail (schemes roadmap PR2) — a NEW detail page;
   // /schemes previously had no [schemeKey] route at all. Registered against
   // the CLIENT, which is where the shell is mounted; the server page only
