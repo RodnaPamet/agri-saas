@@ -5683,7 +5683,9 @@
     "Sunflower": "Sunflower",
     "Peas": "Peas",
     "seasonAutumn": "Autumn crop",
-    "seasonSpring": "Spring crop"
+    "seasonSpring": "Spring crop",
+    "Grass": "Grass",
+    "seasonPerennial": "Perennial"
   },
   "agStatus": {
     "operation": {
