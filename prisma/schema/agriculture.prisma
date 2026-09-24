@@ -458,6 +458,8 @@ model Parcel {
   plantings      Planting[]
   cropPlans      CropPlan[]
   leases         ParcelLease[]
+  cropSeasons      ParcelCropSeason[]
+  weedObservations ParcelWeedObservation[]
   costEntryAllocations CostEntryAllocationParcel[]
 
   @@unique([id, tenantId])
@@ -512,6 +514,105 @@ model ParcelLease {
   // Rent-roll / expiry scans (3/3): leases ending within a window, per tenant.
   @@index([tenantId, endDate])
   costEntries CostEntry[]
+}
+
+/// What was sown in a parcel, per year — the archive.
+///
+/// ## Why this is not derivable
+///
+/// `Parcel.cropType` is a SINGLE string, overwritten whenever the crop
+/// changes, so last year's crop is destroyed the moment this year's is set,
+/// and no year is attached to it. Nothing recorded what a parcel grew before
+/// today: the `Season -> CropPlan -> Planting` chain looks like it would
+/// serve, and even carries `CropPlan.parcelId`, but production holds one row
+/// of each, all flagged `isSampleData`, and that `parcelId` has never been set
+/// on a real row.
+///
+/// ## Why `year` is stored rather than derived from `sownAt`
+///
+/// An autumn-sown crop is sown in the PRECEDING calendar year — wheat sown in
+/// October 2025 is the 2026 harvest. Deriving the year from the sowing date
+/// would file half of Bulgarian arable cropping under the wrong year, and that
+/// half is most of what this product is for. `year` is the HARVEST year;
+/// `sownAt` is optional and may precede it.
+///
+/// ## Why (parcelId, year) is NOT unique
+///
+/// A second or catch crop after an early harvest is ordinary practice. A
+/// unique constraint would refuse a real record in order to prevent a
+/// duplicate one, and refusing the farmer's truth is the worse failure.
+/// Duplicates are surfaced in the UI rather than forbidden in the schema.
+///
+/// `cropType` is a free string, deliberately, and NOT validated against
+/// `CROP_OPTIONS`: production already holds `Grass`, which that catalogue does
+/// not contain, so strict validation would make the live data un-backfillable
+/// on the day this shipped. The picker offers the catalogue; the column
+/// accepts what the farm actually grew.
+model ParcelCropSeason {
+  id              String    @id @default(cuid())
+  tenantId        String
+  parcelId        String
+  /// HARVEST year. See the docblock — not derivable from `sownAt`.
+  year            Int
+  cropType        String
+  sownAt          DateTime?
+  harvestedAt     DateTime?
+  notes           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  createdByUserId String?
+  deletedAt       DateTime?
+  deletedByUserId String?
+  retentionUntil  DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parcel Parcel @relation(fields: [parcelId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  /// Cross-tenant row barrier, per the repo convention.
+  @@unique([id, tenantId])
+  /// The archive read: one parcel, newest year first.
+  @@index([tenantId, parcelId, year])
+  /// "Which parcels grew wheat in 2024" — rotation questions across the farm.
+  @@index([tenantId, year, cropType])
+}
+
+/// Weeds identified in a parcel on a date.
+///
+/// Two lists rather than one: `weedKeys` holds catalogue keys from
+/// `WEED_OPTIONS`, `otherWeeds` holds free text for a species the catalogue
+/// does not carry. Keeping them apart is what makes the catalogue half
+/// reportable — "which parcels had Sorghum halepense across five years" is a
+/// `has` query on an array, and cannot be answered once a controlled key and
+/// someone's spelling share a column.
+///
+/// Scalar string arrays rather than a child table: the question asked of this
+/// data is "which weeds were seen", never "tell me about this one sighting",
+/// so a row per sighting would add a join and a model for nothing. They are
+/// non-nullable with a `[]` default — Prisma cannot make a scalar list
+/// nullable, and an empty list is the honest representation of "looked, found
+/// none" in any case.
+model ParcelWeedObservation {
+  id              String    @id @default(cuid())
+  tenantId        String
+  parcelId        String
+  observedAt      DateTime
+  /// Catalogue keys from `src/lib/agriculture/weed-options.ts`.
+  weedKeys        String[]  @default([])
+  /// Free-text species the catalogue does not carry.
+  otherWeeds      String[]  @default([])
+  notes           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  createdByUserId String?
+  deletedAt       DateTime?
+  deletedByUserId String?
+  retentionUntil  DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parcel Parcel @relation(fields: [parcelId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([id, tenantId])
+  @@index([tenantId, parcelId, observedAt])
 }
 
 /// Rent actually PAID against a lease, per season. The lease carries the
