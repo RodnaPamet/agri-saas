@@ -6251,5 +6251,22 @@
       "low": "Low",
       "wet": "Wet"
     }
+  },
+  "weeds": {
+    "Sorghum halepense": "Johnson grass",
+    "Echinochloa crus-galli": "Barnyard grass",
+    "Setaria viridis": "Green foxtail",
+    "Avena fatua": "Wild oat",
+    "Cynodon dactylon": "Bermuda grass",
+    "Cirsium arvense": "Creeping thistle",
+    "Convolvulus arvensis": "Field bindweed",
+    "Chenopodium album": "Fat hen",
+    "Amaranthus retroflexus": "Redroot pigweed",
+    "Sinapis arvensis": "Charlock",
+    "Raphanus raphanistrum": "Wild radish",
+    "Papaver rhoeas": "Common poppy",
+    "Galium aparine": "Cleavers",
+    "groupGrass": "Grass weed",
+    "groupBroadleaf": "Broadleaf weed"
   }
 }

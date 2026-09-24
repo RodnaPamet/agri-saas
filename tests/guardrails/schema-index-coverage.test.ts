@@ -268,6 +268,25 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
         justification:
             'The category facet applied to that same sort — the only facet the list ships (a date facet needs a filter type that does not exist yet).',
     },
+    // ── Parcel history (the archive) ─────────────────────────────────
+    {
+        model: 'ParcelCropSeason',
+        fields: ['tenantId', 'parcelId', 'year'],
+        justification:
+            "getParcelHistory reads one parcel's archive newest-harvest-first. `year` is the sort key and follows the parcel filter, so it leads the non-tenant half after `parcelId`.",
+    },
+    {
+        model: 'ParcelCropSeason',
+        fields: ['tenantId', 'year', 'cropType'],
+        justification:
+            'The rotation question across the farm — which parcels grew what in a given year. Sorted by year first because that is the filter; cropType is the grouping.',
+    },
+    {
+        model: 'ParcelWeedObservation',
+        fields: ['tenantId', 'parcelId', 'observedAt'],
+        justification:
+            "getParcelHistory reads one parcel's observations newest-first. Same shape as the crop archive above, with the observation date as the sort key.",
+    },
     // ── Asset (machine register, since the Equipment merge) ─────────
     {
         model: 'Asset',

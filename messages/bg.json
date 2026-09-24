@@ -6251,5 +6251,22 @@
       "low": "Ниска",
       "wet": "Влажно"
     }
+  },
+  "weeds": {
+    "Sorghum halepense": "Балур",
+    "Echinochloa crus-galli": "Кокоше просо",
+    "Setaria viridis": "Зелена кощрява",
+    "Avena fatua": "Див овес",
+    "Cynodon dactylon": "Троскот",
+    "Cirsium arvense": "Паламида",
+    "Convolvulus arvensis": "Полска поветица",
+    "Chenopodium album": "Бяла лобода",
+    "Amaranthus retroflexus": "Обикновен щир",
+    "Sinapis arvensis": "Полски синап",
+    "Raphanus raphanistrum": "Дива ряпа",
+    "Papaver rhoeas": "Полски мак",
+    "Galium aparine": "Лепка",
+    "groupGrass": "Житен плевел",
+    "groupBroadleaf": "Широколистен плевел"
   }
 }
