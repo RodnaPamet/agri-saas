@@ -3927,6 +3927,8 @@
       "moduleDisabledNotice": "The Exchange is switched off for your farm, so these offers are hidden from other farms. You can still withdraw them here."
     },
     "messaging": {
+      "messageSeller": "Message the seller",
+      "openFailed": "The conversation could not be opened.",
       "metaRole": "Your side",
       "metaStatus": "Status",
       "open": "Open",

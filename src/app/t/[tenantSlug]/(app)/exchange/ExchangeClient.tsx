@@ -22,7 +22,7 @@
  *     "View details") opens the detail Sheet.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
 import {
@@ -46,7 +46,7 @@ import { ErrorState } from '@/components/ui/error-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/cn';
 import { useTenantHref, useTenantApiUrl } from '@/lib/tenant-context-provider';
-import { apiGet } from '@/lib/api-client';
+import { apiGet, apiPost } from '@/lib/api-client';
 import { formatDate } from '@/lib/format-date';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { localizedRegionName } from '@/lib/geo/bulgaria-regions';
@@ -121,6 +121,7 @@ function SideDot({ side }: { side: 'SELL' | 'BUY' }) {
 
 function ExchangeInner() {
     const t = useTranslations('exchange.client');
+    const tMsg = useTranslations('exchange.messaging');
     const tFilters = useTranslations('exchangeFilters');
     // Commodity labels already exist for all 15 slugs in both locales under
     // `trends.commodities` — the Exchange just never consumed them, so a
@@ -279,6 +280,8 @@ function ExchangeInner() {
     // effect below, which only performs the standalone fetch.
     const [selectedId, setSelectedId] = useState<string | null>(deepLinkId);
     const [createOpen, setCreateOpen] = useState(false);
+    const [openingThread, setOpeningThread] = useState(false);
+    const [openThreadFailed, setOpenThreadFailed] = useState(false);
     const [inquiryOpen, setInquiryOpen] = useState(false);
     // If the deep-linked listing isn't on the loaded page, fetch it standalone
     // (GET /exchange/listings/<id>) so the Sheet can render it.
@@ -312,6 +315,34 @@ function ExchangeInner() {
     // fully enabled "Express interest" button whose only possible outcome was
     // a 400 from the state machine.
     const selectedIsOpen = selectedOffer?.status === 'ACTIVE';
+
+    const router = useRouter();
+    /**
+     * Open (or re-open) the conversation on this listing and go to it.
+     *
+     * Deliberately NOT gated on `selectedIsOpen`, unlike express-interest
+     * beside it. The server applies no listing-status rule here and the call
+     * is idempotent — it returns the EXISTING thread when there is one — so
+     * this button doubles as "back to our conversation". Disabling it on a
+     * closed listing would be a second, weaker gate the server does not have,
+     * and would strand a buyer inside a conversation they had already started.
+     */
+    const openThread = useCallback(async (listingId: string) => {
+        setOpeningThread(true);
+        setOpenThreadFailed(false);
+        try {
+            const res = await apiPost<{ id: string; created: boolean }>(
+                buildApiUrl(`/exchange/listings/${listingId}/thread`),
+                {},
+            );
+            router.push(tenantHref(`/exchange/threads/${res.id}`));
+        } catch {
+            setOpenThreadFailed(true);
+            setOpeningThread(false);
+        }
+        // No `finally`: on success this component is navigating away, and
+        // clearing the spinner first would flash the idle button mid-exit.
+    }, [buildApiUrl, router, tenantHref]);
 
     return (
         <ListPageShell>
@@ -608,6 +639,18 @@ function ExchangeInner() {
                                     </Button>
                                     {!selectedIsOpen && (
                                         <p className="text-xs text-content-muted">{t('closedToInterest')}</p>
+                                    )}
+                                    <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        className="w-full"
+                                        loading={openingThread}
+                                        onClick={() => { void openThread(selectedOffer.id); }}
+                                    >
+                                        {tMsg('messageSeller')}
+                                    </Button>
+                                    {openThreadFailed && (
+                                        <p className="text-xs text-content-danger">{tMsg('openFailed')}</p>
                                     )}
                                 </div>
                             )}
