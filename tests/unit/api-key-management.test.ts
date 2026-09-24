@@ -12,6 +12,7 @@
  * 8. Resource wildcard scopes work
  */
 import { getPermissionsForRole } from '@/lib/permissions';
+import { API_KEY_SCOPE_FAMILIES } from '@/lib/auth/api-key-scope';
 import type { RequestContext } from '@/app-layer/types';
 import type { Role } from '@prisma/client';
 
@@ -119,19 +120,37 @@ describe('API Key Scopes — Validation', () => {
         }
     });
 
-    it('VALID_SCOPES contains expected scopes', () => {
+    it('VALID_SCOPES still contains every scope a key was ever issued with', () => {
+        // Backward compatibility, asserted explicitly. The vocabulary widened
+        // from four resources to one per tenant-API path family when API-key
+        // auth was enabled; all four originals ARE path families, so this is a
+        // strict superset and no issued key changed meaning. Dropping one
+        // would silently revoke live credentials.
         expect(VALID_SCOPES).toContain('*');
-        expect(VALID_SCOPES).toContain('tasks:read');
-        expect(VALID_SCOPES).toContain('tasks:write');
-        expect(VALID_SCOPES).toContain('tasks:*');
-        expect(VALID_SCOPES).toContain('evidence:read');
-        expect(VALID_SCOPES).toContain('admin:write');
-        // Post-teardown truth: the scope vocabulary spans exactly the
-        // four surviving M2M resources.
-        expect(VALID_SCOPES).not.toContain('practices:read');
+        for (const legacy of ['admin', 'evidence', 'reports', 'tasks']) {
+            expect(VALID_SCOPES).toContain(`${legacy}:read`);
+            expect(VALID_SCOPES).toContain(`${legacy}:write`);
+            expect(VALID_SCOPES).toContain(`${legacy}:*`);
+        }
+    });
+
+    it('the scope vocabulary is exactly the scopable path families', () => {
+        // This replaced a hard-coded four-name list. The resource IS the first
+        // path segment after /api/t/<slug>/, so the vocabulary has one source
+        // of truth and cannot drift from the routes it gates — which is what
+        // `tests/guards/api-key-scope-families.test.ts` keeps true against the
+        // filesystem.
         expect(
             [...new Set(VALID_SCOPES.filter(s => s !== '*').map(s => s.split(':')[0]))].sort(),
-        ).toEqual(['admin', 'evidence', 'reports', 'tasks']);
+        ).toEqual([...API_KEY_SCOPE_FAMILIES].sort());
+    });
+
+    it('a resource that is not a path family is not a scope', () => {
+        // `practices` left with the GRC teardown and is not a route family, so
+        // no scope can name it. The negative keeps the generated vocabulary
+        // honest: a generator that emitted everything would pass the test above.
+        expect(VALID_SCOPES).not.toContain('practices:read');
+        expect(VALID_SCOPES).not.toContain('nonexistent:write');
     });
 });
 

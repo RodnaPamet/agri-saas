@@ -343,6 +343,23 @@ if (files.length === 0) {
     console.error('usage: selector-teeth.mjs [--json] <file.test.ts> [...]');
     process.exit(2);
 }
+// A path that no longer exists is not an audit failure — it is a file the
+// caller's diff still names. CI hands us `git diff --name-only`, which includes
+// DELETIONS, so a PR that deletes or renames a guard used to kill this tool
+// with an ENOENT stack trace from readFileSync. The workflow now filters those
+// out; this refuses them by name as well, so a hand invocation says which file
+// is missing instead of printing a stack.
+const missing = files.filter((f) => !existsSync(f));
+if (missing.length > 0) {
+    console.error(
+        'selector-teeth: these paths do not exist and cannot be audited:\n' +
+            missing.map((f) => `  ${f}`).join('\n') +
+            '\n\nIf they came from a `git diff --name-only`, add `--diff-filter=d`' +
+            ' so deletions are excluded.',
+    );
+    process.exit(2);
+}
+
 const results = files.map(auditFile);
 const baseline = loadBaseline();
 

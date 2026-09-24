@@ -282,7 +282,20 @@ jobs:
           # which is part of why it stayed hidden.
           # tests/guards/selector-teeth-audits-every-guard-dir.test.ts fails
           # if a guard directory exists that this pathspec does not cover.
-          mapfile -t ALL < <(git diff --name-only "${BASE}" HEAD -- 'tests/guards/*.test.ts' 'tests/guardrails/*.test.ts')
+          # `--diff-filter=d` EXCLUDES deletions. Without it a PR that deletes
+          # or RENAMES a guard hands the tool a path that no longer exists, and
+          # `auditFile` dies on readFileSync with an ENOENT stack trace:
+          #
+          #   Error: ENOENT: no such file or directory, open
+          #   'tests/guards/api-key-auth-disabled.test.ts'
+          #
+          # That is this gate failing for a reason unrelated to selector teeth,
+          # on a change it should have had no opinion about — and the failure
+          # mode is the one this job's own notes warn of, a job that cannot
+          # finish being no gate at all. A deleted guard has no selectors to
+          # audit; the renamed file arrives in the same diff as an addition and
+          # IS audited.
+          mapfile -t ALL < <(git diff --name-only --diff-filter=d "${BASE}" HEAD -- 'tests/guards/*.test.ts' 'tests/guardrails/*.test.ts')
           TOTAL=${#ALL[@]}
           if [ "${TOTAL}" -eq 0 ]; then
             echo "no guard or guardrail files changed in this PR; the control above still ran"
