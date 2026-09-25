@@ -115,10 +115,17 @@ export function registerParcelHistoryPaths(registry: OpenAPIRegistry): void {
             'position to page from. Each list carries its own `…Cursor`, null when that ' +
             'list has no older rows, and you page each independently: a parcel with 200 ' +
             'operations and 3 crop seasons returns a cursor for the operations only.\n\n' +
-            'Cursors are opaque. Note they are base64url of `<sortKey>|<rowId>`, so a ' +
-            'cursor CONTAINS a row id — encoded, not removed. These are internal ids for ' +
-            'the tenant\'s own rows, but a client should not treat "it is a cursor" as ' +
-            'meaning the URL carries no identifiers.',
+            '**Each list defaults to 100 rows** and `limit` applies PER LIST, so a client ' +
+            'knows whether a first page can even be partial before it decides to offer a ' +
+            '"load older" control at all.\n\n' +
+            '**Cursors are opaque: pass them back verbatim and do not parse them.** They ' +
+            'happen to be base64url of `<sortKey>|<rowId>`, which is stated so nobody ' +
+            'believes a cursor keeps ids out of the URL — it does not, it encodes one. But ' +
+            'the encoding is not a contract: `cropSeasonsCursor` keys on an integer YEAR ' +
+            'while the other two key on timestamps, and a client that parsed and rebuilt ' +
+            'one would paginate on a value the ORDER BY does not use. That skips rows ' +
+            'silently, which reads as a short archive rather than an error — and a short ' +
+            'archive looks exactly like a young farm.',
         tags: ['Parcel history'],
         params: ParcelParams,
         query: z.object({
