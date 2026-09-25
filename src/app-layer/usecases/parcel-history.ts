@@ -27,6 +27,10 @@ import type { RequestContext } from '../types';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
+import {
+    encodeCursor, decodeCursor, keysetBefore,
+    encodeNumericCursor, decodeNumericCursor, keysetBeforeNumeric,
+} from '@/lib/exchange/cursor';
 import { codedBadRequest, codedNotFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { WEED_VALUES } from '@/lib/agriculture/weed-options';
@@ -36,6 +40,13 @@ const MIN_YEAR = 1900;
 /** Two ahead: an autumn-sown crop is recorded for the FOLLOWING harvest year. */
 const YEARS_AHEAD = 2;
 const MAX_CROP_TYPE_LENGTH = 80;
+/**
+ * One page of each list. 100 matches the exchange reads; a parcel's history is
+ * read on a screen, not exported, so a bigger page buys nothing a cursor does
+ * not already give.
+ */
+const DEFAULT_PAGE_SIZE = 100;
+
 const MAX_NOTES_LENGTH = 2000;
 const MAX_OTHER_WEED_LENGTH = 120;
 /** A cap, not a target — it exists so one request cannot store an essay. */
@@ -77,6 +88,14 @@ export interface ParcelHistory {
     cropSeasons: ParcelHistoryCropSeason[];
     operations: ParcelHistoryOperation[];
     weedObservations: ParcelHistoryWeedObservation[];
+    /**
+     * Opaque position of the next OLDER page, PER LIST, or null at the start of
+     * that list. Three cursors because the screen is three sections with three
+     * different sort keys, not one merged stream.
+     */
+    cropSeasonsCursor: string | null;
+    operationsCursor: string | null;
+    weedObservationsCursor: string | null;
 }
 
 /**
@@ -147,18 +166,43 @@ function cleanNotes(notes: string | null | undefined): string | null {
 }
 
 /** The whole timeline for one parcel. */
-export async function getParcelHistory(ctx: RequestContext, parcelId: string): Promise<ParcelHistory> {
+export async function getParcelHistory(
+    ctx: RequestContext,
+    parcelId: string,
+    options: {
+        limit?: number;
+        seasonsBefore?: string | null;
+        operationsBefore?: string | null;
+        weedsBefore?: string | null;
+    } = {},
+): Promise<ParcelHistory> {
     assertCanRead(ctx);
+    // THREE cursors, not one. The screen is three sections with three different
+    // sort keys (harvest year, completion date, observation date), not a single
+    // merged stream — so there is no one position to page from, and pretending
+    // otherwise would mean merging three orders server-side to serve a client
+    // that immediately splits them again.
+    const limit = Math.min(Math.max(options.limit ?? DEFAULT_PAGE_SIZE, 1), DEFAULT_PAGE_SIZE);
+    const seasonsCur = decodeNumericCursor(options.seasonsBefore);
+    const operationsCur = decodeCursor(options.operationsBefore);
+    const weedsCur = decodeCursor(options.weedsBefore);
+
     return runInTenantContext(ctx, async (db) => {
         const parcel = await requireParcel(db, ctx, parcelId);
 
         const [cropSeasons, operationLines, weedObservations] = await Promise.all([
             db.parcelCropSeason.findMany({
-                where: { tenantId: ctx.tenantId, parcelId, deletedAt: null },
-                // Newest harvest first; `createdAt` breaks the tie so a second
-                // crop in the same year has a stable position rather than one
-                // the query plan decides.
-                orderBy: [{ year: 'desc' }, { createdAt: 'desc' }],
+                where: {
+                    tenantId: ctx.tenantId, parcelId, deletedAt: null,
+                    ...(seasonsCur ? keysetBeforeNumeric(seasonsCur, 'year') : {}),
+                },
+                // Newest harvest first, `id` breaking the tie. The tiebreak was
+                // `createdAt` before pagination existed, which was fine as a
+                // stable display order but cannot be a cursor key: two seasons
+                // created in the same millisecond would straddle a page
+                // boundary. `id` is unique, so the order is total.
+                orderBy: [{ year: 'desc' }, { id: 'desc' }],
+                take: limit + 1,
                 select: {
                     id: true, year: true, cropType: true,
                     sownAt: true, harvestedAt: true, notes: true,
@@ -166,8 +210,12 @@ export async function getParcelHistory(ctx: RequestContext, parcelId: string): P
             }),
             db.operationParcel.findMany({
                 // DONE only: a PENDING line is a plan, not history.
-                where: { tenantId: ctx.tenantId, parcelId, status: 'DONE' },
-                orderBy: [{ completedAt: 'desc' }],
+                where: {
+                    tenantId: ctx.tenantId, parcelId, status: 'DONE',
+                    ...(operationsCur ? keysetBefore(operationsCur, 'completedAt') : {}),
+                },
+                orderBy: [{ completedAt: 'desc' }, { id: 'desc' }],
+                take: limit + 1,
                 select: {
                     id: true,
                     taskId: true,
@@ -180,8 +228,12 @@ export async function getParcelHistory(ctx: RequestContext, parcelId: string): P
                 },
             }),
             db.parcelWeedObservation.findMany({
-                where: { tenantId: ctx.tenantId, parcelId, deletedAt: null },
-                orderBy: [{ observedAt: 'desc' }],
+                where: {
+                    tenantId: ctx.tenantId, parcelId, deletedAt: null,
+                    ...(weedsCur ? keysetBefore(weedsCur, 'observedAt') : {}),
+                },
+                orderBy: [{ observedAt: 'desc' }, { id: 'desc' }],
+                take: limit + 1,
                 select: {
                     id: true, observedAt: true,
                     weedKeys: true, otherWeeds: true, notes: true,
@@ -189,10 +241,41 @@ export async function getParcelHistory(ctx: RequestContext, parcelId: string): P
             }),
         ]);
 
+        // Trim the over-fetched row and derive each cursor from the OLDEST row
+        // of its own page. Done per list because each has its own key.
+        const seasonsMore = cropSeasons.length > limit;
+        const seasonsPage = seasonsMore ? cropSeasons.slice(0, limit) : cropSeasons;
+        const opsMore = operationLines.length > limit;
+        const opsPage = opsMore ? operationLines.slice(0, limit) : operationLines;
+        const weedsMore = weedObservations.length > limit;
+        const weedsPage = weedsMore ? weedObservations.slice(0, limit) : weedObservations;
+
+        const lastSeason = seasonsPage.at(-1);
+        const lastOp = opsPage.at(-1);
+        const lastWeed = weedsPage.at(-1);
+
         return {
             parcel,
-            cropSeasons,
-            operations: operationLines.map((line) => ({
+            cropSeasons: seasonsPage,
+            cropSeasonsCursor:
+                seasonsMore && lastSeason
+                    ? encodeNumericCursor({ n: lastSeason.year, id: lastSeason.id })
+                    : null,
+            // `completedAt` is nullable on the column but NOT for a DONE line —
+            // the write path sets it for any non-PENDING status, and the query
+            // above filters to DONE. Guarded rather than asserted with `!`: if
+            // that invariant ever breaks, the page simply reports no more rows
+            // instead of encoding a cursor on `null` and paginating into
+            // nothing.
+            operationsCursor:
+                opsMore && lastOp?.completedAt
+                    ? encodeCursor({ at: lastOp.completedAt, id: lastOp.id })
+                    : null,
+            weedObservationsCursor:
+                weedsMore && lastWeed
+                    ? encodeCursor({ at: lastWeed.observedAt, id: lastWeed.id })
+                    : null,
+            operations: opsPage.map((line) => ({
                 id: line.id,
                 taskId: line.taskId,
                 operationType: line.task?.operationType ?? null,
@@ -205,7 +288,7 @@ export async function getParcelHistory(ctx: RequestContext, parcelId: string): P
                 doseUnit: line.doseUnit?.symbol ?? '',
                 targetNote: line.targetNote,
             })),
-            weedObservations,
+            weedObservations: weedsPage,
         };
     });
 }

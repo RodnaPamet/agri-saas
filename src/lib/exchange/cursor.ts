@@ -69,11 +69,66 @@ export function decodeCursor(raw: string | null | undefined): Cursor | null {
  * comparison because Prisma has no row-value syntax, and getting this wrong in
  * the obvious way — `at: { lt }` alone — is what drops the tied rows.
  */
-export function keysetBefore(cursor: Cursor, field: 'lastMessageAt' | 'createdAt') {
+/**
+ * The field names are enumerated rather than typed `string` so a typo cannot
+ * silently build a predicate on a column the ORDER BY does not use — which
+ * returns wrong rows rather than failing.
+ */
+export type KeysetDateField = 'lastMessageAt' | 'createdAt' | 'completedAt' | 'observedAt';
+
+export function keysetBefore(cursor: Cursor, field: KeysetDateField) {
     return {
         OR: [
             { [field]: { lt: cursor.at } },
             { [field]: cursor.at, id: { lt: cursor.id } },
+        ],
+    };
+}
+
+
+// ─── Numeric first key ────────────────────────────────────────────────
+//
+// `ParcelCropSeason` is ordered by `year` DESC, an integer, not a timestamp.
+// The date functions above cannot express that, and bending them by pretending
+// a year is a date would put a fake January the 1st in the cursor and paginate
+// on a value the ORDER BY does not use — which silently skips rows rather than
+// failing.
+
+export interface NumericCursor {
+    n: number;
+    id: string;
+}
+
+export function encodeNumericCursor(row: { n: number; id: string } | null): string | null {
+    if (!row) return null;
+    return Buffer.from(`${row.n}|${row.id}`, 'utf8').toString('base64url');
+}
+
+/** Same forgiving contract as `decodeCursor`: unusable in, null out. */
+export function decodeNumericCursor(raw: string | null | undefined): NumericCursor | null {
+    if (!raw) return null;
+    let decoded: string;
+    try {
+        decoded = Buffer.from(raw, 'base64url').toString('utf8');
+    } catch {
+        return null;
+    }
+    const sep = decoded.indexOf('|');
+    if (sep <= 0) return null;
+    const n = Number(decoded.slice(0, sep));
+    const id = decoded.slice(sep + 1);
+    // `Number('')` is 0 and `Number('x')` is NaN — both would build a filter
+    // that matches nothing and read as "no more pages".
+    if (!id || !Number.isFinite(n)) return null;
+    return { n, id };
+}
+
+/** Keyset predicate for a DESCENDING `(numericField, id)` order. */
+export function keysetBeforeNumeric(cursor: NumericCursor, field: 'year') {
+    return {
+        OR: [
+            { [field]: { lt: cursor.n } },
+            { [field]: cursor.n, id: { lt: cursor.id } },
         ],
     };
 }

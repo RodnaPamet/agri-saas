@@ -25,8 +25,8 @@ const CropSeason = z
         id: z.string(),
         year: z.number().int(),
         cropType: z.string(),
-        sownAt: z.string().nullable(),
-        harvestedAt: z.string().nullable(),
+        sownAt: z.string().datetime().nullable(),
+        harvestedAt: z.string().datetime().nullable(),
         notes: z.string().nullable(),
     })
     .openapi('ParcelCropSeason', {
@@ -42,8 +42,21 @@ const HistoryOperation = z
         id: z.string(),
         taskId: z.string(),
         operationType: z.string().nullable(),
+        /**
+         * EMPTY STRING when the source relation is absent, never null.
+         *
+         * `title`, `productName` and `doseUnit` are read through optional
+         * relations and collapsed with `?? ''` at the boundary, so an empty
+         * value means "not recorded" and NEVER "unknown". Render nothing
+         * rather than a placeholder, and filter empties out of any
+         * concatenation — an absent unit otherwise leaves a trailing space
+         * that is invisible in a diff and visible in a right-aligned column.
+         *
+         * No schema can express this: `type: string` is all it can say, which
+         * is why it is written here.
+         */
         title: z.string(),
-        completedAt: z.string().nullable(),
+        completedAt: z.string().datetime().nullable(),
         productName: z.string(),
         doseValue: z.string(),
         doseUnit: z.string(),
@@ -55,13 +68,14 @@ const HistoryOperation = z
             'a spray or fertiliser application, which is why "linked completed tasks" and ' +
             '"what was applied" are one list and not two. Pending lines are absent: a plan ' +
             'is not history. `doseValue` is a decimal STRING; parsing it as a float rounds ' +
-            'the dose.',
+            'the dose.' +
+            '\n\n`title`, `productName` and `doseUnit` are EMPTY STRINGS when their source relation is absent, never null — empty means "not recorded", never "unknown". Filter them out of any concatenation rather than rendering a placeholder.',
     });
 
 const WeedObservation = z
     .object({
         id: z.string(),
-        observedAt: z.string(),
+        observedAt: z.string().datetime(),
         weedKeys: z.array(z.string()),
         otherWeeds: z.array(z.string()),
         notes: z.string().nullable(),
@@ -83,6 +97,14 @@ const ParcelHistory = z
         cropSeasons: z.array(CropSeason),
         operations: z.array(HistoryOperation),
         weedObservations: z.array(WeedObservation),
+        /**
+         * Opaque position of the next OLDER page, PER LIST. Null means that
+         * list has nothing older — which is per-list, so two of the three can
+         * be null while the third still pages.
+         */
+        cropSeasonsCursor: z.string().nullable(),
+        operationsCursor: z.string().nullable(),
+        weedObservationsCursor: z.string().nullable(),
     })
     .openapi('ParcelHistory');
 
@@ -99,9 +121,46 @@ export function registerParcelHistoryPaths(registry: OpenAPIRegistry): void {
             'carries no year and no history, which is the reason `cropSeasons` exists. Do ' +
             'not infer this year from it and the rest from the archive; the archive is the ' +
             'record.\n\n' +
-            'ETagged: a parcel grows one crop a season but the screen is revisited often.',
+            'ETagged: a parcel grows one crop a season but the screen is revisited often. ' +
+            'The tag is derived from the BODY, so each page validates separately and a ' +
+            'cached first page is never served for a second.\n\n' +
+            '**Three lists, three cursors.** The sections have three different sort keys — ' +
+            'harvest YEAR, completion date, observation date — so there is no single ' +
+            'position to page from. Each list carries its own `…Cursor`, null when that ' +
+            'list has no older rows, and you page each independently: a parcel with 200 ' +
+            'operations and 3 crop seasons returns a cursor for the operations only.\n\n' +
+            '**Each list defaults to 100 rows** and `limit` applies PER LIST, so a client ' +
+            'knows whether a first page can even be partial before it decides to offer a ' +
+            '"load older" control at all.\n\n' +
+            '**Cursors are opaque: pass them back verbatim and do not parse them.** They ' +
+            'happen to be base64url of `<sortKey>|<rowId>`, which is stated so nobody ' +
+            'believes a cursor keeps ids out of the URL — it does not, it encodes one. But ' +
+            'the encoding is not a contract: `cropSeasonsCursor` keys on an integer YEAR ' +
+            'while the other two key on timestamps, and a client that parsed and rebuilt ' +
+            'one would paginate on a value the ORDER BY does not use. That skips rows ' +
+            'silently, which reads as a short archive rather than an error — and a short ' +
+            'archive looks exactly like a young farm.',
         tags: ['Parcel history'],
         params: ParcelParams,
+        query: z.object({
+            limit: z.coerce.number().int().min(1).max(100).optional().openapi({
+                param: { name: 'limit', in: 'query' },
+                description: 'Page size PER LIST, 1-100. Above the cap it is clamped, not rejected.',
+            }),
+            seasonsBefore: z.string().optional().openapi({
+                param: { name: 'seasonsBefore', in: 'query' },
+                description: 'From a previous response\'s `cropSeasonsCursor`.',
+            }),
+            operationsBefore: z.string().optional().openapi({
+                param: { name: 'operationsBefore', in: 'query' },
+                description: 'From a previous response\'s `operationsCursor`.',
+            }),
+            weedsBefore: z.string().optional().openapi({
+                param: { name: 'weedsBefore', in: 'query' },
+                description: 'From a previous response\'s `weedObservationsCursor`. A stale or ' +
+                    'malformed cursor RESTARTS that list rather than erroring.',
+            }),
+        }),
         success: { status: 200, description: 'The parcel archive.', schema: ParcelHistory },
     });
 
@@ -142,7 +201,12 @@ export function registerParcelHistoryPaths(registry: OpenAPIRegistry): void {
         path: '/api/t/{tenantSlug}/agro/parcels/{parcelId}/crop-seasons/{seasonId}',
         operationId: 'deleteParcelCropSeason',
         summary: 'Remove a crop season',
-        description: 'Soft delete — the row is retained like every other agronomic record.',
+        description:
+            'Soft delete — the row is retained like every other agronomic record, so ids ' +
+            'are never reused.\n\n' +
+            'Deleting one that is ALREADY gone returns **404 `CROP_SEASON_NOT_FOUND`**, not a quiet ' +
+            'success. A retried delete is therefore a 404, and a client should treat that ' +
+            'as the end state it wanted rather than as an error.',
         tags: ['Parcel history'],
         params: ParcelParams.extend({
             seasonId: z.string().openapi({ param: { name: 'seasonId', in: 'path' } }),
@@ -185,7 +249,11 @@ export function registerParcelHistoryPaths(registry: OpenAPIRegistry): void {
         path: '/api/t/{tenantSlug}/agro/parcels/{parcelId}/weed-observations/{observationId}',
         operationId: 'deleteParcelWeedObservation',
         summary: 'Remove a weed observation',
-        description: 'Soft delete.',
+        description:
+            'Soft delete — the row is retained, so ids are never reused.\n\n' +
+            'Deleting one that is ALREADY gone returns **404 `WEED_OBSERVATION_NOT_FOUND`**, ' +
+            'not a quiet success. A retried delete is therefore a 404, and a client should ' +
+            'treat that as the end state it wanted rather than as an error.',
         tags: ['Parcel history'],
         params: ParcelParams.extend({
             observationId: z.string().openapi({ param: { name: 'observationId', in: 'path' } }),
