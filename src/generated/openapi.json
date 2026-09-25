@@ -1529,6 +1529,18 @@
           "listingCommodity": {
             "type": "string"
           },
+          "listingRegionName": {
+            "type": "string"
+          },
+          "listingQuantityTonnes": {
+            "type": "string"
+          },
+          "sellerDisplayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "role": {
             "type": "string",
             "enum": [
@@ -1550,6 +1562,9 @@
           "id",
           "listingId",
           "listingCommodity",
+          "listingRegionName",
+          "listingQuantityTonnes",
+          "sellerDisplayName",
           "role",
           "lastMessageAt",
           "closed",

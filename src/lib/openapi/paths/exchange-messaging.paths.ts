@@ -56,6 +56,16 @@ const ThreadSummary = z
         id: z.string(),
         listingId: z.string(),
         listingCommodity: z.string(),
+        listingRegionName: z.string(),
+        /** Decimal as a STRING, like every quantity on this API. */
+        listingQuantityTonnes: z.string(),
+        /**
+         * The SELLER's published name, or null. Opt-in per listing, so it is
+         * NOT an identity and must not be the only thing a row is scanned by.
+         * Never the counterparty's: on a seller's row the other party is a
+         * buyer, whose identity is behind the inquiry contact-reveal gate.
+         */
+        sellerDisplayName: z.string().nullable(),
         role: z.enum(['seller', 'inquirer']),
         lastMessageAt: z.string(),
         closed: z.boolean(),
