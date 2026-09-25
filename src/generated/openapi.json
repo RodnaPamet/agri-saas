@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "3.50.1",
+    "version": "3.52.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -881,6 +881,664 @@
         ],
         "description": "Whether the cadastre-import tab should be offered."
       },
+      "CalculatorBreakEvenFigures": {
+        "type": "object",
+        "properties": {
+          "breakEvenPricePerTonne": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "marketPricePerTonne": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "currency": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "coverPercent": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "covered": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "uncertainty": {
+            "type": "string",
+            "enum": [
+              "exact",
+              "atLeast",
+              "atMost",
+              "allocated",
+              "partial",
+              "refused"
+            ]
+          },
+          "refusalCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "NO_EXPECTED_TONNAGE",
+              "NO_MARKET_PRICE",
+              null
+            ]
+          }
+        },
+        "required": [
+          "breakEvenPricePerTonne",
+          "marketPricePerTonne",
+          "currency",
+          "coverPercent",
+          "covered",
+          "uncertainty",
+          "refusalCode"
+        ],
+        "description": "Market price against the price that clears cost. covered is null when the comparison cannot be made at all, which is a different claim from false."
+      },
+      "CalculatorCashOutLine": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number"
+          },
+          "categories": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "currency",
+          "amount",
+          "categories"
+        ],
+        "description": "One currency’s worth of money that actually left the bank."
+      },
+      "CalculatorCostSlice": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "labelKey": {
+            "type": "string"
+          },
+          "value": {
+            "type": "number"
+          },
+          "variant": {
+            "type": "string",
+            "enum": [
+              "brand",
+              "success",
+              "warning",
+              "error",
+              "info",
+              "neutral"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "labelKey",
+          "value"
+        ],
+        "description": "One labelled slice of the cost total, composed server-side. labelKey is an i18n key, not a rendered sentence."
+      },
+      "CalculatorData": {
+        "type": "object",
+        "properties": {
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "seasonId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CalculatorRow"
+            }
+          },
+          "farm": {
+            "type": "object",
+            "properties": {
+              "totals": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CalculatorFarmTotal"
+                }
+              },
+              "refusedWithoutCurrency": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "totals",
+              "refusedWithoutCurrency"
+            ]
+          },
+          "exclusions": {
+            "$ref": "#/components/schemas/CalculatorExclusions"
+          },
+          "unvalued": {
+            "type": "object",
+            "properties": {
+              "noUnitCost": {
+                "type": "number"
+              },
+              "unitMismatch": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "noUnitCost",
+              "unitMismatch"
+            ]
+          },
+          "cashOut": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CalculatorCashOutLine"
+            }
+          },
+          "unallocatedToCrop": {
+            "type": "object",
+            "properties": {
+              "amount": {
+                "type": "number"
+              },
+              "areaHa": {
+                "type": "number"
+              },
+              "parcelIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "currencies": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "amount",
+              "areaHa",
+              "parcelIds",
+              "currencies"
+            ]
+          },
+          "imputedLandCharge": {
+            "$ref": "#/components/schemas/CalculatorImputedLandCharge"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "generatedAt",
+          "seasonId",
+          "rows",
+          "farm",
+          "exclusions",
+          "unvalued",
+          "cashOut",
+          "unallocatedToCrop",
+          "imputedLandCharge",
+          "truncated"
+        ],
+        "description": "The grain net-worth calculator’s whole answer. Every figure is a number, string, boolean or array thereof — no Decimal and no Date crosses this boundary. Read `truncated` before trusting a total: when it is true the figures cover only part of the farm. Read `unallocatedToCrop` too — the per-commodity rows are short by exactly that amount, so a client showing only rows displays a cost that shrinks when the farmer changes how it spreads."
+      },
+      "CalculatorExclusionEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ],
+        "description": "One excluded record, carrying the id a deep link needs and a resolved label."
+      },
+      "CalculatorExclusions": {
+        "type": "object",
+        "properties": {
+          "plantingsMissingYieldEstimate": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CalculatorExclusionEntry"
+            }
+          },
+          "plantingsUnknownCommodity": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CalculatorExclusionEntry"
+            }
+          },
+          "lotsUnresolvedUnit": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CalculatorExclusionEntry"
+            }
+          },
+          "lotsUnknownCommodity": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CalculatorExclusionEntry"
+            }
+          },
+          "commoditiesWithNoPrice": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CalculatorExclusionEntry"
+            }
+          },
+          "leasesUnresolvedRent": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CalculatorExclusionEntry"
+            }
+          },
+          "leasesUnattributed": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CalculatorExclusionEntry"
+            }
+          },
+          "leasesProduceRentUnpriced": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CalculatorExclusionEntry"
+            }
+          },
+          "payrollUnattributable": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CalculatorExclusionEntry"
+            }
+          }
+        },
+        "required": [
+          "plantingsMissingYieldEstimate",
+          "plantingsUnknownCommodity",
+          "lotsUnresolvedUnit",
+          "lotsUnknownCommodity",
+          "commoditiesWithNoPrice",
+          "leasesUnresolvedRent",
+          "leasesUnattributed",
+          "leasesProduceRentUnpriced",
+          "payrollUnattributable"
+        ],
+        "description": "Every record left OUT of the figures, by class, each naming the id and a label. This is what makes the totals auditable: a farm can see what was not counted rather than wondering why a number looks low."
+      },
+      "CalculatorFarmTotal": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "standingCropValue": {
+            "type": "number"
+          },
+          "grainOnHandValue": {
+            "type": "number"
+          },
+          "rentCostProduceValue": {
+            "type": "number"
+          },
+          "cashCostTotal": {
+            "type": "number"
+          },
+          "netWorth": {
+            "type": "number"
+          },
+          "refusedCommodities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "uncertainty": {
+            "type": "string",
+            "enum": [
+              "exact",
+              "atLeast",
+              "atMost",
+              "allocated",
+              "partial",
+              "refused"
+            ]
+          }
+        },
+        "required": [
+          "currency",
+          "standingCropValue",
+          "grainOnHandValue",
+          "rentCostProduceValue",
+          "cashCostTotal",
+          "netWorth",
+          "refusedCommodities",
+          "uncertainty"
+        ],
+        "description": "One currency’s farm-level total. refusedCommodities names what is missing from it, so a total is never quietly short."
+      },
+      "CalculatorImputedLandCharge": {
+        "type": "object",
+        "properties": {
+          "perHa": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "areaHa": {
+            "type": "number"
+          },
+          "totalAmount": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "refusalCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "NO_OBSERVED_RENT_RATE",
+              null
+            ]
+          }
+        },
+        "required": [
+          "perHa",
+          "areaHa",
+          "totalAmount",
+          "refusalCode"
+        ],
+        "description": "A rent charge imputed for OWNED land, refused with a reason rather than zeroed when the farm has no money lease to observe a rate from."
+      },
+      "CalculatorPerAreaFigures": {
+        "type": "object",
+        "properties": {
+          "areaDca": {
+            "type": "number"
+          },
+          "standingValuePerDca": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "attributableCostPerDca": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "marginPerDca": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "uncertainty": {
+            "type": "string",
+            "enum": [
+              "exact",
+              "atLeast",
+              "atMost",
+              "allocated",
+              "partial",
+              "refused"
+            ]
+          },
+          "refusalCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "NO_STANDING_CROP_AREA",
+              "NO_STANDING_CROP_VALUE",
+              null
+            ]
+          }
+        },
+        "required": [
+          "areaDca",
+          "standingValuePerDca",
+          "attributableCostPerDca",
+          "marginPerDca",
+          "uncertainty",
+          "refusalCode"
+        ],
+        "description": "Per-decare figures over the terms that share a standing-crop area. marginPerDca is a margin over a subset of net worth’s terms, not net worth per decare."
+      },
+      "CalculatorRow": {
+        "type": "object",
+        "properties": {
+          "commodity": {
+            "type": "string",
+            "enum": [
+              "wheat",
+              "maize",
+              "barley",
+              "sunflower",
+              "rapeseed",
+              "oats",
+              "rye",
+              "soybean",
+              "peas",
+              "lentils"
+            ]
+          },
+          "pricePerTonne": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "priceCurrency": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "priceObservedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "priceSource": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "standingCropAreaHa": {
+            "type": "number"
+          },
+          "standingCropExpectedKg": {
+            "type": "number"
+          },
+          "standingCropValue": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "perArea": {
+            "$ref": "#/components/schemas/CalculatorPerAreaFigures"
+          },
+          "breakEven": {
+            "$ref": "#/components/schemas/CalculatorBreakEvenFigures"
+          },
+          "grainOnHandTonnes": {
+            "type": "number"
+          },
+          "grainOnHandValue": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "rentCostProduceKg": {
+            "type": "number"
+          },
+          "rentCostProduceValue": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "payrollAllocated": {
+            "type": "boolean"
+          },
+          "cashCostTotal": {
+            "type": "number"
+          },
+          "unvaluedNoUnitCost": {
+            "type": "number"
+          },
+          "unvaluedUnitMismatch": {
+            "type": "number"
+          },
+          "netWorth": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "netWorthUnavailableReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "netWorthUnavailableCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "netWorthUnavailableParams": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "netUncertainty": {
+            "type": "string",
+            "enum": [
+              "exact",
+              "atLeast",
+              "atMost",
+              "allocated",
+              "partial",
+              "refused"
+            ]
+          },
+          "costUncertainty": {
+            "type": "string",
+            "enum": [
+              "exact",
+              "atLeast",
+              "atMost",
+              "allocated",
+              "partial",
+              "refused"
+            ]
+          },
+          "costCurrencyCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rentCurrencyUnknown": {
+            "type": "boolean"
+          },
+          "showProduceRent": {
+            "type": "boolean"
+          },
+          "costBreakdown": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CalculatorCostSlice"
+            }
+          }
+        },
+        "required": [
+          "commodity",
+          "pricePerTonne",
+          "priceCurrency",
+          "priceObservedAt",
+          "priceSource",
+          "standingCropAreaHa",
+          "standingCropExpectedKg",
+          "standingCropValue",
+          "perArea",
+          "breakEven",
+          "grainOnHandTonnes",
+          "grainOnHandValue",
+          "rentCostProduceKg",
+          "rentCostProduceValue",
+          "payrollAllocated",
+          "cashCostTotal",
+          "unvaluedNoUnitCost",
+          "unvaluedUnitMismatch",
+          "netWorth",
+          "netWorthUnavailableReason",
+          "netWorthUnavailableCode",
+          "netWorthUnavailableParams",
+          "netUncertainty",
+          "costUncertainty",
+          "costCurrencyCodes",
+          "rentCurrencyUnknown",
+          "showProduceRent",
+          "costBreakdown"
+        ],
+        "description": "One commodity’s net-worth answer. Figures are accompanied by an uncertainty state rather than presented bare: netUncertainty and costUncertainty say whether a number is exact, a floor, a ceiling, apportioned, partial or refused. A refused net worth carries a CODE to translate and English to fall back to."
+      },
       "Contract": {
         "type": "object",
         "properties": {
@@ -949,13 +1607,15 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "deliveryEnd": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "terms": {
             "type": [
@@ -970,10 +1630,12 @@
             ]
           },
           "createdAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "updatedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "season": {
             "type": [
@@ -1225,13 +1887,15 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "deliveryEnd": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "terms": {
             "type": [
@@ -1246,10 +1910,12 @@
             ]
           },
           "createdAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "updatedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "season": {
             "type": [
@@ -1325,7 +1991,8 @@
             "type": "string"
           },
           "incurredOn": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "supplier": {
             "type": [
@@ -1402,10 +2069,12 @@
             ]
           },
           "createdAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "updatedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "planting": {
             "type": [
@@ -4368,7 +5037,8 @@
             "type": "string"
           },
           "observedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date"
           },
           "source": {
             "type": "string"
@@ -6294,10 +6964,12 @@
             "type": "string"
           },
           "createdAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "updatedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "createdBy": {
             "allOf": [
@@ -6718,7 +7390,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "grossTonnes": {
             "type": [
@@ -6764,10 +7437,12 @@
             ]
           },
           "createdAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "updatedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "planting": {
             "type": [
@@ -12424,7 +13099,9 @@
             "description": "The calculator payload (see description for the top-level shape).",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/CalculatorData"
+                }
               }
             }
           },

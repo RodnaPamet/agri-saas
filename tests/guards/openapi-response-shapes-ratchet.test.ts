@@ -50,32 +50,35 @@ import * as path from 'path';
 const SPEC = path.resolve(__dirname, '../../src/generated/openapi.json');
 
 /**
- * Measured 2026-09-26. MAY ONLY FALL.
+ * Measured 2026-09-26. MAY ONLY FALL — and it has reached the floor.
  *
- * 23 -> 13: tasks (9) and journal (1) now reference shapes that already existed.
- * 13 -> 1: costs and yield records are each mapped by ONE `toDto`, so their
- * shape was already defined in exactly one place; the contract list's three
- * decorations and its rollup are each a PURE, EXPORTED function, so each has a
- * single source of truth a schema can be checked against by running it. None of
- * that is a second spelling of anything.
+ * 23 -> 13: tasks (9) and journal (1) referenced shapes that already existed.
+ * 13 -> 1:  costs and yield records are each mapped by ONE `toDto`; the
+ *           contract list's decorations are each a pure exported function.
+ * 1 -> 0:   the calculator, by giving its payload a single source of truth
+ *           rather than a mirror — `CalculatorData` and its siblings are now
+ *           `z.infer` of the published schemas, so the type, the validator and
+ *           the spec are one definition.
  *
- * The one left is `GET /grain/calculator`, and it is the one the module's note
- * is actually about: its payload is assembled by a mapper module with no
- * exported pure pieces to check a schema against, so a Zod mirror would be a
- * third spelling of one money payload, free to drift from both the types and
- * the mapper. Draining it means giving that payload a single source of truth —
- * NOT writing the copy. Until then this stays at 1 rather than 0.
+ * ZERO is a real floor and not an aspiration, so this is now a "may not rise"
+ * rather than a ratchet with room. A new operation that documents no 2xx shape
+ * fails here, which is the pre-commit check the iOS session asked for: it is
+ * cheaper to point an `op()` at a schema when you write it than to reconstruct
+ * the shape later from a client that guessed wrong.
+ *
+ * If a future payload genuinely cannot be described, raising this is the wrong
+ * move: give that payload one source of truth the way the calculator got one.
+ * The argument against a mirror was always correct — the answer was never to
+ * write the mirror anyway.
  */
-const CEILING = 1;
+const CEILING = 0;
 
 /**
  * Slack tolerated before the ceiling must be lowered.
  *
- * Zero, now that the count is 1. An allowance is headroom, and headroom at this
- * size is the whole population: at 2 the ceiling could sit at 1 while three
- * operations were undocumented, which is the accumulated slack this sentinel
- * exists to forbid. It was 2 when the count was 13 and a single documented
- * shape was a rounding error; it is not one now.
+ * Zero, and at a ceiling of zero it is the only coherent value: any allowance
+ * would let undocumented operations exist under a guard whose whole claim is
+ * that none do.
  */
 const DRIFT_ALLOWANCE = 0;
 

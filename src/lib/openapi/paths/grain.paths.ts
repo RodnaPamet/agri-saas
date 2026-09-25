@@ -6,7 +6,7 @@
  * hands a payload straight to a client island. The native client cannot consume
  * that, so the same answer needed an HTTP door.
  *
- * ── Response shapes: 11 of 13 are now pinned, and 2 deliberately are not ──
+ * ── Response shapes: all 13 are pinned ──
  *
  * The rule below stands, but it was being applied to operations it was never
  * about. Costs and yield records are each mapped by ONE `toDto` in their
@@ -31,20 +31,27 @@
  *   - `Contract` omitted `commodityCanonical`, which is the key market
  *     benchmarking joins on: null there is why a contract gets no benchmark.
  *
- * ── Why the calculator's body stays `z.unknown()` ──
+ * ── The calculator, and why it is no longer `z.unknown()` ──
  *
- * `CalculatorData` is a deep shape — per-commodity rows each carrying
- * per-area figures, break-even figures, an uncertainty state and a cost
- * breakdown, plus farm totals, nine exclusion classes, cash-out lines and
- * two figures that sit beside the cost side. Hand-writing that as Zod would
- * make a THIRD spelling of one payload, beside the TypeScript types and the
- * mapper that builds it, free to drift from both.
+ * The objection was right and is worth keeping: `CalculatorData` is deep, and
+ * hand-writing it as Zod would make a THIRD spelling of one money payload,
+ * beside the TypeScript types and the mapper that builds it, free to drift
+ * from both, with nothing to make the copies disagree out loud.
  *
- * The whole point of `@/lib/grain/calculator-payload` is that the page and
- * the route cannot describe the calculator differently. Adding a Zod copy
- * here would reintroduce exactly the divergence it was written to remove, and
- * nothing would make the copy disagree out loud. So the shape is NAMED in the
- * description and its source of truth is cited; the module is the contract.
+ * So the copy was not written. The payload got a single source of truth
+ * instead: `CalculatorData`, `CalculatorRow` and their siblings are now
+ * `z.infer` of the schemas in `@/lib/dto/grain-calculator.dto`, re-exported
+ * from `calculator-payload.ts` under the names they always had. There is no
+ * third spelling because there is no longer a second — one edit moves the
+ * type, the validator and this document together.
+ *
+ * The leaf types other modules COMPUTE (`PerAreaFigures`, `BreakEvenFigures`,
+ * `FarmNetWorthTotal`, `ExclusionEntry`, `UncertaintyState`) stay owned there
+ * and are mirrored, but each mirror carries a compile-time equality assertion
+ * against the real type — so a divergence is a TYPE ERROR, which is precisely
+ * the "nothing would make the copy disagree out loud" the note asked for.
+ * Mutation-proved: dropping a field, widening a nullable, or removing an enum
+ * member each fails the build.
  *
  * `GET /grain/contracts` looked like the same case and is not. Its rows are the
  * model plus three COMPUTED decorations from three separate modules, plus a
@@ -75,6 +82,7 @@ import {
     ContractDTOSchema,
     ContractListSchema,
 } from '@/lib/dto/grain.dto';
+import { CalculatorDataSchema } from '@/lib/dto/grain-calculator.dto';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { op } from './helpers';
 
@@ -106,7 +114,7 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         success: {
             status: 200,
             description: 'The calculator payload (see description for the top-level shape).',
-            schema: z.unknown(),
+            schema: CalculatorDataSchema,
         },
     });
 
@@ -123,8 +131,7 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
     // Request bodies are the REAL Zod schemas the routes validate with, so
     // they cannot drift from the handler. Response bodies are now the DTO
     // schemas written against each usecase's single `toDto` — see the header
-    // for what that surfaced. Only the calculator is still prose-only, and the
-    // header says why.
+    // for what that surfaced. Nothing in this module is prose-only now.
     //
     // Every route requires the GRAIN module — 403 `module_disabled: GRAIN`.
 
