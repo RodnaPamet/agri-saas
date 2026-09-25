@@ -4127,13 +4127,15 @@ exports[`API contract — per-schema snapshots schema: ParcelCropSeason 1`] = `
       "type": [
         "string",
         "null"
-      ]
+      ],
+      "format": "date-time"
     },
     "harvestedAt": {
       "type": [
         "string",
         "null"
-      ]
+      ],
+      "format": "date-time"
     },
     "notes": {
       "type": [
@@ -4300,13 +4302,34 @@ exports[`API contract — per-schema snapshots schema: ParcelHistory 1`] = `
       "items": {
         "$ref": "#/components/schemas/ParcelWeedObservation"
       }
+    },
+    "cropSeasonsCursor": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "operationsCursor": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "weedObservationsCursor": {
+      "type": [
+        "string",
+        "null"
+      ]
     }
   },
   "required": [
     "parcel",
     "cropSeasons",
     "operations",
-    "weedObservations"
+    "weedObservations",
+    "cropSeasonsCursor",
+    "operationsCursor",
+    "weedObservationsCursor"
   ]
 }"
 `;
@@ -4334,7 +4357,8 @@ exports[`API contract — per-schema snapshots schema: ParcelHistoryOperation 1`
       "type": [
         "string",
         "null"
-      ]
+      ],
+      "format": "date-time"
     },
     "productName": {
       "type": "string"
@@ -4895,7 +4919,8 @@ exports[`API contract — per-schema snapshots schema: ParcelWeedObservation 1`]
       "type": "string"
     },
     "observedAt": {
-      "type": "string"
+      "type": "string",
+      "format": "date-time"
     },
     "weedKeys": {
       "type": "array",

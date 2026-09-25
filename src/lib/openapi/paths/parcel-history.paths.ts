@@ -25,8 +25,8 @@ const CropSeason = z
         id: z.string(),
         year: z.number().int(),
         cropType: z.string(),
-        sownAt: z.string().nullable(),
-        harvestedAt: z.string().nullable(),
+        sownAt: z.string().datetime().nullable(),
+        harvestedAt: z.string().datetime().nullable(),
         notes: z.string().nullable(),
     })
     .openapi('ParcelCropSeason', {
@@ -43,7 +43,7 @@ const HistoryOperation = z
         taskId: z.string(),
         operationType: z.string().nullable(),
         title: z.string(),
-        completedAt: z.string().nullable(),
+        completedAt: z.string().datetime().nullable(),
         productName: z.string(),
         doseValue: z.string(),
         doseUnit: z.string(),
@@ -61,7 +61,7 @@ const HistoryOperation = z
 const WeedObservation = z
     .object({
         id: z.string(),
-        observedAt: z.string(),
+        observedAt: z.string().datetime(),
         weedKeys: z.array(z.string()),
         otherWeeds: z.array(z.string()),
         notes: z.string().nullable(),
@@ -83,6 +83,14 @@ const ParcelHistory = z
         cropSeasons: z.array(CropSeason),
         operations: z.array(HistoryOperation),
         weedObservations: z.array(WeedObservation),
+        /**
+         * Opaque position of the next OLDER page, PER LIST. Null means that
+         * list has nothing older — which is per-list, so two of the three can
+         * be null while the third still pages.
+         */
+        cropSeasonsCursor: z.string().nullable(),
+        operationsCursor: z.string().nullable(),
+        weedObservationsCursor: z.string().nullable(),
     })
     .openapi('ParcelHistory');
 
@@ -99,9 +107,39 @@ export function registerParcelHistoryPaths(registry: OpenAPIRegistry): void {
             'carries no year and no history, which is the reason `cropSeasons` exists. Do ' +
             'not infer this year from it and the rest from the archive; the archive is the ' +
             'record.\n\n' +
-            'ETagged: a parcel grows one crop a season but the screen is revisited often.',
+            'ETagged: a parcel grows one crop a season but the screen is revisited often. ' +
+            'The tag is derived from the BODY, so each page validates separately and a ' +
+            'cached first page is never served for a second.\n\n' +
+            '**Three lists, three cursors.** The sections have three different sort keys — ' +
+            'harvest YEAR, completion date, observation date — so there is no single ' +
+            'position to page from. Each list carries its own `…Cursor`, null when that ' +
+            'list has no older rows, and you page each independently: a parcel with 200 ' +
+            'operations and 3 crop seasons returns a cursor for the operations only.\n\n' +
+            'Cursors are opaque. Note they are base64url of `<sortKey>|<rowId>`, so a ' +
+            'cursor CONTAINS a row id — encoded, not removed. These are internal ids for ' +
+            'the tenant\'s own rows, but a client should not treat "it is a cursor" as ' +
+            'meaning the URL carries no identifiers.',
         tags: ['Parcel history'],
         params: ParcelParams,
+        query: z.object({
+            limit: z.coerce.number().int().min(1).max(100).optional().openapi({
+                param: { name: 'limit', in: 'query' },
+                description: 'Page size PER LIST, 1-100. Above the cap it is clamped, not rejected.',
+            }),
+            seasonsBefore: z.string().optional().openapi({
+                param: { name: 'seasonsBefore', in: 'query' },
+                description: 'From a previous response\'s `cropSeasonsCursor`.',
+            }),
+            operationsBefore: z.string().optional().openapi({
+                param: { name: 'operationsBefore', in: 'query' },
+                description: 'From a previous response\'s `operationsCursor`.',
+            }),
+            weedsBefore: z.string().optional().openapi({
+                param: { name: 'weedsBefore', in: 'query' },
+                description: 'From a previous response\'s `weedObservationsCursor`. A stale or ' +
+                    'malformed cursor RESTARTS that list rather than erroring.',
+            }),
+        }),
         success: { status: 200, description: 'The parcel archive.', schema: ParcelHistory },
     });
 
@@ -142,7 +180,12 @@ export function registerParcelHistoryPaths(registry: OpenAPIRegistry): void {
         path: '/api/t/{tenantSlug}/agro/parcels/{parcelId}/crop-seasons/{seasonId}',
         operationId: 'deleteParcelCropSeason',
         summary: 'Remove a crop season',
-        description: 'Soft delete — the row is retained like every other agronomic record.',
+        description:
+            'Soft delete — the row is retained like every other agronomic record, so ids ' +
+            'are never reused.\n\n' +
+            'Deleting one that is ALREADY gone returns **404 `CROP_SEASON_NOT_FOUND`**, not a quiet ' +
+            'success. A retried delete is therefore a 404, and a client should treat that ' +
+            'as the end state it wanted rather than as an error.',
         tags: ['Parcel history'],
         params: ParcelParams.extend({
             seasonId: z.string().openapi({ param: { name: 'seasonId', in: 'path' } }),
@@ -185,7 +228,11 @@ export function registerParcelHistoryPaths(registry: OpenAPIRegistry): void {
         path: '/api/t/{tenantSlug}/agro/parcels/{parcelId}/weed-observations/{observationId}',
         operationId: 'deleteParcelWeedObservation',
         summary: 'Remove a weed observation',
-        description: 'Soft delete.',
+        description:
+            'Soft delete — the row is retained, so ids are never reused.\n\n' +
+            'Deleting one that is ALREADY gone returns **404 `WEED_OBSERVATION_NOT_FOUND`**, ' +
+            'not a quiet success. A retried delete is therefore a 404, and a client should ' +
+            'treat that as the end state it wanted rather than as an error.',
         tags: ['Parcel history'],
         params: ParcelParams.extend({
             observationId: z.string().openapi({ param: { name: 'observationId', in: 'path' } }),

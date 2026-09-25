@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "3.45.0",
+    "version": "3.46.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -3973,13 +3973,15 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "harvestedAt": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "notes": {
             "type": [
@@ -4140,13 +4142,34 @@
             "items": {
               "$ref": "#/components/schemas/ParcelWeedObservation"
             }
+          },
+          "cropSeasonsCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "operationsCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "weedObservationsCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
           "parcel",
           "cropSeasons",
           "operations",
-          "weedObservations"
+          "weedObservations",
+          "cropSeasonsCursor",
+          "operationsCursor",
+          "weedObservationsCursor"
         ]
       },
       "ParcelHistoryOperation": {
@@ -4171,7 +4194,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "productName": {
             "type": "string"
@@ -4699,7 +4723,8 @@
             "type": "string"
           },
           "observedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "weedKeys": {
             "type": "array",
@@ -11394,7 +11419,7 @@
       "post": {
         "operationId": "createCostEntry",
         "summary": "Record a cost",
-        "description": "Creates one cost entry. `allocationBasis` decides how it reaches a crop — read the enum's own docs before choosing, because the basis is what makes a cost attributable rather than stranded in `unallocatedToCrop` on the calculator.",
+        "description": "Creates one cost entry. `allocationBasis` decides how it reaches a crop — read the enum's own docs before choosing, because the basis is what makes a cost attributable rather than stranded in `unallocatedToCrop` on the calculator.\n\n**Honours `Idempotency-Key`.** Send one, minted BEFORE the first attempt and reused on every retry of the same logical write. The server maps it to `clientMutationId` and a replay returns the ORIGINAL row rather than booking the figure twice. These are FINANCIAL records: an undeduped retry moves net worth with nothing erroring.",
         "tags": [
           "Grain"
         ],
@@ -12210,6 +12235,7 @@
       "post": {
         "operationId": "createYieldRecord",
         "summary": "Record a yield",
+        "description": "\n\n**Honours `Idempotency-Key`.** Send one, minted BEFORE the first attempt and reused on every retry of the same logical write. The server maps it to `clientMutationId` and a replay returns the ORIGINAL row rather than booking the figure twice. These are FINANCIAL records: an undeduped retry moves net worth with nothing erroring.",
         "tags": [
           "Grain"
         ],
@@ -14835,7 +14861,7 @@
       "get": {
         "operationId": "getParcelHistory",
         "summary": "What a parcel has grown, and what was done to it",
-        "description": "One request for the whole archive: authored crop seasons, COMPLETED field operations, and weed observations, each newest-first.\n\n`parcel.cropType` is the CURRENT crop and is a single overwritten field — it carries no year and no history, which is the reason `cropSeasons` exists. Do not infer this year from it and the rest from the archive; the archive is the record.\n\nETagged: a parcel grows one crop a season but the screen is revisited often.",
+        "description": "One request for the whole archive: authored crop seasons, COMPLETED field operations, and weed observations, each newest-first.\n\n`parcel.cropType` is the CURRENT crop and is a single overwritten field — it carries no year and no history, which is the reason `cropSeasons` exists. Do not infer this year from it and the rest from the archive; the archive is the record.\n\nETagged: a parcel grows one crop a season but the screen is revisited often. The tag is derived from the BODY, so each page validates separately and a cached first page is never served for a second.\n\n**Three lists, three cursors.** The sections have three different sort keys — harvest YEAR, completion date, observation date — so there is no single position to page from. Each list carries its own `…Cursor`, null when that list has no older rows, and you page each independently: a parcel with 200 operations and 3 crop seasons returns a cursor for the operations only.\n\nCursors are opaque. Note they are base64url of `<sortKey>|<rowId>`, so a cursor CONTAINS a row id — encoded, not removed. These are internal ids for the tenant's own rows, but a client should not treat \"it is a cursor\" as meaning the URL carries no identifiers.",
         "tags": [
           "Parcel history"
         ],
@@ -14864,6 +14890,48 @@
             "required": true,
             "name": "parcelId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "Page size PER LIST, 1-100. Above the cap it is clamped, not rejected."
+            },
+            "required": false,
+            "description": "Page size PER LIST, 1-100. Above the cap it is clamped, not rejected.",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "From a previous response's `cropSeasonsCursor`."
+            },
+            "required": false,
+            "description": "From a previous response's `cropSeasonsCursor`.",
+            "name": "seasonsBefore",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "From a previous response's `operationsCursor`."
+            },
+            "required": false,
+            "description": "From a previous response's `operationsCursor`.",
+            "name": "operationsBefore",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "From a previous response's `weedObservationsCursor`. A stale or malformed cursor RESTARTS that list rather than erroring."
+            },
+            "required": false,
+            "description": "From a previous response's `weedObservationsCursor`. A stale or malformed cursor RESTARTS that list rather than erroring.",
+            "name": "weedsBefore",
+            "in": "query"
           }
         ],
         "responses": {
@@ -15090,7 +15158,7 @@
       "delete": {
         "operationId": "deleteParcelCropSeason",
         "summary": "Remove a crop season",
-        "description": "Soft delete — the row is retained like every other agronomic record.",
+        "description": "Soft delete — the row is retained like every other agronomic record, so ids are never reused.\n\nDeleting one that is ALREADY gone returns **404 `CROP_SEASON_NOT_FOUND`**, not a quiet success. A retried delete is therefore a 404, and a client should treat that as the end state it wanted rather than as an error.",
         "tags": [
           "Parcel history"
         ],
@@ -15361,7 +15429,7 @@
       "delete": {
         "operationId": "deleteParcelWeedObservation",
         "summary": "Remove a weed observation",
-        "description": "Soft delete.",
+        "description": "Soft delete — the row is retained, so ids are never reused.\n\nDeleting one that is ALREADY gone returns **404 `WEED_OBSERVATION_NOT_FOUND`**, not a quiet success. A retried delete is therefore a 404, and a client should treat that as the end state it wanted rather than as an error.",
         "tags": [
           "Parcel history"
         ],

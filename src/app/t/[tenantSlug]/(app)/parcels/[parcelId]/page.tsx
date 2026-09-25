@@ -32,7 +32,7 @@ import { Heading } from '@/components/ui/typography';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
-import { apiPost, apiDelete } from '@/lib/api-client';
+import { apiGet, apiPost, apiDelete } from '@/lib/api-client';
 import { cropLabel, localizedCropOptions } from '@/lib/agriculture/crop-options';
 import { weedLabel, localizedWeedOptions } from '@/lib/agriculture/weed-options';
 import { MetaStrip } from '@/components/ui/meta-strip';
@@ -70,12 +70,30 @@ interface ParcelHistory {
     cropSeasons: CropSeason[];
     operations: HistoryOperation[];
     weedObservations: WeedObservation[];
+    cropSeasonsCursor: string | null;
+    operationsCursor: string | null;
+    weedObservationsCursor: string | null;
 }
 
 /** Dates arrive as ISO strings; render the day only — no time is meaningful here. */
 function day(value: string | null): string {
     return value ? value.slice(0, 10) : '—';
 }
+
+/**
+ * The three sections page INDEPENDENTLY, each from its own cursor.
+ *
+ * Note older rows are APPENDED here, not prepended as in the exchange thread:
+ * these lists read newest-first, so "older" belongs at the bottom. The chat
+ * renders oldest-first and therefore prepends. Same mechanism, opposite end,
+ * and getting it backwards puts 2019 above 2026.
+ */
+const SECTIONS = {
+    cropSeasons: { cursor: 'cropSeasonsCursor', param: 'seasonsBefore' },
+    operations: { cursor: 'operationsCursor', param: 'operationsBefore' },
+    weedObservations: { cursor: 'weedObservationsCursor', param: 'weedsBefore' },
+} as const;
+type SectionKey = keyof typeof SECTIONS;
 
 export default function ParcelHistoryPage() {
     const params = useParams<{ parcelId: string }>();
@@ -85,6 +103,15 @@ export default function ParcelHistoryPage() {
     const tWeeds = useTranslations('weeds');
     const buildUrl = useTenantApiUrl();
     const href = useTenantHref();
+
+    const [older, setOlder] = useState<{
+        cropSeasons: CropSeason[];
+        operations: HistoryOperation[];
+        weedObservations: WeedObservation[];
+    }>({ cropSeasons: [], operations: [], weedObservations: [] });
+    // `undefined` = not walked yet (fall back to the payload's cursor);
+    // `null` = this list has reached its start.
+    const [walked, setWalked] = useState<Partial<Record<SectionKey, string | null>>>({});
 
     const { data, error, isLoading, mutate } = useTenantSWR<ParcelHistory>(
         `/agro/parcels/${parcelId}/history`,
@@ -134,7 +161,38 @@ export default function ParcelHistoryPage() {
         );
     }
 
-    const { parcel, cropSeasons, operations, weedObservations } = data;
+    const cursorFor = (k: SectionKey): string | null =>
+        walked[k] !== undefined ? (walked[k] as string | null) : data[SECTIONS[k].cursor];
+
+    const loadOlder = async (k: SectionKey) => {
+        const cur = cursorFor(k);
+        if (!cur) return;
+        try {
+            const page = await apiGet<ParcelHistory>(
+                buildUrl(
+                    `/agro/parcels/${parcelId}/history?${SECTIONS[k].param}=${encodeURIComponent(cur)}`,
+                ),
+            );
+            setOlder((prev) => ({ ...prev, [k]: [...prev[k], ...page[k]] as never }));
+            setWalked((prev) => ({ ...prev, [k]: page[SECTIONS[k].cursor] }));
+        } catch {
+            // Silent: the reader keeps what they had. An error banner over a
+            // section they did not ask to extend is noisier than the failure.
+        }
+    };
+
+    const olderButton = (k: SectionKey) =>
+        cursorFor(k) ? (
+            <Button variant="ghost" size="sm" onClick={() => { void loadOlder(k); }}>
+                {t('loadOlder')}
+            </Button>
+        ) : null;
+
+    const { parcel } = data;
+    // Payload page first, accumulated older pages after — newest-first order.
+    const cropSeasons = [...data.cropSeasons, ...older.cropSeasons];
+    const operations = [...data.operations, ...older.operations];
+    const weedObservations = [...data.weedObservations, ...older.weedObservations];
 
     return (
         <EntityDetailLayout
@@ -189,6 +247,7 @@ export default function ParcelHistoryPage() {
                             ))}
                         </ul>
                     )}
+                    {olderButton('cropSeasons')}
                 </section>
 
                 {/* ── Completed operations (a READ of the register) ── */}
@@ -212,6 +271,7 @@ export default function ParcelHistoryPage() {
                             ))}
                         </ul>
                     )}
+                    {olderButton('operations')}
                 </section>
 
                 {/* ── Weeds ── */}
@@ -256,6 +316,7 @@ export default function ParcelHistoryPage() {
                             ))}
                         </ul>
                     )}
+                    {olderButton('weedObservations')}
                 </section>
             </div>
 

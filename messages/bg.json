@@ -2696,6 +2696,7 @@
       }
     },
     "parcelHistory": {
+      "loadOlder": "Зареди по-стари",
       "title": "История",
       "breadcrumbParcels": "Имоти",
       "currentCrop": "Текуща култура",

@@ -33,7 +33,20 @@ export const GET = withApiErrorHandling(
     ) => {
         const params = await paramsPromise;
         const ctx = await getTenantCtx(params, req);
-        const history = await getParcelHistory(ctx, params.parcelId);
+        const url = new URL(req.url);
+        const limitRaw = url.searchParams.get('limit');
+        // NOTE on the CFNetwork warning in the docblock above: a cursor is
+        // base64url of `<sortKey>|<rowId>`, so it CONTAINS a row id — encoded,
+        // not removed. Base64 is not redaction. These are internal cuids for
+        // the tenant's own rows rather than personal data, so they are
+        // acceptable here, but a client should not treat "it's a cursor" as
+        // meaning the URL carries no identifiers.
+        const history = await getParcelHistory(ctx, params.parcelId, {
+            limit: limitRaw ? Number(limitRaw) : undefined,
+            seasonsBefore: url.searchParams.get('seasonsBefore'),
+            operationsBefore: url.searchParams.get('operationsBefore'),
+            weedsBefore: url.searchParams.get('weedsBefore'),
+        });
         return jsonWithETag(req, history);
     },
 );

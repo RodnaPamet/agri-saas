@@ -170,6 +170,113 @@ describe('the timeline', () => {
         const orderBy = mockPrisma.parcelCropSeason.findMany.mock.calls[0][0].orderBy;
         expect(orderBy[0]).toEqual({ year: 'desc' });
         // Second crop in the same year must not be ordered by the query plan.
-        expect(orderBy[1]).toEqual({ createdAt: 'desc' });
+        //
+        // The tiebreak is `id`, not `createdAt` as it was before pagination.
+        // `createdAt` was a fine STABLE order but is not a valid CURSOR key:
+        // two seasons created in the same millisecond compare equal, so the
+        // pair straddling a page boundary loses one and repeats the other. `id`
+        // is unique, which makes the order total.
+        expect(orderBy[1]).toEqual({ id: 'desc' });
+    });
+});
+
+describe('pagination — three lists, three cursors', () => {
+    /** n rows sharing a year, so the tiebreak is what separates them. */
+    function seasons(n: number, year = 2024) {
+        return Array.from({ length: n }, (_, i) => ({
+            id: `cs${String(i).padStart(3, '0')}`,
+            year, cropType: 'Wheat', sownAt: null, harvestedAt: null, notes: null,
+        }));
+    }
+    function ops(n: number) {
+        return Array.from({ length: n }, (_, i) => ({
+            id: `op${String(i).padStart(3, '0')}`,
+            taskId: 't1',
+            completedAt: new Date(`2026-05-${String(28 - i).padStart(2, '0')}T08:00:00Z`),
+            doseValue: 1, targetNote: null,
+            product: { name: 'P' }, doseUnit: { symbol: 'l' },
+            task: { operationType: 'SPRAY', title: 'Spray' },
+        }));
+    }
+    function weeds(n: number) {
+        return Array.from({ length: n }, (_, i) => ({
+            id: `w${String(i).padStart(3, '0')}`,
+            observedAt: new Date(`2026-05-${String(28 - i).padStart(2, '0')}T08:00:00Z`),
+            weedKeys: [], otherWeeds: [], notes: null,
+        }));
+    }
+
+    it('over-fetches one row per list to learn whether more exist', async () => {
+        mockPrisma.parcelCropSeason.findMany.mockResolvedValue(seasons(2));
+        mockPrisma.operationParcel.findMany.mockResolvedValue(ops(2));
+        mockPrisma.parcelWeedObservation.findMany.mockResolvedValue(weeds(2));
+        await getParcelHistory(ctx, 'p1', { limit: 5 });
+        for (const m of [
+            mockPrisma.parcelCropSeason.findMany,
+            mockPrisma.operationParcel.findMany,
+            mockPrisma.parcelWeedObservation.findMany,
+        ]) {
+            expect((m.mock.calls.at(-1) as [{ take: number }])[0].take).toBe(6);
+        }
+    });
+
+    it('a FULL final page on any list reports no cursor for that list', async () => {
+        mockPrisma.parcelCropSeason.findMany.mockResolvedValue(seasons(5));
+        mockPrisma.operationParcel.findMany.mockResolvedValue(ops(5));
+        mockPrisma.parcelWeedObservation.findMany.mockResolvedValue(weeds(5));
+        const r = await getParcelHistory(ctx, 'p1', { limit: 5 });
+        expect(r.cropSeasons).toHaveLength(5);
+        expect(r.cropSeasonsCursor).toBeNull();
+        expect(r.operationsCursor).toBeNull();
+        expect(r.weedObservationsCursor).toBeNull();
+    });
+
+    it('paginates each list INDEPENDENTLY — one long list does not cursor the others', async () => {
+        // The point of three cursors. A parcel with 200 operations and 3 crop
+        // seasons must not advertise more crop seasons.
+        mockPrisma.parcelCropSeason.findMany.mockResolvedValue(seasons(3));
+        mockPrisma.operationParcel.findMany.mockResolvedValue(ops(6));
+        mockPrisma.parcelWeedObservation.findMany.mockResolvedValue(weeds(1));
+        const r = await getParcelHistory(ctx, 'p1', { limit: 5 });
+        expect(r.cropSeasonsCursor).toBeNull();
+        expect(r.weedObservationsCursor).toBeNull();
+        expect(r.operationsCursor).toEqual(expect.any(String));
+        expect(r.operations).toHaveLength(5);
+    });
+
+    it("the crop-season cursor carries the YEAR, not a fabricated date", async () => {
+        // `year` is an integer. Encoding it as a date would put a fake
+        // January the 1st in the cursor and paginate on a value the ORDER BY
+        // does not use, which skips rows rather than failing.
+        mockPrisma.parcelCropSeason.findMany.mockResolvedValue(seasons(6, 2019));
+        mockPrisma.operationParcel.findMany.mockResolvedValue([]);
+        mockPrisma.parcelWeedObservation.findMany.mockResolvedValue([]);
+        const r = await getParcelHistory(ctx, 'p1', { limit: 5 });
+        const decoded = Buffer.from(String(r.cropSeasonsCursor), 'base64url').toString('utf8');
+        expect(decoded).toBe('2019|cs004');
+    });
+
+    it('feeding a cursor back builds a keyset predicate, not a bare lt', async () => {
+        mockPrisma.parcelCropSeason.findMany.mockResolvedValue(seasons(6, 2019));
+        mockPrisma.operationParcel.findMany.mockResolvedValue([]);
+        mockPrisma.parcelWeedObservation.findMany.mockResolvedValue([]);
+        const first = await getParcelHistory(ctx, 'p1', { limit: 5 });
+        await getParcelHistory(ctx, 'p1', { limit: 5, seasonsBefore: first.cropSeasonsCursor });
+        const [args] = mockPrisma.parcelCropSeason.findMany.mock.calls.at(-1) as [
+            { where: { OR?: unknown[] } },
+        ];
+        expect(args.where?.OR).toHaveLength(2);
+    });
+
+    it('a garbage cursor restarts that list rather than erroring', async () => {
+        mockPrisma.parcelCropSeason.findMany.mockResolvedValue(seasons(2));
+        mockPrisma.operationParcel.findMany.mockResolvedValue([]);
+        mockPrisma.parcelWeedObservation.findMany.mockResolvedValue([]);
+        const r = await getParcelHistory(ctx, 'p1', { seasonsBefore: 'nonsense' });
+        expect(r.cropSeasons).toHaveLength(2);
+        const [args] = mockPrisma.parcelCropSeason.findMany.mock.calls.at(-1) as [
+            { where: Record<string, unknown> },
+        ];
+        expect(args.where.OR).toBeUndefined();
     });
 });
