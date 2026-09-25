@@ -217,7 +217,13 @@ export const CalculatorRowSchema = z
 
         pricePerTonne: z.number().nullable(),
         priceCurrency: z.string().nullable(),
-        priceObservedAt: z.string().nullable(),
+        /**
+         * A bare DAY, not an instant: `MarketReference.observedAt` passed
+         * straight through. The two date formats in this payload are genuinely
+         * different — `generatedAt` is an instant, this is a day — so declaring
+         * either as the other breaks a client that parses strictly.
+         */
+        priceObservedAt: z.string().date().nullable(),
         priceSource: z.string().nullable(),
 
         standingCropAreaHa: z.number(),
@@ -298,7 +304,8 @@ export const CalculatorCashOutLineSchema = z
 
 export const CalculatorDataSchema = z
     .object({
-        generatedAt: z.string(),
+        /** A full instant — `new Date().toISOString()` at the usecase. */
+        generatedAt: z.string().datetime(),
         seasonId: z.string().nullable(),
         rows: z.array(CalculatorRowSchema),
         /** The farm-level answer — one total per currency, folded server-side. */

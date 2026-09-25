@@ -43,7 +43,12 @@ function row(over: Partial<CommodityNetWorthRow> = {}): CommodityNetWorthRow {
         commodity: 'wheat',
         pricePerTonne: 420,
         priceCurrency: 'BGN',
-        priceObservedAt: '2026-09-01T00:00:00.000Z',
+        // A bare DAY, which is what `trends.ts` emits
+        // (`latest.date.toISOString().slice(0, 10)`). The fixture carried a
+        // full instant here until the schema declared the format — the third
+        // value in this builder that had drifted from the real producer and
+        // could not be seen, because a `string` field accepts any string.
+        priceObservedAt: '2026-09-01',
         priceSource: 'market',
         standingCropAreaHa: 12,
         standingCropExpectedKg: 60_000,

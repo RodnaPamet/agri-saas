@@ -53,8 +53,8 @@ export const TaskCommentDTOSchema = z
         taskId: z.string(),
         body: z.string(),
         createdByUserId: z.string(),
-        createdAt: z.string(),
-        updatedAt: z.string(),
+        createdAt: z.string().datetime(),
+        updatedAt: z.string().datetime(),
         createdBy: UserRefSchema.nullable().optional(),
     })
     .passthrough()

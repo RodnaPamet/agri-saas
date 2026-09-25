@@ -1006,7 +1006,8 @@
         "type": "object",
         "properties": {
           "generatedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "seasonId": {
             "type": [
@@ -1381,7 +1382,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date"
           },
           "priceSource": {
             "type": [
@@ -1605,13 +1607,15 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "deliveryEnd": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "terms": {
             "type": [
@@ -1626,10 +1630,12 @@
             ]
           },
           "createdAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "updatedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "season": {
             "type": [
@@ -1881,13 +1887,15 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "deliveryEnd": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "terms": {
             "type": [
@@ -1902,10 +1910,12 @@
             ]
           },
           "createdAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "updatedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "season": {
             "type": [
@@ -1981,7 +1991,8 @@
             "type": "string"
           },
           "incurredOn": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "supplier": {
             "type": [
@@ -2058,10 +2069,12 @@
             ]
           },
           "createdAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "updatedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "planting": {
             "type": [
@@ -5024,7 +5037,8 @@
             "type": "string"
           },
           "observedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date"
           },
           "source": {
             "type": "string"
@@ -6950,10 +6964,12 @@
             "type": "string"
           },
           "createdAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "updatedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "createdBy": {
             "allOf": [
@@ -7374,7 +7390,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "grossTonnes": {
             "type": [
@@ -7420,10 +7437,12 @@
             ]
           },
           "createdAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "updatedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "planting": {
             "type": [

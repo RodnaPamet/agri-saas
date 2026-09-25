@@ -62,13 +62,13 @@ export const ContractDTOSchema = z
         volumeTonnes: z.string().nullable().optional(),
         pricePerTonne: z.string().nullable().optional(),
         priceCurrency: z.string().nullable().optional(),
-        deliveryStart: z.string().nullable().optional(),
-        deliveryEnd: z.string().nullable().optional(),
+        deliveryStart: z.string().datetime().nullable().optional(),
+        deliveryEnd: z.string().datetime().nullable().optional(),
         // ENCRYPTED at rest (Epic B) — plaintext on read.
         terms: z.string().nullable().optional(),
         pricingNotes: z.string().nullable().optional(),
-        createdAt: z.string().optional(),
-        updatedAt: z.string().optional(),
+        createdAt: z.string().datetime().optional(),
+        updatedAt: z.string().datetime().optional(),
         season: GrainSeasonRefSchema.nullable().optional(),
     })
     .passthrough()
@@ -91,7 +91,7 @@ export const YieldRecordDTOSchema = z
         locationId: z.string().nullable().optional(),
         seasonId: z.string().nullable().optional(),
         commodity: z.string().nullable().optional(),
-        harvestedAt: z.string().nullable().optional(),
+        harvestedAt: z.string().datetime().nullable().optional(),
         grossTonnes: z.number().nullable(),
         moisturePct: z.number().nullable(),
         areaHa: z.number().nullable(),
@@ -123,8 +123,8 @@ export const YieldRecordDTOSchema = z
          * notes; absent means they were not sent on this read.
          */
         valuationNotes: z.string().nullable().optional(),
-        createdAt: z.string().optional(),
-        updatedAt: z.string().optional(),
+        createdAt: z.string().datetime().optional(),
+        updatedAt: z.string().datetime().optional(),
         planting: z
             .object({ id: z.string(), successionNumber: z.number() })
             .passthrough()
@@ -188,7 +188,7 @@ export const CostEntryDTOSchema = z
          */
         amount: z.number(),
         currency: z.string(),
-        incurredOn: z.string(),
+        incurredOn: z.string().datetime(),
         supplier: z.string().nullable(),
         invoiceFileId: z.string().nullable(),
         plantingId: z.string().nullable(),
@@ -207,8 +207,8 @@ export const CostEntryDTOSchema = z
         createdByUserId: z.string().nullable(),
         /** Single-read only — see the note above. Absent ≠ null. */
         description: z.string().nullable().optional(),
-        createdAt: z.string(),
-        updatedAt: z.string(),
+        createdAt: z.string().datetime(),
+        updatedAt: z.string().datetime(),
         planting: CostPlantingRefSchema.nullable(),
         season: CostNamedRefSchema.nullable(),
         location: CostNamedRefSchema.nullable(),
@@ -481,8 +481,15 @@ export const MarketReferenceSchema = z
         commodity: z.enum(CANONICAL_COMMODITIES),
         pricePerTonne: z.number(),
         currency: z.string(),
-        /** yyyy-mm-dd of the observation. */
-        observedAt: z.string(),
+        /**
+         * A bare DAY, `yyyy-mm-dd` — NOT an instant, and the distinction is
+         * load-bearing for a client that parses strictly. `trends.ts` emits it
+         * as `latest.date.toISOString().slice(0, 10)`, and
+         * `contract-benchmark.ts` reads it back by APPENDING `T00:00:00Z`,
+         * which only works on a day. A client decoding this with an ISO-8601
+         * instant strategy throws on it.
+         */
+        observedAt: z.string().date(),
         /** Backend source slug, so a UI can name the source rather than say "the market". */
         source: z.string(),
     })
