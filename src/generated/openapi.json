@@ -4224,7 +4224,7 @@
           "doseUnit",
           "targetNote"
         ],
-        "description": "A COMPLETED field-operation line for this parcel — the same rows that record a spray or fertiliser application, which is why \"linked completed tasks\" and \"what was applied\" are one list and not two. Pending lines are absent: a plan is not history. `doseValue` is a decimal STRING; parsing it as a float rounds the dose."
+        "description": "A COMPLETED field-operation line for this parcel — the same rows that record a spray or fertiliser application, which is why \"linked completed tasks\" and \"what was applied\" are one list and not two. Pending lines are absent: a plan is not history. `doseValue` is a decimal STRING; parsing it as a float rounds the dose.\n\n`title`, `productName` and `doseUnit` are EMPTY STRINGS when their source relation is absent, never null — empty means \"not recorded\", never \"unknown\". Filter them out of any concatenation rather than rendering a placeholder."
       },
       "ParcelLease": {
         "type": "object",

@@ -42,6 +42,19 @@ const HistoryOperation = z
         id: z.string(),
         taskId: z.string(),
         operationType: z.string().nullable(),
+        /**
+         * EMPTY STRING when the source relation is absent, never null.
+         *
+         * `title`, `productName` and `doseUnit` are read through optional
+         * relations and collapsed with `?? ''` at the boundary, so an empty
+         * value means "not recorded" and NEVER "unknown". Render nothing
+         * rather than a placeholder, and filter empties out of any
+         * concatenation — an absent unit otherwise leaves a trailing space
+         * that is invisible in a diff and visible in a right-aligned column.
+         *
+         * No schema can express this: `type: string` is all it can say, which
+         * is why it is written here.
+         */
         title: z.string(),
         completedAt: z.string().datetime().nullable(),
         productName: z.string(),
@@ -55,7 +68,8 @@ const HistoryOperation = z
             'a spray or fertiliser application, which is why "linked completed tasks" and ' +
             '"what was applied" are one list and not two. Pending lines are absent: a plan ' +
             'is not history. `doseValue` is a decimal STRING; parsing it as a float rounds ' +
-            'the dose.',
+            'the dose.' +
+            '\n\n`title`, `productName` and `doseUnit` are EMPTY STRINGS when their source relation is absent, never null — empty means "not recorded", never "unknown". Filter them out of any concatenation rather than rendering a placeholder.',
     });
 
 const WeedObservation = z
