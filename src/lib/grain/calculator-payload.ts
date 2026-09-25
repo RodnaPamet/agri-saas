@@ -26,6 +26,23 @@
  * Every field is a number, string, boolean or array thereof. No Decimal and no
  * Date crosses this boundary, which is what makes the payload equally valid
  * across an RSC boundary and a JSON response.
+ *
+ * ── where these types now come from ──
+ *
+ * The payload's own shapes are `z.infer` of the schemas in
+ * `@/lib/dto/grain-calculator.dto`, re-exported here under the names they have
+ * always had. That is deliberate and it is the point: `grain.paths.ts` left
+ * this operation's response undocumented because writing the shape as Zod would
+ * have been a THIRD spelling of one money payload, free to drift from these
+ * interfaces and from the mapper below. Deriving the types FROM the schema
+ * removes the third spelling by removing the second — there is one definition,
+ * and it is the one the API publishes.
+ *
+ * The leaf types this composes (`PerAreaFigures`, `BreakEvenFigures`,
+ * `FarmNetWorthTotal`, `ExclusionEntry`, `UncertaintyState`) stay owned by the
+ * modules that COMPUTE them; those have mirrors in the DTO module pinned by
+ * compile-time equality assertions, so a divergence is a type error rather than
+ * a silent lie in the spec.
  */
 import type {
     CommodityNetWorthRow,
@@ -37,137 +54,36 @@ import type { ExclusionEntry } from './exclusion-labels';
 import type { PerAreaFigures } from './per-area';
 import type { BreakEvenFigures } from './break-even';
 import { costUncertainty, netWorthUncertainty, type UncertaintyState } from './uncertainty';
+import type { z } from '@/lib/openapi/zod';
+import type {
+    CalculatorCostSliceSchema,
+    CalculatorRowSchema,
+    CalculatorExclusionsSchema,
+    CalculatorCashOutLineSchema,
+    CalculatorDataSchema,
+} from '@/lib/dto/grain-calculator.dto';
 import { UNKNOWN_RENT_CURRENCY } from './cost-metrics';
 
 export type { ExclusionEntry };
 
 /**
- * One labelled slice of the cost total, decided server-side.
+ * The payload's shapes.
  *
- * `variant` is a PRESENTATION hint — which tone the web table paints the slice.
- * It travels in the payload because the composition (which categories, in what
- * order, in which tone) is structure rather than data, and the web island no
- * longer decides that there are three of them. A non-web client may ignore it.
+ * Declared by the schemas in `@/lib/dto/grain-calculator.dto` and inferred
+ * here, so the type, the runtime validator and the published OpenAPI component
+ * are one definition. Editing a field is one edit.
+ *
+ * `CalculatorCostSlice.variant` was `StatusBreakdownVariant | undefined` — a
+ * REQUIRED key holding undefined. `undefined` does not survive
+ * `JSON.stringify`, so over HTTP the key is simply ABSENT; the schema says
+ * optional, which is what a client actually receives. Nothing that builds a
+ * slice needs to change: passing `variant` explicitly still typechecks.
  */
-export interface CalculatorCostSlice {
-    id: string;
-    /** i18n key under `grain.calculator` — the consumer resolves it. */
-    labelKey: string;
-    value: number;
-    variant: StatusBreakdownVariant | undefined;
-}
-
-export interface CalculatorRow {
-    commodity: string;
-
-    pricePerTonne: number | null;
-    priceCurrency: string | null;
-    priceObservedAt: string | null;
-    priceSource: string | null;
-
-    standingCropAreaHa: number;
-    standingCropExpectedKg: number;
-    standingCropValue: number | null;
-    /** Per-decare figures over the terms that share this area. */
-    perArea: PerAreaFigures;
-    /** Market price against the price that clears cost. */
-    breakEven: BreakEvenFigures;
-
-    grainOnHandTonnes: number;
-    grainOnHandValue: number | null;
-
-    rentCostProduceKg: number;
-    rentCostProduceValue: number | null;
-    payrollAllocated: boolean;
-    cashCostTotal: number;
-
-    // Carried with their COUNTS, so they stay data rather than collapsing into
-    // `costUncertainty` — the state says the cost is a floor, these say by how
-    // many records and why.
-    unvaluedNoUnitCost: number;
-    unvaluedUnitMismatch: number;
-
-    netWorth: number | null;
-    /** English, authored by the usecase — the FALLBACK for an unknown code. */
-    netWorthUnavailableReason: string | null;
-    /** Machine-readable reason, translated by the consumer when recognised. */
-    netWorthUnavailableCode: string | null;
-    netWorthUnavailableParams: Record<string, string> | null;
-
-    /** Shared vocabulary — see `@/lib/grain/uncertainty`. */
-    netUncertainty: UncertaintyState;
-    costUncertainty: UncertaintyState;
-    /** Real ISO codes only; the internal rent sentinel is already gone. */
-    costCurrencyCodes: string[];
-    /** True when rent currency was the sentinel — stated in its own words. */
-    rentCurrencyUnknown: boolean;
-    /** Whether the rent-in-grain term is part of this farm's arithmetic. */
-    showProduceRent: boolean;
-    /** The cost's composition — which categories, in what order and tone. */
-    costBreakdown: CalculatorCostSlice[];
-}
-
-/**
- * ONE shape for every exclusion class. Each entry carries the id (deep links
- * need it) and a label a person recognises, resolved server-side.
- */
-export interface CalculatorExclusions {
-    plantingsMissingYieldEstimate: ExclusionEntry[];
-    plantingsUnknownCommodity: ExclusionEntry[];
-    lotsUnresolvedUnit: ExclusionEntry[];
-    lotsUnknownCommodity: ExclusionEntry[];
-    commoditiesWithNoPrice: ExclusionEntry[];
-    leasesUnresolvedRent: ExclusionEntry[];
-    leasesUnattributed: ExclusionEntry[];
-    leasesProduceRentUnpriced: ExclusionEntry[];
-    payrollUnattributable: ExclusionEntry[];
-}
-
-/** One currency's worth of money that left the bank. */
-export interface CalculatorCashOutLine {
-    currency: string;
-    amount: number;
-    categories: string[];
-}
-
-export interface CalculatorData {
-    generatedAt: string;
-    seasonId: string | null;
-    rows: CalculatorRow[];
-    /** The farm-level answer — one total per currency. Folded server-side. */
-    farm: {
-        totals: FarmNetWorthTotal[];
-        refusedWithoutCurrency: string[];
-    };
-    exclusions: CalculatorExclusions;
-    /**
-     * Farm-wide DISTINCT counts, NOT the sum of the rows'. Deliberately not an
-     * exclusion class: nothing here was excluded — the stock moved and the
-     * planting is counted, only the money is missing.
-     */
-    unvalued: { noUnitCost: number; unitMismatch: number };
-    /**
-     * `COST_METRICS.GRAIN_CASH_OUT` — what LEFT THE BANK, per currency. Its own
-     * figure, never added to any cost line: crop cost is consumption-based and
-     * rent cost is a lease-terms accrual, so folding a purchase in would bill
-     * the same money twice.
-     */
-    cashOut: CalculatorCashOutLine[];
-    /**
-     * Cost that landed on land carrying no crop. Carried BECAUSE the rows are
-     * short by exactly this — a spread conserves the amount across
-     * `rows + this`, so a consumer printing only the rows would show a cost
-     * that shrank when the farmer changed how it spreads.
-     */
-    unallocatedToCrop: {
-        amount: number;
-        areaHa: number;
-        parcelIds: string[];
-        currencies: string[];
-    };
-    imputedLandCharge: GrainNetWorthResult['imputedLandCharge'];
-    truncated: GrainNetWorthResult['truncated'];
-}
+export type CalculatorCostSlice = z.infer<typeof CalculatorCostSliceSchema>;
+export type CalculatorRow = z.infer<typeof CalculatorRowSchema>;
+export type CalculatorExclusions = z.infer<typeof CalculatorExclusionsSchema>;
+export type CalculatorCashOutLine = z.infer<typeof CalculatorCashOutLineSchema>;
+export type CalculatorData = z.infer<typeof CalculatorDataSchema>;
 
 export function toCalculatorRow(row: CommodityNetWorthRow): CalculatorRow {
     return {
