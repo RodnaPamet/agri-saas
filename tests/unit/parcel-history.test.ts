@@ -280,3 +280,67 @@ describe('pagination — three lists, three cursors', () => {
         expect(args.where.OR).toBeUndefined();
     });
 });
+
+
+describe('what was applied — the category, not the label', () => {
+    function opLine(over: Record<string, unknown> = {}) {
+        return [{
+            id: 'op1', taskId: 't1',
+            completedAt: new Date('2026-05-20T08:00:00Z'),
+            doseValue: 2.5, targetNote: null,
+            product: { name: 'Roundup', category: 'PESTICIDE' },
+            doseUnit: { symbol: 'l/da' },
+            task: { operationType: 'SPRAY', title: 'Spray' },
+            ...over,
+        }];
+    }
+
+    beforeEach(() => {
+        mockPrisma.parcelCropSeason.findMany.mockResolvedValue([]);
+        mockPrisma.parcelWeedObservation.findMany.mockResolvedValue([]);
+    });
+
+    it('projects the item category', async () => {
+        mockPrisma.operationParcel.findMany.mockResolvedValue(opLine());
+        const r = await getParcelHistory(ctx, 'p1');
+        expect(r.operations[0].productCategory).toBe('PESTICIDE');
+    });
+
+    it('answers even when operationType is NULL — the case it exists for', async () => {
+        // A third of the operation lines in production have no operationType,
+        // and for those it is the only thing that can say what was applied.
+        mockPrisma.operationParcel.findMany.mockResolvedValue(
+            opLine({
+                product: { name: 'Urea', category: 'FERTILIZER' },
+                task: { operationType: null, title: 'Application' },
+            }),
+        );
+        const r = await getParcelHistory(ctx, 'p1');
+        expect(r.operations[0].operationType).toBeNull();
+        expect(r.operations[0].productCategory).toBe('FERTILIZER');
+    });
+
+    it('contradicts a mislabelled operationType rather than echoing it', async () => {
+        // `operationType` is caller-settable and wins over the server's own
+        // derivation, so a fertiliser CAN be recorded as SPRAY. The category
+        // comes off the item and cannot be talked out of it.
+        mockPrisma.operationParcel.findMany.mockResolvedValue(
+            opLine({
+                product: { name: 'Urea', category: 'FERTILIZER' },
+                task: { operationType: 'SPRAY', title: 'Mislabelled' },
+            }),
+        );
+        const r = await getParcelHistory(ctx, 'p1');
+        expect(r.operations[0].operationType).toBe('SPRAY');
+        expect(r.operations[0].productCategory).toBe('FERTILIZER');
+    });
+
+    it('is NULL, not empty string, when the relation is missing', async () => {
+        // Unlike its `productName` neighbour, which collapses to ''. An empty
+        // string is a plausible name and not a plausible category.
+        mockPrisma.operationParcel.findMany.mockResolvedValue(opLine({ product: null }));
+        const r = await getParcelHistory(ctx, 'p1');
+        expect(r.operations[0].productCategory).toBeNull();
+        expect(r.operations[0].productName).toBe('');
+    });
+});

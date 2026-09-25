@@ -68,6 +68,21 @@ export interface ParcelHistoryOperation {
     title: string;
     completedAt: Date | null;
     productName: string;
+    /**
+     * `Item.category` — the HARD signal for what was applied.
+     *
+     * `operationType` cannot answer it: it is caller-settable, has four values
+     * of which only two carry the product-versus-fertiliser derivation, and is
+     * NULL on a third of the operation lines in production. The category comes
+     * off the item itself, so it is right retroactively and cannot be
+     * contradicted by what the operation was labelled.
+     *
+     * Null rather than `''` when the relation is missing, unlike its
+     * `productName` neighbour: an empty string is a plausible NAME but not a
+     * plausible CATEGORY, so collapsing it would invent a value rather than
+     * report an absence.
+     */
+    productCategory: string | null;
     doseValue: string;
     doseUnit: string;
     targetNote: string | null;
@@ -222,7 +237,7 @@ export async function getParcelHistory(
                     completedAt: true,
                     doseValue: true,
                     targetNote: true,
-                    product: { select: { name: true } },
+                    product: { select: { name: true, category: true } },
                     doseUnit: { select: { symbol: true } },
                     task: { select: { operationType: true, title: true } },
                 },
@@ -282,6 +297,7 @@ export async function getParcelHistory(
                 title: line.task?.title ?? '',
                 completedAt: line.completedAt,
                 productName: line.product?.name ?? '',
+                productCategory: line.product?.category ?? null,
                 // Decimal -> string at the usecase seam. The wire carries the
                 // exact value; a float would round a dose.
                 doseValue: line.doseValue.toString(),

@@ -2,7 +2,7 @@
  * "Year on the farm" PDF Generator
  *
  * A celebratory season-recap report for a farm tenant:
- *   Cover → recap metrics → top-fields table → certification line →
+ *   Cover → recap metrics → top-fields table →
  *   activity-story line.
  *
  * All data is pulled INSIDE this usecase (via `getSeasonRecap` + a thin
@@ -108,21 +108,6 @@ export async function generateYearOnFarmPdf(
     } else {
         addParagraph(doc, 'No harvest yet recorded for this scope.');
     }
-    addSpacer(doc);
-
-    // Certification line.
-    //
-    // Readiness used to ride here, derived from the top AG_SCHEME framework.
-    // That catalogue was removed with the compliance uproot, so the branch that
-    // printed a score was UNREACHABLE: a `const certification = null` with an
-    // `if (certification)` around it. Only the else could ever run.
-    //
-    // The output is unchanged — this section still prints one fixed line. Whether
-    // a section that can only ever say "nothing tracked" belongs in a farmer's
-    // report at all is a product question, not a dead-code question, so it is
-    // left standing rather than quietly dropped.
-    addSectionTitle(doc, 'Certification');
-    addParagraph(doc, 'No certification scheme tracked.');
     addSpacer(doc);
 
     // Activity story line
