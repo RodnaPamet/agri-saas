@@ -51,25 +51,12 @@ export interface AgDashboardTaskItem {
     dueAt: string | null;
 }
 
-export interface AgDashboardCertification {
-    schemeKey: string;
-    schemeName: string;
-    /** Readiness score (0–100) of the tenant's top certification scheme. */
-    score: number;
-}
-
 export interface AgDashboardPayload {
     /** The tenant's enabled modules — drives client-side card gating. */
     enabledModules: ModuleKey[];
     recentJournal: AgDashboardJournalItem[];
     lowStock: AgDashboardLowStockItem[];
     myTasks: AgDashboardTaskItem[];
-    /**
-     * Readiness of the top certification scheme — present only when the
-     * CERTIFICATION module is enabled AND at least one AG_SCHEME exists.
-     * Null otherwise so the client card stays hidden for pure-farm tenants.
-     */
-    certification: AgDashboardCertification | null;
     /**
      * Earned milestones + journaling streak (derived from existing rows).
      * Null for a pure-GRC tenant with no ag module enabled, so the
@@ -152,5 +139,5 @@ export async function getAgDashboard(ctx: RequestContext): Promise<AgDashboardPa
     // first. Readiness now lives where it can be attributed to a scheme the
     // reader chose — the scheme detail page.
 
-    return { enabledModules, recentJournal, lowStock, myTasks, certification: null, achievements };
+    return { enabledModules, recentJournal, lowStock, myTasks, achievements };
 }

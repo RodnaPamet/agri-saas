@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "3.47.0",
+    "version": "3.48.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -51,6 +51,183 @@
       }
     },
     "schemas": {
+      "AgDashboardAchievements": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "milestones": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "enum": [
+                    "framework-100",
+                    "evidence-all-current",
+                    "audit-pack-complete",
+                    "first-practice-mapped",
+                    "first-field-mapped",
+                    "spray-job-complete",
+                    "first-harvest",
+                    "season-closed"
+                  ]
+                },
+                "earned": {
+                  "type": "boolean"
+                },
+                "earnedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "key",
+                "earned",
+                "earnedAt"
+              ]
+            }
+          },
+          "streak": {
+            "type": "object",
+            "properties": {
+              "current": {
+                "type": "integer"
+              },
+              "best": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "current",
+              "best"
+            ]
+          }
+        },
+        "required": [
+          "milestones",
+          "streak"
+        ],
+        "description": "Every milestone is returned with `earned` false rather than omitted, so a client renders the full set and does not have to know the list. `earnedAt` is null exactly when `earned` is false."
+      },
+      "AgDashboardJournalItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "title",
+          "occurredAt"
+        ]
+      },
+      "AgDashboardLowStockItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "quantityOnHand": {
+            "type": "number"
+          },
+          "unitSymbol": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "quantityOnHand",
+          "unitSymbol"
+        ]
+      },
+      "AgDashboardPayload": {
+        "type": "object",
+        "properties": {
+          "enabledModules": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "recentJournal": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgDashboardJournalItem"
+            }
+          },
+          "lowStock": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgDashboardLowStockItem"
+            }
+          },
+          "myTasks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgDashboardTaskItem"
+            }
+          },
+          "achievements": {
+            "$ref": "#/components/schemas/AgDashboardAchievements"
+          }
+        },
+        "required": [
+          "enabledModules",
+          "recentJournal",
+          "lowStock",
+          "myTasks",
+          "achievements"
+        ]
+      },
+      "AgDashboardTaskItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "dueAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "status",
+          "dueAt"
+        ]
+      },
       "AssetCreateRequest": {
         "type": "object",
         "properties": {
@@ -599,6 +776,34 @@
           "/journal",
           "/exchange"
         ]
+      },
+      "BriefingAction": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "action": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          }
+        },
+        "required": [
+          "field",
+          "action",
+          "priority"
+        ],
+        "description": "`field` is null for an action that applies to the whole farm."
       },
       "CadastreImportAccepted": {
         "type": "object",
@@ -1825,6 +2030,86 @@
         ],
         "additionalProperties": {},
         "description": "One row of the operator queue. This is the `taskListSelect` projection, NOT the full Task returned by the create — it carries no tenantId, description, priority or metadataJson."
+      },
+      "FarmTaskTrendPoint": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "created": {
+            "type": "integer"
+          },
+          "completed": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "date",
+          "created",
+          "completed"
+        ]
+      },
+      "FieldBriefing": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "headline": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BriefingAction"
+            }
+          }
+        },
+        "required": [
+          "headline",
+          "summary",
+          "actions"
+        ]
+      },
+      "FieldBriefingPayload": {
+        "type": "object",
+        "properties": {
+          "aiConfigured": {
+            "type": "boolean"
+          },
+          "satelliteConfigured": {
+            "type": "boolean"
+          },
+          "satelliteAvailable": {
+            "type": "boolean"
+          },
+          "generatedAt": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          },
+          "fieldCount": {
+            "type": "integer"
+          },
+          "briefing": {
+            "$ref": "#/components/schemas/FieldBriefing"
+          }
+        },
+        "required": [
+          "aiConfigured",
+          "satelliteConfigured",
+          "satelliteAvailable",
+          "generatedAt",
+          "date",
+          "fieldCount",
+          "briefing"
+        ],
+        "description": "The three `*Configured` / `*Available` booleans exist so a client can say WHY there is no briefing instead of showing an empty card. `aiConfigured` false means the deployment has no model; `satelliteConfigured` false means no Earth Engine credentials; `satelliteAvailable` false means configured but the imagery call did not return. Those are three different messages to a farmer, and `briefing: null` alone cannot tell them apart."
       },
       "FieldOperationCreateRequest": {
         "type": "object",
@@ -5538,6 +5823,84 @@
           "metadataJson": {}
         },
         "description": "Partial update for a task. Status changes and assignment go through their own focused endpoints."
+      },
+      "TrendDataPoint": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "evidenceOverdue": {
+            "type": "integer"
+          },
+          "evidenceDueSoon7d": {
+            "type": "integer"
+          },
+          "evidenceCurrent": {
+            "type": "integer"
+          },
+          "tasksOpen": {
+            "type": "integer"
+          },
+          "tasksOverdue": {
+            "type": "integer"
+          },
+          "assetsTotal": {
+            "type": "integer"
+          },
+          "assetsActive": {
+            "type": "integer"
+          },
+          "assetsHighCriticality": {
+            "type": "integer"
+          },
+          "assetsRetired": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "date",
+          "evidenceOverdue",
+          "evidenceDueSoon7d",
+          "evidenceCurrent",
+          "tasksOpen",
+          "tasksOverdue",
+          "assetsTotal",
+          "assetsActive",
+          "assetsHighCriticality",
+          "assetsRetired"
+        ]
+      },
+      "TrendPayload": {
+        "type": "object",
+        "properties": {
+          "dataPoints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrendDataPoint"
+            }
+          },
+          "daysRequested": {
+            "type": "integer"
+          },
+          "daysAvailable": {
+            "type": "integer"
+          },
+          "rangeStart": {
+            "type": "string"
+          },
+          "rangeEnd": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "dataPoints",
+          "daysRequested",
+          "daysAvailable",
+          "rangeStart",
+          "rangeEnd"
+        ],
+        "description": "`daysAvailable` can be SMALLER than `daysRequested` — a young tenant has fewer days of history than you asked for. Plot the range you were given, not the one you requested: a chart that pads the difference with zeroes shows a collapse that never happened."
       },
       "UserRef": {
         "type": "object",
@@ -14876,7 +15239,7 @@
       "get": {
         "operationId": "getParcelHistory",
         "summary": "What a parcel has grown, and what was done to it",
-        "description": "One request for the whole archive: authored crop seasons, COMPLETED field operations, and weed observations, each newest-first.\n\n`parcel.cropType` is the CURRENT crop and is a single overwritten field — it carries no year and no history, which is the reason `cropSeasons` exists. Do not infer this year from it and the rest from the archive; the archive is the record.\n\nETagged: a parcel grows one crop a season but the screen is revisited often. The tag is derived from the BODY, so each page validates separately and a cached first page is never served for a second.\n\n**Three lists, three cursors.** The sections have three different sort keys — harvest YEAR, completion date, observation date — so there is no single position to page from. Each list carries its own `…Cursor`, null when that list has no older rows, and you page each independently: a parcel with 200 operations and 3 crop seasons returns a cursor for the operations only.\n\n**Each list defaults to 100 rows** and `limit` applies PER LIST, so a client knows whether a first page can even be partial before it decides to offer a \"load older\" control at all.\n\n**Cursors are opaque: pass them back verbatim and do not parse them.** They happen to be base64url of `<sortKey>|<rowId>`, which is stated so nobody believes a cursor keeps ids out of the URL — it does not, it encodes one. But the encoding is not a contract: `cropSeasonsCursor` keys on an integer YEAR while the other two key on timestamps, and a client that parsed and rebuilt one would paginate on a value the ORDER BY does not use. That skips rows silently, which reads as a short archive rather than an error — and a short archive looks exactly like a young farm.",
+        "description": "One request for the whole archive: authored crop seasons, COMPLETED field operations, and weed observations, each newest-first.\n\n`parcel.cropType` is the CURRENT crop and is a single overwritten field — it carries no year and no history, which is the reason `cropSeasons` exists. Do not infer this year from it and the rest from the archive; the archive is the record.\n\nETagged: a parcel grows one crop a season but the screen is revisited often. The tag is derived from the BODY, so each page validates separately and a cached first page is never served for a second.\n\n**Three lists, three cursors.** The sections have three different sort keys — harvest YEAR, completion date, observation date — so there is no single position to page from. Each list carries its own `…Cursor`, null when that list has no older rows, and you page each independently: a parcel with 200 operations and 3 crop seasons returns a cursor for the operations only.\n\n**Each list defaults to 100 rows** and `limit` applies PER LIST, so a client knows whether a first page can even be partial before it decides to offer a \"load older\" control at all.\n\n**A stale or malformed cursor RESTARTS that list — and it does so with a 200.** That is deliberate server-side: a 400 over yesterday's cursor would strand a screen for no gain. But it means the failure arrives as a VALID BODY holding the NEWEST rows, so a client that appends a page blindly gets an infinite list with nothing erroring — page one arrives, its cursor goes back, page one arrives — and a farmer sees one spray recorded forty times and concludes the app is lying about his own field. Deduplicate each append by `id`, and treat a page that adds nothing new as the end of that list. The same rule covers a genuinely empty page, which is why a client does not need to tell the two apart.\n\n**A cursor is not a \"has more\" flag.** It names the last row of the page just sent, so a list whose length divides exactly by the page size returns a cursor for a page that turns out empty. Decide \"exhausted\" from what ARRIVED, never from the presence of a cursor.\n\n**Cursors are opaque: pass them back verbatim and do not parse them.** They happen to be base64url of `<sortKey>|<rowId>`, which is stated so nobody believes a cursor keeps ids out of the URL — it does not, it encodes one. But the encoding is not a contract: `cropSeasonsCursor` keys on an integer YEAR while the other two key on timestamps, and a client that parsed and rebuilt one would paginate on a value the ORDER BY does not use. That skips rows silently, which reads as a short archive rather than an error — and a short archive looks exactly like a young farm.",
         "tags": [
           "Parcel history"
         ],
@@ -15498,6 +15861,483 @@
                   "required": [
                     "ok"
                   ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/dashboard/ag": {
+      "get": {
+        "operationId": "getAgDashboard",
+        "summary": "The farm dashboard aggregate",
+        "description": "One request for the whole dashboard: recent journal entries, low stock, the caller's open tasks, and achievements.\n\n**`enabledModules` is the gating contract.** Always present, always an array, and a disabled module is ABSENT from it — never present-and-empty, never flagged. Several sections are legitimately empty for a tenant with modules off, so \"empty because gated\" and \"empty because there is no data\" are not distinguishable from the arrays alone; read the module list to tell them apart.\n\n`achievements` is null for a tenant with no ag module enabled. That is an ordinary state, not an error — hide the card.",
+        "tags": [
+          "Dashboard"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The dashboard aggregate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgDashboardPayload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/dashboard/trends": {
+      "get": {
+        "operationId": "getMetricTrends",
+        "summary": "Compliance and asset metrics over time",
+        "description": "One point per day over the requested window.\n\n**`daysAvailable` can be smaller than `daysRequested`.** A tenant younger than the window has fewer days of history, and the payload says so rather than padding. Plot what you were given.",
+        "tags": [
+          "Dashboard"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "description": "Window length in days. Defaults to 90. A non-numeric value falls back to the default rather than erroring, so a malformed client cannot break the chart — it silently gets the default window."
+            },
+            "required": false,
+            "description": "Window length in days. Defaults to 90. A non-numeric value falls back to the default rather than erroring, so a malformed client cannot break the chart — it silently gets the default window.",
+            "name": "days",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The trend series.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrendPayload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/dashboard/task-trend": {
+      "get": {
+        "operationId": "getFarmTaskTrend",
+        "summary": "Farm tasks created and completed per day",
+        "description": "Created versus completed per day — the shape of whether work is keeping up with itself. Note the envelope: the series is under `trend`, unlike `/dashboard/trends` which returns its series under `dataPoints` alongside range metadata. Two sibling endpoints, two envelopes; this one is documented so nobody has to discover that at runtime.",
+        "tags": [
+          "Dashboard"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "description": "Window length in days. Defaults to 14. A non-numeric value falls back to the default rather than erroring, so a malformed client cannot break the chart — it silently gets the default window."
+            },
+            "required": false,
+            "description": "Window length in days. Defaults to 14. A non-numeric value falls back to the default rather than erroring, so a malformed client cannot break the chart — it silently gets the default window.",
+            "name": "days",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The task series.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "trend": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/FarmTaskTrendPoint"
+                      }
+                    }
+                  },
+                  "required": [
+                    "trend"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/reports/field-briefing": {
+      "get": {
+        "operationId": "getFieldBriefing",
+        "summary": "An AI briefing over the farm's fields",
+        "description": "Generated from satellite index means plus the farm's own records. Cached, so two calls in a day return the same `generatedAt`.\n\n**Read the three booleans before rendering an absence.** `briefing: null` with `aiConfigured: false` is \"this deployment has no model\"; with `satelliteConfigured: false` it is \"no Earth Engine credentials\"; with `satelliteAvailable: false` it is \"configured, but the imagery call did not return\". Those are three different things to tell a farmer, and the null alone says none of them.",
+        "tags": [
+          "Dashboard"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The briefing, or the reasons there is none.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FieldBriefingPayload"
                 }
               }
             }

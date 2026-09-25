@@ -132,6 +132,19 @@ export function registerParcelHistoryPaths(registry: OpenAPIRegistry): void {
             '**Each list defaults to 100 rows** and `limit` applies PER LIST, so a client ' +
             'knows whether a first page can even be partial before it decides to offer a ' +
             '"load older" control at all.\n\n' +
+            '**A stale or malformed cursor RESTARTS that list — and it does so with a 200.** ' +
+            'That is deliberate server-side: a 400 over yesterday\'s cursor would strand a ' +
+            'screen for no gain. But it means the failure arrives as a VALID BODY holding the ' +
+            'NEWEST rows, so a client that appends a page blindly gets an infinite list with ' +
+            'nothing erroring — page one arrives, its cursor goes back, page one arrives — and ' +
+            'a farmer sees one spray recorded forty times and concludes the app is lying about ' +
+            'his own field. Deduplicate each append by `id`, and treat a page that adds nothing ' +
+            'new as the end of that list. The same rule covers a genuinely empty page, which is ' +
+            'why a client does not need to tell the two apart.\n\n' +
+            '**A cursor is not a "has more" flag.** It names the last row of the page just sent, ' +
+            'so a list whose length divides exactly by the page size returns a cursor for a page ' +
+            'that turns out empty. Decide "exhausted" from what ARRIVED, never from the presence ' +
+            'of a cursor.\n\n' +
             '**Cursors are opaque: pass them back verbatim and do not parse them.** They ' +
             'happen to be base64url of `<sortKey>|<rowId>`, which is stated so nobody ' +
             'believes a cursor keeps ids out of the URL — it does not, it encodes one. But ' +
