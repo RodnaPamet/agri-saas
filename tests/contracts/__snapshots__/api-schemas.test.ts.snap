@@ -1510,6 +1510,9 @@ exports[`API contract — per-schema snapshots schema: ExchangeThread 1`] = `
     "closed": {
       "type": "boolean"
     },
+    "blocked": {
+      "type": "boolean"
+    },
     "unreadCount": {
       "type": "integer"
     },
@@ -1527,6 +1530,7 @@ exports[`API contract — per-schema snapshots schema: ExchangeThread 1`] = `
     "role",
     "lastMessageAt",
     "closed",
+    "blocked",
     "unreadCount",
     "messages"
   ]
