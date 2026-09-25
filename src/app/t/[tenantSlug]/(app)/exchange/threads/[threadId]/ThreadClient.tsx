@@ -45,6 +45,7 @@ interface ThreadDetail {
     role: 'seller' | 'inquirer';
     lastMessageAt: string;
     closed: boolean;
+    blocked: boolean;
     unreadCount: number;
     messages: ThreadMessage[];
 }
@@ -56,6 +57,8 @@ export function ThreadClient({ threadId }: { threadId: string }) {
     const [draft, setDraft] = useState('');
     const [sending, setSending] = useState(false);
     const [sendError, setSendError] = useState(false);
+    const [closeError, setCloseError] = useState(false);
+    const [blockError, setBlockError] = useState(false);
     const marked = useRef(false);
 
     const { data, isLoading, error, mutate } = useTenantSWR<ThreadDetail>(
@@ -98,6 +101,30 @@ export function ThreadClient({ threadId }: { threadId: string }) {
     // message.
     const { handleKeyDown } = useEnterSubmit({ onSubmit: () => { void send(); } });
 
+    const closeThread = useCallback(async () => {
+        setCloseError(false);
+        try {
+            await apiPost(buildApiUrl(`/exchange/threads/${threadId}/close`), {});
+            await mutate();
+        } catch {
+            setCloseError(true);
+        }
+    }, [buildApiUrl, threadId, mutate]);
+
+    // No confirmation dialog, deliberately: blocking is REVERSIBLE from the
+    // same button, so the cost of a mis-tap is one more tap. A confirm here
+    // would be ceremony around an undoable action.
+    const toggleBlock = useCallback(async (blocked: boolean) => {
+        setBlockError(false);
+        try {
+            const url = buildApiUrl(`/exchange/threads/${threadId}/block`);
+            await (blocked ? apiDelete(url) : apiPost(url, {}));
+            await mutate();
+        } catch {
+            setBlockError(true);
+        }
+    }, [buildApiUrl, threadId, mutate]);
+
     const remove = useCallback(
         async (messageId: string) => {
             try {
@@ -135,6 +162,27 @@ export function ThreadClient({ threadId }: { threadId: string }) {
                             },
                         ]}
                     />
+                ) : undefined
+            }
+            actions={
+                data ? (
+                    <div className="flex items-center gap-tight">
+                        {/* Seller only — the buyer has no mirror control. */}
+                        {data.role === 'seller' ? (
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => { void toggleBlock(data.blocked); }}
+                            >
+                                {data.blocked ? t('unblockParty') : t('blockParty')}
+                            </Button>
+                        ) : null}
+                        {!data.closed ? (
+                            <Button variant="secondary" size="sm" onClick={() => { void closeThread(); }}>
+                                {t('closeThread')}
+                            </Button>
+                        ) : null}
+                    </div>
                 ) : undefined
             }
             loading={isLoading}
@@ -188,9 +236,21 @@ export function ThreadClient({ threadId }: { threadId: string }) {
                     )}
                 </div>
 
+                {/*
+                  * The composer stays on a CLOSED thread, deliberately. Closing
+                  * is a soft "I'm done here" and sending is what reopens it, so
+                  * hiding the composer would remove the only way back and turn a
+                  * tidy-up into a lock either party could impose on the other.
+                  */}
                 {data?.closed ? (
-                    <p className="text-sm text-content-muted">{t('closed')}</p>
-                ) : (
+                    <p className="text-sm text-content-muted">{t('closedHint')}</p>
+                ) : null}
+                {data?.blocked ? (
+                    <p className="text-sm text-content-muted">
+                        {data.role === 'seller' ? t('blockedNotice') : t('blockedForYou')}
+                    </p>
+                ) : null}
+                {(
                     <div className="flex items-end gap-tight border-t border-border-subtle pt-3">
                         <Textarea
                             value={draft}
@@ -211,6 +271,8 @@ export function ThreadClient({ threadId }: { threadId: string }) {
                     </div>
                 )}
                 {sendError ? <p className="text-sm text-content-danger">{t('sendFailed')}</p> : null}
+                {closeError ? <p className="text-sm text-content-danger">{t('closeFailed')}</p> : null}
+                {blockError ? <p className="text-sm text-content-danger">{t('blockFailed')}</p> : null}
             </div>
         </EntityDetailLayout>
     );

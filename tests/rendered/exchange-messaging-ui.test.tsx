@@ -76,7 +76,7 @@ function thread(over: Record<string, unknown> = {}) {
     return {
         id: 'th1', listingId: 'l1', listingCommodity: 'Wheat',
         role: 'seller', lastMessageAt: '2026-09-20T08:00:00.000Z',
-        closed: false, unreadCount: 1, messages: [msg()], ...over,
+        closed: false, blocked: false, unreadCount: 1, messages: [msg()], ...over,
     };
 }
 
@@ -180,16 +180,35 @@ describe('conversation', () => {
         );
     });
 
-    it('a closed thread has no composer at all', () => {
+    it('a closed thread KEEPS its composer — sending is the way back', () => {
+        // This assertion was the exact opposite when closing was unwired: with
+        // no close action, "closed" could only ever be a dead end, so hiding
+        // the composer looked right. Now that either party can close, hiding it
+        // would let one side lock the other out of a negotiation. Sending
+        // reopens, so the composer IS the reopen affordance.
         swrReturns(thread({ closed: true }));
         render(<ThreadClient threadId="th1" />);
 
-        // 'closed' appears twice by design — once in the meta strip's status
-        // and once as the notice where the composer would be.
-        expect(screen.getAllByText('closed')).toHaveLength(2);
-        expect(screen.queryByText('open')).not.toBeInTheDocument();
-        expect(screen.queryByPlaceholderText('composerPlaceholder')).not.toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: 'send' })).not.toBeInTheDocument();
+        expect(screen.getByText('closed')).toBeInTheDocument(); // meta status
+        expect(screen.getByText('closedHint')).toBeInTheDocument();
+        expect(screen.getByPlaceholderText('composerPlaceholder')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'send' })).toBeInTheDocument();
+        // Nothing to close that is already closed.
+        expect(screen.queryByRole('button', { name: 'closeThread' })).not.toBeInTheDocument();
+    });
+
+    it('offers "close" only while the thread is open', async () => {
+        const user = userEvent.setup();
+        swrReturns(thread({ closed: false }));
+        render(<ThreadClient threadId="th1" />);
+
+        const btn = screen.getByRole('button', { name: 'closeThread' });
+        expect(screen.queryByText('closedHint')).not.toBeInTheDocument();
+
+        await user.click(btn);
+        await waitFor(() =>
+            expect(apiPost).toHaveBeenCalledWith('/api/t/acme/exchange/threads/th1/close', {}),
+        );
     });
 
     it('marks read once per mount, not once per render', async () => {
@@ -210,5 +229,54 @@ describe('conversation', () => {
         render(<ThreadClient threadId="th1" />);
         // A receipt for a thread that may 404 would be a lie.
         expect(apiPost).not.toHaveBeenCalled();
+    });
+});
+
+
+describe('blocking, from the seller side only', () => {
+    it('the SELLER is offered the block control', async () => {
+        const user = userEvent.setup();
+        swrReturns(thread({ role: 'seller', blocked: false }));
+        render(<ThreadClient threadId="th1" />);
+
+        await user.click(screen.getByRole('button', { name: 'blockParty' }));
+        await waitFor(() =>
+            expect(apiPost).toHaveBeenCalledWith('/api/t/acme/exchange/threads/th1/block', {}),
+        );
+    });
+
+    it('the BUYER is not — there is no mirror control', () => {
+        swrReturns(thread({ role: 'inquirer', blocked: false }));
+        render(<ThreadClient threadId="th1" />);
+        expect(screen.queryByRole('button', { name: 'blockParty' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'unblockParty' })).not.toBeInTheDocument();
+    });
+
+    it('a blocked thread reads differently on each side', () => {
+        swrReturns(thread({ role: 'seller', blocked: true }));
+        const { unmount } = render(<ThreadClient threadId="th1" />);
+        // The seller is told what THEY did, and is offered the undo.
+        expect(screen.getByText('blockedNotice')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'unblockParty' })).toBeInTheDocument();
+        unmount();
+
+        swrReturns(thread({ role: 'inquirer', blocked: true }));
+        render(<ThreadClient threadId="th1" />);
+        // The buyer is told why their composer will refuse, rather than being
+        // left to type into a void and collect an error.
+        expect(screen.getByText('blockedForYou')).toBeInTheDocument();
+        expect(screen.queryByText('blockedNotice')).not.toBeInTheDocument();
+    });
+
+    it('unblock uses DELETE, not another POST', async () => {
+        const user = userEvent.setup();
+        swrReturns(thread({ role: 'seller', blocked: true }));
+        render(<ThreadClient threadId="th1" />);
+
+        await user.click(screen.getByRole('button', { name: 'unblockParty' }));
+        await waitFor(() =>
+            expect(apiDelete).toHaveBeenCalledWith('/api/t/acme/exchange/threads/th1/block'),
+        );
+        expect(apiPost).not.toHaveBeenCalledWith('/api/t/acme/exchange/threads/th1/block', {});
     });
 });

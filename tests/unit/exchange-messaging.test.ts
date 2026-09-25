@@ -18,6 +18,7 @@ const mockPrisma = {
     exchangeListing: { findFirst: jest.fn() },
     exchangeThread: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
     exchangeMessage: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
+    exchangeBlock: { findFirst: jest.fn(), create: jest.fn(), deleteMany: jest.fn() },
 };
 jest.mock('@/lib/prisma', () => ({ __esModule: true, prisma: mockPrisma, default: mockPrisma }));
 jest.mock('@/app-layer/events/audit', () => ({ logEvent: jest.fn() }));
@@ -27,7 +28,22 @@ jest.mock('@/app-layer/notifications/enqueue', () => ({
 }));
 const mockRecipientDb = {
     tenantMembership: { findMany: jest.fn() },
+    notification: { create: jest.fn() },
 };
+// Echoes the locale back so a test can prove WHICH language was used —
+// a translator mocked to a constant would pass whether the recipient's
+// uiLanguage was honoured or silently replaced by a default.
+const translateFor = jest.fn(
+    (locale: string, key: string, params?: Record<string, unknown>) =>
+        Promise.resolve(`${locale}|${key}${params ? `|${JSON.stringify(params)}` : ''}`),
+);
+jest.mock('@/lib/i18n/server-messages', () => ({
+    translateFor: (...a: unknown[]) => translateFor(...(a as [string, string])),
+}));
+const publishNotificationEvent = jest.fn();
+jest.mock('@/lib/notifications/notification-bus', () => ({
+    publishNotificationEvent: (...a: unknown[]) => publishNotificationEvent(...a),
+}));
 jest.mock('@/lib/db-context', () => ({
     __esModule: true,
     runInTenantContext: (_ctx: unknown, cb: (db: unknown) => unknown) => cb(mockPrisma),
@@ -35,6 +51,9 @@ jest.mock('@/lib/db-context', () => ({
 }));
 
 import {
+    blockExchangeParty,
+    closeExchangeThread,
+    unblockExchangeParty,
     openExchangeThread,
     getExchangeThread,
     sendExchangeMessage,
@@ -77,8 +96,17 @@ beforeEach(() => {
     mockPrisma.exchangeListing.findFirst.mockResolvedValue({ id: 'lst1', sellerTenantId: SELLER });
     enqueueEmail.mockReset();
     mockRecipientDb.tenantMembership.findMany.mockResolvedValue([
-        { user: { email: 'seller@example.test', uiLanguage: 'bg' }, tenant: { slug: 'seller-farm' } },
+        { user: { id: 'usr_seller', email: 'seller@example.test', uiLanguage: 'bg' }, tenant: { slug: 'seller-farm' } },
     ]);
+    mockRecipientDb.notification.create.mockReset();
+    mockRecipientDb.notification.create.mockResolvedValue({
+        id: 'ntf1', createdAt: new Date('2026-09-25T08:00:00.000Z'),
+    });
+    mockPrisma.exchangeBlock.findFirst.mockResolvedValue(null);
+    mockPrisma.exchangeBlock.create.mockResolvedValue({ id: 'blk1' });
+    mockPrisma.exchangeBlock.deleteMany.mockResolvedValue({ count: 1 });
+    translateFor.mockClear();
+    publishNotificationEvent.mockClear();
 });
 
 describe('opening a thread', () => {
@@ -206,9 +234,15 @@ describe('sending', () => {
         await expect(sendExchangeMessage(buyerCtx, 'th1', '   ')).rejects.toThrow(/message/i);
     });
 
-    it('refuses a closed thread', async () => {
+    it('does NOT refuse a closed thread — it reopens it', async () => {
+        // The inverse of what this asserted while closing was unwired. A
+        // refusal was harmless when nothing could set `closedAt`; now that
+        // either party can close, refusing would let one side mute the other
+        // permanently. See the "closing, and reopening by sending" block.
         mockPrisma.exchangeThread.findFirst.mockResolvedValue(thread({ closedAt: new Date() }));
-        await expect(sendExchangeMessage(buyerCtx, 'th1', 'hello')).rejects.toThrow(/closed/i);
+        await expect(sendExchangeMessage(buyerCtx, 'th1', 'hello')).resolves.toMatchObject({
+            reopened: true,
+        });
     });
 
     it('bumps lastMessageAt so the inbox sorts correctly', async () => {
@@ -293,5 +327,204 @@ describe('retracting', () => {
         });
         await expect(deleteExchangeMessage(buyerCtx, 'm1')).resolves.toEqual({ id: 'm1' });
         expect(mockPrisma.exchangeMessage.update).not.toHaveBeenCalled();
+    });
+});
+
+
+describe('the bell, one row per message', () => {
+    it('writes a notification with NO dedupeKey — the point of the channel', async () => {
+        await sendExchangeMessage(buyerCtx, 'th1', 'Имате ли още налично?');
+
+        expect(mockRecipientDb.notification.create).toHaveBeenCalledTimes(1);
+        const arg = mockRecipientDb.notification.create.mock.calls[0][0] as {
+            data: Record<string, unknown>;
+        };
+        expect(arg.data.type).toBe('EXCHANGE_MESSAGE');
+        expect(arg.data.userId).toBe('usr_seller');
+        expect(arg.data.tenantId).toBe(SELLER);
+        expect(arg.data.linkUrl).toBe('/t/seller-farm/exchange/threads/th1');
+        // A dedupeKey here would re-create the exact bug this channel exists
+        // to cover: the email already collapses to one per day.
+        expect(arg.data.dedupeKey).toBeUndefined();
+    });
+
+    it('notifies on the SECOND message of the same day — the regression', async () => {
+        await sendExchangeMessage(buyerCtx, 'th1', 'first');
+        await sendExchangeMessage(buyerCtx, 'th1', 'second');
+
+        // Before this channel existed, message two reached the recipient on no
+        // channel at all: the outbox dedupe key ends in the UTC day and skips
+        // silently.
+        expect(mockRecipientDb.notification.create).toHaveBeenCalledTimes(2);
+        expect(publishNotificationEvent).toHaveBeenCalledTimes(2);
+    });
+
+    it("renders the copy in the RECIPIENT's language, not the sender's", async () => {
+        // 'en' DELIBERATELY, because RECIPIENT_FALLBACK_LOCALE is 'bg'. With a
+        // 'bg' recipient this assertion has no teeth — "honoured uiLanguage"
+        // and "silently used the fallback" produce identical output, and a
+        // mutation replacing the lookup with the constant passed.
+        mockRecipientDb.tenantMembership.findMany.mockResolvedValue([
+            { user: { id: 'u_en', email: 'en@example.test', uiLanguage: 'en' }, tenant: { slug: 'seller-farm' } },
+        ]);
+        await sendExchangeMessage(buyerCtx, 'th1', 'hello');
+        const arg = mockRecipientDb.notification.create.mock.calls[0][0] as {
+            data: Record<string, unknown>;
+        };
+        expect(arg.data.title).toBe('en|notificationInApp.exchangeMessage.title');
+        expect(arg.data.message).toContain('en|notificationInApp.exchangeMessage.body');
+        expect(arg.data.message).toContain('wheat'); // the commodity, interpolated
+    });
+
+    it('falls back to Bulgarian when the recipient has no uiLanguage', async () => {
+        mockRecipientDb.tenantMembership.findMany.mockResolvedValue([
+            { user: { id: 'u2', email: 'x@example.test', uiLanguage: null }, tenant: { slug: 's' } },
+        ]);
+        await sendExchangeMessage(buyerCtx, 'th1', 'hello');
+        const arg = mockRecipientDb.notification.create.mock.calls[0][0] as {
+            data: Record<string, unknown>;
+        };
+        // The product's fallback, not the sender's language and not `null`.
+        expect(arg.data.title).toBe('bg|notificationInApp.exchangeMessage.title');
+    });
+
+    it('persists BEFORE publishing — a subscriber must not outrun the row', async () => {
+        const order: string[] = [];
+        mockRecipientDb.notification.create.mockImplementation(async () => {
+            order.push('create');
+            return { id: 'ntf1', createdAt: new Date() };
+        });
+        publishNotificationEvent.mockImplementation(() => { order.push('publish'); });
+
+        await sendExchangeMessage(buyerCtx, 'th1', 'hello');
+        expect(order).toEqual(['create', 'publish']);
+    });
+
+    it('a failed bell write does not roll back the message', async () => {
+        mockRecipientDb.notification.create.mockRejectedValue(new Error('db gone'));
+        await expect(sendExchangeMessage(buyerCtx, 'th1', 'hello')).resolves.toBeDefined();
+    });
+});
+
+
+describe('closing, and reopening by sending', () => {
+    it('either party may close — the buyer', async () => {
+        mockPrisma.exchangeThread.findFirst.mockResolvedValue({
+            id: 'th1', listingId: 'lst1', inquirerTenantId: BUYER, closedAt: null,
+            listing: { sellerTenantId: SELLER, commodity: 'wheat' },
+        });
+        const r = await closeExchangeThread(buyerCtx, 'th1');
+        expect(r.alreadyClosed).toBe(false);
+        expect(mockPrisma.exchangeThread.update).toHaveBeenCalledWith(
+            expect.objectContaining({ data: expect.objectContaining({ closedAt: expect.any(Date) }) }),
+        );
+    });
+
+    it('either party may close — the seller', async () => {
+        mockPrisma.exchangeThread.findFirst.mockResolvedValue({
+            id: 'th1', listingId: 'lst1', inquirerTenantId: BUYER, closedAt: null,
+            listing: { sellerTenantId: SELLER, commodity: 'wheat' },
+        });
+        // Symmetric on purpose: a seller-only close would let one side end a
+        // negotiation the other cannot resume.
+        await expect(closeExchangeThread(sellerCtx, 'th1')).resolves.toMatchObject({
+            alreadyClosed: false,
+        });
+    });
+
+    it('is idempotent — a second close keeps the ORIGINAL timestamp', async () => {
+        const first = new Date('2026-09-20T10:00:00.000Z');
+        mockPrisma.exchangeThread.findFirst.mockResolvedValue({
+            id: 'th1', listingId: 'lst1', inquirerTenantId: BUYER, closedAt: first,
+            listing: { sellerTenantId: SELLER, commodity: 'wheat' },
+        });
+        const r = await closeExchangeThread(buyerCtx, 'th1');
+        expect(r).toEqual({ closedAt: first, alreadyClosed: true });
+        // "When did this end" must not drift every time someone taps it.
+        expect(mockPrisma.exchangeThread.update).not.toHaveBeenCalled();
+    });
+
+    it('sending on a CLOSED thread reopens it rather than refusing', async () => {
+        mockPrisma.exchangeThread.findFirst.mockResolvedValue({
+            id: 'th1', listingId: 'lst1', inquirerTenantId: BUYER,
+            closedAt: new Date('2026-09-20T10:00:00.000Z'),
+            listing: { sellerTenantId: SELLER, commodity: 'wheat' },
+        });
+        const r = await sendExchangeMessage(buyerCtx, 'th1', 'still interested?');
+        expect(r.reopened).toBe(true);
+        const [upd] = mockPrisma.exchangeThread.update.mock.calls.at(-1) as [
+            { data: Record<string, unknown> },
+        ];
+        expect(upd.data.closedAt).toBeNull();
+    });
+
+    it('clears closedAt even on an OPEN thread, so a concurrent close cannot survive', async () => {
+        const r = await sendExchangeMessage(buyerCtx, 'th1', 'hello');
+        expect(r.reopened).toBe(false);
+        const [upd] = mockPrisma.exchangeThread.update.mock.calls.at(-1) as [
+            { data: Record<string, unknown> },
+        ];
+        // Unconditional: a close landing between the read and this write must
+        // not outlive a message that came after it.
+        expect(upd.data.closedAt).toBeNull();
+    });
+});
+
+
+describe('a seller blocking a buyer', () => {
+    it('the SELLER may block', async () => {
+        await expect(blockExchangeParty(sellerCtx, 'th1')).resolves.toMatchObject({
+            blocked: true, alreadyBlocked: false,
+        });
+        const [arg] = mockPrisma.exchangeBlock.create.mock.calls[0] as [
+            { data: Record<string, unknown> },
+        ];
+        expect(arg.data.sellerTenantId).toBe(SELLER);
+        expect(arg.data.blockedTenantId).toBe(BUYER);
+    });
+
+    it('the BUYER may not — there is no mirror control', async () => {
+        await expect(blockExchangeParty(buyerCtx, 'th1')).rejects.toThrow(/seller/i);
+        expect(mockPrisma.exchangeBlock.create).not.toHaveBeenCalled();
+    });
+
+    it('is idempotent — blocking twice is one row, not an error', async () => {
+        mockPrisma.exchangeBlock.findFirst.mockResolvedValue({ id: 'blk1' });
+        await expect(blockExchangeParty(sellerCtx, 'th1')).resolves.toMatchObject({
+            alreadyBlocked: true,
+        });
+        expect(mockPrisma.exchangeBlock.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a blocked buyer OPENING a thread — including one they already had', async () => {
+        mockPrisma.exchangeBlock.findFirst.mockResolvedValue({ id: 'blk1' });
+        await expect(openExchangeThread(buyerCtx, 'lst1')).rejects.toThrow(/not accepting/i);
+        // Checked before the idempotent read, so a pre-existing thread is not
+        // handed back either.
+        expect(mockPrisma.exchangeThread.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a blocked buyer SENDING', async () => {
+        mockPrisma.exchangeBlock.findFirst.mockResolvedValue({ id: 'blk1' });
+        await expect(sendExchangeMessage(buyerCtx, 'th1', 'hello')).rejects.toThrow(/not accepting/i);
+        expect(mockPrisma.exchangeMessage.create).not.toHaveBeenCalled();
+    });
+
+    it('the SELLER can still write in a thread they blocked', async () => {
+        mockPrisma.exchangeBlock.findFirst.mockResolvedValue({ id: 'blk1' });
+        // "Stop them reaching me", not "freeze the record" — a symmetric
+        // refusal would lock the seller out of their own conversation.
+        await expect(sendExchangeMessage(sellerCtx, 'th1', 'final word')).resolves.toBeDefined();
+        expect(mockPrisma.exchangeMessage.create).toHaveBeenCalled();
+    });
+
+    it('unblocking lifts it, and is not an error when there is nothing to lift', async () => {
+        mockPrisma.exchangeBlock.deleteMany.mockResolvedValue({ count: 0 });
+        await expect(unblockExchangeParty(sellerCtx, 'th1')).resolves.toEqual({ blocked: false });
+    });
+
+    it('the buyer may not unblock themselves', async () => {
+        await expect(unblockExchangeParty(buyerCtx, 'th1')).rejects.toThrow(/seller/i);
+        expect(mockPrisma.exchangeBlock.deleteMany).not.toHaveBeenCalled();
     });
 });

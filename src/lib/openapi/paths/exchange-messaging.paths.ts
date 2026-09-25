@@ -164,6 +164,71 @@ export function registerExchangeMessagingPaths(registry: OpenAPIRegistry): void 
     });
 
     op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/exchange/threads/{threadId}/close',
+        operationId: 'closeExchangeThread',
+        summary: 'Close a conversation',
+        description:
+            '**Either party may close, and closing does not lock the thread.** Sending a ' +
+            'message reopens it, which is why there is no reopen endpoint to pair with this ' +
+            'one — the way back is the thing you were going to do anyway.\n\n' +
+            'Symmetric on purpose: if only the seller could close, or if a close were final, ' +
+            'one side could silence the other mid-negotiation. Treat `closed` as "tidied out ' +
+            'of the active inbox", not as a permission.\n\n' +
+            '**Idempotent** — closing an already-closed thread keeps the ORIGINAL timestamp ' +
+            'and reports `alreadyClosed: true`, so "when did this end" does not drift each ' +
+            'time someone taps it.',
+        tags: ['Exchange messaging'],
+        params: ThreadParams,
+        success: {
+            status: 200,
+            description: 'The close timestamp, and whether this call is what closed it.',
+            schema: z.object({ closedAt: z.string(), alreadyClosed: z.boolean() }),
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/exchange/threads/{threadId}/block',
+        operationId: 'blockExchangeParty',
+        summary: 'Refuse further contact from the other party',
+        description:
+            '**Seller only.** The listing owner decides who may keep writing to them. There ' +
+            'is no buyer-side mirror: a buyer can simply stop opening threads, and closing ' +
+            'already tidies one away for either side.\n\n' +
+            'Addressed by THREAD rather than by tenant id, so no client ever sends another ' +
+            'tenant\'s id and the caller provably has standing — you can only block someone ' +
+            'who has already written to you.\n\n' +
+            'Only the blocked side is refused afterwards. The seller who pressed this can ' +
+            'still write in the thread: the control is "stop them reaching me", not "freeze ' +
+            'the record". **Idempotent.**',
+        tags: ['Exchange messaging'],
+        params: ThreadParams,
+        success: {
+            status: 200,
+            description: 'The end state, and whether this call is what changed it.',
+            schema: z.object({ blocked: z.boolean(), alreadyBlocked: z.boolean() }),
+        },
+    });
+
+    op(registry, {
+        method: 'delete',
+        path: '/api/t/{tenantSlug}/exchange/threads/{threadId}/block',
+        operationId: 'unblockExchangeParty',
+        summary: 'Lift a block',
+        description:
+            'Seller only, and idempotent — lifting a block that is not there is not an ' +
+            'error, because the end state is what is asserted rather than the transition.',
+        tags: ['Exchange messaging'],
+        params: ThreadParams,
+        success: {
+            status: 200,
+            description: 'The end state.',
+            schema: z.object({ blocked: z.boolean() }),
+        },
+    });
+
+    op(registry, {
         method: 'delete',
         path: '/api/t/{tenantSlug}/exchange/messages/{messageId}',
         operationId: 'deleteExchangeMessage',
