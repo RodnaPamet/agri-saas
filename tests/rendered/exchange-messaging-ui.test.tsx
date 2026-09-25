@@ -45,10 +45,11 @@ jest.mock('@/lib/tenant-context-provider', () => ({
 
 const apiPost = jest.fn();
 const apiDelete = jest.fn();
+const apiGet = jest.fn();
 jest.mock('@/lib/api-client', () => ({
     apiPost: (...a: unknown[]) => apiPost(...a),
     apiDelete: (...a: unknown[]) => apiDelete(...a),
-    apiGet: jest.fn(),
+    apiGet: (...a: unknown[]) => apiGet(...a),
     apiPatch: jest.fn(),
 }));
 
@@ -76,7 +77,7 @@ function thread(over: Record<string, unknown> = {}) {
     return {
         id: 'th1', listingId: 'l1', listingCommodity: 'Wheat',
         role: 'seller', lastMessageAt: '2026-09-20T08:00:00.000Z',
-        closed: false, blocked: false, unreadCount: 1, messages: [msg()], ...over,
+        closed: false, blocked: false, unreadCount: 1, olderCursor: null, messages: [msg()], ...over,
     };
 }
 
@@ -84,6 +85,7 @@ beforeEach(() => {
     jest.clearAllMocks();
     apiPost.mockResolvedValue({});
     apiDelete.mockResolvedValue(undefined);
+    apiGet.mockReset();
 });
 
 describe('inbox', () => {
@@ -278,5 +280,60 @@ describe('blocking, from the seller side only', () => {
             expect(apiDelete).toHaveBeenCalledWith('/api/t/acme/exchange/threads/th1/block'),
         );
         expect(apiPost).not.toHaveBeenCalledWith('/api/t/acme/exchange/threads/th1/block', {});
+    });
+});
+
+
+describe('scrolling back', () => {
+    it('offers "load older" only when there IS an older page', () => {
+        swrReturns(thread({ olderCursor: null }));
+        const { unmount } = render(<ThreadClient threadId="th1" />);
+        expect(screen.queryByRole('button', { name: 'loadOlder' })).not.toBeInTheDocument();
+        unmount();
+
+        swrReturns(thread({ olderCursor: 'CURSOR1' }));
+        render(<ThreadClient threadId="th1" />);
+        expect(screen.getByRole('button', { name: 'loadOlder' })).toBeInTheDocument();
+    });
+
+    it('PREPENDS each older page, so two loads read oldest-first', async () => {
+        // TWO loads, deliberately. With a single older page, prepending and
+        // appending produce identical output — the first version of this test
+        // asserted the order and a prepend/append mutation passed it.
+        const user = userEvent.setup();
+        swrReturns(thread({ olderCursor: 'CURSOR1', messages: [msg({ id: 'm_new', body: 'newest' })] }));
+        apiGet
+            .mockResolvedValueOnce({
+                ...thread({ olderCursor: 'CURSOR2' }),
+                messages: [msg({ id: 'm_mid', body: 'middle line' })],
+            })
+            .mockResolvedValueOnce({
+                ...thread({ olderCursor: null }),
+                messages: [msg({ id: 'm_old', body: 'oldest line' })],
+            });
+        render(<ThreadClient threadId="th1" />);
+
+        await user.click(screen.getByRole('button', { name: 'loadOlder' }));
+        await waitFor(() => expect(screen.getByText('middle line')).toBeInTheDocument());
+        await user.click(screen.getByRole('button', { name: 'loadOlder' }));
+        await waitFor(() => expect(screen.getByText('oldest line')).toBeInTheDocument());
+
+        const bodies = screen.getAllByText(/oldest line|middle line|newest/).map((n) => n.textContent);
+        expect(bodies).toEqual(['oldest line', 'middle line', 'newest']);
+        expect(apiGet).toHaveBeenNthCalledWith(1, '/api/t/acme/exchange/threads/th1?before=CURSOR1');
+        expect(apiGet).toHaveBeenNthCalledWith(2, '/api/t/acme/exchange/threads/th1?before=CURSOR2');
+    });
+
+    it('stops offering the button once the start is reached', async () => {
+        const user = userEvent.setup();
+        swrReturns(thread({ olderCursor: 'CURSOR1' }));
+        // The older page reports null: there is nothing before it.
+        apiGet.mockResolvedValue({ ...thread({ olderCursor: null }), messages: [] });
+        render(<ThreadClient threadId="th1" />);
+
+        await user.click(screen.getByRole('button', { name: 'loadOlder' }));
+        await waitFor(() =>
+            expect(screen.queryByRole('button', { name: 'loadOlder' })).not.toBeInTheDocument(),
+        );
     });
 });

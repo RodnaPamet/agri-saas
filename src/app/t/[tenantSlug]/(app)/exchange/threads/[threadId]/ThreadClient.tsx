@@ -25,7 +25,7 @@ import { MetaStrip } from '@/components/ui/meta-strip';
 import { Textarea } from '@/components/ui/textarea';
 import { useEnterSubmit } from '@/components/ui/hooks';
 import { formatDateTime } from '@/lib/format-date';
-import { apiDelete, apiPost } from '@/lib/api-client';
+import { apiDelete, apiGet, apiPost } from '@/lib/api-client';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 
@@ -47,6 +47,7 @@ interface ThreadDetail {
     closed: boolean;
     blocked: boolean;
     unreadCount: number;
+    olderCursor: string | null;
     messages: ThreadMessage[];
 }
 
@@ -60,6 +61,16 @@ export function ThreadClient({ threadId }: { threadId: string }) {
     const [closeError, setCloseError] = useState(false);
     const [blockError, setBlockError] = useState(false);
     const marked = useRef(false);
+    // Older pages accumulate HERE rather than in the SWR cache. The poll
+    // refreshes the newest page every 5s; if scrollback lived in the same
+    // cache entry it would be discarded on every tick.
+    const [older, setOlder] = useState<ThreadMessage[]>([]);
+    // `undefined` means "not walked yet", which is DISTINCT from `null`
+    // ("reached the start"). Derived rather than seeded in an effect: seeding
+    // on every 5s poll would resurrect a cursor the reader has already walked
+    // past, and the effect form also trips `react-hooks/set-state-in-effect`.
+    const [walkedCursor, setWalkedCursor] = useState<string | null | undefined>(undefined);
+    const [loadingOlder, setLoadingOlder] = useState(false);
 
     const { data, isLoading, error, mutate } = useTenantSWR<ThreadDetail>(
         `/exchange/threads/${threadId}`,
@@ -137,7 +148,27 @@ export function ThreadClient({ threadId }: { threadId: string }) {
         [buildApiUrl, mutate],
     );
 
-    const messages = data?.messages ?? [];
+    const olderCursor = walkedCursor === undefined ? (data?.olderCursor ?? null) : walkedCursor;
+
+    const loadOlder = useCallback(async () => {
+        if (!olderCursor) return;
+        setLoadingOlder(true);
+        try {
+            const page = await apiGet<ThreadDetail>(
+                buildApiUrl(`/exchange/threads/${threadId}?before=${encodeURIComponent(olderCursor)}`),
+            );
+            setOlder((prev) => [...page.messages, ...prev]);
+            setWalkedCursor(page.olderCursor);
+        } catch {
+            // Silent: the reader still has everything they had a moment ago,
+            // and an error banner over a scrollback they did not ask to
+            // extend is noisier than the failure.
+        } finally {
+            setLoadingOlder(false);
+        }
+    }, [olderCursor, threadId, buildApiUrl]);
+
+    const messages = [...older, ...(data?.messages ?? [])];
 
     return (
         <EntityDetailLayout
@@ -190,6 +221,17 @@ export function ThreadClient({ threadId }: { threadId: string }) {
         >
             <div className="flex min-h-0 flex-1 flex-col gap-default">
                 <div className="min-h-0 flex-1 space-y-tight overflow-y-auto pr-1">
+                    {olderCursor ? (
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="w-full"
+                            loading={loadingOlder}
+                            onClick={() => { void loadOlder(); }}
+                        >
+                            {t('loadOlder')}
+                        </Button>
+                    ) : null}
                     {messages.length === 0 ? (
                         <div className="rounded-lg border border-border-subtle p-4 text-sm text-content-muted">
                             {t('threadEmpty')}
