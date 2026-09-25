@@ -32,3 +32,30 @@ export const TaskDTOSchema = z.object({
 });
 
 export type TaskDTO = z.infer<typeof TaskDTOSchema>;
+
+/**
+ * A task comment, as both the list and the create return it.
+ *
+ * Read off the repository's own `include` rather than guessed: every scalar of
+ * `TaskComment` plus `createdBy` narrowed to `{id, name, email}`, which is
+ * exactly `UserRef`. `tenantId` is on the wire — it is the caller's own tenant,
+ * so it discloses nothing, but it is documented rather than hidden because a
+ * client will see it.
+ *
+ * Comments are PLAIN TEXT. The usecase strips HTML before persistence so a
+ * future renderer change cannot re-enable a stored XSS vector, which means a
+ * client must not treat the body as markup either.
+ */
+export const TaskCommentDTOSchema = z
+    .object({
+        id: z.string(),
+        tenantId: z.string(),
+        taskId: z.string(),
+        body: z.string(),
+        createdByUserId: z.string(),
+        createdAt: z.string(),
+        updatedAt: z.string(),
+        createdBy: UserRefSchema.nullable().optional(),
+    })
+    .passthrough()
+    .openapi('TaskComment');

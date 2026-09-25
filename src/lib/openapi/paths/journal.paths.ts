@@ -64,7 +64,21 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
             'Three bodies on one operation — a client must branch on the query it sent.',
         tags: ['Journal'],
         params: TenantParams,
-        success: { status: 200, description: 'Entries, in one of three shapes (see description).', schema: z.unknown() },
+        success: {
+            status: 200,
+            description:
+                'Entries, in one of THREE shapes — the query decides which, and a client that ' +
+                'assumes one reads an absent key from another as an empty list rather than as ' +
+                'an error.',
+            schema: z.union([
+                // `?deleted=…` — the recycle-bin view.
+                z.object({ entries: z.array(LogEntryLike) }),
+                // paged
+                z.object({ rows: z.array(LogEntryLike), nextCursor: z.string().nullable() }),
+                // the default: a bare array, ETagged
+                z.array(LogEntryLike),
+            ]),
+        },
     });
 
     op(registry, {

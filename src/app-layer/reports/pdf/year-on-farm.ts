@@ -6,8 +6,7 @@
  *   activity-story line.
  *
  * All data is pulled INSIDE this usecase (via `getSeasonRecap` + a thin
- * tenant-name lookup + the same certification derivation the ag-dashboard
- * uses). The route only buffers + ships the returned document — this
+ * tenant-name lookup). The route only buffers + ships the returned document — this
  * generator does NOT call `doc.end()` (the route's `collectPdfBuffer`
  * owns finalisation, mirroring the other PDF generators).
  */

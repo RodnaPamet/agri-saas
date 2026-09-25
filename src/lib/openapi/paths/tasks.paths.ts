@@ -9,15 +9,32 @@
  * ROUTE reshapes it to `{ rows, nextCursor }`. The wire is what a client
  * sees, and nothing was telling it what the wire holds.
  *
- * Request bodies are the REAL Zod schemas the routes validate with, so
- * they cannot drift from the handlers. Response bodies stay `z.unknown()`
- * with the shape in prose — a mirrored response schema is a second
- * spelling of a payload, free to drift, and the description is the honest
- * maximum for a shape nobody has pinned with a DTO yet.
+ * Request bodies are the REAL Zod schemas the routes validate with, so they
+ * cannot drift from the handlers.
+ *
+ * Response bodies now reference `TaskDTOSchema`, and that SATISFIES the rule
+ * this note used to state rather than overriding it. The rule was that
+ * `z.unknown()` is the honest maximum "for a shape nobody has pinned with a DTO
+ * yet" — and a task HAD been pinned all along: `TaskDTOSchema` is already the
+ * documented response for `farm-tasks.paths.ts` and `field-operations.paths.ts`,
+ * and `use-tasks.ts` validates with it on the client. So the second spelling
+ * the note warns about already existed and was already trusted; these routes
+ * were simply the ones not pointing at it.
+ *
+ * `TaskCommentDTOSchema` is new, and is the one place here that adds a
+ * spelling. It is eight fields read off the repository's own `include` rather
+ * than guessed, and it lives in `task.dto.ts` beside `Task` so the next reader
+ * finds them together instead of finding a copy inlined in a paths module.
  */
 import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { op } from './helpers';
+// `TaskDTOSchema` is ALREADY the documented response shape for
+// `farm-tasks.paths.ts` and `field-operations.paths.ts`, and the client
+// validates with it in `use-tasks.ts`. Referencing it here is using the
+// spelling this repo already trusts for the same record — not adding a third
+// one, which is what the note below rightly warns against.
+import { TaskDTOSchema, TaskCommentDTOSchema } from '@/lib/dto/task.dto';
 import {
     CreateTaskSchema,
     UpdateTaskSchema,
@@ -86,7 +103,15 @@ export function registerTaskPaths(registry: OpenAPIRegistry): void {
             'comma-separated list here expecting the farm-tasks behaviour.',
         tags: ['Tasks'],
         params: TenantParams,
-        success: { status: 200, description: 'Tasks — see the description for WHICH shape.', schema: z.unknown() },
+        success: {
+            status: 200,
+            description:
+                'Tasks. TWO shapes, and the query decides which — see the operation description.',
+            schema: z.union([
+                z.object({ rows: z.array(TaskDTOSchema), nextCursor: z.string().nullable() }),
+                z.object({ rows: z.array(TaskDTOSchema), truncated: z.boolean() }),
+            ]),
+        },
     });
 
     op(registry, {
@@ -98,7 +123,7 @@ export function registerTaskPaths(registry: OpenAPIRegistry): void {
         tags: ['Tasks'],
         params: TenantParams,
         body: CreateTaskSchema,
-        success: { status: 201, description: 'The created task.', schema: z.unknown() },
+        success: { status: 201, description: 'The created task.', schema: TaskDTOSchema },
     });
 
     op(registry, {
@@ -108,7 +133,7 @@ export function registerTaskPaths(registry: OpenAPIRegistry): void {
         summary: 'Get one task',
         tags: ['Tasks'],
         params: TaskParams,
-        success: { status: 200, description: 'The task.', schema: z.unknown() },
+        success: { status: 200, description: 'The task.', schema: TaskDTOSchema },
     });
 
     op(registry, {
@@ -122,7 +147,7 @@ export function registerTaskPaths(registry: OpenAPIRegistry): void {
         tags: ['Tasks'],
         params: TaskParams,
         body: UpdateTaskSchema,
-        success: { status: 200, description: 'The updated task.', schema: z.unknown() },
+        success: { status: 200, description: 'The updated task.', schema: TaskDTOSchema },
     });
 
     op(registry, {
@@ -133,7 +158,11 @@ export function registerTaskPaths(registry: OpenAPIRegistry): void {
         description: 'Soft delete — reads filter it out, the row survives.',
         tags: ['Tasks'],
         params: TaskParams,
-        success: { status: 200, description: 'Deleted.', schema: z.unknown() },
+        success: {
+            status: 200,
+            description: 'Deleted. `{ ok: true }` — no body of the deleted row.',
+            schema: z.object({ ok: z.boolean() }),
+        },
     });
 
     op(registry, {
@@ -150,7 +179,7 @@ export function registerTaskPaths(registry: OpenAPIRegistry): void {
         tags: ['Tasks'],
         params: TaskParams,
         body: SetTaskStatusSchema,
-        success: { status: 200, description: 'The updated task.', schema: z.unknown() },
+        success: { status: 200, description: 'The updated task.', schema: TaskDTOSchema },
     });
 
     op(registry, {
@@ -161,7 +190,7 @@ export function registerTaskPaths(registry: OpenAPIRegistry): void {
         tags: ['Tasks'],
         params: TaskParams,
         body: AssignTaskSchema,
-        success: { status: 200, description: 'The updated task.', schema: z.unknown() },
+        success: { status: 200, description: 'The updated task.', schema: TaskDTOSchema },
     });
 
     op(registry, {
@@ -171,7 +200,11 @@ export function registerTaskPaths(registry: OpenAPIRegistry): void {
         summary: 'List task comments',
         tags: ['Tasks'],
         params: TaskParams,
-        success: { status: 200, description: 'Comments.', schema: z.unknown() },
+        success: {
+            status: 200,
+            description: 'Comments, OLDEST first — a conversation read in order.',
+            schema: z.array(TaskCommentDTOSchema),
+        },
     });
 
     op(registry, {
@@ -186,6 +219,6 @@ export function registerTaskPaths(registry: OpenAPIRegistry): void {
         tags: ['Tasks'],
         params: TaskParams,
         body: AddTaskCommentSchema,
-        success: { status: 201, description: 'The created comment.', schema: z.unknown() },
+        success: { status: 201, description: 'The created comment.', schema: TaskCommentDTOSchema },
     });
 }
