@@ -41,12 +41,6 @@ export async function generateYearOnFarmPdf(
     });
     const tenantName = tenant?.name || 'Tenant';
 
-    // Certification readiness used to ride here, derived from the top
-    // AG_SCHEME framework. The certification-scheme catalog was removed
-    // with the compliance uproot, so the report carries no readiness
-    // section — the remaining sections are all farm records.
-    const certification = null as { schemeName: string; score: number } | null;
-
     // ─── Meta ─────────────────────────────────────────────────────────
     const yearLabel = recap.year != null ? String(recap.year) : 'All time';
     const meta: ReportMeta = {
@@ -116,16 +110,19 @@ export async function generateYearOnFarmPdf(
     }
     addSpacer(doc);
 
-    // Certification line
+    // Certification line.
+    //
+    // Readiness used to ride here, derived from the top AG_SCHEME framework.
+    // That catalogue was removed with the compliance uproot, so the branch that
+    // printed a score was UNREACHABLE: a `const certification = null` with an
+    // `if (certification)` around it. Only the else could ever run.
+    //
+    // The output is unchanged — this section still prints one fixed line. Whether
+    // a section that can only ever say "nothing tracked" belongs in a farmer's
+    // report at all is a product question, not a dead-code question, so it is
+    // left standing rather than quietly dropped.
     addSectionTitle(doc, 'Certification');
-    if (certification) {
-        addParagraph(
-            doc,
-            `${certification.schemeName} readiness: ${certification.score}%.`,
-        );
-    } else {
-        addParagraph(doc, 'No certification scheme tracked.');
-    }
+    addParagraph(doc, 'No certification scheme tracked.');
     addSpacer(doc);
 
     // Activity story line

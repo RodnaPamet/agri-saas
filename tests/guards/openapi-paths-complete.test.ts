@@ -76,7 +76,10 @@ const EXEMPT_ROUTE_FILES = new Set(['src/app/api/auth/[...nextauth]/route.ts']);
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 
 /** Lowered in the same diff that removes entries. See the baseline's _README. */
-const UNDOCUMENTED_CEILING = 313;
+// 313 -> 309: the four dashboard/briefing routes are described now
+// (`dashboard.paths.ts`), so they leave the baseline in the same diff that
+// documents them — which is what this guard's sibling assertion demands.
+const UNDOCUMENTED_CEILING = 309;
 
 interface Baseline {
     _README: string[];

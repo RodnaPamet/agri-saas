@@ -1,5 +1,197 @@
 // Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
 
+exports[`API contract — per-schema snapshots schema: AgDashboardAchievements 1`] = `
+"{
+  "type": [
+    "object",
+    "null"
+  ],
+  "properties": {
+    "milestones": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "enum": [
+              "framework-100",
+              "evidence-all-current",
+              "audit-pack-complete",
+              "first-practice-mapped",
+              "first-field-mapped",
+              "spray-job-complete",
+              "first-harvest",
+              "season-closed"
+            ]
+          },
+          "earned": {
+            "type": "boolean"
+          },
+          "earnedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "key",
+          "earned",
+          "earnedAt"
+        ]
+      }
+    },
+    "streak": {
+      "type": "object",
+      "properties": {
+        "current": {
+          "type": "integer"
+        },
+        "best": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "current",
+        "best"
+      ]
+    }
+  },
+  "required": [
+    "milestones",
+    "streak"
+  ],
+  "description": "Every milestone is returned with \`earned\` false rather than omitted, so a client renders the full set and does not have to know the list. \`earnedAt\` is null exactly when \`earned\` is false."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AgDashboardJournalItem 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "occurredAt": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "type",
+    "title",
+    "occurredAt"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AgDashboardLowStockItem 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "quantityOnHand": {
+      "type": "number"
+    },
+    "unitSymbol": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "quantityOnHand",
+    "unitSymbol"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AgDashboardPayload 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "enabledModules": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "recentJournal": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/AgDashboardJournalItem"
+      }
+    },
+    "lowStock": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/AgDashboardLowStockItem"
+      }
+    },
+    "myTasks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/AgDashboardTaskItem"
+      }
+    },
+    "achievements": {
+      "$ref": "#/components/schemas/AgDashboardAchievements"
+    }
+  },
+  "required": [
+    "enabledModules",
+    "recentJournal",
+    "lowStock",
+    "myTasks",
+    "achievements"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AgDashboardTaskItem 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "dueAt": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "title",
+    "status",
+    "dueAt"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: AssetCreateRequest 1`] = `
 "{
   "type": "object",
@@ -570,6 +762,37 @@ exports[`API contract — per-schema snapshots schema: BottomTabOrder 1`] = `
     "/journal",
     "/exchange"
   ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: BriefingAction 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "field": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "action": {
+      "type": "string"
+    },
+    "priority": {
+      "type": "string",
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ]
+    }
+  },
+  "required": [
+    "field",
+    "action",
+    "priority"
+  ],
+  "description": "\`field\` is null for an action that applies to the whole farm."
 }"
 `;
 
@@ -1868,6 +2091,95 @@ exports[`API contract — per-schema snapshots schema: FarmTaskListItem 1`] = `
   ],
   "additionalProperties": {},
   "description": "One row of the operator queue. This is the \`taskListSelect\` projection, NOT the full Task returned by the create — it carries no tenantId, description, priority or metadataJson."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: FarmTaskTrendPoint 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "date": {
+      "type": "string"
+    },
+    "created": {
+      "type": "integer"
+    },
+    "completed": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "date",
+    "created",
+    "completed"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: FieldBriefing 1`] = `
+"{
+  "type": [
+    "object",
+    "null"
+  ],
+  "properties": {
+    "headline": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "actions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/BriefingAction"
+      }
+    }
+  },
+  "required": [
+    "headline",
+    "summary",
+    "actions"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: FieldBriefingPayload 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "aiConfigured": {
+      "type": "boolean"
+    },
+    "satelliteConfigured": {
+      "type": "boolean"
+    },
+    "satelliteAvailable": {
+      "type": "boolean"
+    },
+    "generatedAt": {
+      "type": "string"
+    },
+    "date": {
+      "type": "string"
+    },
+    "fieldCount": {
+      "type": "integer"
+    },
+    "briefing": {
+      "$ref": "#/components/schemas/FieldBriefing"
+    }
+  },
+  "required": [
+    "aiConfigured",
+    "satelliteConfigured",
+    "satelliteAvailable",
+    "generatedAt",
+    "date",
+    "fieldCount",
+    "briefing"
+  ],
+  "description": "The three \`*Configured\` / \`*Available\` booleans exist so a client can say WHY there is no briefing instead of showing an empty card. \`aiConfigured\` false means the deployment has no model; \`satelliteConfigured\` false means no Earth Engine credentials; \`satelliteAvailable\` false means configured but the imagery call did not return. Those are three different messages to a farmer, and \`briefing: null\` alone cannot tell them apart."
 }"
 `;
 
@@ -5763,6 +6075,90 @@ exports[`API contract — per-schema snapshots schema: TaskUpdateRequest 1`] = `
     "metadataJson": {}
   },
   "description": "Partial update for a task. Status changes and assignment go through their own focused endpoints."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: TrendDataPoint 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "date": {
+      "type": "string"
+    },
+    "evidenceOverdue": {
+      "type": "integer"
+    },
+    "evidenceDueSoon7d": {
+      "type": "integer"
+    },
+    "evidenceCurrent": {
+      "type": "integer"
+    },
+    "tasksOpen": {
+      "type": "integer"
+    },
+    "tasksOverdue": {
+      "type": "integer"
+    },
+    "assetsTotal": {
+      "type": "integer"
+    },
+    "assetsActive": {
+      "type": "integer"
+    },
+    "assetsHighCriticality": {
+      "type": "integer"
+    },
+    "assetsRetired": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "date",
+    "evidenceOverdue",
+    "evidenceDueSoon7d",
+    "evidenceCurrent",
+    "tasksOpen",
+    "tasksOverdue",
+    "assetsTotal",
+    "assetsActive",
+    "assetsHighCriticality",
+    "assetsRetired"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: TrendPayload 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "dataPoints": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/TrendDataPoint"
+      }
+    },
+    "daysRequested": {
+      "type": "integer"
+    },
+    "daysAvailable": {
+      "type": "integer"
+    },
+    "rangeStart": {
+      "type": "string"
+    },
+    "rangeEnd": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "dataPoints",
+    "daysRequested",
+    "daysAvailable",
+    "rangeStart",
+    "rangeEnd"
+  ],
+  "description": "\`daysAvailable\` can be SMALLER than \`daysRequested\` — a young tenant has fewer days of history than you asked for. Plot the range you were given, not the one you requested: a chart that pads the difference with zeroes shows a collapse that never happened."
 }"
 `;
 

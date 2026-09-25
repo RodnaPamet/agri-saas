@@ -25,13 +25,6 @@ jest.mock('@/lib/prisma', () => ({
     default: { tenant: { findUnique: jest.fn().mockResolvedValue({ name: 'Acme Farm' }) } },
 }));
 
-// year-on-farm.ts statically imports the certification derivation; mock
-// it disabled (empty module list) so the smoke test never hits the
-// scheme/readiness queries.
-jest.mock('@/app-layer/usecases/modules', () => ({
-    getEnabledModules: jest.fn().mockResolvedValue([]),
-}));
-
 import { getSeasonRecap } from '@/app-layer/usecases/season-recap';
 
 const ctx = { tenantId: 't1', userId: 'u', requestId: 'r', permissions: { canRead: true } } as unknown as RequestContext;
