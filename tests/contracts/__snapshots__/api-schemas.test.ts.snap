@@ -912,6 +912,12 @@ exports[`API contract — per-schema snapshots schema: Contract 1`] = `
         "null"
       ]
     },
+    "commodityCanonical": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "type": {
       "type": "string",
       "enum": [
@@ -1001,7 +1007,318 @@ exports[`API contract — per-schema snapshots schema: Contract 1`] = `
     "status"
   ],
   "additionalProperties": {},
-  "description": "Grain marketing/supply contract — a forward SALE of produce or PURCHASE of inputs against a counterparty. volumeTonnes/pricePerTonne are decimal strings; terms/pricingNotes are encrypted at rest and returned decrypted."
+  "description": "Grain marketing/supply contract — a forward SALE of produce or PURCHASE of inputs against a counterparty. volumeTonnes/pricePerTonne are decimal strings; terms/pricingNotes are encrypted at rest and returned decrypted. This is the RAW model as create and single-read return it: the soft-delete bookkeeping columns (deletedAt, deletedByUserId, retentionUntil) are on the wire too and are always null on a contract you can read, so they are described here rather than as fields. The LIST endpoint returns this shape plus computed fulfilment/valueAmount/benchmark decorations, which are not part of this schema."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: CostEntry 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "PAYROLL",
+        "RENT",
+        "FERTILIZER",
+        "FUEL",
+        "SEED",
+        "PESTICIDE",
+        "SERVICE",
+        "OTHER"
+      ]
+    },
+    "amount": {
+      "type": "number"
+    },
+    "currency": {
+      "type": "string"
+    },
+    "incurredOn": {
+      "type": "string"
+    },
+    "supplier": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "invoiceFileId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "plantingId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "seasonId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "locationId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "parcelId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "leaseId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "itemId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "allocationBasis": {
+      "type": "string",
+      "enum": [
+        "TARGET",
+        "HOLDING",
+        "PARCEL_SUBSET"
+      ]
+    },
+    "allocationParcelIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "createdByUserId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "createdAt": {
+      "type": "string"
+    },
+    "updatedAt": {
+      "type": "string"
+    },
+    "planting": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "successionNumber": {
+          "type": "number"
+        },
+        "cropPlan": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "id",
+        "successionNumber"
+      ],
+      "additionalProperties": {}
+    },
+    "season": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "additionalProperties": {}
+    },
+    "location": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "additionalProperties": {}
+    },
+    "parcel": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "additionalProperties": {}
+    },
+    "item": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "category"
+      ],
+      "additionalProperties": {}
+    },
+    "invoiceFile": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "originalName": {
+          "type": "string"
+        },
+        "mimeType": {
+          "type": "string"
+        },
+        "sizeBytes": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "originalName",
+        "mimeType",
+        "sizeBytes"
+      ],
+      "additionalProperties": {}
+    }
+  },
+  "required": [
+    "id",
+    "category",
+    "amount",
+    "currency",
+    "incurredOn",
+    "supplier",
+    "invoiceFileId",
+    "plantingId",
+    "seasonId",
+    "locationId",
+    "parcelId",
+    "leaseId",
+    "itemId",
+    "allocationBasis",
+    "allocationParcelIds",
+    "createdByUserId",
+    "createdAt",
+    "updatedAt",
+    "planting",
+    "season",
+    "location",
+    "parcel",
+    "item",
+    "invoiceFile"
+  ],
+  "additionalProperties": {},
+  "description": "One recorded cost against land, a planting, a season or an inventory item. amount is a JSON number (Decimal converted, absent reads as 0). allocationBasis says WHICH land the cost spreads across and allocationParcelIds is the PARCEL_SUBSET denominator, sorted. description is encrypted commercial free text returned only on a single read — it is ABSENT rather than null on list rows, which is a different claim from \\"this entry has no description\\"."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: CostEntryList 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "rows": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/CostEntry"
+      }
+    },
+    "totalCount": {
+      "type": "number"
+    },
+    "truncated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "rows",
+    "totalCount",
+    "truncated"
+  ],
+  "description": "A capped page of cost entries. When truncated is true rows were DROPPED, so any total computed from rows is wrong — use totalCount."
 }"
 `;
 
@@ -6338,10 +6655,23 @@ exports[`API contract — per-schema snapshots schema: YieldRecord 1`] = `
         "null"
       ]
     },
+    "netTonnesStd": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
     "tPerHa": {
       "type": [
         "number",
         "null"
+      ]
+    },
+    "tPerHaBasis": {
+      "type": "string",
+      "enum": [
+        "standard-moisture",
+        "gross"
       ]
     },
     "valuationNotes": {
@@ -6422,9 +6752,37 @@ exports[`API contract — per-schema snapshots schema: YieldRecord 1`] = `
     "grossTonnes",
     "moisturePct",
     "areaHa",
-    "tPerHa"
+    "netTonnesStd",
+    "tPerHa",
+    "tPerHaBasis"
   ],
   "additionalProperties": {},
-  "description": "Actual harvest production total. tPerHa is computed (grossTonnes / areaHa) and not stored. valuationNotes is encrypted at rest and returned decrypted."
+  "description": "Actual harvest production total. tPerHa is computed and not stored — from netTonnesStd when a standardised tonnage exists, otherwise grossTonnes; tPerHaBasis says which, so two t/ha figures are never compared across different bases. valuationNotes is encrypted at rest, returned decrypted, and is absent (not null) on list rows."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: YieldRecordList 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "rows": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/YieldRecord"
+      }
+    },
+    "totalCount": {
+      "type": "number"
+    },
+    "truncated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "rows",
+    "totalCount",
+    "truncated"
+  ],
+  "description": "A capped page of yield records. When truncated is true rows were DROPPED, so any total computed from rows is wrong — use totalCount. Note that valuationNotes is absent from these rows by design."
 }"
 `;

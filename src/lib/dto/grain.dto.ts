@@ -8,16 +8,21 @@
  *     (`listContracts` / `getContract`), so its `Decimal` columns
  *     (`volumeTonnes`, `pricePerTonne`) serialise to JSON STRINGS
  *     (Prisma `Decimal.toJSON()` → string), and dates to ISO strings.
- *   - `YieldRecord`, `GrainBin` and `GrainCostRow` are mapped to DTOs
- *     in their usecases (`yield-record.ts::toDto`, `grain-bin.ts`,
- *     `cost-rollup.ts`) which convert `Decimal` → number, so those
- *     numeric fields are JSON NUMBERS.
+ *   - `YieldRecord`, `CostEntry`, `GrainBin` and `GrainCostRow` are mapped
+ *     to DTOs in their usecases (`yield-record.ts::toDto`,
+ *     `cost-entry.ts::toDto`, `grain-bin.ts`, `cost-rollup.ts`) which
+ *     convert `Decimal` → number, so those numeric fields are JSON
+ *     NUMBERS.
  *
  * The encrypted free-text columns (Contract.terms / pricingNotes,
  * YieldRecord.valuationNotes) decrypt transparently on read and are
  * plain strings on the wire.
  */
 import { z } from '@/lib/openapi/zod';
+// The read side reuses the WRITE side's enums rather than respelling them.
+// Two independent spellings of one enum is how a value becomes writable and
+// undocumented, or documented and unwritable.
+import { CostCategorySchema, CostAllocationBasisSchema } from '@/app-layer/schemas/grain.schemas';
 
 // ─── Season summary sub-shape (shared include) ───
 
@@ -42,6 +47,12 @@ export const ContractDTOSchema = z
         key: z.string().nullable().optional(),
         counterparty: z.string(),
         commodity: z.string().nullable().optional(),
+        /**
+         * The NORMALISED commodity name, and the key market benchmarking
+         * joins on — a contract whose `commodity` is free text the matcher
+         * did not recognise has this null and gets no benchmark.
+         */
+        commodityCanonical: z.string().nullable().optional(),
         type: z.enum(['SALE', 'PURCHASE']),
         status: z.string(),
         // Decimal → string over JSON.
@@ -60,14 +71,15 @@ export const ContractDTOSchema = z
     .passthrough()
     .openapi('Contract', {
         description:
-            'Grain marketing/supply contract — a forward SALE of produce or PURCHASE of inputs against a counterparty. volumeTonnes/pricePerTonne are decimal strings; terms/pricingNotes are encrypted at rest and returned decrypted.',
+            'Grain marketing/supply contract — a forward SALE of produce or PURCHASE of inputs against a counterparty. volumeTonnes/pricePerTonne are decimal strings; terms/pricingNotes are encrypted at rest and returned decrypted. This is the RAW model as create and single-read return it: the soft-delete bookkeeping columns (deletedAt, deletedByUserId, retentionUntil) are on the wire too and are always null on a contract you can read, so they are described here rather than as fields. The LIST endpoint returns this shape plus computed fulfilment/valueAmount/benchmark decorations, which are not part of this schema.',
     });
 
 export type ContractDTO = z.infer<typeof ContractDTOSchema>;
 
 // ─── YieldRecord ───
 // Mapped DTO (yield-record.ts::toDto). Numeric Decimals → numbers;
-// tPerHa is COMPUTED (grossTonnes / areaHa), not stored.
+// tPerHa is COMPUTED, not stored — from `netTonnesStd ?? grossTonnes`,
+// NOT from grossTonnes alone. `tPerHaBasis` names which was used.
 
 export const YieldRecordDTOSchema = z
     .object({
@@ -80,8 +92,33 @@ export const YieldRecordDTOSchema = z
         grossTonnes: z.number().nullable(),
         moisturePct: z.number().nullable(),
         areaHa: z.number().nullable(),
-        /** Computed yield intensity = grossTonnes / areaHa (null when area is 0/absent). */
+        /**
+         * Moisture-standardised tonnage. Present on BOTH the list and the
+         * single read (`YIELD_LIST_SELECT` projects it), so it is required
+         * here rather than optional — absent would be a different claim.
+         */
+        netTonnesStd: z.number().nullable(),
+        /**
+         * Computed yield intensity, from `netTonnesStd ?? grossTonnes`
+         * divided by `areaHa` — null when area is 0 or absent.
+         */
         tPerHa: z.number().nullable(),
+        /**
+         * WHICH tonnage `tPerHa` was divided from.
+         *
+         * Not decoration. Two records can carry a t/ha computed on
+         * different bases — one standardised, one gross — and the mapper's
+         * own comment says the DTO is what stops them being compared
+         * silently. It was missing here, so the spec made that impossible:
+         * a client could show two figures side by side with no way to know
+         * they were not on the same basis.
+         */
+        tPerHaBasis: z.enum(['standard-moisture', 'gross']),
+        /**
+         * Encrypted commercial free text. ABSENT (not null) on list rows —
+         * `YIELD_LIST_SELECT` omits it. `null` means this record has no
+         * notes; absent means they were not sent on this read.
+         */
         valuationNotes: z.string().nullable().optional(),
         createdAt: z.string().optional(),
         updatedAt: z.string().optional(),
@@ -100,10 +137,100 @@ export const YieldRecordDTOSchema = z
     .passthrough()
     .openapi('YieldRecord', {
         description:
-            'Actual harvest production total. tPerHa is computed (grossTonnes / areaHa) and not stored. valuationNotes is encrypted at rest and returned decrypted.',
+            'Actual harvest production total. tPerHa is computed and not stored — from netTonnesStd when a standardised tonnage exists, otherwise grossTonnes; tPerHaBasis says which, so two t/ha figures are never compared across different bases. valuationNotes is encrypted at rest, returned decrypted, and is absent (not null) on list rows.',
     });
 
 export type YieldRecordDTO = z.infer<typeof YieldRecordDTOSchema>;
+
+// ─── CostEntry ───
+// Mapped DTO (cost-entry.ts::toDto), shared by ALL FIVE cost operations —
+// list, single read, create, update, delete-restore. One mapper means one
+// shape, so this schema is written against `toDto`'s return and nothing
+// else.
+//
+// Two absences here carry meaning, and both are DELIBERATE server-side
+// decisions rather than oversights:
+//
+//   `description` is projected only on a single read. It is encrypted
+//   commercial free text whose sole renderer is the write-gated edit form,
+//   so broadcasting it on a list would decrypt it into every reader's
+//   payload — including readers who can never open that form. ABSENT
+//   therefore means "not sent on this read"; `null` means "this entry has
+//   none". A client that collapses the two shows "no description" over a
+//   row that has one.
+//
+//   `allocationParcels` never reaches the wire at all. The mapper flattens
+//   the join rows to `allocationParcelIds` — sorted, because an unsorted
+//   list makes a payload change when a query planner does, and the ids are
+//   the allocation DENOMINATOR, so a list that comes back shorter than it
+//   went in moves money.
+
+const CostPlantingRefSchema = z
+    .object({
+        id: z.string(),
+        successionNumber: z.number(),
+        cropPlan: z.object({ name: z.string().nullable() }).passthrough().nullable().optional(),
+    })
+    .passthrough();
+
+const CostNamedRefSchema = z.object({ id: z.string(), name: z.string() }).passthrough();
+
+export const CostEntryDTOSchema = z
+    .object({
+        id: z.string(),
+        category: CostCategorySchema,
+        /**
+         * Decimal → number, and `?? 0` in the mapper: an entry with no
+         * amount reads as 0, never null.
+         */
+        amount: z.number(),
+        currency: z.string(),
+        incurredOn: z.string(),
+        supplier: z.string().nullable(),
+        invoiceFileId: z.string().nullable(),
+        plantingId: z.string().nullable(),
+        seasonId: z.string().nullable(),
+        locationId: z.string().nullable(),
+        parcelId: z.string().nullable(),
+        leaseId: z.string().nullable(),
+        itemId: z.string().nullable(),
+        /** Defaulted to TARGET by the mapper, so always present on the wire. */
+        allocationBasis: CostAllocationBasisSchema,
+        /**
+         * The PARCEL_SUBSET denominator, flattened from the join rows and
+         * SORTED. Empty for every other basis.
+         */
+        allocationParcelIds: z.array(z.string()),
+        createdByUserId: z.string().nullable(),
+        /** Single-read only — see the note above. Absent ≠ null. */
+        description: z.string().nullable().optional(),
+        createdAt: z.string(),
+        updatedAt: z.string(),
+        planting: CostPlantingRefSchema.nullable(),
+        season: CostNamedRefSchema.nullable(),
+        location: CostNamedRefSchema.nullable(),
+        parcel: CostNamedRefSchema.nullable(),
+        item: z
+            .object({ id: z.string(), name: z.string(), category: z.string() })
+            .passthrough()
+            .nullable(),
+        invoiceFile: z
+            .object({
+                id: z.string(),
+                originalName: z.string(),
+                mimeType: z.string(),
+                sizeBytes: z.number(),
+            })
+            .passthrough()
+            .nullable(),
+    })
+    .passthrough()
+    .openapi('CostEntry', {
+        description:
+            'One recorded cost against land, a planting, a season or an inventory item. amount is a JSON number (Decimal converted, absent reads as 0). allocationBasis says WHICH land the cost spreads across and allocationParcelIds is the PARCEL_SUBSET denominator, sorted. description is encrypted commercial free text returned only on a single read — it is ABSENT rather than null on list rows, which is a different claim from "this entry has no description".',
+    });
+
+export type CostEntryDTO = z.infer<typeof CostEntryDTOSchema>;
 
 // ─── GrainBin ───
 // BinDto (grain-bin.ts). A BIN/STORAGE Location with computed fill.
@@ -276,3 +403,35 @@ export const PortfolioGrainSummaryDTOSchema = z
     });
 
 export type PortfolioGrainSummaryDTO = z.infer<typeof PortfolioGrainSummaryDTOSchema>;
+
+// ─── List envelopes ───
+//
+// `{ rows, totalCount, truncated }`, which is the GRAIN module's convention
+// and NOT the `{ items, pageInfo }` one `pagination.ts` documents as the
+// standard. The divergence is recorded rather than quietly reconciled: these
+// endpoints have shipped this shape to the web client since the module
+// landed, and renaming a key is a breaking change for a client that exists.
+//
+// `truncated` is the load-bearing field. The read is capped, and when the cap
+// is hit rows are DROPPED — so a total computed off `rows` is simply wrong on
+// a truncated page, and `totalCount` is the only honest denominator. Both are
+// required for that reason: a client cannot decide to ignore them.
+
+const listEnvelope = (rows: z.ZodTypeAny) =>
+    z.object({
+        rows: z.array(rows),
+        /** The full count, queried only when the page came back FULL. */
+        totalCount: z.number(),
+        /** True when the cap was hit and rows were dropped from this page. */
+        truncated: z.boolean(),
+    });
+
+export const CostEntryListSchema = listEnvelope(CostEntryDTOSchema).openapi('CostEntryList', {
+    description:
+        'A capped page of cost entries. When truncated is true rows were DROPPED, so any total computed from rows is wrong — use totalCount.',
+});
+
+export const YieldRecordListSchema = listEnvelope(YieldRecordDTOSchema).openapi('YieldRecordList', {
+    description:
+        'A capped page of yield records. When truncated is true rows were DROPPED, so any total computed from rows is wrong — use totalCount. Note that valuationNotes is absent from these rows by design.',
+});

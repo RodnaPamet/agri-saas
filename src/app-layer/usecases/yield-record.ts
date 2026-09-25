@@ -69,7 +69,13 @@ function parseDate(value: string | null | undefined, label: string): Date | null
  *     call the SAME helper — that divergence (7.0 t/ha on screen, 4.2 in
  *     the PDF) came from two call sites picking different denominators.
  */
-function toDto(row: {
+/**
+ * Exported ONLY so the response-shape contract test can run the real mapper
+ * and parse its output with the published schema in strict mode. A schema
+ * checked against a hand-written fixture is checked against its own author;
+ * checked against this, a field added or dropped here reddens the contract.
+ */
+export function toDto(row: {
     id: string;
     plantingId: string | null;
     locationId: string | null;
