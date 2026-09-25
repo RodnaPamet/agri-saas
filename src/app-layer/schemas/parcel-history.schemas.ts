@@ -11,7 +11,7 @@
  *
  * So these validate SHAPE, and the usecase validates MEANING.
  */
-import { z } from 'zod';
+import { z } from '@/lib/openapi/zod';
 
 export const CreateCropSeasonSchema = z
     .object({
@@ -24,7 +24,8 @@ export const CreateCropSeasonSchema = z
         harvestedAt: z.string().datetime().nullable().optional(),
         notes: z.string().nullable().optional(),
     })
-    .strip();
+    .strip()
+    .openapi('CreateParcelCropSeason');
 export type CreateCropSeasonBody = z.infer<typeof CreateCropSeasonSchema>;
 
 export const CreateWeedObservationSchema = z
@@ -39,5 +40,6 @@ export const CreateWeedObservationSchema = z
         weeds: z.array(z.string()).min(1),
         notes: z.string().nullable().optional(),
     })
-    .strip();
+    .strip()
+    .openapi('CreateParcelWeedObservation');
 export type CreateWeedObservationBody = z.infer<typeof CreateWeedObservationSchema>;

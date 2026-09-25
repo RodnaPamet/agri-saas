@@ -1060,13 +1060,11 @@ exports[`API contract — per-schema snapshots schema: CreateParcelCropSeason 1`
   "type": "object",
   "properties": {
     "year": {
-      "type": "integer",
-      "example": 2024
+      "type": "integer"
     },
     "cropType": {
       "type": "string",
-      "minLength": 1,
-      "example": "Wheat"
+      "minLength": 1
     },
     "sownAt": {
       "type": [
@@ -1109,11 +1107,7 @@ exports[`API contract — per-schema snapshots schema: CreateParcelWeedObservati
       "items": {
         "type": "string"
       },
-      "minItems": 1,
-      "example": [
-        "Sorghum halepense",
-        "някакъв друг плевел"
-      ]
+      "minItems": 1
     },
     "notes": {
       "type": [
@@ -4705,6 +4699,22 @@ exports[`API contract — per-schema snapshots schema: ParcelHistoryOperation 1`
     "productName": {
       "type": "string"
     },
+    "productCategory": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "SEED",
+        "PESTICIDE",
+        "FERTILIZER",
+        "AMENDMENT",
+        "FUEL",
+        "HARVESTED_PRODUCE",
+        "OTHER",
+        null
+      ]
+    },
     "doseValue": {
       "type": "string"
     },
@@ -4725,6 +4735,7 @@ exports[`API contract — per-schema snapshots schema: ParcelHistoryOperation 1`
     "title",
     "completedAt",
     "productName",
+    "productCategory",
     "doseValue",
     "doseUnit",
     "targetNote"
@@ -5267,7 +5278,22 @@ exports[`API contract — per-schema snapshots schema: ParcelWeedObservation 1`]
     "weedKeys": {
       "type": "array",
       "items": {
-        "type": "string"
+        "type": "string",
+        "enum": [
+          "Sorghum halepense",
+          "Echinochloa crus-galli",
+          "Setaria viridis",
+          "Avena fatua",
+          "Cynodon dactylon",
+          "Cirsium arvense",
+          "Convolvulus arvensis",
+          "Chenopodium album",
+          "Amaranthus retroflexus",
+          "Sinapis arvensis",
+          "Raphanus raphanistrum",
+          "Papaver rhoeas",
+          "Galium aparine"
+        ]
       }
     },
     "otherWeeds": {

@@ -12,6 +12,15 @@
 import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { op } from './helpers';
+// The REQUEST bodies come from the schema layer the routes actually validate
+// with, not from copies written here. This module used to hand-write them, so
+// the documented body and the enforced one were two objects that merely
+// happened to agree — and the sync hook could not have caught a drift, because
+// it compares the generated file to THIS module rather than to the validator.
+import {
+    CreateCropSeasonSchema,
+    CreateWeedObservationSchema,
+} from '@/app-layer/schemas/parcel-history.schemas';
 
 const TenantParams = z.object({
     tenantSlug: z.string().openapi({ param: { name: 'tenantSlug', in: 'path' }, example: 'acme' }),
@@ -58,6 +67,15 @@ const HistoryOperation = z
         title: z.string(),
         completedAt: z.string().datetime().nullable(),
         productName: z.string(),
+        /**
+         * What was applied, from the ITEM rather than from the label.
+         * `operationType` cannot answer this — caller-settable, four values of
+         * which only two carry the derivation, and null on a third of the
+         * operation lines in production.
+         */
+        productCategory: z
+            .enum(['SEED', 'PESTICIDE', 'FERTILIZER', 'AMENDMENT', 'FUEL', 'HARVESTED_PRODUCE', 'OTHER'])
+            .nullable(),
         doseValue: z.string(),
         doseUnit: z.string(),
         targetNote: z.string().nullable(),
@@ -76,7 +94,33 @@ const WeedObservation = z
     .object({
         id: z.string(),
         observedAt: z.string().datetime(),
-        weedKeys: z.array(z.string()),
+        /**
+         * CATALOGUE values only — the server matched these against its own
+         * vocabulary, so a client may rely on the set and offer it in a picker.
+         *
+         * The enum is HERE and deliberately NOT on the write field. `weeds` on
+         * the request accepts catalogue values AND free text in one array, and
+         * the server splits them; constraining that side would forbid the free
+         * text the split exists to handle, which is the feature rather than a
+         * loophole.
+         */
+        weedKeys: z.array(
+            z.enum([
+                'Sorghum halepense',
+                'Echinochloa crus-galli',
+                'Setaria viridis',
+                'Avena fatua',
+                'Cynodon dactylon',
+                'Cirsium arvense',
+                'Convolvulus arvensis',
+                'Chenopodium album',
+                'Amaranthus retroflexus',
+                'Sinapis arvensis',
+                'Raphanus raphanistrum',
+                'Papaver rhoeas',
+                'Galium aparine',
+            ]),
+        ),
         otherWeeds: z.array(z.string()),
         notes: z.string().nullable(),
     })
@@ -193,15 +237,7 @@ export function registerParcelHistoryPaths(registry: OpenAPIRegistry): void {
             'harvest is ordinary practice, so this is not refused as a duplicate.',
         tags: ['Parcel history'],
         params: ParcelParams,
-        body: z
-            .object({
-                year: z.number().int().openapi({ example: 2024 }),
-                cropType: z.string().min(1).openapi({ example: 'Wheat' }),
-                sownAt: z.string().datetime().nullable().optional(),
-                harvestedAt: z.string().datetime().nullable().optional(),
-                notes: z.string().nullable().optional(),
-            })
-            .openapi('CreateParcelCropSeason'),
+        body: CreateCropSeasonSchema,
         success: {
             status: 201,
             description: 'Recorded.',
@@ -240,16 +276,7 @@ export function registerParcelHistoryPaths(registry: OpenAPIRegistry): void {
             'Duplicates collapse. An observation resolving to nothing is refused.',
         tags: ['Parcel history'],
         params: ParcelParams,
-        body: z
-            .object({
-                observedAt: z.string().datetime(),
-                weeds: z
-                    .array(z.string())
-                    .min(1)
-                    .openapi({ example: ['Sorghum halepense', 'някакъв друг плевел'] }),
-                notes: z.string().nullable().optional(),
-            })
-            .openapi('CreateParcelWeedObservation'),
+        body: CreateWeedObservationSchema,
         success: {
             status: 201,
             description: 'Recorded.',

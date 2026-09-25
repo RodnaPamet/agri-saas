@@ -1053,13 +1053,11 @@
         "type": "object",
         "properties": {
           "year": {
-            "type": "integer",
-            "example": 2024
+            "type": "integer"
           },
           "cropType": {
             "type": "string",
-            "minLength": 1,
-            "example": "Wheat"
+            "minLength": 1
           },
           "sownAt": {
             "type": [
@@ -1099,11 +1097,7 @@
             "items": {
               "type": "string"
             },
-            "minItems": 1,
-            "example": [
-              "Sorghum halepense",
-              "някакъв друг плевел"
-            ]
+            "minItems": 1
           },
           "notes": {
             "type": [
@@ -4515,6 +4509,22 @@
           "productName": {
             "type": "string"
           },
+          "productCategory": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "SEED",
+              "PESTICIDE",
+              "FERTILIZER",
+              "AMENDMENT",
+              "FUEL",
+              "HARVESTED_PRODUCE",
+              "OTHER",
+              null
+            ]
+          },
           "doseValue": {
             "type": "string"
           },
@@ -4535,6 +4545,7 @@
           "title",
           "completedAt",
           "productName",
+          "productCategory",
           "doseValue",
           "doseUnit",
           "targetNote"
@@ -5044,7 +5055,22 @@
           "weedKeys": {
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "Sorghum halepense",
+                "Echinochloa crus-galli",
+                "Setaria viridis",
+                "Avena fatua",
+                "Cynodon dactylon",
+                "Cirsium arvense",
+                "Convolvulus arvensis",
+                "Chenopodium album",
+                "Amaranthus retroflexus",
+                "Sinapis arvensis",
+                "Raphanus raphanistrum",
+                "Papaver rhoeas",
+                "Galium aparine"
+              ]
             }
           },
           "otherWeeds": {
