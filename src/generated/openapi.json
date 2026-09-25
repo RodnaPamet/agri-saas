@@ -4273,13 +4273,15 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "harvestedAt": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "notes": {
             "type": [
@@ -4440,13 +4442,34 @@
             "items": {
               "$ref": "#/components/schemas/ParcelWeedObservation"
             }
+          },
+          "cropSeasonsCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "operationsCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "weedObservationsCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
           "parcel",
           "cropSeasons",
           "operations",
-          "weedObservations"
+          "weedObservations",
+          "cropSeasonsCursor",
+          "operationsCursor",
+          "weedObservationsCursor"
         ]
       },
       "ParcelHistoryOperation": {
@@ -4471,7 +4494,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "productName": {
             "type": "string"
@@ -4500,7 +4524,7 @@
           "doseUnit",
           "targetNote"
         ],
-        "description": "A COMPLETED field-operation line for this parcel — the same rows that record a spray or fertiliser application, which is why \"linked completed tasks\" and \"what was applied\" are one list and not two. Pending lines are absent: a plan is not history. `doseValue` is a decimal STRING; parsing it as a float rounds the dose."
+        "description": "A COMPLETED field-operation line for this parcel — the same rows that record a spray or fertiliser application, which is why \"linked completed tasks\" and \"what was applied\" are one list and not two. Pending lines are absent: a plan is not history. `doseValue` is a decimal STRING; parsing it as a float rounds the dose.\n\n`title`, `productName` and `doseUnit` are EMPTY STRINGS when their source relation is absent, never null — empty means \"not recorded\", never \"unknown\". Filter them out of any concatenation rather than rendering a placeholder."
       },
       "ParcelLease": {
         "type": "object",
@@ -4999,7 +5023,8 @@
             "type": "string"
           },
           "observedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "weedKeys": {
             "type": "array",
@@ -11772,7 +11797,7 @@
       "post": {
         "operationId": "createCostEntry",
         "summary": "Record a cost",
-        "description": "Creates one cost entry. `allocationBasis` decides how it reaches a crop — read the enum's own docs before choosing, because the basis is what makes a cost attributable rather than stranded in `unallocatedToCrop` on the calculator.",
+        "description": "Creates one cost entry. `allocationBasis` decides how it reaches a crop — read the enum's own docs before choosing, because the basis is what makes a cost attributable rather than stranded in `unallocatedToCrop` on the calculator.\n\n**Honours `Idempotency-Key`.** Send one, minted BEFORE the first attempt and reused on every retry of the same logical write. The server maps it to `clientMutationId` and a replay returns the ORIGINAL row rather than booking the figure twice. These are FINANCIAL records: an undeduped retry moves net worth with nothing erroring.",
         "tags": [
           "Grain"
         ],
@@ -12588,6 +12613,7 @@
       "post": {
         "operationId": "createYieldRecord",
         "summary": "Record a yield",
+        "description": "\n\n**Honours `Idempotency-Key`.** Send one, minted BEFORE the first attempt and reused on every retry of the same logical write. The server maps it to `clientMutationId` and a replay returns the ORIGINAL row rather than booking the figure twice. These are FINANCIAL records: an undeduped retry moves net worth with nothing erroring.",
         "tags": [
           "Grain"
         ],
@@ -15213,7 +15239,7 @@
       "get": {
         "operationId": "getParcelHistory",
         "summary": "What a parcel has grown, and what was done to it",
-        "description": "One request for the whole archive: authored crop seasons, COMPLETED field operations, and weed observations, each newest-first.\n\n`parcel.cropType` is the CURRENT crop and is a single overwritten field — it carries no year and no history, which is the reason `cropSeasons` exists. Do not infer this year from it and the rest from the archive; the archive is the record.\n\nETagged: a parcel grows one crop a season but the screen is revisited often.",
+        "description": "One request for the whole archive: authored crop seasons, COMPLETED field operations, and weed observations, each newest-first.\n\n`parcel.cropType` is the CURRENT crop and is a single overwritten field — it carries no year and no history, which is the reason `cropSeasons` exists. Do not infer this year from it and the rest from the archive; the archive is the record.\n\nETagged: a parcel grows one crop a season but the screen is revisited often. The tag is derived from the BODY, so each page validates separately and a cached first page is never served for a second.\n\n**Three lists, three cursors.** The sections have three different sort keys — harvest YEAR, completion date, observation date — so there is no single position to page from. Each list carries its own `…Cursor`, null when that list has no older rows, and you page each independently: a parcel with 200 operations and 3 crop seasons returns a cursor for the operations only.\n\n**Each list defaults to 100 rows** and `limit` applies PER LIST, so a client knows whether a first page can even be partial before it decides to offer a \"load older\" control at all.\n\n**Cursors are opaque: pass them back verbatim and do not parse them.** They happen to be base64url of `<sortKey>|<rowId>`, which is stated so nobody believes a cursor keeps ids out of the URL — it does not, it encodes one. But the encoding is not a contract: `cropSeasonsCursor` keys on an integer YEAR while the other two key on timestamps, and a client that parsed and rebuilt one would paginate on a value the ORDER BY does not use. That skips rows silently, which reads as a short archive rather than an error — and a short archive looks exactly like a young farm.",
         "tags": [
           "Parcel history"
         ],
@@ -15242,6 +15268,48 @@
             "required": true,
             "name": "parcelId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "Page size PER LIST, 1-100. Above the cap it is clamped, not rejected."
+            },
+            "required": false,
+            "description": "Page size PER LIST, 1-100. Above the cap it is clamped, not rejected.",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "From a previous response's `cropSeasonsCursor`."
+            },
+            "required": false,
+            "description": "From a previous response's `cropSeasonsCursor`.",
+            "name": "seasonsBefore",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "From a previous response's `operationsCursor`."
+            },
+            "required": false,
+            "description": "From a previous response's `operationsCursor`.",
+            "name": "operationsBefore",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "From a previous response's `weedObservationsCursor`. A stale or malformed cursor RESTARTS that list rather than erroring."
+            },
+            "required": false,
+            "description": "From a previous response's `weedObservationsCursor`. A stale or malformed cursor RESTARTS that list rather than erroring.",
+            "name": "weedsBefore",
+            "in": "query"
           }
         ],
         "responses": {
@@ -15468,7 +15536,7 @@
       "delete": {
         "operationId": "deleteParcelCropSeason",
         "summary": "Remove a crop season",
-        "description": "Soft delete — the row is retained like every other agronomic record.",
+        "description": "Soft delete — the row is retained like every other agronomic record, so ids are never reused.\n\nDeleting one that is ALREADY gone returns **404 `CROP_SEASON_NOT_FOUND`**, not a quiet success. A retried delete is therefore a 404, and a client should treat that as the end state it wanted rather than as an error.",
         "tags": [
           "Parcel history"
         ],
@@ -15739,7 +15807,7 @@
       "delete": {
         "operationId": "deleteParcelWeedObservation",
         "summary": "Remove a weed observation",
-        "description": "Soft delete.",
+        "description": "Soft delete — the row is retained, so ids are never reused.\n\nDeleting one that is ALREADY gone returns **404 `WEED_OBSERVATION_NOT_FOUND`**, not a quiet success. A retried delete is therefore a 404, and a client should treat that as the end state it wanted rather than as an error.",
         "tags": [
           "Parcel history"
         ],

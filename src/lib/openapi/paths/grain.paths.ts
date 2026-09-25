@@ -119,7 +119,8 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         description:
             'Creates one cost entry. `allocationBasis` decides how it reaches a crop — read ' +
             "the enum's own docs before choosing, because the basis is what makes a cost " +
-            'attributable rather than stranded in `unallocatedToCrop` on the calculator.',
+            'attributable rather than stranded in `unallocatedToCrop` on the calculator.' +
+            '\n\n**Honours `Idempotency-Key`.** Send one, minted BEFORE the first attempt and reused on every retry of the same logical write. The server maps it to `clientMutationId` and a replay returns the ORIGINAL row rather than booking the figure twice. These are FINANCIAL records: an undeduped retry moves net worth with nothing erroring.',
         tags: ['Grain'],
         params: TenantParams,
         body: CreateCostEntrySchema,
@@ -177,6 +178,8 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         path: '/api/t/{tenantSlug}/grain/yield-records',
         operationId: 'createYieldRecord',
         summary: 'Record a yield',
+        description:
+            '\n\n**Honours `Idempotency-Key`.** Send one, minted BEFORE the first attempt and reused on every retry of the same logical write. The server maps it to `clientMutationId` and a replay returns the ORIGINAL row rather than booking the figure twice. These are FINANCIAL records: an undeduped retry moves net worth with nothing erroring.',
         tags: ['Grain'],
         params: TenantParams,
         body: CreateYieldRecordSchema,

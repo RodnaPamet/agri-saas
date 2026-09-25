@@ -2696,6 +2696,7 @@
       }
     },
     "parcelHistory": {
+      "loadOlder": "Load older",
       "title": "History",
       "breadcrumbParcels": "Parcels",
       "currentCrop": "Current crop",

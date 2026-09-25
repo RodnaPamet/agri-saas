@@ -4454,13 +4454,15 @@ exports[`API contract — per-schema snapshots schema: ParcelCropSeason 1`] = `
       "type": [
         "string",
         "null"
-      ]
+      ],
+      "format": "date-time"
     },
     "harvestedAt": {
       "type": [
         "string",
         "null"
-      ]
+      ],
+      "format": "date-time"
     },
     "notes": {
       "type": [
@@ -4627,13 +4629,34 @@ exports[`API contract — per-schema snapshots schema: ParcelHistory 1`] = `
       "items": {
         "$ref": "#/components/schemas/ParcelWeedObservation"
       }
+    },
+    "cropSeasonsCursor": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "operationsCursor": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "weedObservationsCursor": {
+      "type": [
+        "string",
+        "null"
+      ]
     }
   },
   "required": [
     "parcel",
     "cropSeasons",
     "operations",
-    "weedObservations"
+    "weedObservations",
+    "cropSeasonsCursor",
+    "operationsCursor",
+    "weedObservationsCursor"
   ]
 }"
 `;
@@ -4661,7 +4684,8 @@ exports[`API contract — per-schema snapshots schema: ParcelHistoryOperation 1`
       "type": [
         "string",
         "null"
-      ]
+      ],
+      "format": "date-time"
     },
     "productName": {
       "type": "string"
@@ -4690,7 +4714,7 @@ exports[`API contract — per-schema snapshots schema: ParcelHistoryOperation 1`
     "doseUnit",
     "targetNote"
   ],
-  "description": "A COMPLETED field-operation line for this parcel — the same rows that record a spray or fertiliser application, which is why \\"linked completed tasks\\" and \\"what was applied\\" are one list and not two. Pending lines are absent: a plan is not history. \`doseValue\` is a decimal STRING; parsing it as a float rounds the dose."
+  "description": "A COMPLETED field-operation line for this parcel — the same rows that record a spray or fertiliser application, which is why \\"linked completed tasks\\" and \\"what was applied\\" are one list and not two. Pending lines are absent: a plan is not history. \`doseValue\` is a decimal STRING; parsing it as a float rounds the dose.\\n\\n\`title\`, \`productName\` and \`doseUnit\` are EMPTY STRINGS when their source relation is absent, never null — empty means \\"not recorded\\", never \\"unknown\\". Filter them out of any concatenation rather than rendering a placeholder."
 }"
 `;
 
@@ -5222,7 +5246,8 @@ exports[`API contract — per-schema snapshots schema: ParcelWeedObservation 1`]
       "type": "string"
     },
     "observedAt": {
-      "type": "string"
+      "type": "string",
+      "format": "date-time"
     },
     "weedKeys": {
       "type": "array",
