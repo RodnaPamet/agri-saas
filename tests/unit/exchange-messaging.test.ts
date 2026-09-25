@@ -18,6 +18,7 @@ const mockPrisma = {
     exchangeListing: { findFirst: jest.fn() },
     exchangeThread: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
     exchangeMessage: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
+    exchangeBlock: { findFirst: jest.fn(), create: jest.fn(), deleteMany: jest.fn() },
 };
 jest.mock('@/lib/prisma', () => ({ __esModule: true, prisma: mockPrisma, default: mockPrisma }));
 jest.mock('@/app-layer/events/audit', () => ({ logEvent: jest.fn() }));
@@ -50,7 +51,9 @@ jest.mock('@/lib/db-context', () => ({
 }));
 
 import {
+    blockExchangeParty,
     closeExchangeThread,
+    unblockExchangeParty,
     openExchangeThread,
     getExchangeThread,
     sendExchangeMessage,
@@ -99,6 +102,9 @@ beforeEach(() => {
     mockRecipientDb.notification.create.mockResolvedValue({
         id: 'ntf1', createdAt: new Date('2026-09-25T08:00:00.000Z'),
     });
+    mockPrisma.exchangeBlock.findFirst.mockResolvedValue(null);
+    mockPrisma.exchangeBlock.create.mockResolvedValue({ id: 'blk1' });
+    mockPrisma.exchangeBlock.deleteMany.mockResolvedValue({ count: 1 });
     translateFor.mockClear();
     publishNotificationEvent.mockClear();
 });
@@ -461,5 +467,64 @@ describe('closing, and reopening by sending', () => {
         // Unconditional: a close landing between the read and this write must
         // not outlive a message that came after it.
         expect(upd.data.closedAt).toBeNull();
+    });
+});
+
+
+describe('a seller blocking a buyer', () => {
+    it('the SELLER may block', async () => {
+        await expect(blockExchangeParty(sellerCtx, 'th1')).resolves.toMatchObject({
+            blocked: true, alreadyBlocked: false,
+        });
+        const [arg] = mockPrisma.exchangeBlock.create.mock.calls[0] as [
+            { data: Record<string, unknown> },
+        ];
+        expect(arg.data.sellerTenantId).toBe(SELLER);
+        expect(arg.data.blockedTenantId).toBe(BUYER);
+    });
+
+    it('the BUYER may not — there is no mirror control', async () => {
+        await expect(blockExchangeParty(buyerCtx, 'th1')).rejects.toThrow(/seller/i);
+        expect(mockPrisma.exchangeBlock.create).not.toHaveBeenCalled();
+    });
+
+    it('is idempotent — blocking twice is one row, not an error', async () => {
+        mockPrisma.exchangeBlock.findFirst.mockResolvedValue({ id: 'blk1' });
+        await expect(blockExchangeParty(sellerCtx, 'th1')).resolves.toMatchObject({
+            alreadyBlocked: true,
+        });
+        expect(mockPrisma.exchangeBlock.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a blocked buyer OPENING a thread — including one they already had', async () => {
+        mockPrisma.exchangeBlock.findFirst.mockResolvedValue({ id: 'blk1' });
+        await expect(openExchangeThread(buyerCtx, 'lst1')).rejects.toThrow(/not accepting/i);
+        // Checked before the idempotent read, so a pre-existing thread is not
+        // handed back either.
+        expect(mockPrisma.exchangeThread.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a blocked buyer SENDING', async () => {
+        mockPrisma.exchangeBlock.findFirst.mockResolvedValue({ id: 'blk1' });
+        await expect(sendExchangeMessage(buyerCtx, 'th1', 'hello')).rejects.toThrow(/not accepting/i);
+        expect(mockPrisma.exchangeMessage.create).not.toHaveBeenCalled();
+    });
+
+    it('the SELLER can still write in a thread they blocked', async () => {
+        mockPrisma.exchangeBlock.findFirst.mockResolvedValue({ id: 'blk1' });
+        // "Stop them reaching me", not "freeze the record" — a symmetric
+        // refusal would lock the seller out of their own conversation.
+        await expect(sendExchangeMessage(sellerCtx, 'th1', 'final word')).resolves.toBeDefined();
+        expect(mockPrisma.exchangeMessage.create).toHaveBeenCalled();
+    });
+
+    it('unblocking lifts it, and is not an error when there is nothing to lift', async () => {
+        mockPrisma.exchangeBlock.deleteMany.mockResolvedValue({ count: 0 });
+        await expect(unblockExchangeParty(sellerCtx, 'th1')).resolves.toEqual({ blocked: false });
+    });
+
+    it('the buyer may not unblock themselves', async () => {
+        await expect(unblockExchangeParty(buyerCtx, 'th1')).rejects.toThrow(/seller/i);
+        expect(mockPrisma.exchangeBlock.deleteMany).not.toHaveBeenCalled();
     });
 });

@@ -97,6 +97,96 @@ async function requireParty(db: PrismaTx, ctx: RequestContext, threadId: string)
     return { thread, role: (isInquirer ? 'inquirer' : 'seller') as 'inquirer' | 'seller' };
 }
 
+
+/**
+ * Is `inquirerTenantId` blocked by `sellerTenantId`?
+ *
+ * Readable from EITHER side. The SELECT policy on `ExchangeBlock` is
+ * deliberately wide enough for the blocked tenant to see the row naming them,
+ * because this predicate runs inside THEIR request — a row they cannot see
+ * cannot refuse them, and the refusal would silently never fire. Everything
+ * that CHANGES a block is the seller's alone, enforced by separate per-command
+ * policies rather than one USING clause.
+ */
+async function isBlocked(
+    db: PrismaTx,
+    sellerTenantId: string,
+    inquirerTenantId: string,
+): Promise<boolean> {
+    const row = await db.exchangeBlock.findFirst({
+        where: { sellerTenantId, blockedTenantId: inquirerTenantId },
+        select: { id: true },
+    });
+    return row !== null;
+}
+
+/**
+ * Refuse further contact from the other party to this thread.
+ *
+ * SELLER ONLY — the listing owner decides who may keep writing to them. The
+ * mirror case (a buyer silencing a seller) is not a thing: the buyer can simply
+ * stop opening threads, and closing already tidies one away for either side.
+ *
+ * Addressed by THREAD rather than by tenant id so the API never has to take a
+ * tenant id from a client, and so the caller provably has standing: you can
+ * only block someone who has already written to you.
+ *
+ * Idempotent — blocking twice is one row and not an error.
+ */
+export async function blockExchangeParty(ctx: RequestContext, threadId: string) {
+    assertCanWrite(ctx);
+    return runInTenantContext(ctx, async (db) => {
+        const { thread, role } = await requireParty(db, ctx, threadId);
+        if (role !== 'seller') {
+            throw codedForbidden('BLOCK_SELLER_ONLY', 'Only the seller can block a buyer.');
+        }
+
+        const blockedTenantId = thread.inquirerTenantId;
+        const existing = await db.exchangeBlock.findFirst({
+            where: { sellerTenantId: ctx.tenantId, blockedTenantId },
+            select: { id: true },
+        });
+        if (existing) return { blocked: true, alreadyBlocked: true };
+
+        await db.exchangeBlock.create({
+            data: { sellerTenantId: ctx.tenantId, blockedTenantId, createdByUserId: ctx.userId },
+        });
+        await logEvent(db, ctx, {
+            action: 'CREATE',
+            entityType: 'ExchangeBlock',
+            entityId: threadId,
+            details: `Blocked further contact on thread ${threadId}`,
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'ExchangeBlock',
+                operation: 'created',
+                // The blocked tenant id is NOT in `params` — ids of other
+                // tenants have no place in an audit payload this one can read.
+                after: { threadId },
+                summary: 'Exchange contact blocked',
+            },
+        });
+        return { blocked: true, alreadyBlocked: false };
+    });
+}
+
+/** Lift a block. Seller only, and reversible by design — see `blockExchangeParty`. */
+export async function unblockExchangeParty(ctx: RequestContext, threadId: string) {
+    assertCanWrite(ctx);
+    return runInTenantContext(ctx, async (db) => {
+        const { thread, role } = await requireParty(db, ctx, threadId);
+        if (role !== 'seller') {
+            throw codedForbidden('BLOCK_SELLER_ONLY', 'Only the seller can block a buyer.');
+        }
+        // deleteMany, not delete: absent is the desired end state either way,
+        // and a missing row must not be an error on an undo action.
+        await db.exchangeBlock.deleteMany({
+            where: { sellerTenantId: ctx.tenantId, blockedTenantId: thread.inquirerTenantId },
+        });
+        return { blocked: false };
+    });
+}
+
 /**
  * Open the conversation for a listing, or return the one that exists.
  *
@@ -120,6 +210,12 @@ export async function openExchangeThread(ctx: RequestContext, listingId: string)
                 'THREAD_OWN_LISTING',
                 'You cannot start a conversation on your own listing.',
             );
+        }
+
+        // Checked BEFORE the idempotent read below: a blocked tenant must not
+        // be handed back a thread they opened before the block either.
+        if (await isBlocked(db, listing.sellerTenantId, ctx.tenantId)) {
+            throw codedForbidden('THREAD_BLOCKED', 'That seller is not accepting messages from you.');
         }
 
         const existing = await db.exchangeThread.findFirst({
@@ -160,6 +256,7 @@ export async function getExchangeThread(
 
     return runInTenantContext(ctx, async (db) => {
         const { thread, role } = await requireParty(db, ctx, threadId);
+        const blocked = await isBlocked(db, thread.listing.sellerTenantId, thread.inquirerTenantId);
 
         const rows = await db.exchangeMessage.findMany({
             where: { threadId },
@@ -183,6 +280,11 @@ export async function getExchangeThread(
             role,
             lastMessageAt: thread.lastMessageAt,
             closed: thread.closedAt !== null,
+            // Only meaningful to the seller — they are the only side that can
+            // set or lift it — but returned to both because the blocked buyer's
+            // screen needs to explain why their composer is refusing, rather
+            // than letting them type into a void and collect an error.
+            blocked,
             unreadCount,
             // Reversed: the query takes the NEWEST `limit`, the screen reads
             // oldest-first. Sorting ascending and taking `limit` would hand
@@ -408,7 +510,15 @@ export async function sendExchangeMessage(
     }
 
     return runInTenantContext(ctx, async (db) => {
-        const { thread } = await requireParty(db, ctx, threadId);
+        const { thread, role } = await requireParty(db, ctx, threadId);
+        // Only the BLOCKED side is refused. The seller who pressed block can
+        // still write in the thread — the control is "stop them reaching me",
+        // not "freeze the record" — and a symmetric refusal would let a seller
+        // lock themselves out of their own conversation.
+        if (role === 'inquirer'
+            && await isBlocked(db, thread.listing.sellerTenantId, ctx.tenantId)) {
+            throw codedForbidden('THREAD_BLOCKED', 'That seller is not accepting messages from you.');
+        }
         // A closed thread does NOT refuse the message — sending REOPENS it.
         //
         // Closing is a soft "I'm done here" that clears the thread from the

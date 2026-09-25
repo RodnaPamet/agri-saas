@@ -217,3 +217,28 @@ model ExchangeMessage {
   @@index([threadId, createdAt])
   @@index([senderTenantId])
 }
+
+/// A seller refusing further contact from one tenant.
+///
+/// No `tenantId` of its own, for the same reason `ExchangeThread` has none:
+/// the row is about a PAIR. The blocked party must be able to READ the single
+/// row that concerns them — the refusal is enforced while running in THEIR
+/// context, so a row they cannot see cannot refuse them — but must not be able
+/// to delete it. That asymmetry is why the policies are split per command
+/// rather than written as one USING clause, which would govern DELETE too and
+/// let a blocked tenant unblock itself.
+model ExchangeBlock {
+  id              String   @id @default(cuid())
+  /// The tenant refusing contact. Always a listing seller today; the column is
+  /// named for the role rather than "ownerTenantId" so a future buyer-side
+  /// block cannot quietly reuse it and invert the policy's meaning.
+  sellerTenantId  String
+  blockedTenantId String
+  /// Who pressed it, for the audit trail. Nullable because a membership can be
+  /// removed without the block losing its meaning.
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+
+  @@unique([sellerTenantId, blockedTenantId])
+  @@index([blockedTenantId])
+}

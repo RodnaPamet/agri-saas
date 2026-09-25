@@ -76,7 +76,7 @@ function thread(over: Record<string, unknown> = {}) {
     return {
         id: 'th1', listingId: 'l1', listingCommodity: 'Wheat',
         role: 'seller', lastMessageAt: '2026-09-20T08:00:00.000Z',
-        closed: false, unreadCount: 1, messages: [msg()], ...over,
+        closed: false, blocked: false, unreadCount: 1, messages: [msg()], ...over,
     };
 }
 
@@ -229,5 +229,54 @@ describe('conversation', () => {
         render(<ThreadClient threadId="th1" />);
         // A receipt for a thread that may 404 would be a lie.
         expect(apiPost).not.toHaveBeenCalled();
+    });
+});
+
+
+describe('blocking, from the seller side only', () => {
+    it('the SELLER is offered the block control', async () => {
+        const user = userEvent.setup();
+        swrReturns(thread({ role: 'seller', blocked: false }));
+        render(<ThreadClient threadId="th1" />);
+
+        await user.click(screen.getByRole('button', { name: 'blockParty' }));
+        await waitFor(() =>
+            expect(apiPost).toHaveBeenCalledWith('/api/t/acme/exchange/threads/th1/block', {}),
+        );
+    });
+
+    it('the BUYER is not — there is no mirror control', () => {
+        swrReturns(thread({ role: 'inquirer', blocked: false }));
+        render(<ThreadClient threadId="th1" />);
+        expect(screen.queryByRole('button', { name: 'blockParty' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'unblockParty' })).not.toBeInTheDocument();
+    });
+
+    it('a blocked thread reads differently on each side', () => {
+        swrReturns(thread({ role: 'seller', blocked: true }));
+        const { unmount } = render(<ThreadClient threadId="th1" />);
+        // The seller is told what THEY did, and is offered the undo.
+        expect(screen.getByText('blockedNotice')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'unblockParty' })).toBeInTheDocument();
+        unmount();
+
+        swrReturns(thread({ role: 'inquirer', blocked: true }));
+        render(<ThreadClient threadId="th1" />);
+        // The buyer is told why their composer will refuse, rather than being
+        // left to type into a void and collect an error.
+        expect(screen.getByText('blockedForYou')).toBeInTheDocument();
+        expect(screen.queryByText('blockedNotice')).not.toBeInTheDocument();
+    });
+
+    it('unblock uses DELETE, not another POST', async () => {
+        const user = userEvent.setup();
+        swrReturns(thread({ role: 'seller', blocked: true }));
+        render(<ThreadClient threadId="th1" />);
+
+        await user.click(screen.getByRole('button', { name: 'unblockParty' }));
+        await waitFor(() =>
+            expect(apiDelete).toHaveBeenCalledWith('/api/t/acme/exchange/threads/th1/block'),
+        );
+        expect(apiPost).not.toHaveBeenCalledWith('/api/t/acme/exchange/threads/th1/block', {});
     });
 });

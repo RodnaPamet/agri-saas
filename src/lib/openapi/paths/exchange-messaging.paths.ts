@@ -188,6 +188,47 @@ export function registerExchangeMessagingPaths(registry: OpenAPIRegistry): void 
     });
 
     op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/exchange/threads/{threadId}/block',
+        operationId: 'blockExchangeParty',
+        summary: 'Refuse further contact from the other party',
+        description:
+            '**Seller only.** The listing owner decides who may keep writing to them. There ' +
+            'is no buyer-side mirror: a buyer can simply stop opening threads, and closing ' +
+            'already tidies one away for either side.\n\n' +
+            'Addressed by THREAD rather than by tenant id, so no client ever sends another ' +
+            'tenant\'s id and the caller provably has standing — you can only block someone ' +
+            'who has already written to you.\n\n' +
+            'Only the blocked side is refused afterwards. The seller who pressed this can ' +
+            'still write in the thread: the control is "stop them reaching me", not "freeze ' +
+            'the record". **Idempotent.**',
+        tags: ['Exchange messaging'],
+        params: ThreadParams,
+        success: {
+            status: 200,
+            description: 'The end state, and whether this call is what changed it.',
+            schema: z.object({ blocked: z.boolean(), alreadyBlocked: z.boolean() }),
+        },
+    });
+
+    op(registry, {
+        method: 'delete',
+        path: '/api/t/{tenantSlug}/exchange/threads/{threadId}/block',
+        operationId: 'unblockExchangeParty',
+        summary: 'Lift a block',
+        description:
+            'Seller only, and idempotent — lifting a block that is not there is not an ' +
+            'error, because the end state is what is asserted rather than the transition.',
+        tags: ['Exchange messaging'],
+        params: ThreadParams,
+        success: {
+            status: 200,
+            description: 'The end state.',
+            schema: z.object({ blocked: z.boolean() }),
+        },
+    });
+
+    op(registry, {
         method: 'delete',
         path: '/api/t/{tenantSlug}/exchange/messages/{messageId}',
         operationId: 'deleteExchangeMessage',
