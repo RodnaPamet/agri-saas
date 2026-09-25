@@ -725,7 +725,19 @@ export async function listExchangeThreads(
                 id: true, listingId: true, inquirerTenantId: true,
                 lastMessageAt: true, closedAt: true,
                 sellerLastReadAt: true, inquirerLastReadAt: true,
-                listing: { select: { sellerTenantId: true, commodity: true } },
+                listing: {
+                    select: {
+                        sellerTenantId: true, commodity: true,
+                        // Enough to tell two listings of the SAME commodity
+                        // apart. `listingCommodity` alone could not: two wheat
+                        // threads rendered as two rows differing only by date.
+                        regionName: true, quantityTonnes: true,
+                        // Opt-in and nullable — a seller may publish a listing
+                        // without a display name, so this is NOT an identity
+                        // and must not be the only thing distinguishing a row.
+                        sellerDisplayName: true,
+                    },
+                },
             },
         });
 
@@ -740,6 +752,19 @@ export async function listExchangeThreads(
                 id: t.id,
                 listingId: t.listingId,
                 listingCommodity: t.listing.commodity,
+                listingRegionName: t.listing.regionName,
+                // Decimal -> string at the boundary, like every other quantity
+                // on this API. A float here would lose the third decimal place
+                // the column carries.
+                listingQuantityTonnes: t.listing.quantityTonnes.toString(),
+                /**
+                 * The SELLER's published name, or null. Deliberately not the
+                 * counterparty's: on a seller's row the other party is a buyer,
+                 * whose identity sits behind the inquiry contact-reveal gate
+                 * and is only shared once the seller accepts. Naming buyers
+                 * here would route around that gate.
+                 */
+                sellerDisplayName: t.listing.sellerDisplayName,
                 role: role as 'seller' | 'inquirer',
                 lastMessageAt: t.lastMessageAt,
                 closed: t.closedAt !== null,

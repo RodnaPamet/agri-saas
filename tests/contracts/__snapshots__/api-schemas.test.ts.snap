@@ -1557,6 +1557,18 @@ exports[`API contract — per-schema snapshots schema: ExchangeThreadSummary 1`]
     "listingCommodity": {
       "type": "string"
     },
+    "listingRegionName": {
+      "type": "string"
+    },
+    "listingQuantityTonnes": {
+      "type": "string"
+    },
+    "sellerDisplayName": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "role": {
       "type": "string",
       "enum": [
@@ -1578,6 +1590,9 @@ exports[`API contract — per-schema snapshots schema: ExchangeThreadSummary 1`]
     "id",
     "listingId",
     "listingCommodity",
+    "listingRegionName",
+    "listingQuantityTonnes",
+    "sellerDisplayName",
     "role",
     "lastMessageAt",
     "closed",

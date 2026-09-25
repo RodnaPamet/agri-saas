@@ -566,7 +566,11 @@ describe('pagination', () => {
             closedAt: null,
             sellerLastReadAt: null,
             inquirerLastReadAt: null,
-            listing: { sellerTenantId: SELLER, commodity: 'wheat' },
+            listing: {
+                sellerTenantId: SELLER, commodity: 'wheat',
+                regionName: 'Plovdiv', quantityTonnes: { toString: () => '100.000' },
+                sellerDisplayName: null,
+            },
         }));
     }
 
@@ -722,5 +726,60 @@ describe('your own message must not light up your own badge', () => {
         ];
         expect(upd.data.sellerLastReadAt).toBeInstanceOf(Date);
         expect(upd.data.inquirerLastReadAt).toBeUndefined();
+    });
+});
+
+
+describe('the inbox row identifies its listing', () => {
+    function row(over: Record<string, unknown> = {}) {
+        return [{
+            id: 'th1', listingId: 'l1', inquirerTenantId: BUYER,
+            lastMessageAt: new Date('2026-09-25T10:00:00.000Z'),
+            closedAt: null, sellerLastReadAt: null, inquirerLastReadAt: null,
+            listing: {
+                sellerTenantId: SELLER, commodity: 'wheat',
+                regionName: 'Plovdiv',
+                quantityTonnes: { toString: () => '100.000' },
+                sellerDisplayName: 'Acme Farm',
+                ...over,
+            },
+        }];
+    }
+
+    it('carries region and tonnage, so two wheat listings differ', async () => {
+        mockPrisma.exchangeThread.findMany.mockResolvedValue(row());
+        const r = await listExchangeThreads(buyerCtx);
+        expect(r.threads[0]).toMatchObject({
+            listingCommodity: 'wheat',
+            listingRegionName: 'Plovdiv',
+            listingQuantityTonnes: '100.000',
+        });
+    });
+
+    it('keeps the tonnage a STRING, not a float', async () => {
+        // The column is Decimal(14,3); a float loses the third place.
+        mockPrisma.exchangeThread.findMany.mockResolvedValue(row());
+        const r = await listExchangeThreads(buyerCtx);
+        expect(typeof r.threads[0].listingQuantityTonnes).toBe('string');
+    });
+
+    it('exposes the SELLER name when published, and null when not', async () => {
+        mockPrisma.exchangeThread.findMany.mockResolvedValue(row());
+        expect((await listExchangeThreads(buyerCtx)).threads[0].sellerDisplayName).toBe('Acme Farm');
+
+        mockPrisma.exchangeThread.findMany.mockResolvedValue(row({ sellerDisplayName: null }));
+        expect((await listExchangeThreads(buyerCtx)).threads[0].sellerDisplayName).toBeNull();
+    });
+
+    it('never exposes the BUYER — that is behind the contact-reveal gate', async () => {
+        // On a SELLER's row the counterparty is a buyer. Their identity is
+        // only shared once the seller accepts an inquiry, so nothing naming
+        // them may appear here.
+        mockPrisma.exchangeThread.findMany.mockResolvedValue(row());
+        const r = await listExchangeThreads(sellerCtx);
+        const keys = Object.keys(r.threads[0]);
+        expect(keys).not.toContain('inquirerDisplayName');
+        expect(keys).not.toContain('counterpartyName');
+        expect(JSON.stringify(r.threads[0])).not.toContain(BUYER);
     });
 });

@@ -93,8 +93,12 @@ describe('inbox', () => {
         swrReturns({
             threads: [
                 { id: 'a', listingId: 'l1', listingCommodity: 'Wheat', role: 'seller',
+                  listingRegionName: 'Plovdiv', listingQuantityTonnes: '100.000',
+                  sellerDisplayName: 'Acme Farm',
                   lastMessageAt: '2026-09-20T08:00:00.000Z', closed: false, hasUnread: true },
                 { id: 'b', listingId: 'l2', listingCommodity: 'Barley', role: 'inquirer',
+                  listingRegionName: 'Dobrich', listingQuantityTonnes: '40.500',
+                  sellerDisplayName: null,
                   lastMessageAt: '2026-09-19T08:00:00.000Z', closed: false, hasUnread: false },
             ],
         });
@@ -108,6 +112,33 @@ describe('inbox', () => {
         // Exactly one unread badge: a component that rendered it unconditionally
         // would still pass an `exists` assertion.
         expect(screen.getAllByText('unread')).toHaveLength(1);
+    });
+
+    it('a row says WHICH listing it is about, not just the commodity', () => {
+        // Two wheat listings used to render as two identical rows. Region and
+        // tonnage are what separate them; the seller name is a bonus and is
+        // absent on the second row, which must still be distinguishable.
+        swrReturns({
+            threads: [
+                { id: 'a', listingId: 'l1', listingCommodity: 'Wheat', role: 'seller',
+                  listingRegionName: 'Plovdiv', listingQuantityTonnes: '100.000',
+                  sellerDisplayName: 'Acme Farm',
+                  lastMessageAt: '2026-09-20T08:00:00.000Z', closed: false, hasUnread: false },
+                { id: 'b', listingId: 'l2', listingCommodity: 'Wheat', role: 'inquirer',
+                  listingRegionName: 'Dobrich', listingQuantityTonnes: '40.500',
+                  sellerDisplayName: null,
+                  lastMessageAt: '2026-09-19T08:00:00.000Z', closed: false, hasUnread: false },
+            ],
+        });
+        render(<ThreadsClient />);
+
+        expect(screen.getByText(/Plovdiv/)).toBeInTheDocument();
+        expect(screen.getByText(/Dobrich/)).toBeInTheDocument();
+        expect(screen.getByText(/100\.000/)).toBeInTheDocument();
+        expect(screen.getByText(/40\.500/)).toBeInTheDocument();
+        expect(screen.getByText(/Acme Farm/)).toBeInTheDocument();
+        // Both rows are the same commodity — the point of the test.
+        expect(screen.getAllByText('Wheat')).toHaveLength(2);
     });
 
     it('polls — an inbox that never refreshes is not an inbox', () => {

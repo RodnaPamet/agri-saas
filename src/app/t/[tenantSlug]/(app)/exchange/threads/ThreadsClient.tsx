@@ -34,6 +34,9 @@ interface ThreadSummary {
     id: string;
     listingId: string;
     listingCommodity: string;
+    listingRegionName: string;
+    listingQuantityTonnes: string;
+    sellerDisplayName: string | null;
     role: 'seller' | 'inquirer';
     lastMessageAt: string;
     closed: boolean;
@@ -85,6 +88,17 @@ export function ThreadsClient() {
                                 className="flex items-center gap-default rounded-lg border border-border-subtle p-4 hover:bg-surface-subtle"
                             >
                                 <span className="font-medium text-content-strong">{th.listingCommodity}</span>
+                                {/*
+                                  * Region and tonnage, because commodity alone
+                                  * could not tell two wheat listings apart. The
+                                  * seller name is a bonus when published — it is
+                                  * opt-in, and two listings from one seller would
+                                  * still collide without the facts beside it.
+                                  */}
+                                <span className="text-xs text-content-muted">
+                                    {th.listingRegionName} · {th.listingQuantityTonnes} t
+                                    {th.sellerDisplayName ? ` · ${th.sellerDisplayName}` : ''}
+                                </span>
                                 <StatusBadge variant="neutral">
                                     {th.role === 'seller' ? t('roleSeller') : t('roleInquirer')}
                                 </StatusBadge>
