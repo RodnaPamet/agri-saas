@@ -352,6 +352,46 @@ async function notifyOtherParty(
     }
 }
 
+/**
+ * Close a conversation. EITHER party may.
+ *
+ * Symmetric on purpose: a listing seller who could close unilaterally, with no
+ * way back, could silence a buyer mid-negotiation. Sending a message reopens
+ * the thread (`sendExchangeMessage`), so this is a soft "I'm done here" that
+ * tidies the inbox rather than a lock — which is why it needs no permission
+ * beyond being a party, and why there is no separate reopen endpoint.
+ *
+ * Idempotent: closing an already-closed thread keeps the ORIGINAL timestamp,
+ * so "when did this end" does not drift every time someone taps it again.
+ */
+export async function closeExchangeThread(ctx: RequestContext, threadId: string) {
+    assertCanWrite(ctx);
+    return runInTenantContext(ctx, async (db) => {
+        const { thread } = await requireParty(db, ctx, threadId);
+        if (thread.closedAt) return { closedAt: thread.closedAt, alreadyClosed: true };
+
+        const now = new Date();
+        await db.exchangeThread.update({
+            where: { id: threadId },
+            data: { closedAt: now },
+        });
+        await logEvent(db, ctx, {
+            action: 'UPDATE',
+            entityType: 'ExchangeThread',
+            entityId: threadId,
+            details: `Conversation closed on thread ${threadId}`,
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'ExchangeThread',
+                operation: 'updated',
+                after: { closedAt: now.toISOString() },
+                summary: 'Exchange conversation closed',
+            },
+        });
+        return { closedAt: now, alreadyClosed: false };
+    });
+}
+
 /** Post a message. Sanitised on write; bumps the thread for inbox ordering. */
 export async function sendExchangeMessage(
     ctx: RequestContext,
@@ -369,19 +409,14 @@ export async function sendExchangeMessage(
 
     return runInTenantContext(ctx, async (db) => {
         const { thread } = await requireParty(db, ctx, threadId);
-        // NOTHING WRITES `closedAt` TODAY — there is no close action, on any
-        // surface, so this refusal cannot currently fire and `closed` is false
-        // for every thread in production. It is here (and the screens render
-        // the state) so that adding the action later is a one-line write
-        // rather than a change that has to find every reader.
+        // A closed thread does NOT refuse the message — sending REOPENS it.
         //
-        // Deliberately left unwired: who may unilaterally end a negotiation
-        // channel — and whether the other party can reopen it — is a product
-        // decision about the marketplace, not a detail to settle in the commit
-        // that happens to add the column.
-        if (thread.closedAt) {
-            throw codedBadRequest('THREAD_CLOSED', 'That conversation is closed.');
-        }
+        // Closing is a soft "I'm done here" that clears the thread from the
+        // active inbox, not a door that locks. Either party may close, so a
+        // refusal would let one side mute the other permanently, which is the
+        // one outcome a two-party negotiation channel must not allow. Reopening
+        // on send also means there is no separate reopen action to find.
+        const reopening = thread.closedAt !== null;
 
         const now = new Date();
         const row = await db.exchangeMessage.create({
@@ -398,13 +433,17 @@ export async function sendExchangeMessage(
         // a thread can never sort by a message that does not exist.
         await db.exchangeThread.update({
             where: { id: threadId },
-            data: { lastMessageAt: now },
+            // `closedAt: null` unconditionally rather than only when
+            // `reopening` — one write either way, and a conditional spread
+            // would leave a window where a close landing between the read and
+            // this update survives a message that came after it.
+            data: { lastMessageAt: now, closedAt: null },
         });
         // Persist, THEN notify. Never the reverse: a notification for a write
         // that then failed tells the other party to come and read something
         // that does not exist.
         await notifyOtherParty(ctx.tenantId, thread);
-        return { id: row.id, createdAt: row.createdAt };
+        return { id: row.id, createdAt: row.createdAt, reopened: reopening };
     });
 }
 

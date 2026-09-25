@@ -56,6 +56,7 @@ export function ThreadClient({ threadId }: { threadId: string }) {
     const [draft, setDraft] = useState('');
     const [sending, setSending] = useState(false);
     const [sendError, setSendError] = useState(false);
+    const [closeError, setCloseError] = useState(false);
     const marked = useRef(false);
 
     const { data, isLoading, error, mutate } = useTenantSWR<ThreadDetail>(
@@ -98,6 +99,16 @@ export function ThreadClient({ threadId }: { threadId: string }) {
     // message.
     const { handleKeyDown } = useEnterSubmit({ onSubmit: () => { void send(); } });
 
+    const closeThread = useCallback(async () => {
+        setCloseError(false);
+        try {
+            await apiPost(buildApiUrl(`/exchange/threads/${threadId}/close`), {});
+            await mutate();
+        } catch {
+            setCloseError(true);
+        }
+    }, [buildApiUrl, threadId, mutate]);
+
     const remove = useCallback(
         async (messageId: string) => {
             try {
@@ -135,6 +146,13 @@ export function ThreadClient({ threadId }: { threadId: string }) {
                             },
                         ]}
                     />
+                ) : undefined
+            }
+            actions={
+                data && !data.closed ? (
+                    <Button variant="secondary" size="sm" onClick={() => { void closeThread(); }}>
+                        {t('closeThread')}
+                    </Button>
                 ) : undefined
             }
             loading={isLoading}
@@ -188,9 +206,16 @@ export function ThreadClient({ threadId }: { threadId: string }) {
                     )}
                 </div>
 
+                {/*
+                  * The composer stays on a CLOSED thread, deliberately. Closing
+                  * is a soft "I'm done here" and sending is what reopens it, so
+                  * hiding the composer would remove the only way back and turn a
+                  * tidy-up into a lock either party could impose on the other.
+                  */}
                 {data?.closed ? (
-                    <p className="text-sm text-content-muted">{t('closed')}</p>
-                ) : (
+                    <p className="text-sm text-content-muted">{t('closedHint')}</p>
+                ) : null}
+                {(
                     <div className="flex items-end gap-tight border-t border-border-subtle pt-3">
                         <Textarea
                             value={draft}
@@ -211,6 +236,7 @@ export function ThreadClient({ threadId }: { threadId: string }) {
                     </div>
                 )}
                 {sendError ? <p className="text-sm text-content-danger">{t('sendFailed')}</p> : null}
+                {closeError ? <p className="text-sm text-content-danger">{t('closeFailed')}</p> : null}
             </div>
         </EntityDetailLayout>
     );

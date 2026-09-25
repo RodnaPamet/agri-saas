@@ -50,6 +50,7 @@ jest.mock('@/lib/db-context', () => ({
 }));
 
 import {
+    closeExchangeThread,
     openExchangeThread,
     getExchangeThread,
     sendExchangeMessage,
@@ -227,9 +228,15 @@ describe('sending', () => {
         await expect(sendExchangeMessage(buyerCtx, 'th1', '   ')).rejects.toThrow(/message/i);
     });
 
-    it('refuses a closed thread', async () => {
+    it('does NOT refuse a closed thread — it reopens it', async () => {
+        // The inverse of what this asserted while closing was unwired. A
+        // refusal was harmless when nothing could set `closedAt`; now that
+        // either party can close, refusing would let one side mute the other
+        // permanently. See the "closing, and reopening by sending" block.
         mockPrisma.exchangeThread.findFirst.mockResolvedValue(thread({ closedAt: new Date() }));
-        await expect(sendExchangeMessage(buyerCtx, 'th1', 'hello')).rejects.toThrow(/closed/i);
+        await expect(sendExchangeMessage(buyerCtx, 'th1', 'hello')).resolves.toMatchObject({
+            reopened: true,
+        });
     });
 
     it('bumps lastMessageAt so the inbox sorts correctly', async () => {
@@ -390,5 +397,69 @@ describe('the bell, one row per message', () => {
     it('a failed bell write does not roll back the message', async () => {
         mockRecipientDb.notification.create.mockRejectedValue(new Error('db gone'));
         await expect(sendExchangeMessage(buyerCtx, 'th1', 'hello')).resolves.toBeDefined();
+    });
+});
+
+
+describe('closing, and reopening by sending', () => {
+    it('either party may close — the buyer', async () => {
+        mockPrisma.exchangeThread.findFirst.mockResolvedValue({
+            id: 'th1', listingId: 'lst1', inquirerTenantId: BUYER, closedAt: null,
+            listing: { sellerTenantId: SELLER, commodity: 'wheat' },
+        });
+        const r = await closeExchangeThread(buyerCtx, 'th1');
+        expect(r.alreadyClosed).toBe(false);
+        expect(mockPrisma.exchangeThread.update).toHaveBeenCalledWith(
+            expect.objectContaining({ data: expect.objectContaining({ closedAt: expect.any(Date) }) }),
+        );
+    });
+
+    it('either party may close — the seller', async () => {
+        mockPrisma.exchangeThread.findFirst.mockResolvedValue({
+            id: 'th1', listingId: 'lst1', inquirerTenantId: BUYER, closedAt: null,
+            listing: { sellerTenantId: SELLER, commodity: 'wheat' },
+        });
+        // Symmetric on purpose: a seller-only close would let one side end a
+        // negotiation the other cannot resume.
+        await expect(closeExchangeThread(sellerCtx, 'th1')).resolves.toMatchObject({
+            alreadyClosed: false,
+        });
+    });
+
+    it('is idempotent — a second close keeps the ORIGINAL timestamp', async () => {
+        const first = new Date('2026-09-20T10:00:00.000Z');
+        mockPrisma.exchangeThread.findFirst.mockResolvedValue({
+            id: 'th1', listingId: 'lst1', inquirerTenantId: BUYER, closedAt: first,
+            listing: { sellerTenantId: SELLER, commodity: 'wheat' },
+        });
+        const r = await closeExchangeThread(buyerCtx, 'th1');
+        expect(r).toEqual({ closedAt: first, alreadyClosed: true });
+        // "When did this end" must not drift every time someone taps it.
+        expect(mockPrisma.exchangeThread.update).not.toHaveBeenCalled();
+    });
+
+    it('sending on a CLOSED thread reopens it rather than refusing', async () => {
+        mockPrisma.exchangeThread.findFirst.mockResolvedValue({
+            id: 'th1', listingId: 'lst1', inquirerTenantId: BUYER,
+            closedAt: new Date('2026-09-20T10:00:00.000Z'),
+            listing: { sellerTenantId: SELLER, commodity: 'wheat' },
+        });
+        const r = await sendExchangeMessage(buyerCtx, 'th1', 'still interested?');
+        expect(r.reopened).toBe(true);
+        const [upd] = mockPrisma.exchangeThread.update.mock.calls.at(-1) as [
+            { data: Record<string, unknown> },
+        ];
+        expect(upd.data.closedAt).toBeNull();
+    });
+
+    it('clears closedAt even on an OPEN thread, so a concurrent close cannot survive', async () => {
+        const r = await sendExchangeMessage(buyerCtx, 'th1', 'hello');
+        expect(r.reopened).toBe(false);
+        const [upd] = mockPrisma.exchangeThread.update.mock.calls.at(-1) as [
+            { data: Record<string, unknown> },
+        ];
+        // Unconditional: a close landing between the read and this write must
+        // not outlive a message that came after it.
+        expect(upd.data.closedAt).toBeNull();
     });
 });
