@@ -175,15 +175,38 @@ export function registerExchangeMessagingPaths(registry: OpenAPIRegistry): void 
         summary: 'Send a message',
         description:
             'The body is HTML-sanitised on write and then length-checked, in that order — ' +
-            'so markup cannot pad a message past the limit. A closed thread returns 400 ' +
-            '`THREAD_CLOSED`.',
+            'so markup cannot pad a message past the limit.\n\n' +
+            'A CLOSED thread is not refused: sending REOPENS it and the response says so ' +
+            'with `reopened: true`. (This previously returned 400 `THREAD_CLOSED`; that ' +
+            'refusal is gone, because either party can close and a refusal would let one ' +
+            'side mute the other permanently.)\n\n' +
+            'Send `Idempotency-Key` ALWAYS, minted BEFORE the first attempt and reused on ' +
+            'every retry of the same logical send. The server maps it to `clientMutationId`, ' +
+            'unique per SENDER, and a replay returns the ORIGINAL message with ' +
+            '`replayed: true` rather than adding a duplicate line to the conversation. ' +
+            '**`replayed` is explicit on purpose** — a replay indistinguishable from a create ' +
+            'is a shape a client cannot branch on.\n\n' +
+            'The replay check runs BEFORE the party, block and closed checks, so a retry of a ' +
+            'message that was already accepted returns its original result even if the seller ' +
+            'has since blocked the sender. Otherwise a flaky link turns "delivered" into a ' +
+            '403 for a message that IS in the thread.\n\n' +
+            'Without a key the send is NOT idempotent — two taps make two messages.',
         tags: ['Exchange messaging'],
         params: ThreadParams,
         body: z.object({ body: z.string().min(1).max(8000) }).openapi('SendExchangeMessage'),
         success: {
             status: 201,
             description: 'Sent.',
-            schema: z.object({ id: z.string(), createdAt: z.string() }),
+            schema: z.object({
+                id: z.string(),
+                createdAt: z.string(),
+                replayed: z.boolean().openapi({
+                    description:
+                        'True when an `Idempotency-Key` matched an earlier send and this is ' +
+                        'the ORIGINAL message rather than a new one. False for a first send, ' +
+                        'and always false when no key was supplied.',
+                }),
+            }),
         },
     });
 

@@ -103,6 +103,15 @@ beforeEach(() => {
     mockRecipientDb.notification.create.mockResolvedValue({
         id: 'ntf1', createdAt: new Date('2026-09-25T08:00:00.000Z'),
     });
+    // Reset, not just re-seed: `mockResolvedValue` persists across tests, so a
+    // message fixture set by one test satisfied another's idempotency replay
+    // check and the result depended on execution ORDER.
+    mockPrisma.exchangeMessage.findFirst.mockReset();
+    mockPrisma.exchangeMessage.findFirst.mockResolvedValue(null);
+    mockPrisma.exchangeMessage.create.mockReset();
+    mockPrisma.exchangeMessage.create.mockResolvedValue({
+        id: 'msg_new', createdAt: new Date('2026-09-25T09:30:00.000Z'),
+    });
     mockPrisma.exchangeMessage.count.mockResolvedValue(0);
     mockPrisma.exchangeBlock.findFirst.mockResolvedValue(null);
     mockPrisma.exchangeBlock.create.mockResolvedValue({ id: 'blk1' });
@@ -625,5 +634,66 @@ describe('pagination', () => {
         await listExchangeThreads(buyerCtx, { limit: 100000 });
         const [args] = mockPrisma.exchangeThread.findMany.mock.calls.at(-1) as [{ take: number }];
         expect(args.take).toBeLessThanOrEqual(101);
+    });
+});
+
+
+describe('Idempotency-Key on send', () => {
+    it('a replay returns the ORIGINAL message and says so', async () => {
+        mockPrisma.exchangeMessage.findFirst.mockResolvedValue({
+            id: 'msg_original', createdAt: new Date('2026-09-25T09:00:00.000Z'),
+        });
+        const r = await sendExchangeMessage(buyerCtx, 'th1', 'hello', 'key-1');
+        expect(r).toMatchObject({ id: 'msg_original', replayed: true });
+        // Nothing new is written.
+        expect(mockPrisma.exchangeMessage.create).not.toHaveBeenCalled();
+    });
+
+    it('a first send is NOT flagged as a replay', async () => {
+        // The distinction the iOS client asked to be named: a replay that looks
+        // identical to a create is a shape nobody can branch on.
+        const r = await sendExchangeMessage(buyerCtx, 'th1', 'hello', 'key-1');
+        expect(r.replayed).toBe(false);
+        const [arg] = mockPrisma.exchangeMessage.create.mock.calls.at(-1) as [
+            { data: Record<string, unknown> },
+        ];
+        expect(arg.data.clientMutationId).toBe('key-1');
+    });
+
+    it('without a key nothing is stored and no lookup happens', async () => {
+        await sendExchangeMessage(buyerCtx, 'th1', 'hello');
+        const [arg] = mockPrisma.exchangeMessage.create.mock.calls.at(-1) as [
+            { data: Record<string, unknown> },
+        ];
+        expect(arg.data.clientMutationId).toBeNull();
+    });
+
+    it('a replay wins even when the sender has since been BLOCKED', async () => {
+        // The ordering that matters. If the block check ran first, a retry of a
+        // message that was already delivered would 403 — telling the client its
+        // message failed when it is sitting in the thread.
+        mockPrisma.exchangeBlock.findFirst.mockResolvedValue({ id: 'blk1' });
+        mockPrisma.exchangeMessage.findFirst.mockResolvedValue({
+            id: 'msg_original', createdAt: new Date('2026-09-25T09:00:00.000Z'),
+        });
+        await expect(sendExchangeMessage(buyerCtx, 'th1', 'hello', 'key-1'))
+            .resolves.toMatchObject({ id: 'msg_original', replayed: true });
+    });
+
+    it('a lost race re-reads the winner instead of surfacing a 500', async () => {
+        // Both retries clear the replay check, then one loses the unique index.
+        // A REAL PrismaClientKnownRequestError: `isUniqueViolation` checks
+        // `instanceof`, so a plain object carrying `code: 'P2002'` sails past
+        // the backstop and the test fails for the wrong reason.
+        const { Prisma } = jest.requireActual('@prisma/client');
+        const p2002 = new Prisma.PrismaClientKnownRequestError('unique', {
+            code: 'P2002', clientVersion: 'test',
+        });
+        mockPrisma.exchangeMessage.findFirst
+            .mockResolvedValueOnce(null)   // replay check: nothing yet
+            .mockResolvedValueOnce({ id: 'msg_winner', createdAt: new Date() });
+        mockPrisma.exchangeMessage.create.mockRejectedValueOnce(p2002);
+        await expect(sendExchangeMessage(buyerCtx, 'th1', 'hello', 'key-1'))
+            .resolves.toMatchObject({ id: 'msg_winner', replayed: true });
     });
 });

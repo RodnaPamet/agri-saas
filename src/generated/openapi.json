@@ -15916,7 +15916,7 @@
       "post": {
         "operationId": "sendExchangeMessage",
         "summary": "Send a message",
-        "description": "The body is HTML-sanitised on write and then length-checked, in that order — so markup cannot pad a message past the limit. A closed thread returns 400 `THREAD_CLOSED`.",
+        "description": "The body is HTML-sanitised on write and then length-checked, in that order — so markup cannot pad a message past the limit.\n\nA CLOSED thread is not refused: sending REOPENS it and the response says so with `reopened: true`. (This previously returned 400 `THREAD_CLOSED`; that refusal is gone, because either party can close and a refusal would let one side mute the other permanently.)\n\nSend `Idempotency-Key` ALWAYS, minted BEFORE the first attempt and reused on every retry of the same logical send. The server maps it to `clientMutationId`, unique per SENDER, and a replay returns the ORIGINAL message with `replayed: true` rather than adding a duplicate line to the conversation. **`replayed` is explicit on purpose** — a replay indistinguishable from a create is a shape a client cannot branch on.\n\nThe replay check runs BEFORE the party, block and closed checks, so a retry of a message that was already accepted returns its original result even if the seller has since blocked the sender. Otherwise a flaky link turns \"delivered\" into a 403 for a message that IS in the thread.\n\nWithout a key the send is NOT idempotent — two taps make two messages.",
         "tags": [
           "Exchange messaging"
         ],
@@ -15969,11 +15969,16 @@
                     },
                     "createdAt": {
                       "type": "string"
+                    },
+                    "replayed": {
+                      "type": "boolean",
+                      "description": "True when an `Idempotency-Key` matched an earlier send and this is the ORIGINAL message rather than a new one. False for a first send, and always false when no key was supplied."
                     }
                   },
                   "required": [
                     "id",
-                    "createdAt"
+                    "createdAt",
+                    "replayed"
                   ]
                 }
               }

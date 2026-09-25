@@ -29,6 +29,7 @@ import { logEvent } from '../events/audit';
 import { runInTenantContext, withTenantDb, type PrismaTx } from '@/lib/db-context';
 import { enqueueEmail } from '../notifications/enqueue';
 import { encodeCursor, decodeCursor, keysetBefore } from '@/lib/exchange/cursor';
+import { isUniqueViolation } from '@/lib/errors/prisma';
 import { translateFor } from '@/lib/i18n/server-messages';
 import { publishNotificationEvent } from '@/lib/notifications/notification-bus';
 import { isLocale } from '@/lib/i18n/locales';
@@ -527,6 +528,34 @@ export async function sendExchangeMessage(
     ctx: RequestContext,
     threadId: string,
     body: string,
+    idempotencyKey?: string | null,
+): Promise<{ id: string; createdAt: Date; reopened: boolean; replayed: boolean }> {
+    try {
+        return await sendExchangeMessageImpl(ctx, threadId, body, idempotencyKey);
+    } catch (err) {
+        // Race backstop: two retries of the same send both clear the replay
+        // check above, then one loses the unique index. The loser re-reads the
+        // winner rather than surfacing a 500 for a message that WAS delivered.
+        if (idempotencyKey && isUniqueViolation(err)) {
+            const prior = await runInTenantContext(ctx, (db) =>
+                db.exchangeMessage.findFirst({
+                    where: { senderTenantId: ctx.tenantId, clientMutationId: idempotencyKey },
+                    select: { id: true, createdAt: true },
+                }),
+            );
+            if (prior) {
+                return { id: prior.id, createdAt: prior.createdAt, reopened: false, replayed: true };
+            }
+        }
+        throw err;
+    }
+}
+
+async function sendExchangeMessageImpl(
+    ctx: RequestContext,
+    threadId: string,
+    body: string,
+    idempotencyKey?: string | null,
 ) {
     assertCanWrite(ctx);
     // Sanitise BEFORE length-checking, so padding with markup cannot smuggle a
@@ -538,6 +567,21 @@ export async function sendExchangeMessage(
     }
 
     return runInTenantContext(ctx, async (db) => {
+        // Replay check FIRST — before the party, block and closed checks. A
+        // retry of a message that was already accepted must return the
+        // original result even if the seller has since blocked the sender;
+        // otherwise a flaky link turns "your message was delivered" into a
+        // 403 for a message that IS in the thread.
+        if (idempotencyKey) {
+            const prior = await db.exchangeMessage.findFirst({
+                where: { senderTenantId: ctx.tenantId, clientMutationId: idempotencyKey },
+                select: { id: true, createdAt: true },
+            });
+            if (prior) {
+                return { id: prior.id, createdAt: prior.createdAt, reopened: false, replayed: true };
+            }
+        }
+
         const { thread, role } = await requireParty(db, ctx, threadId);
         // Only the BLOCKED side is refused. The seller who pressed block can
         // still write in the thread — the control is "stop them reaching me",
@@ -564,6 +608,7 @@ export async function sendExchangeMessage(
                 senderUserId: ctx.userId,
                 body: text,
                 createdAt: now,
+                clientMutationId: idempotencyKey ?? null,
             },
             select: { id: true, createdAt: true },
         });
@@ -581,7 +626,10 @@ export async function sendExchangeMessage(
         // that then failed tells the other party to come and read something
         // that does not exist.
         await notifyOtherParty(ctx.tenantId, thread);
-        return { id: row.id, createdAt: row.createdAt, reopened: reopening };
+        // `replayed` is explicit rather than inferable. A replay that looks
+        // identical to a create is a shape a client cannot branch on, and the
+        // iOS session asked for exactly this distinction to be named.
+        return { id: row.id, createdAt: row.createdAt, reopened: reopening, replayed: false };
     });
 }
 

@@ -16,7 +16,7 @@ export const POST = withApiErrorHandling(
         ) => {
             const params = await p;
             const ctx = await getTenantCtx(params, req);
-            const msg = await sendExchangeMessage(ctx, params.threadId, body.body);
+            const msg = await sendExchangeMessage(ctx, params.threadId, body.body, req.headers.get('Idempotency-Key'));
             return jsonResponse(msg, { status: 201 });
         },
     ),
