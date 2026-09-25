@@ -1,12 +1,37 @@
 /**
  * Grain — the net-worth calculator.
  *
- * One route today, and it exists because the calculator had no API at all:
- * `/grain/calculator` is a Server Component that calls the usecase and hands
- * a payload straight to a client island. The native client cannot consume
+ * The calculator came first, and it exists because the calculator had no API
+ * at all: `/grain/calculator` is a Server Component that calls the usecase and
+ * hands a payload straight to a client island. The native client cannot consume
  * that, so the same answer needed an HTTP door.
  *
- * ── Why the success body is `z.unknown()` and not a Zod mirror ──
+ * ── Response shapes: 11 of 13 are now pinned, and 2 deliberately are not ──
+ *
+ * The rule below stands, but it was being applied to operations it was never
+ * about. Costs and yield records are each mapped by ONE `toDto` in their
+ * usecase, so their shape is already defined in exactly one place — pointing
+ * the spec at a schema written against that mapper adds no second spelling of
+ * anything. What the rule protects is the CALCULATOR, whose payload has no
+ * single definition outside its mapper module.
+ *
+ * Pinning them found four things prose had been hiding, every one of which a
+ * client would have met as a bug:
+ *
+ *   - `YieldRecord` was registered in the spec and referenced by NOTHING, and
+ *     it omitted `netTonnesStd` and `tPerHaBasis`, both of which the mapper
+ *     returns. `toDto`'s own comment says the DTO is what stops two t/ha
+ *     figures being compared on different bases — and the published contract
+ *     did not carry the basis at all. `.passthrough()` meant nothing ever went
+ *     red.
+ *   - All three creates return **201**; all three were documented as 200. A
+ *     client written to the spec reads every successful create as a failure.
+ *   - The two sibling deletes return DIFFERENT shapes — `{ id }` for a cost,
+ *     `{ id, deleted }` for a yield — and both were described as "Deleted."
+ *   - `Contract` omitted `commodityCanonical`, which is the key market
+ *     benchmarking joins on: null there is why a contract gets no benchmark.
+ *
+ * ── Why the calculator's body stays `z.unknown()` ──
  *
  * `CalculatorData` is a deep shape — per-commodity rows each carrying
  * per-area figures, break-even figures, an uncertainty state and a cost
@@ -21,8 +46,18 @@
  * nothing would make the copy disagree out loud. So the shape is NAMED in the
  * description and its source of truth is cited; the module is the contract.
  *
- * `journal.paths.ts` takes the same position for its three-shaped list
- * response, for the same reason.
+ * `GET /grain/contracts` looked like the same case and is not. Its rows are the
+ * model plus three COMPUTED decorations from three separate modules, plus a
+ * per-currency `totals` rollup — but all four are PURE, EXPORTED functions, so
+ * each has a single source of truth that a schema can be checked against by
+ * running it. That is what the contract test does, which is why documenting it
+ * invents nothing. The calculator is the one that genuinely differs: its
+ * payload is assembled by a mapper module with no exported pure pieces to
+ * check a schema against.
+ *
+ * `journal.paths.ts` documented its three-shaped list response as a union once
+ * the shapes were known; the position it and this module share is about not
+ * INVENTING a schema, never about leaving a known one unstated.
  */
 import { z } from '@/lib/openapi/zod';
 import {
@@ -32,6 +67,14 @@ import {
     UpdateYieldRecordSchema,
     CreateContractSchema,
 } from '@/app-layer/schemas/grain.schemas';
+import {
+    CostEntryDTOSchema,
+    CostEntryListSchema,
+    YieldRecordDTOSchema,
+    YieldRecordListSchema,
+    ContractDTOSchema,
+    ContractListSchema,
+} from '@/lib/dto/grain.dto';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { op } from './helpers';
 
@@ -78,11 +121,10 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
     // to `{ rows, nextCursor }`, and the wire is what a client sees.
     //
     // Request bodies are the REAL Zod schemas the routes validate with, so
-    // they cannot drift from the handler. Response bodies stay `z.unknown()`
-    // with the shape described in prose, for the same reason the calculator's
-    // does: a mirrored response schema is a second spelling of a payload,
-    // free to drift, and inventing one here would be worse than pointing at
-    // the use case that produces it.
+    // they cannot drift from the handler. Response bodies are now the DTO
+    // schemas written against each usecase's single `toDto` — see the header
+    // for what that surfaced. Only the calculator is still prose-only, and the
+    // header says why.
     //
     // Every route requires the GRAIN module — 403 `module_disabled: GRAIN`.
 
@@ -108,7 +150,7 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
             'enum throws a 500 that a list page renders as its EMPTY state. Carries a weak ETag.',
         tags: ['Grain'],
         params: TenantParams,
-        success: { status: 200, description: 'Cost entries.', schema: z.unknown() },
+        success: { status: 200, description: 'A capped page of cost entries.', schema: CostEntryListSchema },
     });
 
     op(registry, {
@@ -124,7 +166,7 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         tags: ['Grain'],
         params: TenantParams,
         body: CreateCostEntrySchema,
-        success: { status: 200, description: 'The created cost entry.', schema: z.unknown() },
+        success: { status: 201, description: 'The created cost entry.', schema: CostEntryDTOSchema },
     });
 
     op(registry, {
@@ -134,7 +176,13 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         summary: 'Get one cost entry',
         tags: ['Grain'],
         params: CostEntryParams,
-        success: { status: 200, description: 'The cost entry.', schema: z.unknown() },
+        success: {
+            status: 200,
+            description:
+                'The cost entry. This is the only read that carries `description` — it is ' +
+                'ABSENT on list rows, which is a different claim from null.',
+            schema: CostEntryDTOSchema,
+        },
     });
 
     op(registry, {
@@ -145,7 +193,7 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         tags: ['Grain'],
         params: CostEntryParams,
         body: UpdateCostEntrySchema,
-        success: { status: 200, description: 'The updated cost entry.', schema: z.unknown() },
+        success: { status: 200, description: 'The updated cost entry.', schema: CostEntryDTOSchema },
     });
 
     op(registry, {
@@ -155,7 +203,14 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         summary: 'Delete a cost entry',
         tags: ['Grain'],
         params: CostEntryParams,
-        success: { status: 200, description: 'Deleted.', schema: z.unknown() },
+        success: {
+            status: 200,
+            description:
+                'Soft-deleted. The body is `{ id }` ONLY — the sibling ' +
+                '`DELETE /grain/yield-records/{id}` answers `{ id, deleted }` instead. ' +
+                'They are genuinely different shapes, so one decoder cannot serve both.',
+            schema: z.object({ id: z.string() }),
+        },
     });
 
     op(registry, {
@@ -170,7 +225,7 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
             'real number.',
         tags: ['Grain'],
         params: TenantParams,
-        success: { status: 200, description: 'Yield records.', schema: z.unknown() },
+        success: { status: 200, description: 'A capped page of yield records.', schema: YieldRecordListSchema },
     });
 
     op(registry, {
@@ -183,7 +238,7 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         tags: ['Grain'],
         params: TenantParams,
         body: CreateYieldRecordSchema,
-        success: { status: 200, description: 'The created yield record.', schema: z.unknown() },
+        success: { status: 201, description: 'The created yield record.', schema: YieldRecordDTOSchema },
     });
 
     op(registry, {
@@ -193,7 +248,14 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         summary: 'Get one yield record',
         tags: ['Grain'],
         params: YieldRecordParams,
-        success: { status: 200, description: 'The yield record.', schema: z.unknown() },
+        success: {
+            status: 200,
+            description:
+                'The yield record. This is the only read that carries `valuationNotes` — the ' +
+                'list projection omits it, so its absence there means it was not sent, not ' +
+                'that the record has none.',
+            schema: YieldRecordDTOSchema,
+        },
     });
 
     op(registry, {
@@ -204,7 +266,7 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         tags: ['Grain'],
         params: YieldRecordParams,
         body: UpdateYieldRecordSchema,
-        success: { status: 200, description: 'The updated yield record.', schema: z.unknown() },
+        success: { status: 200, description: 'The updated yield record.', schema: YieldRecordDTOSchema },
     });
 
     op(registry, {
@@ -219,7 +281,7 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         tags: ['Grain'],
         params: TenantParams,
         body: CreateContractSchema,
-        success: { status: 200, description: 'The created contract.', schema: z.unknown() },
+        success: { status: 201, description: 'The created contract.', schema: ContractDTOSchema },
     });
 
     op(registry, {
@@ -229,7 +291,14 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         summary: 'Delete a yield record',
         tags: ['Grain'],
         params: YieldRecordParams,
-        success: { status: 200, description: 'Deleted.', schema: z.unknown() },
+        success: {
+            status: 200,
+            description:
+                'Soft-deleted. `{ id, deleted }` — NOT the `{ id }` its cost-entry sibling ' +
+                'returns. `deleted` is always true; it is in the payload because it shipped ' +
+                'that way, not because false is reachable.',
+            schema: z.object({ id: z.string(), deleted: z.boolean() }),
+        },
     });
 
     op(registry, {
@@ -242,6 +311,15 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
             'on costs, and the same failure if it is read with a bare `get()`.',
         tags: ['Grain'],
         params: TenantParams,
-        success: { status: 200, description: 'Contracts.', schema: z.unknown() },
+        success: {
+            status: 200,
+            description:
+                'A capped page of contracts. Each row is the model plus computed ' +
+                '`fulfilment`, `valueAmount` and `benchmark`; `totals` rolls the PAGE up ' +
+                'per currency and is not the whole book when `truncated` is true. Every ' +
+                'money and tonnage figure is an exact decimal STRING — parsing them as ' +
+                'floats undoes the reason they are strings.',
+            schema: ContractListSchema,
+        },
     });
 }

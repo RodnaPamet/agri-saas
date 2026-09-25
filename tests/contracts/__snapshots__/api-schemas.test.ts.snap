@@ -912,6 +912,12 @@ exports[`API contract — per-schema snapshots schema: Contract 1`] = `
         "null"
       ]
     },
+    "commodityCanonical": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "type": {
       "type": "string",
       "enum": [
@@ -1001,7 +1007,624 @@ exports[`API contract — per-schema snapshots schema: Contract 1`] = `
     "status"
   ],
   "additionalProperties": {},
-  "description": "Grain marketing/supply contract — a forward SALE of produce or PURCHASE of inputs against a counterparty. volumeTonnes/pricePerTonne are decimal strings; terms/pricingNotes are encrypted at rest and returned decrypted."
+  "description": "Grain marketing/supply contract — a forward SALE of produce or PURCHASE of inputs against a counterparty. volumeTonnes/pricePerTonne are decimal strings; terms/pricingNotes are encrypted at rest and returned decrypted. This is the RAW model as create and single-read return it: the soft-delete bookkeeping columns (deletedAt, deletedByUserId, retentionUntil) are on the wire too and are always null on a contract you can read, so they are described here rather than as fields. The LIST endpoint returns this shape plus computed fulfilment/valueAmount/benchmark decorations, which are not part of this schema."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ContractBenchmark 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": [
+        "OK",
+        "NO_CONTRACT_PRICE",
+        "NO_MARKET",
+        "MARKET_STALE",
+        "CURRENCY_MISMATCH"
+      ]
+    },
+    "deltaPerTonne": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "deltaPct": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "reference": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/MarketReference"
+        },
+        {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      ]
+    }
+  },
+  "required": [
+    "status",
+    "deltaPerTonne",
+    "deltaPct",
+    "reference"
+  ],
+  "additionalProperties": {},
+  "description": "Whether this contract is priced above or below market, or why it could not be compared. Deltas are present only when status is OK."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ContractBookTotal 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "currency": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "contractCount": {
+      "type": "number"
+    },
+    "contractedTonnes": {
+      "type": "string"
+    },
+    "contractValue": {
+      "type": "string"
+    },
+    "unpricedCount": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "currency",
+    "contractCount",
+    "contractedTonnes",
+    "contractValue",
+    "unpricedCount"
+  ],
+  "additionalProperties": {},
+  "description": "One currency slice of the contract book. Buckets are NEVER summed across currencies — 100k EUR plus 100k USD is not 200k of anything — and a contract priced without a currency gets its own bucket rather than joining a neighbour. Sorted by descending value, with the no-currency bucket last."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ContractFulfilment 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "contractId": {
+      "type": "string"
+    },
+    "deliveredTonnes": {
+      "type": "string"
+    },
+    "deliveryCount": {
+      "type": "number"
+    },
+    "remainingTonnes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "progressPct": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "complete": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "contractId",
+    "deliveredTonnes",
+    "deliveryCount",
+    "remainingTonnes",
+    "progressPct",
+    "complete"
+  ],
+  "additionalProperties": {},
+  "description": "Delivery position of one contract. Tonnages are exact decimal strings. remainingTonnes floors at zero, so over-delivery shows as complete with a full deliveredTonnes rather than a negative remainder."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ContractList 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "rows": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/ContractListRow"
+      }
+    },
+    "totals": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/ContractBookTotal"
+      }
+    },
+    "totalCount": {
+      "type": "number"
+    },
+    "truncated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "rows",
+    "totals",
+    "totalCount",
+    "truncated"
+  ],
+  "description": "A capped page of contracts. \`totals\` is computed over the rows on this page and filtered to committed statuses, so it is a summary of what was returned — on a truncated page it is NOT the whole book."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ContractListRow 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "tenantId": {
+      "type": "string"
+    },
+    "seasonId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "key": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "counterparty": {
+      "type": "string"
+    },
+    "commodity": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "commodityCanonical": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "SALE",
+        "PURCHASE"
+      ]
+    },
+    "status": {
+      "type": "string"
+    },
+    "volumeTonnes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pricePerTonne": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "priceCurrency": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "deliveryStart": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "deliveryEnd": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "terms": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pricingNotes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "createdAt": {
+      "type": "string"
+    },
+    "updatedAt": {
+      "type": "string"
+    },
+    "season": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "additionalProperties": {}
+    },
+    "fulfilment": {
+      "$ref": "#/components/schemas/ContractFulfilment"
+    },
+    "valueAmount": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "benchmark": {
+      "$ref": "#/components/schemas/ContractBenchmark"
+    }
+  },
+  "required": [
+    "id",
+    "tenantId",
+    "counterparty",
+    "type",
+    "status",
+    "fulfilment",
+    "valueAmount",
+    "benchmark"
+  ],
+  "additionalProperties": {},
+  "description": "A contract as the LIST returns it: the model plus computed fulfilment, value and benchmark. The encrypted terms/pricingNotes are NOT projected on a list — fetch the contract itself for those."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: CostEntry 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "PAYROLL",
+        "RENT",
+        "FERTILIZER",
+        "FUEL",
+        "SEED",
+        "PESTICIDE",
+        "SERVICE",
+        "OTHER"
+      ]
+    },
+    "amount": {
+      "type": "number"
+    },
+    "currency": {
+      "type": "string"
+    },
+    "incurredOn": {
+      "type": "string"
+    },
+    "supplier": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "invoiceFileId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "plantingId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "seasonId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "locationId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "parcelId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "leaseId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "itemId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "allocationBasis": {
+      "type": "string",
+      "enum": [
+        "TARGET",
+        "HOLDING",
+        "PARCEL_SUBSET"
+      ]
+    },
+    "allocationParcelIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "createdByUserId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "createdAt": {
+      "type": "string"
+    },
+    "updatedAt": {
+      "type": "string"
+    },
+    "planting": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "successionNumber": {
+          "type": "number"
+        },
+        "cropPlan": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "id",
+        "successionNumber"
+      ],
+      "additionalProperties": {}
+    },
+    "season": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "additionalProperties": {}
+    },
+    "location": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "additionalProperties": {}
+    },
+    "parcel": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "additionalProperties": {}
+    },
+    "item": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "category"
+      ],
+      "additionalProperties": {}
+    },
+    "invoiceFile": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "originalName": {
+          "type": "string"
+        },
+        "mimeType": {
+          "type": "string"
+        },
+        "sizeBytes": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "originalName",
+        "mimeType",
+        "sizeBytes"
+      ],
+      "additionalProperties": {}
+    }
+  },
+  "required": [
+    "id",
+    "category",
+    "amount",
+    "currency",
+    "incurredOn",
+    "supplier",
+    "invoiceFileId",
+    "plantingId",
+    "seasonId",
+    "locationId",
+    "parcelId",
+    "leaseId",
+    "itemId",
+    "allocationBasis",
+    "allocationParcelIds",
+    "createdByUserId",
+    "createdAt",
+    "updatedAt",
+    "planting",
+    "season",
+    "location",
+    "parcel",
+    "item",
+    "invoiceFile"
+  ],
+  "additionalProperties": {},
+  "description": "One recorded cost against land, a planting, a season or an inventory item. amount is a JSON number (Decimal converted, absent reads as 0). allocationBasis says WHICH land the cost spreads across and allocationParcelIds is the PARCEL_SUBSET denominator, sorted. description is encrypted commercial free text returned only on a single read — it is ABSENT rather than null on list rows, which is a different claim from \\"this entry has no description\\"."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: CostEntryList 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "rows": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/CostEntry"
+      }
+    },
+    "totalCount": {
+      "type": "number"
+    },
+    "truncated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "rows",
+    "totalCount",
+    "truncated"
+  ],
+  "description": "A capped page of cost entries. When truncated is true rows were DROPPED, so any total computed from rows is wrong — use totalCount."
 }"
 `;
 
@@ -3897,6 +4520,50 @@ exports[`API contract — per-schema snapshots schema: LogEntryUpdateRequest 1`]
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: MarketReference 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "commodity": {
+      "type": "string",
+      "enum": [
+        "wheat",
+        "maize",
+        "barley",
+        "sunflower",
+        "rapeseed",
+        "oats",
+        "rye",
+        "soybean",
+        "peas",
+        "lentils"
+      ]
+    },
+    "pricePerTonne": {
+      "type": "number"
+    },
+    "currency": {
+      "type": "string"
+    },
+    "observedAt": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "commodity",
+    "pricePerTonne",
+    "currency",
+    "observedAt",
+    "source"
+  ],
+  "additionalProperties": {},
+  "description": "The market observation a benchmark was computed against — carried so a client can attribute and date the claim instead of presenting it as an unsourced fact."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: OperationParcel 1`] = `
 "{
   "type": "object",
@@ -6390,10 +7057,23 @@ exports[`API contract — per-schema snapshots schema: YieldRecord 1`] = `
         "null"
       ]
     },
+    "netTonnesStd": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
     "tPerHa": {
       "type": [
         "number",
         "null"
+      ]
+    },
+    "tPerHaBasis": {
+      "type": "string",
+      "enum": [
+        "standard-moisture",
+        "gross"
       ]
     },
     "valuationNotes": {
@@ -6474,9 +7154,37 @@ exports[`API contract — per-schema snapshots schema: YieldRecord 1`] = `
     "grossTonnes",
     "moisturePct",
     "areaHa",
-    "tPerHa"
+    "netTonnesStd",
+    "tPerHa",
+    "tPerHaBasis"
   ],
   "additionalProperties": {},
-  "description": "Actual harvest production total. tPerHa is computed (grossTonnes / areaHa) and not stored. valuationNotes is encrypted at rest and returned decrypted."
+  "description": "Actual harvest production total. tPerHa is computed and not stored — from netTonnesStd when a standardised tonnage exists, otherwise grossTonnes; tPerHaBasis says which, so two t/ha figures are never compared across different bases. valuationNotes is encrypted at rest, returned decrypted, and is absent (not null) on list rows."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: YieldRecordList 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "rows": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/YieldRecord"
+      }
+    },
+    "totalCount": {
+      "type": "number"
+    },
+    "truncated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "rows",
+    "totalCount",
+    "truncated"
+  ],
+  "description": "A capped page of yield records. When truncated is true rows were DROPPED, so any total computed from rows is wrong — use totalCount. Note that valuationNotes is absent from these rows by design."
 }"
 `;
