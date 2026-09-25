@@ -5867,6 +5867,58 @@ exports[`API contract — per-schema snapshots schema: TaskAssignRequest 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: TaskComment 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "tenantId": {
+      "type": "string"
+    },
+    "taskId": {
+      "type": "string"
+    },
+    "body": {
+      "type": "string"
+    },
+    "createdByUserId": {
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "string"
+    },
+    "updatedAt": {
+      "type": "string"
+    },
+    "createdBy": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/UserRef"
+        },
+        {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "tenantId",
+    "taskId",
+    "body",
+    "createdByUserId",
+    "createdAt",
+    "updatedAt"
+  ],
+  "additionalProperties": {}
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: TaskCommentAddRequest 1`] = `
 "{
   "type": "object",

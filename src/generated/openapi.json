@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "3.49.0",
+    "version": "3.49.1",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -5606,6 +5606,55 @@
         ],
         "description": "Reassign or unassign a task. Pass null to clear the assignee."
       },
+      "TaskComment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "createdByUserId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "createdBy": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "tenantId",
+          "taskId",
+          "body",
+          "createdByUserId",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": {}
+      },
       "TaskCommentAddRequest": {
         "type": "object",
         "properties": {
@@ -6142,10 +6191,54 @@
         ],
         "responses": {
           "200": {
-            "description": "Entries, in one of three shapes (see description).",
+            "description": "Entries, in one of THREE shapes — the query decides which, and a client that assumes one reads an absent key from another as an empty list rather than as an error.",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "entries": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/LogEntry"
+                          }
+                        }
+                      },
+                      "required": [
+                        "entries"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "rows": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/LogEntry"
+                          }
+                        },
+                        "nextCursor": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "rows",
+                        "nextCursor"
+                      ]
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LogEntry"
+                      }
+                    }
+                  ]
+                }
               }
             }
           },
@@ -13634,10 +13727,52 @@
         ],
         "responses": {
           "200": {
-            "description": "Tasks — see the description for WHICH shape.",
+            "description": "Tasks. TWO shapes, and the query decides which — see the operation description.",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "rows": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Task"
+                          }
+                        },
+                        "nextCursor": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "rows",
+                        "nextCursor"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "rows": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Task"
+                          }
+                        },
+                        "truncated": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "rows",
+                        "truncated"
+                      ]
+                    }
+                  ]
+                }
               }
             }
           },
@@ -13753,7 +13888,9 @@
             "description": "The created task.",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
               }
             }
           },
@@ -13869,7 +14006,9 @@
             "description": "The task.",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
               }
             }
           },
@@ -13993,7 +14132,9 @@
             "description": "The updated task.",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
               }
             }
           },
@@ -14105,10 +14246,20 @@
         ],
         "responses": {
           "200": {
-            "description": "Deleted.",
+            "description": "Deleted. `{ ok: true }` — no body of the deleted row.",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
               }
             }
           },
@@ -14234,7 +14385,9 @@
             "description": "The updated task.",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
               }
             }
           },
@@ -14359,7 +14512,9 @@
             "description": "The updated task.",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
               }
             }
           },
@@ -14472,10 +14627,15 @@
         ],
         "responses": {
           "200": {
-            "description": "Comments.",
+            "description": "Comments, OLDEST first — a conversation read in order.",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaskComment"
+                  }
+                }
               }
             }
           },
@@ -14599,7 +14759,9 @@
             "description": "The created comment.",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/TaskComment"
+                }
               }
             }
           },
