@@ -105,7 +105,30 @@ const Achievements = z
 
 const AgDashboard = z
     .object({
-        enabledModules: z.array(z.string()),
+        /**
+         * The vocabulary, not just the mechanism. Absence from this array is
+         * the gating signal, so a client that cannot see the value set cannot
+         * act on it — it was documented as `string[]` and the module names
+         * appeared nowhere in the spec.
+         *
+         * Mirrors `ALL_MODULES` in `src/lib/modules.ts`. A client should treat
+         * an unrecognised name as NOT-enabled rather than failing: the set can
+         * grow, and a new module is by definition one the client has no panel
+         * for.
+         */
+        enabledModules: z.array(
+            z.enum([
+                'JOURNAL',
+                'INVENTORY',
+                'PLANNING',
+                'CERTIFICATION',
+                'AUTOMATION',
+                'PROCESSES',
+                'AI',
+                'GRAIN',
+                'EXCHANGE',
+            ]),
+        ),
         recentJournal: z.array(JournalItem),
         lowStock: z.array(LowStockItem),
         myTasks: z.array(DashboardTaskItem),
@@ -180,7 +203,24 @@ const FieldBriefingPayload = z
         generatedAt: z.string(),
         date: z.string(),
         fieldCount: z.number().int(),
-        briefing: FieldBriefing.nullable(),
+        /**
+         * ALWAYS PRESENT, and null whenever there is no briefing to give —
+         * which is an ordinary state, not an error.
+         *
+         * Written as an explicit union rather than `FieldBriefing.nullable()`.
+         * `.nullable()` on a REGISTERED schema collapses to a bare `$ref` and
+         * the null is silently dropped, because a `$ref` carries no siblings.
+         * That shipped: the description said "briefing: null" three times while
+         * the schema promised a non-null object, so a client generated from the
+         * file would have thrown on exactly the state the paragraph is about.
+         *
+         * The neighbouring nullable refs in this spec use
+         * `allOf: [{$ref}, {type: ["object","null"]}]`, which is what
+         * `.nullable().optional()` emits — but `.optional()` would also drop
+         * this out of `required`, and it is never absent. `anyOf` with an
+         * explicit null is the OpenAPI 3.1 form for required-but-nullable.
+         */
+        briefing: z.union([FieldBriefing, z.null()]),
     })
     .openapi('FieldBriefingPayload', {
         description:
