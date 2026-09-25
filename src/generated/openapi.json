@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "3.48.0",
+    "version": "3.49.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -169,7 +169,18 @@
           "enabledModules": {
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "JOURNAL",
+                "INVENTORY",
+                "PLANNING",
+                "CERTIFICATION",
+                "AUTOMATION",
+                "PROCESSES",
+                "AI",
+                "GRAIN",
+                "EXCHANGE"
+              ]
             }
           },
           "recentJournal": {
@@ -2051,10 +2062,7 @@
         ]
       },
       "FieldBriefing": {
-        "type": [
-          "object",
-          "null"
-        ],
+        "type": "object",
         "properties": {
           "headline": {
             "type": "string"
@@ -2097,7 +2105,14 @@
             "type": "integer"
           },
           "briefing": {
-            "$ref": "#/components/schemas/FieldBriefing"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FieldBriefing"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [

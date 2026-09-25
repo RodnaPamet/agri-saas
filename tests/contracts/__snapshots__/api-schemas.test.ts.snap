@@ -128,7 +128,18 @@ exports[`API contract — per-schema snapshots schema: AgDashboardPayload 1`] = 
     "enabledModules": {
       "type": "array",
       "items": {
-        "type": "string"
+        "type": "string",
+        "enum": [
+          "JOURNAL",
+          "INVENTORY",
+          "PLANNING",
+          "CERTIFICATION",
+          "AUTOMATION",
+          "PROCESSES",
+          "AI",
+          "GRAIN",
+          "EXCHANGE"
+        ]
       }
     },
     "recentJournal": {
@@ -2118,10 +2129,7 @@ exports[`API contract — per-schema snapshots schema: FarmTaskTrendPoint 1`] = 
 
 exports[`API contract — per-schema snapshots schema: FieldBriefing 1`] = `
 "{
-  "type": [
-    "object",
-    "null"
-  ],
+  "type": "object",
   "properties": {
     "headline": {
       "type": "string"
@@ -2167,7 +2175,14 @@ exports[`API contract — per-schema snapshots schema: FieldBriefingPayload 1`] 
       "type": "integer"
     },
     "briefing": {
-      "$ref": "#/components/schemas/FieldBriefing"
+      "anyOf": [
+        {
+          "$ref": "#/components/schemas/FieldBriefing"
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "required": [
