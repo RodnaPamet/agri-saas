@@ -1,93 +1,121 @@
 /**
- * A `$ref` cannot carry siblings, so `.nullable()` on a REGISTERED schema is
- * silently dropped at generation.
+ * A property described as nullable must ADMIT null — with `$ref`s resolved.
  *
- * This shipped. `FieldBriefingPayload.briefing` was written
- * `FieldBriefing.nullable()` in the source module and came out of the generator
- * as a bare `$ref`, in `required`, with the null gone — while the operation
- * description said "`briefing: null`" three times and the three
- * `*Configured` / `*Available` booleans existed for no other purpose than to
- * explain its absence. A client generated from the file would have declared it
- * non-optional and thrown on exactly the state the paragraph was about.
+ * ## The version of this guard that was wrong
  *
- * The pre-commit sync hook cannot catch this: it guards the generated file
- * against the source modules, and here they AGREED — the generator faithfully
- * reproduced what it had decided the schema was. The disagreement was between
- * the schema and the prose sitting beside it.
+ * It first asserted that a property must not be a BARE `$ref` while its
+ * description said it could be null. That rule is false, and the iOS session
+ * caught it: this spec expresses a nullable object two ways, and which one is
+ * right depends on whether the target is REUSED.
  *
- * ── What this checks, and why it is narrow ──
+ *   LocationListItem.owner         allOf: [{$ref: UserRef}, {type: ["object","null"]}]
+ *   AgDashboardPayload.achievements {$ref: AgDashboardAchievements}, whose own
+ *                                   type is ["object","null"]
  *
- * A property that is a BARE `$ref` (no `anyOf`/`allOf`/siblings) while the
- * surrounding description says that property can be null.
+ * `UserRef` appears in five payloads and cannot bake a null into itself, so the
+ * nullability goes at the reference site. `AgDashboardAchievements` is
+ * single-use, so it carries the null in its own type and the reference stays
+ * bare. Both admit null. The first version of this guard would have failed the
+ * second one, and passed only because the description happened to read
+ * "`achievements` is null" rather than "`achievements`: null" — green by
+ * phrasing, which is no better than red by accident.
  *
- * A broader version — "any property whose description mentions null must admit
- * null" — was measured first and rejected: of its four hits, two were false
- * positives (one description said a sibling could be null, another described
- * parcels with null GEOMETRY) and two were `z.unknown()` holes rather than
- * nullability bugs. A guard that needs an allowlist on the day it is written is
- * one people learn to ignore, which is the same ending as the silence it was
- * meant to fix.
+ * So the rule is about NULLABILITY, not about shape: resolve the reference and
+ * ask whether null is admitted. That is the invariant worth holding, and it is
+ * indifferent to which idiom expresses it.
  *
- * The fix, when this fires: write the property as an explicit union —
- * `z.union([Thing, z.null()])` — which yields `anyOf: [{$ref}, {type: null}]`
- * and stays in `required`. Do NOT reach for `.nullable().optional()`, which is
- * what the neighbouring nullable refs in this spec use: `.optional()` also
- * drops the property out of `required`, and a field that is always present but
- * sometimes null is a different contract from one that may be absent.
+ * ## Why it is still worth having
+ *
+ * `.nullable()` CAN be lost — a `$ref` carries no siblings, so nullability
+ * applied at a reference site to a target that does not carry it has nowhere to
+ * live. And the pre-commit sync hook cannot see this class at all: it guards the
+ * generated file against the source modules, and they agree, because the
+ * generator faithfully reproduces whatever it decided the schema was. The
+ * disagreement is between the schema and the prose beside it.
+ *
+ * ## What it does not reach
+ *
+ * Only SCHEMA and PROPERTY descriptions. A nullability claim made in an
+ * OPERATION description is invisible to it — `AgDashboardPayload.achievements`
+ * is exactly that case, and is correct only by luck of where the sentence was
+ * written. Widening to operation descriptions means mapping a response schema
+ * back to the operations that return it, which is more machinery than the two
+ * properties this currently selects can justify. Recorded so the next person
+ * knows the boundary rather than inferring a clean bill of health from green.
  */
 import * as fs from 'fs';
 import * as path from 'path';
 
 const SPEC = path.resolve(__dirname, '../../src/generated/openapi.json');
 
-interface SchemaNode {
-    $ref?: string;
-    description?: string;
-    properties?: Record<string, SchemaNode>;
-}
+type Node = Record<string, unknown>;
 
-describe('a nullable $ref must not lose its null at generation', () => {
+describe('a property described as nullable admits null, $refs resolved', () => {
     const spec = JSON.parse(fs.readFileSync(SPEC, 'utf8')) as {
-        components: { schemas: Record<string, SchemaNode> };
+        components: { schemas: Record<string, Node> };
     };
     const schemas = spec.components.schemas;
 
-    /** Properties that are a `$ref` and nothing else. */
-    function bareRefProperties(): Array<{ schema: string; prop: string; containerDesc: string }> {
-        const out: Array<{ schema: string; prop: string; containerDesc: string }> = [];
+    /** Follow `$ref` into `components.schemas`. Depth-guarded against a cycle. */
+    function resolve(node: Node, depth = 0): Node {
+        const ref = node.$ref;
+        if (typeof ref !== 'string' || depth > 8) return node;
+        const name = ref.split('/').pop() as string;
+        const target = schemas[name];
+        return target ? resolve(target, depth + 1) : node;
+    }
+
+    function admitsNull(node: Node, depth = 0): boolean {
+        if (depth > 8) return false;
+        const n = resolve(node, depth);
+        const t = n.type;
+        if (t === 'null' || (Array.isArray(t) && t.includes('null'))) return true;
+        for (const key of ['anyOf', 'oneOf', 'allOf'] as const) {
+            const branch = n[key];
+            if (Array.isArray(branch) && branch.some((b) => admitsNull(b as Node, depth + 1))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Properties whose own or containing description says THAT property is null. */
+    function describedNullable(): Array<{ schema: string; prop: string; node: Node }> {
+        const out: Array<{ schema: string; prop: string; node: Node }> = [];
         for (const [name, sch] of Object.entries(schemas)) {
-            for (const [prop, ps] of Object.entries(sch.properties ?? {})) {
-                if (Object.keys(ps).length === 1 && ps.$ref) {
-                    out.push({
-                        schema: name,
-                        prop,
-                        containerDesc: `${sch.description ?? ''}\n${ps.description ?? ''}`,
-                    });
+            const props = (sch.properties ?? {}) as Record<string, Node>;
+            for (const [prop, ps] of Object.entries(props)) {
+                const text = `${(sch.description as string) ?? ''}\n${(ps.description as string) ?? ''}`;
+                // `<prop>` followed by "is null" or ": null" — the two ways this
+                // spec's prose says it. Deliberately not a bare search for
+                // "null" anywhere in the description: that was measured and gave
+                // 50% false positives, one description meaning a SIBLING could
+                // be null and another describing parcels with null GEOMETRY.
+                if (new RegExp(`\`?${prop}\`?\\s*(?::|\\bis\\b)\\s*\`?null`, 'i').test(text)) {
+                    out.push({ schema: name, prop, node: ps });
                 }
             }
         }
         return out;
     }
 
-    it('finds bare $ref properties at all (positive control)', () => {
-        // Without this, a renamed key or a restructured spec would make the
-        // assertion below vacuous and read as a clean bill of health.
-        expect(bareRefProperties().length).toBeGreaterThan(0);
+    it('finds properties described as nullable at all (positive control)', () => {
+        // An empty selection satisfies the assertion below. If the prose is
+        // reworded or the spec restructured, this says so rather than passing.
+        expect(describedNullable().length).toBeGreaterThan(0);
     });
 
-    it('no bare $ref is described as nullable', () => {
-        const offenders = bareRefProperties().filter(({ prop, containerDesc }) =>
-            new RegExp(`\`?${prop}\`?\\s*:?\\s*null`, 'i').test(containerDesc),
-        );
-
+    it('every one of them admits null', () => {
+        const offenders = describedNullable().filter(({ node }) => !admitsNull(node));
         if (offenders.length > 0) {
             throw new Error(
-                `${offenders.length} propert(ies) are a bare $ref while their description says ` +
-                    `they can be null — the null was dropped at generation:\n` +
+                `${offenders.length} propert(ies) are DESCRIBED as nullable but the schema ` +
+                    `does not admit null, with $refs resolved:\n` +
                     offenders.map((o) => `  ${o.schema}.${o.prop}`).join('\n') +
-                    `\n\nWrite it as z.union([Thing, z.null()]) in the paths module. ` +
-                    `NOT .nullable() (silently dropped on a registered schema) and NOT ` +
-                    `.nullable().optional() (also drops it from \`required\`).`,
+                    `\n\nEither the prose is wrong, or the null was lost. A \`$ref\` carries no ` +
+                    `siblings, so nullability applied at a reference site to a target that does ` +
+                    `not itself admit null has nowhere to live — put it on the target if the ` +
+                    `target is single-use, or write the property as an explicit union.`,
             );
         }
         expect(offenders).toEqual([]);

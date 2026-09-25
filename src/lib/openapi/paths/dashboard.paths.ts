@@ -207,18 +207,29 @@ const FieldBriefingPayload = z
          * ALWAYS PRESENT, and null whenever there is no briefing to give —
          * which is an ordinary state, not an error.
          *
-         * Written as an explicit union rather than `FieldBriefing.nullable()`.
-         * `.nullable()` on a REGISTERED schema collapses to a bare `$ref` and
-         * the null is silently dropped, because a `$ref` carries no siblings.
-         * That shipped: the description said "briefing: null" three times while
-         * the schema promised a non-null object, so a client generated from the
-         * file would have thrown on exactly the state the paragraph is about.
+         * Written as an explicit union, which yields
+         * `anyOf: [{$ref}, {type: null}]` at the use site.
          *
-         * The neighbouring nullable refs in this spec use
-         * `allOf: [{$ref}, {type: ["object","null"]}]`, which is what
-         * `.nullable().optional()` emits — but `.optional()` would also drop
-         * this out of `required`, and it is never absent. `anyOf` with an
-         * explicit null is the OpenAPI 3.1 form for required-but-nullable.
+         * ── Three correct forms, and why this file uses this one ──
+         *
+         * A nullable object ref is expressed three ways in this spec, and the
+         * choice is not arbitrary:
+         *
+         *   `UserRef` is reused by five payloads, so it cannot bake a null into
+         *   itself — the nullability goes at each reference site, as
+         *   `allOf: [{$ref}, {type: ["object","null"]}]`.
+         *
+         *   `AgDashboardAchievements` below is single-use, so `.nullable()` puts
+         *   the null in the TARGET's own type and the reference stays bare. That
+         *   is correct and admits null, but you have to resolve the ref to see
+         *   it — which misread as a missing `.nullable()` by two readers
+         *   independently, one of whom then "fixed" it.
+         *
+         *   This one says it at the site. Nothing to resolve.
+         *
+         * `.nullable().optional()` is the wrong tool here whichever form you
+         * pick: `.optional()` also drops the property out of `required`, and
+         * `briefing` is never absent.
          */
         briefing: z.union([FieldBriefing, z.null()]),
     })
