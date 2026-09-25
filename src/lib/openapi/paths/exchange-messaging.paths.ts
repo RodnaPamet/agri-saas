@@ -76,6 +76,12 @@ const Thread = z
         role: z.enum(['seller', 'inquirer']),
         lastMessageAt: z.string(),
         closed: z.boolean(),
+        /**
+         * Seller-relevant, returned to BOTH sides: the blocked buyer's screen
+         * needs to explain why sending will be refused rather than letting
+         * them type into a void and collect a 403.
+         */
+        blocked: z.boolean(),
         unreadCount: z.number().int(),
         /** Opaque position of the next OLDER page; null at the start of the thread. */
         olderCursor: z.string().nullable(),
@@ -200,6 +206,10 @@ export function registerExchangeMessagingPaths(registry: OpenAPIRegistry): void 
             schema: z.object({
                 id: z.string(),
                 createdAt: z.string(),
+                // True when this message REOPENED a closed thread. A client
+                // caching `closed` locally must clear it on this, or the
+                // composer keeps showing a closed banner for a live thread.
+                reopened: z.boolean(),
                 replayed: z.boolean().openapi({
                     description:
                         'True when an `Idempotency-Key` matched an earlier send and this is ' +

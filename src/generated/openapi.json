@@ -1485,6 +1485,9 @@
           "closed": {
             "type": "boolean"
           },
+          "blocked": {
+            "type": "boolean"
+          },
           "unreadCount": {
             "type": "integer"
           },
@@ -1508,6 +1511,7 @@
           "role",
           "lastMessageAt",
           "closed",
+          "blocked",
           "unreadCount",
           "olderCursor",
           "messages"
@@ -15970,6 +15974,9 @@
                     "createdAt": {
                       "type": "string"
                     },
+                    "reopened": {
+                      "type": "boolean"
+                    },
                     "replayed": {
                       "type": "boolean",
                       "description": "True when an `Idempotency-Key` matched an earlier send and this is the ORIGINAL message rather than a new one. False for a first send, and always false when no key was supplied."
@@ -15978,6 +15985,7 @@
                   "required": [
                     "id",
                     "createdAt",
+                    "reopened",
                     "replayed"
                   ]
                 }

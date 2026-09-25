@@ -697,3 +697,30 @@ describe('Idempotency-Key on send', () => {
             .resolves.toMatchObject({ id: 'msg_winner', replayed: true });
     });
 });
+
+describe('your own message must not light up your own badge', () => {
+    it('sending moves the SENDER\'s read pointer', async () => {
+        // The inbox's `hasUnread` is `lastMessageAt > readAt` and does not look
+        // at who sent the last message. Without this, sending bumps
+        // lastMessageAt past your own pointer and your own thread reports
+        // unread — a badge that is wrong, which is worse than no badge,
+        // especially on a phone that renders it as a count.
+        await sendExchangeMessage(buyerCtx, 'th1', 'hello');
+        const [upd] = mockPrisma.exchangeThread.update.mock.calls.at(-1) as [
+            { data: Record<string, unknown> },
+        ];
+        expect(upd.data.inquirerLastReadAt).toBeInstanceOf(Date);
+        // The OTHER party's pointer must not move — that would mark your
+        // message read on their behalf.
+        expect(upd.data.sellerLastReadAt).toBeUndefined();
+    });
+
+    it('the seller sending moves the seller pointer, not the buyer\'s', async () => {
+        await sendExchangeMessage(sellerCtx, 'th1', 'yes, 40 tonnes');
+        const [upd] = mockPrisma.exchangeThread.update.mock.calls.at(-1) as [
+            { data: Record<string, unknown> },
+        ];
+        expect(upd.data.sellerLastReadAt).toBeInstanceOf(Date);
+        expect(upd.data.inquirerLastReadAt).toBeUndefined();
+    });
+});

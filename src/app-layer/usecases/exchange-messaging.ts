@@ -620,7 +620,27 @@ async function sendExchangeMessageImpl(
             // `reopening` — one write either way, and a conditional spread
             // would leave a window where a close landing between the read and
             // this update survives a message that came after it.
-            data: { lastMessageAt: now, closedAt: null },
+            //
+            // The SENDER's own read pointer moves too. The inbox computes
+            // `hasUnread` as `lastMessageAt > readAt` and does not look at who
+            // sent the last message, so without this your own message bumps
+            // `lastMessageAt` past your own pointer and your own thread reports
+            // unread. (The per-thread `unreadCount` was already right — it
+            // filters on `senderTenantId !== ctx.tenantId` — which is why the
+            // two disagreed and only the cheap one was wrong.)
+            //
+            // Monotonic, like `markExchangeThreadRead`: `now` is never behind
+            // the stored pointer. It does mean replying without opening marks
+            // the other party's earlier messages read — defensible, because you
+            // cannot reply to a conversation you have not looked at, and the
+            // exact count lives on the thread endpoint either way.
+            data: {
+                lastMessageAt: now,
+                closedAt: null,
+                ...(role === 'seller'
+                    ? { sellerLastReadAt: now }
+                    : { inquirerLastReadAt: now }),
+            },
         });
         // Persist, THEN notify. Never the reverse: a notification for a write
         // that then failed tells the other party to come and read something
