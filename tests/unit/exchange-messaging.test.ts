@@ -27,7 +27,22 @@ jest.mock('@/app-layer/notifications/enqueue', () => ({
 }));
 const mockRecipientDb = {
     tenantMembership: { findMany: jest.fn() },
+    notification: { create: jest.fn() },
 };
+// Echoes the locale back so a test can prove WHICH language was used —
+// a translator mocked to a constant would pass whether the recipient's
+// uiLanguage was honoured or silently replaced by a default.
+const translateFor = jest.fn(
+    (locale: string, key: string, params?: Record<string, unknown>) =>
+        Promise.resolve(`${locale}|${key}${params ? `|${JSON.stringify(params)}` : ''}`),
+);
+jest.mock('@/lib/i18n/server-messages', () => ({
+    translateFor: (...a: unknown[]) => translateFor(...(a as [string, string])),
+}));
+const publishNotificationEvent = jest.fn();
+jest.mock('@/lib/notifications/notification-bus', () => ({
+    publishNotificationEvent: (...a: unknown[]) => publishNotificationEvent(...a),
+}));
 jest.mock('@/lib/db-context', () => ({
     __esModule: true,
     runInTenantContext: (_ctx: unknown, cb: (db: unknown) => unknown) => cb(mockPrisma),
@@ -77,8 +92,14 @@ beforeEach(() => {
     mockPrisma.exchangeListing.findFirst.mockResolvedValue({ id: 'lst1', sellerTenantId: SELLER });
     enqueueEmail.mockReset();
     mockRecipientDb.tenantMembership.findMany.mockResolvedValue([
-        { user: { email: 'seller@example.test', uiLanguage: 'bg' }, tenant: { slug: 'seller-farm' } },
+        { user: { id: 'usr_seller', email: 'seller@example.test', uiLanguage: 'bg' }, tenant: { slug: 'seller-farm' } },
     ]);
+    mockRecipientDb.notification.create.mockReset();
+    mockRecipientDb.notification.create.mockResolvedValue({
+        id: 'ntf1', createdAt: new Date('2026-09-25T08:00:00.000Z'),
+    });
+    translateFor.mockClear();
+    publishNotificationEvent.mockClear();
 });
 
 describe('opening a thread', () => {
@@ -293,5 +314,81 @@ describe('retracting', () => {
         });
         await expect(deleteExchangeMessage(buyerCtx, 'm1')).resolves.toEqual({ id: 'm1' });
         expect(mockPrisma.exchangeMessage.update).not.toHaveBeenCalled();
+    });
+});
+
+
+describe('the bell, one row per message', () => {
+    it('writes a notification with NO dedupeKey — the point of the channel', async () => {
+        await sendExchangeMessage(buyerCtx, 'th1', 'Имате ли още налично?');
+
+        expect(mockRecipientDb.notification.create).toHaveBeenCalledTimes(1);
+        const arg = mockRecipientDb.notification.create.mock.calls[0][0] as {
+            data: Record<string, unknown>;
+        };
+        expect(arg.data.type).toBe('EXCHANGE_MESSAGE');
+        expect(arg.data.userId).toBe('usr_seller');
+        expect(arg.data.tenantId).toBe(SELLER);
+        expect(arg.data.linkUrl).toBe('/t/seller-farm/exchange/threads/th1');
+        // A dedupeKey here would re-create the exact bug this channel exists
+        // to cover: the email already collapses to one per day.
+        expect(arg.data.dedupeKey).toBeUndefined();
+    });
+
+    it('notifies on the SECOND message of the same day — the regression', async () => {
+        await sendExchangeMessage(buyerCtx, 'th1', 'first');
+        await sendExchangeMessage(buyerCtx, 'th1', 'second');
+
+        // Before this channel existed, message two reached the recipient on no
+        // channel at all: the outbox dedupe key ends in the UTC day and skips
+        // silently.
+        expect(mockRecipientDb.notification.create).toHaveBeenCalledTimes(2);
+        expect(publishNotificationEvent).toHaveBeenCalledTimes(2);
+    });
+
+    it("renders the copy in the RECIPIENT's language, not the sender's", async () => {
+        // 'en' DELIBERATELY, because RECIPIENT_FALLBACK_LOCALE is 'bg'. With a
+        // 'bg' recipient this assertion has no teeth — "honoured uiLanguage"
+        // and "silently used the fallback" produce identical output, and a
+        // mutation replacing the lookup with the constant passed.
+        mockRecipientDb.tenantMembership.findMany.mockResolvedValue([
+            { user: { id: 'u_en', email: 'en@example.test', uiLanguage: 'en' }, tenant: { slug: 'seller-farm' } },
+        ]);
+        await sendExchangeMessage(buyerCtx, 'th1', 'hello');
+        const arg = mockRecipientDb.notification.create.mock.calls[0][0] as {
+            data: Record<string, unknown>;
+        };
+        expect(arg.data.title).toBe('en|notificationInApp.exchangeMessage.title');
+        expect(arg.data.message).toContain('en|notificationInApp.exchangeMessage.body');
+        expect(arg.data.message).toContain('wheat'); // the commodity, interpolated
+    });
+
+    it('falls back to Bulgarian when the recipient has no uiLanguage', async () => {
+        mockRecipientDb.tenantMembership.findMany.mockResolvedValue([
+            { user: { id: 'u2', email: 'x@example.test', uiLanguage: null }, tenant: { slug: 's' } },
+        ]);
+        await sendExchangeMessage(buyerCtx, 'th1', 'hello');
+        const arg = mockRecipientDb.notification.create.mock.calls[0][0] as {
+            data: Record<string, unknown>;
+        };
+        // The product's fallback, not the sender's language and not `null`.
+        expect(arg.data.title).toBe('bg|notificationInApp.exchangeMessage.title');
+    });
+
+    it('persists BEFORE publishing — a subscriber must not outrun the row', async () => {
+        const order: string[] = [];
+        mockRecipientDb.notification.create.mockImplementation(async () => {
+            order.push('create');
+            return { id: 'ntf1', createdAt: new Date() };
+        });
+        publishNotificationEvent.mockImplementation(() => { order.push('publish'); });
+
+        await sendExchangeMessage(buyerCtx, 'th1', 'hello');
+        expect(order).toEqual(['create', 'publish']);
+    });
+
+    it('a failed bell write does not roll back the message', async () => {
+        mockRecipientDb.notification.create.mockRejectedValue(new Error('db gone'));
+        await expect(sendExchangeMessage(buyerCtx, 'th1', 'hello')).resolves.toBeDefined();
     });
 });

@@ -1,0 +1,11 @@
+-- Exchange messaging — the in-app (bell) notification type.
+--
+-- Distinct from the EmailNotificationType value of the same name added in
+-- 20260924213144: they are different Postgres types, and the two channels
+-- deliberately have different cadences. The email dedupes to one per thread
+-- per recipient per day; the bell does not dedupe at all, so a conversation
+-- with several messages in a day still signals each one somewhere.
+--
+-- ADD VALUE is forward-compatible: a rolling deploy sees the value before any
+-- writer uses it.
+ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS 'EXCHANGE_MESSAGE';

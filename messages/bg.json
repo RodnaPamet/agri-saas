@@ -6159,6 +6159,12 @@
     "schemePlural": "мерки",
     "loadFailed": "Мерките не се заредиха. Презаредете страницата."
   },
+  "notificationInApp": {
+    "exchangeMessage": {
+      "title": "Ново съобщение",
+      "body": "Имате ново съобщение относно {commodity}."
+    }
+  },
   "notificationEmail": {
     "taskAssigned": {
       "subject": "Възложена ви е задача: {task}",

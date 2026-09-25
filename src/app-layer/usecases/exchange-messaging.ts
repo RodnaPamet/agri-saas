@@ -28,6 +28,8 @@ import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { runInTenantContext, withTenantDb, type PrismaTx } from '@/lib/db-context';
 import { enqueueEmail } from '../notifications/enqueue';
+import { translateFor } from '@/lib/i18n/server-messages';
+import { publishNotificationEvent } from '@/lib/notifications/notification-bus';
 import { isLocale } from '@/lib/i18n/locales';
 import { RECIPIENT_FALLBACK_LOCALE } from '@/lib/email/recipient-locale';
 import { logger } from '@/lib/observability/logger';
@@ -242,7 +244,14 @@ async function notifyOtherParty(
                 where: { tenantId: recipientTenantId, status: 'ACTIVE', role: { in: ['OWNER', 'ADMIN'] } },
                 // `uiLanguage` because this crosses a tenant boundary: the
                 // reader is a different person from the writer.
-                select: { user: { select: { email: true, uiLanguage: true } }, tenant: { select: { slug: true } } },
+                select: {
+                    // `id` for the bell row (Notification is per USER), `email`
+                    // for the outbox (deduped per ADDRESS). One person holding
+                    // two admin memberships is one bell row and one email, but
+                    // those are different groupings, so they need two maps.
+                    user: { select: { id: true, email: true, uiLanguage: true } },
+                    tenant: { select: { slug: true } },
+                },
                 take: 25,
             });
             if (admins.length === 0) return;
@@ -250,11 +259,72 @@ async function notifyOtherParty(
             // One person may hold several admin memberships; keep the first
             // locale seen for an address rather than mailing them twice.
             const byEmail = new Map<string, { locale: string | null; slug: string }>();
+            const byUser = new Map<string, { locale: string | null; slug: string }>();
             for (const a of admins) {
                 const email = a.user.email;
                 if (email && !byEmail.has(email)) {
                     byEmail.set(email, { locale: a.user.uiLanguage, slug: a.tenant.slug });
                 }
+                if (!byUser.has(a.user.id)) {
+                    byUser.set(a.user.id, { locale: a.user.uiLanguage, slug: a.tenant.slug });
+                }
+            }
+
+            // ── The bell, one row per message ──
+            //
+            // NOT deduped, deliberately, and this is the whole point of the
+            // channel. The email's dedupe key ends in the UTC day, so the
+            // second message of a conversation sends no mail — silently. If
+            // the bell deduped the same way, a live negotiation would notify
+            // on NO channel from the second message onward, which is how this
+            // shipped and what this fixes.
+            //
+            // Written per user rather than with `createMany` because the SSE
+            // event needs the row's real id, and `createMany` returns none.
+            // The sibling assignment writer passes its `dedupeKey` as the id
+            // instead — an option only because it HAS one.
+            for (const [userId, { locale, slug }] of byUser) {
+                const loc = isLocale(locale) ? locale : RECIPIENT_FALLBACK_LOCALE;
+                // Rendered in the RECIPIENT's language, not the sender's.
+                // Every other bell writer stores English prose and the bell
+                // renders `{n.title}` raw, so a Bulgarian operator reads
+                // English — `docs/i18n-airtight-roadmap.md` class B2. It is
+                // avoidable here because a Notification row targets exactly
+                // ONE user whose `uiLanguage` we have just read: unlike a
+                // digest fanned to several recipients, the language IS
+                // knowable at the point of authoring.
+                const title = await translateFor(loc, 'notificationInApp.exchangeMessage.title');
+                const message = await translateFor(loc, 'notificationInApp.exchangeMessage.body', {
+                    commodity: thread.listing.commodity,
+                });
+                const linkUrl = `/t/${slug}/exchange/threads/${thread.id}`;
+
+                const row = await db.notification.create({
+                    data: {
+                        tenantId: recipientTenantId,
+                        userId,
+                        type: 'EXCHANGE_MESSAGE',
+                        title,
+                        message,
+                        linkUrl,
+                        // Left NULL on purpose — see the comment above and the
+                        // `dedupeKey` docblock on the model.
+                    },
+                    select: { id: true, createdAt: true },
+                });
+
+                // Persist, then publish. A subscriber that receives an event
+                // for a row that is not yet committed would render a
+                // notification the next poll cannot find.
+                publishNotificationEvent(recipientTenantId, userId, {
+                    id: row.id,
+                    type: 'EXCHANGE_MESSAGE',
+                    title,
+                    message,
+                    read: false,
+                    linkUrl,
+                    createdAt: row.createdAt.toISOString(),
+                });
             }
 
             for (const [toEmail, { locale, slug }] of byEmail) {

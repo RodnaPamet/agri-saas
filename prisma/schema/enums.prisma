@@ -371,6 +371,13 @@ enum NotificationType {
   // contract alerts once on approach and once when it goes overdue,
   // never daily. Routed to the tenant's OWNER/ADMIN members.
   CONTRACT_DELIVERY_DUE
+  // Exchange messaging (2026-09-25) — fired by `sendExchangeMessage` for the
+  // OTHER party to a thread. Unlike every value above it, this one is
+  // deliberately NOT deduped per day: the email is (one per thread per
+  // recipient per day), so if the bell deduped too, the second message of a
+  // conversation would notify on no channel at all. `dedupeKey` is left NULL,
+  // which the Notification model documents as the event-driven writer's case.
+  EXCHANGE_MESSAGE
   GENERAL
   // Seven GRC values were dropped in phase 3 — none had a src/ emission
   // site, and PRACTICE_ASSIGNED / RISK_ASSIGNED additionally deep-linked

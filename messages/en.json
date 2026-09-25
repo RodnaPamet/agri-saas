@@ -6159,6 +6159,12 @@
     "schemePlural": "support schemes",
     "loadFailed": "Couldn't load support schemes. Reload the page to try again."
   },
+  "notificationInApp": {
+    "exchangeMessage": {
+      "title": "New message",
+      "body": "You have a new message about {commodity}."
+    }
+  },
   "notificationEmail": {
     "taskAssigned": {
       "subject": "Task assigned to you: {task}",
