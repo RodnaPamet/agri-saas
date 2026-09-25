@@ -17,7 +17,7 @@
 const mockPrisma = {
     exchangeListing: { findFirst: jest.fn() },
     exchangeThread: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
-    exchangeMessage: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
+    exchangeMessage: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), count: jest.fn() },
     exchangeBlock: { findFirst: jest.fn(), create: jest.fn(), deleteMany: jest.fn() },
 };
 jest.mock('@/lib/prisma', () => ({ __esModule: true, prisma: mockPrisma, default: mockPrisma }));
@@ -53,6 +53,7 @@ jest.mock('@/lib/db-context', () => ({
 import {
     blockExchangeParty,
     closeExchangeThread,
+    listExchangeThreads,
     unblockExchangeParty,
     openExchangeThread,
     getExchangeThread,
@@ -102,6 +103,7 @@ beforeEach(() => {
     mockRecipientDb.notification.create.mockResolvedValue({
         id: 'ntf1', createdAt: new Date('2026-09-25T08:00:00.000Z'),
     });
+    mockPrisma.exchangeMessage.count.mockResolvedValue(0);
     mockPrisma.exchangeBlock.findFirst.mockResolvedValue(null);
     mockPrisma.exchangeBlock.create.mockResolvedValue({ id: 'blk1' });
     mockPrisma.exchangeBlock.deleteMany.mockResolvedValue({ count: 1 });
@@ -161,7 +163,10 @@ describe('the scrollback', () => {
     it('SELECTS newest-first, so a long thread returns its end', async () => {
         await getExchangeThread(buyerCtx, 'th1');
         const args = mockPrisma.exchangeMessage.findMany.mock.calls[0][0];
-        expect(args.orderBy).toEqual({ createdAt: 'desc' });
+        // The `id` tiebreak is not decoration: `createdAt` alone is not a
+        // total order, so two messages sharing a timestamp straddle a page
+        // boundary and one is dropped while the other repeats.
+        expect(args.orderBy).toEqual([{ createdAt: 'desc' }, { id: 'desc' }]);
         expect(args.take).toBeGreaterThan(0);
     });
 
@@ -209,16 +214,24 @@ describe('the scrollback', () => {
         expect(view.messages[0].body).toBeNull();     // and the body withheld
     });
 
-    it('counts only the OTHER party\'s messages as unread', async () => {
-        mockPrisma.exchangeThread.findFirst.mockResolvedValue(
-            thread({ inquirerLastReadAt: new Date('2026-08-01') }),
-        );
-        mockPrisma.exchangeMessage.findMany.mockResolvedValue([
-            { id: 'mine', senderTenantId: BUYER, body: 'x', deletedAt: null, createdAt: new Date('2026-09-02') },
-            { id: 'theirs', senderTenantId: SELLER, body: 'y', deletedAt: null, createdAt: new Date('2026-09-02') },
-        ]);
-        const view = await getExchangeThread(buyerCtx, 'th1');
-        expect(view.unreadCount).toBe(1);
+    it('counts unread in the DATABASE, not over the fetched page', async () => {
+        // This used to filter the fetched rows, which capped the badge at the
+        // page size: a thread with more unread messages than one page reported
+        // the page size and called it a count. With pagination that stops being
+        // a corner case, so the count is a real query now.
+        mockPrisma.exchangeMessage.count.mockResolvedValue(137);
+        const r = await getExchangeThread(sellerCtx, 'th1');
+        expect(r.unreadCount).toBe(137);
+
+        const [arg] = mockPrisma.exchangeMessage.count.mock.calls[0] as [
+            { where: Record<string, unknown> },
+        ];
+        expect(arg.where).toMatchObject({
+            threadId: 'th1',
+            // Never your own, and never a tombstone.
+            senderTenantId: { not: SELLER },
+            deletedAt: null,
+        });
     });
 });
 
@@ -526,5 +539,91 @@ describe('a seller blocking a buyer', () => {
     it('the buyer may not unblock themselves', async () => {
         await expect(unblockExchangeParty(buyerCtx, 'th1')).rejects.toThrow(/seller/i);
         expect(mockPrisma.exchangeBlock.deleteMany).not.toHaveBeenCalled();
+    });
+});
+
+
+describe('pagination', () => {
+    const iso = (d: string) => new Date(d);
+
+    function threadRows(n: number, sameTimestamp = false) {
+        return Array.from({ length: n }, (_, i) => ({
+            id: `th${String(i).padStart(3, '0')}`,
+            listingId: 'lst1',
+            inquirerTenantId: BUYER,
+            lastMessageAt: sameTimestamp
+                ? iso('2026-09-25T10:00:00.000Z')
+                : iso(`2026-09-25T10:${String(59 - i).padStart(2, '0')}:00.000Z`),
+            closedAt: null,
+            sellerLastReadAt: null,
+            inquirerLastReadAt: null,
+            listing: { sellerTenantId: SELLER, commodity: 'wheat' },
+        }));
+    }
+
+    it('asks for one more row than requested, to know if there is a next page', async () => {
+        mockPrisma.exchangeThread.findMany.mockResolvedValue(threadRows(3));
+        await listExchangeThreads(buyerCtx, { limit: 5 });
+        const [args] = mockPrisma.exchangeThread.findMany.mock.calls.at(-1) as [
+            { take: number; orderBy: unknown },
+        ];
+        expect(args.take).toBe(6);
+        // Total order, same reason as the scrollback.
+        expect(args.orderBy).toEqual([{ lastMessageAt: 'desc' }, { id: 'desc' }]);
+    });
+
+    it('a FULL final page does not advertise a next page', async () => {
+        // The trap: deciding on `page.length < limit` says "there is more"
+        // whenever the last page happens to be exactly full, and the client
+        // then fetches an empty page. The extra row is what settles it.
+        mockPrisma.exchangeThread.findMany.mockResolvedValue(threadRows(5));
+        const r = await listExchangeThreads(buyerCtx, { limit: 5 });
+        expect(r.threads).toHaveLength(5);
+        expect(r.nextCursor).toBeNull();
+    });
+
+    it('returns a cursor when there IS more, and trims the extra row', async () => {
+        mockPrisma.exchangeThread.findMany.mockResolvedValue(threadRows(6));
+        const r = await listExchangeThreads(buyerCtx, { limit: 5 });
+        expect(r.threads).toHaveLength(5);
+        expect(r.nextCursor).toEqual(expect.any(String));
+    });
+
+    it('the cursor names ONE row even when timestamps tie', async () => {
+        // The whole reason the id is in the cursor. With five threads sharing a
+        // `lastMessageAt`, a cursor carrying only the timestamp cannot say
+        // which one the page ended on — the next page either repeats all five
+        // or skips them.
+        mockPrisma.exchangeThread.findMany.mockResolvedValue(threadRows(6, true));
+        const r = await listExchangeThreads(buyerCtx, { limit: 5 });
+        const decoded = Buffer.from(String(r.nextCursor), 'base64url').toString('utf8');
+        expect(decoded).toContain('|th004');
+
+        // And feeding it back produces a keyset predicate, not a bare `lt`.
+        await listExchangeThreads(buyerCtx, { limit: 5, cursor: r.nextCursor });
+        const [args] = mockPrisma.exchangeThread.findMany.mock.calls.at(-1) as [
+            { where: { OR?: unknown[] } },
+        ];
+        expect(args.where?.OR).toHaveLength(2);
+    });
+
+    it('a garbage cursor restarts the listing rather than 500ing', async () => {
+        // A stale or truncated cursor is a client bug, not a server error, and
+        // an Invalid Date would otherwise build a filter matching zero rows —
+        // which reads as "no more pages" rather than as a fault.
+        mockPrisma.exchangeThread.findMany.mockResolvedValue(threadRows(2));
+        const r = await listExchangeThreads(buyerCtx, { cursor: 'not-a-cursor' });
+        expect(r.threads).toHaveLength(2);
+        const [args] = mockPrisma.exchangeThread.findMany.mock.calls.at(-1) as [
+            { where: unknown },
+        ];
+        expect(args.where).toBeUndefined();
+    });
+
+    it('caps an absurd limit instead of honouring it', async () => {
+        mockPrisma.exchangeThread.findMany.mockResolvedValue(threadRows(1));
+        await listExchangeThreads(buyerCtx, { limit: 100000 });
+        const [args] = mockPrisma.exchangeThread.findMany.mock.calls.at(-1) as [{ take: number }];
+        expect(args.take).toBeLessThanOrEqual(101);
     });
 });

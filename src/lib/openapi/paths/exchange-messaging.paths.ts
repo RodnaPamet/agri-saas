@@ -20,6 +20,18 @@ const ThreadParams = TenantParams.extend({
     threadId: z.string().openapi({ param: { name: 'threadId', in: 'path' } }),
 });
 
+/**
+ * Keyset paging. The cursor is OPAQUE — a position, not a timestamp to parse or
+ * construct. A client that builds its own has coupled itself to the sort key,
+ * and changing the sort key then breaks it silently.
+ */
+const PageQuery = z.object({
+    limit: z.coerce.number().int().min(1).max(100).optional().openapi({
+        param: { name: 'limit', in: 'query' },
+        description: 'Page size, 1-100. Values above the cap are clamped, not rejected.',
+    }),
+});
+
 const Message = z
     .object({
         id: z.string(),
@@ -65,6 +77,8 @@ const Thread = z
         lastMessageAt: z.string(),
         closed: z.boolean(),
         unreadCount: z.number().int(),
+        /** Opaque position of the next OLDER page; null at the start of the thread. */
+        olderCursor: z.string().nullable(),
         messages: z.array(Message),
     })
     .openapi('ExchangeThread');
@@ -104,10 +118,27 @@ export function registerExchangeMessagingPaths(registry: OpenAPIRegistry): void 
             'is unread state should not be served from a cache.',
         tags: ['Exchange messaging'],
         params: TenantParams,
+        query: PageQuery.extend({
+            cursor: z.string().optional().openapi({
+                param: { name: 'cursor', in: 'query' },
+                description:
+                    'Opaque position from a previous response\'s `nextCursor`. A stale or ' +
+                    'malformed cursor RESTARTS the listing rather than erroring.',
+            }),
+        }),
         success: {
             status: 200,
             description: 'Conversations from both sides.',
-            schema: z.object({ threads: z.array(ThreadSummary) }),
+            schema: z.object({
+                threads: z.array(ThreadSummary),
+                nextCursor: z.string().nullable().openapi({
+                    description:
+                        'Pass as `cursor` for the next page. **Null means the end** — it is ' +
+                        'computed by over-fetching one row, so a final page that happens to ' +
+                        'be exactly `limit` long correctly reports null rather than sending ' +
+                        'the client after an empty page.',
+                }),
+            }),
         },
     });
 
@@ -118,10 +149,22 @@ export function registerExchangeMessagingPaths(registry: OpenAPIRegistry): void 
         summary: 'A conversation and its messages',
         description:
             'Messages come back OLDEST-FIRST (reading order), but are selected newest-first ' +
-            'and reversed — so a long thread returns its END, not its beginning. Capped at ' +
-            '100 per call.',
+            'and reversed — so a long thread returns its END, not its beginning.\n\n' +
+            'Scroll back with `before`: pass the response\'s `olderCursor` to fetch the page ' +
+            'immediately older than the one you hold. `olderCursor: null` means you have ' +
+            'reached the start of the conversation.\n\n' +
+            '`unreadCount` is counted in the DATABASE, not over the returned page, so it is a ' +
+            'true count rather than one capped at `limit`.',
         tags: ['Exchange messaging'],
         params: ThreadParams,
+        query: PageQuery.extend({
+            before: z.string().optional().openapi({
+                param: { name: 'before', in: 'query' },
+                description:
+                    'Opaque position from a previous response\'s `olderCursor`. A stale or ' +
+                    'malformed value returns the newest page rather than erroring.',
+            }),
+        }),
         success: { status: 200, description: 'The conversation.', schema: Thread },
     });
 

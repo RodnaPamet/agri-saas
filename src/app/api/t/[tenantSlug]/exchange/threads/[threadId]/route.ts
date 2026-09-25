@@ -17,6 +17,13 @@ export const GET = withApiErrorHandling(
     ) => {
         const params = await p;
         const ctx = await getTenantCtx(params, req);
-        return jsonResponse(await getExchangeThread(ctx, params.threadId));
+        const url = new URL(req.url);
+        const limitRaw = url.searchParams.get('limit');
+        return jsonResponse(
+            await getExchangeThread(ctx, params.threadId, {
+                before: url.searchParams.get('before'),
+                limit: limitRaw ? Number(limitRaw) : undefined,
+            }),
+        );
     },
 );

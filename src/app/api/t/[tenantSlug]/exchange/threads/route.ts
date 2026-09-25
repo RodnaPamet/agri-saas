@@ -14,6 +14,17 @@ import { jsonResponse } from '@/lib/api-response';
 export const GET = withApiErrorHandling(
     async (req: NextRequest, { params: p }: { params: Promise<{ tenantSlug: string }> }) => {
         const ctx = await getTenantCtx(await p, req);
-        return jsonResponse({ threads: await listExchangeThreads(ctx) });
+        const url = new URL(req.url);
+        // Ids and cursors in the QUERY STRING are fine on the web, but note
+        // `docs/ios-messaging-brief.md`: CFNetwork logs full request URLs, so
+        // a cursor is the only thing that may travel this way — never a thread
+        // or message id.
+        const limitRaw = url.searchParams.get('limit');
+        return jsonResponse(
+            await listExchangeThreads(ctx, {
+                cursor: url.searchParams.get('cursor'),
+                limit: limitRaw ? Number(limitRaw) : undefined,
+            }),
+        );
     },
 );

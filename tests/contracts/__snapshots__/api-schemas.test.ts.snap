@@ -1513,6 +1513,12 @@ exports[`API contract — per-schema snapshots schema: ExchangeThread 1`] = `
     "unreadCount": {
       "type": "integer"
     },
+    "olderCursor": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "messages": {
       "type": "array",
       "items": {
@@ -1528,6 +1534,7 @@ exports[`API contract — per-schema snapshots schema: ExchangeThread 1`] = `
     "lastMessageAt",
     "closed",
     "unreadCount",
+    "olderCursor",
     "messages"
   ]
 }"
