@@ -46,13 +46,14 @@
  * nothing would make the copy disagree out loud. So the shape is NAMED in the
  * description and its source of truth is cited; the module is the contract.
  *
- * `GET /grain/contracts` is the other one left, for a smaller reason: its rows
- * are the raw model plus three COMPUTED decorations (`fulfilment`,
- * `valueAmount`, `benchmark`) from three separate modules, and the envelope
- * carries a `totals` rollup besides. Four more shapes, each with its own
- * source of truth — worth doing, and worth doing as its own change rather
- * than guessed at here. `ContractDTOSchema` describes the raw model and is
- * wired to the CREATE, which returns exactly that.
+ * `GET /grain/contracts` looked like the same case and is not. Its rows are the
+ * model plus three COMPUTED decorations from three separate modules, plus a
+ * per-currency `totals` rollup — but all four are PURE, EXPORTED functions, so
+ * each has a single source of truth that a schema can be checked against by
+ * running it. That is what the contract test does, which is why documenting it
+ * invents nothing. The calculator is the one that genuinely differs: its
+ * payload is assembled by a mapper module with no exported pure pieces to
+ * check a schema against.
  *
  * `journal.paths.ts` documented its three-shaped list response as a union once
  * the shapes were known; the position it and this module share is about not
@@ -72,6 +73,7 @@ import {
     YieldRecordDTOSchema,
     YieldRecordListSchema,
     ContractDTOSchema,
+    ContractListSchema,
 } from '@/lib/dto/grain.dto';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { op } from './helpers';
@@ -121,8 +123,8 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
     // Request bodies are the REAL Zod schemas the routes validate with, so
     // they cannot drift from the handler. Response bodies are now the DTO
     // schemas written against each usecase's single `toDto` — see the header
-    // for what that surfaced. Only the calculator and the contracts LIST are
-    // still prose-only, and the header says why each.
+    // for what that surfaced. Only the calculator is still prose-only, and the
+    // header says why.
     //
     // Every route requires the GRAIN module — 403 `module_disabled: GRAIN`.
 
@@ -309,6 +311,15 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
             'on costs, and the same failure if it is read with a bare `get()`.',
         tags: ['Grain'],
         params: TenantParams,
-        success: { status: 200, description: 'Contracts.', schema: z.unknown() },
+        success: {
+            status: 200,
+            description:
+                'A capped page of contracts. Each row is the model plus computed ' +
+                '`fulfilment`, `valueAmount` and `benchmark`; `totals` rolls the PAGE up ' +
+                'per currency and is not the whole book when `truncated` is true. Every ' +
+                'money and tonnage figure is an exact decimal STRING — parsing them as ' +
+                'floats undoes the reason they are strings.',
+            schema: ContractListSchema,
+        },
     });
 }

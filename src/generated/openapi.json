@@ -1008,6 +1008,297 @@
         "additionalProperties": {},
         "description": "Grain marketing/supply contract — a forward SALE of produce or PURCHASE of inputs against a counterparty. volumeTonnes/pricePerTonne are decimal strings; terms/pricingNotes are encrypted at rest and returned decrypted. This is the RAW model as create and single-read return it: the soft-delete bookkeeping columns (deletedAt, deletedByUserId, retentionUntil) are on the wire too and are always null on a contract you can read, so they are described here rather than as fields. The LIST endpoint returns this shape plus computed fulfilment/valueAmount/benchmark decorations, which are not part of this schema."
       },
+      "ContractBenchmark": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "OK",
+              "NO_CONTRACT_PRICE",
+              "NO_MARKET",
+              "MARKET_STALE",
+              "CURRENCY_MISMATCH"
+            ]
+          },
+          "deltaPerTonne": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "deltaPct": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "reference": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MarketReference"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
+          }
+        },
+        "required": [
+          "status",
+          "deltaPerTonne",
+          "deltaPct",
+          "reference"
+        ],
+        "additionalProperties": {},
+        "description": "Whether this contract is priced above or below market, or why it could not be compared. Deltas are present only when status is OK."
+      },
+      "ContractBookTotal": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contractCount": {
+            "type": "number"
+          },
+          "contractedTonnes": {
+            "type": "string"
+          },
+          "contractValue": {
+            "type": "string"
+          },
+          "unpricedCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "currency",
+          "contractCount",
+          "contractedTonnes",
+          "contractValue",
+          "unpricedCount"
+        ],
+        "additionalProperties": {},
+        "description": "One currency slice of the contract book. Buckets are NEVER summed across currencies — 100k EUR plus 100k USD is not 200k of anything — and a contract priced without a currency gets its own bucket rather than joining a neighbour. Sorted by descending value, with the no-currency bucket last."
+      },
+      "ContractFulfilment": {
+        "type": "object",
+        "properties": {
+          "contractId": {
+            "type": "string"
+          },
+          "deliveredTonnes": {
+            "type": "string"
+          },
+          "deliveryCount": {
+            "type": "number"
+          },
+          "remainingTonnes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "progressPct": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "complete": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "contractId",
+          "deliveredTonnes",
+          "deliveryCount",
+          "remainingTonnes",
+          "progressPct",
+          "complete"
+        ],
+        "additionalProperties": {},
+        "description": "Delivery position of one contract. Tonnages are exact decimal strings. remainingTonnes floors at zero, so over-delivery shows as complete with a full deliveredTonnes rather than a negative remainder."
+      },
+      "ContractList": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContractListRow"
+            }
+          },
+          "totals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContractBookTotal"
+            }
+          },
+          "totalCount": {
+            "type": "number"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "rows",
+          "totals",
+          "totalCount",
+          "truncated"
+        ],
+        "description": "A capped page of contracts. `totals` is computed over the rows on this page and filtered to committed statuses, so it is a summary of what was returned — on a truncated page it is NOT the whole book."
+      },
+      "ContractListRow": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "seasonId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "counterparty": {
+            "type": "string"
+          },
+          "commodity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "commodityCanonical": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "SALE",
+              "PURCHASE"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "volumeTonnes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pricePerTonne": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "priceCurrency": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "deliveryStart": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "deliveryEnd": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "terms": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pricingNotes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "season": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "additionalProperties": {}
+          },
+          "fulfilment": {
+            "$ref": "#/components/schemas/ContractFulfilment"
+          },
+          "valueAmount": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "benchmark": {
+            "$ref": "#/components/schemas/ContractBenchmark"
+          }
+        },
+        "required": [
+          "id",
+          "tenantId",
+          "counterparty",
+          "type",
+          "status",
+          "fulfilment",
+          "valueAmount",
+          "benchmark"
+        ],
+        "additionalProperties": {},
+        "description": "A contract as the LIST returns it: the model plus computed fulfilment, value and benchmark. The encrypted terms/pricingNotes are NOT projected on a list — fetch the contract itself for those."
+      },
       "CostEntry": {
         "type": "object",
         "properties": {
@@ -4051,6 +4342,47 @@
           }
         },
         "description": "Partial update for a field-journal entry. Every field optional. When quantities / locationIds / equipmentIds are supplied they fully REPLACE the existing set (full-replace semantics, matching the create shape)."
+      },
+      "MarketReference": {
+        "type": "object",
+        "properties": {
+          "commodity": {
+            "type": "string",
+            "enum": [
+              "wheat",
+              "maize",
+              "barley",
+              "sunflower",
+              "rapeseed",
+              "oats",
+              "rye",
+              "soybean",
+              "peas",
+              "lentils"
+            ]
+          },
+          "pricePerTonne": {
+            "type": "number"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "observedAt": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "commodity",
+          "pricePerTonne",
+          "currency",
+          "observedAt",
+          "source"
+        ],
+        "additionalProperties": {},
+        "description": "The market observation a benchmark was computed against — carried so a client can attribute and date the claim instead of presenting it as an unsourced fact."
       },
       "OperationParcel": {
         "type": "object",
@@ -13942,10 +14274,12 @@
         ],
         "responses": {
           "200": {
-            "description": "Contracts.",
+            "description": "A capped page of contracts. Each row is the model plus computed `fulfilment`, `valueAmount` and `benchmark`; `totals` rolls the PAGE up per currency and is not the whole book when `truncated` is true. Every money and tonnage figure is an exact decimal STRING — parsing them as floats undoes the reason they are strings.",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ContractList"
+                }
               }
             }
           },

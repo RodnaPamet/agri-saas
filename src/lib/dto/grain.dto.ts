@@ -23,6 +23,9 @@ import { z } from '@/lib/openapi/zod';
 // Two independent spellings of one enum is how a value becomes writable and
 // undocumented, or documented and unwritable.
 import { CostCategorySchema, CostAllocationBasisSchema } from '@/app-layer/schemas/grain.schemas';
+// DERIVED, not copied — the benchmark's commodity vocabulary has exactly one
+// definition and this is a reference to it.
+import { CANONICAL_COMMODITIES } from '@/lib/market/commodity-vocabulary';
 
 // ─── Season summary sub-shape (shared include) ───
 
@@ -435,3 +438,127 @@ export const YieldRecordListSchema = listEnvelope(YieldRecordDTOSchema).openapi(
     description:
         'A capped page of yield records. When truncated is true rows were DROPPED, so any total computed from rows is wrong — use totalCount. Note that valuationNotes is absent from these rows by design.',
 });
+
+// ─── Contract list decorations ───
+//
+// `GET /grain/contracts` does NOT return the raw model. Each row is the
+// LIST_SELECT subset plus three computed fields from three different modules,
+// and the envelope carries a per-currency rollup besides. All four are pure,
+// exported functions, which is what makes them documentable without inventing
+// anything: `tests/contracts/grain-response-shapes.test.ts` runs each one and
+// parses its real output with the schema below, strictly.
+//
+// Every magnitude here is an exact decimal STRING, never a number. These are
+// money and tonnage: `contract-value.ts` puts it plainly — 0.1 * 3 in float is
+// 0.30000000000000004, and a book total is money. A client that parses these
+// into a double has undone the reason they are strings.
+
+export const ContractFulfilmentSchema = z
+    .object({
+        contractId: z.string(),
+        /** Σ delivered tonnes over non-deleted deliveries. Exact decimal string. */
+        deliveredTonnes: z.string(),
+        deliveryCount: z.number(),
+        /**
+         * `volumeTonnes − delivered`, FLOORED AT ZERO — over-delivery is kept
+         * in `deliveredTonnes` but never reported as a negative remainder.
+         * Null when the contract carries no contracted volume.
+         */
+        remainingTonnes: z.string().nullable(),
+        /** Clamped to [0, 100]. Null when there is no volume to be a percentage OF. */
+        progressPct: z.number().nullable(),
+        /** True when delivered ≥ contracted; over-delivery counts as complete. */
+        complete: z.boolean(),
+    })
+    .passthrough()
+    .openapi('ContractFulfilment', {
+        description:
+            'Delivery position of one contract. Tonnages are exact decimal strings. remainingTonnes floors at zero, so over-delivery shows as complete with a full deliveredTonnes rather than a negative remainder.',
+    });
+
+export const MarketReferenceSchema = z
+    .object({
+        commodity: z.enum(CANONICAL_COMMODITIES),
+        pricePerTonne: z.number(),
+        currency: z.string(),
+        /** yyyy-mm-dd of the observation. */
+        observedAt: z.string(),
+        /** Backend source slug, so a UI can name the source rather than say "the market". */
+        source: z.string(),
+    })
+    .passthrough()
+    .openapi('MarketReference', {
+        description:
+            'The market observation a benchmark was computed against — carried so a client can attribute and date the claim instead of presenting it as an unsourced fact.',
+    });
+
+export const ContractBenchmarkSchema = z
+    .object({
+        /**
+         * Only `OK` means deltas are present. The other four are distinct
+         * REASONS a comparison could not be made, and they are not
+         * interchangeable: `MARKET_STALE` means a series exists but its newest
+         * observation is too old, `CURRENCY_MISMATCH` means the two are
+         * denominated differently and are never converted. A client that
+         * renders any non-OK status as "no data" loses the only explanation
+         * the user can act on.
+         */
+        status: z.enum(['OK', 'NO_CONTRACT_PRICE', 'NO_MARKET', 'MARKET_STALE', 'CURRENCY_MISMATCH']),
+        /** Contract minus market, per tonne. Positive = above market. */
+        deltaPerTonne: z.number().nullable(),
+        deltaPct: z.number().nullable(),
+        reference: MarketReferenceSchema.nullable(),
+    })
+    .passthrough()
+    .openapi('ContractBenchmark', {
+        description:
+            'Whether this contract is priced above or below market, or why it could not be compared. Deltas are present only when status is OK.',
+    });
+
+export const ContractBookTotalSchema = z
+    .object({
+        /** Null is its OWN bucket — contracts with a value but no stated currency. */
+        currency: z.string().nullable(),
+        contractCount: z.number(),
+        /** Σ volumeTonnes — exact decimal string. */
+        contractedTonnes: z.string(),
+        /** Σ (volume × price) — exact decimal string. */
+        contractValue: z.string(),
+        /** Contracts in the bucket with no computable value, so a total can say
+         *  "of N contracts, M are unpriced" instead of under-reporting silently. */
+        unpricedCount: z.number(),
+    })
+    .passthrough()
+    .openapi('ContractBookTotal', {
+        description:
+            'One currency slice of the contract book. Buckets are NEVER summed across currencies — 100k EUR plus 100k USD is not 200k of anything — and a contract priced without a currency gets its own bucket rather than joining a neighbour. Sorted by descending value, with the no-currency bucket last.',
+    });
+
+export const ContractListRowSchema = ContractDTOSchema.extend({
+    fulfilment: ContractFulfilmentSchema,
+    /**
+     * volume × price as an exact decimal string, or NULL when either factor
+     * is missing. Null rather than zero is deliberate: zero would claim the
+     * deal is worth nothing and would drag a book total down silently.
+     */
+    valueAmount: z.string().nullable(),
+    benchmark: ContractBenchmarkSchema,
+})
+    .passthrough()
+    .openapi('ContractListRow', {
+        description:
+            'A contract as the LIST returns it: the model plus computed fulfilment, value and benchmark. The encrypted terms/pricingNotes are NOT projected on a list — fetch the contract itself for those.',
+    });
+
+export const ContractListSchema = z
+    .object({
+        rows: z.array(ContractListRowSchema),
+        /** Per-currency rollup over THIS PAGE, restricted to commitment statuses. */
+        totals: z.array(ContractBookTotalSchema),
+        totalCount: z.number(),
+        truncated: z.boolean(),
+    })
+    .openapi('ContractList', {
+        description:
+            'A capped page of contracts. `totals` is computed over the rows on this page and filtered to committed statuses, so it is a summary of what was returned — on a truncated page it is NOT the whole book.',
+    });

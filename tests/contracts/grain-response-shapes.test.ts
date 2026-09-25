@@ -26,9 +26,18 @@
  * client nothing. The pair of fixtures pins which is which.
  */
 import { Prisma } from '@prisma/client';
+import { deriveFulfilment } from '@/app-layer/usecases/grain-delivery';
+import { benchmarkContract } from '@/lib/market/contract-benchmark';
+import { computeContractValue, summariseContractBook } from '@/lib/grain/contract-value';
 import { toDto as toCostEntryDto } from '@/app-layer/usecases/cost-entry';
 import { toDto as toYieldRecordDto } from '@/app-layer/usecases/yield-record';
-import { CostEntryDTOSchema, YieldRecordDTOSchema } from '@/lib/dto/grain.dto';
+import {
+    CostEntryDTOSchema,
+    YieldRecordDTOSchema,
+    ContractFulfilmentSchema,
+    ContractBenchmarkSchema,
+    ContractBookTotalSchema,
+} from '@/lib/dto/grain.dto';
 
 /** What the wire does to a mapper's output. */
 const overTheWire = (v: unknown) => JSON.parse(JSON.stringify(v));
@@ -181,5 +190,104 @@ describe('YieldRecordDTOSchema matches yield-record.ts::toDto', () => {
         );
         expect(wire.tPerHa).toBeNull();
         expect(YieldRecordDTOSchema.strict().safeParse(wire).success).toBe(true);
+    });
+});
+
+/**
+ * The contract list's three decorations and its rollup.
+ *
+ * These are the reason `GET /grain/contracts` is documentable at all. Each is a
+ * PURE exported function with one definition, so the schema is checked by
+ * RUNNING it rather than by a fixture somebody typed to match.
+ *
+ * Every magnitude is asserted to be a STRING on purpose. `contract-value.ts`
+ * exists because these are money and tonnage and must never meet a float parse;
+ * a schema that let one become a number would erase that, and it would erase it
+ * silently, in the direction of looking more convenient.
+ */
+describe('contract list decorations match their pure producers', () => {
+    const D = (n: string) => new Prisma.Decimal(n);
+
+    it('ContractFulfilmentSchema matches deriveFulfilment, strictly', () => {
+        const partial = deriveFulfilment('c_1', D('40'), 3, D('100'));
+        expect(ContractFulfilmentSchema.strict().safeParse(overTheWire(partial)).success).toBe(true);
+        expect(partial.progressPct).toBe(40);
+        expect(partial.complete).toBe(false);
+        expect(typeof partial.deliveredTonnes).toBe('string');
+
+        // No contracted volume: nothing to remain, nothing to be a percentage OF.
+        const noVolume = deriveFulfilment('c_2', D('5'), 1, null);
+        expect(ContractFulfilmentSchema.strict().safeParse(overTheWire(noVolume)).success).toBe(true);
+        expect(noVolume.remainingTonnes).toBeNull();
+        expect(noVolume.progressPct).toBeNull();
+
+        // Over-delivery: kept in deliveredTonnes, FLOORED in remainingTonnes.
+        const over = deriveFulfilment('c_3', D('120'), 4, D('100'));
+        expect(ContractFulfilmentSchema.strict().safeParse(overTheWire(over)).success).toBe(true);
+        expect(over.deliveredTonnes).toBe('120');
+        expect(over.remainingTonnes).toBe('0');
+        expect(over.progressPct).toBe(100);
+        expect(over.complete).toBe(true);
+    });
+
+    it('ContractBenchmarkSchema matches benchmarkContract across every status it can return', () => {
+        // An unpriced contract cannot be compared, and the status says which
+        // of the five reasons applies — the distinction a client needs.
+        const unpriced = benchmarkContract(
+            { commodityCanonical: 'wheat', pricePerTonne: null, priceCurrency: 'BGN' },
+            new Map(),
+            new Date().toISOString(),
+        );
+        expect(ContractBenchmarkSchema.strict().safeParse(overTheWire(unpriced)).success).toBe(true);
+        expect(unpriced.status).toBe('NO_CONTRACT_PRICE');
+        expect(unpriced.reference).toBeNull();
+
+        // Priced, but no series for the commodity.
+        const noMarket = benchmarkContract(
+            { commodityCanonical: 'wheat', pricePerTonne: 300, priceCurrency: 'BGN' },
+            new Map(),
+            new Date().toISOString(),
+        );
+        expect(ContractBenchmarkSchema.strict().safeParse(overTheWire(noMarket)).success).toBe(true);
+        expect(noMarket.status).toBe('NO_MARKET');
+    });
+
+    it('ContractBookTotalSchema matches summariseContractBook, and never sums across currencies', () => {
+        const totals = summariseContractBook([
+            { status: 'SIGNED', volumeTonnes: D('100'), pricePerTonne: D('300'), priceCurrency: 'BGN' },
+            { status: 'SIGNED', volumeTonnes: D('50'), pricePerTonne: D('280'), priceCurrency: 'EUR' },
+            // Unpriced: counted, but contributes no value.
+            { status: 'SIGNED', volumeTonnes: D('10'), pricePerTonne: null, priceCurrency: 'BGN' },
+            // No currency at all — its OWN bucket, never folded into a neighbour.
+            { status: 'SIGNED', volumeTonnes: D('7'), pricePerTonne: D('100'), priceCurrency: null },
+        ]);
+        for (const t of totals) {
+            expect(ContractBookTotalSchema.strict().safeParse(overTheWire(t)).success).toBe(true);
+            expect(typeof t.contractValue).toBe('string');
+            expect(typeof t.contractedTonnes).toBe('string');
+        }
+
+        // Three buckets, not one total. Compared as a SET: the default sort
+        // stringifies, so `null` lands after 'EUR' and an order assertion here
+        // would be testing Array.prototype.sort rather than the rollup.
+        expect(totals).toHaveLength(3);
+        expect(new Set(totals.map((t) => t.currency))).toEqual(new Set(['BGN', 'EUR', null]));
+        const bgn = totals.find((t) => t.currency === 'BGN')!;
+        expect(bgn.contractCount).toBe(2);
+        expect(bgn.unpricedCount).toBe(1);
+        expect(bgn.contractValue).toBe('30000'); // the unpriced row adds nothing
+        expect(bgn.contractedTonnes).toBe('110'); // but its tonnage still counts
+        // The no-currency bucket sorts last regardless of its value.
+        expect(totals[totals.length - 1].currency).toBeNull();
+    });
+
+    it('valueAmount is null for an unpriced contract, never zero', () => {
+        // Zero would claim the deal is worth nothing and would drag a book
+        // total down with nothing saying so.
+        expect(computeContractValue(D('100'), null)).toBeNull();
+        expect(computeContractValue(null, D('300'))).toBeNull();
+        expect(computeContractValue(D('100'), D('300'))).toBe('30000');
+        // Exact, not float: 0.1 * 3 must not be 0.30000000000000004.
+        expect(computeContractValue(D('0.1'), D('3'))).toBe('0.3');
     });
 });
