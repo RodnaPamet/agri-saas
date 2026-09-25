@@ -106,23 +106,27 @@ describe('getAgDashboard', () => {
         // sorted first — the same wrong-scheme selection the certifier pack
         // had. Readiness now lives where it can be attributed to a scheme the
         // reader chose: the scheme detail page.
-        expect(out.certification).toBeNull();
-        // And the queries are not made at all — the point is not just that the
-        // value is null, it is that the dashboard stopped paying for it.
+        // The `certification` FIELD is gone from the payload entirely — nothing
+        // ever populated it after the scheme catalogue was removed, so it was
+        // deleted rather than documented as reserved. What survives here is the
+        // assertion that always carried the weight: the dashboard does not pay
+        // for the scheme queries.
         expect(listSchemes).not.toHaveBeenCalled();
     });
 
-    it('CERTIFICATION on but no scheme exists → certification is null', async () => {
+    it('CERTIFICATION on and a scheme exists → the dashboard still does not query it', async () => {
+        // Was "certification is null". The field no longer exists, but the
+        // behaviour worth pinning is stronger and outlives it: even with the
+        // module ON, the dashboard makes no scheme query at all.
         getEnabledModules.mockResolvedValue(['JOURNAL', 'CERTIFICATION']);
         listLogEntries.mockResolvedValue([]);
         listLots.mockResolvedValue([]);
         listMyFarmTasks.mockResolvedValue([]);
-        listSchemes.mockResolvedValue([]); // explicit — no AG_SCHEME
+        listSchemes.mockResolvedValue([{ key: 'globalgap', name: 'GlobalG.A.P.' }]);
 
-        const out = await getAgDashboard(ctx);
+        await getAgDashboard(ctx);
 
-        expect(out.certification).toBeNull();
-        // No scheme → no readiness query.
+        expect(listSchemes).not.toHaveBeenCalled();
     });
 
     it('pure-GRC tenant (no ag modules) short-circuits journal + inventory fetches', async () => {
@@ -141,15 +145,14 @@ describe('getAgDashboard', () => {
         expect(out.myTasks).toHaveLength(1);
     });
 
-    it('CERTIFICATION off → certification is null and listSchemes is never called', async () => {
+    it('CERTIFICATION off → listSchemes is never called', async () => {
         getEnabledModules.mockResolvedValue(['JOURNAL']);
         listLogEntries.mockResolvedValue([]);
         listLots.mockResolvedValue([]);
         listMyFarmTasks.mockResolvedValue([]);
 
-        const out = await getAgDashboard(ctx);
+        await getAgDashboard(ctx);
 
-        expect(out.certification).toBeNull();
         expect(listSchemes).not.toHaveBeenCalled();
     });
 
