@@ -28,6 +28,8 @@ import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { runInTenantContext, withTenantDb, type PrismaTx } from '@/lib/db-context';
 import { enqueueEmail } from '../notifications/enqueue';
+import { encodeCursor, decodeCursor, keysetBefore } from '@/lib/exchange/cursor';
+import { isUniqueViolation } from '@/lib/errors/prisma';
 import { translateFor } from '@/lib/i18n/server-messages';
 import { publishNotificationEvent } from '@/lib/notifications/notification-bus';
 import { isLocale } from '@/lib/i18n/locales';
@@ -61,6 +63,8 @@ export interface ExchangeThreadView {
     lastMessageAt: Date;
     closed: boolean;
     unreadCount: number;
+    /** Opaque position of the next OLDER page, or null at the start of the thread. */
+    olderCursor: string | null;
     messages: ExchangeMessageView[];
 }
 
@@ -249,29 +253,52 @@ export async function openExchangeThread(ctx: RequestContext, listingId: string)
 export async function getExchangeThread(
     ctx: RequestContext,
     threadId: string,
-    options: { limit?: number } = {},
+    options: { limit?: number; before?: string | null } = {},
 ): Promise<ExchangeThreadView> {
     assertCanRead(ctx);
-    const limit = Math.min(options.limit ?? DEFAULT_PAGE_SIZE, DEFAULT_PAGE_SIZE);
+    const limit = Math.min(Math.max(options.limit ?? DEFAULT_PAGE_SIZE, 1), DEFAULT_PAGE_SIZE);
+    const before = decodeCursor(options.before);
 
     return runInTenantContext(ctx, async (db) => {
         const { thread, role } = await requireParty(db, ctx, threadId);
         const blocked = await isBlocked(db, thread.listing.sellerTenantId, thread.inquirerTenantId);
 
         const rows = await db.exchangeMessage.findMany({
-            where: { threadId },
-            orderBy: { createdAt: 'desc' },
-            take: limit,
+            where: { threadId, ...(before ? keysetBefore(before, 'createdAt') : {}) },
+            // `id` tiebreaks, for the same reason as the inbox: two messages
+            // sharing a `createdAt` are not ordered by the timestamp alone, and
+            // the pair straddling a page boundary loses one and repeats the
+            // other. In a conversation that means a line somebody wrote either
+            // vanishes or is said twice.
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            take: limit + 1,
             select: {
                 id: true, senderTenantId: true, body: true,
                 deletedAt: true, createdAt: true,
             },
         });
 
+        const hasOlder = rows.length > limit;
+        const page = hasOlder ? rows.slice(0, limit) : rows;
+        // The OLDEST row of this page — the query is newest-first, so that is
+        // the last element, and it is the position the next (older) page
+        // continues from.
+        const oldest = page.at(-1);
+
         const readAt = role === 'seller' ? thread.sellerLastReadAt : thread.inquirerLastReadAt;
-        const unreadCount = rows.filter(
-            (m) => m.senderTenantId !== ctx.tenantId && (!readAt || m.createdAt > readAt),
-        ).length;
+        // Counted in the DATABASE, not over the page. Filtering the fetched
+        // rows capped the badge at `limit`, so a thread with more unread
+        // messages than one page reported the page size and called it a count
+        // — precisely the "badge that is wrong" failure, and one that only
+        // appears once a conversation is long enough that nobody checks.
+        const unreadCount = await db.exchangeMessage.count({
+            where: {
+                threadId,
+                senderTenantId: { not: ctx.tenantId },
+                deletedAt: null,
+                ...(readAt ? { createdAt: { gt: readAt } } : {}),
+            },
+        });
 
         return {
             id: thread.id,
@@ -289,7 +316,9 @@ export async function getExchangeThread(
             // Reversed: the query takes the NEWEST `limit`, the screen reads
             // oldest-first. Sorting ascending and taking `limit` would hand
             // back the start of a long thread instead of its end.
-            messages: rows.reverse().map((m) => ({
+            // Null means there is nothing older. Opaque — see `lib/exchange/cursor`.
+            olderCursor: hasOlder && oldest ? encodeCursor({ at: oldest.createdAt, id: oldest.id }) : null,
+            messages: page.reverse().map((m) => ({
                 id: m.id,
                 senderTenantId: m.senderTenantId,
                 mine: m.senderTenantId === ctx.tenantId,
@@ -499,6 +528,34 @@ export async function sendExchangeMessage(
     ctx: RequestContext,
     threadId: string,
     body: string,
+    idempotencyKey?: string | null,
+): Promise<{ id: string; createdAt: Date; reopened: boolean; replayed: boolean }> {
+    try {
+        return await sendExchangeMessageImpl(ctx, threadId, body, idempotencyKey);
+    } catch (err) {
+        // Race backstop: two retries of the same send both clear the replay
+        // check above, then one loses the unique index. The loser re-reads the
+        // winner rather than surfacing a 500 for a message that WAS delivered.
+        if (idempotencyKey && isUniqueViolation(err)) {
+            const prior = await runInTenantContext(ctx, (db) =>
+                db.exchangeMessage.findFirst({
+                    where: { senderTenantId: ctx.tenantId, clientMutationId: idempotencyKey },
+                    select: { id: true, createdAt: true },
+                }),
+            );
+            if (prior) {
+                return { id: prior.id, createdAt: prior.createdAt, reopened: false, replayed: true };
+            }
+        }
+        throw err;
+    }
+}
+
+async function sendExchangeMessageImpl(
+    ctx: RequestContext,
+    threadId: string,
+    body: string,
+    idempotencyKey?: string | null,
 ) {
     assertCanWrite(ctx);
     // Sanitise BEFORE length-checking, so padding with markup cannot smuggle a
@@ -510,6 +567,21 @@ export async function sendExchangeMessage(
     }
 
     return runInTenantContext(ctx, async (db) => {
+        // Replay check FIRST — before the party, block and closed checks. A
+        // retry of a message that was already accepted must return the
+        // original result even if the seller has since blocked the sender;
+        // otherwise a flaky link turns "your message was delivered" into a
+        // 403 for a message that IS in the thread.
+        if (idempotencyKey) {
+            const prior = await db.exchangeMessage.findFirst({
+                where: { senderTenantId: ctx.tenantId, clientMutationId: idempotencyKey },
+                select: { id: true, createdAt: true },
+            });
+            if (prior) {
+                return { id: prior.id, createdAt: prior.createdAt, reopened: false, replayed: true };
+            }
+        }
+
         const { thread, role } = await requireParty(db, ctx, threadId);
         // Only the BLOCKED side is refused. The seller who pressed block can
         // still write in the thread — the control is "stop them reaching me",
@@ -536,6 +608,7 @@ export async function sendExchangeMessage(
                 senderUserId: ctx.userId,
                 body: text,
                 createdAt: now,
+                clientMutationId: idempotencyKey ?? null,
             },
             select: { id: true, createdAt: true },
         });
@@ -573,7 +646,10 @@ export async function sendExchangeMessage(
         // that then failed tells the other party to come and read something
         // that does not exist.
         await notifyOtherParty(ctx.tenantId, thread);
-        return { id: row.id, createdAt: row.createdAt, reopened: reopening };
+        // `replayed` is explicit rather than inferable. A replay that looks
+        // identical to a create is a shape a client cannot branch on, and the
+        // iOS session asked for exactly this distinction to be named.
+        return { id: row.id, createdAt: row.createdAt, reopened: reopening, replayed: false };
     });
 }
 
@@ -625,14 +701,26 @@ export async function deleteExchangeMessage(ctx: RequestContext, messageId: stri
 }
 
 /** The caller's conversations, most recently active first. */
-export async function listExchangeThreads(ctx: RequestContext) {
+export async function listExchangeThreads(
+    ctx: RequestContext,
+    options: { limit?: number; cursor?: string | null } = {},
+) {
     assertCanRead(ctx);
+    const limit = Math.min(Math.max(options.limit ?? DEFAULT_PAGE_SIZE, 1), DEFAULT_PAGE_SIZE);
+    const cursor = decodeCursor(options.cursor);
     return runInTenantContext(ctx, async (db) => {
         // RLS restricts this to threads the caller is a party to, from either
         // side — which is why there is no tenant filter here to write wrongly.
         const rows = await db.exchangeThread.findMany({
-            orderBy: { lastMessageAt: 'desc' },
-            take: DEFAULT_PAGE_SIZE,
+            where: cursor ? keysetBefore(cursor, 'lastMessageAt') : undefined,
+            // `id` is the tiebreak, and it is not decoration: ordering on
+            // `lastMessageAt` alone is not a total order, so two threads
+            // sharing a timestamp straddle the page boundary and one is
+            // dropped while the other repeats.
+            orderBy: [{ lastMessageAt: 'desc' }, { id: 'desc' }],
+            // One more than asked, to learn whether another page exists
+            // without a second COUNT query.
+            take: limit + 1,
             select: {
                 id: true, listingId: true, inquirerTenantId: true,
                 lastMessageAt: true, closedAt: true,
@@ -641,7 +729,11 @@ export async function listExchangeThreads(ctx: RequestContext) {
             },
         });
 
-        return rows.map((t) => {
+        const hasMore = rows.length > limit;
+        const page = hasMore ? rows.slice(0, limit) : rows;
+        const last = page.at(-1);
+
+        const threads = page.map((t) => {
             const role = t.inquirerTenantId === ctx.tenantId ? 'inquirer' : 'seller';
             const readAt = role === 'seller' ? t.sellerLastReadAt : t.inquirerLastReadAt;
             return {
@@ -655,5 +747,13 @@ export async function listExchangeThreads(ctx: RequestContext) {
                 hasUnread: !readAt || t.lastMessageAt > readAt,
             };
         });
+
+        return {
+            threads,
+            // Null means "this is the end", and it is computed from the extra
+            // row rather than from `page.length < limit` — a full final page
+            // would otherwise advertise a next page that returns nothing.
+            nextCursor: hasMore && last ? encodeCursor({ at: last.lastMessageAt, id: last.id }) : null,
+        };
     });
 }

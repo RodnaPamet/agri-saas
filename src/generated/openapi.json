@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "3.44.0",
+    "version": "3.45.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -1491,6 +1491,12 @@
           "unreadCount": {
             "type": "integer"
           },
+          "olderCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "messages": {
             "type": "array",
             "items": {
@@ -1507,6 +1513,7 @@
           "closed",
           "blocked",
           "unreadCount",
+          "olderCursor",
           "messages"
         ]
       },
@@ -15641,6 +15648,28 @@
             "required": true,
             "name": "tenantSlug",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "Page size, 1-100. Values above the cap are clamped, not rejected."
+            },
+            "required": false,
+            "description": "Page size, 1-100. Values above the cap are clamped, not rejected.",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Opaque position from a previous response's `nextCursor`. A stale or malformed cursor RESTARTS the listing rather than erroring."
+            },
+            "required": false,
+            "description": "Opaque position from a previous response's `nextCursor`. A stale or malformed cursor RESTARTS the listing rather than erroring.",
+            "name": "cursor",
+            "in": "query"
           }
         ],
         "responses": {
@@ -15656,10 +15685,18 @@
                       "items": {
                         "$ref": "#/components/schemas/ExchangeThreadSummary"
                       }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Pass as `cursor` for the next page. **Null means the end** — it is computed by over-fetching one row, so a final page that happens to be exactly `limit` long correctly reports null rather than sending the client after an empty page."
                     }
                   },
                   "required": [
-                    "threads"
+                    "threads",
+                    "nextCursor"
                   ]
                 }
               }
@@ -15742,7 +15779,7 @@
       "get": {
         "operationId": "getExchangeThread",
         "summary": "A conversation and its messages",
-        "description": "Messages come back OLDEST-FIRST (reading order), but are selected newest-first and reversed — so a long thread returns its END, not its beginning. Capped at 100 per call.",
+        "description": "Messages come back OLDEST-FIRST (reading order), but are selected newest-first and reversed — so a long thread returns its END, not its beginning.\n\nScroll back with `before`: pass the response's `olderCursor` to fetch the page immediately older than the one you hold. `olderCursor: null` means you have reached the start of the conversation.\n\n`unreadCount` is counted in the DATABASE, not over the returned page, so it is a true count rather than one capped at `limit`.",
         "tags": [
           "Exchange messaging"
         ],
@@ -15771,6 +15808,28 @@
             "required": true,
             "name": "threadId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "Page size, 1-100. Values above the cap are clamped, not rejected."
+            },
+            "required": false,
+            "description": "Page size, 1-100. Values above the cap are clamped, not rejected.",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Opaque position from a previous response's `olderCursor`. A stale or malformed value returns the newest page rather than erroring."
+            },
+            "required": false,
+            "description": "Opaque position from a previous response's `olderCursor`. A stale or malformed value returns the newest page rather than erroring.",
+            "name": "before",
+            "in": "query"
           }
         ],
         "responses": {
@@ -15861,7 +15920,7 @@
       "post": {
         "operationId": "sendExchangeMessage",
         "summary": "Send a message",
-        "description": "The body is HTML-sanitised on write and then length-checked, in that order — so markup cannot pad a message past the limit. A closed thread returns 400 `THREAD_CLOSED`.",
+        "description": "The body is HTML-sanitised on write and then length-checked, in that order — so markup cannot pad a message past the limit.\n\nA CLOSED thread is not refused: sending REOPENS it and the response says so with `reopened: true`. (This previously returned 400 `THREAD_CLOSED`; that refusal is gone, because either party can close and a refusal would let one side mute the other permanently.)\n\nSend `Idempotency-Key` ALWAYS, minted BEFORE the first attempt and reused on every retry of the same logical send. The server maps it to `clientMutationId`, unique per SENDER, and a replay returns the ORIGINAL message with `replayed: true` rather than adding a duplicate line to the conversation. **`replayed` is explicit on purpose** — a replay indistinguishable from a create is a shape a client cannot branch on.\n\nThe replay check runs BEFORE the party, block and closed checks, so a retry of a message that was already accepted returns its original result even if the seller has since blocked the sender. Otherwise a flaky link turns \"delivered\" into a 403 for a message that IS in the thread.\n\nWithout a key the send is NOT idempotent — two taps make two messages.",
         "tags": [
           "Exchange messaging"
         ],
@@ -15917,12 +15976,17 @@
                     },
                     "reopened": {
                       "type": "boolean"
+                    },
+                    "replayed": {
+                      "type": "boolean",
+                      "description": "True when an `Idempotency-Key` matched an earlier send and this is the ORIGINAL message rather than a new one. False for a first send, and always false when no key was supplied."
                     }
                   },
                   "required": [
                     "id",
                     "createdAt",
-                    "reopened"
+                    "reopened",
+                    "replayed"
                   ]
                 }
               }

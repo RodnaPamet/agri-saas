@@ -210,12 +210,25 @@ model ExchangeMessage {
   /// product: text one tenant writes and another tenant's browser renders.
   body           String
   deletedAt      DateTime?
+  /// Client-supplied `Idempotency-Key`, scoped to the SENDER.
+  ///
+  /// A farmer on a bad link taps send twice and the phone retries; without
+  /// this the conversation gains a duplicate of something they said once.
+  /// Scoped to `senderTenantId` rather than a `tenantId` the row does not
+  /// have — and unique WITH it, so two parties may legitimately reuse the
+  /// same client-side id without colliding.
+  ///
+  /// Nullable and unconstrained when null: every NULL is distinct in
+  /// Postgres, so callers that send no key are unaffected. Mirrors
+  /// `LogEntry.clientMutationId` and `Task.clientMutationId`.
+  clientMutationId String?
   createdAt      DateTime  @default(now())
 
   thread ExchangeThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
 
   @@index([threadId, createdAt])
   @@index([senderTenantId])
+  @@unique([senderTenantId, clientMutationId])
 }
 
 /// A seller refusing further contact from one tenant.
