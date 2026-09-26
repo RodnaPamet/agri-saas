@@ -104,6 +104,23 @@ describe('the E2E env example matches the test compose file', () => {
  * it is where the check belongs. The blocks above keep their teeth regardless.
  */
 describe('a LOCAL .env.e2e, if present, points at this project', () => {
+    /**
+     * The control the selector-teeth runner requires, and it is right to: with no
+     * `.env.e2e` on a CI checkout, the two conditional assertions below take
+     * their early return and pass no matter what `readIfPresent` does. Gutting it
+     * to `return null` SURVIVED until this existed.
+     *
+     * `.env.e2e.example` is tracked, so it is a population every run has — which
+     * makes this prove the reader in both directions rather than only when a
+     * developer happens to have the untracked file.
+     */
+    it('readIfPresent reads a file that exists, and returns null for one that does not', () => {
+        const present = readIfPresent('.env.e2e.example');
+        expect(present).not.toBeNull();
+        expect(present).toContain('DATABASE_URL');
+        expect(readIfPresent('.env.e2e.this-path-does-not-exist')).toBeNull();
+    });
+
     const local = readIfPresent('.env.e2e');
     const compose = yaml.load(read('docker-compose.test.yml')) as ComposeFile;
     const entry = Object.entries(compose.services ?? {}).find(
