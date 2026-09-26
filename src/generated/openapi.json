@@ -2510,8 +2510,73 @@
             "minLength": 1,
             "maxLength": 2000
           },
-          "risk": {
+          "quote": {
             "type": "object",
+            "properties": {
+              "productKey": {
+                "type": "string",
+                "enum": [
+                  "wheat",
+                  "barley",
+                  "maize",
+                  "sunflower",
+                  "rapeseed",
+                  "drought",
+                  "hail",
+                  "frost"
+                ]
+              },
+              "areaDca": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 2000000
+              },
+              "sumInsuredCents": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 100000000000
+              },
+              "instalments": {
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "enum": [
+                      1
+                    ]
+                  },
+                  {
+                    "type": "number",
+                    "enum": [
+                      2
+                    ]
+                  },
+                  {
+                    "type": "number",
+                    "enum": [
+                      3
+                    ]
+                  },
+                  {
+                    "type": "number",
+                    "enum": [
+                      4
+                    ]
+                  }
+                ]
+              }
+            },
+            "required": [
+              "productKey",
+              "areaDca",
+              "sumInsuredCents",
+              "instalments"
+            ]
+          },
+          "risk": {
+            "type": [
+              "object",
+              "null"
+            ],
             "properties": {
               "overall": {
                 "type": "string",
@@ -2534,8 +2599,49 @@
           }
         },
         "required": [
-          "parcelId",
-          "message"
+          "parcelId"
+        ]
+      },
+      "CreateInsuranceLeadResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "quote": {
+            "type": "object",
+            "properties": {
+              "premiumCents": {
+                "type": "integer"
+              },
+              "instalmentsCents": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              },
+              "tariffBp": {
+                "type": "integer"
+              },
+              "engineVersion": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "premiumCents",
+              "instalmentsCents",
+              "tariffBp",
+              "engineVersion"
+            ],
+            "description": "Present when the lead carries a quote. Integer cents and basis points, so nothing rounds a float in transit."
+          }
+        },
+        "required": [
+          "id",
+          "status"
         ]
       },
       "CreateParcelCropSeason": {
@@ -17456,20 +17562,11 @@
         },
         "responses": {
           "201": {
-            "description": "The lead was recorded.",
+            "description": "The lead was recorded. **Honours `Idempotency-Key`** — replaying a request with the same key returns the ORIGINAL lead, with no second row, no second audit entry and no second operator email. The key is scoped to the requesting tenant and must be 1-128 characters of `[A-Za-z0-9_-]`.\n\nWhen the body carried a `quote`, the response echoes the figures the SERVER computed. A premium sent by the client is ignored: the request schema has no price field and strips one if present.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "id"
-                  ],
-                  "additionalProperties": {}
+                  "$ref": "#/components/schemas/CreateInsuranceLeadResponse"
                 }
               }
             }

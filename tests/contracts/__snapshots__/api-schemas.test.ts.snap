@@ -2574,8 +2574,73 @@ exports[`API contract — per-schema snapshots schema: CreateInsuranceLeadReques
       "minLength": 1,
       "maxLength": 2000
     },
-    "risk": {
+    "quote": {
       "type": "object",
+      "properties": {
+        "productKey": {
+          "type": "string",
+          "enum": [
+            "wheat",
+            "barley",
+            "maize",
+            "sunflower",
+            "rapeseed",
+            "drought",
+            "hail",
+            "frost"
+          ]
+        },
+        "areaDca": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 2000000
+        },
+        "sumInsuredCents": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 100000000000
+        },
+        "instalments": {
+          "anyOf": [
+            {
+              "type": "number",
+              "enum": [
+                1
+              ]
+            },
+            {
+              "type": "number",
+              "enum": [
+                2
+              ]
+            },
+            {
+              "type": "number",
+              "enum": [
+                3
+              ]
+            },
+            {
+              "type": "number",
+              "enum": [
+                4
+              ]
+            }
+          ]
+        }
+      },
+      "required": [
+        "productKey",
+        "areaDca",
+        "sumInsuredCents",
+        "instalments"
+      ]
+    },
+    "risk": {
+      "type": [
+        "object",
+        "null"
+      ],
       "properties": {
         "overall": {
           "type": "string",
@@ -2598,8 +2663,52 @@ exports[`API contract — per-schema snapshots schema: CreateInsuranceLeadReques
     }
   },
   "required": [
-    "parcelId",
-    "message"
+    "parcelId"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: CreateInsuranceLeadResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "quote": {
+      "type": "object",
+      "properties": {
+        "premiumCents": {
+          "type": "integer"
+        },
+        "instalmentsCents": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "tariffBp": {
+          "type": "integer"
+        },
+        "engineVersion": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "premiumCents",
+        "instalmentsCents",
+        "tariffBp",
+        "engineVersion"
+      ],
+      "description": "Present when the lead carries a quote. Integer cents and basis points, so nothing rounds a float in transit."
+    }
+  },
+  "required": [
+    "id",
+    "status"
   ]
 }"
 `;

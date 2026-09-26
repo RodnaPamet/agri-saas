@@ -6291,7 +6291,16 @@
       "parcelLabel": "Parcel",
       "readingLabel": "Satellite readings",
       "messageLabel": "Message from the farmer",
-      "open": "Open in Agrent"
+      "open": "Open in Agrent",
+      "quoteLabel": "Quote",
+      "productLabel": "Product",
+      "areaLabel": "Area",
+      "sumInsuredLabel": "Sum insured",
+      "tariffLabel": "Tariff",
+      "premiumLabel": "Indicative premium",
+      "perDcaLabel": "Premium per dca",
+      "scheduleLabel": "Payment",
+      "once": "Once"
     },
     "exchangeMessage": {
       "subject": "New message about your {commodity} listing",
@@ -6363,5 +6372,41 @@
     "Galium aparine": "Cleavers",
     "groupGrass": "Grass weed",
     "groupBroadleaf": "Broadleaf weed"
+  },
+  "insurance": {
+    "products": {
+      "wheat": {
+        "name": "Wheat",
+        "blurb": "Cover for a wheat crop against the insured risks."
+      },
+      "barley": {
+        "name": "Barley",
+        "blurb": "Cover for a barley crop against the insured risks."
+      },
+      "maize": {
+        "name": "Maize",
+        "blurb": "Cover for a maize crop against the insured risks."
+      },
+      "sunflower": {
+        "name": "Sunflower",
+        "blurb": "Cover for a sunflower crop against the insured risks."
+      },
+      "rapeseed": {
+        "name": "Rapeseed",
+        "blurb": "Cover for a rapeseed crop against the insured risks."
+      },
+      "drought": {
+        "name": "Drought",
+        "blurb": "Pays out when a prolonged dry spell damages the crop."
+      },
+      "hail": {
+        "name": "Hail",
+        "blurb": "Pays out for hail damage to the standing crop."
+      },
+      "frost": {
+        "name": "Spring frost",
+        "blurb": "Pays out for damage from a late spring frost."
+      }
+    }
   }
 }

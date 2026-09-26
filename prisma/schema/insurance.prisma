@@ -17,6 +17,19 @@ model InsuranceLead {
   riskJson         Json?
   /// Curated status: "PENDING" | "CONTACTED" | "CLOSED".
   status           String   @default("PENDING")
+  /// The premium quote as the SERVER computed it, snapshotted at request time:
+  /// engineVersion, productKey, productKind, tariffBp, areaDca,
+  /// sumInsuredCents, premiumCents, instalmentsCents, the two per-dca figures,
+  /// currencySymbol and computedAt.
+  ///
+  /// Nothing recomputes it on read. A later tariff change must never rewrite
+  /// what the farmer was actually shown, and `engineVersion` ties the stored
+  /// figures to the rounding rules that produced them.
+  quoteJson        Json?
+  /// Idempotency-Key from the client, so a lost response and a retry make ONE
+  /// lead and ONE operator email. Same shape as
+  /// `ExchangeMessage.clientMutationId`.
+  clientMutationId String?
   createdAt        DateTime @default(now())
 
   /// NO unique on (parcelId, inquirerTenantId).
@@ -34,6 +47,9 @@ model InsuranceLead {
   /// `listInquiredParcelIds` still reports which parcels have been asked
   /// about, but it is now INFORMATIONAL — clients must not use it to disable
   /// the control, or re-asking is impossible.
+  /// Postgres treats NULLs as DISTINCT, so leads posted without a key (the
+  /// old bundle, and any client that omits the header) never collide here.
+  @@unique([inquirerTenantId, clientMutationId])
   /// The access path the dropped unique used to provide.
   @@index([parcelId, inquirerTenantId])
   @@index([inquirerTenantId])
