@@ -23,6 +23,13 @@ import * as yaml from 'js-yaml';
 
 const ROOT = join(__dirname, '..', '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
+const readIfPresent = (p: string): string | null => {
+    try {
+        return readFileSync(join(ROOT, p), 'utf8');
+    } catch {
+        return null;
+    }
+};
 
 interface ComposeFile {
     services?: Record<string, { ports?: string[]; environment?: Record<string, string> }>;
@@ -77,6 +84,65 @@ describe('the E2E env example matches the test compose file', () => {
         for (const url of fallback) {
             expect(url).toContain(`:${hostPort}/`);
             expect(url).toContain(`/${dbName}?`);
+        }
+    });
+});
+
+/**
+ * …and the file the runner ACTUALLY loads, when a developer has one.
+ *
+ * Everything above validates `.env.e2e.example`. `scripts/e2e-local.mjs` reads
+ * `.env.e2e`, which is gitignored — so a checkout whose local copy was made from
+ * the pre-fix example keeps pointing at 5434/`inflect_test` forever, invisibly to
+ * every guard here. That is not hypothetical: this checkout had exactly that,
+ * found in #1122, and step 3 of that script is `prisma migrate reset --force`.
+ * It would have reset the SIBLING PRODUCT's database, with this schema, while
+ * another session's suite was running against it.
+ *
+ * Skipped when the file is absent (CI, a fresh clone). That makes this block
+ * developer-local by nature — which is the only place the mistake can exist, so
+ * it is where the check belongs. The blocks above keep their teeth regardless.
+ */
+describe('a LOCAL .env.e2e, if present, points at this project', () => {
+    const local = readIfPresent('.env.e2e');
+    const compose = yaml.load(read('docker-compose.test.yml')) as ComposeFile;
+    const entry = Object.entries(compose.services ?? {}).find(
+        ([, svc]) => svc?.environment?.POSTGRES_DB,
+    );
+
+    const urls = (local ?? '')
+        .split('\n')
+        .filter((l) => /^(DATABASE_URL|DATABASE_URL_TEST|DIRECT_DATABASE_URL)=/.test(l));
+
+    it('names this project\'s database and port, not a sibling stack\'s', () => {
+        if (local === null) {
+            // Nothing to check here; the example/compose/script blocks above
+            // still ran. Recorded rather than silently passing.
+            expect(local).toBeNull();
+            return;
+        }
+        const [, svc] = entry!;
+        const dbName = svc.environment!.POSTGRES_DB;
+        const hostPort = String(svc.ports![0]).split(':')[0];
+
+        expect(urls.length).toBeGreaterThan(0);
+        for (const line of urls) {
+            const value = line.slice(line.indexOf('=') + 1);
+            expect(value).toContain(`:${hostPort}/`);
+            expect(value).toContain(`/${dbName}?`);
+        }
+    });
+
+    it('never names a database belonging to another product', () => {
+        if (local === null) {
+            expect(local).toBeNull();
+            return;
+        }
+        // Belt and braces on top of the positive check: the specific wrong value
+        // that actually happened, and the port that carries it.
+        for (const line of urls) {
+            expect(line).not.toContain('inflect');
+            expect(line).not.toContain(':5434/');
         }
     });
 });

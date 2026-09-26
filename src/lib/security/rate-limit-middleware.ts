@@ -349,6 +349,7 @@ export {
     INVITE_REDEEM_LIMIT,
     EXCHANGE_LISTING_CREATE_LIMIT,
     EXCHANGE_INQUIRY_LIMIT,
+    INSURANCE_LEAD_LIMIT,
     KNOWLEDGE_ASK_LIMIT,
 } from './rate-limit';
 export type { RateLimitConfig, RateLimitResult } from './rate-limit';

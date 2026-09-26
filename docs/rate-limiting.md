@@ -13,6 +13,22 @@ spray attack does not consume the read budget for legitimate users.
 | **Auth** | tiered (10/30/60 per min) | 10/min for sign-in callbacks; 30/min for session probes; 60/min for `/csrf` and `/providers` | Edge middleware | `(IP, ua-hash)` |
 | **Mutation** | `API_MUTATION_LIMIT` | 60 per minute | Node route handlers via `withApiErrorHandling` | `(IP, userId)` |
 | **Read** | `API_READ_LIMIT` | 120 per minute | Edge middleware | `(IP, userId, tenantSlug)` |
+| **Insurance lead** | `INSURANCE_LEAD_LIMIT` | 20 per **hour** | `POST /t/{slug}/insurance/leads`, scope `insurance-lead` | `(IP, userId)` |
+
+### Why the insurance lead tier is per-hour
+
+Every lead sends the operator an email, and the
+`@@unique([parcelId, inquirerTenantId])` that once capped one ask per parcel
+was dropped on 2026-09-24 so a farmer could re-ask with a corrected land size.
+The endpoint previously borrowed `EXCHANGE_INQUIRY_LIMIT` (10 per **minute**),
+which permits up to **600 operator emails an hour** from one account — a
+per-minute window is simply the wrong shape once repeat asks are legitimate.
+
+20 per hour still covers the real behaviour: a farmer comparing cover across
+several parcels, then re-asking on a few after fixing an area. An idempotent
+replay counts against it, deliberately — the limit caps requests reaching the
+endpoint, and a client retrying in a loop costs the same work whether or not
+the row is deduped.
 
 All numbers are sized for normal interactive use — a real user filling
 forms or paginating lists is well below every threshold. Scripts and
