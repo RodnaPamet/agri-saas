@@ -4,6 +4,7 @@
  */
 import { env } from '@/env';
 import { escapeHtml } from '@/lib/security/escape-html';
+import { formatCents } from '@/lib/insurance';
 import { translateFor } from '@/lib/i18n/server-messages';
 import type { Locale } from '@/lib/i18n/locales';
 
@@ -74,11 +75,27 @@ export interface InsuranceLeadPayload {
     cropType?: string | null;
     areaHa?: number | null;
     /** What the farmer typed. Free text, escaped at every render site. */
-    message: string;
+    /** Absent for a quote-only lead: the farmer picked a product, wrote nothing. */
+    message?: string;
     /** The reading the farmer was looking at when they asked, if any. */
     riskOverall?: string | null;
     ndvi?: number | null;
     ndmi?: number | null;
+    /**
+     * The quote as STORED on the lead. Read from `quoteJson`, never recomputed
+     * at render time — the operator must see the figures the farmer was shown,
+     * not what today's tariff would produce.
+     */
+    quote?: {
+        productKey: string;
+        areaDca: number;
+        sumInsuredCents: number;
+        tariffBp: number;
+        premiumCents: number;
+        instalmentsCents: number[];
+        premiumPerDcaCents: number;
+        currencySymbol: string;
+    } | null;
 }
 
 export interface ExchangeMessagePayload {
@@ -248,7 +265,7 @@ export async function buildInsuranceLeadEmail(
     locale: Locale,
 ): Promise<EmailTemplateResult> {
     const { tenantName, tenantSlug, parcelName, locationName, cropType, areaHa, message } = payload;
-    const { riskOverall, ndvi, ndmi } = payload;
+    const { riskOverall, ndvi, ndmi, quote } = payload;
     const t = (key: string, params?: Record<string, string | number>) =>
         translateFor(locale, `notificationEmail.insuranceLead.${key}`, params);
 
@@ -259,6 +276,47 @@ export async function buildInsuranceLeadEmail(
     const parcelLabel = await t('parcelLabel');
     const messageLabel = await t('messageLabel');
     const readingLabel = await t('readingLabel');
+
+    // Every translated string is resolved into a local const BEFORE it is
+    // interpolated. The inline `await t(...)` form inside a template literal is
+    // invisible to the escaping guard, so it would pass review and ship
+    // unescaped (CLAUDE.md).
+    let quoteBlock: { label: string; lines: string[] } | null = null;
+    if (quote) {
+        const quoteLabel = await t('quoteLabel');
+        const productLabel = await t('productLabel');
+        const areaLabel = await t('areaLabel');
+        const sumInsuredLabel = await t('sumInsuredLabel');
+        const tariffLabel = await t('tariffLabel');
+        const premiumLabel = await t('premiumLabel');
+        const perDcaLabel = await t('perDcaLabel');
+        const scheduleLabel = await t('scheduleLabel');
+        const onceLabel = await t('once');
+        const productName = await translateFor(
+            locale,
+            `insurance.products.${quote.productKey}.name`,
+        );
+        const sym = quote.currencySymbol;
+        const schedule =
+            quote.instalmentsCents.length === 1
+                ? onceLabel
+                : `${quote.instalmentsCents.length} x ${quote.instalmentsCents
+                      .map((c) => formatCents(c, sym))
+                      .join(', ')}`;
+
+        quoteBlock = {
+            label: quoteLabel,
+            lines: [
+                `${productLabel}: ${productName}`,
+                `${areaLabel}: ${quote.areaDca} dca`,
+                `${sumInsuredLabel}: ${formatCents(quote.sumInsuredCents, sym)}`,
+                `${tariffLabel}: ${quote.tariffBp / 100} %`,
+                `${premiumLabel}: ${formatCents(quote.premiumCents, sym)}`,
+                `${perDcaLabel}: ${formatCents(quote.premiumPerDcaCents, sym)}`,
+                `${scheduleLabel}: ${schedule}`,
+            ],
+        };
+    }
     const openLink = await t('open');
     const signature = await translateFor(locale, 'notificationEmail.signature');
 
@@ -284,9 +342,8 @@ export async function buildInsuranceLeadEmail(
             '',
             `${parcelLabel}: ${facts}`,
             ...(reading ? [`${readingLabel}: ${reading}`] : []),
-            '',
-            `${messageLabel}:`,
-            message,
+            ...(quoteBlock ? ['', `${quoteBlock.label}:`, ...quoteBlock.lines] : []),
+            ...(message ? ['', `${messageLabel}:`, message] : []),
             '',
             link,
             '',
@@ -300,8 +357,20 @@ export async function buildInsuranceLeadEmail(
     <div><strong>${escapeHtml(parcelLabel)}:</strong> ${escapeHtml(facts)}</div>
     ${reading ? `<div><strong>${escapeHtml(readingLabel)}:</strong> ${escapeHtml(reading)}</div>` : ''}
   </div>
-  <p style="color: #444; line-height: 1.5;"><strong>${escapeHtml(messageLabel)}:</strong></p>
-  <p style="color: #444; line-height: 1.5; white-space: pre-line;">${escapeHtml(message)}</p>
+  ${
+      quoteBlock
+          ? `<div style="background: #f4f6fa; border-left: 4px solid #16a34a; padding: 12px 16px; margin: 16px 0; border-radius: 4px;">
+    <div><strong>${escapeHtml(quoteBlock.label)}</strong></div>
+    ${quoteBlock.lines.map((l) => `<div>${escapeHtml(l)}</div>`).join('')}
+  </div>`
+          : ''
+  }
+  ${
+      message
+          ? `<p style="color: #444; line-height: 1.5;"><strong>${escapeHtml(messageLabel)}:</strong></p>
+  <p style="color: #444; line-height: 1.5; white-space: pre-line;">${escapeHtml(message)}</p>`
+          : ''
+  }
   <a href="${escapeHtml(link)}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500;">${escapeHtml(openLink)}</a>
   <p style="color: #999; font-size: 12px; margin-top: 24px;">${escapeHtml(signature)}</p>
 </div>`.trim(),

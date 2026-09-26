@@ -11,6 +11,7 @@
  * `locations.paths.ts`.
  */
 import { z } from '@/lib/openapi/zod';
+import { CreateInsuranceLeadSchema } from '@/app-layer/schemas/insurance.schemas';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { op } from './helpers';
 
@@ -127,25 +128,42 @@ export function registerFarmRiskPaths(registry: OpenAPIRegistry): void {
             'exchange inquiry. Rate-limited on the inquiry tier.',
         tags: ['Farm risk'],
         params: TenantParams,
-        body: z
-            .object({
-                parcelId: z.string().min(1),
-                locationId: z.string().min(1).nullable().optional(),
-                message: z.string().min(1).max(2000),
-                risk: z
-                    .object({
-                        overall: z.string().max(20).optional(),
-                        ndvi: z.number().nullable().optional(),
-                        ndmi: z.number().nullable().optional(),
-                    })
-                    .optional()
-                    .openapi({ description: 'Snapshot of what the farmer was shown when asking.' }),
-            })
-            .openapi('CreateInsuranceLeadRequest'),
+        // The route's OWN schema, not a copy. The inline redeclaration this
+        // replaces had already drifted: it still required `message`, which is
+        // optional when a quote is present, and knew nothing about `quote` at
+        // all. A second spelling of a contract is a contract that goes stale
+        // silently.
+        body: CreateInsuranceLeadSchema.openapi('CreateInsuranceLeadRequest'),
         success: {
             status: 201,
-            description: 'The lead was recorded.',
-            schema: z.object({ id: z.string() }).passthrough(),
+            description:
+                'The lead was recorded. **Honours `Idempotency-Key`** \u2014 replaying a ' +
+                'request with the same key returns the ORIGINAL lead, with no second ' +
+                'row, no second audit entry and no second operator email. The key is ' +
+                'scoped to the requesting tenant and must be 1-128 characters of ' +
+                '`[A-Za-z0-9_-]`.\n\n' +
+                'When the body carried a `quote`, the response echoes the figures the ' +
+                'SERVER computed. A premium sent by the client is ignored: the request ' +
+                'schema has no price field and strips one if present.',
+            schema: z
+                .object({
+                    id: z.string(),
+                    status: z.string(),
+                    quote: z
+                        .object({
+                            premiumCents: z.number().int(),
+                            instalmentsCents: z.array(z.number().int()),
+                            tariffBp: z.number().int(),
+                            engineVersion: z.number().int(),
+                        })
+                        .optional()
+                        .openapi({
+                            description:
+                                'Present when the lead carries a quote. Integer cents and ' +
+                                'basis points, so nothing rounds a float in transit.',
+                        }),
+                })
+                .openapi('CreateInsuranceLeadResponse'),
         },
     });
 }
