@@ -420,6 +420,30 @@ export const EXCHANGE_INQUIRY_LIMIT: RateLimitConfig = {
 };
 
 /**
+ * Insurance quote requests: 20 per HOUR per (IP, userId).
+ *
+ * Threat model: outbound-email amplification, same family as
+ * `EXCHANGE_INQUIRY_LIMIT` but with the dedup guard removed. Every lead sends
+ * the operator an email, and the `@@unique([parcelId, inquirerTenantId])` that
+ * used to cap one ask per parcel was DROPPED on 2026-09-24 so a farmer could
+ * re-ask with a corrected land size. The inquiry preset's 10-per-MINUTE window
+ * therefore permits up to 600 operator emails an hour from a single account —
+ * a per-minute window is the wrong shape once repeat asks are legitimate.
+ *
+ * 20 per hour is generous for the real behaviour it has to allow: a farmer
+ * comparing cover on several parcels, then re-asking on a few after correcting
+ * an area. It is not generous for a script.
+ *
+ * An idempotent REPLAY counts against this. That is deliberate — the limit
+ * exists to cap requests reaching the endpoint, and a client retrying in a
+ * loop costs the same server work whether or not the row is deduped.
+ */
+export const INSURANCE_LEAD_LIMIT: RateLimitConfig = {
+    maxAttempts: 20,
+    windowMs: 60 * 60 * 1000,
+};
+
+/**
  * Knowledge-base ask (RAG Q&A): 10 requests per minute per (IP, userId).
  *
  * Threat model: cost + abuse. Every call is an LLM completion over a

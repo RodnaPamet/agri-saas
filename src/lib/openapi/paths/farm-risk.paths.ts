@@ -125,7 +125,11 @@ export function registerFarmRiskPaths(registry: OpenAPIRegistry): void {
             'Lead-gen only: the row is stored, a confirmation notification is written for ' +
             'the REQUESTER and a copy is sent to the operator. No insurer API is called ' +
             'and no other tenant is contacted, which is what separates this from an ' +
-            'exchange inquiry. Rate-limited on the inquiry tier.',
+            'exchange inquiry. Opened by the three-step calculator on Farm risk, '  +
+            'which previews the premium and posts only the four quote INPUTS. '  +
+            'Rate-limited on its OWN tier (INSURANCE_LEAD_LIMIT, 20 per hour): '  +
+            'every lead emails the operator, and the inquiry tier\'s per-minute '  +
+            'window allowed 600 of those an hour.',
         tags: ['Farm risk'],
         params: TenantParams,
         // The route's OWN schema, not a copy. The inline redeclaration this
