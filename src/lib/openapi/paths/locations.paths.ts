@@ -133,6 +133,15 @@ const ParcelGeo = z
             description: 'Modelled soil label. Null while the async SoilGrids fetch is still pending.',
         }),
         soilJson: z.unknown().nullable(),
+        absentFromImportAt: z.string().datetime().nullable().openapi({
+            description:
+                'When the location’s LAST spatial import did not contain this parcel — it was ' +
+                'kept, with all of its history, and marked. Null means it WAS in the last import, ' +
+                'or that the location has never been imported into; both mean nothing to warn ' +
+                'about. A TIMESTAMP rather than a boolean because "not in the last import" and ' +
+                '"not in any import since March" are different facts and only the first is ' +
+                'actionable — compare it against the location’s last import.',
+        }),
         companyOwners: z
             .array(
                 z.object({

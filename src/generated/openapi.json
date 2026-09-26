@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "3.59.0",
+    "version": "3.60.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -7771,6 +7771,14 @@
             "description": "Modelled soil label. Null while the async SoilGrids fetch is still pending."
           },
           "soilJson": {},
+          "absentFromImportAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the location’s LAST spatial import did not contain this parcel — it was kept, with all of its history, and marked. Null means it WAS in the last import, or that the location has never been imported into; both mean nothing to warn about. A TIMESTAMP rather than a boolean because \"not in the last import\" and \"not in any import since March\" are different facts and only the first is actionable — compare it against the location’s last import."
+          },
           "companyOwners": {
             "type": "array",
             "items": {
@@ -7817,6 +7825,7 @@
           "cadastralId",
           "ekatte",
           "soilType",
+          "absentFromImportAt",
           "companyOwners",
           "hasActiveLease"
         ],

@@ -444,6 +444,18 @@ model Parcel {
   ///   bulkDensity, depth, uncertainty?, provider, fetchedAt }.
   /// Null until the async soil-fetch job populates it ("soil pending").
   soilJson        Json?
+  /// When the most recent spatial import of this parcel's LOCATION did not
+  /// find a matching shape for this row, and therefore left it behind.
+  ///
+  /// A TIMESTAMP rather than a boolean, deliberately: "not in the last import"
+  /// and "not in any import since March" are different facts and only the
+  /// first is actionable. Compare it to the location's last import to tell
+  /// them apart.
+  ///
+  /// NULL means the parcel was present in the last import of its location —
+  /// or that the location has never been imported into, which is the same
+  /// thing from a client's point of view: nothing to warn about.
+  absentFromImportAt DateTime?
   /// "Try it with sample data" tag — see Location.isSampleData.
   isSampleData    Boolean                                      @default(false)
   createdAt       DateTime                                     @default(now())
