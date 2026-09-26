@@ -6,6 +6,7 @@ import { assertModuleEnabled } from '@/app-layer/usecases/modules';
 import { withValidatedBody } from '@/lib/validation/route';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
+import { UpdateLotSchema } from '@/app-layer/schemas/inventory.schemas';
 
 /**
  * Lot position update. `locationId` is the ONLY mutable field here — quantity
@@ -16,11 +17,6 @@ import { jsonResponse } from '@/lib/api-response';
  * `null` unassigns the lot from its bin; the field is required so a PATCH
  * cannot silently mean "nothing".
  */
-const UpdateLotSchema = z
-    .object({
-        locationId: z.string().min(1).nullable(),
-    })
-    .strip();
 
 export const GET = withApiErrorHandling(
     async (

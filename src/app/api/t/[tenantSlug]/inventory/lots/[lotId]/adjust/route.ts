@@ -5,10 +5,8 @@ import { withValidatedBody } from '@/lib/validation/route';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { z } from 'zod';
+import { AdjustSchema } from '@/app-layer/schemas/inventory.schemas';
 
-const AdjustSchema = z
-    .object({ delta: z.number().refine((n) => n !== 0, 'delta must be non-zero'), reason: z.string().min(1).max(500) })
-    .strip();
 
 export const POST = withApiErrorHandling(
     withValidatedBody(

@@ -79,7 +79,7 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 // 313 -> 309: the four dashboard/briefing routes are described now
 // (`dashboard.paths.ts`), so they leave the baseline in the same diff that
 // documents them — which is what this guard's sibling assertion demands.
-const UNDOCUMENTED_CEILING = 279;
+const UNDOCUMENTED_CEILING = 265;
 
 interface Baseline {
     _README: string[];
