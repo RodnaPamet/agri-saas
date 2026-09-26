@@ -5800,6 +5800,136 @@ exports[`API contract — per-schema snapshots schema: NewsItem 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: Notification 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "tenantId": {
+      "type": "string"
+    },
+    "userId": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "EVIDENCE_DUE_SOON",
+        "EVIDENCE_OVERDUE",
+        "EVIDENCE_REJECTED",
+        "EVIDENCE_APPROVED",
+        "TASK_ASSIGNED",
+        "ASSET_ASSIGNED",
+        "TASK_DUE",
+        "LOW_STOCK",
+        "LEASE_EXPIRING",
+        "CONTRACT_DELIVERY_DUE",
+        "EXCHANGE_MESSAGE",
+        "GENERAL"
+      ]
+    },
+    "title": {
+      "type": "string"
+    },
+    "message": {
+      "type": "string"
+    },
+    "read": {
+      "type": "boolean"
+    },
+    "linkUrl": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "dedupeKey": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "id",
+    "tenantId",
+    "userId",
+    "type",
+    "title",
+    "message",
+    "read",
+    "linkUrl",
+    "dedupeKey",
+    "createdAt"
+  ],
+  "description": "One bell notification. title and message are server-authored prose in the producer’s language, NOT translatable keys — a client renders them as given. linkUrl is where the bell navigates and is null when there is no target."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: NotificationMarkReadAck 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "success": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success"
+  ],
+  "description": "Acknowledgement only. The notification itself is not returned — the caller already has it and \`read\` is the only field that changed."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: NotificationStreamEvent 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "message": {
+      "type": "string"
+    },
+    "read": {
+      "type": "boolean"
+    },
+    "linkUrl": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "id",
+    "type",
+    "title",
+    "message",
+    "read",
+    "linkUrl",
+    "createdAt"
+  ],
+  "description": "The JSON carried by one \`data:\` line. Narrower than the list row: no tenantId, userId or dedupeKey."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: OperationParcel 1`] = `
 "{
   "type": "object",
