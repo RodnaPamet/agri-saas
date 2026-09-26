@@ -507,15 +507,86 @@ const FarmRecordRegister = z
 
 // ─── Imports ────────────────────────────────────────────────────────
 
+/**
+ * The envelope EVERY job executor returns, and which the poll routes hand back
+ * verbatim as `result`.
+ *
+ * It was `z.unknown()` with prose saying `details` "carries the counters" —
+ * no names, no types. A client could not model it without running an import
+ * against a live tenant to see what came back, which is the measured-not-
+ * contracted state this spec exists to end. Worse, checking it revealed the
+ * spatial executor was not forwarding its reconciliation counts AT ALL: they
+ * reached the audit log and the worker's return type and stopped there.
+ */
+const JobRunEnvelope = z
+    .object({
+        jobName: z.string(),
+        jobRunId: z.string(),
+        success: z.boolean(),
+        startedAt: z.string().datetime(),
+        completedAt: z.string().datetime(),
+        durationMs: z.number(),
+        /** Generic progress counters; per-job meaning lives in `details`. */
+        itemsScanned: z.number(),
+        itemsActioned: z.number(),
+        itemsSkipped: z.number(),
+        errorMessage: z.string().optional(),
+        details: z.unknown().optional().openapi({
+            description:
+                'Per-job payload. For `spatial-import` it carries `tenantId`, `locationId`, ' +
+                '`fileRecordId`, `format`, `bounds`, `jobRunId`, `parcelCount` and the ' +
+                'reconciliation counts `matched` / `created` / `flagged` — see ' +
+                '`SpatialImportDetails`. Other job names carry their own keys.',
+        }),
+    })
+    .openapi('JobRunEnvelope', {
+        description:
+            'What an off-thread job returns. `itemsScanned`/`itemsActioned`/`itemsSkipped` are generic; the job-specific answer is in `details`.',
+    });
+
+/**
+ * Registered so a client can generate a type for it even though `details` is
+ * necessarily loose on the shared envelope — two different job kinds poll
+ * through the same route.
+ */
+const SpatialImportDetails = z
+    .object({
+        tenantId: z.string(),
+        locationId: z.string(),
+        fileRecordId: z.string(),
+        format: z.string(),
+        /**
+         * The shapes the FILE contained — `matched + created`. NOT the number
+         * of parcels the location now has, and `flagged` is not part of it.
+         */
+        parcelCount: z.number(),
+        /** Existing parcels the file matched and UPDATED IN PLACE, keeping their history. */
+        matched: z.number(),
+        /** Shapes that matched nothing and were inserted as new parcels. */
+        created: z.number(),
+        /**
+         * Existing parcels the file did NOT contain. Kept with all of their
+         * history and marked with `absentFromImportAt`; nothing is deleted by
+         * an import. Reporting "imported N parcels" must not include these.
+         */
+        flagged: z.number(),
+        bounds: z.unknown().nullable(),
+        jobRunId: z.string(),
+    })
+    .openapi('SpatialImportDetails', {
+        description:
+            'The `details` payload of a completed `spatial-import` job. parcelCount is matched + created — what the file contained. flagged counts existing parcels the file omitted, which were kept rather than deleted, so it is deliberately NOT part of parcelCount.',
+    });
+
 const ImportJobStatus = z
     .object({
         jobId: z.string().nullable(),
         state: z.string().openapi({ description: 'BullMQ job state: waiting, active, completed, failed, …' }),
         progress: z.unknown(),
-        result: z.unknown().nullable().openapi({
+        result: JobRunEnvelope.nullable().openapi({
             description:
-                'The worker’s return value once `state` is completed — the executor payload whose ' +
-                '`details` carries the counters. Null until then.',
+                'The worker’s return value once `state` is completed. NULL until then — poll ' +
+                'until `state` is `completed` rather than treating a null result as a failure.',
         }),
         failedReason: z.string().nullable(),
     })
@@ -524,6 +595,8 @@ const ImportJobStatus = z
             'Poll response for an off-thread import. Note that a not-found or wrong-tenant job ' +
             'answers 404 with the bare `{ error }` body, not this shape and not the canonical envelope.',
     });
+
+
 
 const CadastreImportSettings = z
     .object({
@@ -598,6 +671,13 @@ const rawErrorJson = { 'application/json': { schema: RawErrorResponse } };
 const plainTextError = { 'text/plain': { schema: z.string() } };
 
 export function registerLocationPaths(registry: OpenAPIRegistry): void {
+    // Registered explicitly because nothing REFERENCES it: `details` is
+    // necessarily loose on the shared envelope (two job kinds poll through one
+    // route), so a `$ref` there would over-claim. A client still needs a name
+    // to generate a type from, and `.openapi()` alone only labels a schema —
+    // it does not emit one that no path reaches.
+    registry.register('SpatialImportDetails', SpatialImportDetails);
+
     // ─── Locations ──────────────────────────────────────────────────
 
     op(registry, {

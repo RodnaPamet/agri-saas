@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "3.61.0",
+    "version": "3.63.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -5451,7 +5451,7 @@
           },
           "progress": {},
           "result": {
-            "description": "The worker’s return value once `state` is completed — the executor payload whose `details` carries the counters. Null until then."
+            "$ref": "#/components/schemas/JobRunEnvelope"
           },
           "failedReason": {
             "type": [
@@ -5463,6 +5463,7 @@
         "required": [
           "jobId",
           "state",
+          "result",
           "failedReason"
         ],
         "description": "Poll response for an off-thread import. Note that a not-found or wrong-tenant job answers 404 with the bare `{ error }` body, not this shape and not the canonical envelope."
@@ -5908,6 +5909,61 @@
           "hasNextPage"
         ],
         "description": "The `{ items, pageInfo }` convention — used by inventory, NOT by grain (`{rows, totalCount, truncated}`) or exchange (`{rows, nextCursor}`). One pager cannot serve all three."
+      },
+      "JobRunEnvelope": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "jobName": {
+            "type": "string"
+          },
+          "jobRunId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "durationMs": {
+            "type": "number"
+          },
+          "itemsScanned": {
+            "type": "number"
+          },
+          "itemsActioned": {
+            "type": "number"
+          },
+          "itemsSkipped": {
+            "type": "number"
+          },
+          "errorMessage": {
+            "type": "string"
+          },
+          "details": {
+            "description": "Per-job payload. For `spatial-import` it carries `tenantId`, `locationId`, `fileRecordId`, `format`, `bounds`, `jobRunId`, `parcelCount` and the reconciliation counts `matched` / `created` / `flagged` — see `SpatialImportDetails`. Other job names carry their own keys."
+          }
+        },
+        "required": [
+          "jobName",
+          "jobRunId",
+          "success",
+          "startedAt",
+          "completedAt",
+          "durationMs",
+          "itemsScanned",
+          "itemsActioned",
+          "itemsSkipped"
+        ],
+        "description": "The worker’s return value once `state` is completed. NULL until then — poll until `state` is `completed` rather than treating a null result as a failure."
       },
       "JournalFileLink": {
         "type": "object",
@@ -9490,6 +9546,51 @@
           "status"
         ],
         "description": "The upload was staged and the parse queued. It has NOT been parsed yet — the parcels are replaced by the worker, so poll the job before refreshing the map."
+      },
+      "SpatialImportDetails": {
+        "type": "object",
+        "properties": {
+          "tenantId": {
+            "type": "string"
+          },
+          "locationId": {
+            "type": "string"
+          },
+          "fileRecordId": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "parcelCount": {
+            "type": "number"
+          },
+          "matched": {
+            "type": "number"
+          },
+          "created": {
+            "type": "number"
+          },
+          "flagged": {
+            "type": "number"
+          },
+          "bounds": {},
+          "jobRunId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenantId",
+          "locationId",
+          "fileRecordId",
+          "format",
+          "parcelCount",
+          "matched",
+          "created",
+          "flagged",
+          "jobRunId"
+        ],
+        "description": "The `details` payload of a completed `spatial-import` job. parcelCount is matched + created — what the file contained. flagged counts existing parcels the file omitted, which were kept rather than deleted, so it is deliberately NOT part of parcelCount."
       },
       "SpatialImportUpload": {
         "type": "object",
