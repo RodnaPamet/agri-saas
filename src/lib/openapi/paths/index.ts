@@ -29,6 +29,8 @@ import { registerNotificationPaths } from './notifications.paths';
 import { registerPlanningPaths } from './planning.paths';
 import { registerInventoryPaths } from './inventory.paths';
 import { registerAgroPaths } from './agro.paths';
+import { registerLeasePaths } from './leases.paths';
+import { registerCadastreAndReportPaths } from './cadastre-reports.paths';
 
 export function registerAllPaths(registry: OpenAPIRegistry): void {
     registerSecuritySchemes(registry);
@@ -55,4 +57,6 @@ export function registerAllPaths(registry: OpenAPIRegistry): void {
     registerPlanningPaths(registry);
     registerInventoryPaths(registry);
     registerAgroPaths(registry);
+    registerLeasePaths(registry);
+    registerCadastreAndReportPaths(registry);
 }

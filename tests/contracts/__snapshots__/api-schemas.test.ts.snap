@@ -755,6 +755,44 @@ exports[`API contract — per-schema snapshots schema: AuthRegisterRequest 1`] =
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: BlendLotsResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "outputLotId": {
+      "type": "string"
+    },
+    "outputLotCode": {
+      "type": "string"
+    },
+    "blendedQuantity": {
+      "type": "number"
+    },
+    "sourceCount": {
+      "type": "number"
+    },
+    "mergeLinks": {
+      "type": "number"
+    },
+    "attributes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number"
+      }
+    }
+  },
+  "required": [
+    "outputLotId",
+    "outputLotCode",
+    "blendedQuantity",
+    "sourceCount",
+    "mergeLinks",
+    "attributes"
+  ],
+  "description": "The blend’s outcome. mergeLinks is how many genealogy edges were written, which is what makes the result traceable back to its sources."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: BottomTabOrder 1`] = `
 "{
   "type": [
@@ -804,6 +842,29 @@ exports[`API contract — per-schema snapshots schema: BriefingAction 1`] = `
     "priority"
   ],
   "description": "\`field\` is null for an action that applies to the whole farm."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: CadastreFeatureCollection 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "FeatureCollection"
+      ]
+    },
+    "features": {
+      "type": "array",
+      "items": {}
+    }
+  },
+  "required": [
+    "type",
+    "features"
+  ],
+  "description": "GeoJSON. EMPTY rather than an error when the cadastre integration is not configured or the viewport holds nothing — a map with no overlay still works."
 }"
 `;
 
@@ -2525,6 +2586,21 @@ exports[`API contract — per-schema snapshots schema: CostEntry 1`] = `
   ],
   "additionalProperties": {},
   "description": "One recorded cost against land, a planting, a season or an inventory item. amount is a JSON number (Decimal converted, absent reads as 0). allocationBasis says WHICH land the cost spreads across and allocationParcelIds is the PARCEL_SUBSET denominator, sorted. description is encrypted commercial free text returned only on a single read — it is ABSENT rather than null on list rows, which is a different claim from \\"this entry has no description\\"."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: CostEntryInvoiceUpload 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "file": {
+      "type": "string",
+      "format": "binary"
+    }
+  },
+  "required": [
+    "file"
+  ]
 }"
 `;
 
@@ -5166,6 +5242,110 @@ exports[`API contract — per-schema snapshots schema: GrainBin 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: GrainBinDetail 1`] = `
+"{
+  "allOf": [
+    {
+      "$ref": "#/components/schemas/GrainBin"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "lots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "lotCode": {
+                "type": "string"
+              },
+              "itemName": {
+                "type": "string"
+              },
+              "quantity": {
+                "type": "number"
+              },
+              "unitSymbol": {
+                "type": "string"
+              },
+              "expiresAt": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "attributes": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "id",
+              "lotCode",
+              "itemName",
+              "quantity",
+              "unitSymbol",
+              "expiresAt",
+              "attributes"
+            ]
+          }
+        },
+        "lotsTruncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "lots",
+        "lotsTruncated"
+      ],
+      "additionalProperties": {}
+    }
+  ],
+  "description": "A bin with its stored lots. lotsTruncated is a real truncation marker — a rarity in this API — so a lot count taken from \`lots.length\` is wrong when it is true; use \`lotCount\`."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: GrainBinWriteAck 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "BIN",
+        "STORAGE"
+      ]
+    },
+    "capacityTonnes": {
+      "type": [
+        "number",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "kind",
+    "capacityTonnes"
+  ],
+  "description": "What create and update answer with. NOT the fill-computed bin — storedTonnes, fillPct and the rest require a read of the stock, so fetch the bin if you need them."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: GrainCostRow 1`] = `
 "{
   "type": "object",
@@ -5227,6 +5407,72 @@ exports[`API contract — per-schema snapshots schema: GrainCostRow 1`] = `
   ],
   "additionalProperties": {},
   "description": "One row of the grain cost rollup grouped by planting. totalCost = logEntryCost + stockCost. Cost attributed to a planting: journal entries linked to it plus the stock CONSUMED against those entries. An entry covering several plantings is split evenly between them."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: GrainDelivery 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "tenantId": {
+      "type": "string"
+    },
+    "contractId": {
+      "type": "string"
+    },
+    "deliveredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "tonnes": {
+      "type": "string"
+    },
+    "reference": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "deletedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "retentionUntil": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "id",
+    "tenantId",
+    "contractId",
+    "deliveredAt",
+    "tonnes",
+    "reference",
+    "createdAt",
+    "updatedAt",
+    "deletedAt",
+    "retentionUntil"
+  ],
+  "additionalProperties": {},
+  "description": "One delivery against a contract. tonnes is an exact decimal string. Deliveries are what \`fulfilment\` is derived from, so adding or removing one changes the contract’s position."
 }"
 `;
 
@@ -5898,6 +6144,59 @@ exports[`API contract — per-schema snapshots schema: InventoryPageInfo 1`] = `
     "hasNextPage"
   ],
   "description": "The \`{ items, pageInfo }\` convention — used by inventory, NOT by grain (\`{rows, totalCount, truncated}\`) or exchange (\`{rows, nextCursor}\`). One pager cannot serve all three."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: LeasePayment 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "leaseId": {
+      "type": "string"
+    },
+    "seasonYear": {
+      "type": "number"
+    },
+    "amountPaid": {
+      "type": "string"
+    },
+    "unit": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "paidAt": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "note": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "id",
+    "leaseId",
+    "seasonYear",
+    "amountPaid",
+    "unit",
+    "paidAt",
+    "note",
+    "createdAt"
+  ],
+  "description": "Rent PAID against a lease for one season. \`unit\` defaults to the lease’s canonical rent unit, which is what stops grain rent being booked against a money obligation. seasonYear is the season settled, which is not necessarily the year in paidAt."
 }"
 `;
 
@@ -9116,6 +9415,15 @@ exports[`API contract — per-schema snapshots schema: RawErrorResponse 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: RentRoll 1`] = `
+"{
+  "type": "object",
+  "properties": {},
+  "additionalProperties": {},
+  "description": "Rent by lessor with obligations and payments."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: RiskLevel 1`] = `
 "{
   "type": "string",
@@ -9225,6 +9533,129 @@ exports[`API contract — per-schema snapshots schema: Season 1`] = `
     "retentionUntil"
   ],
   "description": "A marketing/growing season — the \`seasonId\` that grain costs, yield records and contracts refer to. startDate and endDate come back as full instants even though they are written as calendar days."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: SeasonDiaryRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {},
+  "additionalProperties": {}
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: SeasonRecap 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "seasonId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "seasonName": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "year": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "totalAreaHa": {
+      "type": "number"
+    },
+    "harvestedAreaHa": {
+      "type": "number"
+    },
+    "totalYieldTonnes": {
+      "type": "number"
+    },
+    "totalNetTonnesStd": {
+      "type": "number"
+    },
+    "unadjustedTonnes": {
+      "type": "number"
+    },
+    "recordsWithMoisture": {
+      "type": "number"
+    },
+    "yieldRecordCount": {
+      "type": "number"
+    },
+    "avgYieldTPerHa": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "costPerHa": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "topFields": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "locationId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "yieldTonnes": {
+            "type": "number"
+          },
+          "areaHa": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "tPerHa": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "locationId",
+          "name",
+          "yieldTonnes",
+          "areaHa",
+          "tPerHa"
+        ]
+      }
+    },
+    "activityCount": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "seasonId",
+    "seasonName",
+    "year",
+    "totalAreaHa",
+    "harvestedAreaHa",
+    "totalYieldTonnes",
+    "totalNetTonnesStd",
+    "unadjustedTonnes",
+    "recordsWithMoisture",
+    "yieldRecordCount",
+    "avgYieldTPerHa",
+    "costPerHa",
+    "topFields",
+    "activityCount"
+  ],
+  "description": "A season’s headline figures. GROSS and moisture-standardised tonnage are both reported and are not interchangeable; costPerHa is null when nothing carried a cost, which a client must not render as zero."
 }"
 `;
 
@@ -10425,6 +10856,14 @@ exports[`API contract — per-schema snapshots schema: UserRefShort 1`] = `
     "name"
   ],
   "description": "User identity reference without email — used in audit-log entries and other places where leaking the email would be inappropriate."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: YearOnFarmRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {},
+  "additionalProperties": {}
 }"
 `;
 
