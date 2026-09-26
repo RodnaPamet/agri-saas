@@ -5,13 +5,18 @@
  * recorded "sent" in a component-local `useState(false)` whose only consumer
  * was `disabled={sent}`. It died on unmount.
  *
- * As with the offers modal, the harm is NOT a duplicate request.
- * `InsuranceLead` carries `@@unique([parcelId, inquirerTenantId])` and
- * `createInsuranceLead` turns the P2002 into `conflict('You have already
- * requested a quote for this parcel')`, so Postgres refuses the second write.
- * The harm is one layer up: the operator is invited to retype a quote request
- * and is then shown a raw English server string in a UI that defaults to
- * Bulgarian.
+ * The harm was never a duplicate row. It is one layer up: the operator is
+ * invited to retype a quote request, and is then shown a raw English server
+ * string in a UI that defaults to Bulgarian.
+ *
+ * This docblock used to say Postgres refused the second write, because
+ * `InsuranceLead` carried `@@unique([parcelId, inquirerTenantId])` and
+ * `createInsuranceLead` turned the P2002 into a 409. That unique was DROPPED on
+ * 2026-09-24 precisely so a farmer can re-ask with a corrected land size, and
+ * the sentence survived the change it was describing. What collapses a retry
+ * now is idempotency on an explicit `Idempotency-Key` (#1119) — which is a
+ * different mechanism with a different guarantee: it de-duplicates the SAME
+ * request without ever refusing a genuinely new one.
  *
  * What #651 could reuse and this could not: `/offers` is a server component
  * that already loaded the row, so the durable flag was one `select` field.
@@ -42,6 +47,7 @@ jest.mock('@/lib/tenant-context-provider', () => ({
     useTenantApiUrl: () => (p: string) => `/api/t/acme${p}`,
     useTenantHref: () => (p: string) => `/t/acme${p}`,
     useTenantContext: () => ({ tenantName: 'Acme', tenantSlug: 'acme', currencySymbol: '€' }),
+    useTenantCurrencySymbol: () => '€',
 }));
 
 const apiPost = jest.fn();
@@ -72,6 +78,7 @@ function mount(hasRequested = false, onRequested = jest.fn()) {
                 <AskInsuranceModal
                     parcelId="parcel-1"
                     locationId="loc-1"
+                    parcelName="North Block"
                     risk={RISK}
                     hasRequested={hasRequested}
                     onRequested={onRequested}
@@ -80,9 +87,6 @@ function mount(hasRequested = false, onRequested = jest.fn()) {
         ),
     };
 }
-
-/** `FormField` renders its label as a sibling span, so target the placeholder. */
-const messageBox = () => screen.getByPlaceholderText(COPY.messagePlaceholder);
 
 beforeEach(() => {
     setViewport('desktop');
@@ -144,55 +148,46 @@ describe('AskInsuranceModal — the sent state', () => {
     });
 });
 
-describe('AskInsuranceModal — sending', () => {
-    it('POSTs the parcel, risk snapshot and message, then confirms', async () => {
-        const { onRequested } = mount(false);
-        await userEvent.click(screen.getByRole('button', { name: COPY.open }));
-        await userEvent.type(messageBox(), 'Hail cover for this block');
-        await userEvent.click(screen.getByRole('button', { name: COPY.submit }));
+describe('AskInsuranceModal — what one tap opens', () => {
+    const QUOTE = enMessages.ag.risk.quote;
 
-        await waitFor(() => expect(apiPost).toHaveBeenCalledTimes(1));
-        expect(apiPost.mock.calls[0][1]).toMatchObject({
-            parcelId: 'parcel-1',
-            locationId: 'loc-1',
-            message: 'Hail cover for this block',
-            risk: RISK,
-        });
-
-        // The modal closing is what Cancel does too, so it is not by itself a
-        // confirmation.
-        await waitFor(() => expect(toastSuccess).toHaveBeenCalledTimes(1));
-        // …and the page-level server read is refreshed, so the durable flag
-        // catches up rather than relying on the optimistic one forever.
-        expect(onRequested).toHaveBeenCalledTimes(1);
-        expect(await screen.findByText(COPY.sent)).toBeInTheDocument();
-    });
-
-    it('leaves the modal open and shows the error when the POST fails', async () => {
-        apiPost.mockRejectedValueOnce(
-            new Error('You have already requested a quote for this parcel'),
-        );
-        const { onRequested } = mount(false);
-        await userEvent.click(screen.getByRole('button', { name: COPY.open }));
-        await userEvent.type(messageBox(), 'Anything');
-        await userEvent.click(screen.getByRole('button', { name: COPY.submit }));
-
-        expect(
-            await screen.findByText('You have already requested a quote for this parcel'),
-        ).toBeInTheDocument();
-        expect(screen.queryByText(COPY.sent)).not.toBeInTheDocument();
-        expect(toastSuccess).not.toHaveBeenCalled();
-        // No refresh on a failed write — there is nothing new to read.
-        expect(onRequested).not.toHaveBeenCalled();
-    });
-
-    it('does not carry the drafted message across a cancel', async () => {
+    it('goes straight to step 1 of the calculator, with nothing in between', async () => {
         mount(false);
         await userEvent.click(screen.getByRole('button', { name: COPY.open }));
-        await userEvent.type(messageBox(), 'Draft text');
-        await userEvent.click(screen.getByRole('button', { name: COPY.cancel }));
 
+        // Step 1's question is the drawer heading. ONE tap reaches it: no
+        // message box, no confirmation, no intermediate screen.
+        expect(await screen.findByText(QUOTE.step1Title)).toBeInTheDocument();
+    });
+
+    it('no longer shows the message-only form the calculator replaced', async () => {
+        mount(false);
         await userEvent.click(screen.getByRole('button', { name: COPY.open }));
-        expect(messageBox()).toHaveValue('');
+        await screen.findByText(QUOTE.step1Title);
+
+        // The old body was a single required Textarea and a Send button. If
+        // either reappears here, the calculator has been bypassed.
+        expect(screen.queryByPlaceholderText(COPY.messagePlaceholder)).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: COPY.submit })).not.toBeInTheDocument();
+    });
+
+    it('opens on step 1 even when the satellite read failed (risk: null)', async () => {
+        // The calculator uses no reading, so a cloudy week must not cost the
+        // farmer a quote. This is the regression guard for moving the trigger
+        // out of FarmRiskClient's `risk ? … : unavailable` branch.
+        render(
+            <TooltipProvider delayDuration={0}>
+                <AskInsuranceModal
+                    parcelId="parcel-1"
+                    locationId="loc-1"
+                    parcelName="North Block"
+                    risk={null}
+                    hasRequested={false}
+                    onRequested={jest.fn()}
+                />
+            </TooltipProvider>,
+        );
+        await userEvent.click(screen.getByRole('button', { name: COPY.open }));
+        expect(await screen.findByText(QUOTE.step1Title)).toBeInTheDocument();
     });
 });

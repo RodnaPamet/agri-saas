@@ -120,6 +120,7 @@ export function FarmRiskClient({
                                     parcelId={p.id}
                                     locationId={locationId}
                                     fallbackName={p.name}
+                                    fallbackCropType={p.cropType ?? null}
                                     areaHa={p.areaHa ?? null}
                                     geeConfigured={geeConfigured}
                                     hasRequested={inquired.has(p.id)}
@@ -138,6 +139,7 @@ function ParcelRiskCard({
     parcelId,
     locationId,
     fallbackName,
+    fallbackCropType,
     areaHa,
     geeConfigured,
     hasRequested,
@@ -146,6 +148,12 @@ function ParcelRiskCard({
     parcelId: string;
     locationId: string;
     fallbackName: string;
+    /**
+     * The crop from the parcels LIST row. `risk?.cropType` is richer but
+     * arrives with the satellite read, so the calculator would lose its
+     * preselect whenever that read is slow or failed.
+     */
+    fallbackCropType: string | null;
     areaHa: number | null;
     geeConfigured: boolean;
     /** Has this tenant already asked about THIS parcel? Server-read. */
@@ -232,19 +240,28 @@ function ParcelRiskCard({
                         </p>
                     )}
                     {!risk.configured && <p className="mt-2 text-xs text-content-subtle">{t('unavailable')}</p>}
-                    <div className="mt-3">
-                        <AskInsuranceModal
-                            parcelId={parcelId}
-                            locationId={locationId}
-                            risk={{ overall: risk.overall, ndvi: risk.ndvi, ndmi: risk.ndmi }}
-                            hasRequested={hasRequested}
-                            onRequested={onRequested}
-                        />
-                    </div>
                 </>
             ) : (
                 <p className="mt-2 text-sm text-content-subtle">{t('unavailable')}</p>
             )}
+            {/*
+              * OUTSIDE the risk branch on purpose. The calculator uses no
+              * satellite reading, so a cloudy week over Sentinel — or a read
+              * still in flight — must not be what stops a farmer getting a
+              * price. `risk` is simply null in that case.
+              */}
+            <div className="mt-3">
+                <AskInsuranceModal
+                    parcelId={parcelId}
+                    locationId={locationId}
+                    parcelName={risk?.name ?? fallbackName}
+                    risk={risk ? { overall: risk.overall, ndvi: risk.ndvi, ndmi: risk.ndmi } : null}
+                    cropType={risk?.cropType ?? fallbackCropType}
+                    areaHa={areaHa}
+                    hasRequested={hasRequested}
+                    onRequested={onRequested}
+                />
+            </div>
         </li>
     );
 }

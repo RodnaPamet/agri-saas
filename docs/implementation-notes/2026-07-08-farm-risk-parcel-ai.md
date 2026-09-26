@@ -20,8 +20,9 @@ deleting the GRC risk module (keep it behind CERTIFICATION, off the farm nav).
   "No data" levels, and the page still renders the parcel + the insurer action.
   Exposed at `GET /agro/parcel-analysis?parcelId=`.
 - **Farm Risk page.** `/farm-risk` picks a location and lists each parcel with
-  its vegetation/moisture/overall `StatusBadge`, the NDVI/NDMI values, and an
-  "Ask for insurance offer" button. Each parcel card fetches its analysis
+  its vegetation/moisture/overall `StatusBadge`, the NDVI/NDMI values, and a
+  "Request insurance quote" button (labelled "Ask for insurance offer" until
+  #1119's calculator renamed it). Each parcel card fetches its analysis
   on-demand (SWR → the cached route).
 - **Insurer lead.** `InsuranceLead` clones the #12 `PromotionLead` no-RLS lead
   pattern (`inquirerTenantId` is a plain FK, `parcelId` context, `riskJson`

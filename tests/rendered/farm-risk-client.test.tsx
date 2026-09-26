@@ -59,6 +59,10 @@ jest.mock('@/lib/tenant-context-provider', () => {
             tenantSlug: 'acme',
             currencySymbol: '€',
         }),
+        // The insurance calculator (#1120) reads the symbol through this hook.
+        // It renders on EVERY parcel card now — the trigger moved out of the
+        // `risk ? … : unavailable` branch — so the mock must carry it.
+        useTenantCurrencySymbol: () => '€',
     };
 });
 
@@ -261,5 +265,27 @@ describe('FarmRiskClient — landed risk payload', () => {
             ),
         ).toBeInTheDocument();
         expect(screen.queryByText('Loading…')).not.toBeInTheDocument();
+    });
+
+    it('still offers the insurance quote when the reading is unavailable', () => {
+        // #1120 moved the trigger OUT of the `risk ? … : unavailable` branch.
+        // The calculator uses no satellite reading, so a cloudy week over
+        // Sentinel must not be what costs a farmer a price. Put the trigger
+        // back inside that branch and this goes red.
+        setRisk({ data: undefined, isLoading: false });
+        renderClient(true);
+
+        expect(
+            screen.getByRole('button', { name: 'Request insurance quote' }),
+        ).toBeEnabled();
+    });
+
+    it('offers the insurance quote while the reading is still loading', () => {
+        setRisk({ data: undefined, isLoading: true });
+        renderClient(true);
+
+        expect(
+            screen.getByRole('button', { name: 'Request insurance quote' }),
+        ).toBeEnabled();
     });
 });
