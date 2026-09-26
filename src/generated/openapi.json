@@ -5460,6 +5460,59 @@
         "additionalProperties": {},
         "description": "The market observation a benchmark was computed against — carried so a client can attribute and date the claim instead of presenting it as an unsourced fact."
       },
+      "NativeExchangeRequest": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "The single-use code from /complete."
+          },
+          "code_verifier": {
+            "type": "string",
+            "description": "The PKCE verifier. `codeVerifier` is also accepted."
+          },
+          "codeVerifier": {
+            "type": "string",
+            "description": "camelCase alias of `code_verifier`."
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "description": "One of `code_verifier` / `codeVerifier` is REQUIRED — the schema cannot express \"exactly one of\" without rejecting the other spelling, so both are optional here and the handler requires one. Sending neither is 400 invalid_grant."
+      },
+      "NativeTokenPair": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string"
+          },
+          "refreshToken": {
+            "type": "string"
+          },
+          "tokenType": {
+            "type": "string",
+            "enum": [
+              "Bearer"
+            ]
+          },
+          "expiresIn": {
+            "type": "number"
+          },
+          "refreshExpiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "accessToken",
+          "refreshToken",
+          "tokenType",
+          "expiresIn",
+          "refreshExpiresAt"
+        ],
+        "description": "expiresIn is a DURATION in seconds for the access token; refreshExpiresAt is an ISO INSTANT for the refresh token. The two are deliberately different kinds — do not treat expiresIn as a timestamp."
+      },
       "NewsItem": {
         "type": "object",
         "properties": {
@@ -22070,6 +22123,427 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/native/start": {
+      "get": {
+        "operationId": "startNativeSignIn",
+        "summary": "Begin native sign-in in the system browser",
+        "description": "Opened by the app in an `ASWebAuthenticationSession`, NOT fetched. Stashes the PKCE challenge and the app’s delivery URI in a short-lived HttpOnly cookie and hands off to the existing NextAuth provider flow — nothing about provider sign-in is reimplemented. \n\n`redirect_uri` is checked against an allowlist; an unlisted one is a 400 `redirect_uri_not_allowed` rather than a redirect, which is what stops this being an open redirect. \n\nThe challenge lives in the cookie rather than in the OAuth `state` because `state` round-trips through the provider and lands in browser history.",
+        "tags": [
+          "Auth"
+        ],
+        "security": [],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Where the CODE should be delivered. Allowlisted."
+            },
+            "required": true,
+            "description": "Where the CODE should be delivered. Allowlisted.",
+            "name": "redirect_uri",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "PKCE challenge (S256)."
+            },
+            "required": true,
+            "description": "PKCE challenge (S256).",
+            "name": "code_challenge",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "S256. Anything else is a 400."
+            },
+            "required": false,
+            "description": "S256. Anything else is a 400.",
+            "name": "code_challenge_method",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Defaults to google. An unknown one is a 400."
+            },
+            "required": false,
+            "description": "Defaults to google. An unknown one is a 400.",
+            "name": "provider",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Redirect to the provider via NextAuth. Follow it in the browser session; there is no body."
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/native/complete": {
+      "get": {
+        "operationId": "completeNativeSignIn",
+        "summary": "Mint the code and hand it to the app",
+        "description": "Reached by the SYSTEM browser after the provider flow has set a session cookie. Reads the handoff cookie, mints a short-lived PKCE-bound code against the session that now exists, and redirects to the app’s URI carrying the CODE AND NOTHING ELSE — no token, no identity. \n\nThe code is single-use and short-lived; it is spent at `/exchange`. \n\n**401 `not_authenticated`** means the browser reached here without a session — the provider step did not complete, and the client must restart at `/start`.",
+        "tags": [
+          "Auth"
+        ],
+        "security": [],
+        "responses": {
+          "303": {
+            "description": "Redirect to the app’s registered URI with the single-use code. No body."
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/native/exchange": {
+      "post": {
+        "operationId": "exchangeNativeAuthCode",
+        "summary": "Exchange the code and PKCE verifier for a token pair",
+        "description": "The only step the app performs itself, and the only one with a JSON body. Unauthenticated by construction: the code plus the verifier ARE the credential. Rate-limited at the pre-auth tier. \n\nThe body accepts EITHER `code_verifier` or `codeVerifier` — both spellings are read, so a client need not guess. \n\nThe issued credential is a child of the SAME session the browser sign-in created, so every existing revocation lever reaches it with no separate bookkeeping. \n\n**Every failure is `400 { \"error\": \"invalid_grant\" }`** — unknown code, expired code and PKCE mismatch are indistinguishable ON PURPOSE. Do not branch on the reason; restart the flow at `/start`.",
+        "tags": [
+          "Auth"
+        ],
+        "security": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NativeExchangeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The token pair.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NativeTokenPair"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/native/adopt": {
+      "get": {
+        "operationId": "adoptNativeSessionIntoWebview",
+        "summary": "Turn a native bearer into a webview cookie session",
+        "description": "NOT part of the sign-in sequence. A Capacitor shell renders server pages in a WKWebView, and those are authenticated by COOKIE — `getServerSession()` reads the session store and never consults the header. A WKWebView cannot attach an `Authorization` header to a top-level navigation, and the system-browser flow writes its cookies into Safari’s jar rather than the app’s. So after a flawless native sign-in the bearer is valid and the webview is still logged out; this closes that gap. \n\nCall it with the bearer in the `Authorization` header, then follow the redirect: the response sets the session cookie and sends the shell on to `next`. \n\n`next` is sanitised to a path within this origin — an open redirect here would be reached with a VALID credential, which is exactly when one is worth most to an attacker. \n\n**401 `invalid_bearer`** for an absent, malformed or revoked token.",
+        "tags": [
+          "Auth"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Same-origin path to land on. Sanitised server-side."
+            },
+            "required": false,
+            "description": "Same-origin path to land on. Sanitised server-side.",
+            "name": "next",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "303": {
+            "description": "Sets the session cookie and redirects to `next`. No body."
           },
           "400": {
             "description": "Invalid request body or query parameters.",

@@ -144,17 +144,64 @@ describe('the generated OpenAPI document describes endpoints', () => {
         expect(missing).toEqual([]);
     });
 
-    it('every operation describes a SUCCESS body, not just a status', () => {
-        // A path with no response schema tells a client nothing. Listing
-        // endpoints while documenting none of them is the same
-        // empty-selection defect one level down.
+    /**
+     * Every operation says what SUCCESS looks like — a body, or a documented
+     * reason there is none.
+     *
+     * The rule was originally "has a 2xx carrying content", which was right for
+     * the population it was written against: every operation in the spec
+     * returned JSON. It is wrong for an operation whose success is a REDIRECT.
+     * `/api/auth/native/start` hands the system browser to the provider and
+     * `/complete` hands the code back to the app's URI; both answer 3xx and
+     * neither has a body to describe, so demanding one would force a documented
+     * 200 that does not exist — a schema that lies is worse than no schema.
+     *
+     * So the exemption is by REASON rather than by absence: a 3xx success has no
+     * body because it is a redirect, and 204/205 have none by HTTP definition.
+     * Anything else with no 2xx content still fails, which is the case the test
+     * exists for. Same correction as `openapi-response-shapes-ratchet`, which
+     * skipped every schema-less 2xx unconditionally until it was asked WHY the
+     * schema was missing.
+     */
+    it('every operation describes a SUCCESS body, or a reason it has none', () => {
         const bad = operations(readSpec())
             .filter((o) => {
                 const responses = Object.entries(o.responses ?? {});
-                return !responses.some(([status, r]) => status.startsWith('2') && r?.content);
+                // A described body — the ordinary case.
+                if (responses.some(([status, r]) => status.startsWith('2') && r?.content)) {
+                    return false;
+                }
+                // A redirect IS the success; there is nothing to carry.
+                if (responses.some(([status]) => status.startsWith('3'))) return false;
+                // Bodyless by HTTP definition.
+                if (responses.some(([status]) => status === '204' || status === '205')) return false;
+                return true;
             })
             .map((o) => o.operationId ?? '(unnamed)');
         expect(bad).toEqual([]);
+    });
+
+    it('the exemption is narrow — a 2xx JSON operation with no schema still fails', () => {
+        // Proven against a synthetic document rather than the real one, because
+        // the real one has no such operation: an exemption nothing exercises is
+        // an exemption nobody can trust. If this ever passes by returning an
+        // empty list, the widening above has swallowed the rule.
+        const synthetic = {
+            paths: {
+                '/x': { get: { operationId: 'bodyless200', responses: { 200: { description: 'Fine.' } } } },
+                '/y': { get: { operationId: 'redirects', responses: { 303: { description: 'Off you go.' } } } },
+            },
+        };
+        const bad = operations(synthetic as never)
+            .filter((o) => {
+                const responses = Object.entries(o.responses ?? {});
+                if (responses.some(([status, r]) => status.startsWith('2') && r?.content)) return false;
+                if (responses.some(([status]) => status.startsWith('3'))) return false;
+                if (responses.some(([status]) => status === '204' || status === '205')) return false;
+                return true;
+            })
+            .map((o) => o.operationId);
+        expect(bad).toEqual(['bodyless200']);
     });
 
     it('declares the security schemes operations reference', () => {

@@ -5691,6 +5691,65 @@ exports[`API contract — per-schema snapshots schema: MarketReference 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: NativeExchangeRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "code": {
+      "type": "string",
+      "description": "The single-use code from /complete."
+    },
+    "code_verifier": {
+      "type": "string",
+      "description": "The PKCE verifier. \`codeVerifier\` is also accepted."
+    },
+    "codeVerifier": {
+      "type": "string",
+      "description": "camelCase alias of \`code_verifier\`."
+    }
+  },
+  "required": [
+    "code"
+  ],
+  "description": "One of \`code_verifier\` / \`codeVerifier\` is REQUIRED — the schema cannot express \\"exactly one of\\" without rejecting the other spelling, so both are optional here and the handler requires one. Sending neither is 400 invalid_grant."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: NativeTokenPair 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "accessToken": {
+      "type": "string"
+    },
+    "refreshToken": {
+      "type": "string"
+    },
+    "tokenType": {
+      "type": "string",
+      "enum": [
+        "Bearer"
+      ]
+    },
+    "expiresIn": {
+      "type": "number"
+    },
+    "refreshExpiresAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "accessToken",
+    "refreshToken",
+    "tokenType",
+    "expiresIn",
+    "refreshExpiresAt"
+  ],
+  "description": "expiresIn is a DURATION in seconds for the access token; refreshExpiresAt is an ISO INSTANT for the refresh token. The two are deliberately different kinds — do not treat expiresIn as a timestamp."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: NewsItem 1`] = `
 "{
   "type": "object",
