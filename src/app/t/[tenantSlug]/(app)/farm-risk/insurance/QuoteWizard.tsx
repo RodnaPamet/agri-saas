@@ -10,7 +10,7 @@
  * (a cached PWA bundle against a newer tariff, which is a real situation on an
  * installed app) the toast reports the SERVER's figure, not this one.
  */
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { z } from 'zod';
 import { StepWizard, type StepWizardStep } from '@/components/ui/step-wizard';
@@ -18,7 +18,8 @@ import { useIsOnline } from '@/components/ui/async-state';
 import { useToast } from '@/components/ui/hooks';
 import { apiPost } from '@/lib/api-client';
 import { useTenantApiUrl, useTenantCurrencySymbol } from '@/lib/tenant-context-provider';
-import { formatCents } from '@/lib/insurance';
+import { haToDca, trimNumber } from '@/lib/agro/rate-calc';
+import { formatCents, getProduct, sumCropArea, type CropAreaParcel } from '@/lib/insurance';
 import { CoverStep } from './CoverStep';
 import { PaymentStep } from './PaymentStep';
 import { ProductStep } from './ProductStep';
@@ -49,6 +50,14 @@ export interface QuoteWizardProps {
     risk: { overall: string; ndvi: number | null; ndmi: number | null } | null;
     cropType?: string | null;
     areaHa?: number | null;
+    /** The selected location's name, for the crop-aggregate chip's label. */
+    locationName?: string | null;
+    /**
+     * Every parcel at this location. The chip sums the ones sharing this
+     * parcel's crop — the read behind it has no LIMIT, so the sum is the whole
+     * location rather than a page of it.
+     */
+    locationParcels?: readonly CropAreaParcel[];
     onRequested?: () => void;
 }
 
@@ -61,10 +70,13 @@ export function QuoteWizard({
     risk,
     cropType,
     areaHa,
+    locationName,
+    locationParcels,
     onRequested,
 }: QuoteWizardProps) {
     const t = useTranslations('ag.risk.quote');
     const tAsk = useTranslations('ag.risk.ask');
+    const tProducts = useTranslations('insurance.products');
     const buildUrl = useTenantApiUrl();
     const symbol = useTenantCurrencySymbol();
     const toast = useToast();
@@ -94,6 +106,46 @@ export function QuoteWizard({
               ? t('refusalInstalments')
               : null;
 
+    /** This parcel's own prefilled area, rounded the way the field shows it. */
+    const parcelAreaDca = areaHa == null ? null : Math.round(haToDca(areaHa) * 100) / 100;
+
+    const cropTotal = useMemo(() => {
+        if (!state.productKey || !locationParcels?.length) return null;
+        // Peril products match no crop, so the aggregate is empty for them and
+        // the chip never appears — no separate kind check needed.
+        if (getProduct(state.productKey)?.kind !== 'crop') return null;
+        const total = sumCropArea(locationParcels, state.productKey);
+        // Two or more parcels, and a figure that actually differs from this
+        // parcel's own — otherwise the chip offers what the field already holds.
+        if (total.parcelCount < 2) return null;
+        if (parcelAreaDca != null && total.areaDca === parcelAreaDca) return null;
+        return total;
+    }, [state.productKey, locationParcels, parcelAreaDca]);
+
+    const cropChip = useMemo(() => {
+        if (!cropTotal || !state.productKey) return null;
+        return {
+            areaDca: cropTotal.areaDca,
+            label: t('cropChip', {
+                product: tProducts(`${state.productKey}.name`),
+                location: locationName ?? '',
+                area: trimNumber(cropTotal.areaDca),
+                count: cropTotal.parcelCount,
+            }),
+        };
+    }, [cropTotal, state.productKey, locationName, t, tProducts]);
+
+    /**
+     * DERIVED from the value at send time, never tracked through events — so it
+     * cannot claim "all your wheat" over a figure the farmer has since edited.
+     */
+    const areaScope: 'parcel' | 'crop-at-location' | 'custom' =
+        areaDca != null && parcelAreaDca != null && areaDca === parcelAreaDca
+            ? 'parcel'
+            : areaDca != null && cropTotal != null && areaDca === cropTotal.areaDca
+              ? 'crop-at-location'
+              : 'custom';
+
     const premiumText = ok
         ? t('premiumLine', {
               premium: formatCents(ok.premiumCents, symbol),
@@ -116,6 +168,12 @@ export function QuoteWizard({
                         areaDca,
                         sumInsuredCents,
                         instalments: state.instalments,
+                        areaScope,
+                        // Only meaningful for the crop-wide scope, and the
+                        // server REQUIRES it there.
+                        ...(areaScope === 'crop-at-location' && cropTotal
+                            ? { coveredParcelCount: cropTotal.parcelCount }
+                            : {}),
                     },
                     message: state.note.trim() || undefined,
                 },
@@ -176,6 +234,10 @@ export function QuoteWizard({
                     sumError={sumError}
                     symbol={symbol}
                     autoFocusArea={areaHa == null}
+                    cropChip={cropChip}
+                    onUseCropChip={() => {
+                        if (cropChip) q.setArea(trimNumber(cropChip.areaDca));
+                    }}
                     onArea={q.setArea}
                     onSum={q.setSum}
                     onSumMode={q.setSumMode}

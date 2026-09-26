@@ -13,6 +13,7 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
 import { QuoteWizard } from './insurance/QuoteWizard';
+import type { CropAreaParcel } from '@/lib/insurance';
 
 interface AskInsuranceModalProps {
     parcelId: string;
@@ -30,6 +31,10 @@ interface AskInsuranceModalProps {
     cropType?: string | null;
     /** Prefills the area, in HECTARES; the calculator converts to decares. */
     areaHa?: number | null;
+    /** The location's name, for the crop-aggregate chip (#1121). */
+    locationName?: string | null;
+    /** Every parcel at this location, for that aggregate. */
+    locationParcels?: readonly CropAreaParcel[];
     /**
      * Server-read: has this tenant already requested a quote for this parcel?
      *
@@ -58,6 +63,8 @@ export function AskInsuranceModal({
     risk,
     cropType,
     areaHa,
+    locationName,
+    locationParcels,
     hasRequested = false,
     onRequested,
 }: AskInsuranceModalProps) {
@@ -96,6 +103,8 @@ export function AskInsuranceModal({
                 risk={risk}
                 cropType={cropType}
                 areaHa={areaHa}
+                locationName={locationName}
+                locationParcels={locationParcels}
                 onRequested={() => {
                     setJustSent(true);
                     onRequested?.();

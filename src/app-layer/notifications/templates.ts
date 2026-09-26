@@ -95,6 +95,10 @@ export interface InsuranceLeadPayload {
         instalmentsCents: number[];
         premiumPerDcaCents: number;
         currencySymbol: string;
+        /** What the area covers. Absent on leads written before #1121. */
+        areaScope?: 'parcel' | 'crop-at-location' | 'custom';
+        /** Only set for 'crop-at-location'. */
+        coveredParcelCount?: number;
     } | null;
 }
 
@@ -296,6 +300,39 @@ export async function buildInsuranceLeadEmail(
             locale,
             `insurance.products.${quote.productKey}.name`,
         );
+        /**
+         * The unit is TRANSLATED, not hardcoded. This line read
+         * `${quote.areaDca} dca` until #1121 — an English unit in an email that
+         * goes out in Bulgarian, where it is "дка".
+         */
+        const areaValue = await t('areaUnit', { dca: quote.areaDca });
+        /**
+         * What the area covers, appended to the area itself so the operator
+         * reads one figure with its meaning: "1240 dca — all 12 wheat parcels
+         * at Polje Sever". 'parcel' adds nothing, being the default.
+         */
+        let areaText = areaValue;
+        if (quote.areaScope === 'crop-at-location' && quote.coveredParcelCount != null) {
+            /**
+             * TWO keys, not one ICU plural: `translateFor` does plain `{name}`
+             * interpolation and has NO plural support, so a `{count, plural, …}`
+             * message reaches the operator's inbox as its own source text. A
+             * guard now pins this (`tests/guards/no-icu-plural-in-email-copy`).
+             */
+            const parcels =
+                quote.coveredParcelCount === 1
+                    ? await t('scopeParcelsOne', { product: productName })
+                    : await t('scopeParcelsMany', {
+                          count: quote.coveredParcelCount,
+                          product: productName,
+                      });
+            // Without a location name the "at …" half would dangle.
+            areaText = locationName
+                ? await t('areaScopeCrop', { area: areaValue, parcels, location: locationName })
+                : await t('areaScopeCropNoLocation', { area: areaValue, parcels });
+        } else if (quote.areaScope === 'custom') {
+            areaText = await t('areaScopeCustom', { area: areaValue });
+        }
         const sym = quote.currencySymbol;
         const schedule =
             quote.instalmentsCents.length === 1
@@ -308,7 +345,7 @@ export async function buildInsuranceLeadEmail(
             label: quoteLabel,
             lines: [
                 `${productLabel}: ${productName}`,
-                `${areaLabel}: ${quote.areaDca} dca`,
+                `${areaLabel}: ${areaText}`,
                 `${sumInsuredLabel}: ${formatCents(quote.sumInsuredCents, sym)}`,
                 `${tariffLabel}: ${quote.tariffBp / 100} %`,
                 `${premiumLabel}: ${formatCents(quote.premiumCents, sym)}`,

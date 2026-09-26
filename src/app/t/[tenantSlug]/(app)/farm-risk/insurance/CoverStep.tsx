@@ -9,6 +9,7 @@
  * farmer can see which reading they got is to be shown it.
  */
 import { useTranslations } from 'next-intl';
+import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { ToggleGroup } from '@/components/ui/toggle-group';
@@ -18,6 +19,8 @@ import { PremiumLine } from './PremiumLine';
 import type { SumMode } from './useInsuranceQuote';
 
 export function CoverStep({
+    cropChip,
+    onUseCropChip,
     areaRaw,
     sumRaw,
     sumMode,
@@ -32,6 +35,13 @@ export function CoverStep({
     onSum,
     onSumMode,
 }: {
+    /**
+     * The "all your wheat here" aggregate, or null when it does not apply —
+     * a peril product, a single parcel, or a total that equals this parcel's
+     * own area. Composed by the wizard; this step only renders it.
+     */
+    cropChip: { label: string; areaDca: number } | null;
+    onUseCropChip: () => void;
     areaRaw: string;
     sumRaw: string;
     sumMode: SumMode;
@@ -50,6 +60,23 @@ export function CoverStep({
 
     return (
         <div className="space-y-default">
+            {cropChip ? (
+                /*
+                 * A farmer insures a CROP, not a parcel: twelve wheat parcels
+                 * should be one request. A button rather than a toggle — it
+                 * fills the field, and the farmer can still edit afterwards,
+                 * which derives as a custom area.
+                 */
+                <Button
+                    id="insurance-quote-crop-chip"
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={onUseCropChip}
+                >
+                    {cropChip.label}
+                </Button>
+            ) : null}
             <FormField
                 label={t('areaLabel')}
                 error={areaError}
