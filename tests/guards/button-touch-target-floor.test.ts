@@ -35,15 +35,71 @@ import * as path from 'node:path';
 
 const ROOT = path.resolve(__dirname, '../..');
 const VARIANTS = fs.readFileSync(path.join(ROOT, 'src/components/ui/button-variants.ts'), 'utf8');
+const TOGGLE_GROUP = fs.readFileSync(path.join(ROOT, 'src/components/ui/toggle-group.tsx'), 'utf8');
+
+/**
+ * Strip comments before asserting on source text.
+ *
+ * Learned the hard way while writing the ToggleGroup block below: the comment
+ * EXPLAINING the floor also contains `pointer-coarse:min-h-11`, so deleting the
+ * real class left the guard green — satisfied by the prose describing the thing
+ * it was meant to protect. Masking at the read seam is the fix; asserting on a
+ * longer anchor only moves the problem.
+ */
+function codeOf(src: string): string {
+    return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+}
 
 /** The base class list — everything before the `variants:` block. */
 const BASE = VARIANTS.slice(0, VARIANTS.indexOf('variants:'));
 
+describe('the OTHER primitive a finger presses — ToggleGroup', () => {
+    /**
+     * `Button` is not the only tappable control. `ToggleGroup` renders its own
+     * `<button>` per option and so never inherited the #765 floor: its ladder is
+     * `px-3 py-1 text-sm`, about 30px tall against the 44px minimum. The
+     * insurance calculator (#1122) put three of them on a phone screen — cover
+     * type, total vs per-dca, and the instalment count — which is what surfaced
+     * it.
+     *
+     * Checked as source text for the same reason as the buttons above: Tailwind
+     * resolves `pointer-coarse:` at build time and jsdom answers `false` to
+     * every media query, so a rendered test cannot reach the branch.
+     */
+    const OPTION_BASE = (() => {
+        const code = codeOf(TOGGLE_GROUP);
+        const i = code.indexOf('toggleOptionVariants');
+        expect(i).toBeGreaterThan(-1);
+        const rest = code.slice(i);
+        return rest.slice(0, rest.indexOf('variants:'));
+    })();
+
+    it('applies the 44px floor on the option BASE, so both sizes inherit it', () => {
+        expect(OPTION_BASE).toContain('pointer-coarse:min-h-11');
+    });
+
+    it('is not vacuous — the slice really is the option base', () => {
+        // If the extraction silently returned '' the assertion above would fail
+        // rather than pass, but pin the shape anyway so a rename is loud.
+        expect(OPTION_BASE).toContain('text-content-emphasis');
+        expect(OPTION_BASE.length).toBeGreaterThan(80);
+    });
+
+    it('reads CODE, not comments — a comment naming the class cannot satisfy it', () => {
+        // The positive control for `codeOf`. Without it this whole block is
+        // satisfied by its own explanatory comment.
+        expect(codeOf('// pointer-coarse:min-h-11\nconst x = 1;')).not.toContain('min-h-11');
+        expect(codeOf('/* pointer-coarse:min-h-11 */ const x = 1;')).not.toContain('min-h-11');
+        expect(codeOf('const c = "pointer-coarse:min-h-11";')).toContain('min-h-11');
+    });
+});
+
 describe('buttons meet the touch-target minimum on coarse pointers', () => {
     it('the BASE applies a 44px floor, so every variant inherits it', () => {
         // On the base, not per-size: a floor that has to be repeated on each
-        // rung is one a future rung will be added without.
-        expect(BASE).toContain('pointer-coarse:min-h-11');
+        // rung is one a future rung will be added without. Comments masked, so
+        // prose about the floor can never stand in for the floor.
+        expect(codeOf(BASE)).toContain('pointer-coarse:min-h-11');
     });
 
     it('icon-only buttons raise WIDTH too — square targets need both', () => {

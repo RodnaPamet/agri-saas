@@ -67,9 +67,15 @@ export function FarmRiskClient({
     // Which parcels has this tenant already asked about? Fetched ONCE for the
     // whole page rather than per card: the answer is a small id set and the
     // rows are rendered from one list, so N cards would otherwise mean N
-    // identical requests on a phone. `@@unique([parcelId, inquirerTenantId])`
-    // is what makes a second request impossible, and this is what stops the UI
-    // offering one anyway.
+    // identical requests on a phone.
+    //
+    // It drives a NOTE, not a disabled button. This comment used to say
+    // `@@unique([parcelId, inquirerTenantId])` made a second request
+    // impossible; that unique was dropped on 2026-09-24 precisely so a farmer
+    // can re-ask with a corrected land size. What collapses a RETRY now is
+    // idempotency on an explicit `Idempotency-Key` (#1119), which is a
+    // different guarantee: it de-duplicates the same request without ever
+    // refusing a genuinely new one.
     const inquiredQ = useTenantSWR<{ parcelIds: string[] }>('/insurance/leads');
     const inquired = useMemo(
         () => new Set(inquiredQ.data?.parcelIds ?? []),

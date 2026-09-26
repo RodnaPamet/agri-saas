@@ -6,7 +6,7 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { withValidatedBody } from '@/lib/validation/route';
 import { jsonResponse } from '@/lib/api-response';
 import { jsonWithETag } from '@/lib/http/etag';
-import { EXCHANGE_INQUIRY_LIMIT } from '@/lib/security/rate-limit-middleware';
+import { INSURANCE_LEAD_LIMIT } from '@/lib/security/rate-limit-middleware';
 import { codedBadRequest } from '@/lib/errors/types';
 
 /**
@@ -99,5 +99,8 @@ export const POST = withApiErrorHandling(
             );
         },
     ),
-    { rateLimit: { config: EXCHANGE_INQUIRY_LIMIT, scope: 'insurance-lead' } },
+    // Its OWN tier, not the exchange inquiry's: a per-minute window allows 600
+    // operator emails an hour now that repeat asks are legitimate. Scope is
+    // unchanged so existing counters keep their meaning.
+    { rateLimit: { config: INSURANCE_LEAD_LIMIT, scope: 'insurance-lead' } },
 );

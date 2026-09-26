@@ -11,7 +11,7 @@
  * The premium the SERVER returns is the one that counts; this is the preview
  * that makes the server's answer predictable.
  */
-import { useCallback, useMemo, useReducer, useRef } from 'react';
+import { useCallback, useMemo, useReducer, useRef, useState } from 'react';
 import { haToDca, trimNumber } from '@/lib/agro/rate-calc';
 import {
     getProduct,
@@ -90,6 +90,15 @@ export interface UseInsuranceQuote {
     counterpartCents: number | null;
     tariffBp: number | null;
     quote: QuoteResult | null;
+    /**
+     * Has the farmer changed anything they would mind losing?
+     *
+     * Compared against the INITIAL state rather than tracking edits, so it
+     * cannot drift, and it counts the AREA too — a farmer who corrected the
+     * prefilled area and nothing else has still done work, and a silent
+     * discard on Escape would throw it away.
+     */
+    isDirty: boolean;
     setKind: (kind: ProductKind) => void;
     setProduct: (key: InsuranceProductKey) => void;
     setArea: (raw: string) => void;
@@ -113,7 +122,16 @@ export function useInsuranceQuote({
     cropType,
     areaHa,
 }: UseInsuranceQuoteArgs): UseInsuranceQuote {
-    const [state, dispatch] = useReducer(reducer, undefined, (): QuoteState => {
+    /**
+     * The state this calculator STARTED in, held in state rather than a ref.
+     *
+     * `isDirty` compares against it on every render, and a ref may not be read
+     * during render — the React compiler lint says so, and it is right: a ref
+     * read in render is invisible to the compiler's memoisation. `useState`'s
+     * lazy initialiser runs exactly once, which is the same "capture it on first
+     * render" guarantee without the hazard.
+     */
+    const [initialState] = useState<QuoteState>((): QuoteState => {
         // `productForCrop` returns the KEY, so look the product up for its kind.
         const preselectedKey = productForCrop(cropType) ?? null;
         const preselected = preselectedKey ? getProduct(preselectedKey) : undefined;
@@ -129,6 +147,15 @@ export function useInsuranceQuote({
             note: '',
         };
     });
+    const [state, dispatch] = useReducer(reducer, initialState);
+
+    const isDirty =
+        state.areaRaw !== initialState.areaRaw ||
+        state.sumRaw !== initialState.sumRaw ||
+        state.note !== initialState.note ||
+        state.productKey !== initialState.productKey ||
+        state.instalments !== initialState.instalments ||
+        state.sumMode !== initialState.sumMode;
 
     const areaDca = useMemo(() => parseAreaDca(state.areaRaw), [state.areaRaw]);
 
@@ -182,6 +209,7 @@ export function useInsuranceQuote({
 
     return {
         state,
+        isDirty,
         areaDca,
         sumInsuredCents,
         counterpartCents,

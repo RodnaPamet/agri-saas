@@ -190,7 +190,17 @@ const ROOT = path.resolve(__dirname, '../..');
 // AND desktop, and `insurance-quote-wizard-bg` renders the same flow in
 // Bulgarian, which is the app's DEFAULT locale and so the screen most farmers
 // actually see.
-const RENDERED_TEST_FLOOR = 240;
+// 240 → 241: the calculator's accessibility pass (#1122) — axe across all three
+// steps on the phone default, the keyboard-only walk, and the live region. It is
+// its own file rather than more cases in `insurance-quote-wizard` because the
+// dismissal assertions have to force the DESKTOP path: on a phone `Modal` is a
+// Vaul drawer whose dismissal jsdom cannot drive, so an Escape assertion there
+// passes whether or not the confirm exists.
+//
+// Raised because this PR ADDS verification, which is what this ratchet asks of a
+// PR that adds rendered tests. Nothing here lowers a floor or widens a baseline
+// to go green — #1122's brief forbids that, and the two are opposite moves.
+const RENDERED_TEST_FLOOR = 241;
 // Lowered 55 → 54 in the risk-quantification uproot (2026-08-08).
 // `ai-risk-assessment.spec.ts` and `new-risk-modal.spec.ts` were both
 // wholly about the deleted register; the specs that merely REFERENCED a
@@ -235,7 +245,14 @@ const RENDERED_TEST_FLOOR = 240;
 // driven the freeze→share→anonymous-view journey that is now gone.
 //
 // Upward-only from 44.
-const E2E_SPEC_FLOOR = 61;
+// 61 → 62: `insurance-quote.spec.ts` (#1122) — the calculator's real POST on a
+// phone, and "Request sent" surviving a RELOAD, which is the whole reason
+// `listInquiredParcelIds` exists and the one thing no rendered test can show.
+// Tagged `@mobile`, so it runs on both phone projects and not on desktop, where
+// `.tap()` would fail for want of `hasTouch`.
+//
+// Raised because this PR ADDS a spec. Nothing here lowers a floor to go green.
+const E2E_SPEC_FLOOR = 62;
 const REGISTRY_FLOOR = 5;
 
 /** Max a live count may exceed its floor before the floor must rise. */

@@ -1,9 +1,16 @@
-/// Insurance quote requests from the per-parcel Risk page ("Ask for offer", #13).
+/// Insurance quote requests from the per-parcel Risk page (#13), opened by the
+/// "Request insurance quote" button and priced by the calculator (#1120).
 ///
 /// Lead-gen only — no insurer API. Like `PromotionLead` / `ExchangeInquiry`,
 /// `inquirerTenantId` is a PLAIN FK to Tenant.id (NOT a tenantId RLS column),
-/// so the row is not tenant-scoped and needs no RLS. The `@@unique` caps a
-/// tenant to one open request per parcel.
+/// so the row is not tenant-scoped and needs no RLS.
+///
+/// SEVERAL requests per parcel are allowed. This docblock used to say the
+/// `@@unique` capped a tenant to one open request per parcel; that unique —
+/// `([parcelId, inquirerTenantId])` — was DROPPED on 2026-09-24 so a farmer
+/// could re-ask with a corrected land size. The remaining unique is on
+/// `([inquirerTenantId, clientMutationId])` and does something different: it
+/// collapses a RETRY of the same request without refusing a new one.
 model InsuranceLead {
   id               String   @id @default(cuid())
   /// Requesting tenant — plain FK to Tenant.id (NOT a tenantId RLS column).
