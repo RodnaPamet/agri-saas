@@ -1056,6 +1056,16 @@ executorRegistry.register('spatial-import', async (payload) => {
             fileRecordId: r.fileRecordId,
             format: r.format,
             parcelCount: r.parcelCount,
+            // How the import RECONCILED, which is the only place a client can
+            // learn it: the poll route returns this envelope verbatim.
+            //
+            // `parcelCount` is `matched + created` — the shapes the FILE
+            // contained. `flagged` is NOT part of it: those are existing
+            // parcels the file omitted, kept with their history and marked.
+            // Adding them into a "imported N parcels" line overstates it.
+            matched: r.matched,
+            created: r.created,
+            flagged: r.flagged,
             bounds: r.bounds,
             jobRunId: r.jobRunId,
         },

@@ -115,6 +115,32 @@ export class ParcelRepository {
      * `iouAgainstColumnSql`, which carries the perturbation table and the
      * reason this binds on the smallest field a farm has rather than the
      * average one.
+     *
+     * ── WHAT THE EVIDENCE IS, AND IS NOT ──
+     *
+     * It is calibrated against how much a RE-EXPORT moves the number, measured
+     * by perturbing real field shapes. It is NOT calibrated against a real
+     * re-import, because when it was measured (2026-09-26) no production farm
+     * had ever re-imported: the true-pair population was EMPTY. Every number
+     * behind this constant is therefore synthetic perturbation of genuine
+     * geometry, not an observation of the thing it governs.
+     *
+     * That distinction is easy to lose once a number is in a docblock, so:
+     * **the first real re-import is the first real data point.** If it lands
+     * below 0.90 the constant should move, not the farmer's expectations.
+     *
+     * ── THE INSTRUMENT THAT WOULD TELL YOU ──
+     *
+     * `matched` / `created` / `flagged`, on the job result and in the audit
+     * entry. A genuine re-import of a file a farm has imported before should
+     * report mostly `matched`. One reporting mostly `created` means this
+     * threshold is too HIGH — the same ground is being read as new fields, and
+     * every one of them starts with no history while the originals get flagged
+     * as absent.
+     *
+     * Nobody will go looking for that signal unless it is written down next to
+     * the number it indicts, which is why it is here. (The observation is the
+     * iOS session's.)
      */
     static readonly PARCEL_MATCH_IOU = 0.9;
 
