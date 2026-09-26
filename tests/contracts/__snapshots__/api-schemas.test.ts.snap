@@ -2672,6 +2672,570 @@ exports[`API contract — per-schema snapshots schema: CreateParcelWeedObservati
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: CropPlan 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "tenantId": {
+      "type": "string"
+    },
+    "seasonId": {
+      "type": "string"
+    },
+    "cropTypeId": {
+      "type": "string"
+    },
+    "cropVarietyId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "locationId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "parcelId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "name": {
+      "type": "string"
+    },
+    "method": {
+      "type": "string",
+      "enum": [
+        "DIRECT_SOW",
+        "TRANSPLANT"
+      ]
+    },
+    "firstSowDate": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "successions": {
+      "type": "number"
+    },
+    "intervalDays": {
+      "type": "number"
+    },
+    "plantsPerSuccession": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "bedLengthM": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "rowsPerBed": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "targetAreaM2": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "DRAFT",
+        "ACTIVE",
+        "COMPLETED",
+        "CANCELLED"
+      ]
+    },
+    "notes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "season": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "PLANNING",
+            "ACTIVE",
+            "CLOSED"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "status"
+      ]
+    },
+    "cropType": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    },
+    "variety": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "defaultMethod": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "DIRECT_SOW",
+            "TRANSPLANT",
+            null
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "defaultMethod"
+      ]
+    },
+    "location": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    },
+    "parcel": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    },
+    "_count": {
+      "type": "object",
+      "properties": {
+        "plantings": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "plantings"
+      ]
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "isSampleData": {
+      "type": "boolean"
+    },
+    "deletedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "deletedByUserId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "retentionUntil": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "id",
+    "tenantId",
+    "seasonId",
+    "cropTypeId",
+    "cropVarietyId",
+    "locationId",
+    "parcelId",
+    "name",
+    "method",
+    "firstSowDate",
+    "successions",
+    "intervalDays",
+    "plantsPerSuccession",
+    "bedLengthM",
+    "rowsPerBed",
+    "targetAreaM2",
+    "status",
+    "notes",
+    "createdAt",
+    "updatedAt",
+    "isSampleData",
+    "deletedAt",
+    "retentionUntil"
+  ],
+  "description": "A sowing plan: one crop, one season, and the succession pattern that generates the plantings. \`successions\` and \`intervalDays\` describe the intent; the plantings themselves do not exist until POST /generate is called. _count.plantings is how a client tells a plan that has been generated from one that has not."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: CropType 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "tenantId": {
+      "type": "string"
+    },
+    "key": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "name": {
+      "type": "string"
+    },
+    "commodityCanonical": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "family": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "category": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "notes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "_count": {
+      "type": "object",
+      "properties": {
+        "varieties": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "varieties"
+      ]
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "isSampleData": {
+      "type": "boolean"
+    },
+    "deletedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "deletedByUserId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "retentionUntil": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "id",
+    "tenantId",
+    "key",
+    "name",
+    "commodityCanonical",
+    "family",
+    "category",
+    "notes",
+    "createdAt",
+    "updatedAt",
+    "isSampleData",
+    "deletedAt",
+    "retentionUntil"
+  ],
+  "description": "A crop the farm grows. commodityCanonical is what joins it to market prices and contract benchmarking; null there is why a contract may get no benchmark. The LIST carries a \`_count.varieties\`; the create response does not."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: CropVariety 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "tenantId": {
+      "type": "string"
+    },
+    "cropTypeId": {
+      "type": "string"
+    },
+    "key": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "name": {
+      "type": "string"
+    },
+    "defaultMethod": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "DIRECT_SOW",
+        "TRANSPLANT",
+        null
+      ]
+    },
+    "daysToGermination": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "daysToTransplant": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "daysToMaturity": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "harvestWindowDays": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "inRowSpacingCm": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "betweenRowSpacingCm": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "seedsPerGram": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "germinationRate": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "seedsPerCell": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "soilDefaultsJson": {},
+    "gddBaseC": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "gddToMaturity": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "sourceUrn": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "notes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "cropType": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "isSampleData": {
+      "type": "boolean"
+    },
+    "deletedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "deletedByUserId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "retentionUntil": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "id",
+    "tenantId",
+    "cropTypeId",
+    "key",
+    "name",
+    "defaultMethod",
+    "daysToGermination",
+    "daysToTransplant",
+    "daysToMaturity",
+    "harvestWindowDays",
+    "inRowSpacingCm",
+    "betweenRowSpacingCm",
+    "seedsPerGram",
+    "germinationRate",
+    "seedsPerCell",
+    "gddBaseC",
+    "gddToMaturity",
+    "sourceUrn",
+    "notes",
+    "createdAt",
+    "updatedAt",
+    "isSampleData",
+    "deletedAt",
+    "retentionUntil"
+  ],
+  "description": "A variety of a crop type. The spacing, seed-rate, germination and GDD-base columns are Decimal and therefore STRINGS here while the write side takes numbers. soilDefaultsJson holds the curated preferences the soil-suitability verdict compares a parcel against."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: CurrentUser 1`] = `
 "{
   "type": "object",
@@ -4194,6 +4758,30 @@ exports[`API contract — per-schema snapshots schema: FieldOperationReviewResul
     "status"
   ],
   "description": "The Task status the review moved the job to."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: GddDay 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "gdd": {
+      "type": "number"
+    },
+    "cumulative": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "date",
+    "gdd",
+    "cumulative"
+  ],
+  "description": "One day of growing-degree-day accumulation."
 }"
 `;
 
@@ -7353,6 +7941,316 @@ exports[`API contract — per-schema snapshots schema: ParcelWeedObservation 1`]
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: PlanningAck 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "success": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success"
+  ],
+  "description": "Acknowledgement only."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: Planting 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "tenantId": {
+      "type": "string"
+    },
+    "cropPlanId": {
+      "type": "string"
+    },
+    "cropVarietyId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "locationId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "parcelId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "successionNumber": {
+      "type": "number"
+    },
+    "method": {
+      "type": "string",
+      "enum": [
+        "DIRECT_SOW",
+        "TRANSPLANT"
+      ]
+    },
+    "sowDate": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "transplantDate": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "harvestStartDate": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "harvestEndDate": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "seedQuantityGrams": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "plantCount": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "areaM2": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "plannedYieldKgPerHa": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "PLANNED",
+        "SOWN",
+        "TRANSPLANTED",
+        "HARVESTING",
+        "HARVESTED",
+        "TERMINATED"
+      ]
+    },
+    "notes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "variety": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    },
+    "location": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    },
+    "parcel": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "isSampleData": {
+      "type": "boolean"
+    },
+    "deletedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "deletedByUserId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "retentionUntil": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "id",
+    "tenantId",
+    "cropPlanId",
+    "cropVarietyId",
+    "locationId",
+    "parcelId",
+    "successionNumber",
+    "method",
+    "sowDate",
+    "transplantDate",
+    "harvestStartDate",
+    "harvestEndDate",
+    "seedQuantityGrams",
+    "plantCount",
+    "areaM2",
+    "plannedYieldKgPerHa",
+    "status",
+    "notes",
+    "createdAt",
+    "updatedAt",
+    "isSampleData",
+    "deletedAt",
+    "retentionUntil"
+  ],
+  "description": "One succession of a crop plan — the \`plantingId\` that yield records, cost entries and parcel history refer to. Generated from the plan rather than created directly; the only field a client may update is plannedYieldKgPerHa."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: PlantingGdd 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "plantingId": {
+      "type": "string"
+    },
+    "sowDate": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "baseTempC": {
+      "type": "number"
+    },
+    "totalGdd": {
+      "type": "number"
+    },
+    "days": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/GddDay"
+      }
+    },
+    "targetGdd": {
+      "type": [
+        "number",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "plantingId",
+    "sowDate",
+    "baseTempC",
+    "totalGdd",
+    "days",
+    "targetGdd"
+  ],
+  "description": "Growing-degree-day accumulation for one planting. totalGdd is 0 rather than null when there is no weather or no sow date, so a zero is not evidence of anything by itself — check sowDate. targetGdd null means no maturity percentage can be shown."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: PlantingSoilSuitability 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "soil": {
+      "$ref": "#/components/schemas/SoilProfile"
+    },
+    "soilType": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "suitability": {
+      "$ref": "#/components/schemas/SoilSuitability"
+    }
+  },
+  "required": [
+    "soil",
+    "soilType",
+    "suitability"
+  ],
+  "description": "Soil-aware suitability for one planting, comparing the parcel’s modelled soil to the variety’s curated preferences. Advisory only."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: PortfolioGrainSummary 1`] = `
 "{
   "type": "object",
@@ -7625,6 +8523,105 @@ exports[`API contract — per-schema snapshots schema: RiskLevel 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: Season 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "tenantId": {
+      "type": "string"
+    },
+    "key": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "name": {
+      "type": "string"
+    },
+    "year": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "startDate": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "endDate": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "PLANNING",
+        "ACTIVE",
+        "CLOSED"
+      ]
+    },
+    "notes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "isSampleData": {
+      "type": "boolean"
+    },
+    "deletedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "deletedByUserId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "retentionUntil": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "id",
+    "tenantId",
+    "key",
+    "name",
+    "year",
+    "startDate",
+    "endDate",
+    "status",
+    "notes",
+    "createdAt",
+    "updatedAt",
+    "isSampleData",
+    "deletedAt",
+    "retentionUntil"
+  ],
+  "description": "A marketing/growing season — the \`seasonId\` that grain costs, yield records and contracts refer to. startDate and endDate come back as full instants even though they are written as calendar days."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: SendExchangeMessage 1`] = `
 "{
   "type": "object",
@@ -7652,6 +8649,124 @@ exports[`API contract — per-schema snapshots schema: SetBottomTabOrderRequest 
   "required": [
     "order"
   ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: SoilProfile 1`] = `
+"{
+  "type": [
+    "object",
+    "null"
+  ],
+  "properties": {
+    "wrbClass": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "textureClass": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "sandPct": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "siltPct": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "clayPct": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "phH2o": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "socGkg": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "bulkDensity": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "depth": {
+      "type": "string"
+    },
+    "uncertainty": {
+      "type": "object",
+      "additionalProperties": {}
+    },
+    "provider": {
+      "type": "string"
+    },
+    "fetchedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "textureClass",
+    "sandPct",
+    "siltPct",
+    "clayPct",
+    "phH2o",
+    "socGkg",
+    "bulkDensity",
+    "depth",
+    "provider",
+    "fetchedAt"
+  ],
+  "description": "A parcel’s modelled soil profile, fetched asynchronously — null upstream while the fetch is pending, which is an ordinary state rather than an error."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: SoilSuitability 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "flag": {
+      "type": "string",
+      "enum": [
+        "good",
+        "caution",
+        "poor",
+        "unknown"
+      ]
+    },
+    "reason": {
+      "type": "string"
+    },
+    "reasons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "flag",
+    "reason",
+    "reasons"
+  ],
+  "description": "An ADVISORY verdict. \`unknown\` is returned whenever the variety has no curated preferences or the parcel has no soil yet — never a fabricated verdict, so a client must render unknown as unknown rather than as a neutral pass."
 }"
 `;
 

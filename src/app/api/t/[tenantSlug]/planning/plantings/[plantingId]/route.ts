@@ -6,6 +6,7 @@ import { updatePlanting } from '@/app-layer/usecases/crop-planning';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { withValidatedBody } from '@/lib/validation/route';
 import { jsonResponse } from '@/lib/api-response';
+import { UpdatePlantingSchema } from '@/app-layer/schemas/planning.schemas';
 
 /**
  * A single planting (PLANNING module).
@@ -19,11 +20,6 @@ import { jsonResponse } from '@/lib/api-response';
  *           the same as `0` (see `Planting.plannedYieldKgPerHa`'s schema
  *           doc), so it is accepted explicitly rather than stripped.
  */
-const UpdatePlantingSchema = z
-    .object({
-        plannedYieldKgPerHa: z.number().min(0).max(1_000_000).nullable().optional(),
-    })
-    .strip();
 
 export const PATCH = withApiErrorHandling(
     withValidatedBody(

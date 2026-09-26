@@ -6,6 +6,7 @@ import { listSeasons, createSeason } from '@/app-layer/usecases/crop-planning';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { withValidatedBody } from '@/lib/validation/route';
 import { jsonResponse } from '@/lib/api-response';
+import { CreateSeasonSchema } from '@/app-layer/schemas/planning.schemas';
 
 /**
  * Seasons — crop-planning season windows (PLANNING module).
@@ -13,16 +14,6 @@ import { jsonResponse } from '@/lib/api-response';
  *   POST → create a season.
  */
 
-const CreateSeasonSchema = z
-    .object({
-        name: z.string().min(1, 'Season name is required').max(200),
-        year: z.number().int().min(1900).max(3000).nullable().optional(),
-        startDate: z.string().min(8, 'Start date is required'),
-        endDate: z.string().min(8, 'End date is required'),
-        status: z.enum(['PLANNING', 'ACTIVE', 'CLOSED']).optional(),
-        notes: z.string().max(5000).nullable().optional(),
-    })
-    .strip();
 
 export const GET = withApiErrorHandling(
     async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> }) => {

@@ -6,6 +6,7 @@ import { listCropTypes, createCropType } from '@/app-layer/usecases/crop-plannin
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { withValidatedBody } from '@/lib/validation/route';
 import { jsonResponse } from '@/lib/api-response';
+import { CreateCropTypeSchema } from '@/app-layer/schemas/planning.schemas';
 
 /**
  * Crop types — the tenant crop catalog (PLANNING module).
@@ -13,15 +14,6 @@ import { jsonResponse } from '@/lib/api-response';
  *   POST → create a crop type (write-gated).
  */
 
-const CreateCropTypeSchema = z
-    .object({
-        name: z.string().min(1, 'Crop type name is required').max(200),
-        key: z.string().max(100).nullable().optional(),
-        family: z.string().max(200).nullable().optional(),
-        category: z.string().max(200).nullable().optional(),
-        notes: z.string().max(5000).nullable().optional(),
-    })
-    .strip();
 
 export const GET = withApiErrorHandling(
     async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> }) => {
