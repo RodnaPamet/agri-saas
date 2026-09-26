@@ -29,6 +29,8 @@ import {
     API_MUTATION_LIMIT,
     API_KEY_CREATE_LIMIT,
     EMAIL_DISPATCH_LIMIT,
+    EXCHANGE_INQUIRY_LIMIT,
+    INSURANCE_LEAD_LIMIT,
     clearAllRateLimits,
 } from '@/lib/security/rate-limit-middleware';
 import { NextRequest, NextResponse } from 'next/server';
@@ -367,6 +369,7 @@ describe('Preset policy sanity', () => {
         ['API_MUTATION_LIMIT', API_MUTATION_LIMIT],
         ['API_KEY_CREATE_LIMIT', API_KEY_CREATE_LIMIT],
         ['EMAIL_DISPATCH_LIMIT', EMAIL_DISPATCH_LIMIT],
+        ['INSURANCE_LEAD_LIMIT', INSURANCE_LEAD_LIMIT],
     ];
 
     it.each(CASES)('%s has a positive maxAttempts', (_, preset) => {
@@ -386,6 +389,21 @@ describe('Preset policy sanity', () => {
         expect(API_MUTATION_LIMIT.maxAttempts).toBeGreaterThanOrEqual(
             LOGIN_LIMIT.maxAttempts
         );
+    });
+
+    it('INSURANCE_LEAD_LIMIT permits far fewer requests per HOUR than the inquiry tier', () => {
+        // The whole reason the tier exists. Compare budgets over the same
+        // period rather than the raw maxAttempts, because the two presets use
+        // different windows — that difference IS the defect being fixed: 10 per
+        // minute is 600 an hour, and every one of them emails the operator.
+        const perHour = (c: { maxAttempts: number; windowMs: number }) =>
+            (c.maxAttempts * 60 * 60 * 1000) / c.windowMs;
+
+        expect(perHour(EXCHANGE_INQUIRY_LIMIT)).toBe(600);
+        expect(perHour(INSURANCE_LEAD_LIMIT)).toBe(20);
+        // A wide margin, so a future tweak that quietly restores a per-minute
+        // window fails here rather than in the operator's inbox.
+        expect(perHour(INSURANCE_LEAD_LIMIT)).toBeLessThan(perHour(EXCHANGE_INQUIRY_LIMIT) / 10);
     });
 
     it('API_KEY_CREATE_LIMIT is the tightest preset (most sensitive)', () => {

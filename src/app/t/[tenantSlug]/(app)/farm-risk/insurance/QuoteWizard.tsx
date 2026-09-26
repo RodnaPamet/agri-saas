@@ -277,7 +277,8 @@ export function QuoteWizard({
             steps={steps}
             onFinish={send}
             finishLabel={tAsk('submit')}
-            isDirty={state.sumRaw !== '' || state.note !== ''}
+            // Any change the farmer made, the area included — see the hook.
+            isDirty={q.isDirty}
             error={error ?? stepError}
         />
     );

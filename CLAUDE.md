@@ -564,6 +564,13 @@ The outbox holds unsynced field work in IndexedDB, which the phone is free
 to evict. Three rules, all load-bearing — see
 `docs/implementation-notes/2026-08-19-outbox-durability.md`.
 
+**Not every write belongs here.** The insurance quote request (#1120) is
+deliberately NOT an outbox surface: the calculator works offline, but SENDING
+needs a connection and a failed send is not queued. A queued lead would email
+the operator hours later carrying figures the farmer may have corrected since —
+and an insurance enquiry priced against a stale area is worse than one the
+farmer knows did not go. The wizard disables Send while offline and says so.
+
 - **One queue truth: `src/lib/offline/outbox-state.ts`.** Module-scoped, so
   it survives client-side navigation, and it owns the counts, the loss
   record and the SHARED flush lock. `useOfflineSync` is a thin subscriber.
@@ -2087,6 +2094,20 @@ negated. Say what remains instead:
 ## Key Conventions
 
 - **Zod schemas** for all API input validation live in `src/app-layer/schemas/` (backend) and `src/lib/schemas/` (shared).
+- **Money is integer CENTS and rates are BASIS POINTS — never a float, and
+  never computed on the client.** `src/lib/insurance` is the worked example:
+  `quotePremium` does round-half-up in integer arithmetic
+  (`floor((cents * bp + 5_000) / 10_000)`), so nothing is a float at any point,
+  and `MAX_SUM_INSURED_CENTS` is capped at 1e11 precisely so `cents * bp` stays
+  inside `Number.MAX_SAFE_INTEGER`. Instalments are split so the parts sum back
+  to the total EXACTLY, with the leftover cents on the FIRST one.
+  Render with `formatCents(cents, symbol)`, never `useExactMoneyFormatter` —
+  that goes through `formatDecimal`, which sets `maximumFractionDigits` only and
+  renders "€10,000" and "€3,333.3", and a premium schedule must show its cents.
+  The client may PREVIEW a price but never states one: the request body carries
+  only the inputs, the server recomputes, and the stored snapshot is what the
+  operator is shown. `tests/unit/insurance/client-server-agreement.test.ts` pins
+  that the two sides agree.
 - **A URL field in a payload schema uses `httpsUrl()`** from
   `@/lib/schemas/url`, never a bare `z.string().url()`. Under the installed zod
   (4.4.3) the loose form accepts `http://`, `ftp://`, `file://`, `data:`,

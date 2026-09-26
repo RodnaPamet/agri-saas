@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "3.60.0",
+    "version": "3.61.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -22359,7 +22359,7 @@
       "post": {
         "operationId": "createInsuranceLead",
         "summary": "Ask an insurer for an offer on a parcel",
-        "description": "**Irreversible, and now repeatable.** There is still no DELETE and no withdraw — a lead persists once written. What changed on 2026-09-24 is that the unique on (parcel, tenant) was dropped, so a parcel may carry SEVERAL leads: the form collects the farmer's own land size, and a figure they got wrong the first time could not otherwise be corrected.\n\nConsequences for a client:\n- A second POST no longer returns 409. It creates another lead and emails the operator again.\n- **Do not disable the control** because `GET /insurance/leads` lists the parcel. That endpoint is now INFORMATIONAL — suppressing the trigger makes the re-ask this change exists to allow unreachable.\n- Still do not fire it against a real parcel to test wiring: every lead is an email to the platform operator, who has to reconcile duplicates by hand.\n\nLead-gen only: the row is stored, a confirmation notification is written for the REQUESTER and a copy is sent to the operator. No insurer API is called and no other tenant is contacted, which is what separates this from an exchange inquiry. Rate-limited on the inquiry tier.",
+        "description": "**Irreversible, and now repeatable.** There is still no DELETE and no withdraw — a lead persists once written. What changed on 2026-09-24 is that the unique on (parcel, tenant) was dropped, so a parcel may carry SEVERAL leads: the form collects the farmer's own land size, and a figure they got wrong the first time could not otherwise be corrected.\n\nConsequences for a client:\n- A second POST no longer returns 409. It creates another lead and emails the operator again.\n- **Do not disable the control** because `GET /insurance/leads` lists the parcel. That endpoint is now INFORMATIONAL — suppressing the trigger makes the re-ask this change exists to allow unreachable.\n- Still do not fire it against a real parcel to test wiring: every lead is an email to the platform operator, who has to reconcile duplicates by hand.\n\nLead-gen only: the row is stored, a confirmation notification is written for the REQUESTER and a copy is sent to the operator. No insurer API is called and no other tenant is contacted, which is what separates this from an exchange inquiry. Opened by the three-step calculator on Farm risk, which previews the premium and posts only the four quote INPUTS. Rate-limited on its OWN tier (INSURANCE_LEAD_LIMIT, 20 per hour): every lead emails the operator, and the inquiry tier's per-minute window allowed 600 of those an hour.",
         "tags": [
           "Farm risk"
         ],

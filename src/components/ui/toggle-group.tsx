@@ -54,7 +54,13 @@ const toggleGroupVariants = cva(
 );
 
 const toggleOptionVariants = cva(
-    "text-content-emphasis relative z-10 flex items-center gap-tight font-medium capitalize outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-lg",
+    // `pointer-coarse:min-h-11` — the #765 floor, which this primitive never
+    // got. The ladder below is 14px text plus 4px of padding, so a phone tap
+    // target was ~30px against the 44px WCAG 2.5.5 / Apple HIG minimum. `min-h`
+    // only ever RAISES and only under a coarse pointer, so every fine-pointer
+    // call site keeps the density it was tuned for. Same idiom, and the same
+    // reasoning, as `button-variants.ts`.
+    "text-content-emphasis relative z-10 flex items-center gap-tight font-medium capitalize outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-lg pointer-coarse:min-h-11",
     {
         variants: {
             size: {

@@ -70,6 +70,18 @@ export function AskInsuranceModal({
 }: AskInsuranceModalProps) {
     const t = useTranslations('ag.risk.ask');
     const [open, setOpen] = useState(false);
+    /**
+     * Bumped on every open, and used as the wizard's `key`, so each opening gets
+     * a FRESH calculator.
+     *
+     * `QuoteWizard` stays mounted while closed (its `open` is a prop), so
+     * without this the reducer's state outlives the drawer: a farmer who typed a
+     * sum insured, dismissed, and confirmed "Discard" would find it still there
+     * on reopen — while the confirm had just told them their changes would be
+     * lost. The modal this replaced cleared its draft on EVERY close path for
+     * the same reason; remounting is how that survives the move to a wizard.
+     */
+    const [session, setSession] = useState(0);
     // Optimistic only — see `hasRequested`. `sent` is the union of the two.
     const [justSent, setJustSent] = useState(false);
     const sent = hasRequested || justSent;
@@ -83,7 +95,15 @@ export function AskInsuranceModal({
               * before, and still be able to ask again.
               */}
             <span className="inline-flex items-center gap-tight">
-                <Button variant="secondary" size="sm" type="button" onClick={() => setOpen(true)}>
+                <Button
+                    variant="secondary"
+                    size="sm"
+                    type="button"
+                    onClick={() => {
+                        setSession((n) => n + 1);
+                        setOpen(true);
+                    }}
+                >
                     {sent ? t('askAgain') : t('open')}
                 </Button>
                 {sent ? (
@@ -95,6 +115,7 @@ export function AskInsuranceModal({
                 ) : null}
             </span>
             <QuoteWizard
+                key={session}
                 open={open}
                 onOpenChange={setOpen}
                 parcelId={parcelId}
