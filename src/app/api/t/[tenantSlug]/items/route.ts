@@ -6,26 +6,7 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { withValidatedBody } from '@/lib/validation/route';
 import { jsonResponse } from '@/lib/api-response';
 import { z } from 'zod';
-import { normalizeQ } from '@/lib/filters/query-helpers';
-
-const ItemQuerySchema = z.object({
-    category: z.string().optional(),
-    q: z.string().optional().transform(normalizeQ),
-}).strip();
-
-const CreateItemSchema = z
-    .object({
-        name: z.string().min(1).max(200),
-        category: z.enum(['SEED', 'PESTICIDE', 'FERTILIZER', 'AMENDMENT', 'FUEL', 'HARVESTED_PRODUCE', 'OTHER']),
-        defaultUnitId: z.string().min(1),
-        sku: z.string().max(120).nullable().optional(),
-        reorderLevel: z.number().nonnegative().nullable().optional(),
-        // БАБХ farm-record regulatory fields (structured).
-        quarantinePeriodDays: z.number().int().nonnegative().nullable().optional(),
-        activeIngredient: z.string().max(200).nullable().optional(),
-        pppRegistrationNo: z.string().max(120).nullable().optional(),
-    })
-    .strip();
+import { ItemQuerySchema, CreateItemSchema } from '@/app-layer/schemas/catalog.schemas';
 
 export const GET = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> }) => {
     const params = await paramsPromise;

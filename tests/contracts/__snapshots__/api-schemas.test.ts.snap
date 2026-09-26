@@ -1569,6 +1569,233 @@ exports[`API contract — per-schema snapshots schema: CalculatorRow 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: CatalogItemDetail 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "SEED",
+        "PESTICIDE",
+        "FERTILIZER",
+        "AMENDMENT",
+        "FUEL",
+        "HARVESTED_PRODUCE",
+        "OTHER"
+      ]
+    },
+    "defaultUnitId": {
+      "type": "string"
+    },
+    "sku": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "reorderLevel": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "quarantinePeriodDays": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "activeIngredient": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pppRegistrationNo": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "category",
+    "defaultUnitId",
+    "sku",
+    "reorderLevel",
+    "quarantinePeriodDays",
+    "activeIngredient",
+    "pppRegistrationNo"
+  ],
+  "description": "A catalogue item as the SINGLE read returns it: nine fields, no defaultUnit relation, and reorderLevel as a NUMBER rather than the list’s decimal string. Carries the БАБХ regulatory fields — quarantinePeriodDays, activeIngredient and pppRegistrationNo — which the farm-record register is generated from."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: CatalogItemListRow 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "tenantId": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "SEED",
+        "PESTICIDE",
+        "FERTILIZER",
+        "AMENDMENT",
+        "FUEL",
+        "HARVESTED_PRODUCE",
+        "OTHER"
+      ]
+    },
+    "sku": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "defaultUnitId": {
+      "type": "string"
+    },
+    "reorderLevel": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "quarantinePeriodDays": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "activeIngredient": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pppRegistrationNo": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "isArchetype": {
+      "type": "boolean"
+    },
+    "attributesJson": {},
+    "createdByUserId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "deletedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "deletedByUserId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "retentionUntil": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "defaultUnit": {
+      "$ref": "#/components/schemas/UnitRef"
+    }
+  },
+  "required": [
+    "id",
+    "tenantId",
+    "name",
+    "category",
+    "sku",
+    "defaultUnitId",
+    "reorderLevel",
+    "quarantinePeriodDays",
+    "activeIngredient",
+    "pppRegistrationNo",
+    "isArchetype",
+    "createdByUserId",
+    "createdAt",
+    "updatedAt",
+    "deletedAt",
+    "deletedByUserId",
+    "retentionUntil",
+    "defaultUnit"
+  ],
+  "description": "A catalogue item as the LIST returns it: the raw model, so soft-delete and retention bookkeeping are on the wire too (deletedAt is always null on a listed row). reorderLevel is a decimal STRING here and a NUMBER on the single read — the two operations are not interchangeable."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: CatalogItemWriteAck 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "SEED",
+        "PESTICIDE",
+        "FERTILIZER",
+        "AMENDMENT",
+        "FUEL",
+        "HARVESTED_PRODUCE",
+        "OTHER"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "category"
+  ],
+  "description": "What create and update answer with — the id, name and category ONLY, because both carry a narrow \`select\`. A client needing the whole item must re-read it."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: Contract 1`] = `
 "{
   "type": "object",
@@ -8034,6 +8261,87 @@ exports[`API contract — per-schema snapshots schema: TrendSeries 1`] = `
     "points"
   ],
   "description": "One price line, grouped by (source, region) so a chart can split lines that differ in unit or currency — series are NOT comparable across those without conversion. lastObservedAt is the newest observation anywhere, which is what distinguishes a series reporting this week from one that stopped months ago; both otherwise present a points array whose last entry looks equally current."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: Unit 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "key": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "symbol": {
+      "type": "string"
+    },
+    "measure": {
+      "type": "string",
+      "enum": [
+        "COUNT",
+        "WEIGHT",
+        "VOLUME",
+        "AREA",
+        "LENGTH",
+        "RATE",
+        "OTHER"
+      ]
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "id",
+    "key",
+    "name",
+    "symbol",
+    "measure",
+    "createdAt"
+  ],
+  "description": "A unit of measure from the GLOBAL seeded catalogue — not tenant-scoped, and there is no write path for it. \`measure\` constrains which units a dose may use; match on \`key\`, never on the localised \`name\`."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: UnitRef 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "key": {
+      "type": "string"
+    },
+    "symbol": {
+      "type": "string"
+    },
+    "measure": {
+      "type": "string",
+      "enum": [
+        "COUNT",
+        "WEIGHT",
+        "VOLUME",
+        "AREA",
+        "LENGTH",
+        "RATE",
+        "OTHER"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "key",
+    "symbol",
+    "measure"
+  ],
+  "description": "The unit reference embedded in a catalogue item — no \`name\`, no \`createdAt\`."
 }"
 `;
 

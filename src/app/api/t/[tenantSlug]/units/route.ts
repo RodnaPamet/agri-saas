@@ -3,11 +3,7 @@ import { getTenantCtx } from '@/app-layer/context';
 import { listUnits } from '@/app-layer/usecases/catalog';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
-import { z } from 'zod';
-
-const UnitQuerySchema = z.object({
-    measure: z.string().optional(),
-}).strip();
+import { UnitQuerySchema } from '@/app-layer/schemas/catalog.schemas';
 
 export const GET = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> }) => {
     const params = await paramsPromise;

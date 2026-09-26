@@ -246,8 +246,6 @@
         "/api/t/{tenantSlug}/issues/{issueId}/links",
         "/api/t/{tenantSlug}/issues/{issueId}/links/{linkId}",
         "/api/t/{tenantSlug}/issues/{issueId}/status",
-        "/api/t/{tenantSlug}/items",
-        "/api/t/{tenantSlug}/items/{itemId}",
         "/api/t/{tenantSlug}/journal/{id}/files",
         "/api/t/{tenantSlug}/journal/{id}/purge",
         "/api/t/{tenantSlug}/journal/{id}/restore",
@@ -329,7 +327,6 @@
         "/api/t/{tenantSlug}/tasks/{taskId}/evidence/{evidenceId}",
         "/api/t/{tenantSlug}/tasks/{taskId}/links",
         "/api/t/{tenantSlug}/tasks/{taskId}/links/{linkId}",
-        "/api/t/{tenantSlug}/units",
         "/api/t/{tenantSlug}/users/assignable"
     ]
 }

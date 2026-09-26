@@ -23,6 +23,7 @@ import { registerDashboardPaths } from './dashboard.paths';
 import { registerExchangeMessagingPaths } from './exchange-messaging.paths';
 import { registerTrendsPaths } from './trends.paths';
 import { registerExchangeListingPaths } from './exchange-listings.paths';
+import { registerCatalogPaths } from './catalog.paths';
 
 export function registerAllPaths(registry: OpenAPIRegistry): void {
     registerSecuritySchemes(registry);
@@ -43,4 +44,5 @@ export function registerAllPaths(registry: OpenAPIRegistry): void {
     registerExchangeMessagingPaths(registry);
     registerTrendsPaths(registry);
     registerExchangeListingPaths(registry);
+    registerCatalogPaths(registry);
 }

@@ -21,6 +21,9 @@ import {
     CreateCropSeasonSchema,
     CreateWeedObservationSchema,
 } from '@/app-layer/schemas/parcel-history.schemas';
+// DERIVED from the Prisma enum rather than respelled — this list was
+// hand-written in three places before `catalog.schemas.ts` owned it.
+import { ItemCategorySchema } from '@/app-layer/schemas/catalog.schemas';
 
 const TenantParams = z.object({
     tenantSlug: z.string().openapi({ param: { name: 'tenantSlug', in: 'path' }, example: 'acme' }),
@@ -73,9 +76,7 @@ const HistoryOperation = z
          * which only two carry the derivation, and null on a third of the
          * operation lines in production.
          */
-        productCategory: z
-            .enum(['SEED', 'PESTICIDE', 'FERTILIZER', 'AMENDMENT', 'FUEL', 'HARVESTED_PRODUCE', 'OTHER'])
-            .nullable(),
+        productCategory: ItemCategorySchema.nullable(),
         doseValue: z.string(),
         doseUnit: z.string(),
         targetNote: z.string().nullable(),
