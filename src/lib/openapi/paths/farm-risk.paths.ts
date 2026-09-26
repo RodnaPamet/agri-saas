@@ -104,6 +104,55 @@ export function registerFarmRiskPaths(registry: OpenAPIRegistry): void {
     });
 
     op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/insurance/products',
+        operationId: 'listInsuranceProducts',
+        summary: 'The insurance product catalogue and its tariffs',
+        description:
+            'For clients that cannot import the pricing engine. The web app does not ' +
+            'need this — it imports the same constant the engine uses — so it exists ' +
+            'for a SEPARATE codebase, where a compiled-in tariff is a second ' +
+            'description of one thing.\n\n' +
+            'That duplication is worse than most, because it is asymmetric: the SERVER ' +
+            'recompute is what gets stored and emailed, so a stale local tariff shows ' +
+            'the farmer one figure and the operator another, with nothing on either ' +
+            'side saying so. Fetch this rather than hardcoding `tariffBp`.\n\n' +
+            '`engineVersion` is the rounding rules the tariffs belong to. Do not send ' +
+            'it anywhere — compare it, so a preview built against version N notices ' +
+            'the server has moved to N+1.\n\n' +
+            'Language is DECLARED, not negotiated: pass `?locale=bg` (or rely on the ' +
+            '`NEXT_LOCALE` cookie). `Accept-Language` is deliberately ignored — a ' +
+            'device set to English-language/Bulgarian-region would otherwise pull ' +
+            'English product names onto an entirely Bulgarian screen. Absent both, ' +
+            'the answer is English, so a client that wants Bulgarian must say so.\n\n' +
+            'The labels here are the SOURCE for native clients; where five of them ' +
+            'overlap a client\'s own commodity names, that equality is intentional — ' +
+            'change `insurance.products.<key>.name` in `messages/` and both follow.',
+        tags: ['Farm risk'],
+        params: TenantParams,
+        success: {
+            status: 200,
+            description: 'The catalogue, with copy resolved for the declared locale.',
+            schema: z
+                .object({
+                    engineVersion: z.number().int(),
+                    currencySymbol: z.string(),
+                    products: z.array(
+                        z.object({
+                            key: z.string(),
+                            kind: z.enum(['crop', 'peril']),
+                            commodity: z.string().optional(),
+                            tariffBp: z.number().int(),
+                            name: z.string(),
+                            blurb: z.string(),
+                        }),
+                    ),
+                })
+                .openapi('InsuranceCatalogue'),
+        },
+    });
+
+    op(registry, {
         method: 'post',
         path: '/api/t/{tenantSlug}/insurance/leads',
         operationId: 'createInsuranceLead',
@@ -137,7 +186,26 @@ export function registerFarmRiskPaths(registry: OpenAPIRegistry): void {
         // optional when a quote is present, and knew nothing about `quote` at
         // all. A second spelling of a contract is a contract that goes stale
         // silently.
-        body: CreateInsuranceLeadSchema.openapi('CreateInsuranceLeadRequest'),
+        // `required` alone says `parcelId` and stops, because the "a message OR a
+        // quote" rule is a Zod refine and `required` cannot express an either-or.
+        // A generated client therefore read this document, sent `{ parcelId }`,
+        // and got a 400 on every request — which is not hypothetical: the iOS
+        // client did exactly that from the day the ask shipped, and every
+        // enquiry a Bulgarian farmer made failed for weeks before anyone noticed.
+        //
+        // The `anyOf` below states the rule in the document, so a generator
+        // carries it; the description states it in words, for the human who
+        // reads the schema and never opens the refine.
+        body: CreateInsuranceLeadSchema.openapi('CreateInsuranceLeadRequest', {
+            description:
+                'Send a non-blank `message`, a `quote`, or both — `required` lists ' +
+                '`parcelId` only because an either-or cannot be expressed there, and a ' +
+                'body with neither is a 400. `quote.coveredParcelCount` is required ' +
+                'when `quote.areaScope` is `crop-at-location`. Never send a premium, ' +
+                'tariff or instalment amount: there is no such field and one is ' +
+                'stripped if present, because the server recomputes the price.',
+            anyOf: [{ required: ['message'] }, { required: ['quote'] }],
+        }),
         success: {
             status: 201,
             description:

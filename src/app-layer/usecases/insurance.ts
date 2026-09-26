@@ -18,7 +18,14 @@ import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { isUniqueViolation } from '@/lib/errors/prisma';
 import { codedBadRequest } from '@/lib/errors/types';
-import { getProduct, quotePremium } from '@/lib/insurance';
+import {
+    getProduct,
+    INSURANCE_ENGINE_VERSION,
+    INSURANCE_PRODUCTS,
+    quotePremium,
+} from '@/lib/insurance';
+import { translateFor } from '@/lib/i18n/server-messages';
+import type { Locale } from '@/lib/i18n/locales';
 import { logger } from '@/lib/observability/logger';
 import { Prisma } from '@prisma/client';
 import type { CreateInsuranceLeadBody } from '@/app-layer/schemas/insurance.schemas';
@@ -129,6 +136,85 @@ async function currencySymbolFor(db: PrismaTx, tenantId: string): Promise<string
         select: { currencySymbol: true },
     });
     return row?.currencySymbol ?? '\u20ac';
+}
+
+/** One product as an out-of-process client needs it. */
+export interface InsuranceProductView {
+    key: string;
+    kind: 'crop' | 'peril';
+    /** Present for crops only; perils insure against weather, not a commodity. */
+    commodity?: string;
+    /** Integer basis points. 1000 = 10 %. */
+    tariffBp: number;
+    name: string;
+    blurb: string;
+}
+
+export interface InsuranceCatalogue {
+    /**
+     * The rounding rules the tariffs below belong to. A client previewing a
+     * premium should send it nowhere — it is here so a preview built against
+     * version N can notice the server has moved to N+1, which is the moment its
+     * local arithmetic stops matching what gets stored.
+     */
+    engineVersion: number;
+    /** The tenant's display symbol, so a client need not fetch it separately. */
+    currencySymbol: string;
+    products: InsuranceProductView[];
+}
+
+/**
+ * The product catalogue and its tariffs, for clients that cannot import
+ * `src/lib/insurance`.
+ *
+ * The web app does not need this — it imports the same constant the engine
+ * uses, so there is nothing to drift. A SEPARATE codebase is the whole reason it
+ * exists: a compiled-in `1000` bp in a native client is a second description of
+ * one thing, and the asymmetry makes that worse than an ordinary duplication.
+ * The server's recompute is what gets stored and emailed, so a stale local
+ * tariff shows the farmer one figure and the operator another, with nothing on
+ * either side saying so. Requested by the iOS client for exactly that reason.
+ *
+ * Names and blurbs are resolved HERE rather than shipped per client, for the
+ * same argument one level up: copy duplicated into another codebase drifts the
+ * same way a number does.
+ *
+ * ── These labels are the SOURCE for native clients, deliberately ──
+ *
+ * Five of the eight products are commodities (wheat, barley, maize, sunflower,
+ * rapeseed), and the iOS client already resolves commodity names through its own
+ * `CommodityName`. It takes the labels below as the source for all eight and
+ * asserts that its five crop labels equal `CommodityName`'s, so a divergence
+ * reddens its suite instead of showing a farmer two different Bulgarian names
+ * for the same crop on two screens.
+ *
+ * That equality is INTENTIONAL, not an accident waiting to be tidied up. Do not
+ * "fix" a duplicate-looking label by hardcoding one side; change
+ * `insurance.products.<key>.name` in `messages/` and both follow. Written down
+ * here at that client's request, because the next person to notice the overlap
+ * will otherwise assume it is a mistake.
+ */
+export async function listInsuranceProducts(
+    ctx: RequestContext,
+    locale: Locale,
+): Promise<InsuranceCatalogue> {
+    assertCanRead(ctx);
+    const currencySymbol = await runInTenantContext(ctx, (db) =>
+        currencySymbolFor(db, ctx.tenantId),
+    );
+
+    const products = await Promise.all(
+        INSURANCE_PRODUCTS.map(async (product): Promise<InsuranceProductView> => ({
+            key: product.key,
+            kind: product.kind,
+            ...(product.commodity ? { commodity: product.commodity } : {}),
+            tariffBp: product.tariffBp,
+            name: await translateFor(locale, `insurance.products.${product.key}.name`),
+            blurb: await translateFor(locale, `insurance.products.${product.key}.blurb`),
+        })),
+    );
+
+    return { engineVersion: INSURANCE_ENGINE_VERSION, currencySymbol, products };
 }
 
 /**
