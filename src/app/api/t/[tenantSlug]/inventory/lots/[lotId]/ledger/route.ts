@@ -13,13 +13,8 @@ import { listLotLedger } from '@/app-layer/usecases/inventory';
 import { assertModuleEnabled } from '@/app-layer/usecases/modules';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
+import { LedgerQuerySchema } from '@/app-layer/schemas/inventory.schemas';
 
-const LedgerQuerySchema = z
-    .object({
-        limit: z.coerce.number().int().min(1).max(100).optional(),
-        cursor: z.string().optional(),
-    })
-    .strip();
 
 export const GET = withApiErrorHandling(
     async (

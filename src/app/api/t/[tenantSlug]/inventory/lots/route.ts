@@ -6,27 +6,9 @@ import { withValidatedBody } from '@/lib/validation/route';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { z } from 'zod';
+import { LotQuerySchema, CreateLotSchema } from '@/app-layer/schemas/inventory.schemas';
 
-const LotQuerySchema = z
-    .object({
-        itemId: z.string().optional(),
-        limit: z.coerce.number().int().min(1).max(100).optional(),
-        cursor: z.string().optional(),
-    })
-    .strip();
 
-const CreateLotSchema = z
-    .object({
-        itemId: z.string().min(1),
-        lotCode: z.string().min(1).max(120),
-        locationId: z.string().nullable().optional(),
-        expiresAt: z.string().nullable().optional(),
-        receivedAt: z.string().nullable().optional(),
-        unitCostAmount: z.number().nonnegative().nullable().optional(),
-        unitCostCurrency: z.string().max(8).nullable().optional(),
-        initialQuantity: z.number().nonnegative().nullable().optional(),
-    })
-    .strip();
 
 export const GET = withApiErrorHandling(
     async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> }) => {

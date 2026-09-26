@@ -2554,6 +2554,54 @@ exports[`API contract — per-schema snapshots schema: CostEntryList 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: CreateDataStream 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "TEMPERATURE",
+        "SOIL_MOISTURE",
+        "HUMIDITY",
+        "RAINFALL",
+        "WIND",
+        "LEAF_WETNESS",
+        "CUSTOM"
+      ]
+    },
+    "unit": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 32
+    },
+    "locationId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "key",
+    "name",
+    "kind"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: CreateInsuranceLeadRequest 1`] = `
 "{
   "type": "object",
@@ -2778,6 +2826,37 @@ exports[`API contract — per-schema snapshots schema: CreateParcelWeedObservati
     "observedAt",
     "weeds"
   ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: CreatedDataStream 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "key": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "ingestToken": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "key",
+    "name",
+    "kind",
+    "ingestToken"
+  ],
+  "description": "The create response. ingestToken is the raw credential and appears ONLY here — the server keeps a hash, so it cannot be shown again or recovered."
 }"
 `;
 
@@ -3409,6 +3488,96 @@ exports[`API contract — per-schema snapshots schema: CurrentUser 1`] = `
     "user",
     "tenant"
   ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: DataStream 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "key": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "TEMPERATURE",
+        "SOIL_MOISTURE",
+        "HUMIDITY",
+        "RAINFALL",
+        "WIND",
+        "LEAF_WETNESS",
+        "CUSTOM"
+      ]
+    },
+    "unit": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "status": {
+      "type": "string"
+    },
+    "locationId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "id",
+    "key",
+    "name",
+    "kind",
+    "unit",
+    "status",
+    "locationId",
+    "createdAt"
+  ],
+  "description": "A device data stream. The ingest token’s HASH is never projected onto the wire — this shape is what every read returns, and the raw token appears exactly once, in the create response."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: DataStreamReading 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "recordedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "value": {
+      "type": "number"
+    },
+    "unit": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "recordedAt",
+    "value",
+    "unit"
+  ],
+  "description": "One sensor reading. \`unit\` is per-reading and may differ from the stream’s declared unit."
 }"
 `;
 
@@ -5257,6 +5426,97 @@ exports[`API contract — per-schema snapshots schema: ImportJobStatus 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: IndexTiles 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "configured": {
+      "type": "boolean"
+    },
+    "tileUrl": {
+      "type": "string"
+    },
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "error": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "configured",
+    "tileUrl"
+  ],
+  "description": "A satellite-index overlay source. configured:false means no Earth-Engine credentials on this deployment; configured:true with an EMPTY tileUrl means there is nothing to show (no field geometry, or a transient failure named in error) and the overlay should simply stay off. \`date\` is the imagery’s real acquisition date and can be older than the date requested, because the composite falls back to the latest available window."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: IngestAck 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": [
+        "ok"
+      ]
+    },
+    "inserted": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "status",
+    "inserted"
+  ],
+  "description": "inserted may be LOWER than the batch size — duplicates and out-of-range readings are dropped rather than failing the batch."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: IngestReadings 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "token": {
+      "type": "string",
+      "minLength": 16,
+      "maxLength": 512
+    },
+    "readings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "recordedAt": {
+            "type": "string"
+          },
+          "value": {
+            "type": "number"
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 32
+          }
+        },
+        "required": [
+          "recordedAt",
+          "value"
+        ]
+      }
+    }
+  },
+  "required": [
+    "token",
+    "readings"
+  ],
+  "description": "A batch of readings plus the stream’s raw ingest token. The batch is bounded server-side (~1000)."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: InquiredParcelIds 1`] = `
 "{
   "type": "object",
@@ -5271,6 +5531,71 @@ exports[`API contract — per-schema snapshots schema: InquiredParcelIds 1`] = `
   "required": [
     "parcelIds"
   ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: InventoryLedgerEntry 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string"
+    },
+    "quantityDelta": {
+      "type": "number"
+    },
+    "unitSymbol": {
+      "type": "string"
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "actor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    },
+    "entryHash": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "type",
+    "quantityDelta",
+    "unitSymbol",
+    "occurredAt",
+    "reason",
+    "actor",
+    "entryHash"
+  ],
+  "description": "One append-only stock movement. UPDATE and DELETE are blocked at the database, so a correction is a NEW opposing entry rather than an edit. entryHash chains the row to its predecessor and is what a tamper check verifies."
 }"
 `;
 
@@ -5371,6 +5696,137 @@ exports[`API contract — per-schema snapshots schema: InventoryLot 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: InventoryLotDetail 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "lotCode": {
+      "type": "string"
+    },
+    "item": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "category"
+      ]
+    },
+    "unit": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "symbol": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "symbol",
+        "name"
+      ]
+    },
+    "location": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    },
+    "quantityOnHand": {
+      "type": "number"
+    },
+    "expiresAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "receivedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "ledger": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/InventoryLedgerEntry"
+      }
+    }
+  },
+  "required": [
+    "id",
+    "lotCode",
+    "item",
+    "unit",
+    "location",
+    "quantityOnHand",
+    "expiresAt",
+    "receivedAt",
+    "ledger"
+  ],
+  "description": "A lot with its recent ledger embedded. NOT the same shape as a list row: this has \`ledger\` and no \`lowStock\`. For deep history use GET /lots/{lotId}/ledger, which is cursor-paginated."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: InventoryLotMoveAck 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "locationId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "moved": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "id",
+    "locationId",
+    "moved"
+  ],
+  "description": "A move acknowledgement. \`moved: false\` means the lot was already there — the request succeeded and changed nothing, which is different from a failure and different from a move."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: InventoryLotPage 1`] = `
 "{
   "type": "object",
@@ -5401,6 +5857,47 @@ exports[`API contract — per-schema snapshots schema: InventoryLotPage 1`] = `
     "pageInfo"
   ],
   "description": "A cursor page of inventory lots — returned by GET /inventory/lots?limit=&cursor=."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: InventoryMovementAck 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "quantityOnHand": {
+      "type": "number"
+    },
+    "entryHash": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "quantityOnHand",
+    "entryHash"
+  ],
+  "description": "What receive and adjust answer with: the resulting balance and the new chain head. Not the lot and not the ledger entry."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: InventoryPageInfo 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "nextCursor": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "hasNextPage": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "nextCursor",
+    "hasNextPage"
+  ],
+  "description": "The \`{ items, pageInfo }\` convention — used by inventory, NOT by grain (\`{rows, totalCount, truncated}\`) or exchange (\`{rows, nextCursor}\`). One pager cannot serve all three."
 }"
 `;
 
@@ -9452,6 +9949,124 @@ exports[`API contract — per-schema snapshots schema: TaskUpdateRequest 1`] = `
     "metadataJson": {}
   },
   "description": "Partial update for a task. Status changes and assignment go through their own focused endpoints."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: TraceLotNode 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "lotCode": {
+      "type": "string"
+    },
+    "item": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "category"
+      ]
+    },
+    "unitSymbol": {
+      "type": "string"
+    },
+    "quantityOnHand": {
+      "type": "number"
+    },
+    "fields": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      }
+    }
+  },
+  "required": [
+    "id",
+    "lotCode",
+    "item",
+    "unitSymbol",
+    "quantityOnHand",
+    "fields"
+  ],
+  "description": "One lot in the genealogy graph, annotated with the fields it touched."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: TraceLotResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "root": {
+      "$ref": "#/components/schemas/TraceLotNode"
+    },
+    "ancestors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/TraceLotNode"
+      }
+    },
+    "descendants": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/TraceLotNode"
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "parentLotId": {
+            "type": "string"
+          },
+          "childLotId": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "parentLotId",
+          "childLotId",
+          "type"
+        ]
+      }
+    }
+  },
+  "required": [
+    "root",
+    "ancestors",
+    "descendants",
+    "edges"
+  ],
+  "description": "A lot’s provenance in both directions. ancestors and descendants are flat arrays; \`edges\` is what makes them a graph."
 }"
 `;
 

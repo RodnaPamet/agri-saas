@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "3.53.0",
+    "version": "3.55.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -2491,6 +2491,51 @@
         ],
         "description": "A capped page of cost entries. When truncated is true rows were DROPPED, so any total computed from rows is wrong — use totalCount."
       },
+      "CreateDataStream": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "TEMPERATURE",
+              "SOIL_MOISTURE",
+              "HUMIDITY",
+              "RAINFALL",
+              "WIND",
+              "LEAF_WETNESS",
+              "CUSTOM"
+            ]
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 32
+          },
+          "locationId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "kind"
+        ]
+      },
       "CreateInsuranceLeadRequest": {
         "type": "object",
         "properties": {
@@ -2705,6 +2750,34 @@
           "observedAt",
           "weeds"
         ]
+      },
+      "CreatedDataStream": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "ingestToken": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "name",
+          "kind",
+          "ingestToken"
+        ],
+        "description": "The create response. ingestToken is the raw credential and appears ONLY here — the server keeps a hash, so it cannot be shown again or recovered."
       },
       "CropPlan": {
         "type": "object",
@@ -3324,6 +3397,90 @@
           "user",
           "tenant"
         ]
+      },
+      "DataStream": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "TEMPERATURE",
+              "SOIL_MOISTURE",
+              "HUMIDITY",
+              "RAINFALL",
+              "WIND",
+              "LEAF_WETNESS",
+              "CUSTOM"
+            ]
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "locationId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "name",
+          "kind",
+          "unit",
+          "status",
+          "locationId",
+          "createdAt"
+        ],
+        "description": "A device data stream. The ingest token’s HASH is never projected onto the wire — this shape is what every read returns, and the raw token appears exactly once, in the create response."
+      },
+      "DataStreamReading": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "recordedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "value": {
+            "type": "number"
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "recordedAt",
+          "value",
+          "unit"
+        ],
+        "description": "One sensor reading. `unit` is per-reading and may differ from the stream’s declared unit."
       },
       "EmptyBody": {
         "type": "object",
@@ -5068,6 +5225,88 @@
         ],
         "description": "Poll response for an off-thread import. Note that a not-found or wrong-tenant job answers 404 with the bare `{ error }` body, not this shape and not the canonical envelope."
       },
+      "IndexTiles": {
+        "type": "object",
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "tileUrl": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "configured",
+          "tileUrl"
+        ],
+        "description": "A satellite-index overlay source. configured:false means no Earth-Engine credentials on this deployment; configured:true with an EMPTY tileUrl means there is nothing to show (no field geometry, or a transient failure named in error) and the overlay should simply stay off. `date` is the imagery’s real acquisition date and can be older than the date requested, because the composite falls back to the latest available window."
+      },
+      "IngestAck": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok"
+            ]
+          },
+          "inserted": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "status",
+          "inserted"
+        ],
+        "description": "inserted may be LOWER than the batch size — duplicates and out-of-range readings are dropped rather than failing the batch."
+      },
+      "IngestReadings": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "minLength": 16,
+            "maxLength": 512
+          },
+          "readings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "recordedAt": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number"
+                },
+                "unit": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 32
+                }
+              },
+              "required": [
+                "recordedAt",
+                "value"
+              ]
+            }
+          }
+        },
+        "required": [
+          "token",
+          "readings"
+        ],
+        "description": "A batch of readings plus the stream’s raw ingest token. The batch is bounded server-side (~1000)."
+      },
       "InquiredParcelIds": {
         "type": "object",
         "properties": {
@@ -5081,6 +5320,68 @@
         "required": [
           "parcelIds"
         ]
+      },
+      "InventoryLedgerEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "quantityDelta": {
+            "type": "number"
+          },
+          "unitSymbol": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "actor": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          },
+          "entryHash": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "quantityDelta",
+          "unitSymbol",
+          "occurredAt",
+          "reason",
+          "actor",
+          "entryHash"
+        ],
+        "description": "One append-only stock movement. UPDATE and DELETE are blocked at the database, so a correction is a NEW opposing entry rather than an edit. entryHash chains the row to its predecessor and is what a tamper check verifies."
       },
       "InventoryLot": {
         "type": "object",
@@ -5176,6 +5477,131 @@
         "additionalProperties": {},
         "description": "An inventory lot of a catalog input (seed / pesticide / fertilizer / …). quantityOnHand is the ledger-derived on-hand quantity in the lot unit; lowStock flags reorder. Cursor-paginate with ?limit=&cursor= for large fields."
       },
+      "InventoryLotDetail": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "lotCode": {
+            "type": "string"
+          },
+          "item": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "category": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "category"
+            ]
+          },
+          "unit": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "symbol": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "symbol",
+              "name"
+            ]
+          },
+          "location": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          },
+          "quantityOnHand": {
+            "type": "number"
+          },
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "receivedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "ledger": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InventoryLedgerEntry"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "lotCode",
+          "item",
+          "unit",
+          "location",
+          "quantityOnHand",
+          "expiresAt",
+          "receivedAt",
+          "ledger"
+        ],
+        "description": "A lot with its recent ledger embedded. NOT the same shape as a list row: this has `ledger` and no `lowStock`. For deep history use GET /lots/{lotId}/ledger, which is cursor-paginated."
+      },
+      "InventoryLotMoveAck": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "locationId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "moved": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "locationId",
+          "moved"
+        ],
+        "description": "A move acknowledgement. `moved: false` means the lot was already there — the request succeeded and changed nothing, which is different from a failure and different from a move."
+      },
       "InventoryLotPage": {
         "type": "object",
         "properties": {
@@ -5205,6 +5631,41 @@
           "pageInfo"
         ],
         "description": "A cursor page of inventory lots — returned by GET /inventory/lots?limit=&cursor=."
+      },
+      "InventoryMovementAck": {
+        "type": "object",
+        "properties": {
+          "quantityOnHand": {
+            "type": "number"
+          },
+          "entryHash": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "quantityOnHand",
+          "entryHash"
+        ],
+        "description": "What receive and adjust answer with: the resulting balance and the new chain head. Not the lot and not the ledger entry."
+      },
+      "InventoryPageInfo": {
+        "type": "object",
+        "properties": {
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hasNextPage": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "nextCursor",
+          "hasNextPage"
+        ],
+        "description": "The `{ items, pageInfo }` convention — used by inventory, NOT by grain (`{rows, totalCount, truncated}`) or exchange (`{rows, nextCursor}`). One pager cannot serve all three."
       },
       "LocationBulkDeleteRequest": {
         "type": "object",
@@ -9043,6 +9504,118 @@
           "metadataJson": {}
         },
         "description": "Partial update for a task. Status changes and assignment go through their own focused endpoints."
+      },
+      "TraceLotNode": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "lotCode": {
+            "type": "string"
+          },
+          "item": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "category": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "category"
+            ]
+          },
+          "unitSymbol": {
+            "type": "string"
+          },
+          "quantityOnHand": {
+            "type": "number"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "lotCode",
+          "item",
+          "unitSymbol",
+          "quantityOnHand",
+          "fields"
+        ],
+        "description": "One lot in the genealogy graph, annotated with the fields it touched."
+      },
+      "TraceLotResult": {
+        "type": "object",
+        "properties": {
+          "root": {
+            "$ref": "#/components/schemas/TraceLotNode"
+          },
+          "ancestors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TraceLotNode"
+            }
+          },
+          "descendants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TraceLotNode"
+            }
+          },
+          "edges": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "parentLotId": {
+                  "type": "string"
+                },
+                "childLotId": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "parentLotId",
+                "childLotId",
+                "type"
+              ]
+            }
+          }
+        },
+        "required": [
+          "root",
+          "ancestors",
+          "descendants",
+          "edges"
+        ],
+        "description": "A lot’s provenance in both directions. ancestors and descendants are flat arrays; `edges` is what makes them a graph."
       },
       "TrendDataPoint": {
         "type": "object",
@@ -26976,6 +27549,2279 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PlantingSoilSuitability"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/inventory/lots": {
+      "get": {
+        "operationId": "listInventoryLots",
+        "summary": "List stock lots",
+        "description": "DUAL-MODE, decided by the query. Bare, it returns the full ARRAY. With `limit` or `cursor` it returns a PAGE — `{ items, pageInfo }`, which is the inventory convention and differs from both grain’s and exchange’s. \n\nA client that assumes the page shape and calls this bare reads `undefined.items`.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "itemId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Either the full array (bare) or one page (with limit/cursor). The two are the same rows in different envelopes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "allOf": [
+                          {
+                            "$ref": "#/components/schemas/InventoryLot"
+                          },
+                          {
+                            "description": "A stock lot as a LIST row. quantityOnHand is a number (the mapper converts the Decimal). lowStock is computed and false BOTH when stock is sufficient and when the item has no reorderLevel — it is not a reliable \"is fine\" signal on its own."
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "allOf": [
+                              {
+                                "$ref": "#/components/schemas/InventoryLot"
+                              },
+                              {
+                                "description": "A stock lot as a LIST row. quantityOnHand is a number (the mapper converts the Decimal). lowStock is computed and false BOTH when stock is sufficient and when the item has no reorderLevel — it is not a reliable \"is fine\" signal on its own."
+                              }
+                            ]
+                          }
+                        },
+                        "pageInfo": {
+                          "$ref": "#/components/schemas/InventoryPageInfo"
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "pageInfo"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createInventoryLot",
+        "summary": "Create a stock lot",
+        "description": "Requires the INVENTORY module. `initialQuantity` opens the lot with a receipt — omit it for a lot that exists before anything arrives.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "itemId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "lotCode": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "locationId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "expiresAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "receivedAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "unitCostAmount": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "minimum": 0
+                  },
+                  "unitCostCurrency": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 8
+                  },
+                  "initialQuantity": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "itemId",
+                  "lotCode"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The created lot.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/InventoryLot"
+                    },
+                    {
+                      "description": "A stock lot as a LIST row. quantityOnHand is a number (the mapper converts the Decimal). lowStock is computed and false BOTH when stock is sufficient and when the item has no reorderLevel — it is not a reliable \"is fine\" signal on its own."
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/inventory/lots/{lotId}": {
+      "get": {
+        "operationId": "getInventoryLot",
+        "summary": "Get one lot with its recent ledger",
+        "description": "NOT the list row: this carries an inline `ledger` (the recent page, newest first) and has no `lowStock`. For full history use the cursor-paginated `/ledger` route.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "lotId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The lot and its recent movements.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InventoryLotDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateInventoryLot",
+        "summary": "Move a lot to another location",
+        "description": "ONE field is updatable: `locationId`. Quantity is never edited — it only ever moves through the ledger, via receive and adjust.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "lotId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "locationId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "locationId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The id, the resulting location, and whether anything actually moved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InventoryLotMoveAck"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/inventory/lots/{lotId}/receive": {
+      "post": {
+        "operationId": "receiveInventoryStock",
+        "summary": "Receive stock into a lot",
+        "description": "Appends a RECEIPT to the ledger. `quantity` must be POSITIVE — receiving a negative amount is an adjustment, and it has its own route so that the reason is required.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "lotId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "quantity": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "quantity"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The new balance and chain head.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InventoryMovementAck"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/inventory/lots/{lotId}/adjust": {
+      "post": {
+        "operationId": "adjustInventoryStock",
+        "summary": "Correct a lot’s quantity",
+        "description": "Appends a signed ADJUSTMENT. `delta` may not be ZERO and `reason` is required — the ledger is append-only, so an adjustment of nothing would be a permanent record that someone touched the stock and changed nothing. \n\nCorrections are new entries, never edits: there is no route that rewrites history because the database blocks it.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "lotId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "delta": {
+                    "type": "number"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "delta",
+                  "reason"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The new balance and chain head.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InventoryMovementAck"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/inventory/lots/{lotId}/ledger": {
+      "get": {
+        "operationId": "listInventoryLotLedger",
+        "summary": "A lot’s full movement history",
+        "description": "Cursor-paginated deep history — the companion to the recent page embedded in `GET /lots/{lotId}`. Same entry shape. `{ items, pageInfo }`.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "lotId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of movements, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/InventoryLedgerEntry"
+                      }
+                    },
+                    "pageInfo": {
+                      "$ref": "#/components/schemas/InventoryPageInfo"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "pageInfo"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/inventory/lots/{lotId}/trace": {
+      "get": {
+        "operationId": "traceInventoryLot",
+        "summary": "Trace a lot’s provenance both ways",
+        "description": "The FOOD-SAFETY RECALL query. Walks the genealogy graph up to the seed and input lots this one derives from, and down to the harvest lots derived from it, annotating every node with the fields it touched. \n\n\"Given this seed lot, which fields and which harvest lots are implicated?\" — and its inverse, \"given this harvest, what went into it?\". `edges` carries the parent/child links so a client can draw the graph rather than infer it from the arrays.",
+        "tags": [
+          "Inventory"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "lotId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The lot, its ancestors, its descendants, and the edges between them.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TraceLotResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/agro/locations/{locationId}/ndvi-tiles": {
+      "get": {
+        "operationId": "getNDVITiles",
+        "summary": "NDVI tile source for a location",
+        "description": "A recent cloud-masked Sentinel-2 NDVI composite for the location’s field, via Google Earth Engine, Redis-cached. \n\nReturns JSON, not imagery — `tileUrl` is what a map layer then fetches. \n\nHandle all THREE states: `configured:false` (no credentials — show a muted hint, not an error), `configured:true` with an EMPTY `tileUrl` (nothing to show; keep the map, leave the overlay off), and a real URL. \n\n**Display the returned `date`, not the one you asked for** — the composite falls back to the latest available window, so they legitimately differ. \n\nReachable by the restricted MECHANISATOR persona, which is deliberate: the sprayer needs the map on the job.",
+        "tags": [
+          "Agro"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "locationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "YYYY-MM-DD. A REQUEST; the response may report an older date."
+            },
+            "required": false,
+            "description": "YYYY-MM-DD. A REQUEST; the response may report an older date.",
+            "name": "date",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The NDVI overlay source.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexTiles"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/agro/locations/{locationId}/ndmi-tiles": {
+      "get": {
+        "operationId": "getNDMITiles",
+        "summary": "NDMI tile source for a location",
+        "description": "A recent cloud-masked Sentinel-2 NDMI composite for the location’s field, via Google Earth Engine, Redis-cached. \n\nReturns JSON, not imagery — `tileUrl` is what a map layer then fetches. \n\nHandle all THREE states: `configured:false` (no credentials — show a muted hint, not an error), `configured:true` with an EMPTY `tileUrl` (nothing to show; keep the map, leave the overlay off), and a real URL. \n\n**Display the returned `date`, not the one you asked for** — the composite falls back to the latest available window, so they legitimately differ. \n\nReachable by the restricted MECHANISATOR persona, which is deliberate: the sprayer needs the map on the job.",
+        "tags": [
+          "Agro"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "locationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "YYYY-MM-DD. A REQUEST; the response may report an older date."
+            },
+            "required": false,
+            "description": "YYYY-MM-DD. A REQUEST; the response may report an older date.",
+            "name": "date",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The NDMI overlay source.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexTiles"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/agro/locations/{locationId}/ndre-tiles": {
+      "get": {
+        "operationId": "getNDRETiles",
+        "summary": "NDRE tile source for a location",
+        "description": "A recent cloud-masked Sentinel-2 NDRE composite for the location’s field, via Google Earth Engine, Redis-cached. \n\nReturns JSON, not imagery — `tileUrl` is what a map layer then fetches. \n\nHandle all THREE states: `configured:false` (no credentials — show a muted hint, not an error), `configured:true` with an EMPTY `tileUrl` (nothing to show; keep the map, leave the overlay off), and a real URL. \n\n**Display the returned `date`, not the one you asked for** — the composite falls back to the latest available window, so they legitimately differ. \n\nReachable by the restricted MECHANISATOR persona, which is deliberate: the sprayer needs the map on the job.",
+        "tags": [
+          "Agro"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "locationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "YYYY-MM-DD. A REQUEST; the response may report an older date."
+            },
+            "required": false,
+            "description": "YYYY-MM-DD. A REQUEST; the response may report an older date.",
+            "name": "date",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The NDRE overlay source.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexTiles"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/agro/locations/{locationId}/gndvi-tiles": {
+      "get": {
+        "operationId": "getGNDVITiles",
+        "summary": "GNDVI tile source for a location",
+        "description": "A recent cloud-masked Sentinel-2 GNDVI composite for the location’s field, via Google Earth Engine, Redis-cached. \n\nReturns JSON, not imagery — `tileUrl` is what a map layer then fetches. \n\nHandle all THREE states: `configured:false` (no credentials — show a muted hint, not an error), `configured:true` with an EMPTY `tileUrl` (nothing to show; keep the map, leave the overlay off), and a real URL. \n\n**Display the returned `date`, not the one you asked for** — the composite falls back to the latest available window, so they legitimately differ. \n\nReachable by the restricted MECHANISATOR persona, which is deliberate: the sprayer needs the map on the job.",
+        "tags": [
+          "Agro"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "locationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "YYYY-MM-DD. A REQUEST; the response may report an older date."
+            },
+            "required": false,
+            "description": "YYYY-MM-DD. A REQUEST; the response may report an older date.",
+            "name": "date",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The GNDVI overlay source.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexTiles"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/agro/locations/{locationId}/evi-tiles": {
+      "get": {
+        "operationId": "getEVITiles",
+        "summary": "EVI tile source for a location",
+        "description": "A recent cloud-masked Sentinel-2 EVI composite for the location’s field, via Google Earth Engine, Redis-cached. \n\nReturns JSON, not imagery — `tileUrl` is what a map layer then fetches. \n\nHandle all THREE states: `configured:false` (no credentials — show a muted hint, not an error), `configured:true` with an EMPTY `tileUrl` (nothing to show; keep the map, leave the overlay off), and a real URL. \n\n**Display the returned `date`, not the one you asked for** — the composite falls back to the latest available window, so they legitimately differ. \n\nReachable by the restricted MECHANISATOR persona, which is deliberate: the sprayer needs the map on the job.",
+        "tags": [
+          "Agro"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "locationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "YYYY-MM-DD. A REQUEST; the response may report an older date."
+            },
+            "required": false,
+            "description": "YYYY-MM-DD. A REQUEST; the response may report an older date.",
+            "name": "date",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The EVI overlay source.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexTiles"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/agro/data-streams": {
+      "get": {
+        "operationId": "listDataStreams",
+        "summary": "List device data streams",
+        "description": "The tenant’s sensor streams, newest first. The ingest token hash is deliberately NOT projected — there is no read that returns it.",
+        "tags": [
+          "Agro"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The streams. A BARE ARRAY.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DataStream"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createDataStream",
+        "summary": "Create a device data stream",
+        "description": "**The response carries `ingestToken` — the RAW token, and this is the ONLY time it is returned.** Every later read projects the stream without it, and only a hash is stored, so it cannot be recovered. A client must persist it at creation or the stream has to be recreated. \n\nThat token is what a device sends to the public ingest route; treat it as a credential, not as an identifier.",
+        "tags": [
+          "Agro"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDataStream"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The created stream AND its raw ingest token, returned once.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedDataStream"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/agro/data-streams/{streamId}/readings": {
+      "get": {
+        "operationId": "listDataStreamReadings",
+        "summary": "Recent readings for a stream",
+        "description": "Readings newest-first, capped server-side. Values are plain numbers.",
+        "tags": [
+          "Agro"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "streamId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The readings. A BARE ARRAY.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DataStreamReading"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agro/data-streams/{streamId}/ingest": {
+      "post": {
+        "operationId": "ingestDataStreamReadings",
+        "summary": "Device reading ingestion (public, token-gated)",
+        "description": "PUBLIC and session-less — the `token` in the body IS the credential, and the tenant is resolved from the stream it matches. Device-facing. \n\n**Every rejection is the SAME vague 401** `{ \"error\": \"access_denied\" }` — unknown stream, wrong token and disabled stream are indistinguishable on purpose, so probing stream ids gives no oracle. Do not branch on the reason. \n\n**503 `{ \"error\": \"feature_disabled\" }`** when the operator has not enabled the feature; that is a deployment state, not a client error, and retrying will not change it. \n\nThis route deliberately does NOT use the standard error envelope — these bare `{ error }` shapes are its contract, which is why its failures look unlike the rest of this API.",
+        "tags": [
+          "Agro"
+        ],
+        "security": [],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "streamId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IngestReadings"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted. `inserted` is how many rows landed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestAck"
                 }
               }
             }

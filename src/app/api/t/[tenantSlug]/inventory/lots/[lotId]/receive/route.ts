@@ -5,8 +5,8 @@ import { withValidatedBody } from '@/lib/validation/route';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { z } from 'zod';
+import { ReceiveSchema } from '@/app-layer/schemas/inventory.schemas';
 
-const ReceiveSchema = z.object({ quantity: z.number().positive() }).strip();
 
 export const POST = withApiErrorHandling(
     withValidatedBody(
