@@ -76,6 +76,9 @@ export function FarmRiskClient({
         [inquiredQ.data],
     );
     const parcels = parcelsQ.data?.parcels ?? [];
+    // The selected location's name, for the crop-aggregate chip's label.
+    const selectedLocationName =
+        locations.find((l) => l.id === locationId)?.name ?? null;
 
     return (
         <div className="space-y-section p-4">
@@ -121,6 +124,8 @@ export function FarmRiskClient({
                                     locationId={locationId}
                                     fallbackName={p.name}
                                     fallbackCropType={p.cropType ?? null}
+                                    locationName={selectedLocationName}
+                                    locationParcels={parcels}
                                     areaHa={p.areaHa ?? null}
                                     geeConfigured={geeConfigured}
                                     hasRequested={inquired.has(p.id)}
@@ -140,6 +145,8 @@ function ParcelRiskCard({
     locationId,
     fallbackName,
     fallbackCropType,
+    locationName,
+    locationParcels,
     areaHa,
     geeConfigured,
     hasRequested,
@@ -154,6 +161,9 @@ function ParcelRiskCard({
      * preselect whenever that read is slow or failed.
      */
     fallbackCropType: string | null;
+    /** For the crop-aggregate chip (#1121) — the location the card belongs to. */
+    locationName: string | null;
+    locationParcels: readonly { cropType?: string | null; areaHa?: number | null }[];
     areaHa: number | null;
     geeConfigured: boolean;
     /** Has this tenant already asked about THIS parcel? Server-read. */
@@ -258,6 +268,8 @@ function ParcelRiskCard({
                     risk={risk ? { overall: risk.overall, ndvi: risk.ndvi, ndmi: risk.ndmi } : null}
                     cropType={risk?.cropType ?? fallbackCropType}
                     areaHa={areaHa}
+                    locationName={locationName}
+                    locationParcels={locationParcels}
                     hasRequested={hasRequested}
                     onRequested={onRequested}
                 />

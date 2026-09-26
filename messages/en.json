@@ -2500,6 +2500,7 @@
         "areaLabel": "Area (dca)",
         "areaPlaceholder": "e.g. 1,000",
         "areaEcho": "= {dca} dca",
+        "cropChip": "All {product} at {location} — {area} dca ({count, plural, one {# parcel} other {# parcels}})",
         "sumLabel": "Sum insured",
         "sumModeLabel": "How you enter the sum insured",
         "sumModeTotal": "Total",
@@ -6339,7 +6340,13 @@
       "premiumLabel": "Indicative premium",
       "perDcaLabel": "Premium per dca",
       "scheduleLabel": "Payment",
-      "once": "Once"
+      "once": "Once",
+      "areaUnit": "{dca} dca",
+      "scopeParcelsOne": "1 {product} parcel",
+      "scopeParcelsMany": "{count} {product} parcels",
+      "areaScopeCrop": "{area} — all {parcels} at {location}",
+      "areaScopeCropNoLocation": "{area} — all {parcels}",
+      "areaScopeCustom": "{area} (entered by hand)"
     },
     "exchangeMessage": {
       "subject": "New message about your {commodity} listing",

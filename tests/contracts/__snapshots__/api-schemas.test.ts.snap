@@ -2751,6 +2751,20 @@ exports[`API contract — per-schema snapshots schema: CreateInsuranceLeadReques
               ]
             }
           ]
+        },
+        "areaScope": {
+          "type": "string",
+          "enum": [
+            "parcel",
+            "crop-at-location",
+            "custom"
+          ],
+          "description": "What the area covers. Absent means \\"parcel\\"."
+        },
+        "coveredParcelCount": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 10000
         }
       },
       "required": [

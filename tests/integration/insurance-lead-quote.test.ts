@@ -58,12 +58,15 @@ afterAll(async () => {
     await prisma.$disconnect();
 });
 
+// `as const` so `productKey` and `instalments` stay LITERALS. The usecase input
+// is derived from the request schema (#1121), so they must satisfy the product
+// enum and the 1|2|3|4 union rather than widen to string/number.
 const QUOTE = {
     productKey: 'wheat',
     areaDca: 1000,
     sumInsuredCents: 10_000_000,
     instalments: 3,
-};
+} as const;
 
 describeFn('the lead carries a server-computed quote', () => {
     it('recomputes the premium and stores a snapshot, ignoring nothing the client sent', async () => {

@@ -33,6 +33,25 @@ export const CreateInsuranceLeadSchema = z
                     z.literal(3),
                     z.literal(4),
                 ]),
+                /**
+                 * What the area MEANS, for the operator reading the lead. The
+                 * client derives it from the value at send time rather than
+                 * tracking it through events, so it cannot drift out of step
+                 * with the number beside it.
+                 *
+                 * Absent is treated as 'parcel', which is what every lead
+                 * before #1121 was.
+                 */
+                areaScope: z
+                    .enum(['parcel', 'crop-at-location', 'custom'])
+                    .optional()
+                    .describe('What the area covers. Absent means "parcel".'),
+                /**
+                 * How many parcels the area spans. Required when the scope is
+                 * 'crop-at-location' — see the refine below: "1,240 dca" with
+                 * no count tells the operator nothing about what it covers.
+                 */
+                coveredParcelCount: z.number().int().positive().max(10_000).optional(),
             })
             .strip()
             .optional(),
@@ -63,5 +82,21 @@ export const CreateInsuranceLeadSchema = z
             (typeof body.message === 'string' && body.message.trim() !== '') ||
             body.quote !== undefined,
         { message: 'Provide a message or a quote', path: ['message'] },
+    )
+    /**
+     * A crop-wide area must say how many parcels it spans.
+     *
+     * The rule lives out here with the other cross-field rule rather than on
+     * the `quote` object, so `quote` stays a plain object for the OpenAPI
+     * generator instead of becoming a ZodEffects.
+     */
+    .refine(
+        (body) =>
+            body.quote?.areaScope !== 'crop-at-location' ||
+            body.quote.coveredParcelCount !== undefined,
+        {
+            message: 'coveredParcelCount is required when areaScope is crop-at-location',
+            path: ['quote', 'coveredParcelCount'],
+        },
     );
 export type CreateInsuranceLeadBody = z.infer<typeof CreateInsuranceLeadSchema>;

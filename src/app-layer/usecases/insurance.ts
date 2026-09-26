@@ -21,6 +21,7 @@ import { codedBadRequest } from '@/lib/errors/types';
 import { getProduct, quotePremium } from '@/lib/insurance';
 import { logger } from '@/lib/observability/logger';
 import { Prisma } from '@prisma/client';
+import type { CreateInsuranceLeadBody } from '@/app-layer/schemas/insurance.schemas';
 
 /**
  * Parcel ids this tenant has already requested a quote for.
@@ -59,23 +60,22 @@ export async function listInquiredParcelIds(
     });
 }
 
-export interface CreateInsuranceLeadInput {
-    parcelId: string;
-    /** Optional only when `quote` is present — the schema's refine enforces it. */
-    message?: string;
-    locationId?: string | null;
-    risk?: { overall?: string; ndvi?: number | null; ndmi?: number | null } | null;
-    /**
-     * What the farmer chose. Deliberately carries NO price: the server
-     * recomputes it, so a client cannot name its own premium.
-     */
-    quote?: {
-        productKey: string;
-        areaDca: number;
-        sumInsuredCents: number;
-        instalments: number;
-    };
-}
+/**
+ * DERIVED from the request schema, not a second spelling of it.
+ *
+ * This was a hand-written interface duplicating `CreateInsuranceLeadSchema`,
+ * and it had already fallen behind: adding `areaScope` to the schema left the
+ * usecase unable to see it. The same drift the OpenAPI path had in #1119, for
+ * the same reason — two declarations of one contract.
+ *
+ * Deriving also tightens it: `productKey` becomes the product-key union rather
+ * than `string`. `evidence.ts` takes the same approach.
+ *
+ * The shape (parcelId, optional message, locationId, risk snapshot, and a
+ * `quote` that deliberately carries NO price so a client cannot name its own
+ * premium) is documented on the schema itself.
+ */
+export type CreateInsuranceLeadInput = CreateInsuranceLeadBody;
 
 /**
  * Capture an insurance quote request for a parcel.
@@ -112,6 +112,14 @@ export interface InsuranceQuoteSnapshot {
     premiumPerDcaCents: number;
     sumInsuredPerDcaCents: number;
     currencySymbol: string;
+    /**
+     * What the area covers. Defaulted to 'parcel' rather than left undefined,
+     * so every stored snapshot answers the question — including the leads
+     * written before #1121, which were all per-parcel.
+     */
+    areaScope: 'parcel' | 'crop-at-location' | 'custom';
+    /** Only set for 'crop-at-location'; the operator email reads it. */
+    coveredParcelCount?: number;
     computedAt: string;
 }
 
@@ -168,6 +176,10 @@ function buildQuoteSnapshot(
         instalmentsCents: q.instalmentsCents,
         premiumPerDcaCents: q.premiumPerDcaCents,
         sumInsuredPerDcaCents: q.sumInsuredPerDcaCents,
+        areaScope: quote.areaScope ?? 'parcel',
+        ...(quote.coveredParcelCount !== undefined
+            ? { coveredParcelCount: quote.coveredParcelCount }
+            : {}),
         currencySymbol,
         computedAt: new Date().toISOString(),
     };

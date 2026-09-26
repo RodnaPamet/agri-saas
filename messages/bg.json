@@ -2500,6 +2500,7 @@
         "areaLabel": "Площ (дка)",
         "areaPlaceholder": "напр. 1 000",
         "areaEcho": "= {dca} дка",
+        "cropChip": "Цялата площ с {product} в {location} — {area} дка ({count, plural, one {# парцел} other {# парцела}})",
         "sumLabel": "Застрахователна сума",
         "sumModeLabel": "Как въвеждате застрахователната сума",
         "sumModeTotal": "Общо",
@@ -6339,7 +6340,13 @@
       "premiumLabel": "Ориентировъчна премия",
       "perDcaLabel": "Премия на декар",
       "scheduleLabel": "Плащане",
-      "once": "Наведнъж"
+      "once": "Наведнъж",
+      "areaUnit": "{dca} дка",
+      "scopeParcelsOne": "1 парцел с {product}",
+      "scopeParcelsMany": "{count} парцела с {product}",
+      "areaScopeCrop": "{area} — всички {parcels} в {location}",
+      "areaScopeCropNoLocation": "{area} — всички {parcels}",
+      "areaScopeCustom": "{area} (ръчно въведена)"
     },
     "exchangeMessage": {
       "subject": "Ново съобщение за вашата обява за {commodity}",

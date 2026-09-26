@@ -61,9 +61,15 @@ const QUOTE = enMessages.ag.risk.quote;
 const PRODUCTS = enMessages.insurance.products;
 const RISK = { overall: 'MEDIUM', ndvi: 0.42, ndmi: 0.31 };
 
-function mount(
-    overrides: Partial<{ cropType: string | null; areaHa: number | null; risk: typeof RISK | null }> = {},
-) {
+type Overrides = Partial<{
+    cropType: string | null;
+    areaHa: number | null;
+    risk: typeof RISK | null;
+    locationName: string | null;
+    locationParcels: readonly { cropType?: string | null; areaHa?: number | null }[];
+}>;
+
+function mount(overrides: Overrides = {}) {
     const onRequested = jest.fn();
     const utils = render(
         <TooltipProvider delayDuration={0}>
@@ -74,6 +80,8 @@ function mount(
                 risk={'risk' in overrides ? overrides.risk! : RISK}
                 cropType={'cropType' in overrides ? overrides.cropType : 'Winter Wheat'}
                 areaHa={'areaHa' in overrides ? overrides.areaHa : 100}
+                locationName={'locationName' in overrides ? overrides.locationName : 'Polje Sever'}
+                locationParcels={overrides.locationParcels}
                 hasRequested={false}
                 onRequested={onRequested}
             />
@@ -89,7 +97,7 @@ const nextBtn = () => screen.getByTestId('wizard-next');
 const finishBtn = () => screen.getByTestId('wizard-finish');
 
 /** Open the calculator and walk to step 2. */
-async function openToCover(overrides = {}) {
+async function openToCover(overrides: Overrides = {}) {
     const m = mount(overrides);
     await userEvent.click(screen.getByRole('button', { name: ASK.open }));
     await screen.findByText(QUOTE.step1Title);
@@ -233,6 +241,9 @@ describe('step 3 — schedule, and sending', () => {
                 areaDca: 1000,
                 sumInsuredCents: 10_000_000,
                 instalments: 1,
+                // The prefilled area was left alone, so the scope derives as
+                // 'parcel' and carries no parcel count (#1121).
+                areaScope: 'parcel',
             },
             // No note typed, so the field is absent rather than "".
             message: undefined,
@@ -332,6 +343,117 @@ describe('step 3 — schedule, and sending', () => {
 
         await waitFor(() => expect(apiPost).toHaveBeenCalledTimes(1));
         expect(apiPost.mock.calls[0][1].message).toBe('Hail cover please');
+    });
+});
+
+describe('the crop-aggregate chip', () => {
+    // 3 wheat parcels: this one (100 ha = 1,000 dca) plus two more.
+    const THREE_WHEAT = [
+        { cropType: 'Winter Wheat', areaHa: 100 },
+        { cropType: 'Wheat', areaHa: 20 },
+        { cropType: 'пшеница', areaHa: 4 },
+    ];
+    const chip = () => el('insurance-quote-crop-chip');
+
+    it('offers the whole crop at the location, with the count', async () => {
+        await openToCover({ locationParcels: THREE_WHEAT });
+        // 124 ha over three parcels = 1,240 dca.
+        expect(chip()).toHaveTextContent('1240');
+        expect(chip()).toHaveTextContent('3 parcels');
+        expect(chip()).toHaveTextContent(PRODUCTS.wheat.name);
+        expect(chip()).toHaveTextContent('Polje Sever');
+    });
+
+    it('fills the area when tapped, and the premium follows', async () => {
+        await openToCover({ locationParcels: THREE_WHEAT });
+        await userEvent.click(chip());
+
+        expect(areaInput()).toHaveValue('1240');
+        await userEvent.type(sumInput(), '124 000');
+        // 1,240 dca at €124,000 on a 10% tariff: €12,400.00, still €10.00/dca.
+        expect(
+            await screen.findByText(
+                QUOTE.premiumLine.replace('{premium}', '€12,400.00').replace('{perDca}', '€10.00'),
+            ),
+        ).toBeInTheDocument();
+    });
+
+    it('is hidden when the location has only this one wheat parcel', async () => {
+        await openToCover({ locationParcels: [{ cropType: 'Winter Wheat', areaHa: 100 }] });
+        expect(chip()).toBeNull();
+    });
+
+    it('is hidden for a peril product, which aggregates no crop', async () => {
+        const m = mount({ cropType: null, locationParcels: THREE_WHEAT });
+        await userEvent.click(screen.getByRole('button', { name: ASK.open }));
+        await screen.findByText(QUOTE.step1Title);
+        await userEvent.click(el('insurance-quote-kind-peril'));
+        await userEvent.click(await screen.findByText(PRODUCTS.hail.name));
+        await userEvent.click(nextBtn());
+        await screen.findByText(QUOTE.step2Title);
+
+        expect(chip()).toBeNull();
+        expect(m).toBeTruthy();
+    });
+
+    it('is hidden when the aggregate equals this parcel\'s own area', async () => {
+        // One other parcel, but of a different crop — so the wheat total is
+        // just this parcel and the chip would offer what the field already has.
+        await openToCover({
+            locationParcels: [
+                { cropType: 'Winter Wheat', areaHa: 100 },
+                { cropType: 'Maize', areaHa: 50 },
+            ],
+        });
+        expect(chip()).toBeNull();
+    });
+
+    it('posts areaScope crop-at-location WITH the parcel count', async () => {
+        await openToCover({ locationParcels: THREE_WHEAT });
+        await userEvent.click(chip());
+        await userEvent.type(sumInput(), '124 000');
+        await waitFor(() => expect(nextBtn()).toBeEnabled());
+        await userEvent.click(nextBtn());
+        await screen.findByText(QUOTE.step3Title);
+        await userEvent.click(finishBtn());
+
+        await waitFor(() => expect(apiPost).toHaveBeenCalledTimes(1));
+        expect(apiPost.mock.calls[0][1].quote).toMatchObject({
+            areaDca: 1240,
+            areaScope: 'crop-at-location',
+            coveredParcelCount: 3,
+        });
+    });
+
+    it('derives custom after a hand edit, and drops the count', async () => {
+        // The scope is derived from the VALUE at send time, so editing after
+        // tapping cannot leave the lead claiming "all your wheat".
+        await openToCover({ locationParcels: THREE_WHEAT });
+        await userEvent.click(chip());
+        await userEvent.clear(areaInput());
+        await userEvent.type(areaInput(), '900');
+        await userEvent.type(sumInput(), '124 000');
+        await waitFor(() => expect(nextBtn()).toBeEnabled());
+        await userEvent.click(nextBtn());
+        await screen.findByText(QUOTE.step3Title);
+        await userEvent.click(finishBtn());
+
+        await waitFor(() => expect(apiPost).toHaveBeenCalledTimes(1));
+        const quote = apiPost.mock.calls[0][1].quote;
+        expect(quote.areaScope).toBe('custom');
+        expect(quote).not.toHaveProperty('coveredParcelCount');
+    });
+
+    it('derives parcel scope when the prefilled area is left alone', async () => {
+        await openToCover({ locationParcels: THREE_WHEAT });
+        await userEvent.type(sumInput(), '100 000');
+        await waitFor(() => expect(nextBtn()).toBeEnabled());
+        await userEvent.click(nextBtn());
+        await screen.findByText(QUOTE.step3Title);
+        await userEvent.click(finishBtn());
+
+        await waitFor(() => expect(apiPost).toHaveBeenCalledTimes(1));
+        expect(apiPost.mock.calls[0][1].quote.areaScope).toBe('parcel');
     });
 });
 
