@@ -6,6 +6,7 @@ import { getCropPlan, updateCropPlan, deleteCropPlan, getCropPlanProgress } from
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { withValidatedBody } from '@/lib/validation/route';
 import { jsonResponse } from '@/lib/api-response';
+import { UpdateCropPlanSchema } from '@/app-layer/schemas/planning.schemas';
 
 /**
  * A single crop plan (PLANNING module).
@@ -15,24 +16,6 @@ import { jsonResponse } from '@/lib/api-response';
  *   DELETE → soft-delete the plan (admin-gated).
  */
 
-const UpdateCropPlanSchema = z
-    .object({
-        name: z.string().min(1).max(200).optional(),
-        cropVarietyId: z.string().nullable().optional(),
-        locationId: z.string().nullable().optional(),
-        parcelId: z.string().nullable().optional(),
-        method: z.enum(['DIRECT_SOW', 'TRANSPLANT']).optional(),
-        firstSowDate: z.string().min(8).optional(),
-        successions: z.number().int().min(1).max(365).optional(),
-        intervalDays: z.number().int().min(0).max(365).optional(),
-        plantsPerSuccession: z.number().int().min(0).max(10000000).nullable().optional(),
-        bedLengthM: z.number().min(0).max(1000000).nullable().optional(),
-        rowsPerBed: z.number().int().min(0).max(1000).nullable().optional(),
-        targetAreaM2: z.number().min(0).max(100000000).nullable().optional(),
-        status: z.enum(['DRAFT', 'ACTIVE', 'COMPLETED', 'CANCELLED']).optional(),
-        notes: z.string().max(5000).nullable().optional(),
-    })
-    .strip();
 
 export const GET = withApiErrorHandling(
     async (

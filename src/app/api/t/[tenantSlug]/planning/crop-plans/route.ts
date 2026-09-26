@@ -8,6 +8,7 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { withValidatedBody } from '@/lib/validation/route';
 import { csvEnumField } from '@/lib/validation/query-params';
 import { jsonResponse } from '@/lib/api-response';
+import { CreateCropPlanSchema } from '@/app-layer/schemas/planning.schemas';
 
 /**
  * Crop plans — the succession CONFIG the engine expands into Planting
@@ -25,26 +26,6 @@ import { jsonResponse } from '@/lib/api-response';
  * opaque ids, not multi-select facets.
  */
 
-const CreateCropPlanSchema = z
-    .object({
-        seasonId: z.string().min(1, 'A season is required'),
-        cropTypeId: z.string().min(1, 'A crop type is required'),
-        cropVarietyId: z.string().nullable().optional(),
-        locationId: z.string().nullable().optional(),
-        parcelId: z.string().nullable().optional(),
-        name: z.string().min(1, 'Crop plan name is required').max(200),
-        method: z.enum(['DIRECT_SOW', 'TRANSPLANT']).optional(),
-        firstSowDate: z.string().min(8, 'First sow date is required'),
-        successions: z.number().int().min(1).max(365).optional(),
-        intervalDays: z.number().int().min(0).max(365).optional(),
-        plantsPerSuccession: z.number().int().min(0).max(10000000).nullable().optional(),
-        bedLengthM: z.number().min(0).max(1000000).nullable().optional(),
-        rowsPerBed: z.number().int().min(0).max(1000).nullable().optional(),
-        targetAreaM2: z.number().min(0).max(100000000).nullable().optional(),
-        status: z.enum(['DRAFT', 'ACTIVE', 'COMPLETED', 'CANCELLED']).optional(),
-        notes: z.string().max(5000).nullable().optional(),
-    })
-    .strip();
 
 export const GET = withApiErrorHandling(
     async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> }) => {

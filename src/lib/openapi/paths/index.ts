@@ -25,6 +25,8 @@ import { registerTrendsPaths } from './trends.paths';
 import { registerExchangeListingPaths } from './exchange-listings.paths';
 import { registerCatalogPaths } from './catalog.paths';
 import { registerAuthNativePaths } from './auth-native.paths';
+import { registerNotificationPaths } from './notifications.paths';
+import { registerPlanningPaths } from './planning.paths';
 
 export function registerAllPaths(registry: OpenAPIRegistry): void {
     registerSecuritySchemes(registry);
@@ -47,4 +49,6 @@ export function registerAllPaths(registry: OpenAPIRegistry): void {
     registerExchangeListingPaths(registry);
     registerCatalogPaths(registry);
     registerAuthNativePaths(registry);
+    registerNotificationPaths(registry);
+    registerPlanningPaths(registry);
 }
