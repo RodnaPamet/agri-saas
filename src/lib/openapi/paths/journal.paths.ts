@@ -148,4 +148,107 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
         params: EntryParams,
         success: { status: 200, description: 'Deleted.', schema: z.object({ success: z.literal(true) }) },
     });
+
+    // ── The entry's files, and its soft-delete lifecycle ──
+    //
+    // Three routes that complete the ДНЕВНИК surface. The register is a
+    // LEGALLY FILED record, which is why delete is soft and purge is a separate,
+    // explicit act rather than a harder DELETE on the same path.
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/journal/{id}/files',
+        operationId: 'addJournalEntryFile',
+        summary: 'Attach a photo or document to an entry',
+        description:
+            'ONE route, TWO request content types, and which one you send decides what happens:' +
+            '\n\n**`multipart/form-data`** uploads the file, mints the FileRecord through the shared storage pipeline and links it — this is the photo-logging path from the field.' +
+            '\n\n**`application/json`** attaches an ALREADY-uploaded FileRecord by id (`{ fileRecordId, caption? }`). Upload first, here or via `/evidence/uploads`, then reference the id.' +
+            '\n\nRe-attaching a file that is already linked returns the EXISTING link rather than creating a second one, so a retry after a dropped connection does not double-attach a photo.',
+        tags: ['Journal'],
+        params: EntryParams,
+        bodyContentType: 'multipart/form-data',
+        body: z
+            .object({
+                file: z.string().openapi({ format: 'binary' }),
+                caption: z.string().optional(),
+            })
+            .openapi('JournalFileUpload', {
+                description:
+                    'The multipart form. Send `application/json` with `{ fileRecordId, caption? }` instead to attach an already-stored file.',
+            }),
+        success: {
+            status: 201,
+            description: 'The link between the entry and the file.',
+            schema: z
+                .object({
+                    id: z.string(),
+                    tenantId: z.string(),
+                    logEntryId: z.string(),
+                    fileRecordId: z.string(),
+                    caption: z.string().nullable(),
+                    createdAt: z.string().datetime(),
+                })
+                .passthrough()
+                .openapi('JournalFileLink', {
+                    description:
+                        'The LINK, not the file. An already-linked file returns its existing link, so this is idempotent per (entry, file).',
+                }),
+        },
+    });
+
+    op(registry, {
+        method: 'delete',
+        path: '/api/t/{tenantSlug}/journal/{id}/files',
+        operationId: 'removeJournalEntryFile',
+        summary: 'Detach a file from an entry',
+        description:
+            'Takes `fileRecordId` as a QUERY parameter, not a path segment — the link is identified by the pair, and the file may be attached to more than one entry.' +
+            '\n\n**The FileRecord SURVIVES.** Detaching unlinks; it does not delete. A photo taken in a field and attached to a legally-filed record is evidence, and removing it from one entry is not a reason to destroy it.',
+        tags: ['Journal'],
+        params: EntryParams,
+        query: z.object({
+            fileRecordId: z.string().openapi({ description: 'The file to unlink from this entry.' }),
+        }),
+        success: {
+            status: 200,
+            description: 'Detached. The file itself still exists.',
+            schema: z.object({ success: z.boolean() }),
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/journal/{id}/restore',
+        operationId: 'restoreJournalEntry',
+        summary: 'Restore a soft-deleted entry',
+        description:
+            'Brings a soft-deleted entry back into the register. DELETE on an entry is soft precisely so this exists: the ДНЕВНИК is a filed record, and an operator deleting the wrong row must not be a permanent loss.',
+        tags: ['Journal'],
+        params: EntryParams,
+        success: {
+            status: 200,
+            description: 'The restored entry.',
+            schema: z.object({ id: z.string() }).passthrough().openapi('RestoredLogEntry', {
+                description: 'The entry as it is once restored.',
+            }),
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/journal/{id}/purge',
+        operationId: 'purgeJournalEntry',
+        summary: 'Permanently destroy a soft-deleted entry',
+        description:
+            'IRREVERSIBLE. This is the one that actually removes the row, and it is a SEPARATE route from DELETE on purpose — a register that can be emptied by the same verb that hides a row is not a register.' +
+            '\n\nThere is no restore after this. A client should treat it as a distinct, confirmed action rather than as the second half of a delete flow.',
+        tags: ['Journal'],
+        params: EntryParams,
+        success: {
+            status: 200,
+            description: 'Purged. Nothing to restore.',
+            schema: z.object({ success: z.boolean(), purged: z.boolean() }),
+        },
+    });
 }

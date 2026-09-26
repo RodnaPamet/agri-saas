@@ -6147,6 +6147,65 @@ exports[`API contract — per-schema snapshots schema: InventoryPageInfo 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: JournalFileLink 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "tenantId": {
+      "type": "string"
+    },
+    "logEntryId": {
+      "type": "string"
+    },
+    "fileRecordId": {
+      "type": "string"
+    },
+    "caption": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "id",
+    "tenantId",
+    "logEntryId",
+    "fileRecordId",
+    "caption",
+    "createdAt"
+  ],
+  "additionalProperties": {},
+  "description": "The LINK, not the file. An already-linked file returns its existing link, so this is idempotent per (entry, file)."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: JournalFileUpload 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "file": {
+      "type": "string",
+      "format": "binary"
+    },
+    "caption": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "file"
+  ],
+  "description": "The multipart form. Send \`application/json\` with \`{ fileRecordId, caption? }\` instead to attach an already-stored file."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: LeasePayment 1`] = `
 "{
   "type": "object",
@@ -9421,6 +9480,22 @@ exports[`API contract — per-schema snapshots schema: RentRoll 1`] = `
   "properties": {},
   "additionalProperties": {},
   "description": "Rent by lessor with obligations and payments."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: RestoredLogEntry 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "additionalProperties": {},
+  "description": "The entry as it is once restored."
 }"
 `;
 
