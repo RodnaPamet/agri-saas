@@ -367,7 +367,13 @@ function Header({
     className,
     children,
     ...rest
-}: HTMLAttributes<HTMLDivElement> & {
+}: // `HTMLAttributes` contributes its own `title?: string` (the HTML
+// attribute), and intersecting it with `title?: ReactNode` collapses to
+// `string & ReactNode` — so a header title could never be an element,
+// despite being declared `ReactNode`. `title` is destructured out of
+// `rest` and never reaches the div, so omitting it changes no runtime
+// behaviour and every existing string caller stays valid.
+Omit<HTMLAttributes<HTMLDivElement>, "title"> & {
     title?: ReactNode;
     description?: ReactNode;
 }) {

@@ -183,7 +183,14 @@ const ROOT = path.resolve(__dirname, '../..');
 // `m.body ?? tombstone` — behaviourally identical for that row. The
 // fixture is adversarial now (deleted AND carrying a body) so the test
 // pins the flag rather than body-nullity.
-const RENDERED_TEST_FLOOR = 237;
+// 237 → 240: the insurance calculator (#1120). Three files, each carrying its
+// own kind of proof rather than three views of one flow — `step-wizard`
+// mutation-proves the five primitive fixes one test apiece,
+// `insurance-quote-wizard` prices the reference figures on the phone default
+// AND desktop, and `insurance-quote-wizard-bg` renders the same flow in
+// Bulgarian, which is the app's DEFAULT locale and so the screen most farmers
+// actually see.
+const RENDERED_TEST_FLOOR = 240;
 // Lowered 55 → 54 in the risk-quantification uproot (2026-08-08).
 // `ai-risk-assessment.spec.ts` and `new-risk-modal.spec.ts` were both
 // wholly about the deleted register; the specs that merely REFERENCED a

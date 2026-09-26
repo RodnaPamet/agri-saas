@@ -16,7 +16,7 @@
  * The wizard OWNS the `<form>` — step `content` should be fields, not its
  * own `<form>` / submit buttons. `canAdvance` gates Next/Finish per step.
  */
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/cn";
 import { Button } from "./button";
@@ -45,13 +45,25 @@ export interface StepWizardProps {
    * Fires on the final step's primary action. Wrap your
    * `useOfflineSync().submit(...)` here and return `{ queued: true }` when
    * it was queued offline so the wizard shows the offline-saved state.
-   * Throwing keeps the wizard open (surface your own error).
+   *
+   * The contract, relied on by this wizard's first real consumer:
+   *
+   * - RESOLVING means "done" — the wizard closes.
+   * - REJECTING means "failed, keep open" — the wizard clears `busy`, stays
+   *   on the last step with every input intact, and swallows the rejection
+   *   so it never surfaces as an unhandled promise. Pass the message to
+   *   show through `error`; the wizard does not author error copy.
    */
   onFinish: () => Promise<{ queued?: boolean } | void>;
   /** Primary action label on the last step. Default "Create". */
   finishLabel?: string;
   /** Forwarded to `<Modal isDirty>` — a dismiss on a started flow confirms. */
   isDirty?: boolean;
+  /**
+   * Rendered in a `role="alert"` region above the actions. Pair it with a
+   * rejecting `onFinish`: the wizard keeps itself open, the caller says why.
+   */
+  error?: ReactNode;
 }
 
 export function StepWizard({
@@ -62,12 +74,26 @@ export function StepWizard({
   onFinish,
   finishLabel,
   isDirty,
+  error,
 }: StepWizardProps) {
   const t = useTranslations("ui.stepWizard");
   const tc = useTranslations("common");
   const [index, setIndex] = useState(0);
   const [busy, setBusy] = useState(false);
   const [queued, setQueued] = useState(false);
+  /**
+   * `busy` is state, so two submits dispatched in the SAME tick both read it
+   * as false and both reach `onFinish`. A ref settles synchronously and is
+   * what actually makes the guard hold.
+   */
+  const inFlight = useRef(false);
+  /** The step heading, focused on Next/Back so a screen reader follows. */
+  const headingRef = useRef<HTMLSpanElement | null>(null);
+  /**
+   * Only a step CHANGE moves focus. On first open the Modal owns initial
+   * focus, and stealing it here would fight that.
+   */
+  const navigated = useRef(false);
 
   // Reset to the first step each time the wizard (re)opens — an intentional
   // sync of the external `open` prop into internal step state (not a render-
@@ -79,6 +105,14 @@ export function StepWizard({
       setQueued(false);
     }
   }, [open]);
+
+  // Move focus to the new step's heading so a screen reader follows the
+  // change. Guarded on `navigated` — see the ref's comment.
+  useEffect(() => {
+    if (!navigated.current) return;
+    navigated.current = false;
+    headingRef.current?.focus();
+  }, [index]);
 
   const last = Math.max(0, steps.length - 1);
   const safeIndex = Math.min(index, last);
@@ -96,10 +130,14 @@ export function StepWizard({
     [onOpenChange, open],
   );
 
-  const back = useCallback(() => setIndex((i) => Math.max(0, i - 1)), []);
+  const back = useCallback(() => {
+    navigated.current = true;
+    setIndex((i) => Math.max(0, i - 1));
+  }, []);
 
   const finish = useCallback(async () => {
-    if (busy) return;
+    if (inFlight.current) return;
+    inFlight.current = true;
     setBusy(true);
     try {
       const res = await onFinish();
@@ -110,17 +148,27 @@ export function StepWizard({
         return;
       }
       onOpenChange(false);
+    } catch {
+      // A rejection means "failed, keep open" — see `onFinish`. Swallowed on
+      // purpose: `onSubmit` calls this with `void`, so a re-throw would be an
+      // unhandled rejection rather than anything a user could act on. The
+      // caller renders the reason through `error`.
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
-  }, [busy, onFinish, onOpenChange]);
+  }, [onFinish, onOpenChange]);
 
   const onSubmit = useCallback(
     (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       if (!canAdvance || busy || queued) return;
-      if (isLast) void finish();
-      else setIndex((i) => Math.min(last, i + 1));
+      if (isLast) {
+        void finish();
+      } else {
+        navigated.current = true;
+        setIndex((i) => Math.min(last, i + 1));
+      }
     },
     [canAdvance, busy, queued, isLast, finish, last],
   );
@@ -133,10 +181,24 @@ export function StepWizard({
       setShowModal={setShow}
       title={title}
       isDirty={isDirty}
+      // A swipe or Escape mid-send would close the drawer while the request
+      // is still in flight, leaving the farmer with no idea whether it went.
+      preventDefaultClose={busy}
       size="md"
     >
       <Modal.Form onSubmit={onSubmit}>
-        <Modal.Header title={current.title} description={current.description}>
+        <Modal.Header
+          // `Modal.Header` renders the title inside its own `Dialog.Title`
+          // heading and is not a forwardRef, so the focus target is the title
+          // NODE rather than the heading element. Focus still lands inside the
+          // h2, which is what a screen reader announces.
+          title={
+            <span ref={headingRef} tabIndex={-1} className="outline-none">
+              {current.title}
+            </span>
+          }
+          description={current.description}
+        >
           {/* Progress dots — current is a wide pill, past steps filled, future muted. */}
           <ol
             className="mt-2 flex items-center gap-1.5"
@@ -169,6 +231,16 @@ export function StepWizard({
             current.content
           )}
         </Modal.Body>
+
+        {error ? (
+          <div
+            role="alert"
+            className="mx-5 mb-2 rounded-lg border border-border-error bg-bg-error px-3 py-2 text-sm text-content-error"
+            data-testid="wizard-error"
+          >
+            {error}
+          </div>
+        ) : null}
 
         <Modal.Actions align="between">
           <Button
