@@ -68,6 +68,11 @@
  */
 import { z } from '@/lib/openapi/zod';
 import {
+    CreateBinSchema,
+    UpdateBinSchema,
+    BlendLotsSchema,
+    UpdateContractSchema,
+    CreateGrainDeliverySchema,
     CreateCostEntrySchema,
     UpdateCostEntrySchema,
     CreateYieldRecordSchema,
@@ -81,6 +86,8 @@ import {
     YieldRecordListSchema,
     ContractDTOSchema,
     ContractListSchema,
+    ContractFulfilmentSchema,
+    GrainBinDTOSchema,
 } from '@/lib/dto/grain.dto';
 import { CalculatorDataSchema } from '@/lib/dto/grain-calculator.dto';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
@@ -91,6 +98,39 @@ import { op } from './helpers';
 const TenantParams = z.object({
     tenantSlug: z.string().openapi({ param: { name: 'tenantSlug', in: 'path' }, example: 'acme' }),
 });
+
+const BinParams = TenantParams.extend({
+    binId: z.string().openapi({ param: { name: 'binId', in: 'path' } }),
+});
+const ContractParams = TenantParams.extend({
+    contractId: z.string().openapi({ param: { name: 'contractId', in: 'path' } }),
+});
+
+/**
+ * The RAW delivery model. `tonnes` is a `Decimal` and therefore a STRING here
+ * while the write side takes a number — the same asymmetry as everywhere else
+ * a Decimal reaches this API.
+ */
+const GrainDeliverySchema = z
+    .object({
+        id: z.string(),
+        tenantId: z.string(),
+        contractId: z.string(),
+        deliveredAt: z.string().datetime(),
+        /** Exact decimal STRING. Never parse as a float. */
+        tonnes: z.string(),
+        /** The ticket or weighbridge reference, when one was recorded. */
+        reference: z.string().nullable(),
+        createdAt: z.string().datetime(),
+        updatedAt: z.string().datetime(),
+        deletedAt: z.string().datetime().nullable(),
+        retentionUntil: z.string().datetime().nullable(),
+    })
+    .passthrough()
+    .openapi('GrainDelivery', {
+        description:
+            'One delivery against a contract. tonnes is an exact decimal string. Deliveries are what `fulfilment` is derived from, so adding or removing one changes the contract’s position.',
+    });
 
 export function registerGrainPaths(registry: OpenAPIRegistry): void {
     op(registry, {
@@ -327,6 +367,287 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
                 'money and tonnage figure is an exact decimal STRING — parsing them as ' +
                 'floats undoes the reason they are strings.',
             schema: ContractListSchema,
+        },
+    });
+
+    // ── Bins, blend, deliveries and the invoice attachment ──
+    //
+    // The rest of the GRAIN surface. Two things here are worth reading before
+    // writing a client, and neither is guessable:
+    //
+    //   `GET /grain/bins/{binId}` is NOT the list row. It carries the bin's
+    //   LOTS and a `lotsTruncated` flag; the list carries neither.
+    //
+    //   Detaching an invoice does NOT delete the file. The FileRecord survives
+    //   the detach on purpose — a document that was once attached to a
+    //   financial record is evidence, and unlinking it is not a reason to
+    //   destroy it.
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/grain/bins',
+        operationId: 'listGrainBins',
+        summary: 'List grain bins and stores',
+        description:
+            'Bins with their computed fill. Carries a weak ETag; send `If-None-Match` and handle **304**. ' +
+            '\n\nARCHIVED bins ARE listed. That is deliberate: this page cannot change a Location’s status, so hiding them would make a bin vanish with no way back. Org capacity metrics exclude them; this list does not.',
+        tags: ['Grain'],
+        params: TenantParams,
+        success: {
+            status: 200,
+            description: 'The bins.',
+            schema: z.array(GrainBinDTOSchema),
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/grain/bins',
+        operationId: 'createGrainBin',
+        summary: 'Create a bin or store',
+        description:
+            'Answers with the id, name, kind and capacity ONLY — not the computed fill, which requires reading the stock.',
+        tags: ['Grain'],
+        params: TenantParams,
+        body: CreateBinSchema,
+        success: {
+            status: 201,
+            description: 'The created bin.',
+            schema: z
+                .object({
+                    id: z.string(),
+                    name: z.string(),
+                    kind: z.enum(['BIN', 'STORAGE']),
+                    capacityTonnes: z.number().nullable(),
+                })
+                .openapi('GrainBinWriteAck', {
+                    description:
+                        'What create and update answer with. NOT the fill-computed bin — storedTonnes, fillPct and the rest require a read of the stock, so fetch the bin if you need them.',
+                }),
+        },
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/grain/bins/{binId}',
+        operationId: 'getGrainBin',
+        summary: 'Get one bin with its lots',
+        description:
+            'The list row PLUS `lots` and `lotsTruncated`. The lots are capped, and `lotsTruncated: true` says rows were dropped — unlike most of this API, this one tells you.',
+        tags: ['Grain'],
+        params: BinParams,
+        success: {
+            status: 200,
+            description: 'The bin and its stored lots.',
+            schema: GrainBinDTOSchema.extend({
+                lots: z.array(
+                    z.object({
+                        id: z.string(),
+                        lotCode: z.string(),
+                        itemName: z.string(),
+                        quantity: z.number(),
+                        unitSymbol: z.string(),
+                        expiresAt: z.string().datetime().nullable(),
+                        /** Quality attributes carried on the lot, when any. */
+                        attributes: z.record(z.string(), z.unknown()).nullable(),
+                    }),
+                ),
+                /** TRUE when the lot list was capped and rows were dropped. */
+                lotsTruncated: z.boolean(),
+            }).openapi('GrainBinDetail', {
+                description:
+                    'A bin with its stored lots. lotsTruncated is a real truncation marker — a rarity in this API — so a lot count taken from `lots.length` is wrong when it is true; use `lotCount`.',
+            }),
+        },
+    });
+
+    op(registry, {
+        method: 'patch',
+        path: '/api/t/{tenantSlug}/grain/bins/{binId}',
+        operationId: 'updateGrainBin',
+        summary: 'Update a bin',
+        tags: ['Grain'],
+        params: BinParams,
+        body: UpdateBinSchema,
+        success: {
+            status: 200,
+            description: 'The updated bin’s id, name, kind and capacity.',
+            schema: z.object({
+                id: z.string(),
+                name: z.string(),
+                kind: z.enum(['BIN', 'STORAGE']),
+                capacityTonnes: z.number().nullable(),
+            }),
+        },
+    });
+
+    op(registry, {
+        method: 'delete',
+        path: '/api/t/{tenantSlug}/grain/bins/{binId}',
+        operationId: 'deleteGrainBin',
+        summary: 'Delete a bin',
+        tags: ['Grain'],
+        params: BinParams,
+        success: {
+            status: 200,
+            description: 'Deleted.',
+            schema: z.object({ id: z.string(), deleted: z.boolean() }),
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/grain/blend',
+        operationId: 'blendGrainLots',
+        summary: 'Blend source lots into one output lot',
+        description:
+            'Merges several lots into a new one, recording a MERGE edge per source pair so the blend stays traceable in both directions — `/inventory/lots/{id}/trace` walks those edges. ' +
+            '\n\nA lot may NOT appear twice in one blend (the edge is per-pair), every quantity must be positive, and at least one source is required. Each is a 400 with its own message. ' +
+            '\n\n`attributes` is the blended quality result — a weighted combination of the sources, or the overrides supplied.',
+        tags: ['Grain'],
+        params: TenantParams,
+        body: BlendLotsSchema,
+        success: {
+            status: 201,
+            description: 'The output lot and what went into it.',
+            schema: z
+                .object({
+                    outputLotId: z.string(),
+                    outputLotCode: z.string(),
+                    blendedQuantity: z.number(),
+                    sourceCount: z.number(),
+                    /** MERGE edges written — one per source lot. */
+                    mergeLinks: z.number(),
+                    attributes: z.record(z.string(), z.number()),
+                })
+                .openapi('BlendLotsResult', {
+                    description:
+                        'The blend’s outcome. mergeLinks is how many genealogy edges were written, which is what makes the result traceable back to its sources.',
+                }),
+        },
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/grain/contracts/{contractId}',
+        operationId: 'getGrainContract',
+        summary: 'Get one contract',
+        description:
+            'The RAW model plus its season — NOT the list row, which additionally carries computed fulfilment, value and benchmark.',
+        tags: ['Grain'],
+        params: ContractParams,
+        success: { status: 200, description: 'The contract.', schema: ContractDTOSchema },
+    });
+
+    op(registry, {
+        method: 'patch',
+        path: '/api/t/{tenantSlug}/grain/contracts/{contractId}',
+        operationId: 'updateGrainContract',
+        summary: 'Update a contract',
+        tags: ['Grain'],
+        params: ContractParams,
+        body: UpdateContractSchema,
+        success: { status: 200, description: 'The updated contract.', schema: ContractDTOSchema },
+    });
+
+    op(registry, {
+        method: 'delete',
+        path: '/api/t/{tenantSlug}/grain/contracts/{contractId}',
+        operationId: 'deleteGrainContract',
+        summary: 'Delete a contract',
+        tags: ['Grain'],
+        params: ContractParams,
+        success: {
+            status: 200,
+            description: 'Deleted.',
+            schema: z.object({ id: z.string(), deleted: z.boolean() }),
+        },
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/grain/contracts/{contractId}/deliveries',
+        operationId: 'listContractDeliveries',
+        summary: 'Deliveries against a contract',
+        description:
+            'The delivery ledger for one contract, WITH the computed fulfilment position beside it — so a client does not have to re-derive "how much is left" from the rows and risk a different answer than the contract list shows.',
+        tags: ['Grain'],
+        params: ContractParams,
+        success: {
+            status: 200,
+            description: 'The deliveries and the resulting fulfilment.',
+            schema: z.object({
+                rows: z.array(GrainDeliverySchema),
+                fulfilment: ContractFulfilmentSchema,
+            }),
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/grain/contracts/{contractId}/deliveries',
+        operationId: 'createGrainDelivery',
+        summary: 'Record a delivery',
+        description:
+            'Appends to the contract’s delivery ledger. Over-delivery is ACCEPTED — the tickets say what they say — and shows up as a complete fulfilment with a `remainingTonnes` floored at zero rather than a negative.',
+        tags: ['Grain'],
+        params: ContractParams,
+        body: CreateGrainDeliverySchema,
+        success: { status: 201, description: 'The created delivery.', schema: GrainDeliverySchema },
+    });
+
+    op(registry, {
+        method: 'delete',
+        path: '/api/t/{tenantSlug}/grain/deliveries/{deliveryId}',
+        operationId: 'deleteGrainDelivery',
+        summary: 'Delete a delivery',
+        description:
+            'Removing a delivery changes the contract’s fulfilment. Re-read the contract or its deliveries afterwards rather than adjusting a cached figure.',
+        tags: ['Grain'],
+        params: TenantParams.extend({
+            deliveryId: z.string().openapi({ param: { name: 'deliveryId', in: 'path' } }),
+        }),
+        success: {
+            status: 200,
+            description: 'Deleted.',
+            schema: z.object({ id: z.string(), deleted: z.boolean() }),
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/grain/costs/{costEntryId}/invoice',
+        operationId: 'attachCostEntryInvoice',
+        summary: 'Attach an invoice to a cost entry',
+        description:
+            'MULTIPART. Uploads the file, mints the FileRecord through the shared storage pipeline, and points the entry at it. There is no generic upload endpoint in this repo — every multipart route mints its own FileRecord as part of an entity write. ' +
+            '\n\nTo attach an ALREADY-stored file by id, PATCH the cost entry instead; it runs the same tenant + STORED + not-deleted gate.',
+        tags: ['Grain'],
+        params: CostEntryParams,
+        bodyContentType: 'multipart/form-data',
+        body: z
+            .object({ file: z.string().openapi({ format: 'binary' }) })
+            .openapi('CostEntryInvoiceUpload'),
+        success: {
+            status: 201,
+            description: 'The cost entry, now carrying its invoice.',
+            schema: CostEntryDTOSchema,
+        },
+    });
+
+    op(registry, {
+        method: 'delete',
+        path: '/api/t/{tenantSlug}/grain/costs/{costEntryId}/invoice',
+        operationId: 'detachCostEntryInvoice',
+        summary: 'Detach the invoice from a cost entry',
+        description:
+            'Unlinks the invoice. **The FileRecord SURVIVES** — a document once attached to a financial record is evidence, and unlinking it is not a reason to destroy it. So this is reversible by re-attaching the same file id via PATCH.',
+        tags: ['Grain'],
+        params: CostEntryParams,
+        success: {
+            status: 200,
+            description: 'The cost entry, without its invoice.',
+            schema: CostEntryDTOSchema,
         },
     });
 }
