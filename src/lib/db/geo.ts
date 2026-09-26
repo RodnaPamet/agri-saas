@@ -413,3 +413,61 @@ export function parseGeometry(geojson: string | null): Geometry | null {
         return null;
     }
 }
+
+// ─── Geometry matching (spatial re-import) ────────────────────────────
+
+/**
+ * Intersection-over-union between a stored geometry column and a candidate.
+ *
+ * `area(A ∩ B) / area(A ∪ B)` — 1.0 for identical shapes, 0 for disjoint ones.
+ * NULL when the union has no area (both empty), which the caller treats as "no
+ * match" rather than as a division failure.
+ *
+ * ── why computing this in EPSG:4326 is correct ──
+ *
+ * These are degrees, and a degree of longitude is shorter than a degree of
+ * latitude by cos(latitude), so the areas here are NOT square metres. That does
+ * not matter: the distortion is an affine scaling applied to the intersection
+ * and the union ALIKE, and IoU is invariant under affine transformation. The
+ * ratio is exactly what it would be in a metric CRS, without a reprojection per
+ * comparison.
+ *
+ * ── the threshold this feeds, and what it is calibrated against ──
+ *
+ * 0.90, ruled by the owner on measured evidence rather than chosen. Measured on
+ * real Bulgarian field shapes in production (EPSG:32635), IoU against the same
+ * shape after a re-export:
+ *
+ *     simplify 0.5m   0.9992–1.0000      buffer ±1m      0.9704–0.9919
+ *     simplify 5m     0.9679–1.0000      buffer +5m      0.8681–0.9604
+ *     snap to 1m grid 0.9947–0.9982
+ *
+ * So format noise — a different export tool, a CRS round trip, reduced
+ * precision — never drops a true pair below 0.96, while a 5 m re-draw does.
+ *
+ * **The threshold binds on the SMALLEST field a farm has, not the average
+ * one.** A fixed boundary shift is a larger fraction of a small parcel's area:
+ * the 2 ha parcel scored 0.868 under a 5 m buffer where the 70 ha parcel scored
+ * 0.960. Anyone re-tuning this on a large-field tenant will conclude it can be
+ * raised, and will be wrong about every smallholding.
+ *
+ * Distinct neighbouring fields measured 0.0000 — they abut, they do not
+ * overlap — so the separation is enormous and the threshold is NOT a sensitive
+ * detection parameter. What it actually decides is a product question: how much
+ * deliberate re-drawing still counts as the same field and inherits its history.
+ */
+export function iouAgainstColumnSql(column: Prisma.Sql, candidate: Prisma.Sql): Prisma.Sql {
+    return Prisma.sql`ST_Area(ST_Intersection(${column}, ${candidate}))
+        / NULLIF(ST_Area(ST_Union(${column}, ${candidate})), 0)`;
+}
+
+/**
+ * Cheap index-backed prefilter for {@link iouAgainstColumnSql}.
+ *
+ * `ST_Intersects` uses the GiST index; the IoU itself cannot. Without this the
+ * match query computes an intersection against every parcel in the location
+ * rather than against the handful that overlap at all.
+ */
+export function intersectsColumnSql(column: Prisma.Sql, candidate: Prisma.Sql): Prisma.Sql {
+    return Prisma.sql`ST_Intersects(${column}, ${candidate})`;
+}

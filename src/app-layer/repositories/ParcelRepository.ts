@@ -20,6 +20,8 @@ import {
     centroidLonLatSql,
     pointOnSurfaceLonSql,
     pointOnSurfaceLatSql,
+    iouAgainstColumnSql,
+    intersectsColumnSql,
 } from '@/lib/db/geo';
 import type { ParsedParcel } from '@/lib/spatial/parse';
 import { SUPPORTED_SOURCE_SRIDS, type SupportedSourceSrid } from '@/lib/spatial/parse';
@@ -66,6 +68,13 @@ export interface ParcelGeo {
     companyOwners: ParcelCompanyOwner[];
     /** True when the parcel has an active lease (аренда/наем) — i.e. it's leased, not owned. */
     hasActiveLease: boolean;
+    /**
+     * When the last spatial import of this location did NOT contain this
+     * parcel, and it was kept rather than deleted. Null when it was present —
+     * or when the location has never been imported into, which is the same
+     * thing to a reader: nothing to warn about.
+     */
+    absentFromImportAt: string | null;
 }
 
 /** A legal-entity owner surfaced on a parcel (КАИС „собственост ПИ"). */
@@ -97,6 +106,168 @@ export class ParcelRepository {
      * every parcel (#7). Returns the created parcel ids. Per-parcel deletion is
      * a separate, explicit action (see the `deleteParcel` usecase).
      */
+    /**
+     * The IoU at or above which an incoming shape is the SAME FIELD as an
+     * existing parcel, and therefore updates it in place instead of creating a
+     * second one.
+     *
+     * 0.90, ruled by the owner against measured evidence — see the note on
+     * `iouAgainstColumnSql`, which carries the perturbation table and the
+     * reason this binds on the smallest field a farm has rather than the
+     * average one.
+     */
+    static readonly PARCEL_MATCH_IOU = 0.9;
+
+    /**
+     * Reconcile an import against a location's existing parcels.
+     *
+     * ── why this replaced a pure insert ──
+     *
+     * `addParcelsForLocation` only ever created rows, so re-importing a file
+     * gave the location a SECOND copy of every field: the original kept all of
+     * its crop seasons, weed observations and completed operation lines, and
+     * the new duplicate had none. The farm saw two of each field, one of them
+     * apparently empty. (Measured 2026-09-26: no production farm had ever
+     * re-imported, so the defect was latent rather than active.)
+     *
+     * ── why UPDATE IN PLACE and not delete-and-recreate ──
+     *
+     * Everything meant by "history" is keyed on `parcelId` — crop seasons, weed
+     * observations, and the completed field-operation lines the history
+     * projection reads. A matched parcel that KEEPS ITS ROW AND ITS ID needs no
+     * migration at all: overwrite the geometry and every child follows, because
+     * nothing about the foreign key changed. Delete-and-recreate turns the same
+     * requirement into a reassignment across three tables with a failure mode
+     * on each, on a path that is already destructive.
+     *
+     * Nothing here deletes. Matched rows are updated, new shapes are inserted,
+     * and existing rows the file does not contain are FLAGGED — which is also
+     * what makes this safe to run twice.
+     *
+     * ── the one-to-one rule, which is load-bearing ──
+     *
+     * A previously matched row is excluded from later candidates (`claimed`).
+     * Without that, two incoming shapes that both best-match one existing
+     * parcel would both update it, and the second would overwrite the first —
+     * silently losing a parcel from the import while reporting success. Two
+     * overlapping shapes in one file is not hypothetical: it is what a file
+     * containing both an old and a re-drawn boundary looks like.
+     *
+     * ── what a match overwrites, and what it deliberately does not ──
+     *
+     * Geometry, area and the import-sourced identifiers are replaced — that is
+     * what an import is for. `name` is NOT: it is the field an operator renames
+     * in the UI, and silently reverting an operator's edit on every re-import
+     * is the same category of harm as losing their history. A name correction
+     * made in the source file therefore does not land on an already-matched
+     * parcel, which is a real cost and the reason this is written down rather
+     * than assumed.
+     */
+    static async mergeParcelsForLocation(
+        db: PrismaTx,
+        ctx: RequestContext,
+        locationId: string,
+        parcels: ParsedParcel[],
+        cropType?: string | null,
+        sourceSrid?: number,
+    ): Promise<{ matchedIds: string[]; createdIds: string[]; flaggedCount: number }> {
+        const importCrop = cropType && cropType.trim().length > 0 ? cropType.trim() : null;
+
+        const matchedIds: string[] = [];
+        const createdIds: string[] = [];
+        /** Rows already claimed by an earlier shape in THIS file — see above. */
+        const claimed = new Set<string>();
+
+        for (const p of parcels) {
+            const geomSql = sourceSrid
+                ? reprojectedRepairedGeometrySql(p.geometry, sourceSrid)
+                : repairedGeometrySql(p.geometry);
+
+            // The best-overlapping unclaimed parcel in this location, if any.
+            // `ST_Intersects` is the index-backed prefilter; the IoU itself
+            // cannot use the GiST index, so without it this compares against
+            // every parcel rather than the few that overlap at all.
+            const excluded = claimed.size
+                ? Prisma.sql`AND "id" NOT IN (${Prisma.join([...claimed])})`
+                : Prisma.empty;
+            const candidates = await db.$queryRaw<Array<{ id: string; iou: number | null }>>(
+                Prisma.sql`SELECT "id", ${iouAgainstColumnSql(Prisma.sql`"geometry"`, geomSql)} AS iou
+                    FROM "Parcel"
+                    WHERE "locationId" = ${locationId}
+                      AND "tenantId" = ${ctx.tenantId}
+                      AND "deletedAt" IS NULL
+                      AND "geometry" IS NOT NULL
+                      ${excluded}
+                      AND ${intersectsColumnSql(Prisma.sql`"geometry"`, geomSql)}
+                    ORDER BY iou DESC NULLS LAST
+                    LIMIT 1`,
+            );
+
+            const best = candidates[0];
+            if (best && best.iou !== null && Number(best.iou) >= ParcelRepository.PARCEL_MATCH_IOU) {
+                // SAME FIELD — keep the row, keep the id, keep every child.
+                await db.parcel.update({
+                    where: { id: best.id },
+                    data: {
+                        cadastralId: p.cadastralId ?? null,
+                        ekatte: p.ekatte ?? null,
+                        propertiesJson: (p.properties ?? {}) as Prisma.InputJsonValue,
+                        ...(importCrop ? { cropType: importCrop } : {}),
+                        // It is in this import, so it is no longer absent from one.
+                        absentFromImportAt: null,
+                    },
+                });
+                await db.$executeRaw(
+                    Prisma.sql`UPDATE "Parcel"
+                        SET "geometry" = ${geomSql},
+                            "areaHa" = ${areaHectaresNonNullSql(geomSql)}
+                        WHERE "id" = ${best.id} AND "tenantId" = ${ctx.tenantId}`,
+                );
+                claimed.add(best.id);
+                matchedIds.push(best.id);
+                continue;
+            }
+
+            // A shape this location has not seen — insert it.
+            const row = await db.parcel.create({
+                data: {
+                    tenantId: ctx.tenantId,
+                    locationId,
+                    name: p.name,
+                    cropType: importCrop,
+                    cadastralId: p.cadastralId ?? null,
+                    ekatte: p.ekatte ?? null,
+                    propertiesJson: (p.properties ?? {}) as Prisma.InputJsonValue,
+                },
+                select: { id: true },
+            });
+            await db.$executeRaw(
+                Prisma.sql`UPDATE "Parcel"
+                    SET "geometry" = ${geomSql},
+                        "areaHa" = ${areaHectaresNonNullSql(geomSql)}
+                    WHERE "id" = ${row.id} AND "tenantId" = ${ctx.tenantId}`,
+            );
+            claimed.add(row.id);
+            createdIds.push(row.id);
+        }
+
+        // Everything this file did NOT account for is kept and flagged. Not
+        // deleted: losing a season's crop records for a field somebody left out
+        // of an export is the outcome this whole change exists to prevent.
+        const touched = [...matchedIds, ...createdIds];
+        const flagged = await db.parcel.updateMany({
+            where: {
+                tenantId: ctx.tenantId,
+                locationId,
+                deletedAt: null,
+                ...(touched.length ? { id: { notIn: touched } } : {}),
+            },
+            data: { absentFromImportAt: new Date() },
+        });
+
+        return { matchedIds, createdIds, flaggedCount: flagged.count };
+    }
+
     static async addParcelsForLocation(
         db: PrismaTx,
         ctx: RequestContext,
@@ -186,10 +357,12 @@ export class ParcelRepository {
             ekatte: string | null;
             ownersJson: unknown;
             hasActiveLease: boolean;
+            absentFromImportAt: Date | null;
         }>>(
             Prisma.sql`SELECT "id", "name", "cropType", "areaHa"::text AS "areaHa",
                     ${geojsonSql} AS "geojson", "propertiesJson", "soilType", "soilJson",
-                    "cadastralId", "ekatte", "ss"."cachedSoilJson", "own"."ownersJson",
+                    "cadastralId", "ekatte", "absentFromImportAt",
+                    "ss"."cachedSoilJson", "own"."ownersJson",
                     EXISTS (
                         -- "leased" = an active (non-deleted, not-yet-ended) land-use
                         -- agreement exists. ParcelLease is tenant-scoped (RLS), and
@@ -260,6 +433,9 @@ export class ParcelRepository {
                 ekatte: r.ekatte,
                 companyOwners: (r.ownersJson ?? []) as ParcelCompanyOwner[],
                 hasActiveLease: Boolean(r.hasActiveLease),
+                absentFromImportAt: r.absentFromImportAt
+                    ? r.absentFromImportAt.toISOString()
+                    : null,
             };
         });
     }
