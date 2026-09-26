@@ -36,13 +36,23 @@
  *
  * ## Re-trigger behaviour
  *
- * Non-retrying (`attempts: 1`). Import is ADDITIVE — `addParcelsForLocation`
- * appends the parsed parcels and KEEPS the location's existing ones — so it
- * is NOT idempotent: a manual re-trigger after a partial/transient failure
- * would append the parcels again (there is no name uniqueness). A hard
- * reject (cap / topology / budget) fails closed BEFORE any parcel is
- * written and is surfaced via `failedReason` to the upload modal; the staged
- * file is left in place for the operator to re-trigger or delete.
+ * Non-retrying (`attempts: 1`), and import now RECONCILES rather than appends.
+ * `mergeParcelsForLocation` matches each incoming shape against the location's
+ * existing parcels by geometry overlap: a match UPDATES that parcel in place
+ * (same row, same id, so its crop seasons, weed observations and completed
+ * operation lines all follow), a non-match is INSERTED, and an existing parcel
+ * the file does not contain is KEPT AND FLAGGED with `absentFromImportAt`.
+ * Nothing is deleted.
+ *
+ * That makes a re-trigger SAFE, which it was not: the import used to be purely
+ * additive, so re-running it gave the location a second copy of every field —
+ * the original holding all of the history and the duplicate holding none.
+ * Re-running now updates the same rows a second time and changes nothing else.
+ *
+ * A hard reject (cap / topology / budget) still fails closed BEFORE any parcel
+ * is written or flagged, and is surfaced via `failedReason` to the upload
+ * modal; the staged file is left in place for the operator to re-trigger or
+ * delete.
  */
 import crypto from 'node:crypto';
 import { Prisma } from '@prisma/client';
@@ -71,6 +81,17 @@ export interface SpatialImportJobResult {
     fileRecordId: string;
     format: string;
     parcelCount: number;
+    /**
+     * How the import reconciled against what was already there.
+     *
+     * `parcelCount` is `matched + created` — the shapes the FILE contained.
+     * `flagged` is separate and is NOT part of it: those are existing parcels
+     * the file did not contain, kept with their history and marked absent. A
+     * caller reporting "imported N parcels" should not add them in.
+     */
+    matched: number;
+    created: number;
+    flagged: number;
     bounds: [number, number, number, number] | null;
     skipped: number;
     jobRunId: string;
@@ -179,7 +200,7 @@ export async function runLocationSpatialImport(
         assertParcelComplexity(parsed.parcels);
 
         // 4 — validate topology + persist atomically inside the tenant ctx.
-        const { parcelCount, parcelIds, bounds } = await runInTenantContext(ctx, async (db) => {
+        const { parcelCount, parcelIds, bounds, merged } = await runInTenantContext(ctx, async (db) => {
             const location = await db.location.findFirst({
                 where: { id: payload.locationId, tenantId: ctx.tenantId, deletedAt: null },
                 select: { id: true, name: true },
@@ -240,9 +261,22 @@ export async function runLocationSpatialImport(
                 }
             }
 
-            // 4b — ADD the parsed parcels to the location (additive import; the
-            // location's existing parcels are kept) + stamp file/format/bounds.
-            const parcelIds = await ParcelRepository.addParcelsForLocation(
+            // 4b — RECONCILE the parsed parcels against the location's existing
+            // ones + stamp file/format/bounds.
+            //
+            // A shape that overlaps an existing parcel by at least the match
+            // threshold IS that parcel: it keeps its row and its id, so every
+            // crop season, weed observation and completed operation line
+            // follows it without a migration. A shape that matches nothing is
+            // inserted. An existing parcel the file does not contain is KEPT
+            // AND FLAGGED.
+            //
+            // Nothing is deleted, which is what makes a re-import safe to run
+            // twice — and what it did NOT used to be: this was purely additive,
+            // so re-importing a file gave the location a second copy of every
+            // field, the original holding all the history and the duplicate
+            // holding none.
+            const merged = await ParcelRepository.mergeParcelsForLocation(
                 db,
                 ctx,
                 payload.locationId,
@@ -252,6 +286,7 @@ export async function runLocationSpatialImport(
                 // via PostGIS on write; undefined ⇒ geometry is already WGS84.
                 sourceSrid,
             );
+            const parcelIds = [...merged.matchedIds, ...merged.createdIds];
             const count = parcelIds.length;
             // Additive import keeps existing parcels, so the location bounds must
             // be the extent of ALL parcels — NOT just the freshly-imported set
@@ -274,17 +309,31 @@ export async function runLocationSpatialImport(
                 action: 'LOCATION_SPATIAL_IMPORTED',
                 entityType: 'Location',
                 entityId: payload.locationId,
-                details: `Imported ${count} parcels from ${payload.filename}`,
+                details:
+                    `Imported ${count} parcels from ${payload.filename} ` +
+                    `(${merged.matchedIds.length} matched existing, ` +
+                    `${merged.createdIds.length} new, ` +
+                    `${merged.flaggedCount} kept but absent from the file)`,
                 detailsJson: {
                     category: 'entity_lifecycle',
                     entityName: 'Location',
                     operation: 'updated',
-                    after: { spatialFormat: parsed.format, parcelCount: count },
-                    summary: `Imported ${count} parcels from ${payload.filename}`,
+                    after: {
+                        spatialFormat: parsed.format,
+                        parcelCount: count,
+                        // Counts only — the audit trail carries no parcel names
+                        // or geometry.
+                        matched: merged.matchedIds.length,
+                        created: merged.createdIds.length,
+                        flagged: merged.flaggedCount,
+                    },
+                    summary:
+                        `Imported ${count} parcels from ${payload.filename}; ` +
+                        `${merged.flaggedCount} existing parcel(s) were not in the file and were kept`,
                 },
             });
 
-            return { parcelCount: count, parcelIds, bounds: fullBounds };
+            return { parcelCount: count, parcelIds, bounds: fullBounds, merged };
         });
 
         // Trigger the async soil fetch for the freshly-imported parcels
@@ -307,6 +356,9 @@ export async function runLocationSpatialImport(
             fileRecordId: payload.stagingFileRecordId,
             format: parsed.format,
             parcelCount,
+            matched: merged.matchedIds.length,
+            created: merged.createdIds.length,
+            flagged: merged.flaggedCount,
             bounds,
             skipped: parsed.skipped,
             jobRunId,
