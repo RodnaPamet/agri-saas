@@ -10,6 +10,34 @@ import { MAX_AREA_DCA, MAX_SUM_INSURED_CENTS } from './premium';
 
 /** Spaces used as thousands separators, including the two non-breaking kinds. */
 const SEPARATOR_SPACES = /[\s  ]/g;
+/** The same class, unanchored and non-global, for `String.split`. */
+const SEPARATOR_SPACES_SPLIT = /[\s  ]+/;
+
+/**
+ * Do the SPACE-separated groups look like a thousands grouping?
+ *
+ * Spaces used to be stripped WHOLESALE before any grouping check, while commas
+ * and dots were validated by `groupsOfThree`. That asymmetry was a hole:
+ * "1 2 3 4" became 1234, "1 23" became 123, "1 2" became 12. Nonsense producing
+ * a PLAUSIBLE figure — and on a sum-insured field a plausible figure reaches the
+ * operator as a real number, which is the worst way to be wrong.
+ *
+ * The iOS client found the same defect in its own parser and asked whether this
+ * one shared it. It did, in `parseMoneyToCents` AND `parseAreaDca`.
+ *
+ * A thousands separator means groups of exactly three. The FIRST group is free
+ * (1-3 digits, since "12 345" is ordinary) and only the LAST may carry a decimal
+ * tail — how many decimals is each parser's own business, so this checks the
+ * grouping alone.
+ */
+function spaceGroupsValid(parts: string[]): boolean {
+    if (parts.length < 2) return true; // no space grouping used at all
+    if (!/^[0-9]{1,3}$/.test(parts[0])) return false;
+    return parts.slice(1).every((part, i) => {
+        const isLast = i === parts.length - 2;
+        return (isLast ? /^[0-9]{3}([.,][0-9]+)?$/ : /^[0-9]{3}$/).test(part);
+    });
+}
 
 /** Groups of exactly three digits, which is what a thousands separator implies. */
 function groupsOfThree(parts: string[]): boolean {
@@ -36,6 +64,8 @@ export function parseMoneyToCents(raw: string, opts?: { symbol?: string }): numb
         if (s.startsWith(sym)) s = s.slice(sym.length).trim();
         if (s.endsWith(sym)) s = s.slice(0, -sym.length).trim();
     }
+    // Validate the space grouping BEFORE collapsing it — see `spaceGroupsValid`.
+    if (!spaceGroupsValid(s.split(SEPARATOR_SPACES_SPLIT))) return null;
     s = s.replace(SEPARATOR_SPACES, '');
     if (s === '') return null;
 
@@ -97,7 +127,10 @@ export function parseMoneyToCents(raw: string, opts?: { symbol?: string }): numb
  */
 export function parseAreaDca(raw: string): number | null {
     if (typeof raw !== 'string') return null;
-    let s = raw.trim().replace(SEPARATOR_SPACES, '');
+    const trimmed = raw.trim();
+    // Same grouping rule as money: "1 2 3 4" must not become 1234 dca.
+    if (!spaceGroupsValid(trimmed.split(SEPARATOR_SPACES_SPLIT))) return null;
+    let s = trimmed.replace(SEPARATOR_SPACES, '');
     if (s === '') return null;
     if (!/^[0-9]+([.,][0-9]{1,3})?$/.test(s)) return null;
     s = s.replace(',', '.');
