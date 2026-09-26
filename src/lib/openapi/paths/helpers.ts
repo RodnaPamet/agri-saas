@@ -140,7 +140,14 @@ export interface OperationInput {
      * detail to approximate.
      */
     success: {
-        status: 200 | 201 | 202 | 204;
+        /**
+         * 3xx is here because for some operations the REDIRECT is the success.
+         * `/api/auth/native/start` hands the system browser to NextAuth and
+         * `/complete` hands the code back to the app's URI; a 200 would be a
+         * lie about both. The implementation below already emits a bodyless
+         * response when no schema is given — only this type stood in the way.
+         */
+        status: 200 | 201 | 202 | 204 | 302 | 303 | 307;
         description: string;
         schema?: ZodTypeAny;
         content?: Record<string, ZodTypeAny>;

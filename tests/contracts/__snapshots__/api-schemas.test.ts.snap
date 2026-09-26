@@ -1569,6 +1569,233 @@ exports[`API contract — per-schema snapshots schema: CalculatorRow 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: CatalogItemDetail 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "SEED",
+        "PESTICIDE",
+        "FERTILIZER",
+        "AMENDMENT",
+        "FUEL",
+        "HARVESTED_PRODUCE",
+        "OTHER"
+      ]
+    },
+    "defaultUnitId": {
+      "type": "string"
+    },
+    "sku": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "reorderLevel": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "quarantinePeriodDays": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "activeIngredient": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pppRegistrationNo": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "category",
+    "defaultUnitId",
+    "sku",
+    "reorderLevel",
+    "quarantinePeriodDays",
+    "activeIngredient",
+    "pppRegistrationNo"
+  ],
+  "description": "A catalogue item as the SINGLE read returns it: nine fields, no defaultUnit relation, and reorderLevel as a NUMBER rather than the list’s decimal string. Carries the БАБХ regulatory fields — quarantinePeriodDays, activeIngredient and pppRegistrationNo — which the farm-record register is generated from."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: CatalogItemListRow 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "tenantId": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "SEED",
+        "PESTICIDE",
+        "FERTILIZER",
+        "AMENDMENT",
+        "FUEL",
+        "HARVESTED_PRODUCE",
+        "OTHER"
+      ]
+    },
+    "sku": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "defaultUnitId": {
+      "type": "string"
+    },
+    "reorderLevel": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "quarantinePeriodDays": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "activeIngredient": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pppRegistrationNo": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "isArchetype": {
+      "type": "boolean"
+    },
+    "attributesJson": {},
+    "createdByUserId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "deletedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "deletedByUserId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "retentionUntil": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "defaultUnit": {
+      "$ref": "#/components/schemas/UnitRef"
+    }
+  },
+  "required": [
+    "id",
+    "tenantId",
+    "name",
+    "category",
+    "sku",
+    "defaultUnitId",
+    "reorderLevel",
+    "quarantinePeriodDays",
+    "activeIngredient",
+    "pppRegistrationNo",
+    "isArchetype",
+    "createdByUserId",
+    "createdAt",
+    "updatedAt",
+    "deletedAt",
+    "deletedByUserId",
+    "retentionUntil",
+    "defaultUnit"
+  ],
+  "description": "A catalogue item as the LIST returns it: the raw model, so soft-delete and retention bookkeeping are on the wire too (deletedAt is always null on a listed row). reorderLevel is a decimal STRING here and a NUMBER on the single read — the two operations are not interchangeable."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: CatalogItemWriteAck 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "SEED",
+        "PESTICIDE",
+        "FERTILIZER",
+        "AMENDMENT",
+        "FUEL",
+        "HARVESTED_PRODUCE",
+        "OTHER"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "category"
+  ],
+  "description": "What create and update answer with — the id, name and category ONLY, because both carry a narrow \`select\`. A client needing the whole item must re-read it."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: Contract 1`] = `
 "{
   "type": "object",
@@ -2996,6 +3223,162 @@ exports[`API contract — per-schema snapshots schema: EvidenceUpdateRequest 1`]
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: ExchangeInquiry 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "message": {
+      "type": "string"
+    },
+    "quantityTonnes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "status": {
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "counterpartyContact": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "contactSharedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "listing": {
+      "$ref": "#/components/schemas/ExchangeListing"
+    }
+  },
+  "required": [
+    "id",
+    "message",
+    "quantityTonnes",
+    "status",
+    "createdAt",
+    "counterpartyContact",
+    "contactSharedAt"
+  ],
+  "description": "An inquiry against a listing. No inquirer ids ever reach the wire. counterpartyContact and contactSharedAt are a two-sided consent gate rather than ordinary nullable fields: null means consent has not completed, and on a declined inquiry it never will. The listing key is present in the buyer’s outbox and omitted in the seller’s nest — absent, not null."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ExchangeListing 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "side": {
+      "type": "string",
+      "enum": [
+        "SELL",
+        "BUY"
+      ]
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "CULTURE",
+        "FERTILIZER",
+        "SEEDS",
+        "PRODUCT"
+      ]
+    },
+    "commodity": {
+      "type": "string"
+    },
+    "quantityTonnes": {
+      "type": "string"
+    },
+    "pricePerTonne": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "priceCurrency": {
+      "type": "string"
+    },
+    "regionCode": {
+      "type": "string"
+    },
+    "regionName": {
+      "type": "string"
+    },
+    "lat": {
+      "type": "number"
+    },
+    "lon": {
+      "type": "number"
+    },
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "sellerDisplayName": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "status": {
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expiresAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "isOwn": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "id",
+    "side",
+    "kind",
+    "commodity",
+    "quantityTonnes",
+    "pricePerTonne",
+    "priceCurrency",
+    "regionCode",
+    "regionName",
+    "lat",
+    "lon",
+    "description",
+    "sellerDisplayName",
+    "status",
+    "createdAt",
+    "expiresAt",
+    "isOwn"
+  ],
+  "description": "A marketplace listing, in the projection every tenant sees. quantityTonnes and pricePerTonne are exact decimal STRINGS — they are quantity and money and must not be parsed as floats. isOwn is computed for the VIEWING tenant, so this projection is not shareable between callers."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: ExchangeMessage 1`] = `
 "{
   "type": "object",
@@ -3031,6 +3414,50 @@ exports[`API contract — per-schema snapshots schema: ExchangeMessage 1`] = `
     "createdAt"
   ],
   "description": "Use \`mine\` to decide which side of the thread to render a bubble on. Do NOT compare \`senderTenantId\` to your own tenant — the server already knows which party is asking and answers for it.\\n\\nA deleted message keeps its PLACE: \`deleted: true\` with a null \`body\`. Render it as removed rather than dropping it, or the other party's scrollback develops a hole where something they read used to be."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ExchangeMyListing 1`] = `
+"{
+  "allOf": [
+    {
+      "$ref": "#/components/schemas/ExchangeListing"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "inquiries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/ExchangeInquiry"
+          }
+        }
+      },
+      "required": [
+        "inquiries"
+      ]
+    }
+  ],
+  "description": "A listing the calling tenant owns, with its inquiries nested. The nested inquiries omit their \`listing\` key, because this row is it."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ExchangeStatusAck 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "status"
+  ],
+  "description": "A status transition acknowledgement. Deliberately NOT the full object: the caller already holds it and the transition is the only thing that changed."
 }"
 `;
 
@@ -5261,6 +5688,115 @@ exports[`API contract — per-schema snapshots schema: MarketReference 1`] = `
   ],
   "additionalProperties": {},
   "description": "The market observation a benchmark was computed against — carried so a client can attribute and date the claim instead of presenting it as an unsourced fact."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: NativeExchangeRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "code": {
+      "type": "string",
+      "description": "The single-use code from /complete."
+    },
+    "code_verifier": {
+      "type": "string",
+      "description": "The PKCE verifier. \`codeVerifier\` is also accepted."
+    },
+    "codeVerifier": {
+      "type": "string",
+      "description": "camelCase alias of \`code_verifier\`."
+    }
+  },
+  "required": [
+    "code"
+  ],
+  "description": "One of \`code_verifier\` / \`codeVerifier\` is REQUIRED — the schema cannot express \\"exactly one of\\" without rejecting the other spelling, so both are optional here and the handler requires one. Sending neither is 400 invalid_grant."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: NativeTokenPair 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "accessToken": {
+      "type": "string"
+    },
+    "refreshToken": {
+      "type": "string"
+    },
+    "tokenType": {
+      "type": "string",
+      "enum": [
+        "Bearer"
+      ]
+    },
+    "expiresIn": {
+      "type": "number"
+    },
+    "refreshExpiresAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "accessToken",
+    "refreshToken",
+    "tokenType",
+    "expiresIn",
+    "refreshExpiresAt"
+  ],
+  "description": "expiresIn is a DURATION in seconds for the access token; refreshExpiresAt is an ISO INSTANT for the refresh token. The two are deliberately different kinds — do not treat expiresIn as a timestamp."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: NewsItem 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string"
+    },
+    "category": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "summary": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "url": {
+      "type": "string"
+    },
+    "imageUrl": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "publishedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "id",
+    "source",
+    "category",
+    "title",
+    "summary",
+    "url",
+    "imageUrl",
+    "publishedAt"
+  ],
+  "description": "One aggregated agri-news article. summary and imageUrl are genuinely nullable — many feeds carry neither — so a client must render a headline-only item rather than treating it as malformed."
 }"
 `;
 
@@ -7615,6 +8151,28 @@ exports[`API contract — per-schema snapshots schema: TrendDataPoint 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: TrendNewsResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "category": {
+      "type": "string"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/NewsItem"
+      }
+    }
+  },
+  "required": [
+    "category",
+    "items"
+  ],
+  "description": "The aggregated news feed, newest first. category echoes the filter that produced it, so a client can tell a stale response from the one it asked for."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: TrendPayload 1`] = `
 "{
   "type": "object",
@@ -7646,6 +8204,203 @@ exports[`API contract — per-schema snapshots schema: TrendPayload 1`] = `
     "rangeEnd"
   ],
   "description": "\`daysAvailable\` can be SMALLER than \`daysRequested\` — a young tenant has fewer days of history than you asked for. Plot the range you were given, not the one you requested: a chart that pads the difference with zeroes shows a collapse that never happened."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: TrendPoint 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "price": {
+      "type": "number"
+    },
+    "count": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "date",
+    "price"
+  ],
+  "description": "One observation. \`date\` is a calendar day, not an instant. \`count\` appears only on listings-derived series, where it is the distinct-tenant sample size — its absence means the series is not sampled, not that the sample was zero."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: TrendPricesResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "commodity": {
+      "type": "string"
+    },
+    "range": {
+      "type": "string",
+      "enum": [
+        "1m",
+        "3m",
+        "1y",
+        "all"
+      ]
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "series": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/TrendSeries"
+      }
+    }
+  },
+  "required": [
+    "commodity",
+    "range",
+    "generatedAt",
+    "series"
+  ],
+  "description": "Market price series for one commodity, grouped by source and region. Staleness is generatedAt minus a series’ lastObservedAt and must be computed against generatedAt rather than the device clock — the payload is cached for 6h and a rural device may be hours off."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: TrendSeries 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "source": {
+      "type": "string"
+    },
+    "region": {
+      "type": "string"
+    },
+    "stage": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "unit": {
+      "type": "string"
+    },
+    "currency": {
+      "type": "string"
+    },
+    "label": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "lastObservedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date"
+    },
+    "points": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/TrendPoint"
+      }
+    }
+  },
+  "required": [
+    "source",
+    "region",
+    "stage",
+    "unit",
+    "currency",
+    "label",
+    "lastObservedAt",
+    "points"
+  ],
+  "description": "One price line, grouped by (source, region) so a chart can split lines that differ in unit or currency — series are NOT comparable across those without conversion. lastObservedAt is the newest observation anywhere, which is what distinguishes a series reporting this week from one that stopped months ago; both otherwise present a points array whose last entry looks equally current."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: Unit 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "key": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "symbol": {
+      "type": "string"
+    },
+    "measure": {
+      "type": "string",
+      "enum": [
+        "COUNT",
+        "WEIGHT",
+        "VOLUME",
+        "AREA",
+        "LENGTH",
+        "RATE",
+        "OTHER"
+      ]
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "id",
+    "key",
+    "name",
+    "symbol",
+    "measure",
+    "createdAt"
+  ],
+  "description": "A unit of measure from the GLOBAL seeded catalogue — not tenant-scoped, and there is no write path for it. \`measure\` constrains which units a dose may use; match on \`key\`, never on the localised \`name\`."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: UnitRef 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "key": {
+      "type": "string"
+    },
+    "symbol": {
+      "type": "string"
+    },
+    "measure": {
+      "type": "string",
+      "enum": [
+        "COUNT",
+        "WEIGHT",
+        "VOLUME",
+        "AREA",
+        "LENGTH",
+        "RATE",
+        "OTHER"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "key",
+    "symbol",
+    "measure"
+  ],
+  "description": "The unit reference embedded in a catalogue item — no \`name\`, no \`createdAt\`."
 }"
 `;
 
