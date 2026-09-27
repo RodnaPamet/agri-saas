@@ -24,7 +24,15 @@ test.describe('Admin SSO Configuration', () => {
 
         await safeGoto(page, `/t/${tenantSlug}/admin`, { waitUntil: 'domcontentloaded' });
 
-        await expect(page.locator('#sso-pill-btn')).toBeVisible({ timeout: 15000 });
+        // Settle-then-assert, the same barrier admin-regression.spec.ts applies
+        // to this very pill row: during the admin page's hydration window a pill
+        // can transiently render twice, and a bare toBeVisible() then fails with
+        // a strict-mode violation instead of waiting the double out. Asserting
+        // the count first waits for the window to close while still failing a
+        // page that really did render two — `.first()` would pass on both.
+        const ssoPill = page.locator('#sso-pill-btn');
+        await expect(ssoPill).toHaveCount(1, { timeout: 15000 });
+        await expect(ssoPill).toBeVisible();
     });
 
     // ── SSO page tests: server should be warm from admin page ──
