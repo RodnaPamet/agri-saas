@@ -1,5 +1,6 @@
 /**
- * Native sign-in — the four routes a phone actually walks.
+ * Native sign-in — the routes a phone actually walks, and the one that keeps it
+ * signed in afterwards.
  *
  * `/auth/me` was the only auth route in the spec, which described how to READ an
  * identity and nothing about how to obtain one. These four are the handoff, and
@@ -12,8 +13,14 @@
  *   2.                                 (provider + NextAuth set a session cookie)
  *   3. GET  /api/auth/native/complete  -> 303 to the app's URI carrying the CODE
  *   4. POST /api/auth/native/exchange  code + verifier -> token pair
+ *   5. POST /api/auth/token/refresh    spend the refresh token -> a NEW pair
  *
- * Only step 4 is performed by the app itself; 1 and 3 are navigations inside
+ * Step 5 is not part of the sign-in handshake; it is the whole reason the
+ * handshake only has to happen once. It is documented here rather than beside
+ * the public auth routes because it is meaningless without step 4 — `/exchange`
+ * mints the first pair and `/refresh` is the only way to keep one alive.
+ *
+ * Only steps 4 and 5 are performed by the app itself; 1 and 3 are navigations inside
  * `ASWebAuthenticationSession`. `/adopt` is not part of this sequence — it
  * converts a bearer the app already holds into a WEBVIEW cookie session,
  * because a WKWebView authenticates server-rendered pages by cookie and cannot
@@ -39,6 +46,13 @@
  * interceptor which check defeated them is free help. A client therefore cannot
  * and should not branch on the reason — the only correct response is to restart
  * the flow at step 1.
+ *
+ * `/api/auth/token/refresh` applies the same rule at 401, and adds a case the
+ * exchange has not got: a REPLAYED refresh token. Replay is theft evidence, so
+ * the server logs it at WARN — but the caller still gets the identical status
+ * and body, because telling a thief their replay was noticed is the same free
+ * help. `invalid_grant` from either route means one thing to a client: the
+ * credential is gone, restart at step 1.
  */
 import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
@@ -46,6 +60,27 @@ import { op } from './helpers';
 
 /** Unauthenticated by construction — the code and verifier ARE the credential. */
 const NO_AUTH: Array<Record<string, string[]>> = [];
+
+/**
+ * The pair, hoisted because TWO routes answer it: `/native/exchange` mints the
+ * first one and `/token/refresh` replaces it. Registering the component name
+ * from both call sites would collide, and describing one wire shape in two
+ * places is how the two descriptions drift apart.
+ */
+const NativeTokenPair = z
+    .object({
+        accessToken: z.string(),
+        refreshToken: z.string(),
+        tokenType: z.literal('Bearer'),
+        /** Access-token lifetime in SECONDS (a duration, not a date). */
+        expiresIn: z.number(),
+        /** Refresh-token expiry as an ISO instant (a date, not a duration). */
+        refreshExpiresAt: z.string().datetime(),
+    })
+    .openapi('NativeTokenPair', {
+        description:
+            'expiresIn is a DURATION in seconds for the access token; refreshExpiresAt is an ISO INSTANT for the refresh token. The two are deliberately different kinds — do not treat expiresIn as a timestamp.',
+    });
 
 export function registerAuthNativePaths(registry: OpenAPIRegistry): void {
     op(registry, {
@@ -129,20 +164,7 @@ export function registerAuthNativePaths(registry: OpenAPIRegistry): void {
         success: {
             status: 200,
             description: 'The token pair.',
-            schema: z
-                .object({
-                    accessToken: z.string(),
-                    refreshToken: z.string(),
-                    tokenType: z.literal('Bearer'),
-                    /** Access-token lifetime in SECONDS (a duration, not a date). */
-                    expiresIn: z.number(),
-                    /** Refresh-token expiry as an ISO instant (a date, not a duration). */
-                    refreshExpiresAt: z.string().datetime(),
-                })
-                .openapi('NativeTokenPair', {
-                    description:
-                        'expiresIn is a DURATION in seconds for the access token; refreshExpiresAt is an ISO INSTANT for the refresh token. The two are deliberately different kinds — do not treat expiresIn as a timestamp.',
-                }),
+            schema: NativeTokenPair,
         },
     });
 
@@ -166,6 +188,38 @@ export function registerAuthNativePaths(registry: OpenAPIRegistry): void {
         success: {
             status: 303,
             description: 'Sets the session cookie and redirects to `next`. No body.',
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/auth/token/refresh',
+        operationId: 'refreshNativeToken',
+        summary: 'Spend a refresh token for a new pair',
+        description:
+            'Step 5 of the flow above, and the reason the sign-in handshake only has to happen once. Send `{ "refreshToken": "…" }`; the answer is a COMPLETE new pair and the token sent is consumed. Rotation is unconditional — there is no "still valid, reuse it" reply — so a client must persist the new `refreshToken` before discarding the old one, or it has locked itself out. ' +
+            '\n\nUnauthenticated by construction: the refresh token IS the credential, which puts this in the same abuse position as sign-in and is why it is rate-limited at the pre-auth tier rather than the default one. Do not send an `Authorization` header expecting it to matter — an expired access token is the normal reason to be here. ' +
+            '\n\nThis route FAILS CLOSED, unlike per-request bearer verification: the underlying session is re-checked live and a revoked or expired one is refused. That is the moment a native client actually loses access after an admin revokes it. ' +
+            '\n\nThe new access token is rebuilt from the session’s CURRENT claims, never from anything the client sent, so a changed role, a lost membership or a deleted tenant is reflected in the next access token. A refresh is not a way to keep stale authority alive, and a client must not assume its claims survive one unchanged. ' +
+            '\n\n**Every failure is `401 { "error": "invalid_grant" }`** — malformed body, unknown token, revoked session and a REPLAYED token are indistinguishable on purpose (see the module docblock). Note this is 401 where `/exchange` uses 400 for the same shape. The only correct client response to either is to discard the pair and restart at `/api/auth/native/start`.',
+        tags: ['Auth'],
+        security: NO_AUTH,
+        body: z
+            .object({
+                refreshToken: z
+                    .string()
+                    .min(1)
+                    .openapi({
+                        description:
+                            'The refresh token from the previous pair. Consumed by this call.',
+                    }),
+            })
+            .openapi('NativeRefreshRequest'),
+        success: {
+            status: 200,
+            description:
+                'A new pair. The refresh token sent has been consumed and must be replaced in storage.',
+            schema: NativeTokenPair,
         },
     });
 }

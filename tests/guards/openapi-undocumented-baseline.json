@@ -54,8 +54,6 @@
         "/api/auth/sso/saml/callback",
         "/api/auth/sso/saml/start",
         "/api/auth/token",
-        "/api/auth/token/refresh",
-        "/api/auth/ui-config",
         "/api/auth/verify-email",
         "/api/auth/verify-email/resend",
         "/api/docs",

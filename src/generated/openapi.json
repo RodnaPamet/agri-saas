@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "3.64.1",
+    "version": "3.65.2",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -769,6 +769,19 @@
           "orgName"
         ],
         "description": "Self-service signup payload (gated by AUTH_TEST_MODE in non-prod). The password is checked against HIBP via k-anonymity before persistence; emailVerification is initiated server-side."
+      },
+      "AuthUiConfig": {
+        "type": "object",
+        "properties": {
+          "credentialsFormHidden": {
+            "type": "boolean",
+            "description": "True means do NOT offer the email/password form. It is a UI instruction, not a capability statement: the Credentials provider stays registered server-side and the backend remains reachable for API clients and tests. A client that reads this as \"credentials are disabled\" will report the wrong reason when a sign-in fails."
+          }
+        },
+        "required": [
+          "credentialsFormHidden"
+        ],
+        "description": "Deliberately additive — flags are expected to be added here. Treat an unknown key as ignorable and a missing key as \"use the built-in default\", never as false."
       },
       "BlendLotsResult": {
         "type": "object",
@@ -7189,6 +7202,19 @@
           "code"
         ],
         "description": "One of `code_verifier` / `codeVerifier` is REQUIRED — the schema cannot express \"exactly one of\" without rejecting the other spelling, so both are optional here and the handler requires one. Sending neither is 400 invalid_grant."
+      },
+      "NativeRefreshRequest": {
+        "type": "object",
+        "properties": {
+          "refreshToken": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The refresh token from the previous pair. Consumed by this call."
+          }
+        },
+        "required": [
+          "refreshToken"
+        ]
       },
       "NativeTokenPair": {
         "type": "object",
@@ -27878,6 +27904,201 @@
         "responses": {
           "303": {
             "description": "Sets the session cookie and redirects to `next`. No body."
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/token/refresh": {
+      "post": {
+        "operationId": "refreshNativeToken",
+        "summary": "Spend a refresh token for a new pair",
+        "description": "Step 5 of the flow above, and the reason the sign-in handshake only has to happen once. Send `{ \"refreshToken\": \"…\" }`; the answer is a COMPLETE new pair and the token sent is consumed. Rotation is unconditional — there is no \"still valid, reuse it\" reply — so a client must persist the new `refreshToken` before discarding the old one, or it has locked itself out. \n\nUnauthenticated by construction: the refresh token IS the credential, which puts this in the same abuse position as sign-in and is why it is rate-limited at the pre-auth tier rather than the default one. Do not send an `Authorization` header expecting it to matter — an expired access token is the normal reason to be here. \n\nThis route FAILS CLOSED, unlike per-request bearer verification: the underlying session is re-checked live and a revoked or expired one is refused. That is the moment a native client actually loses access after an admin revokes it. \n\nThe new access token is rebuilt from the session’s CURRENT claims, never from anything the client sent, so a changed role, a lost membership or a deleted tenant is reflected in the next access token. A refresh is not a way to keep stale authority alive, and a client must not assume its claims survive one unchanged. \n\n**Every failure is `401 { \"error\": \"invalid_grant\" }`** — malformed body, unknown token, revoked session and a REPLAYED token are indistinguishable on purpose (see the module docblock). Note this is 401 where `/exchange` uses 400 for the same shape. The only correct client response to either is to discard the pair and restart at `/api/auth/native/start`.",
+        "tags": [
+          "Auth"
+        ],
+        "security": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NativeRefreshRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A new pair. The refresh token sent has been consumed and must be replaced in storage.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NativeTokenPair"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/ui-config": {
+      "get": {
+        "operationId": "getAuthUiConfig",
+        "summary": "Which sign-in methods the login screen should offer",
+        "description": "Read this on mount, before drawing a login screen. It answers which auth affordances to render — currently one flag. \n\nIt is a RUNTIME route rather than a build-time constant for a deployment reason worth knowing: a `NEXT_PUBLIC_*` value is inlined at `next build`, so flipping one would need a rebuild, an image push and a rollout. Reading `process.env` per request lets an operator change the flag with an env edit and a container recreate. A client must therefore treat the answer as CURRENT, not fixed for the life of its build, and re-read it rather than caching it across sessions. \n\nIt carries no secrets and needs no credential — it exposes only what the browser would otherwise have learned at build time.",
+        "tags": [
+          "Auth"
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The flags. Absent keys are not a contract — read each one explicitly.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthUiConfig"
+                }
+              }
+            }
           },
           "400": {
             "description": "Invalid request body or query parameters.",
