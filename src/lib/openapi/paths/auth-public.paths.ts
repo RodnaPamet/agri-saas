@@ -1,5 +1,5 @@
 /**
- * Public auth surfaces — what a client may read BEFORE it has any credential.
+ * Public auth surfaces — what a client may read BEFORE it holds a credential.
  *
  * Separate from `auth-native.paths.ts` on purpose. That module documents the
  * handshake and the token lifecycle: every route in it is a step a client takes
