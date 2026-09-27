@@ -118,8 +118,6 @@ const EXEMPTIONS: Record<string, string> = {
         "Detail-tab sub-table inside the billing page — chronological event log with fixed scope.",
     "src/app/t/[tenantSlug]/(app)/admin/ledger-integrity/LedgerIntegrityClient.tsx":
         "Reconciliation-history sub-table on a multi-section admin page (status hero + history) — small fixed chronological log, no faceting.",
-    "src/app/t/[tenantSlug]/(app)/admin/rbac/MembersTable.tsx":
-        "Members sub-table on the RBAC admin dashboard — fixed list of tenant memberships with no faceting (members admin owns the writes; RBAC is read-only matrix).",
     "src/app/t/[tenantSlug]/(app)/access-reviews/[reviewId]/AccessReviewDetailClient.tsx":
         "Detail-page roster sub-table — fixed scope (decisions in this campaign) with inline per-row decision practices; not a faceted-filter surface.",
     // A11y pass — location detail parcels list (a DataTable, now inside the

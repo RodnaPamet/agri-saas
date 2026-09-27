@@ -53,9 +53,6 @@ const OBSESSION_CHECKLIST: ObsessionItem[] = [
     {
         // OBSESSION: admin/rbac members migrated to DataTable
         name: 'admin/rbac members table uses DataTable (was raw <table>)',
-        ratchet: 'src/app/t/[tenantSlug]/(app)/admin/rbac/MembersTable.tsx',
-    },
-    {
         // OBSESSION: access-reviews detail-page roster migrated to DataTable
         name: 'access-reviews detail-page roster uses DataTable (was raw <table>)',
         ratchet: 'src/app/t/[tenantSlug]/(app)/access-reviews/[reviewId]/AccessReviewDetailClient.tsx',

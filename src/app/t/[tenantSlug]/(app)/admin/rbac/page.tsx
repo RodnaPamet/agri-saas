@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
@@ -11,14 +12,15 @@ import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { cardVariants } from '@/components/ui/card-variants';
 import { cn } from '@/lib/cn';
-import { MembersTable, type MembersTableRow } from './MembersTable';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * Admin-only RBAC overview page.
  * Authorization: handled by centralized admin layout guard.
- * Shows: permission matrix by role, current tenant members + roles.
+ * Shows: the permission matrix by role. Members are NOT listed here —
+ * /admin/members owns them, and a second read-only copy is a second thing
+ * to keep in step.
  */
 export default async function RbacPage({
     params,
@@ -42,19 +44,14 @@ export default async function RbacPage({
 
 
     // ─── Data fetching ───
-    const memberRecords = await prisma.tenantMembership.findMany({
-        where: { tenantId: tenantCtx.tenant.id },
-        include: { user: { select: { id: true, name: true, email: true } } },
-        orderBy: { createdAt: 'asc' },
-    });
-
-    const members: MembersTableRow[] = memberRecords.map((m) => ({
-        id: m.id,
-        name: m.user.name,
-        email: m.user.email,
-        role: m.role,
-        createdAtIso: m.createdAt.toISOString(),
-    }));
+    //
+    // No member query here any more. This page listed the tenant's members
+    // beside the permission matrix, which meant members lived in TWO places:
+    // here, read-only, and at /admin/members, which owns them and can actually
+    // change a role. Two lists of one thing is two things to keep in step, and
+    // the read-only one is the copy a reader reaches for and then cannot act on.
+    //
+    // The matrix is about ROLES, not about who holds them. It stands alone.
 
     const roles: Role[] = ['OWNER', 'ADMIN', 'EDITOR', 'AUDITOR', 'READER', 'MECHANISATOR'];
     const permissionMatrix: Record<Role, PermissionSet> = {
@@ -97,10 +94,20 @@ export default async function RbacPage({
                 </p>
             </div>
 
-            {/* Members Table */}
+            {/* Members live at /admin/members — see the note above. */}
             <section>
-                <Heading level={2} className="mb-3">{t('teamMembers')}</Heading>
-                <MembersTable members={members} />
+                <p className="text-sm text-content-muted">
+                    {t.rich('membersMovedNotice', {
+                        link: (chunks) => (
+                            <Link
+                                href={`/t/${tenantSlug}/admin/members`}
+                                className="text-[var(--brand-default)] underline"
+                            >
+                                {chunks}
+                            </Link>
+                        ),
+                    })}
+                </p>
             </section>
 
             {/* Permission Matrix */}

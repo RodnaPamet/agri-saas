@@ -162,7 +162,7 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     //  profile. Sensitive identifiers printed on the ДНЕВНИК; encrypted at
     //  rest. The row is fetched by tenantId only (never searched by these
     //  columns), so in-place encryption is safe — no `contains`/`orderBy`.
-    FarmProfile: ['egn', 'eik'],
+    FarmProfile: ['egn', 'eik', 'urn'],
 
     // ─── Land administration — lease counterparty PII ──
     //  The landlord's name (and ЕИК when they're a legal entity) is

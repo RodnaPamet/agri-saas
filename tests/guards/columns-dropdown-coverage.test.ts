@@ -79,8 +79,6 @@ const EXEMPTIONS: Record<string, string> = {
         '(a) sub-component — billing-page event log; parent decides chrome.',
     'admin/ledger-integrity/LedgerIntegrityClient.tsx':
         '(a) sub-component — reconciliation-history table on a status+history admin page; parent owns chrome.',
-    'admin/rbac/MembersTable.tsx':
-        '(a) sub-component — RBAC members sub-table; parent dashboard owns chrome.',
     'access-reviews/[reviewId]/AccessReviewDetailClient.tsx':
         '(a) sub-component — detail-page roster sub-table; EntityDetailLayout owns chrome.',
     // GRC teardown phase 2 removed the vendor-detail and practice-detail

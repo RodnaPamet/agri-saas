@@ -196,6 +196,14 @@ const SEAM_COVERED: Readonly<
         fieldList: 'PROFILE_FIELDS',
         reason: 'Same PROFILE_FIELDS reduce seam as FarmProfile.egn.',
     },
+    'FarmProfile.urn': {
+        seam: 'norm',
+        fieldList: 'PROFILE_FIELDS',
+        reason:
+            'Same PROFILE_FIELDS reduce seam as FarmProfile.egn. УРН is the ' +
+            'holding’s registration number — encrypted beside egn/eik because ' +
+            'it identifies a named producer to the state.',
+    },
 };
 
 /** Sanitiser names usable in `src`: the three real ones + verified local helpers. */
