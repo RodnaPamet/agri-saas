@@ -109,8 +109,6 @@ const EXEMPTIONS: Record<string, string> = {
     // R10-PR1 — sub-component embedded inside the RBAC page (which is
     // a multi-section dashboard: members + permission matrix). Parent
     // owns layout.
-    'admin/rbac/MembersTable.tsx':
-        'sub-component (parent owns layout — members + matrix dashboard)',
 
     // R10-PR2 — detail page (EntityDetailLayout). The DataTable is
     // the roster sub-table inside the detail body; the page itself

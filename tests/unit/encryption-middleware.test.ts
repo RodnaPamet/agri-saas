@@ -85,26 +85,36 @@ describe('ENCRYPTED_FIELDS manifest', () => {
         expect(getEncryptedFields(undefined)).toBeUndefined();
     });
 
-    it('registers the БАБХ FarmProfile identifiers (egn/eik)', () => {
+    it('registers the БАБХ FarmProfile identifiers (egn/eik/urn)', () => {
         expect(isEncryptedModel('FarmProfile')).toBe(true);
-        expect(getEncryptedFields('FarmProfile')).toEqual(['egn', 'eik']);
+        // УРН joined these: it is the HOLDING's registration number on the
+        // земеделски-стопанин register, distinct from the company (eik) and the
+        // person (egn), and it identifies a named producer to the state.
+        //
+        // The exact-list assertion is the point of this test, so adding a field
+        // to the manifest is SUPPOSED to redden it — a manifest that quietly
+        // grows is one nobody reviewed.
+        expect(getEncryptedFields('FarmProfile')).toEqual(['egn', 'eik', 'urn']);
     });
 
-    it('round-trips FarmProfile egn/eik plaintext → ciphertext → plaintext', () => {
+    it('round-trips FarmProfile egn/eik/urn plaintext → ciphertext → plaintext', () => {
         const data: Record<string, unknown> = {
             producerName: 'ЕТ Иван Петров',
             egn: '7501011234',
             eik: '203456789',
+            urn: '1234567890',
             tenantId: 'tenant-1',
         };
         encryptDataNode(data, 'FarmProfile', null);
         // Sensitive identifiers encrypted; producerName left plaintext.
         expect(isEncryptedValue(data.egn as string)).toBe(true);
         expect(isEncryptedValue(data.eik as string)).toBe(true);
+        expect(isEncryptedValue(data.urn as string)).toBe(true);
         expect(data.producerName).toBe('ЕТ Иван Петров');
 
         decryptResultNode(data, 'FarmProfile', NO_DEKS);
         expect(data.egn).toBe('7501011234');
+        expect(data.urn).toBe('1234567890');
         expect(data.eik).toBe('203456789');
     });
 });

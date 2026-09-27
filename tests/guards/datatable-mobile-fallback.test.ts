@@ -124,8 +124,6 @@ const EXEMPTIONS: Record<string, string> = {
         'sub-component embedded in the billing page (parent owns layout)',
     't/[tenantSlug]/(app)/admin/ledger-integrity/LedgerIntegrityClient.tsx':
         'multi-section admin page (status hero + reconciliation-history table)',
-    't/[tenantSlug]/(app)/admin/rbac/MembersTable.tsx':
-        'sub-component of the RBAC dashboard (members + permission matrix)',
 
     // ── Detail-page sub-tables (EntityDetailLayout, not list pages) ──
     't/[tenantSlug]/(app)/access-reviews/[reviewId]/AccessReviewDetailClient.tsx':

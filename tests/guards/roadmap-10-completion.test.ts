@@ -51,12 +51,11 @@ const OBSESSION_CHECKLIST: ObsessionItem[] = [
         ratchet: 'tests/guards/no-raw-tables-in-app-pages.test.ts',
     },
     {
-        // OBSESSION: admin/rbac members migrated to DataTable
-        name: 'admin/rbac members table uses DataTable (was raw <table>)',
-        ratchet: 'src/app/t/[tenantSlug]/(app)/admin/rbac/MembersTable.tsx',
-    },
-    {
         // OBSESSION: access-reviews detail-page roster migrated to DataTable
+        //
+        // The admin/rbac entry that sat here is gone with its file: that page
+        // listed members beside the permission matrix, which meant members
+        // lived in two places, and /admin/members owns them.
         name: 'access-reviews detail-page roster uses DataTable (was raw <table>)',
         ratchet: 'src/app/t/[tenantSlug]/(app)/access-reviews/[reviewId]/AccessReviewDetailClient.tsx',
     },

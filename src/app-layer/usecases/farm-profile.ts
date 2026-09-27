@@ -9,22 +9,46 @@ import { sanitizePlainText } from '@/lib/security/sanitize';
  * БАБХ farm-record — the one-per-tenant FarmProfile identity block printed on
  * the "ДНЕВНИК за проведените растителнозащитни мероприятия и торене"
  * (Прил. 1 към заповед РД 11-3194/31.12.2021). Every field is optional (the
- * paper form tolerates blanks). egn/eik are encrypted at rest via the Epic B
+ * paper form tolerates blanks). egn/eik/urn are encrypted at rest via the Epic B
  * manifest — this usecase reads/writes plaintext; the Prisma extension does
  * the crypto transparently.
+ *
+ * ── two fields are NOT strings, and that is deliberate ──
+ *
+ * Every field here used to be `string | null`, which let one list drive read,
+ * write and normalisation. `sizeHa` and `grainProduced` break that on purpose:
+ * a size that can hold "abc" is bad data on a page whose numbers reach a state
+ * form, and a single grain string cannot express the ordinary case of a farm
+ * growing three. So they are handled explicitly beside the uniform block
+ * rather than squeezed into it.
+ *
+ * `sizeHa` crosses the wire as a NUMBER, not the decimal string a Prisma
+ * `Decimal` serialises to by default. That is a departure from the money and
+ * tonnage fields elsewhere in this API, and the reason is that those are money:
+ * a float cannot be trusted with them. An area in hectares to three decimals is
+ * exactly representable, nobody sums thousands of them, and a numeric field
+ * that arrives as `"12.5"` is the asymmetry this codebase has been removing.
  */
 
 export interface FarmProfileFields {
     producerName?: string | null;
     egn?: string | null;
     eik?: string | null;
+    /** УРН — the holding's registration number. Encrypted at rest. */
+    urn?: string | null;
     address?: string | null;
     municipality?: string | null;
     settlement?: string | null;
+    /** Where the LAND is, as declared — not the correspondence address. */
+    farmLocation?: string | null;
     agricultureDirectorateCity?: string | null;
     registrationPlace?: string | null;
     registrationEkatte?: string | null;
     odbhCity?: string | null;
+    /** Declared hectares. A NUMBER on the wire — see the module note. */
+    sizeHa?: number | null;
+    /** Declared grains. Free values; a farm may grow something unquoted. */
+    grainProduced?: string[] | null;
 }
 
 /** Ordered list of the editable string fields (single source of truth). */
@@ -32,21 +56,53 @@ const PROFILE_FIELDS = [
     'producerName',
     'egn',
     'eik',
+    'urn',
     'address',
     'municipality',
     'settlement',
+    'farmLocation',
     'agricultureDirectorateCity',
     'registrationPlace',
     'registrationEkatte',
     'odbhCity',
 ] as const;
 
-type ProfileShape = Record<(typeof PROFILE_FIELDS)[number], string | null>;
+type StringShape = Record<(typeof PROFILE_FIELDS)[number], string | null>;
 
-const EMPTY_PROFILE: ProfileShape = PROFILE_FIELDS.reduce(
-    (acc, k) => ({ ...acc, [k]: null }),
-    {} as ProfileShape,
-);
+/** The whole profile: the uniform string block plus the two typed fields. */
+export type ProfileShape = StringShape & {
+    sizeHa: number | null;
+    grainProduced: string[];
+};
+
+const EMPTY_PROFILE: ProfileShape = {
+    ...PROFILE_FIELDS.reduce((acc, k) => ({ ...acc, [k]: null }), {} as StringShape),
+    sizeHa: null,
+    // An EMPTY ARRAY rather than null: "this farm declares no grain" and
+    // "nobody has filled this in" are the same fact here, and an array a
+    // client can map over without a null check is the kinder shape.
+    grainProduced: [],
+};
+
+/** Decimal → number. See the module note on why this is not a string. */
+function toNum(v: unknown): number | null {
+    if (v == null) return null;
+    const n = typeof v === 'number' ? v : Number(String(v));
+    return Number.isFinite(n) ? n : null;
+}
+
+/** Project a row (or the empty default) onto the wire shape. */
+function project(row: Record<string, unknown> | null): ProfileShape {
+    if (!row) return { ...EMPTY_PROFILE };
+    return {
+        ...PROFILE_FIELDS.reduce(
+            (acc, k) => ({ ...acc, [k]: (row[k] as string | null) ?? null }),
+            {} as StringShape,
+        ),
+        sizeHa: toNum(row.sizeHa),
+        grainProduced: Array.isArray(row.grainProduced) ? (row.grainProduced as string[]) : [],
+    };
+}
 
 /** Admin read — the tenant's farm profile (an all-null shape when unset). */
 export async function getFarmProfile(ctx: RequestContext): Promise<ProfileShape> {
@@ -55,11 +111,7 @@ export async function getFarmProfile(ctx: RequestContext): Promise<ProfileShape>
         const row = await db.farmProfile.findUnique({
             where: { tenantId: ctx.tenantId },
         });
-        if (!row) return { ...EMPTY_PROFILE };
-        return PROFILE_FIELDS.reduce(
-            (acc, k) => ({ ...acc, [k]: (row as Record<string, unknown>)[k] ?? null }),
-            {} as ProfileShape,
-        );
+        return project(row as Record<string, unknown> | null);
     });
 }
 
@@ -75,10 +127,33 @@ export async function upsertFarmProfile(
         if (v == null) return null;
         return sanitizePlainText(v.trim()) || null;
     };
-    const data: ProfileShape = PROFILE_FIELDS.reduce(
+    const strings: StringShape = PROFILE_FIELDS.reduce(
         (acc, k) => ({ ...acc, [k]: norm(input[k]) }),
-        {} as ProfileShape,
+        {} as StringShape,
     );
+
+    // A negative area is not a smaller farm, it is a typo. Refuse rather than
+    // store it: this number can reach a state form.
+    const sizeHa =
+        input.sizeHa == null || !Number.isFinite(input.sizeHa) || input.sizeHa < 0
+            ? null
+            : input.sizeHa;
+
+    // Sanitise each grain, drop blanks, de-duplicate case-insensitively while
+    // keeping what the farmer typed. Order is preserved — it is a declaration,
+    // not a set, and re-ordering someone's list on save is an unasked-for edit.
+    const seen = new Set<string>();
+    const grainProduced = (input.grainProduced ?? [])
+        .map((g) => norm(g))
+        .filter((g): g is string => g !== null)
+        .filter((g) => {
+            const key = g.toLocaleLowerCase('bg');
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+
+    const data = { ...strings, sizeHa, grainProduced };
 
     return runInTenantContext(ctx, async (db) => {
         const row = await db.farmProfile.upsert({
@@ -100,9 +175,6 @@ export async function upsertFarmProfile(
             },
         });
 
-        return PROFILE_FIELDS.reduce(
-            (acc, k) => ({ ...acc, [k]: (row as Record<string, unknown>)[k] ?? null }),
-            {} as ProfileShape,
-        );
+        return project(row as unknown as Record<string, unknown>);
     });
 }

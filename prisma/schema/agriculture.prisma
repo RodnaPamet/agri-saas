@@ -845,6 +845,31 @@ model FarmProfile {
   registrationEkatte         String?
   /// ОДБХ гр.
   odbhCity                   String?
+  /// УРН — the farmer's registration number on the МЗХ земеделски-стопанин
+  /// register. DISTINCT from `eik` (the company) and `egn` (the person), both
+  /// already here: this is the number identifying the HOLDING to the state, and
+  /// it is what a subsidy or inspection reference cites.
+  ///
+  /// Encrypted at rest alongside egn/eik — it identifies a named producer, and
+  /// the manifest already treats the company number that way.
+  urn                        String?
+  /// Declared size of the holding, in HECTARES.
+  ///
+  /// TYPED IN rather than derived, and that is a decision. The farm's parcels
+  /// already sum to an area (`season-recap.totalAreaHa`); that sum and this
+  /// number can legitimately disagree, because this is what the producer
+  /// DECLARES on the paper form and a state form must match the declaration
+  /// even when the mapped parcels say otherwise. Showing both side by side
+  /// would be honest; silently replacing one with the other would not.
+  sizeHa                     Decimal? @db.Decimal(12, 3)
+  /// Grains the holding produces, as declared. Free values rather than the
+  /// canonical commodity enum, because a farm may grow something the market
+  /// vocabulary does not quote and a picker that refused it would be wrong.
+  grainProduced              String[]
+  /// Where the HOLDING is, as declared — the land, not the correspondence
+  /// address. `address`/`municipality`/`settlement` above are the producer's
+  /// registered address, which is frequently not where the fields are.
+  farmLocation               String?
   createdAt                  DateTime @default(now())
   updatedAt                  DateTime @updatedAt
 
