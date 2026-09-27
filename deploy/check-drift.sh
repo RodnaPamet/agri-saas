@@ -13,6 +13,13 @@
 # compose file, so a drift here always means a human edited the VM out of band
 # (or forgot to run deploy/apply.sh after a repo change).
 #
+# It also checks the CADDYFILE, which is not repo-canonical and must not become
+# so: the live file is hand-assembled and serves a second, unrelated product, so
+# `deploy/Caddyfile` is a PARTIAL copy by design. The check is therefore not
+# "are they identical" — that would be permanently red and would invite the one
+# repair that causes an outage — but "is the difference still the difference we
+# recorded", against deploy/caddy-foreign-sites.txt. See that file's header.
+#
 # Usage:  deploy/check-drift.sh
 # Exit:   0 = in sync, 1 = drift detected, 2 = could not reach the VM.
 set -euo pipefail
@@ -96,7 +103,89 @@ else
     DF_DRIFT=1
 fi
 
+# ── The Caddyfile's SITE SET, not its bytes ──────────────────────────────
+#
+# Comparing sha256 here would be wrong twice over: it would report drift
+# forever (the live file legitimately carries another product's blocks), and
+# the obvious way to make it green is to overwrite the VM copy with the repo
+# copy, which deletes those blocks and takes that product's domains down. So
+# this compares the SET OF SITE ADDRESSES against the recorded difference.
+LOCAL_CADDY="${SCRIPT_DIR}/Caddyfile"
+FOREIGN_LIST="${SCRIPT_DIR}/caddy-foreign-sites.txt"
+REMOTE_CADDY="${REMOTE_DIR}/Caddyfile"
+SITES_SH="${SCRIPT_DIR}/caddy-sites.sh"
+CADDY_DRIFT=0
+
+if [ ! -f "$LOCAL_CADDY" ] || [ ! -f "$FOREIGN_LIST" ] || [ ! -x "$SITES_SH" ]; then
+    err "missing Caddyfile check inputs — expected ${LOCAL_CADDY}, ${FOREIGN_LIST}"
+    err "  and an executable ${SITES_SH}."
+    CADDY_DRIFT=1
+else
+    CADDY_TMP="$(mktemp)"
+    # shellcheck disable=SC2064
+    trap "rm -f '${CADDY_TMP}'" EXIT
+    if ! gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" \
+        --command "sudo cat '${REMOTE_CADDY}'" > "$CADDY_TMP" 2>/dev/null \
+        || [ ! -s "$CADDY_TMP" ]; then
+        err "could not read ${REMOTE_CADDY} on ${VM_NAME} — absent, or unreadable."
+        CADDY_DRIFT=1
+    else
+        # Both extractions must succeed. caddy-sites.sh exits 3 rather than
+        # printing an empty set, because every comparison below would pass on one.
+        if ! REPO_SITES="$("$SITES_SH" "$LOCAL_CADDY")"; then
+            err "could not extract site addresses from ${LOCAL_CADDY}."
+            CADDY_DRIFT=1
+        elif ! VM_SITES="$("$SITES_SH" "$CADDY_TMP")"; then
+            err "could not extract site addresses from ${VM_NAME}:${REMOTE_CADDY}."
+            CADDY_DRIFT=1
+        else
+            RECORDED="$(grep -vE '^[[:space:]]*#|^[[:space:]]*$' "$FOREIGN_LIST" \
+                | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' | sort -u)"
+
+            VM_ONLY="$(comm -13 <(printf '%s\n' "$REPO_SITES") <(printf '%s\n' "$VM_SITES"))"
+            REPO_ONLY="$(comm -23 <(printf '%s\n' "$REPO_SITES") <(printf '%s\n' "$VM_SITES"))"
+            UNRECORDED="$(comm -13 <(printf '%s\n' "$RECORDED") <(printf '%s\n' "$VM_ONLY"))"
+            STALE="$(comm -23 <(printf '%s\n' "$RECORDED") <(printf '%s\n' "$VM_ONLY"))"
+
+            if [ -n "$UNRECORDED" ]; then
+                err "CADDY — the VM serves site(s) that nothing in this repo records:"
+                # shellcheck disable=SC2086 # deliberate: one address per line
+                printf '           %s\n' $UNRECORDED >&2
+                err "  Someone added a site to ${REMOTE_CADDY} out of band. Add it to"
+                err "  ${FOREIGN_LIST} (with who owns it) if it belongs to another"
+                err "  product, or describe it in deploy/Caddyfile if it is ours."
+                CADDY_DRIFT=1
+            fi
+            if [ -n "$STALE" ]; then
+                err "CADDY — recorded foreign site(s) the VM no longer serves:"
+                # shellcheck disable=SC2086 # deliberate: one address per line
+                printf '           %s\n' $STALE >&2
+                err "  Delete them from ${FOREIGN_LIST}. The list is not allowed to rot"
+                err "  into a standing excuse for whatever the live file happens to hold."
+                CADDY_DRIFT=1
+            fi
+            if [ -n "$REPO_ONLY" ]; then
+                err "CADDY — deploy/Caddyfile declares site(s) the VM does NOT serve:"
+                # shellcheck disable=SC2086 # deliberate: one address per line
+                printf '           %s\n' $REPO_ONLY >&2
+                err "  The repo describes a name the host does not answer."
+                CADDY_DRIFT=1
+            fi
+            if [ "$CADDY_DRIFT" -eq 0 ]; then
+                FOREIGN_N="$(printf '%s\n' "$RECORDED" | grep -cE '.' || true)"
+                ok "in sync — Caddy site set matches; ${FOREIGN_N} recorded foreign site(s) present"
+                ok "  NOTE: ${REMOTE_CADDY} is hand-assembled and NOT repo-canonical."
+                ok "  Never scp deploy/Caddyfile over it — that deletes those ${FOREIGN_N} block(s)."
+            fi
+        fi
+    fi
+fi
+
 if [ "$LOCAL_SHA" = "$REMOTE_SHA" ]; then
+    if [ "$CADDY_DRIFT" -ne 0 ]; then
+        err "compose file is in sync but the Caddy site set is NOT."
+        exit 1
+    fi
     if [ "$DF_DRIFT" -ne 0 ]; then
         err "compose file is in sync but the db build context is NOT."
         exit 1

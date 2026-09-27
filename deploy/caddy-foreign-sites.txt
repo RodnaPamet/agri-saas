@@ -1,0 +1,50 @@
+# Site addresses served by /opt/agrent/Caddyfile on the prod VM that this repo
+# does NOT describe, and must not try to.
+#
+# ── WHY THIS FILE EXISTS ──
+#
+# The VM's Caddyfile is HAND-ASSEMBLED and serves two unrelated products. This
+# repo describes one of them. `deploy/Caddyfile` is therefore a PARTIAL copy of
+# the live file — not a stale one — and the difference is by design.
+#
+# That makes it a trap, because every other deploy artifact here is
+# repo-canonical: `deploy/apply.sh` pushes the compose up, `deploy/check-drift.sh`
+# fails when the VM's copy differs, and both docblocks state plainly that the
+# repo is the source of truth. Applying that same reflex to the Caddyfile —
+# `scp deploy/Caddyfile` up, or "reconciling" the VM to match the repo — DELETES
+# every block listed below and takes the other product's domains offline. It
+# would look like a tidy-up and read as a routine sync in the diff.
+#
+# apply.sh does not copy the Caddyfile, so nothing automated does this today.
+# The risk is a human doing it by hand, believing the repo is canonical here as
+# it is everywhere else.
+#
+# ── HOW IT IS ENFORCED ──
+#
+# `deploy/check-drift.sh` compares the live site addresses against
+# `deploy/Caddyfile` and this list, and fails on THREE conditions:
+#
+#   · a VM site address that is not listed here — something new appeared on the
+#     host out of band and nobody recorded it;
+#   · an address listed here that the VM no longer serves — the list may not rot
+#     into a permanent excuse, the same rule the openapi undocumented baseline
+#     uses;
+#   · an address `deploy/Caddyfile` declares that the VM does NOT serve — the
+#     repo describing a site the host does not answer.
+#
+# A listed address that IS live is reported and does not fail. The point is not
+# to make the difference go away; it is to make it impossible to be surprised by.
+#
+# ── FORMAT ──
+#
+# One address per line. `#` comments and blank lines ignored. Addresses are
+# compared literally, as Caddy writes them in the block header.
+#
+# Recorded 2026-09-27 from /opt/agrent/Caddyfile (4 blocks live, 1 described
+# here). Wildcards are deliberately NOT supported: a pattern would quietly
+# absorb the next foreign domain, which is the surprise this file prevents.
+
+app.playerz.bg
+playerz.35-187-80-26.sslip.io
+playerz.bg
+www.playerz.bg
