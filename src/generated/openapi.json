@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "3.63.0",
+    "version": "3.63.1",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -2726,6 +2726,19 @@
         },
         "required": [
           "parcelId"
+        ],
+        "description": "Send a non-blank `message`, a `quote`, or both — `required` lists `parcelId` only because an either-or cannot be expressed there, and a body with neither is a 400. `quote.coveredParcelCount` is required when `quote.areaScope` is `crop-at-location`. Never send a premium, tariff or instalment amount: there is no such field and one is stripped if present, because the server recomputes the price.",
+        "anyOf": [
+          {
+            "required": [
+              "message"
+            ]
+          },
+          {
+            "required": [
+              "quote"
+            ]
+          }
         ]
       },
       "CreateInsuranceLeadResponse": {
@@ -5562,6 +5575,59 @@
         },
         "required": [
           "parcelIds"
+        ]
+      },
+      "InsuranceCatalogue": {
+        "type": "object",
+        "properties": {
+          "engineVersion": {
+            "type": "integer"
+          },
+          "currencySymbol": {
+            "type": "string"
+          },
+          "products": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "crop",
+                    "peril"
+                  ]
+                },
+                "commodity": {
+                  "type": "string"
+                },
+                "tariffBp": {
+                  "type": "integer"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "blurb": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key",
+                "kind",
+                "tariffBp",
+                "name",
+                "blurb"
+              ]
+            }
+          }
+        },
+        "required": [
+          "engineVersion",
+          "currencySymbol",
+          "products"
         ]
       },
       "InventoryLedgerEntry": {
@@ -22508,6 +22574,117 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CreateInsuranceLeadResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/insurance/products": {
+      "get": {
+        "operationId": "listInsuranceProducts",
+        "summary": "The insurance product catalogue and its tariffs",
+        "description": "For clients that cannot import the pricing engine. The web app does not need this — it imports the same constant the engine uses — so it exists for a SEPARATE codebase, where a compiled-in tariff is a second description of one thing.\n\nThat duplication is worse than most, because it is asymmetric: the SERVER recompute is what gets stored and emailed, so a stale local tariff shows the farmer one figure and the operator another, with nothing on either side saying so. Fetch this rather than hardcoding `tariffBp`.\n\n`engineVersion` is the rounding rules the tariffs belong to. Do not send it anywhere — compare it, so a preview built against version N notices the server has moved to N+1.\n\nLanguage is DECLARED, not negotiated: pass `?locale=bg` (or rely on the `NEXT_LOCALE` cookie). `Accept-Language` is deliberately ignored — a device set to English-language/Bulgarian-region would otherwise pull English product names onto an entirely Bulgarian screen. Absent both, the answer is English, so a client that wants Bulgarian must say so.\n\nThe labels here are the SOURCE for native clients; where five of them overlap a client's own commodity names, that equality is intentional — change `insurance.products.<key>.name` in `messages/` and both follow.",
+        "tags": [
+          "Farm risk"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The catalogue, with copy resolved for the declared locale.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsuranceCatalogue"
                 }
               }
             }

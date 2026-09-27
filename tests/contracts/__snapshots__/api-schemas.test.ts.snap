@@ -2802,6 +2802,19 @@ exports[`API contract — per-schema snapshots schema: CreateInsuranceLeadReques
   },
   "required": [
     "parcelId"
+  ],
+  "description": "Send a non-blank \`message\`, a \`quote\`, or both — \`required\` lists \`parcelId\` only because an either-or cannot be expressed there, and a body with neither is a 400. \`quote.coveredParcelCount\` is required when \`quote.areaScope\` is \`crop-at-location\`. Never send a premium, tariff or instalment amount: there is no such field and one is stripped if present, because the server recomputes the price.",
+  "anyOf": [
+    {
+      "required": [
+        "message"
+      ]
+    },
+    {
+      "required": [
+        "quote"
+      ]
+    }
   ]
 }"
 `;
@@ -5791,6 +5804,62 @@ exports[`API contract — per-schema snapshots schema: InquiredParcelIds 1`] = `
   },
   "required": [
     "parcelIds"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: InsuranceCatalogue 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "engineVersion": {
+      "type": "integer"
+    },
+    "currencySymbol": {
+      "type": "string"
+    },
+    "products": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "crop",
+              "peril"
+            ]
+          },
+          "commodity": {
+            "type": "string"
+          },
+          "tariffBp": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "blurb": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "kind",
+          "tariffBp",
+          "name",
+          "blurb"
+        ]
+      }
+    }
+  },
+  "required": [
+    "engineVersion",
+    "currencySymbol",
+    "products"
   ]
 }"
 `;
