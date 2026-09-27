@@ -4524,6 +4524,108 @@ exports[`API contract — per-schema snapshots schema: ExchangeThreadSummary 1`]
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: FarmProfile 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "producerName": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "egn": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "eik": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "urn": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "address": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "municipality": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "settlement": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "agricultureDirectorateCity": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "registrationPlace": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "registrationEkatte": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "odbhCity": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "sizeHa": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "grainProduced": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "producerName",
+    "egn",
+    "eik",
+    "urn",
+    "address",
+    "municipality",
+    "settlement",
+    "agricultureDirectorateCity",
+    "registrationPlace",
+    "registrationEkatte",
+    "odbhCity",
+    "sizeHa",
+    "grainProduced"
+  ],
+  "description": "The one-per-tenant farm identity block printed on the БАБХ ДНЕВНИК. Every field is nullable because the paper form tolerates blanks — an all-null body is the normal answer for a tenant that has not filled it in, not an error. egn/eik/urn are encrypted at rest and returned as plaintext: treat them as sensitive on screen and in logs. sizeHa is a number and grainProduced is an array that is [] rather than null."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: FarmRecordGenerateRequest 1`] = `
 "{
   "type": "object",
@@ -11075,6 +11177,15 @@ exports[`API contract — per-schema snapshots schema: UnitRef 1`] = `
     "measure"
   ],
   "description": "The unit reference embedded in a catalogue item — no \`name\`, no \`createdAt\`."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: UpdateFarmProfileRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {},
+  "additionalProperties": {},
+  "description": "Every field of FarmProfile is optional here. A blank string CLEARS the field. sizeHa is a number (bounded at 1,000,000 and refused if negative); grainProduced is an array of up to 50 strings of at most 120 characters each."
 }"
 `;
 

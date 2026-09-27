@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "3.64.0",
+    "version": "3.64.1",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -4370,6 +4370,105 @@
           "hasUnread"
         ],
         "description": "Threads from BOTH sides — ones this tenant opened as a buyer and ones opened against its own listings. `role` says which. `hasUnread` is a cheap staleness flag; the exact count needs the thread itself."
+      },
+      "FarmProfile": {
+        "type": "object",
+        "properties": {
+          "producerName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "egn": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "eik": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "urn": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "address": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "municipality": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "settlement": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "agricultureDirectorateCity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "registrationPlace": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "registrationEkatte": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "odbhCity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sizeHa": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "grainProduced": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "producerName",
+          "egn",
+          "eik",
+          "urn",
+          "address",
+          "municipality",
+          "settlement",
+          "agricultureDirectorateCity",
+          "registrationPlace",
+          "registrationEkatte",
+          "odbhCity",
+          "sizeHa",
+          "grainProduced"
+        ],
+        "description": "The one-per-tenant farm identity block printed on the БАБХ ДНЕВНИК. Every field is nullable because the paper form tolerates blanks — an all-null body is the normal answer for a tenant that has not filled it in, not an error. egn/eik/urn are encrypted at rest and returned as plaintext: treat them as sensitive on screen and in logs. sizeHa is a number and grainProduced is an array that is [] rather than null."
       },
       "FarmRecordGenerateRequest": {
         "type": "object",
@@ -10552,6 +10651,12 @@
           "measure"
         ],
         "description": "The unit reference embedded in a catalogue item — no `name`, no `createdAt`."
+      },
+      "UpdateFarmProfileRequest": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": {},
+        "description": "Every field of FarmProfile is optional here. A blank string CLEARS the field. sizeHa is a number (bounded at 1,000,000 and refused if negative); grainProduced is an array of up to 50 strings of at most 120 characters each."
       },
       "UserRef": {
         "type": "object",
@@ -35435,6 +35540,235 @@
                 "schema": {
                   "type": "string",
                   "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/admin/farm-profile": {
+      "get": {
+        "operationId": "getFarmProfile",
+        "summary": "The tenant’s farm profile",
+        "description": "Requires `admin.manage`. An all-null body (with `grainProduced: []`) is the ordinary answer for a tenant that has never filled the profile in — it is not a 404 and not an error.",
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The profile.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FarmProfile"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited. Carries `Retry-After` and `X-RateLimit-*`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateFarmProfile",
+        "summary": "Upsert the tenant’s farm profile",
+        "description": "Requires `admin.manage`. An upsert, so the first write creates the row. \n\nA BLANK STRING CLEARS a field — it is not ignored. Send only what you mean to keep, or read first and send the whole object back. \n\nThe server normalises on write: text is trimmed and sanitised, a negative `sizeHa` is refused (stored as null), and `grainProduced` has blanks dropped and duplicates removed case-insensitively while PRESERVING ORDER. So the response can legitimately differ from what you sent — re-read it from the response rather than keeping the submitted values, or the screen will disagree with the database.",
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateFarmProfileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The stored profile, AFTER normalisation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FarmProfile"
                 }
               }
             }

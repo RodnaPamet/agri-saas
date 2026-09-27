@@ -39,8 +39,6 @@ export interface FarmProfileFields {
     address?: string | null;
     municipality?: string | null;
     settlement?: string | null;
-    /** Where the LAND is, as declared — not the correspondence address. */
-    farmLocation?: string | null;
     agricultureDirectorateCity?: string | null;
     registrationPlace?: string | null;
     registrationEkatte?: string | null;
@@ -60,7 +58,6 @@ const PROFILE_FIELDS = [
     'address',
     'municipality',
     'settlement',
-    'farmLocation',
     'agricultureDirectorateCity',
     'registrationPlace',
     'registrationEkatte',

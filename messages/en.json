@@ -811,12 +811,11 @@
                 "egn": "ЕГН (personal ID)",
                 "eik": "ЕИК (company ID)",
                 "urn": "УРН (producer registration number)",
-                "address": "Registered address",
+                "address": "Registered / management address",
                 "municipality": "Municipality",
                 "settlement": "Settlement",
-                "farmLocation": "Location of the holding",
                 "agricultureDirectorateCity": "Regional Agriculture Directorate (city)",
-                "registrationPlace": "Place of registration",
+                "registrationPlace": "Place of registration (the holding’s location)",
                 "registrationEkatte": "ЕКАТТЕ code",
                 "odbhCity": "ОДБХ (city)",
                 "sizeHa": "Size of the holding (ha)",
@@ -824,9 +823,9 @@
             },
             "fieldHints": {
                 "urn": "The holding's number on the producer register — not the same as ЕИК or ЕГН.",
-                "farmLocation": "Where the land is, when that differs from the registered address.",
                 "sizeHa": "As declared. May differ from the sum of the mapped parcels.",
-                "grainProduced": "Comma-separated, e.g. “wheat, sunflower, maize”."
+                "grainProduced": "Comma-separated, e.g. “wheat, sunflower, maize”.",
+                "registrationPlace": "Where the holding is registered. This is usually also the produce warehouse — the warehouse itself is recorded per parcel."
             }
         },
         "integrations": {
