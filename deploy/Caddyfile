@@ -101,7 +101,19 @@
         -Server
     }
 
-    reverse_proxy app:3000 {
+    # `agrent-app`, NOT `app` — the alias `app` is AMBIGUOUS on this host.
+    #
+    # A second product (playerz) shares `agrent_internal` and its container also
+    # declares the alias `app`, so Docker DNS answers `app` with TWO addresses
+    # and Caddy sent roughly half of app.agrent.bg's traffic to the wrong
+    # application. It presented as an auth outage — the other app has no
+    # /api/auth/* routes, so ITS NextAuth catch-all answered 400 where this app
+    # returns 401 `invalid_grant`, and the iOS client only clears tokens on 401,
+    # so sessions were kept forever and every screen failed. Found 2026-09-27.
+    #
+    # `agrent-app` resolves to exactly one container, which is why it is used
+    # here: this block must not depend on what another stack names its services.
+    reverse_proxy agrent-app:3000 {
         # Next.js sits behind the proxy — forward the original host so
         # NextAuth + server-side redirects resolve to the public URL.
         header_up Host {host}
