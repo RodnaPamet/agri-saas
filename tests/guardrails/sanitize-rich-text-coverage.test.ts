@@ -331,6 +331,53 @@ describe('rich-text sanitiser coverage — structural completeness', () => {
             ),
     );
 
+    it('control: every declared usecase path EXISTS, so `fileExists` selects', () => {
+        // The selector this whole block rests on. `fileExists` filters which
+        // usecase files get read; if it returned false for everything, `src`
+        // would be the empty string and every "is sanitised by name" assertion
+        // below would pass VACUOUSLY — the guard reporting full coverage while
+        // reading nothing.
+        //
+        // Mutating `fileExists` to return nothing SURVIVED the selector-teeth
+        // audit, which is exactly that: a selector with no control. This is the
+        // control. It also catches the ordinary case of a usecase being renamed
+        // or moved, which would silently empty the source for that model rather
+        // than failing.
+        const declared = [
+            ...new Set(
+                Object.values(RICH_TEXT_COVERAGE).flatMap(({ usecases }) => usecases),
+            ),
+        ];
+        expect(declared.length).toBeGreaterThan(0);
+
+        const missing = declared.filter((u) => !fileExists(u));
+        if (missing.length > 0) {
+            throw new Error(
+                `RICH_TEXT_COVERAGE names usecase file(s) that do not exist:\n` +
+                    missing.map((m) => `  ${m}`).join('\n') +
+                    `\n\nThe field assertions read these files. A path that does not ` +
+                    `resolve does not fail — it contributes an empty string, and every ` +
+                    `assertion over it passes. Update the path, or remove the model.`,
+            );
+        }
+
+        // And the files must have CONTENT: an existing but empty file is the
+        // same vacuum by another route.
+        for (const u of declared) {
+            expect(readFile(u).length).toBeGreaterThan(0);
+        }
+
+        // The OTHER half, and the half that was missing. Everything above
+        // proves `fileExists` can say YES. A selector that always says yes
+        // selects nothing — which is why the audit's mutation returned a
+        // TRUTHY value (`{}`) rather than false, and why replacing the
+        // implementation with `() => ({})` passed every assertion above.
+        //
+        // So: prove it can say NO.
+        expect(fileExists('src/app-layer/usecases/__definitely-not-a-real-file__.ts')).toBe(false);
+        expect(fileExists(declared[0])).toBe(true);
+    });
+
     it('every RICH_TEXT_COVERAGE model declares at least one field to check', () => {
         // Guard the guard: if ENCRYPTED_FIELDS ever stopped yielding fields
         // for these models, `fieldEntries` would be empty and every
