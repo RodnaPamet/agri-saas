@@ -866,10 +866,6 @@ model FarmProfile {
   /// canonical commodity enum, because a farm may grow something the market
   /// vocabulary does not quote and a picker that refused it would be wrong.
   grainProduced              String[]
-  /// Where the HOLDING is, as declared — the land, not the correspondence
-  /// address. `address`/`municipality`/`settlement` above are the producer's
-  /// registered address, which is frequently not where the fields are.
-  farmLocation               String?
   createdAt                  DateTime @default(now())
   updatedAt                  DateTime @updatedAt
 
