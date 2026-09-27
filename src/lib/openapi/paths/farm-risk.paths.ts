@@ -11,6 +11,7 @@
  * `locations.paths.ts`.
  */
 import { z } from '@/lib/openapi/zod';
+import { LOCALES } from '@/lib/i18n/locales';
 import { CreateInsuranceLeadSchema } from '@/app-layer/schemas/insurance.schemas';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { op } from './helpers';
@@ -50,6 +51,29 @@ const ParcelRisk = z
         generatedAt: z.string(),
     })
     .openapi('ParcelRisk');
+
+/**
+ * `?locale=` on the catalogue.
+ *
+ * Optional, because the endpoint has a defined fallback — but DECLARED, because
+ * a generated client only sends what the document names. The enum is derived
+ * from `LOCALES` rather than restated, so adding a locale cannot leave this
+ * behind.
+ */
+const CatalogueQuery = z.object({
+    locale: z
+        .enum(LOCALES)
+        .optional()
+        .openapi({
+            description:
+                'Which language to resolve `name` and `blurb` in. DECLARE it — ' +
+                '`Accept-Language` is deliberately ignored, and the fallback is the ' +
+                '`NEXT_LOCALE` cookie then `en`. A client whose UI is Bulgarian by ' +
+                'declaration rather than by device setting must send `bg` on every ' +
+                'request; a device reporting English-language/Bulgarian-region would ' +
+                'otherwise be served English names for an entirely Bulgarian screen.',
+        }),
+});
 
 export function registerFarmRiskPaths(registry: OpenAPIRegistry): void {
     op(registry, {
@@ -130,6 +154,15 @@ export function registerFarmRiskPaths(registry: OpenAPIRegistry): void {
             'change `insurance.products.<key>.name` in `messages/` and both follow.',
         tags: ['Farm risk'],
         params: TenantParams,
+        // Declared, so a GENERATED client sends it. Omitting it left the
+        // document describing an endpoint whose only parameter was the tenant —
+        // so a generated client never asked for a language, fell through to the
+        // deliberate `en` default, and was served English product names as DATA.
+        // That is the same hole as `required: ['parcelId']`: a contract the
+        // document does not carry is one every new client gets wrong, and "we
+        // always send it" is luck rather than a contract. Reported by the iOS
+        // client after building against the document.
+        query: CatalogueQuery,
         success: {
             status: 200,
             description: 'The catalogue, with copy resolved for the declared locale.',

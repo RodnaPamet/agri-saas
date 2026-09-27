@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "3.63.1",
+    "version": "3.64.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -22676,6 +22676,20 @@
             "required": true,
             "name": "tenantSlug",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "en",
+                "bg"
+              ],
+              "description": "Which language to resolve `name` and `blurb` in. DECLARE it — `Accept-Language` is deliberately ignored, and the fallback is the `NEXT_LOCALE` cookie then `en`. A client whose UI is Bulgarian by declaration rather than by device setting must send `bg` on every request; a device reporting English-language/Bulgarian-region would otherwise be served English names for an entirely Bulgarian screen."
+            },
+            "required": false,
+            "description": "Which language to resolve `name` and `blurb` in. DECLARE it — `Accept-Language` is deliberately ignored, and the fallback is the `NEXT_LOCALE` cookie then `en`. A client whose UI is Bulgarian by declaration rather than by device setting must send `bg` on every request; a device reporting English-language/Bulgarian-region would otherwise be served English names for an entirely Bulgarian screen.",
+            "name": "locale",
+            "in": "query"
           }
         ],
         "responses": {
