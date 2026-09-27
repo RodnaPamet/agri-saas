@@ -57,3 +57,55 @@ describe('the asymmetry between the two parsers is deliberate', () => {
         expect(parseAreaDca('12.345')).toBe(12.345);
     });
 });
+
+describe('a space is a THOUSANDS separator, so its groups must be threes', () => {
+    /**
+     * Spaces were stripped wholesale before any grouping check, while commas and
+     * dots went through `groupsOfThree`. That asymmetry read "1 2 3 4" as 1234 —
+     * nonsense producing a PLAUSIBLE figure, which on a sum-insured field reaches
+     * the operator as a real number. The worst way to be wrong.
+     *
+     * Found because the iOS client hit the identical defect in its own parser and
+     * asked whether this one shared it. It did, in both parsers.
+     */
+    it.each([
+        ['every group a single digit', '1 2 3 4'],
+        ['a two-digit tail group', '1 23'],
+        ['a four-digit tail group', '12 3456'],
+        ['two groups, second too short', '1 2'],
+        ['a valid group after an invalid one', '1 2 345'],
+        ['a two-digit final group', '100 00'],
+    ])('money rejects %s (%p)', (_label, input) => {
+        expect(parseMoneyToCents(input)).toBeNull();
+    });
+
+    it.each([
+        ['every group a single digit', '1 2 3 4'],
+        ['a two-digit tail group', '1 23'],
+        ['two groups, second too short', '1 2'],
+    ])('area rejects %s (%p)', (_label, input) => {
+        expect(parseAreaDca(input)).toBeNull();
+    });
+
+    it('still reads a real thousands grouping, with or without a decimal', () => {
+        // The first group is free — "12 345" is ordinary — and only the LAST
+        // group may carry the decimal tail.
+        expect(parseMoneyToCents('100 000')).toBe(10_000_000);
+        expect(parseMoneyToCents('12 345')).toBe(1_234_500);
+        expect(parseMoneyToCents('100 000,50')).toBe(10_000_050);
+        expect(parseMoneyToCents('1 234 567.89')).toBe(123_456_789);
+        expect(parseAreaDca('100 000')).toBe(100_000);
+        expect(parseAreaDca('1 000,5')).toBe(1000.5);
+    });
+
+    it('is unbothered by surrounding whitespace, which is not a grouping', () => {
+        expect(parseMoneyToCents('1000 ')).toBe(100_000);
+        expect(parseMoneyToCents(' 100 000 ')).toBe(10_000_000);
+    });
+
+    it('leaves the money/area asymmetry intact', () => {
+        // The point of this file: the same characters read opposite ways.
+        expect(parseMoneyToCents('12,345')).toBe(1_234_500);
+        expect(parseAreaDca('12,345')).toBe(12.345);
+    });
+});
