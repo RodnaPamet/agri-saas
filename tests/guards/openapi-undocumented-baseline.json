@@ -108,7 +108,6 @@
         "/api/t/{tenantSlug}/admin/api-keys/{keyId}",
         "/api/t/{tenantSlug}/admin/companies",
         "/api/t/{tenantSlug}/admin/companies/{id}",
-        "/api/t/{tenantSlug}/admin/farm-profile",
         "/api/t/{tenantSlug}/admin/integrations",
         "/api/t/{tenantSlug}/admin/integrations/diagnostics",
         "/api/t/{tenantSlug}/admin/integrations/sharepoint",

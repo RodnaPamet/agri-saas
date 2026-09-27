@@ -22,8 +22,6 @@ const UpdateFarmProfileSchema = z
         address: z.string().max(500).nullable().optional(),
         municipality: z.string().max(200).nullable().optional(),
         settlement: z.string().max(200).nullable().optional(),
-        // Where the LAND is. The three above are the correspondence address.
-        farmLocation: z.string().max(500).nullable().optional(),
         agricultureDirectorateCity: z.string().max(200).nullable().optional(),
         registrationPlace: z.string().max(200).nullable().optional(),
         registrationEkatte: z.string().max(20).nullable().optional(),

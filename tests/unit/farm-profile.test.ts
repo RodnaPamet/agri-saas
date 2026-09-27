@@ -112,7 +112,6 @@ describe('farm-profile usecase', () => {
         expect(p.grainProduced).toEqual([]);
         expect(p.sizeHa).toBeNull();
         expect(p.urn).toBeNull();
-        expect(p.farmLocation).toBeNull();
     });
 
     test('sizeHa crosses the wire as a NUMBER, not a decimal string', async () => {
@@ -174,8 +173,15 @@ describe('farm-profile usecase', () => {
     test('УРН is trimmed and sanitised like the other identifiers', async () => {
         const upsert = jest.fn().mockResolvedValue({ id: 'fp-1' });
         mockDb.farmProfile = { upsert };
-        await upsertFarmProfile(makeCtx(), { urn: ' <i>1234567890</i> ', farmLocation: '  с. Труд  ' });
+        await upsertFarmProfile(makeCtx(), {
+            urn: ' <i>1234567890</i> ',
+            // The holding's LOCATION is this field — «Място на регистриране» on
+            // the form. A separate `farmLocation` column was added and removed:
+            // it duplicated this one, on a misreading that "location" meant
+            // where the land is rather than where the farm is registered.
+            registrationPlace: '  с. Труд  ',
+        });
         expect(upsert.mock.calls[0][0].update.urn).toBe('1234567890');
-        expect(upsert.mock.calls[0][0].update.farmLocation).toBe('с. Труд');
+        expect(upsert.mock.calls[0][0].update.registrationPlace).toBe('с. Труд');
     });
 });
