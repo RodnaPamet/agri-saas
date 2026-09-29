@@ -59,6 +59,26 @@ export interface RateLimitScope {
      * omitted, extracted from the request.
      */
     ip?: string;
+
+    /**
+     * Cap a SHARED RESOURCE rather than an individual caller.
+     *
+     * The default key is `<scope>:ip:<ip>:u:<userId>`, which bounds one
+     * client. That is the right shape for login attempts or API-key
+     * creation, where the abuser IS the caller. It is the wrong shape
+     * when the thing being protected is somebody ELSE's surface: a
+     * tenant with N users gets N budgets, and they all land on one
+     * recipient (#1161).
+     *
+     * When `bucket` is set the key becomes `<scope>:<bucket>` — IP and
+     * userId are deliberately ABSENT, because including them would
+     * re-divide the very budget this is meant to share.
+     *
+     * Keep it low-cardinality and derived from data the ROUTE already
+     * has. A bucket that needs a database read has moved the cost it is
+     * protecting against into the check itself.
+     */
+    bucket?: string;
 }
 
 export interface RateLimitEnforcement {
@@ -132,7 +152,12 @@ export function buildRateLimitKey(
     scope: string,
     ip: string,
     userId?: string | null,
+    bucket?: string | null,
 ): string {
+    // A shared-resource bucket REPLACES the per-caller portion. Appending
+    // it instead would keep the per-caller split and change nothing about
+    // the exposure it exists to close.
+    if (bucket) return `${scope}:${bucket}`;
     const actor = userId ? `u:${userId}` : 'anon';
     return `${scope}:ip:${ip}:${actor}`;
 }
@@ -198,7 +223,7 @@ export async function enforceRateLimit(
     scope: RateLimitScope,
 ): Promise<RateLimitEnforcement> {
     const ip = scope.ip ?? getClientIp(req);
-    const key = buildRateLimitKey(scope.scope, ip, scope.userId ?? null);
+    const key = buildRateLimitKey(scope.scope, ip, scope.userId ?? null, scope.bucket ?? null);
     // Distributed by default (Upstash sliding window, ONE round-trip); falls
     // back to the in-process Map when no Upstash env is configured.
     const result = await checkRateLimitDistributed(key, scope.config);
@@ -349,6 +374,7 @@ export {
     INVITE_REDEEM_LIMIT,
     EXCHANGE_LISTING_CREATE_LIMIT,
     EXCHANGE_INQUIRY_LIMIT,
+    EXCHANGE_MESSAGE_LIMIT,
     INSURANCE_LEAD_LIMIT,
     KNOWLEDGE_ASK_LIMIT,
 } from './rate-limit';
