@@ -56,17 +56,26 @@ monitors:
     timeout_seconds: 10
     expect:
       status_class: 2xx
-      body_contains: '"status":"ready"'
+      body_contains: '"service":"agri-saas"'
       ssl_valid: true
-      # PENDING — do not set this in GCP until the field is SERVING.
-      # `/api/readyz` now emits `"service":"agri-saas"` (SERVICE_ID in
-      # src/lib/service-identity.ts). Tightening the matcher to that string
-      # BEFORE the image carrying it has rolled fails every probe and pages
-      # for a self-inflicted outage — the same ordering trap CLAUDE.md
-      # records for the worker healthcheck. Order: merge -> GHCR publishes
-      # -> Watchtower pulls -> confirm the live body contains it -> then
-      # change the matcher here and in GCP, in one diff.
-      body_contains_pending: '"service":"agri-saas"'
+      # TIGHTENED 2026-09-29, in the second of the two steps the note below
+      # describes — after the image serving `service` had rolled, verified on
+      # the live body first.
+      #
+      # It REPLACES `"status":"ready"` rather than joining it, and that is
+      # forced rather than chosen — GCP refuses a second one outright:
+      #
+      #   "The number of content_matchers allowed in any uptime check is
+      #    currently limited to one"
+      #
+      # So the two properties compete for one slot, and identity wins because
+      # readiness is already implied: `/api/readyz` returns 503 when a
+      # dependency is down, so a 2xx from it IS dependency-aware. Nothing else
+      # in the check implies WHOSE 2xx it is.
+      #
+      # Verified after the change: passing fraction 1.00 across all six probe
+      # regions, sustained over seven minutes. A matcher that cannot match is
+      # worse than no matcher, so the check was watched rather than assumed.
     # GCP's global setting probes from six regions. Recorded because a
     # single-region check cannot tell an outage from a network partition,
     # and because the alert threshold below is expressed in regions.
@@ -108,12 +117,12 @@ monitors:
 #     redis, not whether the BullMQ worker is consuming. A wedged worker is
 #     still invisible — that is #809, and it is a different probe.
 #   - Whether an alert reaches a human out of hours. There is no rota.
-#   - WHOSE readiness the 200 describes. See below — being closed.
+#   - (CLOSED 2026-09-29 — see below.)
 #
-# ─── A PROBE CAN PASS BY REACHING THE WRONG APPLICATION ─────────────────
+# ─── A PROBE COULD PASS BY REACHING THE WRONG APPLICATION — CLOSED ──────
 #
-# `body_contains: '"status":"ready"'` asks "is something at this address
-# ready?", not "is agri-saas ready?". Both this product and its sibling
+# Until 2026-09-29 this check matched `"status":"ready"`, which asks "is
+# something at this address ready?", not "is agri-saas ready?". Both this product and its sibling
 # `inflect-compliance` emit that exact string, and the two share a GCP
 # project, a GHCR org and — as #1143 proved — a Docker network.
 #
@@ -136,9 +145,13 @@ monitors:
 #
 # The close is `SERVICE_ID` in `src/lib/service-identity.ts`, emitted by
 # `/api/readyz`, `/api/livez` and `/api/health`, executed (not merely
-# asserted) by `tests/unit/health-probe-identity.test.ts`. The matcher change
-# is staged as `body_contains_pending` above because it must not precede the
-# deploy.
+# asserted) by `tests/unit/health-probe-identity.test.ts`.
+#
+# BOTH STEPS ARE DONE. The field shipped in #1156 and the matcher was
+# tightened once the live body carried it — in that order, because tightening
+# first fails every probe and pages for an outage we caused. If this check
+# ever moves to a different body, keep the order: serve, verify on the live
+# response, then require.
 #
 # NOTE this measurement also settles a separate question that was open:
 # whether a DEPLOY's restart window can trip this alert. It cannot. A
