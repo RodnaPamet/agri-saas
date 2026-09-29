@@ -49,6 +49,20 @@ export interface ApiWrapperOptions {
         getUserId?: (
             req: NextRequest,
         ) => string | null | undefined | Promise<string | null | undefined>;
+        /**
+         * Cap a SHARED RESOURCE instead of an individual caller.
+         *
+         * Returns a bucket derived from the REQUEST — typically path
+         * segments. When present the key drops IP and userId entirely,
+         * so every user of a tenant shares one budget (#1161).
+         *
+         * Derive it from the URL, not the database: this runs before the
+         * handler, so a lookup here is work an unauthenticated caller can
+         * make the server do.
+         */
+        getBucket?: (
+            req: NextRequest,
+        ) => string | null | undefined | Promise<string | null | undefined>;
     };
 }
 
@@ -70,7 +84,17 @@ async function resolveRateLimitScope(
             userId = null;
         }
     }
-    return { scope, config, userId: userId ?? null };
+    let bucket: string | null | undefined;
+    if (options?.getBucket) {
+        try {
+            bucket = await options.getBucket(req);
+        } catch {
+            // FAIL CLOSED onto the per-caller key rather than skipping the
+            // limit. A resolver that throws must not be a way past the gate.
+            bucket = null;
+        }
+    }
+    return { scope, config, userId: userId ?? null, bucket: bucket ?? undefined };
 }
 
 /**

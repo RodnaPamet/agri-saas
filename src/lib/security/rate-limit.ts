@@ -420,6 +420,60 @@ export const EXCHANGE_INQUIRY_LIMIT: RateLimitConfig = {
 };
 
 /**
+ * Exchange messages: 60 per minute per SENDING TENANT — not per caller.
+ *
+ * Threat model, and it is NOT the one the inquiry limit above guards.
+ * `EXCHANGE_INQUIRY_LIMIT` exists to cap an outbound EMAIL fanout. Messaging
+ * looks like the same shape and is not: `notifyOtherParty` builds its email
+ * dedupe key ending in the UTC DAY, so the second message of a thread sends
+ * no mail at all. One email per thread, per recipient, per day, however many
+ * messages. Copying the inquiry reasoning here would be citing a threat that
+ * this code already closes.
+ *
+ * What is unbounded is the BELL. `#1102` made that deliberate and correct —
+ * one `Notification` row per message with `dedupeKey` NULL, because deduping
+ * it like the email meant a live negotiation notified on NO channel from the
+ * second message onward. So the flood surface is notification rows plus an
+ * SSE publish each, landing on the recipient.
+ *
+ * The generic `API_MUTATION_LIMIT` cannot bound it: 60/min keyed on
+ * `(IP, userId)` means a tenant with ten users can drive 600 rows a minute at
+ * one counterparty, and every one of them is a legitimate member of that
+ * tenant. The budget has to be SHARED to mean anything, which is what the
+ * `bucket` seam is for.
+ *
+ * Why per TENANT and not per thread. Per-thread was the first design and it
+ * fails in a way that is easy to miss: a thread is per (listing, inquirer),
+ * so the NUMBER of budgets an abuser gets is chosen by the victim. A seller
+ * with ten listings can be written to in ten threads, and a per-thread 30
+ * would permit 300/min at one bell — half the exposure rather than a tenth.
+ * A ceiling that scales with the target's own catalogue is not a ceiling.
+ *
+ * Per (sender, recipient) would be tighter still, and is rejected for a
+ * different reason: the recipient is only knowable by loading the thread, and
+ * this check runs BEFORE the handler precisely so an abusive caller cannot
+ * make the server work. The bucket must come from the URL.
+ *
+ * Why 60. It is the same number as the generic tier and that is not an
+ * accident — it is the same number made to mean something. Today 60 is per
+ * (IP, userId), so ten users are 600; here it is the tenant's whole outbound
+ * budget, so ten users are still 60. The cut is 10x and it does not decay as
+ * the sender adds users or the victim adds listings.
+ *
+ * What it costs: a tenant negotiating several deals at once shares one
+ * budget. A message a second sustained across an entire organisation is
+ * ample for people typing, and this constant is one line to raise.
+ *
+ * A BLOCKED sender consumes quota. The limit runs in the wrapper, before the
+ * handler reaches `isBlocked`, so the cost of being blocked falls on the
+ * blocked party rather than on the person who blocked them.
+ */
+export const EXCHANGE_MESSAGE_LIMIT: RateLimitConfig = {
+    maxAttempts: 60,
+    windowMs: 60 * 1000,
+};
+
+/**
  * Insurance quote requests: 20 per HOUR per (IP, userId).
  *
  * Threat model: outbound-email amplification, same family as

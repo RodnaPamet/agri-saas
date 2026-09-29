@@ -472,7 +472,21 @@ runbook in `docs/rate-limiting.md`.
 POST/PUT/DELETE/PATCH by default. Stricter presets (`LOGIN_LIMIT`,
 `API_KEY_CREATE_LIMIT`, `EMAIL_DISPATCH_LIMIT`) are applied via
 `{ rateLimit: { config, scope } }` options on specific routes. Keyed
-`(IP, userId)`. Storage: an Upstash sliding window — ONE Redis round-trip
+`(IP, userId)`.
+**A route may instead cap a SHARED RESOURCE via `getBucket`** (#1161), which
+replaces the `(IP, userId)` portion of the key entirely — appending it would
+keep the per-caller split and change nothing. Reach for it when the cost being
+bounded lands on somebody ELSE: `EXCHANGE_MESSAGE_LIMIT` is 60/min per SENDING
+TENANT because a notification row is written per message by design, so a
+ten-user tenant otherwise held ten budgets aimed at one recipient. The number
+is unchanged from the generic tier on purpose — the cut is in the KEY, not the
+number. **Per-thread was rejected**: a thread is per (listing, inquirer), so a
+per-thread ceiling is multiplied by however many listings the RECIPIENT has,
+and a ceiling the victim chooses is not a ceiling. Derive
+the bucket from the URL — the resolver runs BEFORE the handler, so a database
+read there is work an abusive caller can compel inside the check meant to stop
+them. It fails closed onto the per-caller key when the resolver throws or does
+not recognise the path. Storage: an Upstash sliding window — ONE Redis round-trip
 on the hot path — via `checkRateLimitDistributed` in
 `src/lib/rate-limit/mutationRateLimit.ts`, which is the only check
 `enforceRateLimit` performs. With no Upstash env, or

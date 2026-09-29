@@ -206,7 +206,20 @@ export function registerExchangeMessagingPaths(registry: OpenAPIRegistry): void 
             'message that was already accepted returns its original result even if the seller ' +
             'has since blocked the sender. Otherwise a flaky link turns "delivered" into a ' +
             '403 for a message that IS in the thread.\n\n' +
-            'Without a key the send is NOT idempotent — two taps make two messages.',
+            'Without a key the send is NOT idempotent — two taps make two messages.\n\n' +
+            '**Rate limit: 60 per minute, SHARED across the whole sending tenant** — ' +
+            'not per user, not per device, and not per thread. Every conversation a ' +
+            'tenant has draws on ONE budget, because the cost this bounds is the ' +
+            'recipient\'s notification bell, which gets a row per message by design. ' +
+            'Per-thread was rejected: a thread is per (listing, inquirer), so a ' +
+            'per-thread ceiling would be multiplied by however many listings the ' +
+            'RECIPIENT happens to have. Each party has their own budget, so one side ' +
+            'can never exhaust the other\'s ability to reply.\n\n' +
+            'On 429, HONOUR `Retry-After`. A client that retries on its own schedule ' +
+            'spends the next window the moment it opens and stays blocked; the header ' +
+            'says when the budget is actually free. A blocked sender consumes quota too ' +
+            '— the limit runs before the block check, so the cost of being blocked falls ' +
+            'on the blocked party. See #1161.',
         tags: ['Exchange messaging'],
         params: ThreadParams,
         body: z.object({ body: z.string().min(1).max(8000) }).openapi('SendExchangeMessage'),
