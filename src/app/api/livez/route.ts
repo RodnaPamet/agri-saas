@@ -13,10 +13,12 @@
  *   (never returns anything else while the process is running)
  */
 import { jsonResponse } from '@/lib/api-response';
+import { SERVICE_ID } from '@/lib/service-identity';
 
 export async function GET() {
     return jsonResponse(
         {
+            service: SERVICE_ID,
             status: 'alive',
             timestamp: new Date().toISOString(),
             uptime: process.uptime(),

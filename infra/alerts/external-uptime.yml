@@ -58,6 +58,15 @@ monitors:
       status_class: 2xx
       body_contains: '"status":"ready"'
       ssl_valid: true
+      # PENDING — do not set this in GCP until the field is SERVING.
+      # `/api/readyz` now emits `"service":"agri-saas"` (SERVICE_ID in
+      # src/lib/service-identity.ts). Tightening the matcher to that string
+      # BEFORE the image carrying it has rolled fails every probe and pages
+      # for a self-inflicted outage — the same ordering trap CLAUDE.md
+      # records for the worker healthcheck. Order: merge -> GHCR publishes
+      # -> Watchtower pulls -> confirm the live body contains it -> then
+      # change the matcher here and in GCP, in one diff.
+      body_contains_pending: '"service":"agri-saas"'
     # GCP's global setting probes from six regions. Recorded because a
     # single-region check cannot tell an outage from a network partition,
     # and because the alert threshold below is expressed in regions.
@@ -99,3 +108,40 @@ monitors:
 #     redis, not whether the BullMQ worker is consuming. A wedged worker is
 #     still invisible — that is #809, and it is a different probe.
 #   - Whether an alert reaches a human out of hours. There is no rota.
+#   - WHOSE readiness the 200 describes. See below — being closed.
+#
+# ─── A PROBE CAN PASS BY REACHING THE WRONG APPLICATION ─────────────────
+#
+# `body_contains: '"status":"ready"'` asks "is something at this address
+# ready?", not "is agri-saas ready?". Both this product and its sibling
+# `inflect-compliance` emit that exact string, and the two share a GCP
+# project, a GHCR org and — as #1143 proved — a Docker network.
+#
+# This is not theoretical. From 12:00 to 17:50 UTC on 2026-09-27,
+# `app.agrent.bg` was served intermittently by a THIRD application: a stack
+# sharing `agrent_internal` declared the same `app` network alias, Docker DNS
+# answered with two addresses, and Caddy's `reverse_proxy app:3000` chose per
+# connection. #1143 records the consequence exactly:
+#
+#     /api/readyz answered 200 through the proxy while agri-saas 404'd it —
+#     because the 200 came from the OTHER app.
+#
+# Measured from the uptime check's own time series: 62 five-minute buckets
+# with more than one region failing, in one unbroken ~5h50m run, and ZERO
+# such buckets on the six surrounding days. The alert condition was satisfied
+# many times over. It went red only because the misrouting app happened not
+# to emit `"status":"ready"` — luck, not design. Had the misroute been to
+# `inflect-compliance`, the check would have stayed GREEN for six hours over
+# an application serving somebody else's data.
+#
+# The close is `SERVICE_ID` in `src/lib/service-identity.ts`, emitted by
+# `/api/readyz`, `/api/livez` and `/api/health`, executed (not merely
+# asserted) by `tests/unit/health-probe-identity.test.ts`. The matcher change
+# is staged as `body_contains_pending` above because it must not precede the
+# deploy.
+#
+# NOTE this measurement also settles a separate question that was open:
+# whether a DEPLOY's restart window can trip this alert. It cannot. A
+# Watchtower restart is under a minute; the condition needs >1 region failing
+# sustained over a 300s window, and across seven days the ONLY breaches were
+# the misrouting incident above. No deploy-suppression mechanism is needed.

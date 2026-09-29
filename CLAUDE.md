@@ -134,7 +134,22 @@ including a derived check that every repo path it names exists.
 every 60s from six regions, requiring a 2xx whose body contains
 `"status":"ready"` — so a dependency outage fails it, not just a dead
 process. Alert policy `agrent production is not ready (#854)` fires on
-sustained failure from more than one region. Detection latency is
+sustained failure from more than one region.
+**That matcher does not say WHOSE readiness it is**, and the sibling
+`inflect-compliance` emits the identical string. From 12:00–17:50 UTC on
+2026-09-27 `app.agrent.bg` was served intermittently by a third app
+(#1117/#1143) and the check went red only because that app happened not to
+emit it — measured from the check's own series: 62 five-minute buckets with
+>1 region failing, one unbroken ~5h50m run, zero on the six surrounding days.
+So `/api/readyz`, `/api/livez` and `/api/health` now emit
+`"service":"agri-saas"` from `SERVICE_ID` (`src/lib/service-identity.ts`) —
+a LITERAL, because `package.json` still reads `inflect-compliance` and
+deriving it from there would match the sibling exactly. **Tightening the GCP
+matcher is a SECOND step, after the image carrying the field has rolled**;
+`infra/alerts/external-uptime.yml` stages it as `body_contains_pending`.
+That same measurement settles a question that was open: a deploy's restart
+window CANNOT trip this alert (a restart is under a minute; the condition
+needs >1 region sustained over 300s), so no deploy-suppression is needed. Detection latency is
 therefore about two minutes, and a detection time MAY now be written
 down — but only that one. An email notification channel is attached, and on
 2026-09-17 it was proved to deliver END TO END rather than assumed: a
