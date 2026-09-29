@@ -151,13 +151,46 @@ export function selectorsIn(src) {
     return out;
 }
 
+/**
+ * Wall-clock ceiling for ONE mutation's jest run.
+ *
+ * This is NOT the outer timeout this file's signal-handler docblock warns
+ * against, and the difference is the whole point. An EXTERNAL timeout kills
+ * THIS process mid-`spawnSync`, so the `finally` that restores the guard never
+ * runs and a gutted file is left on disk. `spawnSync`'s own `timeout` kills the
+ * CHILD and returns normally — the parent lives, the restore runs, and the
+ * mutation is scored as killed.
+ *
+ * Generous on purpose: a large guard legitimately takes minutes, and a bound
+ * that fires on real work would score a slow suite as "has teeth" and hide a
+ * dead selector. This exists to stop an INFINITE wait, not to hurry anything.
+ */
+const GUARD_RUN_TIMEOUT_MS = 10 * 60 * 1000;
+
 function runGuard(file) {
     // BOTH streams. jest writes its summary ("Test Suites: ... / Tests: ...")
     // to STDERR, so capturing only stdout made every PASSING run look like a
     // run with no summary at all — which the survival test then skipped. The
     // tool reported "no gut typechecked" for selectors it had never scored.
-    const r = spawnSync('npx', ['jest', file, '--silent'], { encoding: 'utf8' });
-    return { out: `${r.stdout ?? ''}\n${r.stderr ?? ''}`, ok: r.status === 0 };
+    //
+    // `--forceExit` because this repo's suites leave handles open — ci.yml
+    // passes it for exactly these directories (the `tests/guards/` and
+    // `tests/contracts/` steps). Without it jest completes its tests and then
+    // sleeps in `ep_poll` forever waiting on a socket nothing will close, and
+    // since this tool applies no timeout the whole sweep stops dead. Measured
+    // 2026-09-29: two consecutive guardrail files hung for 69 and 133 minutes
+    // at 0% CPU with the file still mutated, on an otherwise idle machine.
+    const r = spawnSync('npx', ['jest', file, '--silent', '--forceExit'], {
+        encoding: 'utf8',
+        timeout: GUARD_RUN_TIMEOUT_MS,
+    });
+    // A timeout kills the child, so `status` is null and `signal` is set. That
+    // is NOT a mutation the tests caught — scoring it as one would report
+    // teeth on a selector nobody measured, which is the false clean this whole
+    // tool exists to find. Surface it in the output the caller already reads.
+    const timedOut = r.error?.code === 'ETIMEDOUT' || (r.status === null && r.signal);
+    const note = timedOut ? `\n[selector-teeth] RUN DID NOT COMPLETE (${r.signal ?? r.error?.code})\n` : '';
+    return { out: `${r.stdout ?? ''}\n${r.stderr ?? ''}${note}`, ok: r.status === 0 };
 }
 
 /**
