@@ -165,6 +165,22 @@ describe('Epic 51 — raw Tailwind color ratchet', () => {
         );
     });
 
+    it('control: readFromDisk actually reads bytes', () => {
+        // The reader seam is itself a selector, and re-running `selector-teeth`
+        // after adding it proved so: gutted to `''` every file reads as empty,
+        // the count is 0, and the ceiling passes over nothing. The controls
+        // below cannot see it — they each pass their OWN reader, which is the
+        // point of the seam and also its blind spot. So read THIS file through
+        // the real reader and look for something only it contains.
+        //
+        // The general shape: adding an injectable dependency to make a
+        // collector testable creates a NEW untested collector. Re-run the
+        // mutation tool after fixing a guard, not just before.
+        const self = readFromDisk(__filename);
+        expect(self.length).toBeGreaterThan(1000);
+        expect(self).toContain('RAW_COLOR_RE');
+    });
+
     it('control: the counter DETECTS a raw colour, and ignores a semantic one', () => {
         // Kills a broken regex or a broken accumulator. This cannot be proved
         // against the real tree, because the tree must contain ZERO matches for
