@@ -265,6 +265,7 @@
         "postcss": "$postcss",
         "@grpc/grpc-js": "^1.14.4",
         "find-my-way": "^9.7.0",
+        "undici": "^7.29.1",
         "@visx/axis": {
             "react": "$react"
         },
