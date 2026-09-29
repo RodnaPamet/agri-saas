@@ -92,7 +92,39 @@ export function commonErrorResponses(): RouteConfig['responses'] {
                 'supported floor. The request was not processed; it is NOT a payload rejection.',
             content: json,
         },
-        429: { description: 'Rate limited. Carries `Retry-After` and `X-RateLimit-*`.', content: json },
+        429: {
+            description: 'Rate limited.',
+            // DECLARED, not merely described. These four are set on every 429
+            // by `rateLimitedResponse` (rate-limit-middleware.ts:187-190), and
+            // until now they existed only in this sentence — so a generated
+            // client could not see them and had to learn `Retry-After` out of
+            // band. That is the measured-not-contracted shape this repo keeps
+            // paying for; the iOS client retries 429s today and parses none of
+            // this.
+            headers: {
+                'Retry-After': {
+                    description:
+                        'Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, ' +
+                        'so it is never 0 — a client that retries immediately on 0 would spend the ' +
+                        'next window the moment it opens. The same number is in the body as ' +
+                        '`retryAfterSeconds`.',
+                    schema: { type: 'integer', minimum: 1 },
+                },
+                'X-RateLimit-Limit': {
+                    description: 'The preset ceiling for this scope, in requests per window.',
+                    schema: { type: 'integer' },
+                },
+                'X-RateLimit-Remaining': {
+                    description: 'Always `0` on a 429 — present for symmetry with the other headers.',
+                    schema: { type: 'integer' },
+                },
+                'X-RateLimit-Reset': {
+                    description: 'Unix time in SECONDS at which the window frees up.',
+                    schema: { type: 'integer' },
+                },
+            },
+            content: json,
+        },
         500: { description: 'Unhandled server error. Carries `x-request-id`.', content: json },
     };
 }
@@ -114,6 +146,14 @@ export interface OperationInput {
      */
     params?: ZodObject;
     query?: ZodObject;
+    /**
+     * REQUEST headers this operation reads.
+     *
+     * Added because `Idempotency-Key` lived in prose on the exchange-message
+     * send while being load-bearing for it — a client reading the document
+     * strictly could not see that the header exists at all.
+     */
+    headers?: ZodObject;
     /** Request body schema. Omit for GET/DELETE. */
     body?: ZodTypeAny;
     /**
@@ -191,6 +231,7 @@ export function op(registry: OpenAPIRegistry, input: OperationInput): void {
         request: {
             ...(input.params ? { params: input.params } : {}),
             ...(input.query ? { query: input.query } : {}),
+            ...(input.headers ? { headers: input.headers } : {}),
             ...(input.body
                 ? {
                       body: {
