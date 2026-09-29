@@ -311,15 +311,45 @@ describe('OI-3 — external uptime contract', () => {
         }
     });
 
-    it('every monitor asserts on the READY body, not merely a 2xx', () => {
+    it('every monitor asserts on the body, not merely a 2xx', () => {
         const u = loadUptime();
         for (const m of u.monitors) {
             expect(m.expect.status_class).toBe('2xx');
-            // `readyz` can answer 200 while reporting a degraded dependency.
-            // Matching the body is what makes the check dependency-aware
-            // rather than a liveness probe wearing a different path.
-            expect(m.expect.body_contains).toBe('"status":"ready"');
+            // This used to require `"status":"ready"`, on the stated grounds
+            // that "readyz can answer 200 while reporting a degraded
+            // dependency". That is FALSE for the current handler — see the
+            // premise test below — so the ready string was redundant with the
+            // 2xx, and it occupied the only matcher slot GCP allows:
+            //
+            //   "The number of content_matchers allowed in any uptime check
+            //    is currently limited to one"   (GCP, measured 2026-09-29)
+            //
+            // agrent spends that slot on IDENTITY instead, which nothing else
+            // in the check implies. #1117/#1143: app.agrent.bg was served by
+            // another application for ~6h and this check went red only
+            // because that app happened not to emit the ready string.
+            // `inflect-compliance` DOES emit it, and shares a GCP project, a
+            // GHCR org and a Docker network with agrent.
+            expect(m.expect.body_contains).toBe(
+                m.name.startsWith('agrent') ? '"service":"agri-saas"' : '"status":"ready"',
+            );
         }
+    });
+
+    it('the premise holds: readyz cannot answer 2xx while NOT ready', () => {
+        // The reasoning above is only sound while the HTTP code and the body
+        // string come from ONE expression. If they are ever decoupled, a 200
+        // could carry `not_ready` and dropping the ready matcher would lose a
+        // real property — so this pins the coupling rather than trusting the
+        // paragraph that asserts it.
+        const src = fs.readFileSync(
+            path.join(ROOT, 'src/app/api/readyz/route.ts'),
+            'utf8',
+        );
+        expect(src).toContain("status: allOk ? 'ready' : 'not_ready'");
+        expect(src).toContain('{ status: allOk ? 200 : 503 }');
+        // Positive control: the file is the one we think it is.
+        expect(src).toContain('const allOk =');
     });
 
     it('every monitor validates SSL at the user-visible boundary', () => {

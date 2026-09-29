@@ -144,9 +144,12 @@ emit it — measured from the check's own series: 62 five-minute buckets with
 So `/api/readyz`, `/api/livez` and `/api/health` now emit
 `"service":"agri-saas"` from `SERVICE_ID` (`src/lib/service-identity.ts`) —
 a LITERAL, because `package.json` still reads `inflect-compliance` and
-deriving it from there would match the sibling exactly. **Tightening the GCP
-matcher is a SECOND step, after the image carrying the field has rolled**;
-`infra/alerts/external-uptime.yml` stages it as `body_contains_pending`.
+deriving it from there would match the sibling exactly. **Both steps are DONE** (2026-09-29): the field
+shipped in #1156, and the matcher was tightened to `"service":"agri-saas"`
+once the live body carried it — verified afterwards at a 1.00 passing
+fraction across all six probe regions. Keep that ORDER for any future change
+to the probed body: serve it, verify on the live response, then require it.
+Tightening first fails every probe and pages for an outage you caused.
 That same measurement settles a question that was open: a deploy's restart
 window CANNOT trip this alert (a restart is under a minute; the condition
 needs >1 region sustained over 300s), so no deploy-suppression is needed. Detection latency is
