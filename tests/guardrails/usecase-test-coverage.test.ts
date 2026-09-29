@@ -141,6 +141,79 @@ describe('every usecase file has an importing test', () => {
         expect(testSource.length).toBeGreaterThan(500_000);
     });
 
+    // ── Controls (#971) ─────────────────────────────────────────────
+    //
+    // The two sanity checks above cover the POPULATION; nothing covered the
+    // MATCHER. `selector-teeth` found that gutting `isImported` survives —
+    // but only for the truthy guts:
+    //
+    //     survived:  [] | new Set() | new Map() | {}
+    //     killed:    false | null | undefined | 0 | ''
+    //
+    // That asymmetry is the finding. `isImported` is declared `: boolean` but
+    // is consumed as `if (!isImported(...))`, so ANY truthy return means
+    // "imported" — and a matcher stuck on yes reports full coverage over a
+    // population it never examined, which is the failure direction that reads
+    // as green. The falsy guts were caught only because they make EVERY
+    // usecase an offender, i.e. the guard had teeth solely in the direction
+    // that fails loudly.
+
+    test('control: isImported returns an actual boolean, not a truthy value', () => {
+        // `[]`, `{}`, `new Set()` are all truthy and all satisfy `!x === false`.
+        expect(typeof isImported('src/app-layer/usecases/journal.ts', "from '@/x'")).toBe(
+            'boolean',
+        );
+    });
+
+    test('control: isImported says NO when the specifier is absent', () => {
+        // The half the mutation exposed. Without this, a matcher that always
+        // answered yes would pass the ratchet over an unexamined population.
+        expect(
+            isImported(
+                'src/app-layer/usecases/journal.ts',
+                "import { somethingElse } from '@/app-layer/usecases/inventory';",
+            ),
+        ).toBe(false);
+        expect(isImported('src/app-layer/usecases/journal.ts', '')).toBe(false);
+    });
+
+    test('control: isImported says YES for a direct import and for the domain barrel', () => {
+        expect(
+            isImported(
+                'src/app-layer/usecases/journal.ts',
+                "import { createEntry } from '@/app-layer/usecases/journal';",
+            ),
+        ).toBe(true);
+        // A file inside a domain folder counts when the test imports the
+        // parent barrel — the documented re-export channel.
+        expect(
+            isImported(
+                'src/app-layer/usecases/grain/contracts.ts',
+                "import { listContracts } from '@/app-layer/usecases/grain';",
+            ),
+        ).toBe(true);
+    });
+
+    test('control: a longer sibling specifier does not satisfy a shorter one', () => {
+        // The patterns anchor on the closing quote for exactly this reason. If
+        // they did not, `journal-archive` would mark `journal` as covered, and
+        // the ratchet would silently under-report by the number of usecases
+        // that happen to be a prefix of another.
+        expect(
+            isImported(
+                'src/app-layer/usecases/journal.ts',
+                "import { x } from '@/app-layer/usecases/journal-archive';",
+            ),
+        ).toBe(false);
+        // ...and the bare barrel must not count as importing a top-level file.
+        expect(
+            isImported(
+                'src/app-layer/usecases/journal.ts',
+                "import { x } from '@/app-layer/usecases';",
+            ),
+        ).toBe(false);
+    });
+
     test('every usecase is either imported by a test OR explicitly exempt', () => {
         const offenders: string[] = [];
         for (const uc of usecases) {
