@@ -247,7 +247,6 @@ const HAND_ROLLED_COLLECTORS: readonly string[] = [
     'tests/guardrails/ci-retry-loop-timeout.test.ts',
     'tests/guardrails/dashboard-chart-bypass.test.ts',
     'tests/guardrails/date-display-consistency.test.ts',
-    'tests/guardrails/date-input-rollout.test.ts',
     'tests/guardrails/design-system-drift.test.ts',
     'tests/guardrails/enterprise-identity-epic.test.ts',
     'tests/guardrails/geo-raw-sql-containment.test.ts',
