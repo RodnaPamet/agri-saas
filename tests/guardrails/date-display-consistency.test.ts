@@ -32,6 +32,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { collectSourceFiles } from '../helpers/collect-files';
 
 const ROOT = path.resolve(__dirname, '../..');
 const SCAN_DIRS = [
@@ -60,22 +61,50 @@ const ALLOWED_LOCALE_FILES = new Set<string>([
     path.join(ROOT, 'src/components/ui/KpiCard.tsx'),
 ]);
 
-function walk(dir: string, acc: string[] = []): string[] {
-    if (!fs.existsSync(dir)) return acc;
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-            if (entry.name === 'node_modules' || entry.name === '.next') continue;
-            walk(full, acc);
-        } else if (/\.(tsx?|jsx?)$/.test(entry.name)) {
-            acc.push(full);
-        }
-    }
-    return acc;
+/**
+ * The file set, via the SHARED collector rather than a hand-rolled walk.
+ *
+ * `selector-teeth` measured the old local `walk()` on 2026-09-29 and it
+ * SURVIVED being gutted to `return []`: every assertion below iterates
+ * `allFiles`, so an empty list satisfies all of them and the guard reports a
+ * clean repo having opened nothing. That is the exact defect this guard
+ * family exists to find, in the guard itself.
+ *
+ * `collectSourceFiles` refuses to return an empty list — `floor` is the teeth
+ * the local walk never had — which is also why `file-collection-is-not-
+ * silently-empty` forbids a new hand-rolled collector.
+ */
+function collectScannedFiles(): string[] {
+    return collectSourceFiles({
+        roots: SCAN_DIRS,
+        extensions: ['.ts', '.tsx', '.js', '.jsx'],
+        // src/app + src/components is thousands of files. 200 is far below
+        // the real population and far above the zero a broken walk returns,
+        // so it fails on a collapse without being brittle to real churn.
+        floor: 200,
+    });
 }
 
 describe('Date display consistency', () => {
-    const allFiles = SCAN_DIRS.flatMap((d) => walk(d));
+    const allFiles = collectScannedFiles();
+
+    it('the scan actually reaches app code (positive control)', () => {
+        // WITHOUT THIS THE GUARD IS VACUOUS, and moving to a floored
+        // collector did not fix that — `selector-teeth` measured it twice on
+        // 2026-09-29. Gutting `collectScannedFiles` to `[]` returns before
+        // `collectSourceFiles` is ever called, so its `floor` never runs; and
+        // every assertion below is a `for...of` over `allFiles`, which an
+        // empty array satisfies silently. That is the four-container seam
+        // signature (`[] | '' | new Set() | new Map()`) #971 names.
+        //
+        // This is the assertion that has to redden, because it is the only
+        // one that fails on an EMPTY selection rather than passing on it.
+        expect(allFiles.length).toBeGreaterThan(200);
+        expect(allFiles.some((f) => f.includes(`${path.sep}src${path.sep}app${path.sep}`))).toBe(true);
+        expect(
+            allFiles.some((f) => f.includes(`${path.sep}src${path.sep}components${path.sep}`)),
+        ).toBe(true);
+    });
 
     it('no ad-hoc toLocaleDateString / toLocaleString / toLocaleTimeString in app code', () => {
         const pattern =
