@@ -31,7 +31,7 @@ import { enqueueEmail } from '../notifications/enqueue';
 import { encodeCursor, decodeCursor, keysetBefore } from '@/lib/exchange/cursor';
 import { isUniqueViolation } from '@/lib/errors/prisma';
 import { translateFor } from '@/lib/i18n/server-messages';
-import { publishNotificationEvent } from '@/lib/notifications/notification-bus';
+import { publishNotificationEvent, type NotificationEvent } from '@/lib/notifications/notification-bus';
 import { isLocale } from '@/lib/i18n/locales';
 import { RECIPIENT_FALLBACK_LOCALE } from '@/lib/email/recipient-locale';
 import { logger } from '@/lib/observability/logger';
@@ -366,6 +366,10 @@ async function notifyOtherParty(
             ? thread.listing.sellerTenantId
             : thread.inquirerTenantId;
 
+    // Collected INSIDE the transaction, acted on AFTER it commits.
+    const published: Array<{ userId: string; event: NotificationEvent }> = [];
+    let emails: Array<{ toEmail: string; locale: string | null; slug: string }> = [];
+
     try {
         // The recipient's memberships are RLS-forced, so this must run in
         // THEIR context — a context-less read returns zero rows and the
@@ -444,37 +448,87 @@ async function notifyOtherParty(
                     select: { id: true, createdAt: true },
                 });
 
-                // Persist, then publish. A subscriber that receives an event
-                // for a row that is not yet committed would render a
-                // notification the next poll cannot find.
-                publishNotificationEvent(recipientTenantId, userId, {
-                    id: row.id,
-                    type: 'EXCHANGE_MESSAGE',
-                    title,
-                    message,
-                    read: false,
-                    linkUrl,
-                    createdAt: row.createdAt.toISOString(),
+                // QUEUED, not published. The publish has to happen after this
+                // transaction COMMITS — see the block below.
+                published.push({
+                    userId,
+                    event: {
+                        id: row.id,
+                        type: 'EXCHANGE_MESSAGE' as const,
+                        title,
+                        message,
+                        read: false,
+                        linkUrl,
+                        createdAt: row.createdAt.toISOString(),
+                    },
                 });
             }
 
-            for (const [toEmail, { locale, slug }] of byEmail) {
-                await enqueueEmail(db, {
-                    tenantId: recipientTenantId,
-                    type: 'EXCHANGE_MESSAGE',
-                    toEmail,
-                    // Required, so there is no "unset" to pass through. A
-                    // recipient with no uiLanguage gets the product's own
-                    // fallback rather than the sender's language — the reader
-                    // is a different person, which is the whole point of
-                    // reading uiLanguage in the first place.
-                    locale: isLocale(locale) ? locale : RECIPIENT_FALLBACK_LOCALE,
-                    // THE THREAD, deliberately — see the docblock.
-                    entityId: thread.id,
-                    payload: { commodity: thread.listing.commodity, tenantSlug: slug, threadId: thread.id },
+            // The email enqueue used to sit HERE, inside this transaction, and
+            // that lost the bell rows above from the second message of a
+            // thread onward. `buildDedupeKey` ends in the UTC DAY, so the
+            // outbox INSERT collides; `enqueueEmail` catches Prisma's P2002
+            // and returns null, which reads as "duplicate skipped, carry on".
+            // Postgres does not agree: a statement error ABORTS the
+            // transaction, and only a SAVEPOINT taken beforehand can clear
+            // that — there is none anywhere in `src/` or `prisma/`. So the
+            // COMMIT silently became a ROLLBACK and the notification the
+            // operator needed went with it.
+            //
+            // Measured, not inferred:
+            // `tests/integration/notify-transaction-abort.test.ts`.
+            //
+            // #1102 made the bell deliberately NOT deduped so a live
+            // negotiation keeps notifying. Coupling it to a per-day deduped
+            // email in one transaction undid exactly that, on exactly the
+            // messages it was built for.
+            emails = [...byEmail].map(([toEmail, v]) => ({ toEmail, ...v }));
+        });
+
+        // ── After the commit ──
+        //
+        // Persist, THEN publish. A subscriber that receives an event for a
+        // row that is not yet committed would render a notification the next
+        // poll cannot find — and with the abort above, for a row that never
+        // existed at all. The old code carried this comment INSIDE the
+        // transaction, stating the rule it was breaking.
+        for (const { userId, event } of published) {
+            publishNotificationEvent(recipientTenantId, userId, event);
+        }
+
+        // A SEPARATE transaction, so a duplicate here can only roll back
+        // itself. The bell is already durable; losing today's email for a
+        // thread is the deduplication working as designed.
+        for (const { toEmail, locale, slug } of emails) {
+            try {
+                await withTenantDb(recipientTenantId, async (db) =>
+                    enqueueEmail(db, {
+                        tenantId: recipientTenantId,
+                        type: 'EXCHANGE_MESSAGE',
+                        toEmail,
+                        // Required, so there is no "unset" to pass through. A
+                        // recipient with no uiLanguage gets the product's own
+                        // fallback rather than the sender's language — the
+                        // reader is a different person, which is the whole
+                        // point of reading uiLanguage in the first place.
+                        locale: isLocale(locale) ? locale : RECIPIENT_FALLBACK_LOCALE,
+                        // THE THREAD, deliberately — see the docblock.
+                        entityId: thread.id,
+                        payload: {
+                            commodity: thread.listing.commodity,
+                            tenantSlug: slug,
+                            threadId: thread.id,
+                        },
+                    }),
+                );
+            } catch (err) {
+                // One address failing must not cost the others theirs.
+                logger.warn('exchange.message_email_failed', {
+                    component: 'exchange-messaging',
+                    error: err instanceof Error ? err.message : String(err),
                 });
             }
-        });
+        }
     } catch (err) {
         logger.warn('exchange.message_notify_failed', {
             component: 'exchange-messaging',

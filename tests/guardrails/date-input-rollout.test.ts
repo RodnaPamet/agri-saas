@@ -24,6 +24,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { collectSourceFiles } from '../helpers/collect-files';
 
 const ROOT = path.resolve(__dirname, '../..');
 const SCAN_DIRS = [
@@ -46,18 +47,26 @@ const ALLOWED_FILES = new Set<string>([
 const DATE_INPUT_RE =
     /<(?:input|Input)\b[^>]*\btype\s*=\s*["'](?:date|datetime-local)["'][^>]*>/g;
 
-function walk(dir: string, acc: string[] = []): string[] {
-    if (!fs.existsSync(dir)) return acc;
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-            if (entry.name === 'node_modules' || entry.name === '.next') continue;
-            walk(full, acc);
-        } else if (/\.(tsx?|jsx?)$/.test(entry.name)) {
-            acc.push(full);
-        }
-    }
-    return acc;
+/**
+ * The file set, via the shared collector rather than a hand-rolled walk.
+ *
+ * `selector-teeth` measured the old local `walk()` and it SURVIVED being
+ * gutted to `return []`: the single assertion below iterates `allFiles`, so
+ * an empty list satisfies it and the guard reports a clean repo having
+ * opened nothing.
+ *
+ * The floor is teeth the local walk never had — but a floor alone is NOT
+ * enough, which is the lesson from the sibling fix in
+ * `date-display-consistency`: gutting this wrapper returns before
+ * `collectSourceFiles` is ever called, so its floor never runs. The positive
+ * control in the describe block is what actually fails on an empty set.
+ */
+function collectScannedFiles(): string[] {
+    return collectSourceFiles({
+        roots: SCAN_DIRS,
+        extensions: ['.ts', '.tsx', '.js', '.jsx'],
+        floor: 200,
+    });
 }
 
 /**
@@ -76,7 +85,38 @@ function stripComments(src: string): string {
 }
 
 describe('Epic 58 — no native date inputs in app code', () => {
-    const allFiles = SCAN_DIRS.flatMap((d) => walk(d));
+    const allFiles = collectScannedFiles();
+
+    it('the scan reaches app code (positive control)', () => {
+        // The assertion below is satisfied by an EMPTY file set, so without
+        // this the guard passes having opened nothing. `selector-teeth`
+        // measured exactly that: `walk` survived `return []`.
+        expect(allFiles.length).toBeGreaterThan(200);
+        expect(allFiles.some((f) => f.includes(`${path.sep}src${path.sep}app${path.sep}`))).toBe(true);
+    });
+
+    it('stripComments removes comments and KEEPS code (positive control)', () => {
+        // The second dead selector: `stripComments` survived being gutted to
+        // `''`, which makes every file look empty so the regex never matches.
+        // An assertion that it strips is not enough — `''` strips everything.
+        // What fails on the gut is asserting what must SURVIVE.
+        const src = [
+            '{/* <input type="date" /> in a JSX comment */}',
+            '/* <input type="date" /> in a block comment */',
+            '// <input type="date" /> in a line comment',
+            '<input type="date" name="sowing" />',
+        ].join('\n');
+        const out = stripComments(src);
+
+        // Survives — this is the assertion the `''` gut fails.
+        expect(out).toContain('name="sowing"');
+        expect(out.match(DATE_INPUT_RE)).toHaveLength(1);
+
+        // Removed — the behaviour the function exists for.
+        expect(out).not.toContain('JSX comment');
+        expect(out).not.toContain('block comment');
+        expect(out).not.toContain('line comment');
+    });
 
     it('no <input type="date" | datetime-local"> outside the allowlist', () => {
         const violations: { file: string; line: number; snippet: string }[] = [];
