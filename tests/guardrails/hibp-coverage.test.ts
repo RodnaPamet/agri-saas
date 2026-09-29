@@ -209,6 +209,60 @@ describe('HIBP coverage guardrail — curated list integrity', () => {
 // ── Test 2 — structural scan ───────────────────────────────────────────────
 
 describe('HIBP coverage guardrail — structural scan', () => {
+    it('the scan reaches the routes it polices (positive control)', () => {
+        // WITHOUT THIS THE STRUCTURAL HALF IS VACUOUS. `selector-teeth`
+        // measured `walkRouteFiles` on 2026-09-29 and it SURVIVED being
+        // gutted to `return []`: the assertion below is a `for` over
+        // `allRoutes`, so an empty list produces no violations and the guard
+        // passes having opened nothing. The curated list in test 1 would keep
+        // working; the half that catches a NEW password route would not.
+        //
+        // The control is tied to HIBP_REQUIRED_ROUTES rather than to a bare
+        // count, because that catches a second failure the count cannot: if
+        // PASSWORD_FIELD_RE ever stops matching, these three known routes go
+        // quiet and every future one with them.
+        const apiDir = path.join(REPO_ROOT, 'src/app/api');
+        const allRoutes = walkRouteFiles(apiDir);
+
+        // 369 route files today; 200 fails on a collapse without being
+        // brittle to ordinary churn.
+        expect(allRoutes.length).toBeGreaterThan(200);
+
+        // The WALK must see every registered route.
+        for (const r of HIBP_REQUIRED_ROUTES) {
+            expect(allRoutes).toContain(path.join(REPO_ROOT, r.file));
+        }
+
+        // And the PATTERN must still match something, or it has rotted and
+        // every future password route goes quiet with it.
+        const matched = HIBP_REQUIRED_ROUTES.filter(
+            (r) =>
+                [
+                    ...fs
+                        .readFileSync(path.join(REPO_ROOT, r.file), 'utf8')
+                        .matchAll(PASSWORD_FIELD_RE),
+                ].length > 0,
+        ).map((r) => r.file);
+        expect(matched.length).toBeGreaterThan(0);
+
+        // NOT every registered route matches, and that is a REAL GAP rather
+        // than a quirk of this test. `auth/register` imports
+        // `AuthActionSchema` from `@/lib/schemas`, so its password field is
+        // declared outside the route file and this scan cannot see it —
+        // which is exactly what CLAUDE.md means by "define password schemas
+        // inline in the route file so the scan sees them".
+        //
+        // It is safe TODAY only because the curated list in test 1 names it
+        // and asserts the HIBP call. A NEW signup route written the same way
+        // would be invisible here. Tracked in #1166; this assertion pins the
+        // blind spot so closing it makes a test go red rather than passing
+        // silently either way.
+        const blind = HIBP_REQUIRED_ROUTES.filter((r) => !matched.includes(r.file)).map(
+            (r) => r.file,
+        );
+        expect(blind).toEqual(['src/app/api/auth/register/route.ts']);
+    });
+
     it('every route.ts that parses a password field is registered', () => {
         const apiDir = path.join(REPO_ROOT, 'src/app/api');
         const allRoutes = walkRouteFiles(apiDir);
