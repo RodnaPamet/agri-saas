@@ -215,10 +215,28 @@ interface Offender {
     binding: string;
 }
 
-function scan(): Offender[] {
+/**
+ * Read one spec, by bare filename within E2E_DIR.
+ *
+ * A seam, and it is what makes a control on `scan` possible at all. The
+ * `selector-teeth` baseline listed `e2e-isolation:scan` as a case where a
+ * control could not be written, on the grounds that the only thing which
+ * reddens a gutted `scan()` is a real offending spec ON DISK — and planting
+ * one mid-run hands every sibling guard that walks this directory a transient
+ * file. That is true of a file. It is not true of the BYTES: inject the
+ * reader and the offending spec never exists outside the control's own scope.
+ */
+type SpecReader = (file: string) => string;
+
+const readSpec: SpecReader = (file) => fs.readFileSync(path.join(E2E_DIR, file), 'utf8');
+
+function scan(
+    files: readonly string[] = specFiles(),
+    readSource: SpecReader = readSpec,
+): Offender[] {
     const offenders: Offender[] = [];
-    for (const file of specFiles()) {
-        const raw = fs.readFileSync(path.join(E2E_DIR, file), 'utf8');
+    for (const file of files) {
+        const raw = readSource(file);
         const src = stripNoise(raw);
         const spans = testBodySpans(src);
         if (spans.length < 2) continue; // need ≥2 tests to cascade
@@ -251,6 +269,68 @@ describe('E2E test isolation — no cross-test `let` cascade', () => {
     // RECORDS the class rather than asserting on it, and specFiles() has
     // not moved onto the shared collector helper (which refuses an empty
     // result). Until it does, these two assert it here.
+    it('control: scan DETECTS a cascade, and only the offending spec (#971)', () => {
+        // The assertion this file exists for cannot show this. `scan()` over
+        // the real corpus returns [] because no spec offends, so the `[]` gut
+        // REPRODUCES the true value — not a mutation of the program at all.
+        // The baseline entry for this selector said no control was possible,
+        // because the only thing that reddens a gutted `scan()` is a real
+        // offending spec on disk, and planting one mid-run hands every sibling
+        // guard that walks tests/e2e a transient file.
+        //
+        // That is true of a FILE. It is not true of the BYTES: the reader is
+        // injected, so the offending spec exists only in this closure.
+        const offender = 'synthetic-offender.spec.ts';
+        const clean = 'synthetic-clean.spec.ts';
+        const sources: Record<string, string> = {
+            // A genuine cascade: a top-level `let` assigned in one test and
+            // read in another. This is the exact shape the guard forbids.
+            [offender]: [
+                "import { test, expect } from '@playwright/test';",
+                'let sharedId: string;',
+                "test('creates the thing', async ({ page }) => {",
+                "    sharedId = 'abc';",
+                '});',
+                "test('reads the thing', async ({ page }) => {",
+                '    expect(sharedId).toBeTruthy();',
+                '});',
+            ].join('\n'),
+            // Same two-test shape, no cross-test binding. Present so the
+            // control proves DISCRIMINATION: a scan that flagged everything
+            // would satisfy a bare "found something" assertion too.
+            [clean]: [
+                "import { test, expect } from '@playwright/test';",
+                "test('one', async ({ page }) => {",
+                "    const localId = 'abc';",
+                '    expect(localId).toBeTruthy();',
+                '});',
+                "test('two', async ({ page }) => {",
+                "    const other = 'def';",
+                '    expect(other).toBeTruthy();',
+                '});',
+            ].join('\n'),
+        };
+
+        const found = scan([offender, clean], (f) => sources[f] ?? '');
+        expect(found).toHaveLength(1);
+        expect(found[0]).toEqual({ file: offender, binding: 'sharedId' });
+    });
+
+    it('control: readSpec actually reads bytes (#971)', () => {
+        // Injecting a reader to make a collector testable creates a NEW
+        // untested collector — every control above passes its own reader, so
+        // `readSpec` gutted to '' would leave the real scan reading empty
+        // sources and finding nothing. Measured on the sibling fix in #1170,
+        // where exactly this seam came back as a fresh survivor.
+        const first = specFiles()[0];
+        expect(typeof first).toBe('string');
+        const src = readSpec(first);
+        expect(src.length).toBeGreaterThan(0);
+        // Every Playwright spec imports from the test runner or the local
+        // fixtures; a reader returning junk would not satisfy this.
+        expect(src).toMatch(/from '(@playwright\/test|\.\/fixtures)'/);
+    });
+
     it('control: specFiles() selects the whole real top-level spec corpus (#971)', () => {
         const scanned = specFiles();
 
