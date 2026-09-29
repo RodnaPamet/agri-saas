@@ -243,9 +243,24 @@ export async function loginAndGetTenant(
         if (rendered) break;
         renderRetries--;
         if (renderRetries > 0) {
-            await page.waitForLoadState('networkidle').catch(() => {});
+            // RE-NAVIGATE, do not wait for the network. Two swallowed
+            // `networkidle` waits used to stand here, and neither could
+            // condition anything:
+            //
+            //   - the first waited on a page we are about to navigate AWAY
+            //     from, so whatever it settled was discarded a line later;
+            //   - the second ran before a `main` probe that already auto-waits
+            //     10s for exactly the condition being retried.
+            //
+            // Both were unbounded, so each could spend the full 30s default
+            // before `.catch(() => {})` discarded the timeout without a word.
+            // Two retries x two waits is up to 120s of silent dead wall clock
+            // on a login that is already failing — #748's "swallowed
+            // networkidle" half, in the one helper every spec routes through.
+            //
+            // `safeGoto` is the robust part (5 attempts, 60s, domcontentloaded);
+            // the `waitFor({ state: 'visible' })` above is the real condition.
             await safeGoto(page, `/t/${slug}/dashboard`, { waitUntil: 'domcontentloaded' });
-            await page.waitForLoadState('networkidle').catch(() => {});
         }
     }
 
