@@ -144,7 +144,10 @@ function probeDb(url: string | undefined): DbProbeOutcome {
             '  before believing any skip, and set INTEGRATION_REQUIRE_DB=1\n' +
             '  anywhere a database is guaranteed.\n' +
             '='.repeat(72) + '\n';
-        // eslint-disable-next-line no-console
+        // No eslint-disable: `no-console` does not apply under tests/, so the
+        // directive would mute nothing and register as an unused-directive
+        // warning — and the Lint gate counts SUPPRESSIONS, so a needless one
+        // costs exactly what the finding it does not mute would.
         console.warn(banner);
         if (REQUIRE_DB) {
             throw new Error(
