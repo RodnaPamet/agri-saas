@@ -33,7 +33,6 @@ describe('the identity constant', () => {
         // the sibling's would go green on exactly the misroute it exists to
         // detect — worse than having none, because it would look solved.
         expect(SERVICE_ID).not.toBe('inflect-compliance');
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
         const pkgName = require('../../package.json').name;
         expect(SERVICE_ID).not.toBe(pkgName);
     });

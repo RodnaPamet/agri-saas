@@ -55,6 +55,11 @@ export const SERVICE_ID = 'agri-saas' as const;
  * Exported as one string so the check's matcher and the response cannot drift
  * apart by a quote or a space — the two live in different systems (this repo
  * and GCP Cloud Monitoring) and nothing but this constant connects them.
- * `infra/alerts/external-uptime.yml` records the deployed value.
+ * The `external-uptime.yml` alerting record carries the deployed value.
+ * (Named without its directory path on purpose: `tests/guards/infra-
+ * directories-are-referenced.test.ts` treats any `infra/<dir>` string in a
+ * SOURCE file as evidence that something here runs it. Nothing does — the
+ * check lives in GCP — so writing the path would turn this comment into a
+ * false wiring and mis-record the directory.)
  */
 export const SERVICE_ID_MATCHER = `"service":"${SERVICE_ID}"` as const;
