@@ -49,15 +49,23 @@ const RAW_COLOR_RE = /\b(?:text|bg|border)-(?:slate|gray|neutral|zinc)-\d{2,3}\b
 // navy→green re-ground swept the last route-level components that were
 // painting raw slate/navy instead of reading a token, and the 95 had
 // carried ~81 of stale slack since April — a ratchet with that much
-// give is not a ratchet. 14 is the exact current count, and every one
-// of them is in the ONE file the cheatsheet says should keep raw
-// colours: `audit/shared/[token]/page.tsx`, the public audit-pack
-// viewer, which renders outside the tenant shell with no ThemeProvider
-// in scope. `login/page.tsx`, `error.tsx` and `SoAPrintView.tsx` are
-// now clean and no longer contribute. Lower again only if the public
-// viewer ever gets a theme-aware pass; do not raise it to absorb drift
-// in an authenticated route — those owe semantic tokens.
-const BASELINE = 14;
+// give is not a ratchet.
+//
+// Lowered 14 → 0 on 2026-09-30, and the sentence this replaces is why it
+// matters. It read: "14 is the exact current count, and every one of them is
+// in the ONE file the cheatsheet says should keep raw colours:
+// `audit/shared/[token]/page.tsx`". That file NO LONGER EXISTS — GRC teardown
+// phase 2 deleted the public audit-pack viewer — so the entire justification
+// for the 14 went with it. Measured over the live tree: 612 files walked,
+// **0 occurrences**. The same slack the paragraph above calls "not a ratchet"
+// had returned at a smaller size, and its own docblock was the thing hiding
+// it, because a ceiling of 14 over a real count of 0 reports green either way.
+//
+// At 0 the ceiling is exact: ANY raw colour in src/app fails. Do not raise it
+// to absorb drift in an authenticated route — those owe semantic tokens. A
+// genuinely theme-free public surface goes in EXEMPT_DIRS with a reason, which
+// is the carve-out that does not weaken the count for everything else.
+const BASELINE = 0;
 
 // Directories that are intentionally outside the internal design
 // system. Adding entries here is allowed when the surface is a
@@ -86,11 +94,23 @@ function walk(dir: string, out: string[]): string[] {
     return out;
 }
 
-function countRawColors(): { total: number; byFile: Record<string, number> } {
+/**
+ * Read one file. A seam, so a control can prove the COUNTING works without
+ * depending on the tree containing a violation — which it must not, since the
+ * baseline is 0. See the controls at the bottom of this file.
+ */
+type SourceReader = (file: string) => string;
+
+const readFromDisk: SourceReader = (file) => fs.readFileSync(file, 'utf-8');
+
+function countRawColors(
+    files: readonly string[] = walk(APP_ROOT, []),
+    readSource: SourceReader = readFromDisk,
+): { total: number; byFile: Record<string, number> } {
     const byFile: Record<string, number> = {};
     let total = 0;
-    for (const file of walk(APP_ROOT, [])) {
-        const src = fs.readFileSync(file, 'utf-8');
+    for (const file of files) {
+        const src = readSource(file);
         const matches = src.match(RAW_COLOR_RE);
         if (matches && matches.length > 0) {
             byFile[path.relative(APP_ROOT, file)] = matches.length;
@@ -118,11 +138,82 @@ describe('Epic 51 — raw Tailwind color ratchet', () => {
         expect(total).toBeLessThanOrEqual(BASELINE);
     });
 
-    it('baseline is plausible and matches the current tree', () => {
-        const { total } = countRawColors();
-        // If the baseline drifts below the observed count, someone
-        // migrated a file — lower the baseline in this test.
-        expect(total).toBeLessThanOrEqual(BASELINE);
-        expect(BASELINE).toBeGreaterThanOrEqual(0);
+    // ── Controls (#971) ─────────────────────────────────────────────
+    //
+    // The assertion above is a CEILING, and a ceiling is satisfied by finding
+    // nothing. With BASELINE at 0 that is doubly true: `expect(total)
+    // .toBeLessThanOrEqual(0)` passes if the walk returns no files, AND if the
+    // regex matches nothing it should. `selector-teeth` measured the first
+    // one — gutting `walk` to `[]` survived this entire file (#971).
+    //
+    // The test this replaced was called "baseline is plausible and matches the
+    // current tree" and asserted only `total <= BASELINE`, so it could not see
+    // either failure — nor the 14-vs-0 drift it was named for. Both axes are
+    // covered below, separately, because neither implies the other.
+
+    it('control: the walk finds a real population of app sources', () => {
+        // Kills the gutted-`walk` mutation: no files means no count, and no
+        // count reads as a clean ratchet.
+        const files = walk(APP_ROOT, []);
+        expect(files.length).toBeGreaterThan(400); // 612 today
+        expect(files.every((f) => f.startsWith(APP_ROOT))).toBe(true);
+        expect(files.every((f) => /\.tsx?$/.test(f))).toBe(true);
+
+        // The exemption is honoured rather than just declared.
+        expect(files.some((f) => f.includes(`${path.sep}vendor-assessment${path.sep}`))).toBe(
+            false,
+        );
+    });
+
+    it('control: readFromDisk actually reads bytes', () => {
+        // The reader seam is itself a selector, and re-running `selector-teeth`
+        // after adding it proved so: gutted to `''` every file reads as empty,
+        // the count is 0, and the ceiling passes over nothing. The controls
+        // below cannot see it — they each pass their OWN reader, which is the
+        // point of the seam and also its blind spot. So read THIS file through
+        // the real reader and look for something only it contains.
+        //
+        // The general shape: adding an injectable dependency to make a
+        // collector testable creates a NEW untested collector. Re-run the
+        // mutation tool after fixing a guard, not just before.
+        const self = readFromDisk(__filename);
+        expect(self.length).toBeGreaterThan(1000);
+        expect(self).toContain('RAW_COLOR_RE');
+    });
+
+    it('control: the counter DETECTS a raw colour, and ignores a semantic one', () => {
+        // Kills a broken regex or a broken accumulator. This cannot be proved
+        // against the real tree, because the tree must contain ZERO matches for
+        // the ratchet to pass — "found none" and "cannot see any" are the same
+        // observation there. So feed it synthetic sources.
+        const raw = path.join(APP_ROOT, 'synthetic-raw.tsx');
+        const clean = path.join(APP_ROOT, 'synthetic-clean.tsx');
+        const sources: Record<string, string> = {
+            // Two raw colours, one of them repeated, plus a semantic class
+            // that must NOT be counted.
+            [raw]:
+                '<div className="bg-slate-800 text-content-muted" />' +
+                '<span className="border-gray-100 bg-slate-800" />',
+            [clean]: '<div className="bg-bg-default text-content-muted border-border-subtle" />',
+        };
+        const { total, byFile } = countRawColors([raw, clean], (f) => sources[f] ?? '');
+
+        expect(total).toBe(3);
+        expect(byFile['synthetic-raw.tsx']).toBe(3);
+        // A file with only semantic tokens must not appear in the report at
+        // all — an entry with 0 would make the hotspot list meaningless.
+        expect(byFile).not.toHaveProperty('synthetic-clean.tsx');
+    });
+
+    it('control: a raw colour in the real tree WOULD breach the ceiling', () => {
+        // Ties the two controls above together: the detector works, the
+        // population is real, and one occurrence is enough to fail. Without
+        // this, a BASELINE that had drifted upward again would leave the other
+        // two green while the ratchet absorbed live drift — which is exactly
+        // what the 14-vs-0 gap did.
+        const one = path.join(APP_ROOT, 'synthetic-one.tsx');
+        const { total } = countRawColors([one], () => '<div className="text-zinc-500" />');
+        expect(total).toBe(1);
+        expect(total).toBeGreaterThan(BASELINE);
     });
 });
