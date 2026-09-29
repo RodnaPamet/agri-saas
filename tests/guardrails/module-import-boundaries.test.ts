@@ -199,11 +199,27 @@ describe('module-import-boundaries', () => {
 
         // ...and the sources carry imports the scanner's own regex matches,
         // so "no violations" means "looked and found none".
+        // Read through `readFromDisk`, not a bare fs call: the reader is the
+        // seam `scan` uses, so a control that bypasses it leaves the seam
+        // untested. Re-running `selector-teeth` after adding the seam is what
+        // caught that — it survived all nine guts.
         const sample = files
             .slice(0, 40)
-            .map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8'))
+            .map((f) => readFromDisk(f))
             .join('\n');
         expect(/(?:import|export)[^'"]*?from\s*['"]([^'"]+)['"]/.test(sample)).toBe(true);
+    });
+
+    it('control: readFromDisk actually reads bytes', () => {
+        // Adding an injectable dependency to make a collector testable creates
+        // a NEW untested collector: every control below passes its own reader,
+        // so `readFromDisk` gutted to '' (or [], 0, null, …) left this file
+        // green. Read THIS file through the real reader and look for a token
+        // only it contains.
+        const rel = path.relative(ROOT, __filename).replace(/\\/g, '/');
+        const self = readFromDisk(rel);
+        expect(self.length).toBeGreaterThan(1000);
+        expect(self).toContain('AGRI_RE');
     });
 
     it('control: scan DETECTS a cross-seam import, and only the cross-seam one', () => {
