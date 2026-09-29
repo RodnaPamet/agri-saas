@@ -75,45 +75,101 @@ function resolveDbUrl(): string {
  * Uses spawnSync (no shell) with the URL passed via environment variable to
  * avoid shell-escaping issues with special characters like & in pgbouncer URLs.
  */
-function checkDbAvailable(url: string | undefined): boolean {
-    if (!url) return false;
+/**
+ * What the probe learned. THREE outcomes, not two.
+ *
+ *   'ok'       — connected and ran `SELECT 1`
+ *   'refused'  — the probe finished and could NOT connect (no database)
+ *   'unknown'  — the probe did not finish: timed out, was signalled, or
+ *                could not be spawned
+ *
+ * The third used to be folded into the second, and that is the bug this
+ * distinction fixes. `spawnSync` returns `status: null` on timeout, so
+ * `result.status === 0` was false and the helper reported "no database" —
+ * turning every integration suite into `describe.skip`. The run then got
+ * GREENER by running less, which is the failure mode CLAUDE.md names first
+ * under "a skipped suite is indistinguishable from a passing one".
+ *
+ * Measured 2026-09-29: with a mutation sweep loading the box to ~12, the
+ * 30s probe timed out and a new integration suite reported `1 skipped`.
+ * The database was up and connecting in 1.1 seconds. Raising the budget —
+ * which is what the previous comment here did — makes the window smaller
+ * without making the two cases distinguishable.
+ */
+import { classifyProbe, type DbProbeOutcome } from './db-probe';
+export type { DbProbeOutcome } from './db-probe';
+
+function probeOnce(url: string, timeoutMs: number): DbProbeOutcome {
     try {
         const { spawnSync } = require('child_process');
-        // Prisma 7 dropped the `datasources` constructor option; URLs
-        // now flow in through a driver adapter (`@prisma/adapter-pg`).
-        // Mirrors the singleton wiring in `src/lib/prisma.ts`.
-        const script = [
-            "const{PrismaClient}=require('@prisma/client');",
-            "const{PrismaPg}=require('@prisma/adapter-pg');",
-            'const u=process.env.__DB_CHECK_URL;',
-            'const adapter=new PrismaPg({connectionString:u});',
-            'const p=new PrismaClient({adapter});',
-            'p.$connect()',
-            '.then(()=>p.$queryRawUnsafe("SELECT 1"))',
-            '.then(()=>{p.$disconnect();process.exit(0)})',
-            '.catch(()=>{p.$disconnect().catch(()=>{});process.exit(1)})',
-        ].join('');
-        const result = spawnSync('node', ['-e', script], {
-            // 30s, not 5s. This probe pays a cold Node start plus the Prisma
-            // client's own load before it can even attempt a connection —
-            // measured at ~7s on an ordinary dev machine, i.e. reliably over
-            // the old budget. A timeout here reads as "no database", which
-            // turns every integration suite into `describe.skip` and makes
-            // the run GREENER by running less. An absent database still fails
-            // fast (ECONNREFUSED returns in milliseconds), so the larger
-            // budget costs nothing in the case it was guarding against.
-            timeout: 30_000,
-            stdio: 'ignore',
-            cwd: ROOT,
-            env: { ...process.env, __DB_CHECK_URL: url },
-        });
-        return result.status === 0;
+        return classifyProbe(
+            spawnSync('node', ['-e', PROBE_SCRIPT], {
+                timeout: timeoutMs,
+                stdio: 'ignore',
+                cwd: ROOT,
+                env: { ...process.env, __DB_CHECK_URL: url },
+            }),
+        );
     } catch {
-        return false;
+        return 'unknown';
     }
+}
+
+/**
+ * Opt-in escalation, mirroring `RLS_GUARDRAIL_REQUIRE_DB` and
+ * `BULLMQ_SMOKE_REQUIRE_REDIS`. Any environment that GUARANTEES a database
+ * can set `INTEGRATION_REQUIRE_DB=1` to make "the integration suites did not
+ * run" a red build instead of a quiet skip.
+ */
+const REQUIRE_DB = process.env.INTEGRATION_REQUIRE_DB === '1';
+
+function probeDb(url: string | undefined): DbProbeOutcome {
+    if (!url) return 'refused';
+
+    let outcome = probeOnce(url, 30_000);
+    // RETRY an unfinished probe, with room. When the database is up this
+    // costs ~1s; when it is absent we never get here, because a refusal
+    // returns in milliseconds. So the retry is paid only in the case it is
+    // for: a machine too busy to answer in time.
+    if (outcome === 'unknown') outcome = probeOnce(url, 90_000);
+
+    if (outcome === 'unknown') {
+        const banner =
+            '\n' +
+            '='.repeat(72) + '\n' +
+            '  DATABASE PROBE DID NOT FINISH — integration suites will SKIP.\n' +
+            '  This is UNKNOWN, not "no database". The probe timed out twice\n' +
+            '  (30s then 90s), which on a loaded machine says nothing about\n' +
+            '  whether Postgres is reachable. Re-run when the box is quiet\n' +
+            '  before believing any skip, and set INTEGRATION_REQUIRE_DB=1\n' +
+            '  anywhere a database is guaranteed.\n' +
+            '='.repeat(72) + '\n';
+        // eslint-disable-next-line no-console
+        console.warn(banner);
+        if (REQUIRE_DB) {
+            throw new Error(
+                'INTEGRATION_REQUIRE_DB=1 but the database probe did not finish. ' +
+                    'Refusing to skip the integration suites silently.',
+            );
+        }
+    }
+
+    if (outcome === 'refused' && REQUIRE_DB) {
+        throw new Error(
+            'INTEGRATION_REQUIRE_DB=1 but no database is reachable at the resolved URL.',
+        );
+    }
+
+    return outcome;
 }
 
 const dbUrl = resolveDbUrl();
 
 export const DB_URL = dbUrl;
-export const DB_AVAILABLE = checkDbAvailable(dbUrl);
+
+/**
+ * WHY the suites are running or skipping, not just whether. A caller that
+ * needs to tell "no database" from "could not tell" reads this.
+ */
+export const DB_PROBE: DbProbeOutcome = probeDb(dbUrl);
+export const DB_AVAILABLE = DB_PROBE === 'ok';
