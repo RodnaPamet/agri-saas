@@ -104,14 +104,31 @@ interface Violation {
     spec: string;
 }
 
-function scan(): Violation[] {
+/**
+ * Read one repo-relative source. A seam, not indirection for its own sake:
+ * the CORE side of this seam is empty today (see the 28 / 0 / 291 test
+ * below), so `scan()` over the real tree returns `[]` and a gutted `scan`
+ * is indistinguishable from a working one BY ITS RESULT. `selector-teeth`
+ * confirmed that — gutting `scan` to `[]` survived every assertion in this
+ * file (#971). Injecting the reader lets a control feed the scan a
+ * population that DOES cross the seam, with no fixture files on disk.
+ */
+type SourceReader = (relPath: string) => string;
+
+const readFromDisk: SourceReader = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+
+function scan(
+    files: readonly string[] = listAppLayerFiles(),
+    readSource: SourceReader = readFromDisk,
+): Violation[] {
     const violations: Violation[] = [];
     const importRe = /(?:import|export)[^'"]*?from\s*['"]([^'"]+)['"]|import\(\s*['"]([^'"]+)['"]\s*\)/g;
-    for (const file of listAppLayerFiles()) {
+    for (const file of files) {
         const fromDomain = classify(file);
         if (fromDomain === 'platform') continue; // platform may import anything
-        const content = fs.readFileSync(path.join(ROOT, file), 'utf8');
+        const content = readSource(file);
         let m: RegExpExecArray | null;
+        importRe.lastIndex = 0; // /g state is shared across files in this loop
         while ((m = importRe.exec(content)) !== null) {
             const spec = m[1] ?? m[2];
             if (!spec) continue;
@@ -166,11 +183,10 @@ describe('module-import-boundaries', () => {
     // layer down never runs. A floor inside a helper cannot protect a caller
     // that stops calling it.
     //
-    // One honest limit: BASELINE is empty and the tree currently has zero
-    // violations, so `scan() -> []` cannot be told from "correctly found
-    // nothing" by its RESULT. These controls prove the traversal is real
-    // instead — a genuine population, containing both sides of the seam this
-    // ratchet polices, with imports its regex can actually see.
+    // The controls below prove the traversal is real — a genuine population
+    // with imports the scanner's regex can actually see — and the one after
+    // them proves the scan DETECTS a crossing, which no assertion over the
+    // real tree can show while the core side of the seam is empty.
 
     it('control: the scanned population is real and spans the seam', () => {
         const files = listAppLayerFiles();
@@ -188,6 +204,62 @@ describe('module-import-boundaries', () => {
             .map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8'))
             .join('\n');
         expect(/(?:import|export)[^'"]*?from\s*['"]([^'"]+)['"]/.test(sample)).toBe(true);
+    });
+
+    it('control: scan DETECTS a cross-seam import, and only the cross-seam one', () => {
+        // The assertions at the top of this file cannot show this. The core
+        // side of the seam is empty (28 agri / 0 core / 291 platform — see
+        // the test below), so `scan()` over the real tree returns `[]`, and
+        // `[]` is what a gutted scan returns too. `selector-teeth` measured
+        // exactly that: gutting `scan` survived this whole file (#971).
+        //
+        // So drive it over a SYNTHETIC population that does cross the seam.
+        // No fixture files are needed: a file's domain comes from its PATH,
+        // and its imports come from the injected reader.
+        const agri = 'src/app-layer/usecases/journal-synthetic.ts';
+        const core = 'src/app-layer/usecases/vendor-synthetic.ts';
+        const sources: Record<string, string> = {
+            // Three imports from the agri side, and only ONE of them crosses:
+            //   • a platform import — legal, agri may depend on platform
+            //   • the core import   — the violation this ratchet exists for
+            //   • a bare specifier  — must resolve to null, not to a repo path
+            [agri]:
+                "import { a } from '@/app-layer/auth/session';\n" +
+                "import { x } from '@/app-layer/usecases/vendor-synthetic';\n" +
+                "import React from 'react';\n",
+            [core]: "export const y = 1;\n",
+        };
+        const found = scan([agri, core], (rel) => sources[rel] ?? '');
+
+        // Exactly one — a scan that flagged everything would satisfy a bare
+        // "found something" assertion just as well as a working one.
+        expect(found).toHaveLength(1);
+        expect(found[0]).toMatchObject({
+            from: agri,
+            fromDomain: 'agri',
+            to: 'src/app-layer/usecases/vendor-synthetic',
+            toDomain: 'core',
+            spec: '@/app-layer/usecases/vendor-synthetic',
+        });
+    });
+
+    it('control: a crossing found by scan is one the ratchet would FAIL on', () => {
+        // The scan finding a violation is only half of it — the assertion at
+        // the top filters by BASELINE, so a detected crossing still has to
+        // survive that filter to redden CI. This runs the same predicate the
+        // real assertion uses over the synthetic finding.
+        const agri = 'src/app-layer/usecases/grain-synthetic.ts';
+        const core = 'src/app-layer/usecases/compliance-synthetic.ts';
+        const found = scan(
+            [agri, core],
+            (rel) =>
+                rel === agri
+                    ? "import { z } from '@/app-layer/usecases/compliance-synthetic';\n"
+                    : '',
+        );
+        const baselineKeys = new Set(BASELINE.map((b) => baselineKey(b.from, b.to)));
+        const unexpected = found.filter((v) => !baselineKeys.has(baselineKey(v.from, v.to)));
+        expect(unexpected).toHaveLength(1);
     });
 
     it('the CORE side of the seam is currently empty — this ratchet has nothing to cross', () => {
