@@ -19,6 +19,7 @@
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { jsonResponse } from '@/lib/api-response';
+import { SERVICE_ID } from '@/lib/service-identity';
 
 // Prisma 7 — `new PrismaClient()` requires an adapter. The probe
 // constructs a standalone client (deliberately not the app
@@ -92,6 +93,7 @@ export async function GET() {
 
     return jsonResponse(
         {
+            service: SERVICE_ID,
             status: allOk ? 'healthy' : 'degraded',
             timestamp: new Date().toISOString(),
             uptime: process.uptime(),

@@ -66,6 +66,7 @@ import { env } from '@/env';
 import { geeConfigStatus } from '@/lib/agro/gee-config';
 import { basemapBranchStatus } from '@/lib/geo/basemap-bundle-scan';
 import { jsonResponse } from '@/lib/api-response';
+import { SERVICE_ID } from '@/lib/service-identity';
 import { logger } from '@/lib/observability/logger';
 
 const CHECK_TIMEOUT_MS = 2000;
@@ -282,6 +283,10 @@ export async function GET() {
 
     return jsonResponse(
         {
+            // WHOSE readiness this is. A probe that only asks "is something
+            // here ready?" passes when another app is misrouted to this
+            // hostname — which happened for ~6h on 2026-09-27 (#1117/#1143).
+            service: SERVICE_ID,
             status: allOk ? 'ready' : 'not_ready',
             timestamp: new Date().toISOString(),
             uptime: process.uptime(),
