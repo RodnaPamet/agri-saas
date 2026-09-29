@@ -40,3 +40,27 @@ export function classifyProbe(result: {
     if (result.status === 1) return 'refused';
     return 'unknown';
 }
+
+/**
+ * The probe body, run by `node -e`. Prisma 7 dropped the `datasources`
+ * constructor option, so the URL flows in through a driver adapter
+ * (`@prisma/adapter-pg`), mirroring the singleton wiring in
+ * `src/lib/prisma.ts`. The URL is passed via the environment rather than
+ * interpolated, so no shell quoting is involved.
+ *
+ * Exit 0 = connected. Exit 1 = the `.catch` below fired, i.e. a real refusal.
+ * Those are the ONLY two exits this script produces, which is what lets
+ * `classifyProbe` treat every other status as 'unknown' rather than as an
+ * answer about the database.
+ */
+export const PROBE_SCRIPT = [
+    "const{PrismaClient}=require('@prisma/client');",
+    "const{PrismaPg}=require('@prisma/adapter-pg');",
+    'const u=process.env.__DB_CHECK_URL;',
+    'const adapter=new PrismaPg({connectionString:u});',
+    'const p=new PrismaClient({adapter});',
+    'p.$connect()',
+    '.then(()=>p.$queryRawUnsafe("SELECT 1"))',
+    '.then(()=>{p.$disconnect();process.exit(0)})',
+    '.catch(()=>{p.$disconnect().catch(()=>{});process.exit(1)})',
+].join('');

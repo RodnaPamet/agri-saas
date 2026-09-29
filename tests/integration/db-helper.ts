@@ -96,7 +96,7 @@ function resolveDbUrl(): string {
  * which is what the previous comment here did — makes the window smaller
  * without making the two cases distinguishable.
  */
-import { classifyProbe, type DbProbeOutcome } from './db-probe';
+import { classifyProbe, PROBE_SCRIPT, type DbProbeOutcome } from './db-probe';
 export type { DbProbeOutcome } from './db-probe';
 
 function probeOnce(url: string, timeoutMs: number): DbProbeOutcome {

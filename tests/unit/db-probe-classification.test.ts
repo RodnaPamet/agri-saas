@@ -23,7 +23,9 @@
  * and green in the conditions that do not. So the classification is a pure
  * function and this exercises it directly.
  */
-import { classifyProbe, type DbProbeOutcome } from '../integration/db-probe';
+import { spawnSync } from 'node:child_process';
+
+import { classifyProbe, PROBE_SCRIPT, type DbProbeOutcome } from '../integration/db-probe';
 
 describe('classifyProbe — three outcomes, not two', () => {
     it('exit 0 is available', () => {
@@ -83,5 +85,46 @@ describe('classifyProbe — three outcomes, not two', () => {
             classifyProbe({ status: null, signal: 'SIGTERM' as NodeJS.Signals }),
         ]);
         expect(outcomes.size).toBe(3);
+    });
+});
+
+describe('PROBE_SCRIPT — the premise classifyProbe rests on', () => {
+    // `classifyProbe` treats exit 1 as the ONLY answer meaning "no database",
+    // and every other non-zero exit as 'unknown'. That is only sound if the
+    // probe script itself produces no other exit codes. Nothing tested it.
+    //
+    // This also closes the gap that let a real defect reach CI: the tests
+    // above are pure BY DESIGN, so they import `db-probe` and never execute
+    // `db-helper` — which is exactly why a `PROBE_SCRIPT` that was referenced
+    // but never defined typechecked nowhere locally and shipped a
+    // ReferenceError into every integration suite's module load. A constant
+    // that only CI compiles is a constant only CI tests.
+
+    it('exits 1 — not 2, not a crash — when the database refuses', () => {
+        // Port 1 is never a Postgres. ECONNREFUSED comes back in
+        // milliseconds; the cost here is Node + Prisma client load.
+        const result = spawnSync('node', ['-e', PROBE_SCRIPT], {
+            timeout: 60_000,
+            stdio: 'ignore',
+            env: { ...process.env, __DB_CHECK_URL: 'postgresql://u:p@127.0.0.1:1/nope' },
+        });
+
+        expect(result.error).toBeUndefined();
+        expect(result.signal).toBeNull();
+        // The exact code matters: 1 is a refusal and skips the suites, while
+        // anything else must read as 'unknown'. A script that exited 2 on a
+        // refusal would make every absent database look like a broken probe.
+        expect(result.status).toBe(1);
+        expect(classifyProbe(result)).toBe<DbProbeOutcome>('refused');
+    }, 90_000);
+
+    it('is a single line of real JS, not an accidentally-empty string', () => {
+        // A collector that silently produced '' would spawn `node -e ''`,
+        // which exits 0 — and exit 0 means "the database is fine".
+        expect(PROBE_SCRIPT.length).toBeGreaterThan(200);
+        expect(PROBE_SCRIPT).toContain('@prisma/adapter-pg');
+        expect(PROBE_SCRIPT).toContain('process.exit(0)');
+        expect(PROBE_SCRIPT).toContain('process.exit(1)');
+        expect(PROBE_SCRIPT).not.toContain('\n');
     });
 });
