@@ -57,6 +57,43 @@ updates:
         update-types:
           - minor
           - patch
+      # The typescript-eslint family moves as ONE UNIT or not at all.
+      #
+      # `typescript-eslint` is a meta-package that pins its siblings to EXACT
+      # versions — at 8.71.0 it requires @typescript-eslint/parser@8.71.0,
+      # /eslint-plugin@8.71.0, /utils@8.71.0 and /typescript-estree@8.71.0 —
+      # while @typescript-eslint/eslint-plugin separately declares a PEER on
+      # parser@^<its own version>. Bumping one member without the meta-package
+      # is therefore not merely untidy, it is unresolvable by construction:
+      #
+      #     ERESOLVE could not resolve
+      #     peer @typescript-eslint/parser@"^8.70.1"
+      #       from @typescript-eslint/eslint-plugin@8.70.1
+      #
+      # Measured 2026-09-29. The `dev-dependencies` group below matches by
+      # `dependency-type: development` with no patterns, which selects the
+      # family but cannot guarantee it moves together — #1150 bumped
+      # eslint-plugin 8.69.0 -> 8.70.1 and left `typescript-eslint` at ^8.70.0.
+      # `npm ci` then failed, so ALL 15 jobs went red on ONE broken install,
+      # and the 15 unrelated dev updates in that PR were blocked by it.
+      # `@dependabot recreate` reproduced the same split into #1152, which is
+      # how we know it is structural and not a stale branch.
+      #
+      # A dedicated group fixes both halves: the family is bumped as a unit so
+      # it resolves, and it is ISOLATED, so if it ever cannot resolve it fails
+      # in its own PR instead of holding the weekly dev batch hostage — the
+      # same reasoning the `next` exclusion above is built on.
+      #
+      # ORDER MATTERS: a dependency joins the FIRST group whose patterns match,
+      # so this must stay ABOVE `dev-dependencies`. Moving it below silently
+      # restores the old behaviour with no error anywhere.
+      typescript-eslint:
+        patterns:
+          - "typescript-eslint"
+          - "@typescript-eslint/*"
+        update-types:
+          - minor
+          - patch
       # Dev deps — lower risk
       dev-dependencies:
         dependency-type: development
