@@ -106,7 +106,11 @@ describeFn('a caught unique-violation aborts the whole transaction', () => {
         // even raise. In JavaScript this is indistinguishable from a clean
         // "duplicate skipped, carry on", which is exactly why the bug survived
         // review — the code reads correctly and Postgres disagrees silently.
-        // eslint-disable-next-line no-console
+        //
+        // No eslint-disable here: `no-console` does not apply under tests/, so
+        // the directive itself was an unused-directive warning — and the lint
+        // gate counts SUPPRESSIONS, so a needless one costs the same as the
+        // finding it does not mute.
         console.log(
             `[measured] caught=${caught} txThrew=${txThrew ?? 'no'} survivorRow=${survivor ? 'KEPT' : 'ROLLED BACK'}`,
         );
