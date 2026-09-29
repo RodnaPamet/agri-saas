@@ -1890,6 +1890,33 @@ database. The structural half of that contract lives in
 `tests/guards/rls-coverage-skip-visibility.test.ts`, modelled on
 `tests/guards/tooltip-kill-switch-consistency.test.ts`.
 
+**And `DB_AVAILABLE` — the flag that whole gate reads — could not tell "no
+database" from "could not look".** `tests/integration/db-helper.ts` probes
+Postgres once at module load with `spawnSync`, and ended
+`return result.status === 0`. **`spawnSync` sets `status: null` on a
+TIMEOUT**, so a probe that was merely too SLOW returned `false`, and `false`
+means absent: every integration suite became `describe.skip`. The failure is
+load-correlated, which is the worst possible shape — integration coverage
+thins exactly when the machine is busy, and a busy machine is what CI is.
+Measured 2026-09-29: under a mutation sweep holding the box at load ~12 the
+30s probe timed out and a fresh integration suite reported `1 skipped`, while
+the database answered in 1.1s when asked directly.
+
+The probe has THREE outcomes now (`classifyProbe` in
+`tests/integration/db-probe.ts`): `'ok'`, `'refused'` — the probe FINISHED
+and said no — and `'unknown'` for a timeout, a signal, or a spawn failure.
+**Only exit 1 is an answer about the database**, because that is the probe
+script's own `.catch`; every other non-zero exit is the probe itself
+breaking, and reading that as absence is how a broken probe silently
+disables a tier. `'unknown'` retries once at 90s, then prints a banner
+saying which of the two it is, and `INTEGRATION_REQUIRE_DB=1` turns either
+into a hard failure — set on the `test` job (and its
+`coverage-reference.yml` twin, which the parity guard requires to match)
+because that job runs `prisma migrate deploy` against a declared service.
+The classifier lives in its OWN module so a test can import it without
+paying the module-load probe: a test that had to spawn would be flaky under
+exactly the load it exists to catch, and green otherwise.
+
 **A mocked dependency cannot report that the dependency changed.** `bullmq`
 5 → 6 (a MAJOR) went 19/19 green while nothing in the repo executed one line of
 BullMQ: `tests/integration/bullmq-queue.test.ts` and `bullmq-scheduler.test.ts`

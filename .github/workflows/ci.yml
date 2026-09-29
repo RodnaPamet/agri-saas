@@ -547,6 +547,15 @@ jobs:
       # `prisma migrate deploy`, so a skip here means the service is
       # broken and the build should say so.
       RLS_GUARDRAIL_REQUIRE_DB: "1"
+      # Same argument again, for the OTHER skip gate over the same
+      # Postgres. tests/integration/db-helper.ts probes the database at
+      # module load and every integration suite is
+      # `DB_AVAILABLE ? describe : describe.skip`, so an unreachable — or
+      # merely SLOW — database takes the whole integration tier quiet and
+      # green. This job runs `prisma migrate deploy` against a declared
+      # service, so neither a refusal nor a probe that cannot finish is
+      # acceptable here: both fail the build instead of thinning coverage.
+      INTEGRATION_REQUIRE_DB: "1"
       # GAP-03 — deterministic test key so the startup-encryption-check
       # integration test can simulate NODE_ENV=production with a real
       # key, AND so any future test that asserts prod-only encryption
