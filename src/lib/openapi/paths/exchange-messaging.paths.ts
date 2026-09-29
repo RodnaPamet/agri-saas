@@ -117,9 +117,23 @@ export function registerExchangeMessagingPaths(registry: OpenAPIRegistry): void 
         params: TenantParams.extend({
             listingId: z.string().openapi({ param: { name: 'listingId', in: 'path' } }),
         }),
+        // 200 is DECLARED, not only described. The prose above says a second
+        // call answers 200, and until now only the 201 was in the document —
+        // so a strict or generated client treated the ordinary
+        // already-open case as an undeclared response.
+        extraResponses: {
+            200: {
+                description: 'The conversation was already open. Same body as the 201.',
+                content: {
+                    'application/json': {
+                        schema: z.object({ id: z.string(), created: z.boolean() }),
+                    },
+                },
+            },
+        },
         success: {
             status: 201,
-            description: 'The conversation, created or already open.',
+            description: 'The conversation was created.',
             schema: z.object({ id: z.string(), created: z.boolean() }),
         },
     });
@@ -222,6 +236,19 @@ export function registerExchangeMessagingPaths(registry: OpenAPIRegistry): void 
             'on the blocked party. See #1161.',
         tags: ['Exchange messaging'],
         params: ThreadParams,
+        headers: z.object({
+            'Idempotency-Key': z
+                .string()
+                .min(1)
+                .optional()
+                .openapi({
+                    description:
+                        'Mint it BEFORE the first attempt and reuse it for every retry of the ' +
+                        'same logical send. Without it the send is NOT idempotent — two taps ' +
+                        'make two messages. A replay returns the ORIGINAL message with ' +
+                        '`replayed: true`.',
+                }),
+        }),
         body: z.object({ body: z.string().min(1).max(8000) }).openapi('SendExchangeMessage'),
         success: {
             status: 201,
