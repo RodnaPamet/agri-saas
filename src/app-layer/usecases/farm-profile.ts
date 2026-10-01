@@ -112,51 +112,101 @@ export async function getFarmProfile(ctx: RequestContext): Promise<ProfileShape>
     });
 }
 
-/** Admin write — upsert the tenant's farm profile. Blank strings clear a field. */
+/**
+ * Admin write — upsert the tenant's farm profile, with MERGE semantics.
+ *
+ * Three instructions share each field, and they are all distinct (#1176):
+ *
+ *     absent from the body   say nothing   -> the stored value stands
+ *     explicit null          say empty     -> cleared
+ *     blank string           say empty     -> cleared
+ *
+ * It used to clear on absence, so a partial body wiped the record. See `said`
+ * below for the discriminator and why it is `Object.hasOwn`.
+ */
 export async function upsertFarmProfile(
     ctx: RequestContext,
     input: FarmProfileFields,
 ): Promise<ProfileShape> {
     assertCanAdmin(ctx);
 
-    // Every field is optional free text — trim + sanitise, blank → null.
+    /**
+     * Did the caller SAY anything about this field?
+     *
+     * `Object.hasOwn`, not `!= null` — and that distinction is the whole of
+     * #1176. Every field is `.optional()`, and this function used to map all
+     * thirteen through a normaliser returning null for `undefined`, so an
+     * ABSENT field was CLEARED: `{"urn":"123"}` nulled the other twelve and
+     * emptied `grainProduced`. Nothing had hit it because the only caller is
+     * the admin page, which GETs the whole profile and PUTs it entire — but
+     * the native client was about to send partial bodies against a schema
+     * whose every field is optional.
+     *
+     * Zod's `.optional()` OMITS an absent key rather than materialising it as
+     * undefined (verified on the installed zod 4.6.5), so `hasOwn` separates
+     * "said nothing" from "said null". The `!== undefined` half is
+     * belt-and-braces: JSON cannot carry undefined, so a present-but-undefined
+     * key cannot arrive over HTTP — and if one ever does, "leave alone" is the
+     * conservative reading.
+     */
+    const said = (k: keyof FarmProfileFields): boolean =>
+        Object.hasOwn(input, k) && input[k] !== undefined;
+
+    // Free text — trim + sanitise. A BLANK STRING still clears, as it always
+    // did; that is a caller saying "this field is empty", not saying nothing.
     const norm = (v: string | null | undefined): string | null => {
         if (v == null) return null;
         return sanitizePlainText(v.trim()) || null;
     };
-    const strings: StringShape = PROFILE_FIELDS.reduce(
-        (acc, k) => ({ ...acc, [k]: norm(input[k]) }),
-        {} as StringShape,
-    );
 
     // A negative area is not a smaller farm, it is a typo. Refuse rather than
     // store it: this number can reach a state form.
-    const sizeHa =
-        input.sizeHa == null || !Number.isFinite(input.sizeHa) || input.sizeHa < 0
-            ? null
-            : input.sizeHa;
+    const normSize = (n: number | null | undefined): number | null =>
+        n == null || !Number.isFinite(n) || n < 0 ? null : n;
 
     // Sanitise each grain, drop blanks, de-duplicate case-insensitively while
     // keeping what the farmer typed. Order is preserved — it is a declaration,
     // not a set, and re-ordering someone's list on save is an unasked-for edit.
-    const seen = new Set<string>();
-    const grainProduced = (input.grainProduced ?? [])
-        .map((g) => norm(g))
-        .filter((g): g is string => g !== null)
-        .filter((g) => {
-            const key = g.toLocaleLowerCase('bg');
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-        });
+    const normGrain = (list: string[] | null | undefined): string[] => {
+        const seen = new Set<string>();
+        return (list ?? [])
+            .map((g) => norm(g))
+            .filter((g): g is string => g !== null)
+            .filter((g) => {
+                const key = g.toLocaleLowerCase('bg');
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+    };
 
-    const data = { ...strings, sizeHa, grainProduced };
+    // UPDATE carries ONLY what the caller mentioned. A field absent from the
+    // body is absent from the statement, so the stored value stands.
+    const update: Record<string, unknown> = {};
+    for (const k of PROFILE_FIELDS) {
+        if (said(k)) update[k] = norm(input[k]);
+    }
+    if (said('sizeHa')) update.sizeHa = normSize(input.sizeHa);
+    if (said('grainProduced')) update.grainProduced = normGrain(input.grainProduced);
+
+    // CREATE is the full shape, and that is not an inconsistency: with no
+    // prior row there is nothing to leave alone, so a field the caller did
+    // not mention is genuinely undeclared.
+    const create = {
+        tenantId: ctx.tenantId,
+        ...PROFILE_FIELDS.reduce(
+            (acc, k) => ({ ...acc, [k]: said(k) ? norm(input[k]) : null }),
+            {} as StringShape,
+        ),
+        sizeHa: said('sizeHa') ? normSize(input.sizeHa) : null,
+        grainProduced: said('grainProduced') ? normGrain(input.grainProduced) : [],
+    };
 
     return runInTenantContext(ctx, async (db) => {
         const row = await db.farmProfile.upsert({
             where: { tenantId: ctx.tenantId },
-            create: { tenantId: ctx.tenantId, ...data },
-            update: data,
+            create,
+            update,
         });
 
         await logEvent(db, ctx, {
