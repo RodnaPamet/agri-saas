@@ -1,8 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- test mocks mirroring
- * runtime contracts (NextRequest, getToken); the file-level disable is this
- * codebase's standard pattern for these harnesses (see
- * tests/unit/api-read-rate-limit-enforced.test.ts). */
-
 /**
  * An authenticated mutation is keyed by USER, not by IP alone.
  *
@@ -59,11 +54,11 @@ beforeAll(() => {
 });
 
 const getToken = jest.fn();
-jest.mock('next-auth/jwt', () => ({ getToken: (...a: any[]) => getToken(...a) }));
+jest.mock('next-auth/jwt', () => ({ getToken: (...a: unknown[]) => getToken(...a) }));
 
 const checkRateLimitDistributed = jest.fn();
 jest.mock('@/lib/rate-limit/mutationRateLimit', () => ({
-    checkRateLimitDistributed: (...a: any[]) => checkRateLimitDistributed(...a),
+    checkRateLimitDistributed: (...a: unknown[]) => checkRateLimitDistributed(...a),
     resetRateLimitDistributed: jest.fn(),
     __resetMutationLimitersForTests: jest.fn(),
 }));
@@ -112,7 +107,7 @@ describe('an authenticated mutation is keyed by user, not IP alone', () => {
         getToken.mockResolvedValue({ sub: 'usr_abc' });
         const handler = withApiErrorHandling(async () => new Response('{}', { status: 200 }));
 
-        await handler(post(), { params: Promise.resolve({}) } as any);
+        await handler(post(), { params: Promise.resolve({}) });
 
         expect(lastKey()).toBe('api-mutation:ip:203.0.113.7:u:usr_abc');
         expect(lastKey()).not.toContain('anon');
@@ -125,11 +120,11 @@ describe('an authenticated mutation is keyed by user, not IP alone', () => {
         const handler = withApiErrorHandling(async () => new Response('{}', { status: 200 }));
 
         getToken.mockResolvedValue({ sub: 'usr_one' });
-        await handler(post(), { params: Promise.resolve({}) } as any);
+        await handler(post(), { params: Promise.resolve({}) });
         const first = lastKey();
 
         getToken.mockResolvedValue({ sub: 'usr_two' });
-        await handler(post(), { params: Promise.resolve({}) } as any);
+        await handler(post(), { params: Promise.resolve({}) });
         const second = lastKey();
 
         expect(first).not.toBe(second);
@@ -144,7 +139,7 @@ describe('an authenticated mutation is keyed by user, not IP alone', () => {
         getToken.mockResolvedValue(null);
         const handler = withApiErrorHandling(async () => new Response('{}', { status: 200 }));
 
-        await handler(post(), { params: Promise.resolve({}) } as any);
+        await handler(post(), { params: Promise.resolve({}) });
 
         expect(lastKey()).toBe('api-mutation:ip:203.0.113.7:anon');
     });
@@ -155,7 +150,7 @@ describe('an authenticated mutation is keyed by user, not IP alone', () => {
         getToken.mockRejectedValue(new Error('JWEDecryptionFailed'));
         const handler = withApiErrorHandling(async () => new Response('{}', { status: 200 }));
 
-        const res = await handler(post(), { params: Promise.resolve({}) } as any);
+        const res = await handler(post(), { params: Promise.resolve({}) });
 
         expect(res.status).toBe(200);
         expect(lastKey()).toBe('api-mutation:ip:203.0.113.7:anon');
@@ -170,7 +165,7 @@ describe('an authenticated mutation is keyed by user, not IP alone', () => {
             { rateLimit: { getUserId: () => 'usr_target' } },
         );
 
-        await handler(post(), { params: Promise.resolve({}) } as any);
+        await handler(post(), { params: Promise.resolve({}) });
 
         expect(lastKey()).toContain('u:usr_target');
         expect(lastKey()).not.toContain('usr_admin');
@@ -185,7 +180,7 @@ describe('an authenticated mutation is keyed by user, not IP alone', () => {
             { rateLimit: { scope: 'exchange-message', getBucket: () => 't:acme' } },
         );
 
-        await handler(post(), { params: Promise.resolve({}) } as any);
+        await handler(post(), { params: Promise.resolve({}) });
 
         expect(lastKey()).toBe('exchange-message:t:acme');
         // The decode is skipped entirely on this path.
@@ -197,7 +192,7 @@ describe('an authenticated mutation is keyed by user, not IP alone', () => {
 
         await handler(
             new NextRequest('https://app.agrent.bg/api/t/acme/journal', { method: 'GET' }),
-            { params: Promise.resolve({}) } as any,
+            { params: Promise.resolve({}) },
         );
 
         expect(checkRateLimitDistributed).not.toHaveBeenCalled();
