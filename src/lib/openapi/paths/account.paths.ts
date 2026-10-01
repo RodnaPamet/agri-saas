@@ -51,21 +51,32 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
         description:
             'The launch request. Returns the caller plus their OLDEST ACTIVE membership as ' +
             '`tenant` — one membership, not the list, so a user who belongs to several ' +
-            'tenants cannot pick between them here. `role` falls back to `READER` when ' +
-            'there is no active membership, so it is not proof of access on its own. ' +
+            'tenants cannot pick between them here. `role` and `tenant` are BOTH `null` ' +
+            'when there is no active membership, and they always agree: `role` is never ' +
+            'a fallback value, so it is also not proof of access on its own. ' +
             'Carries `bottomTabOrder`, which is why a client needs no second round-trip ' +
             'before drawing its tab bar. Answers a BEARER token as well as a cookie.',
         tags: ['Account'],
         success: {
             status: 200,
-            description: 'The caller. `tenant` is null when they have no active membership.',
+            description:
+                'The caller. `role` AND `tenant` are both null when they have no active ' +
+                'membership — the two never disagree.',
             schema: z
                 .object({
                     user: z.object({
                         id: z.string(),
                         email: z.string().nullable(),
                         name: z.string().nullable(),
-                        role: z.string(),
+                        // `.nullable()` is load-bearing documentation, like
+                        // `BottomTabOrder` above: `null` means "no active
+                        // membership", the same state the sibling `tenant: null`
+                        // reports. There is deliberately no fallback role —
+                        // READER grants real reads, so inventing one would answer
+                        // "who am I" with view access for a principal who has
+                        // none. A generated client must therefore decode a
+                        // missing role rather than assume a string is present.
+                        role: z.string().nullable(),
                         bottomTabOrder: BottomTabOrder,
                     }),
                     tenant: z
