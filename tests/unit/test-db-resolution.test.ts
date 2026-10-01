@@ -17,7 +17,15 @@
  * So: an allowlist, checked before anything runs, proven by the cases that
  * would pass a substring test.
  */
-import { assertIsTestDatabase, getBaseTestDatabaseUrl, getDbName, migrateTestDb } from '../helpers/db';
+import {
+    applyCheckoutSlot,
+    assertIsTestDatabase,
+    checkoutDbSlot,
+    getBaseTestDatabaseUrl,
+    getDbName,
+    migrateTestDb,
+    slotForPath,
+} from '../helpers/db';
 
 
 const url = (db: string) => `postgresql://u:p@127.0.0.1:5435/${db}?schema=public`;
@@ -155,5 +163,134 @@ describe('migrateTestDb', () => {
         process.env.DATABASE_URL_TEST = url('inflect_compliance');
         expect(() => migrateTestDb(runner)).toThrow(/refusing to run against database/);
         expect(calls).toHaveLength(0);
+    });
+});
+
+/**
+ * The per-CHECKOUT axis (#1171 mode 3).
+ *
+ * `globalSetup` terminates every session on the base database and DROPs the
+ * `_w<n>` clones. Correct for one run; two worktrees resolved the SAME name,
+ * so the second recreated the databases under the first. Measured:
+ * `rls-coverage` died with Postgres `57P01`, then passed 22/22 alone — a
+ * DB-backed guardrail failing on connection teardown looks exactly like that
+ * guardrail finding a real RLS defect.
+ *
+ * These are executing tests, not source scans: the slot is arithmetic and the
+ * allowlist is a predicate, so both can be run rather than asserted about.
+ */
+describe('the per-checkout database slot (#1171 mode 3)', () => {
+    describe('slotForPath — the property that actually prevents the collision', () => {
+        it('two checkouts never collide', () => {
+            // THE regression test. Before this, every worktree resolved one name.
+            expect(slotForPath('/home/u/agri-saas')).not.toBe(
+                slotForPath('/home/u/agri-saas-wt-fp-merge'),
+            );
+        });
+
+        it('is stable for one checkout — a slot that moved would strand databases', () => {
+            expect(slotForPath('/home/u/agri-saas')).toBe(slotForPath('/home/u/agri-saas'));
+        });
+
+        it('has the shape the allowlist admits, and nothing wider', () => {
+            for (const root of ['/a', '/home/u/x', 'C:\\repos\\y', '']) {
+                expect(slotForPath(root)).toMatch(/^_c[0-9a-f]{8}$/);
+            }
+        });
+
+        it('a slotted name is accepted, including alongside a worker clone', () => {
+            // The real parallel case is BOTH axes at once.
+            const slot = slotForPath('/home/u/agri-saas');
+            expect(() => assertIsTestDatabase(url(`agri_saas_test${slot}`), 't')).not.toThrow();
+            expect(() => assertIsTestDatabase(url(`agri_saas_test${slot}_w3`), 't')).not.toThrow();
+            expect(() => assertIsTestDatabase(url(`ci_testdb${slot}`), 't')).not.toThrow();
+        });
+    });
+
+    describe('admitting the slot did not loosen the allowlist', () => {
+        // The hazard in widening a safety predicate is admitting more than the
+        // one shape you meant. Each of these would pass `(_.*)?`.
+        it.each([
+            ['a non-hex slot', 'agri_saas_test_cZZZZZZZZ'],
+            ['a short slot', 'agri_saas_test_c1a111b8'],
+            ['a long slot', 'agri_saas_test_c1a111b877'],
+            ['trailing junk after a valid slot', 'agri_saas_test_c1a111b87_extra'],
+            ['the other product wearing a valid slot', 'inflect_compliance_test_c1a111b87'],
+            ['a slot on an unowned name', 'latest_backup_c1a111b87'],
+        ])('still refuses %s', (_label, db) => {
+            expect(() => assertIsTestDatabase(url(db), 't')).toThrow(/refusing to run/);
+        });
+    });
+
+    describe('applyCheckoutSlot — extends OWNED names only', () => {
+        it('extends a name this repo owns', () => {
+            expect(getDbName(applyCheckoutSlot(url('agri_saas_test')))).toMatch(
+                /^agri_saas_test_c[0-9a-f]{8}$/,
+            );
+        });
+
+        it('leaves a FOREIGN name untouched, so it still fails closed', () => {
+            // The teeth: suffixing indiscriminately would rename another
+            // product's database INTO a name the allowlist accepts, which is
+            // the opposite of what the allowlist is for.
+            const foreign = url('inflect_compliance_test');
+            expect(applyCheckoutSlot(foreign)).toBe(foreign);
+            expect(() => assertIsTestDatabase(applyCheckoutSlot(foreign), 't')).toThrow();
+        });
+
+        it('does not double-slot or re-slot a worker clone', () => {
+            expect(applyCheckoutSlot(url('agri_saas_test_w1'))).toBe(url('agri_saas_test_w1'));
+            const once = applyCheckoutSlot(url('agri_saas_test'));
+            expect(applyCheckoutSlot(once)).toBe(once);
+        });
+
+        it('preserves the rest of the URL — credentials, host, port, params', () => {
+            const out = new URL(applyCheckoutSlot(url('agri_saas_test')));
+            expect(out.username).toBe('u');
+            expect(out.port).toBe('5435');
+            expect(out.searchParams.get('schema')).toBe('public');
+        });
+    });
+
+    describe('JEST_DB_SLOT', () => {
+        const prev = process.env.JEST_DB_SLOT;
+        afterEach(() => {
+            if (prev === undefined) delete process.env.JEST_DB_SLOT;
+            else process.env.JEST_DB_SLOT = prev;
+        });
+
+        it('pins an explicit slot', () => {
+            process.env.JEST_DB_SLOT = 'deadbeef';
+            expect(checkoutDbSlot()).toBe('_cdeadbeef');
+        });
+
+        it('an empty value opts out entirely', () => {
+            process.env.JEST_DB_SLOT = '';
+            expect(checkoutDbSlot()).toBe('');
+        });
+
+        it('a malformed value THROWS rather than silently opting out', () => {
+            // Coercing to '' would reintroduce the exact collision the operator
+            // set the variable to avoid, and would do it silently.
+            process.env.JEST_DB_SLOT = 'NOT-HEX!';
+            expect(() => checkoutDbSlot()).toThrow(/8 lowercase hex/);
+        });
+    });
+
+    describe('CI parity — a pinned URL gets no slot', () => {
+        const prev = process.env.DATABASE_URL_TEST;
+        afterEach(() => {
+            if (prev === undefined) delete process.env.DATABASE_URL_TEST;
+            else process.env.DATABASE_URL_TEST = prev;
+        });
+
+        it('returns DATABASE_URL_TEST verbatim', () => {
+            // CI runs `prisma migrate deploy` against this name OUTSIDE jest.
+            // A slot here would migrate one database and test another.
+            const pinned = url('ci_testdb');
+            process.env.DATABASE_URL_TEST = pinned;
+            expect(getBaseTestDatabaseUrl()).toBe(pinned);
+            expect(getDbName(getBaseTestDatabaseUrl())).toBe('ci_testdb');
+        });
     });
 });
