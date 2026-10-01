@@ -866,6 +866,31 @@ model FarmProfile {
   /// canonical commodity enum, because a farm may grow something the market
   /// vocabulary does not quote and a picker that refused it would be wrong.
   grainProduced              String[]
+  /// Optimistic-lock version, sent back as `If-Match` on PUT.
+  ///
+  /// DEFAULT 1, NOT 0 — deliberately unlike `OperationParcel.version` above,
+  /// and the difference is load-bearing rather than an inconsistency.
+  ///
+  /// GET returns an all-null shape for a tenant with no row rather than a 404,
+  /// so a client can legitimately read a profile that does not exist yet and
+  /// send its version back. That shape reports version 0. If a stored row could
+  /// also hold 0, "I believe there is no row" and "there is a row nobody has
+  /// edited" would be the same precondition, and this sequence loses a write
+  /// with no conflict reported:
+  ///
+  ///   A GET -> no row, 0     B GET -> no row, 0
+  ///   A PUT If-Match: 0 -> creates a row at 0
+  ///   B PUT If-Match: 0 -> MATCHES the stored 0 -> silently overwrites A
+  ///
+  /// Defaulting to 1 makes 0 a value no stored row ever carries, so If-Match: 0
+  /// means exactly "create" and matches nothing else. It belongs on the COLUMN
+  /// DEFAULT rather than in the guarded create path: an unguarded write does not
+  /// mention `version`, so it takes whatever this says, and the sentinel has to
+  /// hold for every writer or it is not a sentinel.
+  ///
+  /// `OperationParcel.version` can default to 0 safely because nothing there
+  /// reports a version for a row that does not exist.
+  version                    Int      @default(1)
   createdAt                  DateTime @default(now())
   updatedAt                  DateTime @updatedAt
 

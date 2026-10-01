@@ -105,6 +105,9 @@ function lastCreate(): Record<string, unknown> {
 beforeEach(() => {
     mockDb.farmProfile = {
         upsert: jest.fn().mockResolvedValue({ id: 'fp-1', tenantId: 'tenant-A' }),
+        // The optimistic lock's no-op path READS when a body mentions nothing,
+        // instead of writing a version bump for a request that changed nothing.
+        findUnique: jest.fn().mockResolvedValue({ id: 'fp-1', tenantId: 'tenant-A', version: 1 }),
     };
 });
 
@@ -133,7 +136,13 @@ describe('farm-profile merge semantics (#1176)', () => {
         await upsertFarmProfile(makeCtx(), { urn: '123' });
 
         const update = lastUpdate();
-        expect(Object.keys(update)).toEqual(['urn']);
+        // `version` is excluded from the USER-FIELD key set: the optimistic
+        // lock bumps it on every write, so it is bookkeeping rather than
+        // something the caller said. Excluding it cannot hide a merge
+        // regression — its presence is asserted on the next line, and a user
+        // field leaking in would still fail this.
+        expect(Object.keys(update).filter((k) => k !== 'version')).toEqual(['urn']);
+        expect(update.version).toEqual({ increment: 1 });
         expect(update.urn).toBe('123');
         // Named explicitly, because "not in the keys" and "present as null"
         // are the two states this change exists to separate.
@@ -219,6 +228,13 @@ describe('farm-profile merge semantics (#1176)', () => {
         // The degenerate case, and the one most likely to be got wrong: a
         // caller who sends {} has said nothing about anything.
         await upsertFarmProfile(makeCtx(), {});
-        expect(lastUpdate()).toEqual({});
+        // Nothing is written AT ALL — not even the lock's version bump. `{}`
+        // says nothing about anything, so the same rule that leaves an absent
+        // field alone leaves the row alone. An earlier revision of the
+        // optimistic lock bumped `version` here, which claimed the row changed,
+        // logged an audit entry for a write that never happened, and
+        // invalidated every other holder's If-Match token for a no-op.
+        const upsert = (mockDb.farmProfile as { upsert: jest.Mock }).upsert;
+        expect(upsert).not.toHaveBeenCalled();
     });
 });
