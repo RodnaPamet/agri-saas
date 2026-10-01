@@ -256,7 +256,13 @@ export async function getExchangeThread(
     options: { limit?: number; before?: string | null } = {},
 ): Promise<ExchangeThreadView> {
     assertCanRead(ctx);
-    const limit = Math.min(Math.max(options.limit ?? DEFAULT_PAGE_SIZE, 1), DEFAULT_PAGE_SIZE);
+    // `Number.isFinite`, not `??`: NaN is neither null nor undefined, so `??`
+    // passes it straight through and Math.min/max propagate it to
+    // `take: NaN`, which Prisma rejects as a 500. The routes now refuse a
+    // malformed `?limit=` with a 400, and this is the choke point that keeps
+    // a future caller from reintroducing it.
+    const requested = Number.isFinite(options.limit) ? (options.limit as number) : DEFAULT_PAGE_SIZE;
+    const limit = Math.min(Math.max(requested, 1), DEFAULT_PAGE_SIZE);
     const before = decodeCursor(options.before);
 
     return runInTenantContext(ctx, async (db) => {
@@ -760,7 +766,13 @@ export async function listExchangeThreads(
     options: { limit?: number; cursor?: string | null } = {},
 ) {
     assertCanRead(ctx);
-    const limit = Math.min(Math.max(options.limit ?? DEFAULT_PAGE_SIZE, 1), DEFAULT_PAGE_SIZE);
+    // `Number.isFinite`, not `??`: NaN is neither null nor undefined, so `??`
+    // passes it straight through and Math.min/max propagate it to
+    // `take: NaN`, which Prisma rejects as a 500. The routes now refuse a
+    // malformed `?limit=` with a 400, and this is the choke point that keeps
+    // a future caller from reintroducing it.
+    const requested = Number.isFinite(options.limit) ? (options.limit as number) : DEFAULT_PAGE_SIZE;
+    const limit = Math.min(Math.max(requested, 1), DEFAULT_PAGE_SIZE);
     const cursor = decodeCursor(options.cursor);
     return runInTenantContext(ctx, async (db) => {
         // RLS restricts this to threads the caller is a party to, from either

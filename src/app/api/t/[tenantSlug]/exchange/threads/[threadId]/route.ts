@@ -3,6 +3,7 @@ import { getTenantCtx } from '@/app-layer/context';
 import { getExchangeThread } from '@/app-layer/usecases/exchange-messaging';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
+import { parseLimitParam } from '@/lib/validation/query-params';
 
 /**
  * GET /api/t/{slug}/exchange/threads/{threadId} — the scrollback.
@@ -22,7 +23,7 @@ export const GET = withApiErrorHandling(
         return jsonResponse(
             await getExchangeThread(ctx, params.threadId, {
                 before: url.searchParams.get('before'),
-                limit: limitRaw ? Number(limitRaw) : undefined,
+                limit: parseLimitParam(limitRaw),
             }),
         );
     },

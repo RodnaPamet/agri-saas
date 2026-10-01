@@ -3,6 +3,7 @@ import { getTenantCtx } from '@/app-layer/context';
 import { getParcelHistory } from '@/app-layer/usecases/parcel-history';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonWithETag } from '@/lib/http/etag';
+import { parseLimitParam } from '@/lib/validation/query-params';
 
 /**
  * GET /api/t/{slug}/agro/parcels/{parcelId}/history
@@ -42,7 +43,7 @@ export const GET = withApiErrorHandling(
         // acceptable here, but a client should not treat "it's a cursor" as
         // meaning the URL carries no identifiers.
         const history = await getParcelHistory(ctx, params.parcelId, {
-            limit: limitRaw ? Number(limitRaw) : undefined,
+            limit: parseLimitParam(limitRaw),
             seasonsBefore: url.searchParams.get('seasonsBefore'),
             operationsBefore: url.searchParams.get('operationsBefore'),
             weedsBefore: url.searchParams.get('weedsBefore'),
