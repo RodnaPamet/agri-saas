@@ -34,6 +34,20 @@ export default async function globalSetup(globalConfig?: GlobalConfig) {
     const baseName = getDbName(base);
 
     console.log(`\n[test-setup] Database URL: ${base.replace(/:[^@]*@/, ':***@')}`);
+
+    // The base database may not EXIST yet. Since #1171 the local name carries
+    // a per-checkout slot (`_c<hash>`, see `checkoutDbSlot`), so the first run
+    // in a fresh worktree names a database nothing has created. CI is
+    // unaffected — it pins DATABASE_URL_TEST and provisions the database as a
+    // service — but creating it here rather than relying on
+    // `prisma migrate deploy` to do it keeps the behaviour independent of
+    // Prisma's internals, which is a dependency we would otherwise be
+    // asserting without a test.
+    //
+    // An unreachable server stays TOLERATED: guard and unit suites run with no
+    // database at all, and `migrateTestDb()` below reports `unreachable` for
+    // the same condition. This must not turn that into a hard failure.
+    await ensureBaseDatabase(baseName);
     console.log(`[test-setup] Running migrations on base DB...`);
     // The success line is CONDITIONAL on success. It used to print
     // unconditionally while `migrateTestDb` swallowed its own failure, so
@@ -94,4 +108,34 @@ export default async function globalSetup(globalConfig?: GlobalConfig) {
     fs.mkdirSync(path.dirname(PER_WORKER_MARKER), { recursive: true });
     fs.writeFileSync(PER_WORKER_MARKER, JSON.stringify(marker));
 
+}
+
+/**
+ * Create the base test database if it is absent. Never throws.
+ *
+ * `assertIsTestDatabase` has already run on the URL this name came from, so
+ * the name is one of the two this repo owns, optionally slotted — see
+ * ALLOWED_TEST_DB.
+ */
+async function ensureBaseDatabase(name: string): Promise<void> {
+    let admin: Client | undefined;
+    try {
+        admin = new Client({ connectionString: adminConnectionString() });
+        await admin.connect();
+        const res = await admin.query('SELECT 1 FROM pg_database WHERE datname = $1', [name]);
+        if (res.rowCount === 0) {
+            await admin.query(`CREATE DATABASE "${name}"`);
+            console.log(`[test-setup] created ${name} — first run in this checkout`);
+        }
+    } catch {
+        // Unreachable or insufficient privilege: tolerated by design. The
+        // migration step reports the same condition and DB_AVAILABLE skips
+        // the suites that need a database.
+    } finally {
+        try {
+            await admin?.end();
+        } catch {
+            /* already gone */
+        }
+    }
 }

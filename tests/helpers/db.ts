@@ -20,7 +20,105 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import * as path from 'path';
 import * as fs from 'fs';
 import { execSync } from 'child_process';
+import { createHash } from 'crypto';
 import type { ExecSyncOptions } from 'child_process';
+
+/**
+ * A per-CHECKOUT suffix for the test database name (`_c<8 hex>`), or `''`.
+ *
+ * ## The defect (#1171 mode 3)
+ *
+ * `globalSetup` does two destructive things to the base database before any
+ * suite runs: `pg_terminate_backend` on every session attached to it, and
+ * `DROP DATABASE ... WITH (FORCE)` on each `_w<n>` clone. Both are correct for
+ * ONE run. Two runs in two worktrees resolve the SAME name — `.env.test` and
+ * the container default are identical in every checkout — so the second run
+ * recreates the databases out from under the first.
+ *
+ * Measured: `tests/guardrails/rls-coverage.test.ts` failed with Postgres
+ * `57P01` (admin shutdown), then passed 22/22 alone. A DB-backed guardrail
+ * dying on connection teardown is indistinguishable, from the log, from that
+ * guardrail finding a real RLS defect — which is the half that makes this
+ * worth fixing rather than remembering. The worked-around rule was "while a
+ * sweep runs, do not run jest anywhere else in the repo", and a rule an
+ * operator has to remember is not a control.
+ *
+ * The `_w<n>` axis already separates jest WORKERS. The missing axis is the
+ * CHECKOUT, which is what this adds.
+ *
+ * ## Why an explicitly pinned URL gets no slot
+ *
+ * `DATABASE_URL_TEST` is how CI names its database, and CI runs
+ * `prisma migrate deploy` against that name OUTSIDE jest — so a slot there
+ * would migrate one database and test another. Returning the pinned URL
+ * verbatim keeps every CI job byte-identical; the slot exists only for the
+ * local fall-through sources, which are the only ones that collide.
+ *
+ * `JEST_DB_SLOT` overrides: 8 lowercase hex to pin a slot, or empty to opt
+ * out. It validates rather than coercing, because a malformed slot that
+ * silently became `''` would reintroduce the collision it was set to avoid.
+ *
+ * ## What this does NOT cover
+ *
+ * TWO RUNS IN ONE CHECKOUT still collide. They share a slot by construction,
+ * so the second still terminates the first's sessions and recreates its
+ * clones. #1171 names the checkout as the missing axis and that is what this
+ * adds; a per-RUN slot would need a database per invocation and would leave
+ * strays behind, which is a worse trade for a rarer case. If you need it,
+ * `JEST_DB_SLOT` is the lever — give the second run its own.
+ *
+ * Slot databases ACCUMULATE: one per checkout that has ever run tests, and
+ * they outlive the worktree. They are cheap (an empty template clone) and
+ * local-only, but to prune them, DROP every `agri_saas_test_c*` while no run
+ * is in flight; the next run recreates what it needs.
+ */
+export function checkoutDbSlot(): string {
+    const pinned = process.env.JEST_DB_SLOT;
+    if (pinned !== undefined) {
+        if (pinned === '') return '';
+        if (!/^[0-9a-f]{8}$/.test(pinned)) {
+            throw new Error(
+                `JEST_DB_SLOT must be 8 lowercase hex characters (or empty to opt out); ` +
+                    `got ${JSON.stringify(pinned)}.`,
+            );
+        }
+        return `_c${pinned}`;
+    }
+    // The checkout this FILE belongs to — each worktree has its own copy, so
+    // the path is the axis. Not `process.cwd()`: jest is invoked from
+    // subdirectories, which would hand one checkout several slots.
+    return slotForPath(path.resolve(__dirname, '../..'));
+}
+
+/**
+ * The slot for a given checkout root. Pure, so the property that matters —
+ * two checkouts never collide — is testable without faking `__dirname`.
+ */
+export function slotForPath(root: string): string {
+    return `_c${createHash('sha256').update(root).digest('hex').slice(0, 8)}`;
+}
+
+/**
+ * Extend an OWNED database name with the checkout slot.
+ *
+ * Only ever extends `agri_saas_test` / `ci_testdb`. A name this repo does not
+ * own is returned untouched, so it still fails `assertIsTestDatabase` — the
+ * alternative (suffixing anything) would rename a foreign database INTO a
+ * name that passes the allowlist, which is the opposite of what that
+ * allowlist is for.
+ */
+export function applyCheckoutSlot(url: string): string {
+    const slot = checkoutDbSlot();
+    if (!slot) return url;
+    let name: string;
+    try {
+        name = getDbName(url);
+    } catch {
+        return url; // unparseable: let the caller's own validation speak
+    }
+    if (!/^(agri_saas_test|ci_testdb)$/.test(name)) return url;
+    return withDbName(url, `${name}${slot}`);
+}
 
 /**
  * The base/template test database URL.
@@ -43,7 +141,7 @@ export function getBaseTestDatabaseUrl(): string {
         const content = fs.readFileSync(envTestPath, 'utf8');
         const match = content.match(/^DATABASE_URL_TEST=["']?([^"'\n]*)["']?$/m)
             || content.match(/^DATABASE_URL=["']?([^"'\n]*)["']?$/m);
-        if (match?.[1]) return match[1];
+        if (match?.[1]) return applyCheckoutSlot(match[1]);
     } catch { /* no .env.test */ }
 
     // 3. Test container default (docker-compose.test.yml → port 5435).
@@ -59,7 +157,9 @@ export function getBaseTestDatabaseUrl(): string {
     //    so the fix was unreachable whenever a `.env` existed, which is
     //    always. A fix documented as taking precedence is worthless if an
     //    earlier branch returns before it. It now returns.
-    return 'postgresql://test:test@127.0.0.1:5435/agri_saas_test?schema=public';
+    return applyCheckoutSlot(
+        'postgresql://test:test@127.0.0.1:5435/agri_saas_test?schema=public',
+    );
 }
 
 /**
@@ -72,8 +172,15 @@ export function getBaseTestDatabaseUrl(): string {
  * database we recognise means a database nobody anticipated fails CLOSED.
  *
  * `_w<n>` is the per-worker TEMPLATE clone globalSetup creates.
+ * `_c<8 hex>` is the per-CHECKOUT slot from `checkoutDbSlot()` (#1171 mode 3).
+ *
+ * The slot is admitted by a FIXED shape rather than by loosening the pattern:
+ * still anchored at both ends, still an allowlist, and `inflect_compliance_test`,
+ * `agrent_production_testbed`, `latest_backup`, `protest_db` and `contest_db`
+ * all still fail closed. Widening this to something like `(_.*)?` would have
+ * admitted every one of them.
  */
-const ALLOWED_TEST_DB = /^(agri_saas_test|ci_testdb)(_w\d+)?$/;
+const ALLOWED_TEST_DB = /^(agri_saas_test|ci_testdb)(_c[0-9a-f]{8})?(_w\d+)?$/;
 
 /**
  * Throw unless `url` names a database this repo's tests own.
