@@ -82,7 +82,13 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
                     tenant: z
                         .object({ id: z.string(), name: z.string(), slug: z.string() })
                         .nullable(),
-                })
+                    featureFlags: z
+                        .record(z.string(), z.boolean())
+                        .openapi({
+                            description:
+                                'Runtime feature flags, ALREADY RESOLVED for this caller — cohort-gated flags are narrowed server-side, so a client never sees one enabled only for someone else. An ABSENT key means OFF; never treat a missing key as default-on. An EMPTY OBJECT is a legitimate state meaning everything is off, and is what the global kill switch returns. Flags are DB-backed and read at request time, never NEXT_PUBLIC_* (baked in at build time); the server caches the table for 30s, which is the propagation bound for a flip. Re-read rather than caching across sessions.',
+                            example: { 'social.profiles': false },
+                        }),})
                 .openapi('CurrentUser'),
         },
     });

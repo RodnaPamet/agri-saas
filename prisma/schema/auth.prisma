@@ -749,6 +749,7 @@ model User {
   knowledgeAcks                 KnowledgeAcknowledgement[]
   // Enterprise-grain — payroll/labour cost register.
   costEntriesCreated            CostEntry[]                  @relation("CostEntryCreator")
+  featureFlagCohorts FeatureFlagCohortMember[] @relation("FeatureFlagCohortMemberships")
 }
 
 model Account {

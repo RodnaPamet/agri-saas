@@ -50,6 +50,13 @@ describe('Static Analysis: No process.env fallbacks', () => {
             if (file.endsWith('middleware.ts') && !file.includes('pii-middleware')) continue;
             // Dub-ported utility files use process.env by upstream design
             if (file.includes('dub-utils')) continue;
+            // Feature flags read FEATURE_FLAGS_FORCE_OFF from process.env on
+            // every call, for the same reason ui-config does below: it is a
+            // RUNTIME switch. Going through `@/env` would capture it once at
+            // module load, so a container started before the switch was set
+            // would ignore it until restarted — exactly when a kill switch
+            // has to work.
+            if (file.includes('feature-flags.ts')) continue;
             // ui-config endpoint is intentionally a runtime process.env
             // reader so operators can toggle AUTH_CREDENTIALS_UI_HIDDEN
             // without a rebuild/rollout (NEXT_PUBLIC_* inlines at build
