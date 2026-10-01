@@ -1333,8 +1333,31 @@ user-chosen password MUST import AND call
 in-memory mutation regression proof confirms the detector catches
 removals. The structural scan auto-fails any new route that parses
 a `password` / `newPassword` / `currentPassword` Zod field without
-registering — define password schemas inline in the route file so
-the scan sees them.
+registering.
+
+**The scan FOLLOWS IMPORTS** (`tests/helpers/password-schema-graph.ts`,
+#1166), and the sentence that used to end this paragraph — *"define
+password schemas inline in the route file so the scan sees them"* — is
+gone because following it cost you the API contract. The scan was a
+regex over route FILES, so a field declared in a shared schema module
+was invisible: `auth/change-password` and `auth/reset-password` scored
+2 and 1 matches, and **`auth/register` — the primary signup route —
+scored 0**, because it imports `AuthActionSchema` from `@/lib/schemas`.
+Nothing was exposed (the curated list names it and asserts the call),
+but the half of the guard that catches a route nobody registered was
+blind to the shape the most important password route already had. The
+inline convention could not be followed either:
+`scripts/openapi-build.ts` registers components by walking the
+`@/lib/schemas` module namespace, so moving `AuthRegisterSchema` into
+the route file drops `AuthRegisterRequest` from
+`src/generated/openapi.json` — measured, it reddens the full-spec
+drift check in `tests/contracts/api-schemas.test.ts` and orphans that
+schema's contract snapshot. The two inline password schemas are
+absent from the spec for exactly that reason. **So declare a request
+schema in `@/lib/schemas` as GAP-10 says, and import it by NAME** —
+resolution is per-symbol, and a namespace import
+(`import * as s from '@/lib/schemas'`) has no symbol to follow, which
+the guard asserts no route file uses.
 
 **See `docs/epic-e-observability.md`** for the Epic E operator
 runbook (verification commands, rollback procedures, how to add a

@@ -18,12 +18,49 @@
  *   2. Await the call before persisting the password hash.
  *   3. Add an entry to `HIBP_REQUIRED_ROUTES` below with the file path
  *      and the Zod field name so failures are self-documenting.
+ *
+ * The structural half (test 2) finds the route whether its password field
+ * is declared in the route file or in a shared schema module — it resolves
+ * the route's imports per symbol. Declaring one in `@/lib/schemas` is the
+ * right thing to do for a request schema, because that module is the single
+ * source of truth for the generated OpenAPI spec; it used to cost the route
+ * its visibility to this guard, and no longer does (#1166).
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 
-const REPO_ROOT = path.resolve(__dirname, '../..');
+import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
+import {
+    findPasswordFields,
+    lastWalkSymbolVisits,
+    MAX_HOPS,
+    namespaceImportSpecs,
+    PASSWORD_FIELD_NAMES,
+    WALK_BUDGET_PER_ROUTE,
+} from '../helpers/password-schema-graph';
+
+/**
+ * Every `route.ts` under the API tree.
+ *
+ * `collectSourceFiles` rather than a hand-rolled walk: the walk this
+ * replaced (`walkRouteFiles`) was measured by `selector-teeth` on
+ * 2026-09-29 and SURVIVED being gutted to `return []` — the scan below is a
+ * `for` over its result, and an empty list produces no violations. The
+ * helper refuses to return fewer than `floor` files instead, which is a
+ * guarantee rather than a mutation someone has to remember to run.
+ *
+ * Floor 300 against 369 today: close enough to reality to catch an exclude
+ * predicate that ate most of the tree, loose enough for ordinary churn.
+ */
+function allRouteFiles(): string[] {
+    return collectSourceFiles({
+        roots: ['src/app/api'],
+        extensions: ['.ts'],
+        exclude: (rel) => !rel.endsWith('route.ts'),
+        floor: 300,
+    });
+}
 
 const HIBP_REQUIRED_ROUTES: ReadonlyArray<{
     /** Path relative to repo root. */
@@ -64,28 +101,6 @@ const IMPORT_RE =
  * invoked rather than dead-imported.
  */
 const CALL_RE = /\bcheckPasswordAgainstHIBP\s*\(/;
-
-/**
- * Password-field heuristic.
- * Detects Zod schema fields whose name looks like a password input.
- * Captures the field name for diagnostic messages.
- */
-const PASSWORD_FIELD_RE =
-    /\b(password|newPassword|currentPassword|confirmPassword)\s*:\s*z\./g;
-
-function walkRouteFiles(dir: string): string[] {
-    const out: string[] = [];
-    if (!fs.existsSync(dir)) return out;
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-            out.push(...walkRouteFiles(full));
-        } else if (entry.name === 'route.ts' || entry.name === 'route.tsx') {
-            out.push(full);
-        }
-    }
-    return out;
-}
 
 function hasImport(src: string): boolean {
     return IMPORT_RE.test(src);
@@ -149,6 +164,18 @@ describe('HIBP coverage guardrail — curated list integrity', () => {
         expect(HIBP_REQUIRED_ROUTES.length).toBeGreaterThan(0);
     });
 
+    it('every registered field name is one the detector looks for', () => {
+        // A route registered under a field name outside
+        // `PASSWORD_FIELD_NAMES` is a route the structural scan can never
+        // find on its own — it would be held by the curated list alone,
+        // which is the asymmetry #1166 was about. Adding a field name here
+        // means adding it to the detector's vocabulary in the same change.
+        const unknown = HIBP_REQUIRED_ROUTES.map((r) => r.field).filter(
+            (field) => !(PASSWORD_FIELD_NAMES as readonly string[]).includes(field),
+        );
+        expect(unknown).toEqual([]);
+    });
+
     test.each(HIBP_REQUIRED_ROUTES.map((r) => [r.file, r] as const))(
         '%s exists, imports, and calls checkPasswordAgainstHIBP',
         (relPath, entry) => {
@@ -209,88 +236,195 @@ describe('HIBP coverage guardrail — curated list integrity', () => {
 // ── Test 2 — structural scan ───────────────────────────────────────────────
 
 describe('HIBP coverage guardrail — structural scan', () => {
-    it('the scan reaches the routes it polices (positive control)', () => {
-        // WITHOUT THIS THE STRUCTURAL HALF IS VACUOUS. `selector-teeth`
-        // measured `walkRouteFiles` on 2026-09-29 and it SURVIVED being
-        // gutted to `return []`: the assertion below is a `for` over
-        // `allRoutes`, so an empty list produces no violations and the guard
-        // passes having opened nothing. The curated list in test 1 would keep
-        // working; the half that catches a NEW password route would not.
+    it('the scan reaches EVERY route it polices (positive control)', () => {
+        // WITHOUT THIS THE STRUCTURAL HALF IS VACUOUS. The scan below is a
+        // `for` over a collected list, so an empty list produces no
+        // violations and the guard passes having opened nothing —
+        // `selector-teeth` measured exactly that against the old
+        // `walkRouteFiles` on 2026-09-29. The collector now REFUSES a short
+        // list (`collectSourceFiles`, floor 300), and this control asserts
+        // on the DETECTOR, which a floor cannot speak for.
         //
-        // The control is tied to HIBP_REQUIRED_ROUTES rather than to a bare
-        // count, because that catches a second failure the count cannot: if
-        // PASSWORD_FIELD_RE ever stops matching, these three known routes go
-        // quiet and every future one with them.
-        const apiDir = path.join(REPO_ROOT, 'src/app/api');
-        const allRoutes = walkRouteFiles(apiDir);
+        // Tied to HIBP_REQUIRED_ROUTES rather than to a bare count, because
+        // a count cannot detect a rotted pattern: if the detector stops
+        // matching, these three known routes go quiet and every future one
+        // with them.
+        const allRoutes = allRouteFiles();
+        expect(allRoutes.length).toBeGreaterThan(300);
 
-        // 369 route files today; 200 fails on a collapse without being
-        // brittle to ordinary churn.
-        expect(allRoutes.length).toBeGreaterThan(200);
-
-        // The WALK must see every registered route.
+        // The COLLECTOR must see every registered route.
         for (const r of HIBP_REQUIRED_ROUTES) {
             expect(allRoutes).toContain(path.join(REPO_ROOT, r.file));
         }
 
-        // And the PATTERN must still match something, or it has rotted and
-        // every future password route goes quiet with it.
-        const matched = HIBP_REQUIRED_ROUTES.filter(
-            (r) =>
-                [
-                    ...fs
-                        .readFileSync(path.join(REPO_ROOT, r.file), 'utf8')
-                        .matchAll(PASSWORD_FIELD_RE),
-                ].length > 0,
-        ).map((r) => r.file);
-        expect(matched.length).toBeGreaterThan(0);
-
-        // NOT every registered route matches, and that is a REAL GAP rather
-        // than a quirk of this test. `auth/register` imports
-        // `AuthActionSchema` from `@/lib/schemas`, so its password field is
-        // declared outside the route file and this scan cannot see it —
-        // which is exactly what CLAUDE.md means by "define password schemas
-        // inline in the route file so the scan sees them".
+        // And the DETECTOR must find a password field in every one of them.
+        // This is the assertion #1166 closed. It used to read
         //
-        // It is safe TODAY only because the curated list in test 1 names it
-        // and asserts the HIBP call. A NEW signup route written the same way
-        // would be invisible here. Tracked in #1166; this assertion pins the
-        // blind spot so closing it makes a test go red rather than passing
-        // silently either way.
-        const blind = HIBP_REQUIRED_ROUTES.filter((r) => !matched.includes(r.file)).map(
-            (r) => r.file,
+        //     expect(blind).toEqual(['src/app/api/auth/register/route.ts'])
+        //
+        // pinning `auth/register` as a route the scan could not see: its
+        // password field is declared on `AuthRegisterSchema` in
+        // `@/lib/schemas`, and the scan read route files only, so the
+        // primary signup route scored 0 matches where the other two scored
+        // 2 and 1. Nothing was exposed — the curated list in test 1 names
+        // it — but the half of this guard that exists to catch a route
+        // NOBODY REGISTERED was blind to the shape the most important
+        // password route in the repo already has.
+        const blind = HIBP_REQUIRED_ROUTES.filter(
+            (r) => findPasswordFields(path.join(REPO_ROOT, r.file)).length === 0,
+        ).map((r) => r.file);
+        expect(blind).toEqual([]);
+
+        // Import-following is the capability that closed it, so assert the
+        // capability and not just the outcome. A detector that had quietly
+        // reverted to reading route files only would still satisfy
+        // `blind === []` the moment someone moved the field inline — this
+        // fails instead, naming the route whose field is declared
+        // elsewhere.
+        const external = HIBP_REQUIRED_ROUTES.flatMap((r) =>
+            findPasswordFields(path.join(REPO_ROOT, r.file))
+                .filter((hit) => hit.declaredIn !== r.file)
+                .map((hit) => `${r.file} -> ${hit.declaredIn}`),
         );
-        expect(blind).toEqual(['src/app/api/auth/register/route.ts']);
+        expect(external).toEqual([
+            'src/app/api/auth/register/route.ts -> src/lib/schemas/index.ts',
+        ]);
+
+        // The chain that proves it: route → AuthActionSchema →
+        // AuthRegisterSchema. Two symbol hops, well inside MAX_HOPS, so the
+        // cap is a backstop rather than something the real schema layer is
+        // pressed against.
+        const registerHits = findPasswordFields(
+            path.join(REPO_ROOT, 'src/app/api/auth/register/route.ts'),
+        );
+        expect(registerHits.map((h) => h.field)).toEqual(['password']);
+        expect(registerHits[0].via).toEqual([
+            'src/app/api/auth/register/route.ts#AuthActionSchema',
+            'src/lib/schemas/index.ts#AuthActionSchema',
+            'src/lib/schemas/index.ts#AuthRegisterSchema',
+        ]);
+        expect(registerHits[0].via.length).toBeLessThan(MAX_HOPS);
     });
 
-    it('every route.ts that parses a password field is registered', () => {
-        const apiDir = path.join(REPO_ROOT, 'src/app/api');
-        const allRoutes = walkRouteFiles(apiDir);
+    it('the namespace-import detector can see one (positive control)', () => {
+        // The assertion below it is `expect(offenders).toEqual([])`, which an
+        // empty selection satisfies for free: a `namespaceImportSpecs` that
+        // always answered `[]` would pass it forever. So prove the detector
+        // reports one where one exists.
+        //
+        // `src/lib/db/rls-middleware.ts` carries
+        // `import * as prismaModule from '@/lib/prisma'` as a deliberate
+        // pattern. If it ever stops, this control is the thing that says so —
+        // repoint it at another witness (`src/lib/audit/audit-writer.ts` and
+        // `src/app-layer/usecases/sso.ts` both carry one today) rather than
+        // deleting it.
+        const witness = path.join(REPO_ROOT, 'src/lib/db/rls-middleware.ts');
+        expect(fs.existsSync(witness)).toBe(true);
+        expect(namespaceImportSpecs(witness)).toEqual(['@/lib/prisma']);
+
+        // And an external namespace import is NOT reported — there is
+        // nothing of ours to follow into a package, so counting one would
+        // make the guard below fail on every file that imports `fs`.
+        expect(namespaceImportSpecs(__filename)).toEqual([]);
+    });
+
+    it('no route reaches its schema through a namespace import', () => {
+        // The one shape `findPasswordFields` cannot resolve. `import * as s
+        // from '@/lib/schemas'` has no single symbol to follow, and
+        // following the whole module would mark all 40 routes that import
+        // from that barrel as password-handling to find the 1 that is.
+        //
+        // So the gap is asserted shut rather than left to be discovered:
+        // zero route files use one today, and the first one to appear
+        // fails here instead of silently becoming invisible to the scan.
+        const offenders = allRouteFiles()
+            .filter((abs) => namespaceImportSpecs(abs).length > 0)
+            .map((abs) => `${path.relative(REPO_ROOT, abs)}: ${namespaceImportSpecs(abs).join(', ')}`);
+        if (offenders.length > 0) {
+            throw new Error(
+                [
+                    'These route files use a repo-internal namespace import:',
+                    ...offenders.map((o) => `  ${o}`),
+                    '',
+                    'The HIBP structural scan resolves imports PER SYMBOL, so a',
+                    'namespace import hides whatever schema the route parses. Import',
+                    'the schema by name, or register the route in',
+                    'HIBP_REQUIRED_ROUTES if it handles a password.',
+                ].join('\n'),
+            );
+        }
+        expect(offenders).toEqual([]);
+    });
+
+    it('every route that parses a password field is registered', () => {
+        const allRoutes = allRouteFiles();
         const registeredFiles = new Set(
             HIBP_REQUIRED_ROUTES.map((r) => path.join(REPO_ROOT, r.file)),
         );
 
         const violations: string[] = [];
+        let scanned = 0;
+        let detected = 0;
 
         for (const absFile of allRoutes) {
-            const src = fs.readFileSync(absFile, 'utf8');
-            const matches = [...src.matchAll(PASSWORD_FIELD_RE)];
-            if (matches.length === 0) continue;
+            scanned++;
+            const hits = findPasswordFields(absFile);
+            if (hits.length === 0) continue;
+            detected++;
 
             if (!registeredFiles.has(absFile)) {
-                const fieldNames = [...new Set(matches.map((m) => m[1]))].join(', ');
+                const fieldNames = [...new Set(hits.map((h) => h.field))].join(', ');
+                const where = [...new Set(hits.map((h) => h.declaredIn))].join(', ');
                 const rel = path.relative(REPO_ROOT, absFile);
                 violations.push(
-                    `Route \`${rel}\` parses a password field \`${fieldNames}\` but is not` +
-                        ` registered in HIBP_REQUIRED_ROUTES. Add an entry so the HIBP check is` +
-                        ` enforced on this route, or document why it's exempt.`,
+                    `Route \`${rel}\` parses a password field \`${fieldNames}\` (declared in` +
+                        ` ${where}) but is not registered in HIBP_REQUIRED_ROUTES. Add an entry` +
+                        ` so the HIBP check is enforced on this route, or document why it's` +
+                        ` exempt.\n  reached via: ${hits[0].via.join(' -> ')}`,
                 );
             }
         }
 
         if (violations.length > 0) {
-            throw new Error(violations.join('\n\n'));
+            throw new Error(
+                [
+                    ...violations,
+                    '',
+                    `(scanned ${scanned} route files, ${detected} of them password-handling)`,
+                ].join('\n\n'),
+            );
         }
+
+        // Print the denominator next to the answer: a scan reporting zero
+        // violations over zero detections is the vacuous pass this control
+        // exists to rule out.
+        expect(scanned).toBeGreaterThan(300);
+        expect(detected).toBe(HIBP_REQUIRED_ROUTES.length);
+    });
+
+    it('the import walk stays inside its budget', () => {
+        // This is what holds `ZOD_SHAPED_RE` in `password-schema-graph.ts`.
+        // Deleting that gate does NOT produce false positives — measured, it
+        // flags the same three routes — so there was no correctness
+        // assertion available to pin it. What it does produce is 38x the
+        // work (2,558 symbol visits → 97,443; 0.8s → 4.4s over 369 routes),
+        // which is a budget, so a budget is what guards it.
+        const routes = allRouteFiles();
+        let visits = 0;
+        for (const abs of routes) {
+            findPasswordFields(abs);
+            visits += lastWalkSymbolVisits();
+        }
+        const perRoute = visits / routes.length;
+        if (perRoute >= WALK_BUDGET_PER_ROUTE) {
+            throw new Error(
+                `HIBP import walk cost ${visits} symbol visits over ${routes.length} routes ` +
+                    `(${perRoute.toFixed(1)}/route, budget ${WALK_BUDGET_PER_ROUTE}). ` +
+                    `Measured 6.9/route with the Zod composition gate in ` +
+                    `password-schema-graph.ts and 264/route without it — check that gate first.`,
+            );
+        }
+        expect(perRoute).toBeLessThan(WALK_BUDGET_PER_ROUTE);
     });
 });
 

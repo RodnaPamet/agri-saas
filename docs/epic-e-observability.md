@@ -47,7 +47,7 @@
 |---|---|---|
 | E.2 — retry + idempotency | `src/app-layer/events/audit-stream.ts` (retry loop around `postFn`), `src/app-layer/events/webhook-headers.ts` (`buildOutboundHeaders`, `computeBatchId`) | `tests/unit/audit-stream.test.ts` (cases A–D — happy retry, double-fail, network throw, kill-switch), `tests/unit/webhook-headers.test.ts` (header shape + determinism) |
 | E.3 — SIGTERM drain | `src/lib/observability/shutdown.ts` (`installShutdownHandlers`), `src/lib/observability/instrumentation.ts` (`shutdownTelemetry`), `src/lib/observability/sentry.ts` (`shutdownSentry`), `src/lib/observability/shutdown-budget.ts` | `tests/unit/observability/shutdown.test.ts` (order, idempotence, partial-failure isolation), `tests/unit/observability/shutdown-helpers.test.ts` (timeout + noop paths), `tests/guardrails/shutdown-budget-sanity.test.ts` (sum ≤ ceiling) |
-| E.4 — HIBP guardrail | `tests/guardrails/hibp-coverage.test.ts` + the curated `HIBP_REQUIRED_ROUTES` constant inside it | Self-contained; extends `src/app/api/auth/register/route.ts` as the seed entry |
+| E.4 — HIBP guardrail | `tests/guardrails/hibp-coverage.test.ts` + the curated `HIBP_REQUIRED_ROUTES` constant inside it, over the import-following detector in `tests/helpers/password-schema-graph.ts` | Self-contained; extends `src/app/api/auth/register/route.ts` as the seed entry |
 
 ## Why each design choice
 
@@ -184,6 +184,12 @@ When the first password-change / reset / recovery route lands:
 3. Run `SKIP_ENV_VALIDATION=1 npx jest tests/guardrails/hibp-coverage.test.ts`.
    Both the curated-list integrity check AND the structural scan
    should pass.
+
+The structural scan resolves the route's imports per symbol
+(`tests/helpers/password-schema-graph.ts`, #1166), so it finds the
+password field whether the schema is declared in the route file or in
+`@/lib/schemas`. Import it **by name** — a namespace import has no
+symbol to follow, and the guard fails on one in any route file.
 
 ## Adding a new outbound webhook
 
