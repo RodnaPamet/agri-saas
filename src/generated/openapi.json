@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "3.67.4",
+    "version": "3.68.1",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -4464,6 +4464,9 @@
             "items": {
               "type": "string"
             }
+          },
+          "version": {
+            "type": "integer"
           }
         },
         "required": [
@@ -4479,9 +4482,41 @@
           "registrationEkatte",
           "odbhCity",
           "sizeHa",
-          "grainProduced"
+          "grainProduced",
+          "version"
         ],
         "description": "The one-per-tenant farm identity block printed on the БАБХ ДНЕВНИК. Every field is nullable because the paper form tolerates blanks — an all-null body is the normal answer for a tenant that has not filled it in, not an error. egn/eik/urn are encrypted at rest and returned as plaintext: treat them as sensitive on screen and in logs. sizeHa is a number and grainProduced is an array that is [] rather than null."
+      },
+      "FarmProfileStaleDataError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "example": "NOT_FOUND"
+              },
+              "message": {
+                "type": "string",
+                "example": "Practice not found"
+              },
+              "requestId": {
+                "type": "string",
+                "example": "req_01HG7…"
+              },
+              "details": {}
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "description": "A 409 `STALE_DATA` from the farm-profile optimistic lock. `error.details` carries `currentVersion` (the stored version) and `expectedVersion` (what you sent). Read them from `error.details`, NOT from the body root — the envelope is nested, and a client that reads the root gets nothing and may then retry with no precondition at all. `currentVersion: 0` means the row does not exist: re-read and retry as a create. It is a conflict to resolve, never a success."
       },
       "FarmRecordGenerateRequest": {
         "type": "object",
@@ -10778,7 +10813,7 @@
             "maxItems": 50
           }
         },
-        "description": "MERGE SEMANTICS (#1176). Every field is optional and an ABSENT field is LEFT UNCHANGED — only an explicit `null` clears one, and a blank string clears one too. So `{\"urn\":\"123\"}` sets `urn` and touches nothing else. `grainProduced` follows the same rule: absent leaves the list alone, while `[]` or `null` clears it. This was NOT the behaviour before #1176, when an omitted field was nulled and a per-field PUT wiped the record — if you are reading a cached copy of this spec, check that it carries this sentence. A read-modify-write that sends all thirteen fields is still correct and is what the web admin page does; it is simply no longer required. Concurrency: there is no `If-Match` precondition on this route YET, so concurrent edits are last-write-wins per FIELD (merge semantics means two admins editing DIFFERENT fields no longer clobber each other, which replace semantics did). `sizeHa` is a number, bounded at 1,000,000 and refused if negative — and null is not 0: a farm nobody has measured and a farm of zero hectares are different claims. `grainProduced` holds up to 50 strings of at most 120 characters; the server drops blanks and de-duplicates case-insensitively while PRESERVING ORDER, so re-read the response rather than keeping what you sent."
+        "description": "MERGE SEMANTICS (#1176). Every field is optional and an ABSENT field is LEFT UNCHANGED — only an explicit `null` clears one, and a blank string clears one too. So `{\"urn\":\"123\"}` sets `urn` and touches nothing else. `grainProduced` follows the same rule: absent leaves the list alone, while `[]` or `null` clears it. This was NOT the behaviour before #1176, when an omitted field was nulled and a per-field PUT wiped the record — if you are reading a cached copy of this spec, check that it carries this sentence. A read-modify-write that sends all thirteen fields is still correct and is what the web admin page does; it is simply no longer required. Concurrency: send `If-Match: <version>` to get a precondition — a stale one is a 409 (see below). WITHOUT it, writes are last-write-wins per FIELD: merge semantics already means two admins editing DIFFERENT fields no longer clobber each other, so the precondition closes the narrower SAME-field race rather than the whole lost-update problem. A body that mentions NO field is a true no-op: nothing is written and the version does NOT move, so an empty PUT cannot manufacture a conflict for anyone else. `sizeHa` is a number, bounded at 1,000,000 and refused if negative — and null is not 0: a farm nobody has measured and a farm of zero hectares are different claims. `grainProduced` holds up to 50 strings of at most 120 characters; the server drops blanks and de-duplicates case-insensitively while PRESERVING ORDER, so re-read the response rather than keeping what you sent."
       },
       "UserRef": {
         "type": "object",
@@ -40883,7 +40918,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The profile.",
+            "description": "The profile. `ETag` carries the version as a strong tag; `version` carries it in the body.",
             "content": {
               "application/json": {
                 "schema": {
@@ -40994,7 +41029,7 @@
       "put": {
         "operationId": "updateFarmProfile",
         "summary": "Upsert the tenant’s farm profile",
-        "description": "Requires `admin.manage`. An upsert, so the first write creates the row. \n\nA BLANK STRING CLEARS a field — it is not ignored. Send only what you mean to keep, or read first and send the whole object back. \n\nThe server normalises on write: text is trimmed and sanitised, a negative `sizeHa` is refused (stored as null), and `grainProduced` has blanks dropped and duplicates removed case-insensitively while PRESERVING ORDER. So the response can legitimately differ from what you sent — re-read it from the response rather than keeping the submitted values, or the screen will disagree with the database.",
+        "description": "Requires `admin.manage`. An upsert, so the first write creates the row. \n\nA BLANK STRING CLEARS a field — it is not ignored. An ABSENT field is left ALONE (see the body schema) — true since #1176, and this sentence previously said the opposite. \n\nThe server normalises on write: text is trimmed and sanitised, a negative `sizeHa` is refused (stored as null), and `grainProduced` has blanks dropped and duplicates removed case-insensitively while PRESERVING ORDER. So the response can legitimately differ from what you sent — re-read it from the response rather than keeping the submitted values, or the screen will disagree with the database.",
         "tags": [
           "Admin"
         ],
@@ -41015,6 +41050,17 @@
             "required": true,
             "name": "tenantSlug",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The `version` you last read, as a BARE INTEGER (`5`) or a STRONG entity-tag (`\"5\"`) — both are accepted, and the `ETag` from GET round-trips verbatim. A WEAK tag (`W/\"5\"`) is REFUSED with a 400: RFC 7232 forbids weak comparison for If-Match and it is meaningless for a version lock. Anything else non-numeric is also a 400 rather than being ignored — unlike the journal and field-operations routes, which silently fall through to NO precondition on a header they cannot parse (#1182). OPTIONAL: omit it and the write is last-write-wins, exactly as before this lock existed. Omitting it is not an error and never will be without notice — an installed mobile build sends none. `If-Match: 0` means \"the profile does not exist yet, create it\": 0 is a sentinel no stored row carries, so it fails with a 409 if someone created the row first.",
+              "example": "5"
+            },
+            "required": false,
+            "description": "The `version` you last read, as a BARE INTEGER (`5`) or a STRONG entity-tag (`\"5\"`) — both are accepted, and the `ETag` from GET round-trips verbatim. A WEAK tag (`W/\"5\"`) is REFUSED with a 400: RFC 7232 forbids weak comparison for If-Match and it is meaningless for a version lock. Anything else non-numeric is also a 400 rather than being ignored — unlike the journal and field-operations routes, which silently fall through to NO precondition on a header they cannot parse (#1182). OPTIONAL: omit it and the write is last-write-wins, exactly as before this lock existed. Omitting it is not an error and never will be without notice — an installed mobile build sends none. `If-Match: 0` means \"the profile does not exist yet, create it\": 0 is a sentinel no stored row carries, so it fails with a 409 if someone created the row first.",
+            "name": "If-Match",
+            "in": "header"
           }
         ],
         "requestBody": {
@@ -41028,7 +41074,7 @@
         },
         "responses": {
           "200": {
-            "description": "The stored profile, AFTER normalisation.",
+            "description": "The stored profile, AFTER normalisation. `ETag` carries the NEW version, so a client need not re-GET before its next write.",
             "content": {
               "application/json": {
                 "schema": {
@@ -41073,6 +41119,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Optimistic-lock conflict — the profile moved on, or you sent a version for a row that does not exist. Re-read and retry; do NOT treat it as success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FarmProfileStaleDataError"
                 }
               }
             }

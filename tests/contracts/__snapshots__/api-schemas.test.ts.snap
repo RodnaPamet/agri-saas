@@ -4621,6 +4621,9 @@ exports[`API contract — per-schema snapshots schema: FarmProfile 1`] = `
       "items": {
         "type": "string"
       }
+    },
+    "version": {
+      "type": "integer"
     }
   },
   "required": [
@@ -4636,9 +4639,44 @@ exports[`API contract — per-schema snapshots schema: FarmProfile 1`] = `
     "registrationEkatte",
     "odbhCity",
     "sizeHa",
-    "grainProduced"
+    "grainProduced",
+    "version"
   ],
   "description": "The one-per-tenant farm identity block printed on the БАБХ ДНЕВНИК. Every field is nullable because the paper form tolerates blanks — an all-null body is the normal answer for a tenant that has not filled it in, not an error. egn/eik/urn are encrypted at rest and returned as plaintext: treat them as sensitive on screen and in logs. sizeHa is a number and grainProduced is an array that is [] rather than null."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: FarmProfileStaleDataError 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "error": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "example": "NOT_FOUND"
+        },
+        "message": {
+          "type": "string",
+          "example": "Practice not found"
+        },
+        "requestId": {
+          "type": "string",
+          "example": "req_01HG7…"
+        },
+        "details": {}
+      },
+      "required": [
+        "code",
+        "message"
+      ]
+    }
+  },
+  "required": [
+    "error"
+  ],
+  "description": "A 409 \`STALE_DATA\` from the farm-profile optimistic lock. \`error.details\` carries \`currentVersion\` (the stored version) and \`expectedVersion\` (what you sent). Read them from \`error.details\`, NOT from the body root — the envelope is nested, and a client that reads the root gets nothing and may then retry with no precondition at all. \`currentVersion: 0\` means the row does not exist: re-read and retry as a create. It is a conflict to resolve, never a success."
 }"
 `;
 
@@ -11313,7 +11351,7 @@ exports[`API contract — per-schema snapshots schema: UpdateFarmProfileRequest 
       "maxItems": 50
     }
   },
-  "description": "MERGE SEMANTICS (#1176). Every field is optional and an ABSENT field is LEFT UNCHANGED — only an explicit \`null\` clears one, and a blank string clears one too. So \`{\\"urn\\":\\"123\\"}\` sets \`urn\` and touches nothing else. \`grainProduced\` follows the same rule: absent leaves the list alone, while \`[]\` or \`null\` clears it. This was NOT the behaviour before #1176, when an omitted field was nulled and a per-field PUT wiped the record — if you are reading a cached copy of this spec, check that it carries this sentence. A read-modify-write that sends all thirteen fields is still correct and is what the web admin page does; it is simply no longer required. Concurrency: there is no \`If-Match\` precondition on this route YET, so concurrent edits are last-write-wins per FIELD (merge semantics means two admins editing DIFFERENT fields no longer clobber each other, which replace semantics did). \`sizeHa\` is a number, bounded at 1,000,000 and refused if negative — and null is not 0: a farm nobody has measured and a farm of zero hectares are different claims. \`grainProduced\` holds up to 50 strings of at most 120 characters; the server drops blanks and de-duplicates case-insensitively while PRESERVING ORDER, so re-read the response rather than keeping what you sent."
+  "description": "MERGE SEMANTICS (#1176). Every field is optional and an ABSENT field is LEFT UNCHANGED — only an explicit \`null\` clears one, and a blank string clears one too. So \`{\\"urn\\":\\"123\\"}\` sets \`urn\` and touches nothing else. \`grainProduced\` follows the same rule: absent leaves the list alone, while \`[]\` or \`null\` clears it. This was NOT the behaviour before #1176, when an omitted field was nulled and a per-field PUT wiped the record — if you are reading a cached copy of this spec, check that it carries this sentence. A read-modify-write that sends all thirteen fields is still correct and is what the web admin page does; it is simply no longer required. Concurrency: send \`If-Match: <version>\` to get a precondition — a stale one is a 409 (see below). WITHOUT it, writes are last-write-wins per FIELD: merge semantics already means two admins editing DIFFERENT fields no longer clobber each other, so the precondition closes the narrower SAME-field race rather than the whole lost-update problem. A body that mentions NO field is a true no-op: nothing is written and the version does NOT move, so an empty PUT cannot manufacture a conflict for anyone else. \`sizeHa\` is a number, bounded at 1,000,000 and refused if negative — and null is not 0: a farm nobody has measured and a farm of zero hectares are different claims. \`grainProduced\` holds up to 50 strings of at most 120 characters; the server drops blanks and de-duplicates case-insensitively while PRESERVING ORDER, so re-read the response rather than keeping what you sent."
 }"
 `;
 

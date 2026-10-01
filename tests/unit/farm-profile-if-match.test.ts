@@ -53,6 +53,7 @@ function makeCtx(): RequestContext {
 import * as fs from 'fs';
 import * as path from 'path';
 import { Prisma } from '@prisma/client';
+import { staleData, toApiErrorResponse } from '@/lib/errors/types';
 
 
 /** Source with comments stripped — see the sentinel assertion below. */
@@ -156,6 +157,38 @@ describe('farm-profile optimistic lock', () => {
         // silent-success bug would also produce no duplicate.
         expect(create).toHaveBeenCalledTimes(1);
         expect(pass).toBe(2); // the whole transaction ran twice
+    });
+});
+
+describe('the 409 WIRE shape — what the iOS decoder actually reads', () => {
+    /**
+     * Asserting the thrown DomainError is not enough: iOS decodes the
+     * SERIALISED body, and its APIClient docblock records that reading
+     * `currentVersion` off the top level "silently yields nil, and a keep-mine
+     * retry then sends no If-Match at all. The web client did exactly that for
+     * months (#922)."
+     *
+     * So a flat body here would make this route's conflict response manufacture
+     * the unguarded write the lock exists to prevent. The envelope is nested and
+     * this pins it.
+     */
+    it('nests both versions under error.details', () => {
+        const { payload, status } = toApiErrorResponse(
+            staleData('The farm profile changed while you were editing it.', {
+                currentVersion: 9,
+                expectedVersion: 4,
+            }),
+            'req-1',
+        );
+        expect(status).toBe(409);
+        expect(payload.error.code).toBe('STALE_DATA');
+        const details = payload.error.details as { currentVersion: number; expectedVersion: number };
+        expect(details.currentVersion).toBe(9);
+        expect(details.expectedVersion).toBe(4);
+        // The negative half: NOT at the top level, which is the shape that
+        // decodes to nil on the client.
+        expect((payload as unknown as Record<string, unknown>).currentVersion).toBeUndefined();
+        expect((payload.error as unknown as Record<string, unknown>).currentVersion).toBeUndefined();
     });
 });
 
