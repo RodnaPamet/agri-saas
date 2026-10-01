@@ -2456,6 +2456,53 @@ negated. Say what remains instead:
   you mock a module, assert the mock was CALLED** — "the mock did not apply"
   is silent whenever the real thing returns a lazily-failing handle.
 - **Two `DATABASE_URL` vars**: `DATABASE_URL` points to PgBouncer (transaction-mode, used at runtime). `DIRECT_DATABASE_URL` points directly to Postgres (used for Prisma migrations).
+- **A side effect that ANNOUNCES a write goes through `afterCommit`, never inline.**
+  `afterCommit(name, fn)` from `@/lib/db/after-commit` queues `fn` until the
+  OUTERMOST transaction commits; a rollback discards the queue unrun. Both
+  transaction helpers in `src/lib/db-context.ts` own a scope, placed OUTSIDE
+  `$transaction`, so a usecase may queue from inside its callback and the drain
+  happens after COMMIT. Reach for it for a `Notification` row, an SSE publish,
+  an outbox enqueue, a webhook — anything whose only job is to tell somebody
+  that a write happened.
+  **Why a collector and not "move the call after the closure":** a usecase
+  cannot know whether it is the outermost transaction. `runInTenantContext` IS a
+  `$transaction` and usecases call usecases, so a helper that moved its own
+  notify one level out would still be inside somebody else's. The queue is
+  addressed through `AsyncLocalStorage` — NOT the module-level stack
+  `audit-context.ts` uses, whose top under concurrent requests is whichever
+  request pushed last.
+  The defect it was built for: `notifyOtherParty` (exchange-messaging) wrote the
+  bell rows, published the SSE events and enqueued the mail from inside the
+  sender's still-open transaction, under a comment claiming the opposite. Those
+  writes land in an INDEPENDENT transaction (Prisma does not nest), so they
+  committed early — and a sender transaction that then rolled back left the
+  other party notified about a message that does not exist. Measured by
+  restoring the old line: 2 `Notification` rows where there must be 0
+  (`tests/integration/exchange-notify-after-commit.test.ts`).
+  Prisma's non-nesting also decides the conservative case: an inner
+  transaction's WRITES survive an outer rollback, its ANNOUNCEMENTS do not.
+- **The pg pool `max` is EXPLICIT, and a transaction that needs a second
+  connection deadlocks at it.** `PG_POOL_MAX` (`src/lib/db/pool-config.ts`) is
+  derived — `floor((25 − 1) / 2) = 12` — from pgbouncer's `DEFAULT_POOL_SIZE:
+  "25"` in `deploy/docker-compose.vm.yml`, the two containers that connect
+  through it (`app` + `worker`), and one slot reserved for an operator session.
+  It was `pg`'s default of 10 until #1191's P0.8: a ceiling nobody chose.
+  `connection_limit` in the URL is NOT the lever — with `@prisma/adapter-pg` the
+  pool is `pg`'s and that parameter is read by nobody.
+  `tests/guards/pg-pool-size-fits-pgbouncer.test.ts` re-derives it from the
+  compose file rather than trusting the comment.
+  **Two things inside a tenant transaction reach for a SECOND connection, and
+  that is the real concurrency ceiling** — measured 2026-10-01, the cliff is
+  exactly at `max` (11 concurrent fine, 12 all fail with P2028 after ~5.2s, and
+  a `pg_stat_activity` sample shows 12 backends all `idle in transaction`):
+  `withEncryptionExtension`'s `resolveTenantDekPair` reads the `Tenant` row
+  through the global client on EVERY model read and write (cached per tenant per
+  process, so it costs the extra connection once per tenant — a COLD tenant is
+  the dangerous one), and `appendAuditEntry` opens its own `$transaction` on the
+  global client for every audited write and is not cached. So the supportable
+  concurrency for audited writes is `max - 1`, which is why the P0.8 hardening
+  test runs 11 sends and not the 20 its roadmap asked for. Full sweep in
+  `docs/implementation-notes/2026-10-01-p0-8-after-commit-notifications.md`.
 - **Page-section rhythm** (Roadmap-5 PR-9): the spacing scale
   (`tight` / `compact` / `default` / `section` / `page`) is rich, but
   vertical page rhythm wants only TWO answers most of the time.

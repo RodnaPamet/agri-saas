@@ -7,6 +7,7 @@ import { withSoftDeleteExtension } from './soft-delete';
 import { withPiiEncryptionExtension } from './security/pii-middleware';
 import { withEncryptionExtension } from './db/encryption-middleware';
 import { withRlsTripwireExtension } from './db/rls-middleware';
+import { PG_POOL_MAX } from './db/pool-config';
 import { logger as auditMiddlewareLogger } from '@/lib/observability/logger';
 
 // ─── Write actions to intercept ───
@@ -292,6 +293,14 @@ function buildClient(): PrismaClient {
     // time, not module-import time.
     const adapter = new PrismaPg({
         connectionString: env.DATABASE_URL ?? '',
+        // EXPLICIT, because the alternative was `pg`'s default of 10 — a
+        // ceiling nobody chose and no file records. `connection_limit` in the
+        // URL would not do it: with a driver adapter the pool is `pg`'s and
+        // that parameter is read by nobody. The derivation (pgbouncer's 25
+        // transaction-mode server connections, two pooled containers, one slot
+        // reserved) lives in `./db/pool-config` and is re-checked against
+        // `deploy/docker-compose.vm.yml` by a guard.
+        max: PG_POOL_MAX,
     });
     return new PrismaClient({ adapter });
 }
