@@ -86,6 +86,38 @@ export function logitsToIdentification(
     };
 }
 
+/**
+ * Load the native ONNX runtime, or fail in a way an operator can act on.
+ *
+ * `onnxruntime-node` is an OPTIONAL dependency: its postinstall downloads a
+ * platform binary from the network, and a bare `RUN npm ci` in the Dockerfile
+ * made every image build depend on that download succeeding first time. One
+ * ETIMEDOUT reddened `Docker Build & Scan` on a commit whose diff was a single
+ * `scripts` entry. Optional means a failed download no longer fails the build;
+ * it also means the module can legitimately be ABSENT at runtime.
+ *
+ * Absence is unreachable in the current configuration — `getSession` throws on
+ * a missing `VISION_MODEL_PATH` before either import site runs, and production
+ * sets neither `VISION_MODEL_PATH` nor `VISION_BACKEND` — so this exists for
+ * the operator who later supplies a model on an image whose optional install
+ * failed. Without it they would get a raw `MODULE_NOT_FOUND` naming a package
+ * they never asked for, which reads as a code bug rather than an install one.
+ */
+async function loadOnnxRuntime(): Promise<typeof import('onnxruntime-node')> {
+    try {
+        return await import('onnxruntime-node');
+    } catch (cause) {
+        throw new Error(
+            'The ONNX vision backend needs `onnxruntime-node`, which is not installed in ' +
+                'this image. It is an OPTIONAL dependency because its postinstall downloads ' +
+                'a native binary, so a network failure at build time leaves it absent rather ' +
+                'than failing the build. Reinstall it, or set VISION_BACKEND to a provider ' +
+                'that does not need it.',
+            { cause },
+        );
+    }
+}
+
 export class OnnxVisionProvider implements VisionProvider {
     readonly backend = 'onnx' as const;
 
@@ -112,7 +144,7 @@ export class OnnxVisionProvider implements VisionProvider {
 
         // Dynamic import keeps the native addon off any module that only
         // needs the TYPES above (the orchestrator + tests can mock it).
-        this.sessionPromise = import('onnxruntime-node').then((ort) =>
+        this.sessionPromise = loadOnnxRuntime().then((ort) =>
             ort.InferenceSession.create(path),
         );
         return this.sessionPromise;
@@ -147,7 +179,7 @@ export class OnnxVisionProvider implements VisionProvider {
 
     async identify(image: VisionImage): Promise<PestIdentification> {
         const session = await this.getSession();
-        const ort = await import('onnxruntime-node');
+        const ort = await loadOnnxRuntime();
 
         const input = await this.preprocess(image);
         const tensor: Tensor = new ort.Tensor('float32', input, [1, 3, INPUT_SIZE, INPUT_SIZE]);

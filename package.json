@@ -165,7 +165,6 @@
         "next-auth": "4.24.15",
         "next-intl": "^4.14.7",
         "nodemailer": "^10.0.10",
-        "onnxruntime-node": "^1.30.0",
         "openai": "^7.23.0",
         "pdfkit": "^0.20.2",
         "pino": "^10.3.1",
@@ -193,6 +192,9 @@
         "web-vitals": "^6.2.2",
         "zod": "^4.6.5",
         "zod-to-json-schema": "^3.25.2"
+    },
+    "optionalDependencies": {
+        "onnxruntime-node": "^1.30.0"
     },
     "devDependencies": {
         "@axe-core/playwright": "^4.13.0",
