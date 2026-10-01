@@ -133,7 +133,13 @@ describe('farm-profile merge semantics (#1176)', () => {
         await upsertFarmProfile(makeCtx(), { urn: '123' });
 
         const update = lastUpdate();
-        expect(Object.keys(update)).toEqual(['urn']);
+        // `version` is excluded from the USER-FIELD key set: the optimistic
+        // lock bumps it on every write, so it is bookkeeping rather than
+        // something the caller said. Excluding it cannot hide a merge
+        // regression — its presence is asserted on the next line, and a user
+        // field leaking in would still fail this.
+        expect(Object.keys(update).filter((k) => k !== 'version')).toEqual(['urn']);
+        expect(update.version).toEqual({ increment: 1 });
         expect(update.urn).toBe('123');
         // Named explicitly, because "not in the keys" and "present as null"
         // are the two states this change exists to separate.
@@ -219,6 +225,9 @@ describe('farm-profile merge semantics (#1176)', () => {
         // The degenerate case, and the one most likely to be got wrong: a
         // caller who sends {} has said nothing about anything.
         await upsertFarmProfile(makeCtx(), {});
-        expect(lastUpdate()).toEqual({});
+        // Only the lock's own bump. "Said nothing about anything" still means no
+        // user field is written — `version` is the write itself being counted,
+        // not a value the caller supplied.
+        expect(lastUpdate()).toEqual({ version: { increment: 1 } });
     });
 });

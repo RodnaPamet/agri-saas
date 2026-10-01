@@ -1,0 +1,26 @@
+-- Optimistic-lock version for the farm profile, sent back as `If-Match` on PUT.
+--
+-- DEFAULT 1, NOT 0, and the difference is load-bearing rather than a style
+-- choice. `OperationParcel.version` next door defaults to 0 and is correct to:
+-- nothing there reports a version for a row that does not exist.
+--
+-- Here it would lose a write. GET returns an all-null shape for a tenant with no
+-- row rather than a 404, so a client can read a profile that does not exist yet
+-- and send its version back; that shape reports 0. If a stored row could also
+-- hold 0, then "I believe there is no row" and "there is a row nobody has
+-- edited" are the same precondition:
+--
+--   A GET -> no row, version 0        B GET -> no row, version 0
+--   A PUT If-Match: 0 -> creates the row, stored version 0
+--   B PUT If-Match: 0 -> MATCHES the stored 0 -> B overwrites A silently
+--
+-- B believed it was creating from nothing and clobbered a row it had never seen,
+-- and the precondition never fired — the exact lost update the lock exists to
+-- prevent, moved into the create window.
+--
+-- Defaulting to 1 makes 0 a value no stored row ever carries, so `If-Match: 0`
+-- means exactly "create" and can match nothing else.
+--
+-- NOT NULL with a default backfills every existing row at 1, which satisfies the
+-- same invariant (no stored row holds 0) without a data migration.
+ALTER TABLE "FarmProfile" ADD COLUMN "version" INTEGER NOT NULL DEFAULT 1;

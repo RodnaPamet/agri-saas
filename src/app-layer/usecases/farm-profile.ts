@@ -4,6 +4,8 @@ import { assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
+import { staleData } from '@/lib/errors/types';
+import { isUniqueViolation } from '@/lib/errors/prisma';
 
 /**
  * БАБХ farm-record — the one-per-tenant FarmProfile identity block printed on
@@ -70,6 +72,15 @@ type StringShape = Record<(typeof PROFILE_FIELDS)[number], string | null>;
 export type ProfileShape = StringShape & {
     sizeHa: number | null;
     grainProduced: string[];
+    /**
+     * Optimistic-lock version. Send it back as `If-Match` on PUT.
+     *
+     * 0 means NO ROW EXISTS YET — a sentinel, not a stored value. The column
+     * defaults to 1, so a real row always reports >= 1 and `If-Match: 0` can
+     * only ever mean "create". See the schema comment for the create race this
+     * closes.
+     */
+    version: number;
 };
 
 const EMPTY_PROFILE: ProfileShape = {
@@ -79,6 +90,9 @@ const EMPTY_PROFILE: ProfileShape = {
     // "nobody has filled this in" are the same fact here, and an array a
     // client can map over without a null check is the kinder shape.
     grainProduced: [],
+    // The sentinel. No stored row holds 0, so a client that reads an unset
+    // profile and sends this back is unambiguously saying "create".
+    version: 0,
 };
 
 /** Decimal → number. See the module note on why this is not a string. */
@@ -98,6 +112,10 @@ function project(row: Record<string, unknown> | null): ProfileShape {
         ),
         sizeHa: toNum(row.sizeHa),
         grainProduced: Array.isArray(row.grainProduced) ? (row.grainProduced as string[]) : [],
+        // A stored row always has one. The `?? 0` is not a default for real
+        // rows — it is unreachable for them — it keeps the type honest for a
+        // caller that hands this a partial record.
+        version: typeof row.version === 'number' ? row.version : 0,
     };
 }
 
@@ -127,6 +145,7 @@ export async function getFarmProfile(ctx: RequestContext): Promise<ProfileShape>
 export async function upsertFarmProfile(
     ctx: RequestContext,
     input: FarmProfileFields,
+    expectedVersion?: number,
 ): Promise<ProfileShape> {
     assertCanAdmin(ctx);
 
@@ -202,26 +221,120 @@ export async function upsertFarmProfile(
         grainProduced: said('grainProduced') ? normGrain(input.grainProduced) : [],
     };
 
-    return runInTenantContext(ctx, async (db) => {
-        const row = await db.farmProfile.upsert({
-            where: { tenantId: ctx.tenantId },
-            create,
-            update,
+    /**
+     * ONE attempt at the write, entirely inside one transaction.
+     *
+     * Returns the stored profile, or throws. Called at most twice: a concurrent
+     * CREATE makes the loser raise P2002, and that must be retried as a WHOLE
+     * transaction rather than caught and continued — see the loop below.
+     */
+    const attempt = async (): Promise<ProfileShape> =>
+        runInTenantContext(ctx, async (db) => {
+            let row: Record<string, unknown>;
+
+            if (expectedVersion === undefined) {
+                // UNGUARDED — no precondition was sent. Behaves exactly as it
+                // did before this lock existed: last-write-wins. Still bumps
+                // `version`, which is the half that matters: an unguarded write
+                // that left the version behind would silently corrupt the lock
+                // for every client that DOES send one. journal.paths.ts
+                // documents that exact defect on its own route; this does not
+                // inherit it.
+                row = (await db.farmProfile.upsert({
+                    where: { tenantId: ctx.tenantId },
+                    create,
+                    update: { ...update, version: { increment: 1 } },
+                })) as unknown as Record<string, unknown>;
+            } else {
+                // GUARDED. `upsert` cannot carry a precondition — its `where` is
+                // the unique selector, not a predicate — so the compare-and-swap
+                // is an `updateMany` and the create is a separate branch.
+                //
+                // `version: 0` never matches a stored row (the column defaults
+                // to 1), so an If-Match of 0 always falls through to the
+                // existence check below and is answered there.
+                const swapped = await db.farmProfile.updateMany({
+                    where: { tenantId: ctx.tenantId, version: expectedVersion },
+                    data: { ...update, version: { increment: 1 } },
+                });
+
+                if (swapped.count === 1) {
+                    row = (await db.farmProfile.findUniqueOrThrow({
+                        where: { tenantId: ctx.tenantId },
+                    })) as unknown as Record<string, unknown>;
+                } else {
+                    // count === 0 is AMBIGUOUS: the version moved, or there is
+                    // no row at all. Those want different answers, so read
+                    // rather than infer from the count.
+                    const existing = await db.farmProfile.findUnique({
+                        where: { tenantId: ctx.tenantId },
+                        select: { version: true },
+                    });
+
+                    if (existing) {
+                        throw staleData('The farm profile changed while you were editing it.', {
+                            currentVersion: existing.version,
+                            expectedVersion,
+                        });
+                    }
+                    if (expectedVersion !== 0) {
+                        // They held a version for a row that does not exist.
+                        // `currentVersion: 0` is the sentinel saying so — the
+                        // client should re-read and retry as a create.
+                        throw staleData('The farm profile no longer exists.', {
+                            currentVersion: 0,
+                            expectedVersion,
+                        });
+                    }
+                    // If-Match: 0 and genuinely no row -> this is a create.
+                    // A concurrent create raises P2002 here and the whole
+                    // transaction is retried.
+                    row = (await db.farmProfile.create({
+                        data: create,
+                    })) as unknown as Record<string, unknown>;
+                }
+            }
+
+            await logEvent(db, ctx, {
+                action: 'FARM_PROFILE_UPDATED',
+                entityType: 'FarmProfile',
+                entityId: row.id as string,
+                details: 'Farm profile updated',
+                detailsJson: {
+                    category: 'entity_lifecycle',
+                    entityName: 'FarmProfile',
+                    operation: 'updated',
+                    summary: 'Farm profile updated',
+                },
+            });
+
+            return project(row);
         });
 
-        await logEvent(db, ctx, {
-            action: 'FARM_PROFILE_UPDATED',
-            entityType: 'FarmProfile',
-            entityId: row.id,
-            details: 'Farm profile updated',
-            detailsJson: {
-                category: 'entity_lifecycle',
-                entityName: 'FarmProfile',
-                operation: 'updated',
-                summary: 'Farm profile updated',
-            },
-        });
-
-        return project(row as unknown as Record<string, unknown>);
-    });
+    /**
+     * P2002 is retried as a WHOLE transaction, never caught and continued.
+     *
+     * Two callers can both pass the existence check with no row and both reach
+     * `create`; the loser violates the unique `tenantId`. That error has already
+     * ABORTED the transaction by the time it surfaces, and there are no
+     * SAVEPOINTs in this codebase (the one textual mention, at
+     * exchange-messaging.ts:473, is a comment explaining their absence), so
+     * nothing further can run inside it — a catch-and-continue here reads
+     * correctly and silently commits nothing, which is exactly how #1168's
+     * swallowed notification looked.
+     *
+     * Re-running the whole thing is safe because the second pass is not a
+     * repeat: a row now exists, so it takes the 409 branch (or the update
+     * branch, if this caller genuinely holds the current version). ONE retry is
+     * enough — the row cannot go back to not existing, since nothing deletes a
+     * farm profile.
+     */
+    for (let i = 0; ; i++) {
+        try {
+            return await attempt();
+        } catch (err) {
+            if (i === 0 && isUniqueViolation(err)) continue;
+            throw err;
+        }
+    }
 }
