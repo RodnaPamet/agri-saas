@@ -71,6 +71,11 @@ interface Inventory {
 const README = [
     'Every path template this API serves. APPEND-ONLY.',
     '',
+    'ORDER: `routes` is sorted by `path` in UTF-16 CODE-UNIT order, never via',
+    'localeCompare — that resolves through the generating machine\'s ICU and',
+    'locale, so two machines could emit different bytes for the same surface.',
+    'tests/guards/route-inventory-ledger.test.ts asserts the order.',
+    '',
     'Consumed by native clients to check that a path they build still exists',
     '(agrent-ios#132) and by tests/guards/route-inventory-ledger.test.ts, which',
     'fails when a live path leaves the filesystem.',
@@ -150,7 +155,21 @@ function main(): void {
         (e) => e.status === 'live' && !onDisk.includes(e.path),
     );
 
-    const routes = [...byPath.values()].sort((a, b) => a.path.localeCompare(b.path));
+    // CODE-UNIT order, never `localeCompare`.
+    //
+    // This file is consumed by a drift check, so its byte order is part of its
+    // contract. `localeCompare` resolves through ICU and the generating
+    // machine's locale, which collates punctuation differently — it placed
+    // `/api/notifications/{id}` BEFORE `/api/notifications/stream` even though
+    // `{` is 0x7B and `s` is 0x73. Sixteen such inversions shipped in the first
+    // version of this file, caught by the iOS session reading it.
+    //
+    // Two machines regenerating the "same" inventory could therefore produce
+    // different bytes, and a reorder would read as a change — in the one
+    // artifact whose job is to make a real change impossible to miss.
+    const routes = [...byPath.values()].sort((a, b) =>
+        a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
+    );
     const next: Inventory = { _README: README, routes };
     fs.writeFileSync(outAbs, `${JSON.stringify(next, null, 2)}\n`);
 

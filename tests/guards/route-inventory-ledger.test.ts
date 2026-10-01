@@ -103,6 +103,19 @@ export function auditInventory(onDisk: readonly string[], routes: readonly Entry
     };
 }
 
+/**
+ * The first pair that is out of UTF-16 code-unit order, or null.
+ *
+ * Pure, like `auditInventory`, and for the same reason: the controls drive it
+ * with synthetic input to prove it can FAIL.
+ */
+export function firstOrderInversion(paths: readonly string[]): [string, string] | null {
+    for (let i = 0; i + 1 < paths.length; i += 1) {
+        if (paths[i] > paths[i + 1]) return [paths[i], paths[i + 1]];
+    }
+    return null;
+}
+
 const inventory = JSON.parse(
     fs.readFileSync(path.join(ROOT, INVENTORY_REL), 'utf8'),
 ) as { _README?: string[]; routes: Entry[] };
@@ -193,6 +206,38 @@ describe('route inventory — a path cannot leave silently', () => {
     // ── The ledger itself ────────────────────────────────────────────
 
     const audit = auditInventory(onDisk, inventory.routes);
+
+    it('control: firstOrderInversion finds a localeCompare-shaped inversion', () => {
+        // The exact pair that shipped: ICU collation put `{id}` before
+        // `stream`, though `{` is 0x7B and `s` is 0x73.
+        expect(
+            firstOrderInversion(['/api/notifications/{id}', '/api/notifications/stream']),
+        ).toEqual(['/api/notifications/{id}', '/api/notifications/stream']);
+        expect(firstOrderInversion(['/a', '/b', '/c'])).toBeNull();
+        expect(firstOrderInversion([])).toBeNull();
+        expect(firstOrderInversion(['/only'])).toBeNull();
+        // Equal neighbours are not an inversion; duplicates are a different
+        // defect and the walk control catches those.
+        expect(firstOrderInversion(['/same', '/same'])).toBeNull();
+    });
+
+    it('the inventory is in code-unit order, not locale order', () => {
+        // The byte order is part of this file's contract: it is consumed by a
+        // drift check, so a reorder reads as a change. The first version used
+        // `localeCompare`, which resolves through the generating machine's ICU
+        // and locale — 16 inversions shipped, and two machines could have
+        // emitted different bytes for the same route surface.
+        const inversion = firstOrderInversion(inventory.routes.map((e) => e.path));
+        if (inversion) {
+            throw new Error(
+                `route-inventory.json is out of code-unit order:\n` +
+                    `  ${inversion[0]}\n  ${inversion[1]}   <- sorts BEFORE the line above\n\n` +
+                    `The generator must sort with a plain code-unit comparator, never ` +
+                    `localeCompare.\nRe-run \`npm run routes:inventory\`.`,
+            );
+        }
+        expect(inversion).toBeNull();
+    });
 
     it('every live path in the inventory still exists on disk', () => {
         if (audit.vanished.length > 0) {
