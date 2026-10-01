@@ -150,6 +150,11 @@
       "documented": true
     },
     {
+      "path": "/api/auth/native/revoke",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/auth/native/start",
       "status": "live",
       "documented": true

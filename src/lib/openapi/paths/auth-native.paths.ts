@@ -222,4 +222,33 @@ export function registerAuthNativePaths(registry: OpenAPIRegistry): void {
             schema: NativeTokenPair,
         },
     });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/auth/native/revoke',
+        operationId: 'revokeNativeSession',
+        summary: 'Sign this device out',
+        description:
+            'Revokes the session the presented refresh token hangs from, plus every token on it. Send `{ "refreshToken": "…" }`. ' +
+            '\n\nSCOPE IS ONE DEVICE, NOT THE ACCOUNT. Other devices keep their own sessions and stay signed in. One caveat worth knowing rather than discovering: a native credential is a CHILD of the session the browser sign-in created, which in the ordinary flow was minted inside the system browser and is invisible to the user — but if that browser session was shared with an existing web login on the same machine, this ends that too. The blast radius is the session the credential descends from; that usually coincides with the device and is not guaranteed to. ' +
+            '\n\nANSWERS 200 EVEN FOR A TOKEN IT HAS NEVER SEEN (RFC 7009). Distinguishing unknown from revoked would be an oracle for which tokens exist, and sign-out is retried on a flaky network, so a second attempt must not error for work that already succeeded. You therefore cannot learn whether anything was revoked — and do not need to: drop your tokens regardless. A malformed body is the one exception, because that is the caller’s own bug rather than a statement about any token. ' +
+            '\n\nUnauthenticated by construction: the refresh token IS the credential, so this sits in the same abuse position as sign-in and is rate-limited at the pre-auth tier. ' +
+            '\n\nThis exists because `/api/auth/logout` only clears a cookie and the three real revoke routes are tenant-scoped — a native sign-out has no single farm to address. Without it, clearing local state leaves the refresh token valid.',
+        tags: ['Auth'],
+        security: NO_AUTH,
+        body: z
+            .object({
+                refreshToken: z
+                    .string()
+                    .min(1)
+                    .openapi({ description: 'The refresh token for the session to end.' }),
+            })
+            .openapi('NativeRevokeRequest'),
+        success: {
+            status: 200,
+            description:
+                'Acknowledged. `{ "revoked": true }` regardless of whether a token matched — see the description.',
+            schema: z.object({ revoked: z.literal(true) }).openapi('NativeRevokeResponse'),
+        },
+    });
 }
