@@ -44,10 +44,20 @@ const publishNotificationEvent = jest.fn();
 jest.mock('@/lib/notifications/notification-bus', () => ({
     publishNotificationEvent: (...a: unknown[]) => publishNotificationEvent(...a),
 }));
+// Both fakes wrap `runWithAfterCommit`, because the REAL helpers do (see
+// `src/lib/db-context.ts`). Without it an `afterCommit(...)` inside a usecase
+// finds no scope and fires immediately as an unawaited promise — so the notify
+// assertions below would run before the effect had, and read as "it never
+// notified". `require` inside the factory because `jest.mock` is hoisted above
+// the imports.
 jest.mock('@/lib/db-context', () => ({
     __esModule: true,
-    runInTenantContext: (_ctx: unknown, cb: (db: unknown) => unknown) => cb(mockPrisma),
-    withTenantDb: (_tenantId: string, cb: (db: unknown) => unknown) => cb(mockRecipientDb),
+    runInTenantContext: (_ctx: unknown, cb: (db: unknown) => unknown) =>
+        (require('@/lib/db/after-commit') as typeof import('@/lib/db/after-commit'))
+            .runWithAfterCommit(async () => cb(mockPrisma)),
+    withTenantDb: (_tenantId: string, cb: (db: unknown) => unknown) =>
+        (require('@/lib/db/after-commit') as typeof import('@/lib/db/after-commit'))
+            .runWithAfterCommit(async () => cb(mockRecipientDb)),
 }));
 
 import {

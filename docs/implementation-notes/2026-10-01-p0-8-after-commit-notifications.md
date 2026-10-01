@@ -152,9 +152,10 @@ transient burst into 500s; that is a different change with its own measurement.
 ## Findings this PR does NOT fix
 
 Both were measured while building the hardening tests. Neither is in P0.8's
-scope; both deserve their own issue.
+scope; both are filed.
 
-1. **The recipient of an Exchange message reads ciphertext, not the message.**
+1. **#1222 — the recipient of an Exchange message reads ciphertext, not the
+   message.**
    `ExchangeMessage` is not in `ENCRYPTED_FIELDS`, but
    `encryption-middleware`'s `'*'` fan-out encrypts any field NAMED `body`
    (because `TaskComment: ['body']` is in the manifest) under the WRITER
@@ -163,7 +164,7 @@ scope; both deserve their own issue.
    `"__p08_probe_body__"`, and in the recipient's context returns
    `"v2:arifZrA3GVhFxUEnFcEGuIe/..."`. The file's own docblock warns about
    exactly this fan-out class for `message`; `body` is the live instance.
-2. **A cold tenant's first in-transaction model operation needs two
+2. **#1223 — a cold tenant's first in-transaction model operation needs two
    connections**, so a burst of first-requests at concurrency ≥ `max`
    deadlocks the pool. The fix shape is to resolve the DEK BEFORE opening the
    transaction (or on the transaction's own client); both touch the encryption
