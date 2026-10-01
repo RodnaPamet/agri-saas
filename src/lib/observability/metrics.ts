@@ -104,6 +104,7 @@
 import { metrics } from '@opentelemetry/api';
 
 import { recordRouteOutcome } from './route-outcomes';
+import { recordUsage, usageSurface } from './usage-counter';
 
 const METER_NAME = 'inflect-compliance';
 
@@ -219,6 +220,16 @@ export function recordRequestMetrics(attrs: {
     route: string;
     status: number;
     durationMs: number;
+    /**
+     * Normalised client token (`normaliseClient` of `X-Agrent-Client`).
+     *
+     * Optional because this function is also reached from paths with no request
+     * to read headers from. Absent counts as `unknown`, which is a real answer
+     * rather than a dropped one.
+     */
+    client?: string;
+    /** Normalised device class (`normaliseDevice` of `Sec-CH-UA-Mobile`). */
+    device?: string;
 }): void {
     const normalizedRoute = normalizeRoute(attrs.route);
 
@@ -242,6 +253,16 @@ export function recordRequestMetrics(attrs: {
         method: attrs.method,
         route: normalizedRoute,
         status: attrs.status,
+    });
+
+    // P0.5 — usage by client and device, for OD9's tab decision. Hooked HERE for
+    // the same reason the outcome counter is: one place that sees every request,
+    // so the two counters cannot disagree about which requests they saw.
+    recordUsage({
+        client: attrs.client ?? 'unknown',
+        device: attrs.device ?? 'unknown',
+        method: attrs.method,
+        route: usageSurface(normalizedRoute),
     });
 }
 
