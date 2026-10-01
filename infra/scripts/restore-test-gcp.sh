@@ -417,9 +417,9 @@ echo "  ✓ ${STACK_DIR} present and carries DATA_ENCRYPTION_KEY"
 # single source of truth) and the package list must match, since PostGIS is
 # now INSTALLED rather than baked into the base.
 #
-# The `Acquire::Check-Valid-Until=false` flag this heredoc used to carry is
+# The \`Acquire::Check-Valid-Until=false\` flag this heredoc used to carry is
 # gone with #832. It was required while the base was bullseye, whose security
-# Release file expired 2026-09-07 — without it `apt-get update` exits 100 and
+# Release file expired 2026-09-07 — without it \`apt-get update\` exits 100 and
 # this drill cannot build a Postgres to restore INTO, which reads as a FAILED
 # RESTORE rather than as a broken build. That is why the flag mattered here
 # more than anywhere else, and why trixie (supported to 2028-08-09) is worth
@@ -430,15 +430,15 @@ echo "  ✓ ${STACK_DIR} present and carries DATA_ENCRYPTION_KEY"
 # drift silently.
 #
 # The PACKAGE LIST is enforced too, since #979. That same guard parses the
-# `apt-get install` set out of THIS heredoc and out of deploy/postgres/Dockerfile
+# \`apt-get install\` set out of THIS heredoc and out of deploy/postgres/Dockerfile
 # and requires them equal, so the two cannot disagree about which extensions get
-# installed. It reads the heredoc specifically, not this file: `docker.io` is
+# installed. It reads the heredoc specifically, not this file: \`docker.io\` is
 # installed further up to prepare the VM, and the guard asserts that name never
 # appears in the parsed set.
 #
 # Worth keeping in mind when editing below: this heredoc is nested inside an
-# UNQUOTED outer heredoc, so its `\`-continuations collapse to one physical
-# line when REMOTE_SCRIPT is built. A `#` comment inside the RUN would therefore
+# UNQUOTED outer heredoc, so its \`\`-continuations collapse to one physical
+# line when REMOTE_SCRIPT is built. A \`#\` comment inside the RUN would therefore
 # comment out everything after it.
 if [ -n "${PG_IMAGE}" ]; then
     RESTORE_IMAGE="${PG_IMAGE}"
@@ -504,8 +504,8 @@ echo "── validation battery ──"
 echo "  ✓ SELECT 1"
 
 # Core tables present and readable.
-# `psql ... && echo "✓"` used to stand here. `cmd && echo` is not an
-# assertion: under `set -euo pipefail` a failing left side short-circuits,
+# \`psql ... && echo "✓"\` used to stand here. \`cmd && echo\` is not an
+# assertion: under \`set -euo pipefail\` a failing left side short-circuits,
 # prints nothing and does NOT trip errexit, so a missing or unreadable
 # core table sailed through the drill. Assigning from the substitution
 # does trip errexit, which is why every OTHER check in this battery is
@@ -526,7 +526,7 @@ echo "  ✓ _prisma_migrations: \$MIGRATIONS applied"
 # stale, or restored from a long-dead disk.
 RECENT=\$(psql 'SELECT count(*) FROM "AuditLog" WHERE "createdAt" > now() - INTERVAL '"'"'14 days'"'"'')
 # Informational ONLY, deliberately. This used to carry
-# `[ "\$RECENT" -gt 0 ] || echo "⚠ ..."`, which is a warning in a monthly
+# \`[ "\$RECENT" -gt 0 ] || echo "⚠ ..."\`, which is a warning in a monthly
 # cron log — i.e. nothing. The staleness it claimed to catch is already
 # hard-failed upstream (SNAPSHOT_AGE_HOURS vs MAX_SNAPSHOT_AGE_HOURS),
 # and the only case left is a fresh snapshot of an idle database, which
