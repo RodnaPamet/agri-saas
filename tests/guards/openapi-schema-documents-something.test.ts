@@ -196,8 +196,14 @@ describe('every documented schema describes something', () => {
         ]);
         // The hazard a generated client cannot infer from types: an omitted
         // field is cleared. It has to be in the description or it is nowhere.
-        expect(u.description).toMatch(/ABSENT IS NOT "LEAVE ALONE"/);
-        expect(u.description).toMatch(/ALL THIRTEEN/i);
+        // The hazard a generated client cannot infer from thirteen optional
+        // properties — which way the merge goes. #1176 made absent mean
+        // "unchanged"; before it, absent meant "cleared". A client reading a
+        // stale copy of this spec would get that exactly backwards, so the
+        // description states which it is and this pins that it says so.
+        expect(u.description).toMatch(/MERGE SEMANTICS/);
+        expect(u.description).toMatch(/LEFT UNCHANGED/);
+        expect(u.description).toMatch(/only an explicit `null` clears/);
         expect(documentsNothing(u)).toBe(false);
     });
 });
