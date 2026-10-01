@@ -19,6 +19,7 @@ import {
     adminConnectionString,
     PER_WORKER_MARKER,
 } from '../helpers/db';
+import { assertNoForeignMutation } from '../helpers/selector-teeth-marker';
 
 interface GlobalConfig { maxWorkers?: number }
 
@@ -30,6 +31,13 @@ export default async function globalSetup(globalConfig?: GlobalConfig) {
     // from `base`. The check this replaced sat at the END of this function,
     // after all of it — so it could not have prevented a single one of them.
     assertIsTestDatabase(base, 'globalSetup');
+
+    // A sweep holding a guard file gutted makes every result from this run a
+    // statement about the mutation (#1171 mode 1). Placed AFTER the test-database
+    // assertion deliberately: that one must stay first, and this check touches
+    // no database. Exempts the sweep's own child; SELECTOR_TEETH_ALLOW_CONCURRENT=1
+    // downgrades it to a warning.
+    assertNoForeignMutation('globalSetup');
 
     const baseName = getDbName(base);
 
