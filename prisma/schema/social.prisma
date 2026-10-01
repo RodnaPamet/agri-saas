@@ -1,0 +1,70 @@
+// ═══════════════════════════════════════════════════════════════════
+//  SOCIAL DOMAIN — P0.4: runtime feature flags and cohorts
+// ═══════════════════════════════════════════════════════════════════
+//
+//  GAP-09 multi-file schema: new domain file. Generator + datasource
+//  remain in base.prisma.
+//
+//  WHY THESE ARE NOT TENANT-SCOPED. Every other gate in this codebase is
+//  per-tenant (`TenantModuleSettings`, resolved by `resolveEnabledModules`).
+//  These are PLATFORM-scoped on purpose: a dark-launch rail has to be
+//  flippable for the whole deployment, and the social surfaces it gates
+//  are person-scoped rather than farm-scoped — a profile, a direct
+//  message and a channel do not belong to one farm. So there is no
+//  `tenantId` here, and the RLS classification is deliberately not the
+//  tenant-scoped one.
+//
+//  WHY A TABLE AND NOT AN ENV VAR. `NEXT_PUBLIC_*` is inlined at
+//  `next build`, so a flag held there cannot be flipped without a rebuild,
+//  an image push and a rollout — and `NEXT_PUBLIC_NOTIFICATIONS_SSE` is
+//  the live example of that going wrong: it is a client switch that is off
+//  in production and cannot be turned on without shipping. Flags must be
+//  DB-backed and read at request time.
+
+/// A single runtime switch. Default OFF — a flag that does not exist is off,
+/// and a flag that exists is off until someone enables it.
+model FeatureFlag {
+  /// Dotted key, e.g. `social.profiles`. The primary key, because the key IS
+  /// the identity: two rows for one switch is the bug this prevents.
+  key         String   @id
+  enabled     Boolean  @default(false)
+  description String?
+
+  /// When NON-EMPTY, `enabled` is necessary but not sufficient: only members
+  /// of these cohorts see the surface. Empty means "everyone, once enabled".
+  ///
+  /// So the two fields compose as AND, not OR. A flag enabled with cohorts
+  /// set is a limited rollout, never a global one — getting that backwards
+  /// would silently expose a surface to the whole deployment.
+  cohorts     String[]
+
+  updatedAt   DateTime @updatedAt
+  /// Who flipped it. Nullable for rows created by seed/migration rather than
+  /// by a person.
+  updatedByUserId String?
+
+  @@index([enabled])
+}
+
+/// Cohort membership, as a join row rather than an array on the flag.
+///
+/// An array of user ids on `FeatureFlag` would have been smaller and wrong:
+/// a cohort outlives any one flag, several flags share a cohort, and an
+/// array cannot be indexed for "which cohorts is this user in" — the query
+/// the resolver makes on every request.
+model FeatureFlagCohortMember {
+  id        String   @id @default(cuid())
+  /// Free-form cohort name, e.g. `beta-farms`. Not a foreign key: a cohort
+  /// is a label, and requiring a parent row before anyone can be added to
+  /// one buys nothing a typo guard would not.
+  cohortKey String
+  userId    String
+  createdAt DateTime @default(now())
+
+  user User @relation("FeatureFlagCohortMemberships", fields: [userId], references: [id], onDelete: Cascade)
+
+  /// One membership per (cohort, user) — a double-add is a no-op, not two rows.
+  @@unique([cohortKey, userId])
+  @@index([userId])
+  @@index([cohortKey])
+}

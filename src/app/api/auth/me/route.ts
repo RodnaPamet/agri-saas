@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { parseBottomTabOrder } from '@/lib/account/bottom-tabs';
+import { resolveFlags } from '@/lib/feature-flags';
 
 export const GET = withApiErrorHandling(async () => {
     const session = await auth();
@@ -31,6 +32,12 @@ export const GET = withApiErrorHandling(async () => {
 
     const membership = user?.tenantMemberships[0];
 
+    // Flags resolved FOR THIS USER, on the launch request the client already
+    // makes. Cohort-gated flags are therefore already narrowed — a client never
+    // sees a flag that is enabled for someone else, so it cannot accidentally
+    // render a surface it is not in the cohort for.
+    const featureFlags = await resolveFlags(session.user.id ?? null);
+
     return jsonResponse({
         user: {
             id: user?.id,
@@ -45,5 +52,18 @@ export const GET = withApiErrorHandling(async () => {
             bottomTabOrder: parseBottomTabOrder(user?.bottomTabOrder),
         },
         tenant: membership?.tenant ?? null,
+        /**
+         * Runtime feature flags, already resolved for this caller.
+         *
+         * An ABSENT key means OFF. Do not treat a missing key as a default-on:
+         * the whole point of the rail is that a surface nobody has enabled is
+         * invisible, and the global kill switch (`FEATURE_FLAGS_FORCE_OFF`)
+         * answers with an EMPTY OBJECT rather than a set of falses — so
+         * "no keys at all" is a legitimate state meaning everything is off.
+         *
+         * Re-read it; do not cache across sessions. The server caches the table
+         * for 30s, which is the propagation bound for a flip.
+         */
+        featureFlags,
     });
 });
