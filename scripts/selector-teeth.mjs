@@ -21,8 +21,9 @@
  *         node scripts/selector-teeth.mjs --json <file.test.ts>
  * Exit:   0 if every selector was killed, 1 if any survived.
  */
-import { readFileSync, writeFileSync, copyFileSync, unlinkSync, existsSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
+import { readFileSync, writeFileSync, copyFileSync, unlinkSync, existsSync, mkdirSync } from 'node:fs';
+import { spawnSync, execFileSync } from 'node:child_process';
+import { dirname, join, resolve } from 'node:path';
 import ts from 'typescript';
 
 /**
@@ -37,6 +38,74 @@ import ts from 'typescript';
  * is why `tests/guards/selector-teeth-no-stray-mutations.test.ts` also fails the
  * suite if a `.teeth-bak` is ever left lying around.
  */
+/**
+ * ── The active-mutation marker (#1171 mode 1) ──────────────────────────
+ *
+ * This tool rewrites a guard file IN PLACE and runs jest against that path, so
+ * for the length of a `runGuard` call the file on disk is a mutant. Anything
+ * else that reads it in that window sees the mutant and draws a confident
+ * wrong conclusion: a detector reported a guard as having a dead selector when
+ * the sweep merely had it gutted at that instant, and the two readings were
+ * only distinguishable because they disagreed over a clean `git status`.
+ *
+ * The window is not small. There are ~104 files with ~9 guts each and no
+ * timeout on the sweep by design, so it is open almost continuously for hours;
+ * "wait for it to finish" is unbounded advice.
+ *
+ * So the sweep publishes what it is currently gutting. That turns an
+ * unattributable contradiction into a named one, and lets a reader at a choke
+ * point refuse instead of answering — `tests/setup/globalSetup.ts` does
+ * exactly that for every jest run.
+ *
+ * It lives in the git COMMON directory, not `node_modules/.cache`, because the
+ * contamination crosses checkouts: every worktree of this repo resolves the
+ * same `--git-common-dir`, so a reader in one sees a sweep in another. Not
+ * `os.tmpdir()` — a predictable name in a world-writable directory is a
+ * symlink-race vector (CodeQL js/insecure-temporary-file), the same reason
+ * `PER_WORKER_MARKER` is repo-local.
+ */
+export const MARKER_BASENAME = 'selector-teeth-active.json';
+
+export function markerPath() {
+    // An explicit path wins. This exists so the marker's own tests can run
+    // hermetically: they would otherwise write to the SHARED location and
+    // could clobber a real sweep's claim mid-run. Also a lever for an
+    // operator deliberately isolating a sweep.
+    if (process.env.SELECTOR_TEETH_MARKER) return resolve(process.env.SELECTOR_TEETH_MARKER);
+    // `--git-common-dir` is the shared admin dir; from a worktree it points at
+    // the main checkout's .git, which is what makes this cross-checkout.
+    const common = execFileSync('git', ['rev-parse', '--git-common-dir'], {
+        encoding: 'utf8',
+    }).trim();
+    return join(resolve(common), MARKER_BASENAME);
+}
+
+/** Publish the mutation currently on disk. Never throws — this is telemetry. */
+export function writeMarker(info) {
+    try {
+        const f = markerPath();
+        mkdirSync(dirname(f), { recursive: true });
+        writeFileSync(
+            f,
+            JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString(), ...info }),
+        );
+    } catch {
+        /* a sweep must not fail because it could not announce itself */
+    }
+}
+
+/** Withdraw it. Only ever removes OUR marker, so a parallel sweep keeps its own. */
+export function clearMarker() {
+    try {
+        const f = markerPath();
+        if (!existsSync(f)) return;
+        const held = JSON.parse(readFileSync(f, 'utf8'));
+        if (held.pid === process.pid) unlinkSync(f);
+    } catch {
+        /* unreadable: leave it — the reader treats a dead pid as stale */
+    }
+}
+
 const BAK = (f) => `${f}.teeth-bak`;
 
 function restoreIfStray(file) {
@@ -53,6 +122,9 @@ function restoreActive() {
         copyFileSync(BAK(ACTIVE), ACTIVE);
         unlinkSync(BAK(ACTIVE));
     }
+    // Withdraw the claim in the same breath as restoring the file. A marker
+    // outliving its mutation would block readers over a tree that is clean.
+    clearMarker();
 }
 /**
  * Best-effort, and NOT a guarantee — measured 2026-09-17.
@@ -180,7 +252,11 @@ function runGuard(file) {
     // since this tool applies no timeout the whole sweep stops dead. Measured
     // 2026-09-29: two consecutive guardrail files hung for 69 and 133 minutes
     // at 0% CPU with the file still mutated, on an otherwise idle machine.
+    // The child reads the marker at its own globalSetup and would refuse to
+    // run against the mutant this very sweep just wrote. Name ourselves as the
+    // owner so our own child proceeds and everyone else's does not.
     const r = spawnSync('npx', ['jest', file, '--silent', '--forceExit'], {
+        env: { ...process.env, SELECTOR_TEETH_OWNER: String(process.pid) },
         encoding: 'utf8',
         timeout: GUARD_RUN_TIMEOUT_MS,
     });
@@ -252,6 +328,9 @@ export function auditFile(file) {
                 const replacement = sel.kind === 'block' ? `{ return ${gut}; }` : `(${gut})`;
                 const mutated =
                     original.slice(0, sel.bodyStart) + replacement + original.slice(sel.bodyEnd);
+                // Announce BEFORE the write, so there is no instant where the
+                // mutant is on disk unannounced.
+                writeMarker({ file, selector: sel.name, gut, line: sel.line });
                 writeFileSync(file, mutated);
                 const { out } = runGuard(file);
                 // A gut whose return type does not typecheck never runs, so it
@@ -269,6 +348,7 @@ export function auditFile(file) {
         copyFileSync(backup, file);
         unlinkSync(backup);
         ACTIVE = null;
+        clearMarker();
     }
     /**
      * `candidates` is the DENOMINATOR, and it is load-bearing.
