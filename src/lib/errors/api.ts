@@ -3,6 +3,7 @@ import { toApiErrorResponse } from './types';
 import { runWithRequestContext, getRequestContext } from '@/lib/observability/context';
 import { logger, extractErrorMeta } from '@/lib/observability/logger';
 import { getTracer } from '@/lib/observability/tracing';
+import { normaliseClient, normaliseDevice } from '@/lib/observability/usage-counter';
 import { recordRequestMetrics, recordRequestError } from '@/lib/observability/metrics';
 import { captureError } from '@/lib/observability/sentry';
 import { SpanStatusCode } from '@opentelemetry/api';
@@ -182,6 +183,12 @@ export function withApiErrorHandling<Context = unknown>(
         const ctx = ctxIn as Context;
         const requestId = req.headers.get('x-request-id') || generateRequestId();
         const route = req.nextUrl.pathname;
+        // P0.5 — resolved ONCE here rather than at each recordRequestMetrics call,
+        // so a rate-limited request and a completed one cannot be attributed to
+        // different clients. Both are low-cardinality enums and neither can fail
+        // the request — see normaliseClient.
+        const usageClient = normaliseClient(req.headers.get('x-agrent-client'));
+        const usageDevice = normaliseDevice(req.headers.get('sec-ch-ua-mobile'));
         const method = req.method;
         const startTime = performance.now();
 
@@ -225,6 +232,8 @@ export function withApiErrorHandling<Context = unknown>(
                                     route,
                                     status: 429,
                                     durationMs,
+                                    client: usageClient,
+                                    device: usageDevice,
                                 });
                                 logger.warn('request rate-limited', {
                                     component: 'api',
@@ -247,7 +256,10 @@ export function withApiErrorHandling<Context = unknown>(
                         // ── Span + metrics ──
                         span.setAttributes({ 'http.status_code': status });
                         span.setStatus({ code: SpanStatusCode.OK });
-                        recordRequestMetrics({ method, route, status, durationMs });
+                        recordRequestMetrics({
+                            method, route, status, durationMs,
+                            client: usageClient, device: usageDevice,
+                        });
 
                         // ── Request completed ──
                         logger.info('request completed', {
@@ -293,7 +305,10 @@ export function withApiErrorHandling<Context = unknown>(
                         }
 
                         // ── Metrics ──
-                        recordRequestMetrics({ method, route, status, durationMs });
+                        recordRequestMetrics({
+                            method, route, status, durationMs,
+                            client: usageClient, device: usageDevice,
+                        });
                         recordRequestError({ method, route, errorCode: payload.error.code });
 
                         // ── Sentry error capture (5xx only — skips 4xx) ──
