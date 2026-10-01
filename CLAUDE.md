@@ -1008,6 +1008,43 @@ re-wraps the per-tenant DEK. When every tenant reports zero `v1:`
 rows under the old key, remove `DATA_ENCRYPTION_KEY_PREVIOUS` from
 env.
 
+> **⚠️ THAT PROCEDURE IS INCOMPLETE. DO NOT ROTATE
+> `DATA_ENCRYPTION_KEY` TODAY.** It covers CIPHERTEXT and says nothing
+> about LOOKUP HASHES, which the same key derives and which nothing
+> rehashes.
+>
+> `hashForLookup` (`src/lib/security/encryption.ts`) HMACs with a key
+> derived from the CURRENT `DATA_ENCRYPTION_KEY` only. There is no
+> previous-key fallback on that path — a hash has no auth failure to
+> trigger one, so the lookup simply misses — and the rotation job
+> contains **zero** references to `hashForLookup` or `emailHash`
+> (verified 2026-10-01): it re-wraps the DEK and re-encrypts `v1:`
+> ciphertexts, nothing else.
+>
+> So every `User.emailHash` in the database was computed under the old
+> key, and after a rotation every lookup by email misses. The failure is
+> NOT a clean error:
+>
+> - sign-in reports no such user;
+> - password reset, email verification, invite redemption and SCIM
+>   matching all fail to find existing accounts;
+> - **registration SUCCEEDS and creates a DUPLICATE `User`**, because its
+>   uniqueness check is the same `emailHash` that now misses. That is
+>   silent data corruption, not an outage, and it is the expensive half.
+>
+> Sixteen files look a user up by `emailHash` (`src/auth.ts`,
+> `credentials.ts`, `password-management.ts`, `email-verification.ts`,
+> `invite-redemption.ts`, `scim-users.ts`, `tenant-invites.ts`,
+> `org-invites.ts`, `tenant-lifecycle.ts`, `sso.ts`, the register and
+> resend routes, and others).
+>
+> **P1.1 is the fix**: a separate `LOOKUP_HMAC_KEY` (+ `_PREVIOUS`),
+> bootstrapped to today's derived bytes so nothing needs rehashing, with
+> HKDF-separated derivation per identifier kind. Rotation of the master
+> KEK becomes safe once the lookup hash no longer depends on it. Until
+> then, treat the master KEK as un-rotatable regardless of what the
+> paragraph above implies on its own.
+
 Per-tenant DEK rotation (generating a fresh DEK for a single
 compromised tenant without touching the global KEK) is implemented
 at `rotateTenantDek` in `src/lib/security/tenant-key-manager.ts`.

@@ -320,6 +320,27 @@ export function decryptField(ciphertext: string): string {
  * const hash = hashForLookup('User@Example.com');
  * // Same as hashForLookup('user@example.com')
  */
+/**
+ * ⚠️ THIS FUNCTION IS WHY `DATA_ENCRYPTION_KEY` CANNOT BE ROTATED YET.
+ *
+ * The HMAC key comes from the CURRENT master KEK and nothing else. Unlike
+ * `decryptField`, there is no previous-key fallback here and there cannot
+ * usefully be one: a hash has no auth failure to trigger a retry, so a key change
+ * does not error — the lookup just misses.
+ *
+ * And nothing rehashes. `src/app-layer/jobs/key-rotation.ts` re-wraps the tenant
+ * DEK and re-encrypts `v1:` ciphertexts; it contains zero references to this
+ * function or to `emailHash` (verified 2026-10-01).
+ *
+ * So after a master-KEK rotation every stored `emailHash` is unreachable, and the
+ * worst consequence is not that sign-in fails — it is that REGISTRATION SUCCEEDS
+ * and writes a duplicate `User`, because its uniqueness check is this same hash.
+ * Silent corruption rather than an outage.
+ *
+ * P1.1 moves this onto a separate `LOOKUP_HMAC_KEY` (+ `_PREVIOUS`), bootstrapped
+ * to today's derived bytes so no existing hash changes. See the rotation banner in
+ * CLAUDE.md before touching either key.
+ */
 export function hashForLookup(value: string): string {
     if (value === null || value === undefined) {
         throw new Error('hashForLookup: value must not be null or undefined');
