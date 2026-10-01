@@ -455,9 +455,15 @@ describe('.github/postgis-image is the single source of truth', () => {
          *
          * A whole-file hash would be the wrong shape: the two files differ
          * legitimately — the Dockerfile carries a 28-line comment header the
-         * heredoc structurally cannot (it is nested inside an UNQUOTED outer
-         * heredoc, so a `#` would comment out the collapsed remainder), and it
-         * has a blank line the heredoc lacks.
+         * heredoc does not, and it has a blank line the heredoc lacks.
+         *
+         * Until #1179 this docblock said the heredoc "structurally cannot"
+         * carry a `#` comment, because the outer heredoc was UNQUOTED and
+         * collapsed its continuations into one physical line. That is no longer
+         * true — the outer heredoc is `<<'REMOTE'` now and the inner one ships
+         * verbatim — so the reason is a style one, not a structural one. The
+         * unquoted form is what broke the drill for a month; see
+         * tests/guards/restore-drill-remote-script.test.ts.
          */
         function aptPackages(dockerfile: string): string[] {
             const stripped = dockerfile.replace(/^\s*#.*$/gm, '');
