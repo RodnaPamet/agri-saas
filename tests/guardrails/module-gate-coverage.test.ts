@@ -169,6 +169,92 @@ const MODULE_GATE_EXEMPT_ROUTES: ReadonlyArray<{
     module: string;
     reason: string;
 }> = [
+    // ── Exchange MESSAGING (#1189) ────────────────────────────────────────
+    //
+    // Owner decision, 2026-10-01: messaging stays UNGATED. The alternative was
+    // measured and rejected — gating it would cut a tenant that disables
+    // EXCHANGE off from conversations it is already in, including ones where it
+    // owes a counterparty a reply, which is the custody problem the rule above
+    // already names one level along.
+    //
+    // Before this, these eight sat in NEITHER list: not gated, not exempt, and
+    // invisible to this guardrail, which is a curated list and cannot report a
+    // route it has never heard of. `docs/ios-messaging-brief.md` meanwhile told
+    // the native client that "all require the EXCHANGE module". So the state
+    // was not a decision, it was an absence that read like one.
+    //
+    // What a tenant with EXCHANGE off still gets, accepted deliberately: it can
+    // read and send in existing threads, and it still receives bell rows and
+    // notification emails for new messages. The toggle hides the marketplace,
+    // not the inbox.
+    {
+        file: 'src/app/api/t/[tenantSlug]/exchange/threads/route.ts',
+        module: 'EXCHANGE',
+        reason:
+            'The inbox. Listing BOTH sides of every conversation this tenant is party to is ' +
+            'custody of correspondence already begun, not participation in the marketplace. ' +
+            'A tenant that cannot see its own threads cannot discover that someone is waiting ' +
+            'on it.',
+    },
+    {
+        file: 'src/app/api/t/[tenantSlug]/exchange/threads/[threadId]/route.ts',
+        module: 'EXCHANGE',
+        reason:
+            'Reading one conversation, including its scrollback. Same custody argument as the ' +
+            'inbox: the messages already exist and both parties already consented to the ' +
+            'thread by opening it.',
+    },
+    {
+        file: 'src/app/api/t/[tenantSlug]/exchange/threads/[threadId]/messages/route.ts',
+        module: 'EXCHANGE',
+        reason:
+            'Sending a reply. The deliberate edge of this decision — a tenant with EXCHANGE ' +
+            'off can still answer. Gating it would leave the counterparty waiting on someone ' +
+            'the product has silently muted, which is worse than either answer. Rate-limited ' +
+            'per sending tenant by EXCHANGE_MESSAGE_LIMIT, which is the control that bounds ' +
+            'abuse here rather than the module toggle.',
+    },
+    {
+        file: 'src/app/api/t/[tenantSlug]/exchange/threads/[threadId]/read/route.ts',
+        module: 'EXCHANGE',
+        reason:
+            'Moving the read pointer. Gating it would leave a thread permanently unread for ' +
+            'the tenant, so the badge it drives would be wrong forever rather than merely ' +
+            'inaccessible.',
+    },
+    {
+        file: 'src/app/api/t/[tenantSlug]/exchange/threads/[threadId]/close/route.ts',
+        module: 'EXCHANGE',
+        reason:
+            'Closing a thread, either party. This is how a tenant winds DOWN its marketplace ' +
+            'correspondence, so it is exactly the endpoint a tenant that just switched ' +
+            'EXCHANGE off needs most.',
+    },
+    {
+        file: 'src/app/api/t/[tenantSlug]/exchange/threads/[threadId]/block/route.ts',
+        module: 'EXCHANGE',
+        reason:
+            'Blocking and unblocking a buyer, seller only. A protective control: gating it ' +
+            'would mean a tenant could stop receiving the marketplace while losing the one ' +
+            'lever that stops a specific counterparty contacting it.',
+    },
+    {
+        file: 'src/app/api/t/[tenantSlug]/exchange/messages/[messageId]/route.ts',
+        module: 'EXCHANGE',
+        reason:
+            'Retracting your OWN message. Custody in the strictest sense — the row belongs to ' +
+            'this tenant, and the same reasoning that keeps my-listings reachable applies ' +
+            'with more force to something already sent to a third party.',
+    },
+    {
+        file: 'src/app/api/t/[tenantSlug]/exchange/listings/[listingId]/thread/route.ts',
+        module: 'EXCHANGE',
+        reason:
+            'Opening a thread against a listing. The ONE entry here that is arguably ' +
+            'participation rather than custody, and it is left ungated so the set is ' +
+            'coherent: a buyer reaching a seller is the act the rest of this list exists to ' +
+            'let both sides finish. Revisit this one first if the decision is ever reversed.',
+    },
     {
         file: 'src/app/api/t/[tenantSlug]/exchange/my-listings/route.ts',
         module: 'EXCHANGE',

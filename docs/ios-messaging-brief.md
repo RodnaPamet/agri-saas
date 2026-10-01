@@ -7,6 +7,15 @@ Everything below is live on `app.agrent.bg` and documented in the OpenAPI
 snapshot (`src/generated/openapi.json`, tag `Exchange messaging`). Read that
 for schemas; this file is for the things a schema cannot tell you.
 
+> **Precedence: the generated spec and the routes win over this file.**
+> Three claims here were measured false on 2026-10-01 — the module gate, "no
+> rate limiting", and cursor pagination as an open gap — and two of them had
+> been false since the file was written. They cost nothing only because the
+> iOS team derived its endpoint map from the routes and its limits from the
+> spec, and read this as commentary. Keep doing that. A sentence here that
+> contradicts generated output is a bug in this file, and worth reporting
+> rather than working around.
+
 ## The one hard security constraint
 
 **Thread and message ids must never appear in a query string.**
@@ -19,8 +28,21 @@ for convenience, that convenience is a disclosure.
 
 ## Endpoints
 
-All are tenant-scoped: `/api/t/{tenantSlug}/…`, and all require the `EXCHANGE`
-module, which the web screens gate on too.
+All are tenant-scoped: `/api/t/{tenantSlug}/…`, and **none of them is gated on
+the `EXCHANGE` module** — a deliberate decision (#1189, owner, 2026-10-01), not
+an oversight. The module toggle governs PARTICIPATION in the marketplace
+(browse, post, inquire); messaging is custody of correspondence already begun.
+A tenant that switches EXCHANGE off can still read and answer its existing
+threads, and still receives bell rows and notification emails for new messages.
+
+So **do not write a module-disabled error path for messaging** — the server
+emits none. All eight routes are recorded as reasoned exemptions in
+`tests/guardrails/module-gate-coverage.test.ts`, so re-gating one is a visible
+change rather than a quiet one.
+
+This paragraph previously said the opposite — *"all require the `EXCHANGE`
+module, which the web screens gate on too"* — which was false for nine of the
+ten endpoints tabulated below, for the whole life of the document.
 
 | method | path | what it does |
 |---|---|---|
@@ -302,7 +324,19 @@ conversation onward.
 
 ## Still open
 
-- **Rate limiting.** None today. The owner chose seller-side blocking over send
-  caps, so volume from many buyers is unbounded. If the phone adds retry-on-
-  failure, make it bounded — the server will not stop you.
-- **Cursor pagination**, as above: known gap, shape undecided.
+- **Rate limiting — CLOSED, and the shape matters.** `EXCHANGE_MESSAGE_LIMIT`
+  caps sending at 60/min keyed by the **sending tenant** (#1161), not by user
+  and not by thread. So several users on one farm share one budget, and a
+  retry loop WILL meet a 429 carrying `Retry-After`. Per-thread was considered
+  and rejected: a thread is per (listing, inquirer), so a per-thread ceiling
+  multiplies by however many listings the RECIPIENT has, and a ceiling the
+  victim chooses is not a ceiling. Seller-side blocking still exists and is
+  still the answer to a specific bad counterparty; the cap is the answer to
+  volume.
+- **Cursor pagination — CLOSED.** `GET exchange/threads/{threadId}` takes
+  `?before=` and returns `olderCursor`; `olderCursor: null` means you have
+  reached the start of the conversation. `unreadCount` on that response is
+  counted in the DATABASE rather than over the returned page, so it is a true
+  count rather than one capped at `limit`. The thread LIST returns `hasUnread`
+  (a boolean) instead — deliberately cheap, with the exact count available from
+  the thread itself.
