@@ -7581,6 +7581,39 @@ exports[`API contract — per-schema snapshots schema: NativeRefreshRequest 1`] 
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: NativeRevokeRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "refreshToken": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The refresh token for the session to end."
+    }
+  },
+  "required": [
+    "refreshToken"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: NativeRevokeResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "revoked": {
+      "type": "boolean",
+      "enum": [
+        true
+      ]
+    }
+  },
+  "required": [
+    "revoked"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: NativeTokenPair 1`] = `
 "{
   "type": "object",

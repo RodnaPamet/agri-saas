@@ -20,6 +20,7 @@ import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { POST as issue } from '@/app/api/auth/token/route';
 import { POST as refresh } from '@/app/api/auth/token/refresh/route';
+import { POST as revoke } from '@/app/api/auth/native/revoke/route';
 
 const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -55,6 +56,14 @@ async function issueReq(claims: Record<string, unknown>) {
     return new NextRequest('http://localhost/api/auth/token', {
         method: 'POST',
         headers: { authorization: `Bearer ${jwe}` },
+    });
+}
+
+function revokeReq(body: unknown) {
+    return new NextRequest('http://localhost/api/auth/native/revoke', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
     });
 }
 
@@ -209,5 +218,86 @@ describeFn('POST /api/auth/token/refresh', () => {
             expect(r.status).toBe(401);
             expect((await r.json()).error).toBe('invalid_grant');
         });
+    });
+});
+
+describeFn('POST /api/auth/native/revoke', () => {
+    /** Mint a real pair through the issue route and hand back the refresh token. */
+    async function mintFor(sessionId: string): Promise<string> {
+        const res = await issue(await issueReq({
+            userId: USER_ID, sub: USER_ID, email: EMAIL, userSessionId: sessionId,
+        }), ROUTE_CTX);
+        expect(res.status).toBe(200);
+        return (await res.json()).refreshToken as string;
+    }
+
+    it('revokes the session AND its tokens, so a later refresh is refused', async () => {
+        const s = await makeSession();
+        const token = await mintFor(s.sessionId);
+
+        expect((await revoke(revokeReq({ refreshToken: token }), ROUTE_CTX)).status).toBe(200);
+
+        // The session is the load-bearing half: rotateRefreshToken re-reads
+        // session.revokedAt and fails closed, so even a token that escaped the
+        // sweep cannot mint anything.
+        const session = await db.userSession.findUnique({
+            where: { id: s.id }, select: { revokedAt: true, revokedReason: true },
+        });
+        expect(session?.revokedAt).not.toBeNull();
+        expect(session?.revokedReason).toBe('native_sign_out');
+
+        const live = await db.nativeRefreshToken.count({
+            where: { userSessionId: s.id, revokedAt: null },
+        });
+        expect(live).toBe(0);
+
+        // The property that matters to a client: the credential is dead.
+        const after = await refresh(refreshReq({ refreshToken: token }), ROUTE_CTX);
+        expect(after.status).toBe(401);
+        expect((await after.json()).error).toBe('invalid_grant');
+    });
+
+    it('leaves OTHER sessions of the same user alone — scope is one device', async () => {
+        const keep = await makeSession();
+        const kill = await makeSession();
+        const keepToken = await mintFor(keep.sessionId);
+        const killToken = await mintFor(kill.sessionId);
+
+        await revoke(revokeReq({ refreshToken: killToken }), ROUTE_CTX);
+
+        const other = await db.userSession.findUnique({
+            where: { id: keep.id }, select: { revokedAt: true },
+        });
+        expect(other?.revokedAt).toBeNull();
+        // And it still works, which is the user-visible half of "stays signed in".
+        expect((await refresh(refreshReq({ refreshToken: keepToken }), ROUTE_CTX)).status).toBe(200);
+    });
+
+    it('answers an UNKNOWN token identically to a revoked one — no oracle', async () => {
+        // RFC 7009. If these differed, anyone holding a candidate token could ask
+        // whether it exists.
+        const s = await makeSession();
+        const token = await mintFor(s.sessionId);
+        const first = await revoke(revokeReq({ refreshToken: token }), ROUTE_CTX);
+        const unknown = await revoke(revokeReq({ refreshToken: 'never-issued-at-all' }), ROUTE_CTX);
+
+        expect(unknown.status).toBe(first.status);
+        expect(await unknown.text()).toBe(await first.text());
+    });
+
+    it('is IDEMPOTENT — a retried sign-out is not an error', async () => {
+        const s = await makeSession();
+        const token = await mintFor(s.sessionId);
+        const a = await revoke(revokeReq({ refreshToken: token }), ROUTE_CTX);
+        const b = await revoke(revokeReq({ refreshToken: token }), ROUTE_CTX);
+        expect(a.status).toBe(200);
+        expect(b.status).toBe(200);
+        expect(await b.text()).toBe(await a.text());
+    });
+
+    it('400s a malformed body — the caller\'s own bug, not a claim about a token', async () => {
+        expect((await revoke(revokeReq({}), ROUTE_CTX)).status).toBe(400);
+        expect((await revoke(revokeReq({ refreshToken: '' }), ROUTE_CTX)).status).toBe(400);
+        expect((await revoke(revokeReq({ refreshToken: 42 }), ROUTE_CTX)).status).toBe(400);
     });
 });

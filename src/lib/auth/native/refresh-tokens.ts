@@ -359,6 +359,51 @@ export async function revokeTokensForSession(userSessionRowId: string, reason: s
     return res.count;
 }
 
+/**
+ * Sign THIS DEVICE out: revoke the session the presented refresh token hangs
+ * from, plus every token on it.
+ *
+ * Scope is deliberate and narrow (owner ruling 2026-10-01): one device, not the
+ * account. Other devices keep their own `UserSession` rows and are untouched.
+ *
+ * ── what "one device" actually means here, because it is not quite clean ──
+ *
+ * A native credential is a CHILD of the session the browser sign-in created
+ * (`exchange/route.ts` passes `claimed.userSessionRowId`). In the ordinary flow
+ * that session was minted inside `ASWebAuthenticationSession`, so revoking it
+ * ends something the user never sees and their desktop login — a different
+ * `UserSession` — survives, which is the promised behaviour.
+ *
+ * But if that browser session was SHARED with an existing web login on the same
+ * machine, this ends that too. The blast radius is the session the credential
+ * descends from, not the device; those usually coincide and are not guaranteed
+ * to.
+ *
+ * Revoking the session is the load-bearing half: `rotateRefreshToken` re-reads
+ * `session.revokedAt` and fails closed, so a token that escaped the sweep still
+ * cannot mint anything.
+ *
+ * Returns whether a token matched. Callers MUST NOT leak that to the client —
+ * an unknown token and a revoked one have to look identical, or this becomes an
+ * oracle for which tokens exist (RFC 7009 says answer 200 either way).
+ */
+export async function revokeSessionByRefreshToken(
+    rawToken: string,
+    reason: string,
+): Promise<{ matched: boolean }> {
+    const row = await asSystem(() => prisma.nativeRefreshToken.findUnique({
+        where: { tokenHash: hashToken(rawToken) },
+        select: { userSessionId: true },
+    }));
+    if (!row) return { matched: false };
+
+    // Session first: if the token sweep fails, a revoked session still refuses
+    // every refresh. The other order can leave a live session with live tokens.
+    await revokeSessionRow(row.userSessionId, reason);
+    await revokeTokensForSession(row.userSessionId, reason);
+    return { matched: true };
+}
+
 async function revokeSessionRow(userSessionRowId: string, reason: string): Promise<void> {
     try {
         await asSystem(() => prisma.userSession.updateMany({
