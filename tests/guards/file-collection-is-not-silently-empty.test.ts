@@ -249,7 +249,6 @@ const HAND_ROLLED_COLLECTORS: readonly string[] = [
     'tests/guardrails/design-system-drift.test.ts',
     'tests/guardrails/enterprise-identity-epic.test.ts',
     'tests/guardrails/geo-raw-sql-containment.test.ts',
-    'tests/guardrails/hibp-coverage.test.ts',
     'tests/guardrails/html-template-escaping.test.ts',
     'tests/guardrails/i18n-completeness.test.ts',
     'tests/guardrails/icon-a11y.test.ts',
