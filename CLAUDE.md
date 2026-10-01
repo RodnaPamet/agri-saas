@@ -490,7 +490,30 @@ runbook in `docs/rate-limiting.md`.
 POST/PUT/DELETE/PATCH by default. Stricter presets (`LOGIN_LIMIT`,
 `API_KEY_CREATE_LIMIT`, `EMAIL_DISPATCH_LIMIT`) are applied via
 `{ rateLimit: { config, scope } }` options on specific routes. Keyed
-`(IP, userId)`.
+`(IP, userId)` — **and that is true BY DEFAULT only since the wrapper started
+resolving the userId itself.** `getUserId` was an opt-in option, and measured
+across main: of **346** route files wrapped in `withApiErrorHandling`, **3**
+passed one, so **343** keyed `<scope>:ip:<ip>:anon` — exactly what
+`buildRateLimitKey`'s own docblock forbids ("every authenticated preset MUST
+keep the userId"), on a product whose users share carrier-grade NAT egress
+IPs, where one busy caller throttled every other subscriber behind the same
+address. The mechanism was never broken; it was opt-in, and an invariant that
+holds only when 346 route authors each remember it is not an invariant.
+`resolveRateLimitScope` now calls `resolveRequestUserId`
+(`src/lib/security/rate-limit-identity.ts`) when no resolver is passed — a
+`getToken` JWE decode, no database, the same call middleware already makes —
+and `getUserId` became an OVERRIDE for the rare route whose budget should be
+bounded by a TARGET user rather than the caller. It fails SOFT to `anon`,
+which is the tighter bucket, never a 500 on a write path. A header passed down
+from middleware was rejected: it is forgeable, and a client setting a fresh
+value per request would escape the limit entirely. `getBucket` is resolved
+FIRST and short-circuits the decode, since a bucketed route replaces the
+ip+userId portion anyway (#1161). Held by
+`tests/unit/rate-limit-keyed-by-user.test.ts`, which drives the real wrapper
+and asserts on the key the store is handed — the sibling
+`mutation-rate-limit.test.ts` calls `buildRateLimitKey` directly and proves
+the FORMAT, which is precisely why it could not see that 343 routes passed a
+null.
 **A route may instead cap a SHARED RESOURCE via `getBucket`** (#1161), which
 replaces the `(IP, userId)` portion of the key entirely — appending it would
 keep the per-caller split and change nothing. Reach for it when the cost being

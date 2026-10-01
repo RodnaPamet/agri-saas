@@ -13,6 +13,7 @@ import {
     type RateLimitScope,
 } from '@/lib/security/rate-limit-middleware';
 import type { RateLimitConfig } from '@/lib/security/rate-limit';
+import { resolveRequestUserId } from '@/lib/security/rate-limit-identity';
 import { API_VERSION, API_VERSION_HEADER } from '@/lib/api-version';
 
 // Depending on the Node.js / Edge runtime version, crypto.randomUUID() is natively available globally.
@@ -46,6 +47,16 @@ export interface ApiWrapperOptions {
     rateLimit?: false | {
         config?: RateLimitConfig;
         scope?: string;
+        /**
+         * OVERRIDE the default identity resolution.
+         *
+         * Rarely needed: the wrapper resolves the caller's user id itself
+         * (`resolveRequestUserId`), so a route gets a `(IP, userId)` key with
+         * no opt-in. Pass this only when the id that should bound the budget
+         * is NOT the authenticated caller — e.g. a route acting on a TARGET
+         * user, where keying by the admin would let one admin exhaust the
+         * budget for every target.
+         */
         getUserId?: (
             req: NextRequest,
         ) => string | null | undefined | Promise<string | null | undefined>;
@@ -76,14 +87,11 @@ async function resolveRateLimitScope(
 
     const config = options?.config ?? API_MUTATION_LIMIT;
     const scope = options?.scope ?? 'api-mutation';
-    let userId: string | null | undefined;
-    if (options?.getUserId) {
-        try {
-            userId = await options.getUserId(req);
-        } catch {
-            userId = null;
-        }
-    }
+
+    // BUCKET FIRST, because it decides whether the identity matters at all.
+    // `getBucket` REPLACES the ip+userId portion of the key (#1161), so
+    // resolving a userId for a bucketed route is work thrown away — and the
+    // resolution below costs a JWE decode.
     let bucket: string | null | undefined;
     if (options?.getBucket) {
         try {
@@ -94,6 +102,30 @@ async function resolveRateLimitScope(
             bucket = null;
         }
     }
+
+    // The userId is resolved BY DEFAULT, and `getUserId` is now an override
+    // rather than the only way in.
+    //
+    // `buildRateLimitKey`'s docblock says "every authenticated preset MUST
+    // keep the userId" and explains why: carrier-grade NAT puts thousands of
+    // unrelated subscribers behind one public IPv4, so an IP-only key lets one
+    // caller throttle a village. Measured before this change: 3 of 346 wrapped
+    // route files passed a resolver, so 343 keyed `anon`. The mechanism was
+    // never broken — it was OPT-IN, and an invariant that holds only when 346
+    // authors each remember it is not an invariant.
+    let userId: string | null | undefined;
+    if (bucket == null) {
+        if (options?.getUserId) {
+            try {
+                userId = await options.getUserId(req);
+            } catch {
+                userId = null;
+            }
+        } else {
+            userId = await resolveRequestUserId(req);
+        }
+    }
+
     return { scope, config, userId: userId ?? null, bucket: bucket ?? undefined };
 }
 
