@@ -159,6 +159,48 @@ describe('farm-profile optimistic lock', () => {
     });
 });
 
+describe('a body that mentions nothing is a no-op, but still checked', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        for (const k of Object.keys(mockDb)) delete mockDb[k];
+    });
+
+    it('does not write, does not bump, and does not audit', async () => {
+        const upsert = jest.fn();
+        const updateMany = jest.fn();
+        mockDb.farmProfile = {
+            upsert,
+            updateMany,
+            findUnique: jest.fn().mockResolvedValue({ ...ROW, version: 4 }),
+        };
+        const out = await upsertFarmProfile(makeCtx(), {}, 4);
+        expect(upsert).not.toHaveBeenCalled();
+        expect(updateMany).not.toHaveBeenCalled();
+        // The version a holder is left with is UNCHANGED — this is the whole
+        // point: a no-op must not invalidate anyone else's If-Match token.
+        expect(out.version).toBe(4);
+    });
+
+    it('still 409s a stale token, because asking for nothing is still asking', async () => {
+        mockDb.farmProfile = {
+            upsert: jest.fn(),
+            findUnique: jest.fn().mockResolvedValue({ ...ROW, version: 9 }),
+        };
+        await expect(upsertFarmProfile(makeCtx(), {}, 4)).rejects.toMatchObject({
+            code: 'STALE_DATA',
+            details: { currentVersion: 9, expectedVersion: 4 },
+        });
+    });
+
+    it('an empty body with no row returns the unset shape rather than creating one', async () => {
+        const create = jest.fn();
+        mockDb.farmProfile = { create, upsert: jest.fn(), findUnique: jest.fn().mockResolvedValue(null) };
+        const out = await upsertFarmProfile(makeCtx(), {}, 0);
+        expect(create).not.toHaveBeenCalled();
+        expect(out.version).toBe(0); // still the sentinel: no row exists
+    });
+});
+
 describe('the 0 sentinel holds — two assertions, two failure modes', () => {
     const schema = () =>
         fs.readFileSync(

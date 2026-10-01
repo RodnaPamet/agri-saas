@@ -105,6 +105,9 @@ function lastCreate(): Record<string, unknown> {
 beforeEach(() => {
     mockDb.farmProfile = {
         upsert: jest.fn().mockResolvedValue({ id: 'fp-1', tenantId: 'tenant-A' }),
+        // The optimistic lock's no-op path READS when a body mentions nothing,
+        // instead of writing a version bump for a request that changed nothing.
+        findUnique: jest.fn().mockResolvedValue({ id: 'fp-1', tenantId: 'tenant-A', version: 1 }),
     };
 });
 
@@ -225,9 +228,13 @@ describe('farm-profile merge semantics (#1176)', () => {
         // The degenerate case, and the one most likely to be got wrong: a
         // caller who sends {} has said nothing about anything.
         await upsertFarmProfile(makeCtx(), {});
-        // Only the lock's own bump. "Said nothing about anything" still means no
-        // user field is written — `version` is the write itself being counted,
-        // not a value the caller supplied.
-        expect(lastUpdate()).toEqual({ version: { increment: 1 } });
+        // Nothing is written AT ALL — not even the lock's version bump. `{}`
+        // says nothing about anything, so the same rule that leaves an absent
+        // field alone leaves the row alone. An earlier revision of the
+        // optimistic lock bumped `version` here, which claimed the row changed,
+        // logged an audit entry for a write that never happened, and
+        // invalidated every other holder's If-Match token for a no-op.
+        const upsert = (mockDb.farmProfile as { upsert: jest.Mock }).upsert;
+        expect(upsert).not.toHaveBeenCalled();
     });
 });

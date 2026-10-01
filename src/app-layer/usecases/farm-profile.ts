@@ -228,9 +228,56 @@ export async function upsertFarmProfile(
      * CREATE makes the loser raise P2002, and that must be retried as a WHOLE
      * transaction rather than caught and continued — see the loop below.
      */
+    /**
+     * Did the caller mention ANY field? `{}` means they said nothing at all.
+     *
+     * Computed before `version` is added, so it asks about USER fields only.
+     */
+    const mentionedAnything = Object.keys(update).length > 0;
+
     const attempt = async (): Promise<ProfileShape> =>
         runInTenantContext(ctx, async (db) => {
             let row: Record<string, unknown>;
+
+            /**
+             * A BODY THAT MENTIONS NOTHING IS A NO-OP, ALL THE WAY DOWN.
+             *
+             * Under merge semantics `{}` says nothing about anything, so the
+             * same rule that leaves an absent field alone has to leave the row
+             * alone. Bumping `version` for it would be wrong in four ways: it
+             * claims the row changed when it did not; it writes an audit entry
+             * recording an update that never happened; it invalidates every
+             * other holder's If-Match token, manufacturing a 409 on their next
+             * REAL write out of a request that changed nothing; and it makes an
+             * empty PUT non-idempotent, so a retry after a lost response moves
+             * the version again.
+             *
+             * The precondition is still CHECKED. A caller holding a stale token
+             * deserves to be told, even when it is asking for nothing.
+             *
+             * Note this is only the mentioned-NOTHING case. The admin page PUTs
+             * all thirteen fields on every save, so it mentions every field even
+             * when the operator changed none; those are mentioned and do bump.
+             * Suppressing that would need value-by-value comparison and is a
+             * different decision.
+             */
+            if (!mentionedAnything) {
+                const current = await db.farmProfile.findUnique({
+                    where: { tenantId: ctx.tenantId },
+                });
+                const currentVersion = current
+                    ? ((current as unknown as { version: number }).version)
+                    : 0;
+                if (expectedVersion !== undefined && expectedVersion !== currentVersion) {
+                    throw staleData('The farm profile changed while you were editing it.', {
+                        currentVersion,
+                        expectedVersion,
+                    });
+                }
+                return current
+                    ? project(current as unknown as Record<string, unknown>)
+                    : { ...EMPTY_PROFILE };
+            }
 
             if (expectedVersion === undefined) {
                 // UNGUARDED — no precondition was sent. Behaves exactly as it
