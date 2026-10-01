@@ -712,6 +712,31 @@ export async function expectRouteTransition(
     page: Page,
     opts: { content: Locator; url: RegExp; navTimeout?: number; paintTimeout?: number },
 ): Promise<void> {
-    await page.waitForURL(opts.url, { timeout: opts.navTimeout ?? 15_000 });
+    // `waitUntil: 'domcontentloaded'`, not Playwright's default of `'load'`.
+    //
+    // This helper was the ONLY place in the suite waiting for the full load
+    // event, and it got there by omission rather than by decision: 46 call
+    // sites pass `domcontentloaded` deliberately, one passes `networkidle`,
+    // one passes `load`, and this passed nothing. `safeGoto` defaults to
+    // `domcontentloaded` too.
+    //
+    // Measured on run 36900688054 (#1076): both of this helper's consumer
+    // files failed in one shard, at its two consecutive waits —
+    // `data-table-platform:188` here with `page.waitForURL: Timeout 15000ms
+    // exceeded. waiting for navigation until "load"`, and
+    // `entity-detail-layout:24` on the line below. 100% of its call sites,
+    // and the two were on DIFFERENT routes (`/farm-tasks/{id}` and
+    // `/assets/{id}`), so it is not one slow page.
+    //
+    // This is NOT expected to fix both. A locator-visibility wait does not
+    // care about the navigation lifecycle, and the exhaustion asymmetry
+    // (`data-table` recovered on attempt 2, `entity-detail` exhausted all
+    // three) points at two costs of different sizes. The prediction is
+    // recorded on #1076 before the change: this one fixes the URL wait and
+    // leaves the paint wait open.
+    await page.waitForURL(opts.url, {
+        timeout: opts.navTimeout ?? 15_000,
+        waitUntil: 'domcontentloaded',
+    });
     await expect(opts.content).toBeVisible({ timeout: opts.paintTimeout ?? 30_000 });
 }
