@@ -40,8 +40,30 @@ const SCRIPT = path.join(REPO_ROOT, '.github/scripts/ci-failure-issue.sh');
 interface Scenario {
     /** What `gh issue list` should report: an issue number, or empty for none. */
     openIssue?: string;
-    /** How many jobs the run reports as having STARTED — the cancel discriminator. */
-    startedJobs?: number;
+    /**
+     * The cancel discriminator, as two numbers, because ONE number cannot
+     * express the case that matters (#748).
+     *
+     * `jobsCreated` is `.jobs | length`; `jobsExecuted` counts the jobs with
+     * at least one timestamped step. The old harness had a single
+     * `startedJobs` standing for `select(.started_at != null) | length`, and
+     * that expression cannot distinguish a job that ran from a job that only
+     * ever had a RECORD: the Jobs API sets `started_at` to a placeholder
+     * equal to `created_at` before any runner is assigned. So the two reads
+     * were identical in the stub and identical in production, and a run whose
+     * jobs were cancelled in the queue was reported as a timeout.
+     *
+     * `jobsExecuted` defaults to `jobsCreated` — a plain budget kill, the
+     * shape the old single number always implied.
+     */
+    jobsCreated?: number;
+    jobsExecuted?: number;
+    /**
+     * Overrides the two numbers with a verbatim probe answer, so a malformed
+     * one can be driven. Exists because the branch that reads a bad answer as
+     * "0 jobs" is the SILENT branch.
+     */
+    rawProbe?: string;
     /** What `gh issue view --json body` should report as the existing body. */
     existingBody?: string;
     conclusion: string;
@@ -58,6 +80,8 @@ function run(s: Scenario): { out: string; calls: string[] } {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'notifier-'));
     try {
         const callLog = path.join(dir, 'calls.txt');
+        const jobsCreated = s.jobsCreated ?? 0;
+        const jobsExecuted = s.jobsExecuted ?? jobsCreated;
         // Newlines are squashed to spaces so one gh invocation stays one log
         // line — the issue body is multi-line and would otherwise be split
         // across entries, hiding the marker this test checks for.
@@ -67,7 +91,11 @@ printf '%s\\n' "\${args//$'\\n'/ }" >> ${JSON.stringify(callLog)}
 case "$1 $2" in
   "issue list")   printf '%s' ${JSON.stringify(s.openIssue ?? '')} ;;
   "issue view")   printf '%s' ${JSON.stringify(s.existingBody ?? '')} ;;
-  api*)           printf '%s' ${JSON.stringify(String(s.startedJobs ?? 0))} ;;
+  api*)           ${
+      s.rawProbe === undefined
+          ? `printf '%s\\t%s' '${jobsCreated}' '${jobsExecuted}'`
+          : `printf '%s' ${JSON.stringify(s.rawProbe)}`
+  } ;;
 esac
 exit 0
 `;
@@ -124,11 +152,11 @@ describe('CI-failure notifier — files for real failures, and only those', () =
         expect(calls.some((l) => l.startsWith('issue edit'))).toBe(true);
     });
 
-    it('a SUPERSEDED cancel files nothing — no job ever started', () => {
+    it('a SUPERSEDED cancel files nothing — no job record at all', () => {
         // Defect 1, which fired in production as #680. A `concurrency` group
         // kills the earlier PENDING run, so it reports ZERO jobs — measured on
         // the real run: `gh api .../jobs` returned an empty set.
-        const { out, calls } = run({ conclusion: 'cancelled', runId: '202', startedJobs: 0 });
+        const { out, calls } = run({ conclusion: 'cancelled', runId: '202', jobsCreated: 0 });
 
         expect(created(calls)).toBe(false);
         expect(commented(calls)).toBe(false);
@@ -142,22 +170,119 @@ describe('CI-failure notifier — files for real failures, and only those', () =
         // pushes; the run concluded `cancelled` with 17 of 18 jobs SUCCEEDING,
         // and this notifier said nothing. A gate that can neither pass nor fail
         // went dark unannounced.
-        const { out, calls } = run({ conclusion: 'cancelled', runId: '203', startedJobs: 17 });
+        const { out, calls } = run({
+            conclusion: 'cancelled',
+            runId: '203',
+            jobsCreated: 18,
+            jobsExecuted: 18,
+        });
 
         expect(created(calls)).toBe(true);
-        expect(out).toContain('real failure');
+        expect(out).toContain('budget kill');
     });
 
     it('a timed-out cancel COMMENTS rather than duplicating, like any failure', () => {
         const { calls } = run({
             conclusion: 'cancelled',
             runId: '204',
-            startedJobs: 17,
+            jobsCreated: 18,
             openIssue: '42',
         });
 
         expect(created(calls)).toBe(false);
         expect(commented(calls)).toBe(true);
+    });
+
+    // ── #748: a QUEUE DROP is not a budget kill, and the report must say so ──
+    //
+    // Measured on run 35754149459 (a main push, 2026-09-22): 21 job records,
+    // all 21 with a non-null `started_at`, and only 2 that executed a single
+    // step. Nineteen required checks produced no log and no verdict because no
+    // runner was ever free — the queue was ~80 jobs deep — and the notifier
+    // reported that as `timed_out_or_cancelled`, i.e. as a budget overrun. Two
+    // weeks of #748 went into looking for a slow job that was never there.
+    //
+    // The counts come from the SAME payload, so this costs no extra request.
+    it('a QUEUE-DROP cancel files, and names itself a queue drop with the counts', () => {
+        const { out, calls } = run({
+            conclusion: 'cancelled',
+            runId: '206',
+            jobsCreated: 21,
+            jobsExecuted: 2,
+            wf: 'CI',
+        });
+
+        // The filing DECISION is unchanged — a main push that lost 19 checks
+        // is news. What changes is that the report distinguishes the cause.
+        expect(created(calls)).toBe(true);
+        expect(out).toContain('queue drop');
+        expect(out).not.toContain('budget kill');
+
+        const body = calls.find((l) => l.startsWith('issue create')) ?? '';
+        expect(body).toContain('21 created');
+        expect(body).toContain('2 executed a step');
+        expect(body).toContain('19 never started');
+        expect(body).toContain('queue drop');
+    });
+
+    it('a BUDGET KILL names itself a budget kill, and never a queue drop', () => {
+        // The opposite pole, measured on run 35246281669: 21 of 21 jobs
+        // executed, and `CodeQL SAST` was killed at 15m05s against its
+        // `timeout-minutes: 15`. Both poles are asserted because a classifier
+        // with one tested arm is a constant.
+        const { out, calls } = run({
+            conclusion: 'cancelled',
+            runId: '207',
+            jobsCreated: 21,
+            jobsExecuted: 21,
+            wf: 'CI',
+        });
+
+        expect(created(calls)).toBe(true);
+        expect(out).toContain('budget kill');
+        expect(out).not.toContain('queue drop');
+
+        const body = calls.find((l) => l.startsWith('issue create')) ?? '';
+        expect(body).toContain('0 never started');
+        expect(body).toContain('budget kill');
+    });
+
+    it('the probe reads STEPS, not `started_at` — the field that cannot tell the two apart', () => {
+        // The tests above stub `gh`, so they prove the PARSER and the
+        // classifier and can say nothing about which field the `--jq` reads.
+        // Reverting the expression to `select(.started_at != null)` would make
+        // created == executed on every run with job records and every
+        // cancellation would read as a budget kill again — with all of the
+        // above still green. So the selector itself is pinned here.
+        //
+        // The live evidence that `started_at` cannot discriminate, for the
+        // next reader (both are `gh api .../jobs`, both 21 jobs, both with a
+        // non-null `started_at` on all 21):
+        //
+        //   run 35754149459  queue drop   executed a step:  2
+        //   run 35246281669  budget kill  executed a step: 21
+        const src = fs.readFileSync(SCRIPT, 'utf8');
+        expect(src).toContain('(.jobs | length)');
+        expect(src).toContain('select((.steps // []) | map(select(.started_at != null)) | length > 0)');
+        // And the field that was wrong must not be the whole of the count.
+        expect(src).not.toContain('[.jobs[] | select(.started_at != null)] | length');
+    });
+
+    it('a probe that answers with ONE number is a failed probe, not "0 created"', () => {
+        // The suppression branch is reached by `CREATED -eq 0`, so a parser
+        // that mis-reads a malformed answer as zero goes SILENT on a real
+        // failure. That is the shape of the `|| echo 0` defect this script
+        // already carries a comment about; the TSV split gave it a second way
+        // to happen, so both halves are validated.
+        const { out, calls } = run({
+            conclusion: 'cancelled',
+            runId: '208',
+            rawProbe: 'not-a-number',
+            wf: 'CI',
+        });
+
+        expect(created(calls)).toBe(true);
+        expect(out).toContain('probe');
     });
 
     it.each(['skipped', 'neutral', 'action_required'])('%s is not a failure either', (c) => {
@@ -227,7 +352,7 @@ describe('CI-failure notifier — files for real failures, and only those', () =
         const { calls } = run({
             conclusion: 'cancelled',
             runId: '300',
-            startedJobs: 1,
+            jobsCreated: 1,
             wf: 'Publish image to GHCR',
         });
 
@@ -252,7 +377,7 @@ describe('CI-failure notifier — files for real failures, and only those', () =
         const { calls } = run({
             conclusion: 'cancelled',
             runId: '302',
-            startedJobs: 1,
+            jobsCreated: 1,
             wf: 'CI',
         });
 

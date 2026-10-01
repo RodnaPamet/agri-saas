@@ -20,11 +20,11 @@ MARKER_PREFIX="<!-- ci-failure-run:"
 
 # Workflows whose `cancelled` conclusion carries NO information (#805).
 #
-# The discriminator in the `cancelled)` branch below — "did any job start?" —
-# was derived from CI, where a superseded run is killed while still PENDING and
-# so reports zero started jobs. That reasoning does not transfer to
-# `Publish image to GHCR`: it is a SINGLE-job workflow whose job starts within
-# seconds of the run being created, so a supersession finds a started job every
+# The suppression condition in the `cancelled)` branch below — "does this run
+# have any job records?" — was derived from CI, where a superseded run is killed
+# while still PENDING and so has none. That reasoning does not transfer to
+# `Publish image to GHCR`: it is a SINGLE-job workflow whose job record exists
+# within seconds of the run being created, so a supersession finds one every
 # time and would be reported as a real failure. Its cancellations on 2026-09-04
 # were the concurrency group working exactly as designed — filing issues for
 # them is the accumulating noise #682 removed.
@@ -52,6 +52,12 @@ recorded_run_id() {
         | sed -n "s/.*ci-failure-run: \([0-9]\{1,\}\).*/\1/p" | head -1
 }
 
+# Filled in by the `cancelled)` branch with the measured created/executed job
+# split. Empty for every other conclusion, where there is nothing to
+# disambiguate.
+CANCEL_ROW=""
+SHAPE=""
+
 body() {
     cat <<EOF
 **${WF}** concluded \`${CONCLUSION}\`.
@@ -61,7 +67,7 @@ body() {
 | run | [${RUN_ID}](${RUN_URL}) |
 | trigger | \`${EVENT}\` |
 | branch | \`${BRANCH}\` |
-| commit | ${SHA} |
+| commit | ${SHA} |${CANCEL_ROW}
 
 This trigger has no PR page, so nothing else would have said so.
 
@@ -125,14 +131,51 @@ case "$CONCLUSION" in
         #   unannounced. Fixing one false positive had created a worse false
         #   negative.
         #
-        # The discriminator, derived from both real cases rather than guessed:
-        # a SUPERSEDED run is killed while PENDING, so no job ever starts —
-        # #680's run reports ZERO jobs. A timed-out run has jobs that ran, and
-        # siblings that succeeded (17 of 18, in the Coverage case).
+        # The SUPPRESSION condition, derived from both real cases rather than
+        # guessed: a SUPERSEDED run is killed while PENDING, so GitHub never
+        # creates its job records — #680's run reports ZERO jobs. A timed-out
+        # run has jobs that ran, and siblings that succeeded (17 of 18, in the
+        # Coverage case).
         #
         # Counting cancelled-vs-succeeded jobs does NOT work: measured 17/1 for
         # the timeout and 16/1 for the other candidate. Job DURATION alone does
-        # not work either. "Did any job start?" does.
+        # not work either. "Does this run have any job records?" does.
+        #
+        # That last sentence used to read "Did any job start?" and the code
+        # used to claim to test it. It did not — see the #748 paragraph below,
+        # which is the correction, not an addition.
+        #
+        # ── #748: `started_at` is NOT "did this job start" ──
+        #
+        # The probe below used to be `[.jobs[] | select(.started_at != null)]
+        # | length`, described as "did any job start?". It is not that. The
+        # Jobs API populates `started_at` as a PLACEHOLDER equal to
+        # `created_at` the moment a job record exists, before any runner is
+        # assigned — verified live on run 36889033354, whose `E2E (shard 1/2)`
+        # reported `status: "queued"` with `started_at` already set, and on run
+        # 35754149459, where all 21 jobs carry `started_at == created_at` and
+        # `steps: []`. So the old expression answered the job COUNT, and
+        # `STARTED == 0` could only ever be true for a run with no job records
+        # at all. Measured over 115 cancelled `ci.yml` runs (2026-09-17 →
+        # 2026-10-01): 6 had zero records and were suppressed; the other 109
+        # all reported a non-null `started_at` on every job, so every one was
+        # filed as `timed_out_or_cancelled` — including seven main pushes on
+        # 2026-09-22 where 19 of 21 jobs never executed a single step because
+        # the queue was 80 jobs deep. A queue drop and a budget kill need
+        # opposite responses and arrived under one word.
+        #
+        # What DOES separate them is whether a job executed a STEP, which the
+        # same payload carries. Measured on the two classes:
+        #
+        #   run 35754149459  queue drop   21 jobs · 21 started_at · 2 executed
+        #   run 35246281669  budget kill  21 jobs · 21 started_at · 21 executed
+        #
+        # The FILING DECISION is deliberately unchanged — it still suppresses
+        # only on zero job records, which is what the old probe actually tested.
+        # Widening the suppression to "nothing executed" would silence a main
+        # push that lost every check, which is the false negative #682 created
+        # once already. This change makes the report say which of the two
+        # happened; it does not change who gets reported.
         case "|${SUPERSEDED_ONLY}|" in
             *"|${WF}|"*)
                 echo "cancelled ${WF}: this workflow's cancellations are ambiguous by construction — image-tip-check.yml covers the case that matters (#805)"
@@ -140,29 +183,55 @@ case "$CONCLUSION" in
                 ;;
         esac
         # This probe is the SOLE discriminator between "cancelled because it
-        # was superseded" (not a failure) and "cancelled because it timed
-        # out" (very much a failure). `2>/dev/null || echo 0` used to stand
+        # was superseded" (not a failure) and "cancelled because something
+        # went wrong" (very much a failure), and — since #748 — the only thing
+        # that says WHICH kind of wrong. `2>/dev/null || echo 0` used to stand
         # here, which collapsed a rate limit, a 5xx and a jq error into the
         # same answer as a genuine zero — byte-identical stdout, exit 0, and
         # no issue filed for a real timeout. A control that cannot fail
         # cannot discriminate.
-        if ! STARTED="$("$GH" api "repos/${REPO}/actions/runs/${RUN_ID}/jobs?per_page=100" \
-            --jq '[.jobs[] | select(.started_at != null)] | length')"; then
+        if ! PROBE="$("$GH" api "repos/${REPO}/actions/runs/${RUN_ID}/jobs?per_page=100" \
+            --jq '[ (.jobs | length), ([.jobs[] | select((.steps // []) | map(select(.started_at != null)) | length > 0)] | length) ] | @tsv')"; then
             echo "::error::could not read the job list for run ${RUN_ID} — cannot tell a superseded cancel from a timeout, so refusing to stay silent"
-            STARTED=-1
+            PROBE=""
         fi
-        if [ "${STARTED}" = "-1" ]; then
+        CREATED="${PROBE%%$'\t'*}"
+        EXECUTED="${PROBE##*$'\t'}"
+        # Both halves are validated, not just the first. A probe that returns
+        # one number, or prose, must not be read as "0 created" — that is the
+        # suppression branch, and a failed probe landing there is silence.
+        if [ -z "$PROBE" ] \
+            || ! [ "${CREATED}" -eq "${CREATED}" ] 2>/dev/null \
+            || ! [ "${EXECUTED}" -eq "${EXECUTED}" ] 2>/dev/null; then
+            echo "::error::job-list probe returned no usable answer: '${PROBE}'"
             echo "job-list probe failed; treating this cancellation as a real failure"
-        elif ! [ "${STARTED}" -eq "${STARTED}" ] 2>/dev/null; then
-            echo "::error::job-list probe returned a non-numeric answer: ${STARTED}"
-            STARTED=-1
+            CREATED=-1
+            EXECUTED=-1
         fi
-        if [ "${STARTED:-0}" -eq 0 ]; then  # a genuine zero, never a failed probe
-            echo "cancelled with no job ever started — superseded, not a failure"
+        if [ "${CREATED}" -eq 0 ]; then  # a genuine zero, never a failed probe
+            echo "cancelled with no job record at all — superseded while pending, not a failure"
             exit 0
         fi
-        echo "cancelled after ${STARTED} job(s) started — treating as a real failure"
-        CONCLUSION="timed_out_or_cancelled"
+        NEVER_STARTED=$(( CREATED - EXECUTED ))
+        if [ "${CREATED}" -lt 0 ]; then
+            # No counts in the body: `-1 created` reads as data and is not.
+            # An unknown shape, stated as unknown, is the honest report.
+            CANCEL_ROW="
+| cancel shape | unknown — the job-list probe failed, so neither a queue drop nor a budget kill can be ruled out. Read the run (#748). |"
+            echo "cancelled, probe unavailable — treating as a real failure"
+            SHAPE=""
+        elif [ "${NEVER_STARTED}" -gt 0 ]; then
+            SHAPE="**queue drop** — ${NEVER_STARTED} of ${CREATED} jobs never executed a step, so this is a runner-availability cancellation, NOT a \`timeout-minutes\` kill. Those jobs produced no log and no verdict (#748)."
+            echo "cancelled: ${EXECUTED}/${CREATED} jobs executed a step — ${NEVER_STARTED} never started (queue drop)"
+        else
+            SHAPE="**budget kill** — all ${CREATED} jobs executed, so a step or job budget ran out. The killed job's own log names it."
+            echo "cancelled: all ${CREATED} jobs executed a step — budget kill"
+        fi
+        if [ -n "$SHAPE" ]; then
+            CANCEL_ROW="
+| jobs | ${CREATED} created · ${EXECUTED} executed a step · ${NEVER_STARTED} never started |
+| cancel shape | ${SHAPE} |"
+        fi
         if [ -n "$EXISTING" ]; then
             "$GH" issue comment "$EXISTING" --repo "$REPO" --body "$(body)"
             "$GH" issue edit "$EXISTING" --repo "$REPO" --body "$(body)"
