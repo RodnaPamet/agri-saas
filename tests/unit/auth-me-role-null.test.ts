@@ -28,10 +28,36 @@ const auth = jest.fn();
 jest.mock('@/auth', () => ({ auth: () => auth() }));
 
 const findUnique = jest.fn();
-jest.mock('@/lib/prisma', () => ({
-    __esModule: true,
-    default: { user: { findUnique: () => findUnique() } },
-}));
+/**
+ * The route also resolves FEATURE FLAGS (#1209 added `resolveFlags` to this
+ * handler after this test was written), and `resolveFlags` reads
+ * `featureFlag` + `featureFlagCohortMember` and consults Redis. A mock that
+ * omits them made the handler throw `Cannot read properties of undefined
+ * (reading 'featureFlag')` — a 500 where the test asserted 200, green on this
+ * branch's own base and red on the union.
+ *
+ * Shaped after `tests/unit/auth-me-feature-flags.test.ts`, which is the
+ * precedent for this route: mock the MODELS and stub Redis to `null` rather
+ * than mocking `@/lib/feature-flags` wholesale, so `resolveFlags` really runs
+ * and this test cannot pass over a flag resolver that has stopped working.
+ */
+jest.mock('@/lib/prisma', () => {
+    const client = {
+        user: { findUnique: () => findUnique() },
+        featureFlag: { findMany: jest.fn(async () => []) },
+        featureFlagCohortMember: { findMany: jest.fn(async () => []) },
+    };
+    // BOTH export shapes, one object. `route.ts` imports the DEFAULT
+    // (`import prisma from '@/lib/prisma'`) while `feature-flags.ts:37`
+    // imports the NAMED (`import { prisma } from '@/lib/prisma'`). A mock
+    // supplying only `default` leaves the client undefined inside the
+    // resolver, which is why the failure read `Cannot read properties of
+    // undefined (reading 'featureFlag')` — the undefined thing was the
+    // CLIENT, not the model. Same shape as
+    // `tests/unit/auth-me-feature-flags.test.ts`.
+    return { __esModule: true, default: client, prisma: client };
+});
+jest.mock('@/lib/redis', () => ({ getRedis: () => null }));
 
 import { NextRequest } from 'next/server';
 import { GET } from '@/app/api/auth/me/route';
