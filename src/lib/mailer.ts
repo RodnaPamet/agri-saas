@@ -2,14 +2,21 @@
  * Email provider abstraction.
  *
  * Providers:
- * - ConsoleEmailProvider: logs to console (dev default)
- * - NodemailerProvider:   sends via SMTP (production)
+ * - ConsoleEmailProvider: logs to console (dev default; WARNs in production,
+ *                         where it means the message was discarded)
+ * - ResendProvider:       sends via Resend's HTTPS API (what production runs)
+ * - NodemailerProvider:   sends via SMTP (dormant fallback)
  * - StubEmailProvider:    records messages for tests
+ *
+ * Which one is selected is decided in ONE place —
+ * `src/lib/email/provider-selection.ts` — shared with `/api/readyz`, so the
+ * probe's `capabilities.email` cannot drift from what `sendEmail` does.
  */
 
 import nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
 import { logger } from '@/lib/observability/logger';
+import { selectMailProviderKind } from '@/lib/email/provider-selection';
 
 export interface EmailAttachment {
     filename: string;
@@ -33,8 +40,44 @@ export interface EmailProvider {
 
 // ─── Console (dev) ───
 
+/**
+ * Is this process running in production?
+ *
+ * Lazy `require` of `@/env` for the same reason `initMailerFromEnv` does it
+ * (see its comment): Next's bundler loads mailer.ts in several chunks and this
+ * module must not drag env validation in at parse time in each of them.
+ */
+function isProductionRuntime(): boolean {
+
+    const { env } = require('@/env');
+    return env.NODE_ENV === 'production';
+}
+
 export class ConsoleEmailProvider implements EmailProvider {
     async send(msg: EmailMessage): Promise<void> {
+        if (isProductionRuntime()) {
+            // The console sink in PRODUCTION means no transport was configured
+            // and this message is being THROWN AWAY. It used to say so at
+            // `debug`, which production log levels drop — so a silent fallback
+            // to "discard the mail" looked exactly like a successful send, for
+            // invites, password resets and the notification outbox alike.
+            //
+            // The body is deliberately NOT logged on this path, unlike the dev
+            // line below: these messages carry verification + password-reset
+            // links, and a WARN that survives production log levels is a WARN
+            // that reaches log storage.
+            logger.warn('Email NOT SENT — no mail transport configured; the console sink discarded it', {
+                component: 'mailer',
+                provider: 'console',
+                delivered: false,
+                to: msg.to,
+                subject: msg.subject,
+                hint: 'Set RESEND_API_KEY (preferred) or SMTP_HOST. /api/readyz reports capabilities.email.',
+            });
+            return;
+        }
+        // Dev/test: the console sink is the intended default, so stay at
+        // `debug` and keep local development quiet.
         logger.debug('Email sent (dev console sink)', {
             component: 'mailer',
             to: msg.to,
@@ -193,24 +236,36 @@ export function initMailerFromEnv(): void {
         });
     }
 
-    // Resend (HTTPS API) takes precedence — most deployments use it and it
-    // needs no SMTP egress. RESEND_FROM must be a Resend-verified sender;
-    // falls back to SMTP_FROM (which carries a default).
-    const resendKey = env.RESEND_API_KEY;
-    if (resendKey) {
-        setEmailProvider(
-            new ResendProvider(resendKey, env.RESEND_FROM ?? env.SMTP_FROM ?? DEFAULT_SENDER),
-        );
-        return;
-    }
+    // ONE decision function, shared with /api/readyz's capabilities.email —
+    // see src/lib/email/provider-selection.ts. Resend (HTTPS API) takes
+    // precedence: it needs no SMTP egress and it is what production runs on.
+    // SMTP stays wired as the dormant fallback.
+    const kind = selectMailProviderKind(env);
 
-    const host = env.SMTP_HOST;
-    if (host) {
+    if (kind === 'resend') {
+        // RESEND_FROM must be a Resend-verified sender; falls back to
+        // SMTP_FROM (which carries a default).
+        setEmailProvider(
+            new ResendProvider(env.RESEND_API_KEY, env.RESEND_FROM ?? env.SMTP_FROM ?? DEFAULT_SENDER),
+        );
+    } else if (kind === 'smtp') {
         const port = env.SMTP_PORT ?? 587;
         const user = env.SMTP_USER;
         const pass = env.SMTP_PASS;
         const from = env.SMTP_FROM ?? DEFAULT_SENDER;
-        setEmailProvider(new NodemailerProvider({ host, port, user, pass, from }));
+        setEmailProvider(new NodemailerProvider({ host: env.SMTP_HOST, port, user, pass, from }));
     }
-    // Otherwise keep ConsoleEmailProvider (dev/test default)
+    // 'console' → keep ConsoleEmailProvider (dev/test default). In production
+    // that sink WARNs on every send that the message was discarded.
+
+    // Name the selected transport in the logs. Delivery was previously
+    // provable only from outside the app (calling Resend by hand with the
+    // container's env); this line is the inside-the-app evidence that
+    // `sendEmail` picked the transport the operator configured. No key
+    // material — the kind is a closed enum.
+    logger.info('Mailer transport selected', {
+        component: 'mailer',
+        provider: kind,
+        sends: kind !== 'console',
+    });
 }

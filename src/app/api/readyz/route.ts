@@ -45,7 +45,8 @@
  *       // observability, never part of `checks`/`failed`, so they can
  *       // never 503 the probe.
  *       "satellite": { "configured": boolean, "missing": string[] },
- *       "basemap":   { "branch": "maptiler" | "demotiles" | "blind", ... }
+ *       "basemap":   { "branch": "maptiler" | "demotiles" | "blind", ... },
+ *       "email":     { "provider": "resend" | "smtp" | "console", "sends": boolean }
  *     },
  *     "latencyMs": N           // total probe time
  *   }
@@ -64,6 +65,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { HeadBucketCommand, S3Client } from '@aws-sdk/client-s3';
 import { env } from '@/env';
 import { geeConfigStatus } from '@/lib/agro/gee-config';
+import { emailCapabilityStatus } from '@/lib/email/provider-selection';
 import { basemapBranchStatus } from '@/lib/geo/basemap-bundle-scan';
 import { jsonResponse } from '@/lib/api-response';
 import { SERVICE_ID } from '@/lib/service-identity';
@@ -269,6 +271,18 @@ export async function GET() {
     // the result is a closed enum — the key never appears in the response.
     const basemap = await basemapBranchStatus();
 
+    // Mail transport (P0.6). Third instance of the same argument, third kind of
+    // silence: with no transport configured `sendEmail` logs to the console
+    // sink and DISCARDS the message — invites, verification links, password
+    // resets — and the sink's log line sat at `debug`, which production log
+    // levels drop. Delivery had only ever been proved from OUTSIDE the app
+    // (calling Resend by hand with the container's env), so nothing said which
+    // transport the running process picked. This reports it: a closed enum
+    // from the same selector `initMailerFromEnv` branches on, never a key,
+    // never a host, and OUTSIDE `checks`/`failed` so mail can never 503 a
+    // healthy instance.
+    const email = emailCapabilityStatus(env);
+
     if (!allOk) {
         // Log the failure for observability — operators want to see
         // readyz failures in the logs even though the probe response
@@ -293,7 +307,7 @@ export async function GET() {
             version: process.env.BUILD_SHA || process.env.VERCEL_GIT_COMMIT_SHA || 'dev',
             checks,
             failed,
-            capabilities: { satellite, basemap },
+            capabilities: { satellite, basemap, email },
             latencyMs: Date.now() - start,
         },
         { status: allOk ? 200 : 503 },
