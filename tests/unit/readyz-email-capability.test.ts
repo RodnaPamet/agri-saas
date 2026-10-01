@@ -79,7 +79,10 @@ describe('GET /api/readyz — capabilities.email is REPORTED, never GATING', () 
     });
 
     it('reports provider "resend" when RESEND_API_KEY is set, without echoing the key', async () => {
-        process.env.RESEND_API_KEY = 're_live_SUPERSECRETKEYVALUE';
+        // The shape is the point: the assertion below proves readyz does not echo
+        // a value that LOOKS like a credential, which a short placeholder would
+        // not test. Never a real key.
+        process.env.RESEND_API_KEY = 're_live_SUPERSECRETKEYVALUE'; // pragma: allowlist secret -- key-shaped test fixture, never a real credential
         process.env.RESEND_FROM = 'noreply@agrent.bg';
         // SMTP is also configured — Resend must win, exactly as the mailer does.
         process.env.SMTP_HOST = 'smtp.example.test';
