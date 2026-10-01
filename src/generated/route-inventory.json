@@ -1,0 +1,1873 @@
+{
+  "_README": [
+    "Every path template this API serves. APPEND-ONLY.",
+    "",
+    "ORDER: `routes` is sorted by `path` in UTF-16 CODE-UNIT order, never via",
+    "localeCompare — that resolves through the generating machine's ICU and",
+    "locale, so two machines could emit different bytes for the same surface.",
+    "tests/guards/route-inventory-ledger.test.ts asserts the order.",
+    "",
+    "Consumed by native clients to check that a path they build still exists",
+    "(agrent-ios#132) and by tests/guards/route-inventory-ledger.test.ts, which",
+    "fails when a live path leaves the filesystem.",
+    "",
+    "RULES:",
+    "  - `npm run routes:inventory` adds new paths and resurrects returning",
+    "    ones. It NEVER retires a path. That is deliberate: a generator that",
+    "    rewrote the list wholesale would make a removal as cheap as an",
+    "    addition, which is the defect this file exists to prevent.",
+    "  - A path that leaves the filesystem FAILS the guard until someone sets",
+    "    `status: \"retired\"` and writes a `reason`. A client may be calling it.",
+    "  - `documented: false` means the route EXISTS and no schema describes it",
+    "    (it is on openapi-undocumented-baseline.json). It does not mean the",
+    "    route is absent. 239 of 368 were in that state when this file was",
+    "    created.",
+    "",
+    "WHY IT EXISTS: #1087 renamed five tile routes and the iOS client went on",
+    "calling the old shape, rendering no satellite overlay until the owner saw",
+    "it on a phone. Both suites stayed green — a rename is invisible to a repo",
+    "that only checks its own callers."
+  ],
+  "routes": [
+    {
+      "path": "/api/account/avatar",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/account/avatar/{userId}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/account/bottom-tabs",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/account/language",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/account/profile",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/admin/agri-events",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/admin/agri-events/{id}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/admin/diagnostics",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/admin/news-derived-events",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/admin/news-derived-events/{id}/approve",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/admin/news-derived-events/{id}/reject",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/admin/support-schemes",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/admin/support-schemes/{id}/review",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/admin/tenants",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/admin/tenants/{slug}/transfer-ownership",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/agro/data-streams/{streamId}/ingest",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/audit-log",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/auth/change-password",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/auth/forgot-password",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/auth/logout",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/auth/me",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/auth/native/adopt",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/auth/native/complete",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/auth/native/exchange",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/auth/native/start",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/auth/register",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/auth/reset-password",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/auth/sso/oidc/callback",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/auth/sso/oidc/start",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/auth/sso/saml/callback",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/auth/sso/saml/start",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/auth/token",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/auth/token/refresh",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/auth/ui-config",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/auth/verify-email",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/auth/verify-email/resend",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/docs",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/docs/assets/{asset}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/evidence",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/evidence/{id}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/evidence/{id}/review",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/health",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/integrations/sharepoint/callback",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/integrations/webhooks/{provider}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/invites/{token}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/invites/{token}/accept-redirect",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/invites/{token}/start-signin",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/livez",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/metrics",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/notifications",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/notifications/stream",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/notifications/{id}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/offline/whoami",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/openapi",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/org",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/org/invite/{token}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/org/invite/{token}/accept-redirect",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/org/invite/{token}/start-signin",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/org/{orgSlug}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/org/{orgSlug}/audit-log",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/org/{orgSlug}/dashboard/widgets",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/org/{orgSlug}/dashboard/widgets/{widgetId}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/org/{orgSlug}/invites",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/org/{orgSlug}/invites/{inviteId}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/org/{orgSlug}/members",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/org/{orgSlug}/portfolio",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/org/{orgSlug}/portfolio/export",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/org/{orgSlug}/tenants",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/org/{orgSlug}/tenants/{tenantId}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/promotions/{id}/image",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/readyz",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/scim/v2/Groups",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/scim/v2/Groups/{id}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/scim/v2/ServiceProviderConfig",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/scim/v2/Users",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/scim/v2/Users/{id}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/security/csp-report",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/sso",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/staging/seed",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/storage/av-webhook",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/stripe/webhook",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/access-reviews",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/access-reviews/{reviewId}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/access-reviews/{reviewId}/close",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/access-reviews/{reviewId}/decisions/{decisionId}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/access-reviews/{reviewId}/evidence",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/api-keys",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/api-keys/bulk/delete",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/api-keys/{keyId}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/companies",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/companies/{id}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/farm-profile",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/integrations",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/integrations/diagnostics",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/integrations/sharepoint",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/integrations/sharepoint/connect",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/integrations/sharepoint/sites",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/integrations/sharepoint/test",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/invites",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/invites/bulk/delete",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/invites/{inviteId}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/key-rotation",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/ledger-reconciliation",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/market-prices",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/members",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/members/bulk/delete",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/members/bulk/remove",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/members/{membershipId}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/members/{membershipId}/certificates",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/members/{membershipId}/deactivate",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/members/{membershipId}/reactivate",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/modules",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/promotions",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/promotions/{id}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/promotions/{id}/image",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/roles",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/roles/bulk/delete",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/roles/{roleId}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/rotate-dek",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/scim",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/sessions",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/settings",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/tenant-dek-rotation",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/agro/data-streams",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/agro/data-streams/{streamId}/readings",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/agro/locations/{locationId}/evi-tiles",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/agro/locations/{locationId}/gndvi-tiles",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/agro/locations/{locationId}/ndmi-tiles",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/agro/locations/{locationId}/ndre-tiles",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/agro/locations/{locationId}/ndvi-tiles",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/agro/parcels/{parcelId}/analysis",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/agro/parcels/{parcelId}/crop-seasons",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/agro/parcels/{parcelId}/crop-seasons/{seasonId}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/agro/parcels/{parcelId}/history",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/agro/parcels/{parcelId}/weed-observations",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/agro/parcels/{parcelId}/weed-observations/{observationId}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/ai/automation-suggestions",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/ai/copilot",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/assets",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/assets/bulk/delete",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/assets/kpi",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/assets/{id}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/assets/{id}/activity",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/assets/{id}/evidence/attached",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/assets/{id}/evidence/attached/{evidenceId}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/assets/{id}/maintenance",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/assets/{id}/maintenance/{maintenanceId}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/assets/{id}/purge",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/assets/{id}/restore",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/audit-log",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/audit-log/verify",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/automation/analytics",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/automation/executions/live",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/automation/executions/{id}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/automation/rules",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/automation/rules/{id}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/automation/rules/{id}/dry-run",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/automation/rules/{id}/executions",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/automation/rules/{id}/re-trigger",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/automation/templates",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/billing/checkout",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/billing/events",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/billing/portal",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/cadastre/config",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/cadastre/parcels",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/cadastre/parcels/config",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/cadastre/wms/{z}/{x}/{y}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/calendar",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/calendar/upcoming-count",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/climate/meteobot",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/costs/machinery",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/dashboard/ag",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/dashboard/task-trend",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/dashboard/trends",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/equipment",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/bulk/delete",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/files/{fileId}/download",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/imports",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/imports/{jobId}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/metrics",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/retention/expired",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/retention/expiring",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/retention/metrics",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/retention/sweep",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/uploads",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/{id}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/{id}/archive",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/{id}/purge",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/{id}/restore",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/{id}/retention",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/{id}/review",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/{id}/unarchive",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/exchange/inquiries",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/exchange/inquiries/{inquiryId}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/exchange/listings",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/exchange/listings/{listingId}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/exchange/listings/{listingId}/thread",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/exchange/messages/{messageId}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/exchange/my-listings",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/exchange/threads",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/exchange/threads/{threadId}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/exchange/threads/{threadId}/block",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/exchange/threads/{threadId}/close",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/exchange/threads/{threadId}/messages",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/exchange/threads/{threadId}/read",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/farm-tasks",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/field-operations/{taskId}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/field-operations/{taskId}/parcels/{lineId}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/field-operations/{taskId}/review",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/files/{fileName}/verify",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/grain/bins",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/grain/bins/{binId}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/grain/blend",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/grain/calculator",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/grain/contracts",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/grain/contracts/{contractId}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/grain/contracts/{contractId}/deliveries",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/grain/costs",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/grain/costs/{costEntryId}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/grain/costs/{costEntryId}/invoice",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/grain/deliveries/{deliveryId}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/grain/yield-records",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/grain/yield-records/{yieldRecordId}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/insurance/leads",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/insurance/products",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/integrations/sharepoint/browse",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/integrations/sharepoint/connections",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/integrations/sharepoint/health",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/integrations/sharepoint/import",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/integrations/sharepoint/sites",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/integrations/sharepoint/sync",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/inventory/lots",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/inventory/lots/{lotId}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/inventory/lots/{lotId}/adjust",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/inventory/lots/{lotId}/ledger",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/inventory/lots/{lotId}/receive",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/inventory/lots/{lotId}/trace",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/issues",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/issues/bulk/assign",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/issues/bulk/due",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/issues/bulk/status",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/issues/metrics",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/issues/{issueId}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/issues/{issueId}/activity",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/issues/{issueId}/assign",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/issues/{issueId}/bundles",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/issues/{issueId}/bundles/{bundleId}/freeze",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/issues/{issueId}/bundles/{bundleId}/items",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/issues/{issueId}/comments",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/issues/{issueId}/links",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/issues/{issueId}/links/{linkId}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/issues/{issueId}/status",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/items",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/items/{itemId}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/journal",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/journal/{id}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/journal/{id}/files",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/journal/{id}/purge",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/journal/{id}/restore",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/knowledge",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/knowledge/ask",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/knowledge/categories",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/knowledge/satellite-guide",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/knowledge/{id}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/knowledge/{id}/acknowledge",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/knowledge/{id}/archive",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/knowledge/{id}/publish",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/knowledge/{id}/unarchive",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/knowledge/{id}/versions",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/leases",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/leases/parcel-options",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/leases/{leaseId}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/leases/{leaseId}/payments",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/leases/{leaseId}/payments/{paymentId}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/bulk/delete",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/basemap/{z}/{x}/{y}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/cadastre-import",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/cadastre-import/{jobId}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/farm-record",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/farm-records",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/operations",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/parcel-clusters",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/parcels",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/parcels/merge",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/parcels/{parcelId}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/parcels/{parcelId}/leases",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/parcels/{parcelId}/leases/{leaseId}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/parcels/{parcelId}/split",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/smart-defaults",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/spatial-import",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/spatial-import/{jobId}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/tiles/{z}/{x}/{y}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/me/interests",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/notification-settings",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/notification-settings/run-job",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/notifications",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/notifications/{id}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/offers/leads",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/onboarding/finish",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/onboarding/metrics",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/onboarding/restart",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/onboarding/start",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/onboarding/state",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/onboarding/step",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/planning/crop-plans",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/planning/crop-plans/{cropPlanId}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/planning/crop-plans/{cropPlanId}/generate",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/planning/crop-types",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/planning/crop-varieties",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/planning/plantings",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/planning/plantings/{plantingId}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/planning/plantings/{plantingId}/gdd",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/planning/plantings/{plantingId}/soil",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/planning/seasons",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/planning/seasons/{seasonId}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/processes",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/processes/governance-graph",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/processes/{id}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/processes/{id}/export-automation",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/processes/{id}/export-pdf",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/processes/{id}/snapshots",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/processes/{id}/snapshots/{version}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/processes/{id}/snapshots/{version}/restore",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/push-subscriptions",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/reports/field-briefing",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/reports/rent-roll",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/reports/season-diary",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/reports/season-recap",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/reports/year-on-farm",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/sample-data",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/schemes",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/search",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/security/mfa/challenge/verify",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/security/mfa/enroll",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/security/mfa/enroll/start",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/security/mfa/enroll/verify",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/security/mfa/policy",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/security/sessions/revoke-all",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/security/sessions/revoke-current",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/security/sessions/revoke-user",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/soil/legend",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/soil/wms/{z}/{x}/{y}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/sso",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/sso/entra",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/sso/entra/group-mappings",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/sso/entra/group-mappings/{mappingId}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks/bulk/assign",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks/bulk/delete",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks/bulk/due",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks/bulk/status",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks/metrics",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks/{taskId}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks/{taskId}/activity",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks/{taskId}/assign",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks/{taskId}/comments",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks/{taskId}/evidence",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks/{taskId}/evidence/{evidenceId}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks/{taskId}/links",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks/{taskId}/links/{linkId}",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks/{taskId}/status",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/trends/news",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/trends/prices",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/units",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/users/assignable",
+      "status": "live",
+      "documented": false
+    }
+  ]
+}

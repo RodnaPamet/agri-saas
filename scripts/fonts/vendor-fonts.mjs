@@ -150,7 +150,15 @@ async function main() {
         });
         blocks.push({ face, file, bytes });
     }
-    entries.sort((a, b) => a.file.localeCompare(b.file));
+    // CODE-UNIT order, never `localeCompare` — this writes a hash-verified
+    // lockfile, so its byte order is part of what `--write-lock` freezes.
+    // LATENT rather than live today: every vendored filename is drawn from
+    // `-.0-9a-z`, where ICU collation and code-unit order happen to agree
+    // (measured: 0 inversions across 72 entries). One uppercase letter or
+    // underscore in a future font family would diverge them, and the
+    // regenerated lock would differ by ordering alone. Same defect this
+    // repo's route inventory shipped live.
+    entries.sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0));
 
     const lock = { source: css2Url(), userAgent: CHROME_UA, faces: entries };
 

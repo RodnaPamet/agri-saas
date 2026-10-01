@@ -55,10 +55,15 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { collectSourceFiles } from '../helpers/collect-files';
+import {
+    API_REL,
+    NON_SURFACE_ROUTE_FILES as EXEMPT_ROUTE_FILES,
+    ROOT,
+    routeFiles,
+    toOpenApiPath,
+    toRouteFile,
+} from '../../scripts/lib/api-routes';
 
-const ROOT = path.resolve(__dirname, '../..');
-const API_REL = 'src/app/api';
 const SPEC_PATH = path.join(ROOT, 'src/generated/openapi.json');
 const BASELINE_PATH = path.join(__dirname, 'openapi-undocumented-baseline.json');
 
@@ -69,8 +74,11 @@ const BASELINE_PATH = path.join(__dirname, 'openapi-undocumented-baseline.json')
  * `/callback/:provider`, `/csrf`, …) from one file, so it has no single path
  * template. Baselining it would imply someone should eventually write one entry
  * for it; exempting it says the mapping does not reach it.
+ *
+ * Imported as `NON_SURFACE_ROUTE_FILES` from `scripts/lib/api-routes`, which
+ * holds the route derivation once — the inventory generator needs the same
+ * exclusion, and two copies of it is how the two answers drift.
  */
-const EXEMPT_ROUTE_FILES = new Set(['src/app/api/auth/[...nextauth]/route.ts']);
 
 /** The HTTP verbs Next.js treats as route handlers. */
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
@@ -91,38 +99,8 @@ const spec = JSON.parse(fs.readFileSync(SPEC_PATH, 'utf8')) as {
 };
 const baseline = JSON.parse(fs.readFileSync(BASELINE_PATH, 'utf8')) as Baseline;
 
-/**
- * Every `route.ts` under `src/app/api`, repo-relative.
- *
- * Collected through `collectSourceFiles` (#865) so a result below the floor
- * THROWS instead of returning an empty list. A guard whose walk silently
- * returns nothing reports every route as accounted for — the failure would be
- * invisible in exactly the direction that matters.
- */
-function routeFiles(): string[] {
-    return collectSourceFiles({
-        roots: [API_REL],
-        extensions: ['.ts'],
-        exclude: (rel) => !rel.endsWith('/route.ts'),
-        // 353 today. The floor sits under that but well above zero, so an
-        // `exclude` predicate that ate too much fails rather than passing.
-        floor: 300,
-    })
-        .map((abs) => path.relative(ROOT, abs).split(path.sep).join('/'))
-        .sort();
-}
 
-/** `src/app/api/t/[tenantSlug]/journal/[id]/route.ts` -> `/api/t/{tenantSlug}/journal/{id}` */
-function toOpenApiPath(routeFile: string): string {
-    const dir = routeFile.slice('src/app'.length, -'/route.ts'.length);
-    return dir.replace(/\[([^\]]+)\]/g, (_m, name: string) => `{${name}}`);
-}
 
-/** `/api/t/{tenantSlug}/journal/{id}` -> the route file it must have come from */
-function toRouteFile(openApiPath: string): string {
-    const dir = openApiPath.replace(/\{([^}]+)\}/g, (_m, name: string) => `[${name}]`);
-    return `src/app${dir}/route.ts`;
-}
 
 /**
  * The verbs a route file exports.
