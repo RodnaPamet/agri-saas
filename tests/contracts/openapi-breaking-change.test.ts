@@ -13,6 +13,13 @@
  *      wolf earns the same contempt.
  *
  * So the additive cases below are as load-bearing as the breaking ones.
+ *
+ * A THIRD failure mode was found later and lives in its own file. This one
+ * calibrates the CLASSES; it said nothing about the classifier's field of view,
+ * and the field of view turned out to be one level deep — 293 of 1575 described
+ * property sites outside the gate, reading as green (#1214). See
+ * `openapi-breaking-depth.test.ts`. Keep both: classes and depth are
+ * independent axes, and neither assertion subsumes the other.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -140,19 +147,32 @@ describe('the guard, against the real committed spec', () => {
         expect({ breaking: found }).toEqual({ breaking: [] });
     });
 
-    it('MUTATION PROOF: deleting a real field from the real spec IS caught', () => {
+    it('MUTATION PROOF: deleting a real DEPTH-0 field from the real spec IS caught', () => {
         // Proves the gate above is not vacuously passing because the two specs
         // happen to be identical. Removes an actual property from an actual
         // schema and asserts the classifier notices.
+        //
+        // This used to pick its victim with `Object.keys(props)[0]` — a
+        // TOP-LEVEL key by construction — and that is precisely why it passed
+        // for months while every NESTED property sat outside the gate (#1214).
+        // The victim is now chosen by SEARCHING for a depth-0 leaf and the
+        // choice is asserted, so "depth 0" is a stated property of this proof
+        // rather than an accident of which key came first. The nested half of
+        // the calibration lives in `openapi-breaking-depth.test.ts`; the two
+        // files together are the proof, and neither is sufficient alone.
         const name = Object.keys(committed.components.schemas).find((n) => {
             const props = committed.components.schemas[n].properties;
-            return props && Object.keys(props).length > 0;
+            return props && Object.keys(props).some((p) => typeof props[p]?.type === 'string');
         });
         expect(name).toBeDefined();
 
         const mutated = JSON.parse(JSON.stringify(committed));
         const props = mutated.components.schemas[name!].properties;
-        const victim = Object.keys(props)[0];
+        const victim = Object.keys(props).find((p) => typeof props[p]?.type === 'string')!;
+        // The victim is a depth-0 LEAF: directly under `properties`, and not
+        // itself an object with properties of its own.
+        expect(Object.keys(committed.components.schemas[name!].properties)).toContain(victim);
+        expect(props[victim].properties).toBeUndefined();
         delete props[victim];
 
         const found = findBreakingChanges(committed, mutated);

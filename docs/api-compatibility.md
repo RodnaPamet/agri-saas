@@ -59,6 +59,25 @@ Enforced by `scripts/openapi-breaking.ts`, run in
 | property becomes required | a client that omits it is rejected |
 | enum narrowed | a client still sending the old value is rejected |
 | type narrowed | a client parsing the old type breaks |
+| `$ref` repointed | the shape at that path changed, though neither schema did |
+
+**At every depth, since #1214.** The classifier used to compare exactly
+`schema.properties[prop]` and nothing below it. Measured on the committed spec,
+that put **293 of 1575** described property sites — across **51 of 204**
+schemas — outside the gate, reading as green: deleting
+`CurrentUser.user.role` reported clean, and so did retyping it to `number`.
+Findings now carry a dotted path (`user.role`, `rows[].id`, `featureFlags{}`,
+`AssetDetail/allOf[1].parcels`). The depth calibration, including the sweep
+over every nested site the spec has, is
+`tests/contracts/openapi-breaking-depth.test.ts`.
+
+**A `$ref` is not followed.** Every `$ref` in this spec points at a named
+schema under `components.schemas`, and the classifier already compares every
+named schema on its own — so a change to a `$ref` target is reported under the
+target's own name, once, instead of once per referencing path. Repointing a
+`$ref` at a different target is the one class that treatment would otherwise
+miss, so it has its own row above. Swapping an inline object for a `$ref` (or
+back) is a shape-preserving refactor and stays silent.
 
 **Explicitly NOT breaking**, and this list is as load-bearing as the one above:
 

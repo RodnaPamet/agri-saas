@@ -21,7 +21,9 @@
 /**
  * Bumped ONLY on a breaking change — the classes `scripts/openapi-breaking.ts`
  * detects: a removed schema or property, a property becoming required, a
- * narrowed enum, a narrowed type.
+ * narrowed enum, a narrowed type, a repointed `$ref`. Since #1214 every one of
+ * those is scored at EVERY depth, not only on a schema's top-level properties,
+ * so a nested field's verdict is a verdict rather than a silent pass.
  *
  * Additive change does NOT bump this. If every new optional field forced a
  * bump, the number would stop meaning "clients must update" and start meaning
