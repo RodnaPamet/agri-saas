@@ -168,6 +168,63 @@ describe('the read pointer is monotonic', () => {
     });
 });
 
+describe('a malformed ?limit= cannot reach Prisma as NaN', () => {
+    /**
+     * `?limit=abc` returned 500. The route did `limitRaw ? Number(limitRaw) :
+     * undefined`, and NaN then survived everything that looks like a guard:
+     *
+     *     NaN ?? DEFAULT_PAGE_SIZE  -> NaN   (`??` catches null/undefined only)
+     *     Math.max(NaN, 1)          -> NaN
+     *     Math.min(NaN, 100)        -> NaN
+     *     take: NaN + 1             -> NaN   -> Prisma rejects -> 500
+     *
+     * The routes now 400 on a value they cannot read (`parseLimitParam`), and
+     * the clamp here is the choke point that stops a future caller
+     * reintroducing it. These assert the CLAMP, by the `take` it produces.
+     */
+    it('the scrollback: NaN falls back to the default, not to take: NaN', async () => {
+        await getExchangeThread(buyerCtx, 'th1', { limit: Number.NaN });
+        const args = mockPrisma.exchangeMessage.findMany.mock.calls.at(-1)![0];
+        expect(Number.isFinite(args.take)).toBe(true);
+        expect(args.take).toBe(101); // DEFAULT_PAGE_SIZE + 1
+    });
+
+    it('the thread list: NaN falls back to the default too', async () => {
+        // The shared beforeEach only stubs `exchangeMessage.findMany`; this
+        // path reads threads, and an unstubbed mock returns undefined.
+        mockPrisma.exchangeThread.findMany.mockResolvedValue([]);
+        await listExchangeThreads(buyerCtx, { limit: Number.NaN });
+        const args = mockPrisma.exchangeThread.findMany.mock.calls.at(-1)![0];
+        expect(Number.isFinite(args.take)).toBe(true);
+        expect(args.take).toBe(101);
+    });
+
+    it.each([
+        ['Infinity', Number.POSITIVE_INFINITY, 101],
+        ['a huge finite number', 1e9, 101],
+        ['zero', 0, 2],
+        ['a negative', -5, 2],
+        ['a normal value', 5, 6],
+    ])('%s clamps into range', async (_label, limit, expected) => {
+        await getExchangeThread(buyerCtx, 'th1', { limit: limit as number });
+        const args = mockPrisma.exchangeMessage.findMany.mock.calls.at(-1)![0];
+        expect(args.take).toBe(expected);
+    });
+
+    it('control: an ABSENT limit produces the default, and 5 does NOT', async () => {
+        // Without a control the assertions above are satisfied by a clamp
+        // that ignores its argument and always returns the default. This
+        // pins that the argument is read: two inputs, two takes.
+        await getExchangeThread(buyerCtx, 'th1');
+        const absent = mockPrisma.exchangeMessage.findMany.mock.calls.at(-1)![0].take;
+        await getExchangeThread(buyerCtx, 'th1', { limit: 5 });
+        const given = mockPrisma.exchangeMessage.findMany.mock.calls.at(-1)![0].take;
+        expect(absent).toBe(101);
+        expect(given).toBe(6);
+        expect(given).not.toBe(absent);
+    });
+});
+
 describe('the scrollback', () => {
     it('SELECTS newest-first, so a long thread returns its end', async () => {
         await getExchangeThread(buyerCtx, 'th1');

@@ -3,6 +3,7 @@ import { getTenantCtx } from '@/app-layer/context';
 import { listExchangeThreads } from '@/app-layer/usecases/exchange-messaging';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
+import { parseLimitParam } from '@/lib/validation/query-params';
 
 /**
  * GET /api/t/{slug}/exchange/threads — the caller's conversations.
@@ -23,7 +24,7 @@ export const GET = withApiErrorHandling(
         return jsonResponse(
             await listExchangeThreads(ctx, {
                 cursor: url.searchParams.get('cursor'),
-                limit: limitRaw ? Number(limitRaw) : undefined,
+                limit: parseLimitParam(limitRaw),
             }),
         );
     },

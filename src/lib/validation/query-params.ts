@@ -17,7 +17,7 @@
  */
 
 import { z } from 'zod';
-import { badRequest } from '@/lib/errors/types';
+import { badRequest, codedBadRequest } from '@/lib/errors/types';
 
 /**
  * Parse a comma-separated multi-select query param into a validated,
@@ -266,4 +266,80 @@ export function parseDateRangeParam(
         to = new Date(to.getTime() + 86_399_999);
     }
     return { ...(from ? { from } : {}), ...(to ? { to } : {}) };
+}
+
+/**
+ * A `?limit=` value: a positive integer, or `undefined` when absent.
+ *
+ * ## The defect this exists for
+ *
+ * Four routes read the param as `limitRaw ? Number(limitRaw) : undefined`.
+ * `Number('abc')` is `NaN`, and NaN then survives everything that looks like
+ * it would stop it:
+ *
+ *     NaN ?? DEFAULT_PAGE_SIZE   -> NaN   (`??` catches null/undefined, NOT NaN)
+ *     Math.max(NaN, 1)           -> NaN
+ *     Math.min(NaN, 100)         -> NaN
+ *     take: NaN + 1              -> NaN   -> Prisma validation error -> 500
+ *
+ * So `?limit=abc` returned 500 on a list read. The clamp in the usecase LOOKS
+ * like the defence and is inert for exactly the input that needs it — the
+ * whole chain is NaN-transparent.
+ *
+ * ## Why this REJECTS rather than falling back
+ *
+ * A silent default hides a client bug: the caller asked for something the
+ * server cannot interpret and gets a normal-looking page back, so the mistake
+ * surfaces as "why is my page size wrong" much later, if ever. `limit=abc` is
+ * not a preference, it is a malformed request, and `parseCsvEnumParam` above
+ * already sets the house precedent of 400 on an invalid member.
+ *
+ * TOO LARGE is different and is clamped, not rejected: a caller asking for
+ * more than the ceiling has made a reasonable request the server declines to
+ * serve in full, which is not the same as one it cannot read.
+ *
+ * ## Why digits-only rather than parseInt
+ *
+ * `Number.parseInt('12abc', 10)` is 12 and `Number('0x10')` is 16, so both
+ * accept values whose meaning the caller did not intend. `Number('')` and
+ * `Number(' ')` are 0. A page size is digits; anything else is a typo worth
+ * reporting.
+ *
+ * @param raw   The raw value (`searchParams.get('limit')`).
+ * @param opts  `max` clamps the result; `label` names the param in the 400.
+ * Thrown CODED (`INVALID_LIMIT`): a client can translate a code, and the
+ * English sentence is only the fallback for a code it does not recognise —
+ * the same contract the coded helpers were added for, and the reason
+ * server-authored prose is on a downward ratchet.
+ *
+ * @throws `codedBadRequest('INVALID_LIMIT')` (400) when present and not a
+ *         positive integer.
+ */
+export function parseLimitParam(
+    raw: string | null,
+    opts: { max?: number; label?: string } = {},
+): number | undefined {
+    const label = opts.label ?? 'limit';
+    if (raw === null) return undefined;
+    const trimmed = raw.trim();
+    if (trimmed === '') {
+        throw codedBadRequest(
+            'INVALID_LIMIT',
+            `Invalid ${label}: it was empty. Omit it for the default, or send a positive integer.`,
+        );
+    }
+    if (!/^\d+$/.test(trimmed)) {
+        throw codedBadRequest(
+            'INVALID_LIMIT',
+            `Invalid ${label}: must be a positive integer; received ${JSON.stringify(raw)}.`,
+        );
+    }
+    const n = Number(trimmed);
+    if (!Number.isSafeInteger(n) || n < 1) {
+        throw codedBadRequest(
+            'INVALID_LIMIT',
+            `Invalid ${label}: must be a positive integer; received ${JSON.stringify(raw)}.`,
+        );
+    }
+    return opts.max === undefined ? n : Math.min(n, opts.max);
 }
