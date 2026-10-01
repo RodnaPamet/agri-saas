@@ -169,8 +169,10 @@ last-run record, so it lives here rather than only in the Actions tab.
 | 2026-08-01 | schedule | **failed — same old workflow**, same AWS credential step. |
 | 2026-08-21 | manual ×3 | first two failed while the GCP drill was being brought up; **the third PASSED — the first genuine restore verification either stack has ever had.** |
 | 2026-09-01 | schedule | **exit 75 — NOT TESTED.** Both targets hit `ZONE_RESOURCE_POOL_EXHAUSTED` for a pd-balanced disk in `europe-west1-b`. The backups were fine: schedule attached and newest snapshot 6h old on both, verified before it stopped. This was the FIRST scheduled run of the current drill, and it is what the zone fallback above exists for. |
+| 2026-09-01 | manual | **PASSED on both targets** (run 33512186670), re-run the same afternoon once capacity came back — the correct response to an exit 75. |
+| 2026-10-01 | schedule | **failed — a defect in the drill, not in the backup** (run 36851363940, issue #1179). Both targets died at step 4 with `PGDATA_HOST: unbound variable` after a pile of `command not found`. Cause: the remote script was built with an UNQUOTED heredoc, so backticks in its own COMMENTS were command substitutions evaluated on the runner. #990 added a comment with an odd number of them; the unterminated substitution swallowed the rest of the heredoc and ran it locally — `apt-get`, a real `docker build`, then `docker run -v "$PGDATA_HOST"` with the variable unset. No SSH connection was ever opened, so the restore was never attempted and the whole validation battery was unreachable. Fixed by #1212 (escape every backtick in the body) with `tests/guards/shell-heredoc-no-live-backticks.test.ts` to keep it that way, plus `tests/guards/restore-drill-remote-script.test.ts`, which EXECUTES the drill against a stubbed `gcloud` and asserts the payload that reaches the VM is complete and `bash -n`-clean. |
 
-Two things that table is here to stop being misread:
+Three things that table is here to stop being misread:
 
 - **Do not read the 07-01 and 08-01 rows as this drill failing.** They are a
   different workflow against different infrastructure. `gh run list --workflow
@@ -183,6 +185,16 @@ Two things that table is here to stop being misread:
   red — an unverified restore path deserves attention — but the summary says
   `NOT TESTED`, and the correct response is to re-run it, not to start an
   incident.
+- **A drill that fails before step 4 finishes has told you nothing about the
+  backup.** 2026-10-01 is the worked example: a red job, two red targets, and
+  zero evidence either way, because the failure was in the drill's own string
+  building. Read the step log for which of the five steps printed a `✓` before
+  deciding whether to be worried. Steps 1 and 2 (schedule attached, snapshot
+  fresh) passing is real information even when the rest never ran.
+- **`gh run rerun` cannot clear this class.** A re-run replays the ORIGINAL
+  commit, so a drill broken by a code defect fails identically forever. Push the
+  fix and dispatch the workflow (`gh workflow run restore-test.yml`) once it is
+  on `main`.
 
 ## Recovering for real
 
