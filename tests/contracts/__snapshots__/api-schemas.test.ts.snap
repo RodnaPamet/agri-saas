@@ -3566,7 +3566,10 @@ exports[`API contract — per-schema snapshots schema: CurrentUser 1`] = `
           ]
         },
         "role": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "bottomTabOrder": {
           "$ref": "#/components/schemas/BottomTabOrder"

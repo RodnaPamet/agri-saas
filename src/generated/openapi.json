@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "3.70.1",
+    "version": "3.70.2",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -3463,7 +3463,10 @@
                 ]
               },
               "role": {
-                "type": "string"
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "bottomTabOrder": {
                 "$ref": "#/components/schemas/BottomTabOrder"
@@ -24566,7 +24569,7 @@
       "get": {
         "operationId": "getCurrentUser",
         "summary": "The signed-in user, their primary tenant, and their preferences",
-        "description": "The launch request. Returns the caller plus their OLDEST ACTIVE membership as `tenant` — one membership, not the list, so a user who belongs to several tenants cannot pick between them here. `role` falls back to `READER` when there is no active membership, so it is not proof of access on its own. Carries `bottomTabOrder`, which is why a client needs no second round-trip before drawing its tab bar. Answers a BEARER token as well as a cookie.",
+        "description": "The launch request. Returns the caller plus their OLDEST ACTIVE membership as `tenant` — one membership, not the list, so a user who belongs to several tenants cannot pick between them here. `role` and `tenant` are BOTH `null` when there is no active membership, and they always agree: `role` is never a fallback value, so it is also not proof of access on its own. Carries `bottomTabOrder`, which is why a client needs no second round-trip before drawing its tab bar. Answers a BEARER token as well as a cookie.",
         "tags": [
           "Account"
         ],
@@ -24580,7 +24583,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The caller. `tenant` is null when they have no active membership.",
+            "description": "The caller. `role` AND `tenant` are both null when they have no active membership — the two never disagree.",
             "content": {
               "application/json": {
                 "schema": {

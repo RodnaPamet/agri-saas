@@ -36,7 +36,15 @@ export const GET = withApiErrorHandling(async () => {
             id: user?.id,
             email: user?.email,
             name: user?.name,
-            role: membership?.role ?? 'READER',
+            // `null` means "no active membership", which is exactly what the
+            // adjacent `tenant: null` already says. It must NOT fall back to a
+            // real role: READER carries real grants (`view` on evidence/tasks/
+            // reports/knowledge plus evidence `download`), so a fallback answers
+            // "who am I" with view access for a principal who has none, and a
+            // role with no tenant has no referent anyway. The live gates are RLS,
+            // `requirePermission` and the middleware tenant check — none read this
+            // field — so this is contract honesty, not the authorization boundary.
+            role: membership?.role ?? null,
             // Bottom-row arrangement, returned here so a client can draw its
             // tab bar from the launch request it already makes rather than a
             // second round-trip. `null` means "never chosen, use the default";
