@@ -30,6 +30,7 @@
  * arrive looking ordinary.
  */
 import { z } from '@/lib/openapi/zod';
+import { UpdateFarmProfileSchema } from '@/app-layer/schemas/farm-profile.schemas';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { op } from './helpers';
 
@@ -112,10 +113,26 @@ export function registerFarmProfilePaths(registry: OpenAPIRegistry): void {
             '\n\nThe server normalises on write: text is trimmed and sanitised, a negative `sizeHa` is refused (stored as null), and `grainProduced` has blanks dropped and duplicates removed case-insensitively while PRESERVING ORDER. So the response can legitimately differ from what you sent — re-read it from the response rather than keeping the submitted values, or the screen will disagree with the database.',
         tags: ['Admin'],
         params: TenantParams,
-        // The handler's own schema, so the documented body cannot drift.
-        body: z.object({}).passthrough().openapi('UpdateFarmProfileRequest', {
+        // The handler's own schema, imported — so the claim this comment
+        // makes is now true. It said exactly this while the code was
+        // `z.object({}).passthrough()`, and the published
+        // `UpdateFarmProfileRequest` had ZERO properties as a result.
+        body: UpdateFarmProfileSchema.openapi('UpdateFarmProfileRequest', {
             description:
-                'Every field of FarmProfile is optional here. A blank string CLEARS the field. sizeHa is a number (bounded at 1,000,000 and refused if negative); grainProduced is an array of up to 50 strings of at most 120 characters each.',
+                'ABSENT IS NOT "LEAVE ALONE". Every field is optional, and an omitted field is ' +
+                'CLEARED — `{"urn":"123"}` nulls the other twelve and empties `grainProduced`. ' +
+                'So READ FIRST AND SEND ALL THIRTEEN FIELDS BACK; a per-field PUT silently wipes ' +
+                'the record. A blank string clears a field too. (The only caller today is the web ' +
+                'admin page, which GETs the whole profile and PUTs it entire, which is why nothing ' +
+                'has hit this — see agri-saas#1176, which must choose between merge semantics and ' +
+                'marking these `required`.) ' +
+                'There is no ETag or If-Match: concurrent edits are last-write-wins across the ' +
+                'whole record, not per field. ' +
+                '`sizeHa` is a number, bounded at 1,000,000 and refused if negative — and null is ' +
+                'not 0: a farm nobody has measured and a farm of zero hectares are different ' +
+                'claims. `grainProduced` is an array of up to 50 strings of at most 120 characters; ' +
+                'the server drops blanks and de-duplicates case-insensitively while PRESERVING ' +
+                'ORDER, so re-read the response rather than keeping what you sent.',
         }),
         success: { status: 200, description: 'The stored profile, AFTER normalisation.', schema: FarmProfileSchema },
     });

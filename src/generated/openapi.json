@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "3.67.0",
+    "version": "3.67.4",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -10680,9 +10680,105 @@
       },
       "UpdateFarmProfileRequest": {
         "type": "object",
-        "properties": {},
-        "additionalProperties": {},
-        "description": "Every field of FarmProfile is optional here. A blank string CLEARS the field. sizeHa is a number (bounded at 1,000,000 and refused if negative); grainProduced is an array of up to 50 strings of at most 120 characters each."
+        "properties": {
+          "producerName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 300
+          },
+          "egn": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 20
+          },
+          "eik": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 20
+          },
+          "urn": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 40
+          },
+          "address": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          },
+          "municipality": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200
+          },
+          "settlement": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200
+          },
+          "agricultureDirectorateCity": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200
+          },
+          "registrationPlace": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200
+          },
+          "registrationEkatte": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 20
+          },
+          "odbhCity": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200
+          },
+          "sizeHa": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1000000
+          },
+          "grainProduced": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "maxLength": 120
+            },
+            "maxItems": 50
+          }
+        },
+        "description": "ABSENT IS NOT \"LEAVE ALONE\". Every field is optional, and an omitted field is CLEARED — `{\"urn\":\"123\"}` nulls the other twelve and empties `grainProduced`. So READ FIRST AND SEND ALL THIRTEEN FIELDS BACK; a per-field PUT silently wipes the record. A blank string clears a field too. (The only caller today is the web admin page, which GETs the whole profile and PUTs it entire, which is why nothing has hit this — see agri-saas#1176, which must choose between merge semantics and marking these `required`.) There is no ETag or If-Match: concurrent edits are last-write-wins across the whole record, not per field. `sizeHa` is a number, bounded at 1,000,000 and refused if negative — and null is not 0: a farm nobody has measured and a farm of zero hectares are different claims. `grainProduced` is an array of up to 50 strings of at most 120 characters; the server drops blanks and de-duplicates case-insensitively while PRESERVING ORDER, so re-read the response rather than keeping what you sent."
       },
       "UserRef": {
         "type": "object",
