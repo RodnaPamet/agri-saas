@@ -11215,9 +11215,105 @@ exports[`API contract — per-schema snapshots schema: UnitRef 1`] = `
 exports[`API contract — per-schema snapshots schema: UpdateFarmProfileRequest 1`] = `
 "{
   "type": "object",
-  "properties": {},
-  "additionalProperties": {},
-  "description": "Every field of FarmProfile is optional here. A blank string CLEARS the field. sizeHa is a number (bounded at 1,000,000 and refused if negative); grainProduced is an array of up to 50 strings of at most 120 characters each."
+  "properties": {
+    "producerName": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 300
+    },
+    "egn": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 20
+    },
+    "eik": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 20
+    },
+    "urn": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 40
+    },
+    "address": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 500
+    },
+    "municipality": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 200
+    },
+    "settlement": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 200
+    },
+    "agricultureDirectorateCity": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 200
+    },
+    "registrationPlace": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 200
+    },
+    "registrationEkatte": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 20
+    },
+    "odbhCity": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 200
+    },
+    "sizeHa": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1000000
+    },
+    "grainProduced": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string",
+        "maxLength": 120
+      },
+      "maxItems": 50
+    }
+  },
+  "description": "MERGE SEMANTICS (#1176). Every field is optional and an ABSENT field is LEFT UNCHANGED — only an explicit \`null\` clears one, and a blank string clears one too. So \`{\\"urn\\":\\"123\\"}\` sets \`urn\` and touches nothing else. \`grainProduced\` follows the same rule: absent leaves the list alone, while \`[]\` or \`null\` clears it. This was NOT the behaviour before #1176, when an omitted field was nulled and a per-field PUT wiped the record — if you are reading a cached copy of this spec, check that it carries this sentence. A read-modify-write that sends all thirteen fields is still correct and is what the web admin page does; it is simply no longer required. Concurrency: there is no \`If-Match\` precondition on this route YET, so concurrent edits are last-write-wins per FIELD (merge semantics means two admins editing DIFFERENT fields no longer clobber each other, which replace semantics did). \`sizeHa\` is a number, bounded at 1,000,000 and refused if negative — and null is not 0: a farm nobody has measured and a farm of zero hectares are different claims. \`grainProduced\` holds up to 50 strings of at most 120 characters; the server drops blanks and de-duplicates case-insensitively while PRESERVING ORDER, so re-read the response rather than keeping what you sent."
 }"
 `;
 
