@@ -59,6 +59,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { collectSourceFiles } from '../helpers/collect-files';
+
 const ROOT = path.resolve(__dirname, '../..');
 const SCRIPT_DIRS = ['infra/scripts', 'scripts', 'deploy'];
 
@@ -132,21 +134,28 @@ export function offendingLines(docs: Heredoc[]): string[] {
     return out;
 }
 
+/**
+ * The shell scripts to scan.
+ *
+ * `collectSourceFiles` rather than a hand-rolled walk, for two reasons it
+ * enforces and I did not: it THROWS when a declared root does not exist
+ * (#875 — a renamed root would scan zero files and pass), and it refuses a
+ * result below `floor`. My first version wrote `if (!existsSync(abs))
+ * continue`, which turns a missing root into an empty contribution — and
+ * `tests/guards/scan-roots-resolve.test.ts` caught it as a NEW swallower,
+ * correctly. Nothing here is special enough to justify its own walk.
+ */
 function shellFiles(): string[] {
-    const out: string[] = [];
-    for (const dir of SCRIPT_DIRS) {
-        const abs = path.join(ROOT, dir);
-        if (!fs.existsSync(abs)) continue;
-        const walk = (d: string): void => {
-            for (const e of fs.readdirSync(d, { withFileTypes: true })) {
-                const full = path.join(d, e.name);
-                if (e.isDirectory()) { walk(full); continue; }
-                if (e.name.endsWith('.sh')) out.push(full);
-            }
-        };
-        walk(abs);
-    }
-    return out.sort();
+    return collectSourceFiles({
+        roots: SCRIPT_DIRS,
+        extensions: ['.sh'],
+        // MEASURED at 12 (2026-10-01), floored at 10 so one or two deletions
+        // are legitimate while a collapse is not. I first guessed 20 from
+        // memory and the suite failed to LOAD — `Test Suites: 1 failed,
+        // Tests: 0 total`, which a grep for `Tests:.*failed` reads as clean.
+        // Floor from a count you took, not from an impression.
+        floor: 10,
+    });
 }
 
 const files = shellFiles();
