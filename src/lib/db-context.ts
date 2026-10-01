@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { prisma } from './prisma';
 import type { RequestContext } from '@/app-layer/types';
 import { runWithAuditContext } from './audit-context';
+import { runWithAfterCommit } from './db/after-commit';
 
 export type PrismaTx = Omit<
     PrismaClient,
@@ -27,18 +28,24 @@ export async function withTenantDb<T>(
 ): Promise<T> {
     const p = customPrisma || prisma;
 
-    // Bind audit context so middleware can access tenantId
-    return runWithAuditContext({ tenantId, source: 'api' }, () =>
-        p.$transaction(async (tx) => {
-            // Drop superuser privileges to ensure RLS policies are enforced
-            await tx.$executeRaw`SET LOCAL ROLE app_user`;
-            // Use SET LOCAL to scope the variable to the current transaction.
-            // It automatically resets when the transaction commits or rolls back.
-            // $executeRaw safely parameterizes the value.
-            await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
-            return callback(tx);
-        })
-    ) as Promise<T>;
+    // `runWithAfterCommit` is OUTSIDE `$transaction` deliberately: effects
+    // queued with `afterCommit` inside the callback drain once this promise
+    // resolves, which is after COMMIT. A nested call joins the outer scope
+    // instead of draining its own — see src/lib/db/after-commit.ts.
+    return runWithAfterCommit(() =>
+        // Bind audit context so middleware can access tenantId
+        runWithAuditContext({ tenantId, source: 'api' }, () =>
+            p.$transaction(async (tx) => {
+                // Drop superuser privileges to ensure RLS policies are enforced
+                await tx.$executeRaw`SET LOCAL ROLE app_user`;
+                // Use SET LOCAL to scope the variable to the current transaction.
+                // It automatically resets when the transaction commits or rolls back.
+                // $executeRaw safely parameterizes the value.
+                await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
+                return callback(tx);
+            })
+        ) as Promise<T>,
+    );
 }
 
 /**
@@ -64,22 +71,29 @@ export async function runInTenantContext<T>(
     if (options?.timeout) txOptions.timeout = options.timeout;
     if (options?.maxWait) txOptions.maxWait = options.maxWait;
 
-    // Bind full audit context so middleware can access tenantId, userId, requestId
-    return runWithAuditContext(
-        {
-            tenantId: ctx.tenantId,
-            actorUserId: ctx.userId,
-            requestId: ctx.requestId,
-            source: 'api',
-        },
-        () =>
-            p.$transaction(async (tx) => {
-                await tx.$executeRaw`SET LOCAL ROLE app_user`;
-                await tx.$executeRaw`SELECT set_config('app.tenant_id', ${ctx.tenantId}, true)`;
-                await tx.$executeRaw`SELECT set_config('app.request_id', ${ctx.requestId}, true)`;
-                return callback(tx);
-            }, txOptions)
-    ) as Promise<T>;
+    // Same placement as `withTenantDb`: the after-commit scope wraps the
+    // transaction, so a usecase may queue a notification, an SSE publish or an
+    // email with `afterCommit(...)` from inside the callback and have it fire
+    // only once this transaction — or the outermost one enclosing it — has
+    // committed. On rollback the queue is discarded unrun.
+    return runWithAfterCommit(() =>
+        // Bind full audit context so middleware can access tenantId, userId, requestId
+        runWithAuditContext(
+            {
+                tenantId: ctx.tenantId,
+                actorUserId: ctx.userId,
+                requestId: ctx.requestId,
+                source: 'api',
+            },
+            () =>
+                p.$transaction(async (tx) => {
+                    await tx.$executeRaw`SET LOCAL ROLE app_user`;
+                    await tx.$executeRaw`SELECT set_config('app.tenant_id', ${ctx.tenantId}, true)`;
+                    await tx.$executeRaw`SELECT set_config('app.request_id', ${ctx.requestId}, true)`;
+                    return callback(tx);
+                }, txOptions)
+        ) as Promise<T>,
+    );
 }
 
 

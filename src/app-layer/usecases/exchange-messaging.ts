@@ -27,6 +27,7 @@ import type { RequestContext } from '../types';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { runInTenantContext, withTenantDb, type PrismaTx } from '@/lib/db-context';
+import { afterCommit } from '@/lib/db/after-commit';
 import { enqueueEmail } from '../notifications/enqueue';
 import { encodeCursor, decodeCursor, keysetBefore } from '@/lib/exchange/cursor';
 import { isUniqueViolation } from '@/lib/errors/prisma';
@@ -359,6 +360,15 @@ export async function getExchangeThread(
  * action individually; a chat message is one of many in a conversation that
  * has a single place to go and look. The question is never "dedupe or not" —
  * it is "does each of these need its own notification".
+ *
+ * ── When this runs ──
+ *
+ * NOT inside the sender's transaction. `sendExchangeMessageImpl` queues it with
+ * `afterCommit`, so by the time the first line executes the message row is
+ * durable and the sender's connection has been returned to the pool. "The
+ * message is already committed" below is now a fact about the caller rather
+ * than an aspiration — it was neither before, and the call site carries the
+ * measurement.
  *
  * Fail-open. The message is already committed; a mail failure must not turn a
  * successful send into an error the sender sees.
@@ -702,10 +712,36 @@ async function sendExchangeMessageImpl(
                     : { inquirerLastReadAt: now }),
             },
         });
-        // Persist, THEN notify. Never the reverse: a notification for a write
-        // that then failed tells the other party to come and read something
-        // that does not exist.
-        await notifyOtherParty(ctx.tenantId, thread);
+        // Persist, THEN notify — and "then" now means AFTER THE COMMIT, not
+        // after the INSERT.
+        //
+        // This was `await notifyOtherParty(...)` right here, inside the
+        // transaction, and the comment above claimed the property the code did
+        // not have. `notifyOtherParty` opens its own `withTenantDb` for the
+        // recipient (it must: their memberships are RLS-forced), and Prisma
+        // does not nest transactions — that inner one is INDEPENDENT and
+        // commits on its own connection. So:
+        //
+        //   • the bell row, the SSE publish and the outbox row all landed
+        //     while THIS transaction was still open. If it then rolled back,
+        //     the other party had been told to come and read a message that
+        //     does not exist — exactly the failure the old comment forbade.
+        //     The publish is the unrecoverable half: a row can be reconciled,
+        //     an SSE push cannot be recalled.
+        //
+        //   • every send held TWO pool clients at once. pgbouncer runs
+        //     `pool_mode = transaction` with `default_pool_size = 25`, so that
+        //     is two of 25 server connections per in-flight message — and once
+        //     every client in the local pg pool was held by a sender waiting
+        //     for a notify connection, the pool deadlocked and the senders
+        //     died on P2028 rather than on anything naming a pool.
+        //
+        // `afterCommit` queues it against the OUTERMOST transaction, so this
+        // stays correct if a future caller wraps `sendExchangeMessage` in a
+        // transaction of its own. Recipients and content are untouched.
+        afterCommit('exchange.notify_other_party', () =>
+            notifyOtherParty(ctx.tenantId, thread),
+        );
         // `replayed` is explicit rather than inferable. A replay that looks
         // identical to a create is a shape a client cannot branch on, and the
         // iOS session asked for exactly this distinction to be named.
