@@ -1,85 +1,80 @@
 /**
- * The `If-Match` parser on the farm-profile route, asserted as a TABLE.
+ * Why `farm-profile` needs the STRICT `If-Match` parser specifically.
  *
- * This exists because the two routes that already have an optimistic lock
- * DISAGREE on this header, and the looser one coerces in a way that is harmless
- * where it lives and dangerous here:
+ * The full input table now lives in `tests/unit/http/if-match-parser.test.ts`,
+ * against the shared `@/lib/http/if-match` that all three locked routes use
+ * since #1182. This file keeps only what is specific to THIS route, because the
+ * reason it refused to reuse `field-operations`' parser is a property of its
+ * own design rather than of HTTP.
  *
- *     header     journal /^\d+$/   field-operations parseInt+isInteger
- *     5          5                 5
- *     "5"        unguarded         unguarded          <- RFC form, silently ignored
- *     W/"5"      unguarded         unguarded
- *     0abc       unguarded         0                  <- becomes the create sentinel
- *     -1         unguarded         -1
+ * ## The route-specific stake
  *
- * Measured 2026-10-01 (#1182). Under THIS design `version: 0` means "no row
- * exists yet", so a malformed header coerced to 0 is a create attempt. Hence:
- * accept the bare form and the strong tag, refuse everything else with a 400,
- * and never fall through to unguarded on a header that was present.
+ * Under this design `version: 0` means **"no row exists yet"**. So two things
+ * have to hold at once, and they pull in opposite directions:
  *
- * The bare form is asserted explicitly because that is what both real clients
- * send — the web outbox via `outboxHeaders` and the iOS app via
- * `String(version)` — confirmed with the iOS session rather than assumed.
+ *   `0` must be ACCEPTED        — it is a real, meaningful precondition here
+ *   `0abc` / `0x0` must NOT be 0 — `field-operations`' `parseInt` coerced both
+ *                                  to 0, which here is a CREATE attempt
+ *
+ * A parser that got either half wrong would look correct on the other two
+ * routes, where 0 is not a sentinel. That asymmetry is why one shared parser
+ * had to be the strict one rather than the average one.
+ *
+ * ## What changed in #1182
+ *
+ * This file used to assert a LOCAL REIMPLEMENTATION of the parser — three
+ * regexes copied out of the route, because the real function was module-private
+ * — plus a text control asserting the route still contained those regexes, to
+ * catch the copy drifting from the original. Extracting the parser to a shared
+ * module removed the need for both: the test now drives the real function, so
+ * there is nothing to drift and nothing to control for.
  */
-const ROUTE = 'src/app/api/t/[tenantSlug]/admin/farm-profile/route.ts';
+import { parseIfMatch } from '@/lib/http/if-match';
 
-describe('If-Match parsing — the table', () => {
-    // The parser is a module-private function, so it is exercised through its
-    // observable contract: the regexes it is built from, asserted against the
-    // same inputs the two existing routes were measured on. A behavioural test
-    // through the route needs the permission middleware and is covered by E2E.
-    const WEAK = /^W\//i;
-    const STRONG = /^"(.*)"$/;
-    const DIGITS = /^\d+$/;
+/** 400 or the parsed version, so a refusal is distinguishable from a value. */
+function outcome(raw: string | null): number | undefined | 400 {
+    try {
+        return parseIfMatch(raw);
+    } catch {
+        return 400;
+    }
+}
 
-    const classify = (raw: string | null): 'absent' | 'weak-400' | 'bad-400' | number => {
-        if (raw === null) return 'absent';
-        const v = raw.trim();
-        if (WEAK.test(v)) return 'weak-400';
-        const unq = STRONG.exec(v)?.[1] ?? v;
-        if (!DIGITS.test(unq)) return 'bad-400';
-        return Number.parseInt(unq, 10);
-    };
-
-    it.each([
-        ['5', 5],
-        ['0', 0],
-        ['"5"', 5],
-        ['"0"', 0],
-        ['  7  ', 7],
-    ])('accepts %p as %p', (header, expected) => {
-        expect(classify(header as string)).toBe(expected);
+describe('farm-profile If-Match: the `version 0` sentinel', () => {
+    it('ACCEPTS a real zero — it is a meaningful precondition here', () => {
+        // "No row exists yet". A parser that refused 0 as falsy would make the
+        // create path unlockable.
+        expect(outcome('0')).toBe(0);
+        expect(outcome('"0"')).toBe(0);
     });
 
-    it.each([['W/"5"'], ['w/"5"']])('refuses the weak tag %p with a 400', (header) => {
-        expect(classify(header as string)).toBe('weak-400');
+    it('does NOT coerce to zero the two values field-operations turned into the sentinel', () => {
+        // The specific regression. Under `parseInt` both become 0, which here
+        // means create — so a malformed header would silently attempt one.
+        expect(outcome('0abc')).not.toBe(0);
+        expect(outcome('0x0')).not.toBe(0);
+        // And they are refused rather than merely not-zero: `undefined` would
+        // be the fall-through this parser exists to remove.
+        expect(outcome('0abc')).toBe(400);
+        expect(outcome('0x0')).toBe(400);
     });
 
-    it.each([['0abc'], ['5xyz'], ['0x0'], ['-1'], [''], ['null'], ['"a"'], ['1.5']])(
-        'refuses %p with a 400 rather than coercing or ignoring it',
-        (header) => {
-            expect(classify(header as string)).toBe('bad-400');
-        },
-    );
-
-    it('treats an ABSENT header as unguarded — that half is deliberate', () => {
-        expect(classify(null)).toBe('absent');
+    it('control: absent is STILL unguarded — that half is deliberate', () => {
+        // The route documents last-write-wins for an absent header, and the
+        // strictness above must not have eaten it. If this ever became a 400,
+        // every online edit from the admin form would break.
+        expect(outcome(null)).toBeUndefined();
     });
 
-    it('would NOT coerce the two values field-operations turns into the sentinel', () => {
-        // The specific regression this parser exists to avoid. Under
-        // field-operations' parseInt both of these become 0, which here means
-        // "create".
-        expect(classify('0abc')).not.toBe(0);
-        expect(classify('0x0')).not.toBe(0);
-    });
-
-    it('control: the route really does use these three patterns', () => {
-        // Without this the table above would be asserting a local copy that had
-        // drifted from the route it claims to describe.
-        const src = require('fs').readFileSync(require('path').resolve(__dirname, '../../', ROUTE), 'utf8');
-        expect(src).toMatch(/\^W\\\//);
-        expect(src).toMatch(/\^"\(\.\*\)"\$/);
-        expect(src).toMatch(/\^\\d\+\$/);
+    it('control: the route uses the shared parser rather than a local one', () => {
+        // Replaces the old regex-text control. What it protects is the same
+        // claim — that this file describes the parser the route actually runs —
+        // but by import rather than by matching source text.
+        const src = require('fs').readFileSync(
+            require('path').resolve(__dirname, '../../', 'src/app/api/t/[tenantSlug]/admin/farm-profile/route.ts'),
+            'utf8',
+        );
+        expect(src).toContain("from '@/lib/http/if-match'");
+        expect(src).not.toMatch(/function parseIfMatch/);
     });
 });
