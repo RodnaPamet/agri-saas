@@ -2796,12 +2796,22 @@ negated. Say what remains instead:
       fine. So the supportable concurrency for an AUDITED write is still
       `max - 1` — which is why the P0.8 hardening test runs 11 sends and not the
       20 its roadmap asked for — and past it the hash-chained trail silently
-      loses entries rather than erroring. **It cannot be fixed by reusing the
-      `afterCommit` seam**: that queue is addressed through
-      `AsyncLocalStorage`, and a Prisma query extension runs detached from the
-      ALS chain (which is the documented reason `audit-context.ts` uses a
-      module-level stack at all), so `afterCommit` called from inside the
-      extension finds no scope and fires inline — changing nothing.
+      loses entries rather than erroring.
+      **The `afterCommit` seam IS reachable from the extension, contrary to what
+      this file said for a day and to what `audit-context.ts`'s docblock
+      implies.** That docblock's "Prisma's $use middleware runs in a detached
+      async context that loses ALS state" is a statement about Prisma **5**, and
+      `$use` was removed in Prisma 7. Measured 2026-10-02 by
+      `tests/integration/prisma-extension-als-reachability.test.ts`: a
+      `$extends({ query })` handler calling `afterCommit` has its effect
+      DEFERRED to the post-commit drain, not fired inline — so a query extension
+      DOES see the ALS store. Whether the audit write SHOULD move there is still
+      a design question (an audit row written after COMMIT has a crash window,
+      and the alternative of writing it on the caller's `tx` changes the
+      documented "best-effort, never breaks the original write" contract and
+      holds `pg_advisory_xact_lock(hashtext(tenantId))` for the whole caller
+      transaction) — but it is not blocked by ALS. **Do not re-derive "the
+      extension cannot see ALS" from that Prisma-5 docblock; run the test.**
   Full sweep in
   `docs/implementation-notes/2026-10-01-p0-8-after-commit-notifications.md`;
   the fix and the remaining half in

@@ -94,17 +94,46 @@ caller's 5s budget, the audit extension's best-effort `catch` swallows the error
 then commits normally. So the caller is told it succeeded and the hash-chained
 trail has no entry.
 
-That is worse than the visible stall #1223 predicted, and it is why this PR does
-not also "fix" it in passing: the obvious shape — queue the audit write with
-`afterCommit` — **does not work**. That queue is addressed through
-`AsyncLocalStorage`, and a Prisma query extension runs detached from the ALS
-chain; that detachment is the documented reason `audit-context.ts` uses a
-module-level stack rather than ALS in the first place. `afterCommit` called from
-inside the extension finds no scope and fires the effect inline, changing
-nothing. Writing the audit row on the caller's `tx` instead would work but
-changes the documented "best-effort, never breaks the original write" contract
-and holds `pg_advisory_xact_lock(hashtext(tenantId))` for the whole of the
-caller's transaction. Both want their own measurement.
+That is worse than the visible stall #1223 predicted.
+
+### I got the reason for not fixing it WRONG, then measured it
+
+The first version of this note (and of the CLAUDE.md paragraph, and of this
+PR's description) said the obvious shape — queue the audit write with
+`afterCommit` — **cannot work**, because that queue is addressed through
+`AsyncLocalStorage` and a Prisma query extension runs detached from the ALS
+chain. I took that from `audit-context.ts`'s docblock, which says "Prisma's
+`$use` middleware runs in a detached async context that loses ALS state", and
+from `prisma.ts`'s "Prisma's underlying execution may detach from the
+AsyncLocalStorage chain".
+
+**That is a statement about Prisma 5, and `$use` was removed in Prisma 7.**
+Measured instead, in `tests/integration/prisma-extension-als-reachability.test.ts`:
+a `$extends({ query })` handler that calls `afterCommit` has its effect
+**DEFERRED to the post-commit drain**, not fired inline. Timeline, with a
+positive control from the transaction callback so the result is readable:
+
+```
+control   (from the tx callback) : [callback:done, effect:from-callback]
+extension (from $allModels)      : [extension:enter, extension:exit,
+                                    callback:done, effect:from-extension]
+```
+
+A detached extension would put `effect:from-extension` at index 1. Mutating the
+assertion to that ordering fails the test while the control stays green, so the
+instrument has teeth.
+
+So the ALS route is **open**, and the honest reason this PR stops here is scope,
+not impossibility: an audit row written after COMMIT has a crash window between
+the two, which is a compliance-visible design call rather than a refactor. The
+other option the issue names — writing the row on the caller's `tx` — still
+carries its two documented costs: it changes the "best-effort, never breaks the
+original write" contract, and it holds
+`pg_advisory_xact_lock(hashtext(tenantId))` for the whole of the caller's
+transaction. Both want their own measurement and their own test population.
+
+The same finding matters to the misattribution below: if ALS reaches an
+extension, the module-level stack has no remaining technical excuse.
 
 ## A second defect found while measuring (filed separately)
 
@@ -115,7 +144,15 @@ tenant's id. `getAuditContext()` returns the TOP of a module-level stack
 whichever request pushed last. CLAUDE.md already warns about this stack — as the
 reason `afterCommit` uses ALS instead — but the audit trail itself still reads
 it. `resolveTenantDekPair` reads the same context, so the blast radius may
-include encrypting a row under the wrong tenant's DEK. Not touched here.
+include encrypting a row under the wrong tenant's DEK. Filed as #1259; not
+fixed here.
+
+What IS done here is correcting that file's own docblock, because it is what
+sent me down the wrong path above. It gives three reasons the stack is safe;
+the ALS premise behind it is a Prisma 5 statement the measurement above
+refutes, and its reason 2 ("read synchronously … on the same tick") is false
+for an `async` query extension that awaits `query(args)`. Comment only — the
+fix belongs with #1259, which owns the test population.
 
 ## Files
 
@@ -124,6 +161,7 @@ include encrypting a row under the wrong tenant's DEK. Not touched here.
 | `src/lib/db-context.ts` | `prewarmTenantKeys` + one call in each of the two tenant helpers, before `$transaction` |
 | `src/lib/db/pool-config.ts` | docblock correction — #1224 removed one route to the deadlock, not the class |
 | `tests/integration/tenant-tx-single-connection.test.ts` | the property at `max` concurrency, cold, plus the positive control |
+| `tests/integration/prisma-extension-als-reachability.test.ts` | whether a Prisma 7 query extension sees the ALS store — it does |
 | `CLAUDE.md` | the pool section now separates the fixed half from the silent-loss half |
 
 ## Decisions
