@@ -102,6 +102,15 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
         // P1.7/P1.5 debt on #1192 — that is about classifying non-tenant models
         // generally, not about a missing tenant filter here.)
         'feature-flag-admin.ts',
+        // The GLOBAL master-KEK rotation sweep. It re-encrypts every master-KEK
+        // column in the deployment, and two of those models have no `tenantId`
+        // at all (`User`, `Account`) — which is precisely the gap it exists to
+        // close, since `jobs/key-rotation.ts` does `if (!hasTenantId) continue`.
+        // No tenant to scope to, no RequestContext during an operator rotation,
+        // and the reads are raw SQL on purpose: the sweep must see the
+        // CIPHERTEXT, not a value the encryption extension or pii-middleware has
+        // already decrypted on its way out.
+        'global-key-rotation.ts',
         'sso.ts', 'mfa.ts', 'mfa-enrollment.ts', 'mfa-challenge.ts',
         'session-security.ts', 'webhook-processor.ts', 'scim-users.ts',
         // EI-3 — scim-groups resolves SCIM externalIds → IC users via a global

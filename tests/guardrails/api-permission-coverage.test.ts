@@ -187,6 +187,15 @@ const EXCLUDED_ROUTES: ReadonlyArray<{ relPath: string; reason: string }> = [
         reason: 'Platform-admin-key-gated: POST /api/admin/tenants — tenant-scope does not apply.',
     },
     {
+        relPath: 'api/admin/key-rotation/route.ts',
+        reason:
+            'Platform-admin-key-gated: the GLOBAL master-KEK rotation sweep. It re-encrypts ' +
+            'every master-KEK column in the deployment, including tenantId-less ones (User, ' +
+            'Account), so there is no tenant to scope a permission to and no user session ' +
+            'during an operator rotation. The tenant-scoped sibling at ' +
+            'api/t/[tenantSlug]/admin/key-rotation keeps requirePermission.',
+    },
+    {
         relPath: 'api/admin/feature-flags/route.ts',
         reason:
             'Platform-admin-key-gated: the flag console. `FeatureFlag` has no tenantId — a ' +
