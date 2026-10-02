@@ -69,7 +69,6 @@ import {
 } from '@/lib/security/encryption';
 import {
     getEncryptedFields,
-    isEncryptedModel,
     ALL_ENCRYPTED_FIELD_NAMES,
     nodeHasAnyEncryptedFieldKey,
 } from '@/lib/security/encrypted-fields';
@@ -198,6 +197,14 @@ export const GLOBAL_KEK_MODELS: ReadonlySet<string> = new Set([
     'Tenant',
     'Company',
     'ExchangeMessage',
+    // #1222. No `tenantId`, and every reader is a platform admin rather than a
+    // tenant — so by the rule above, no single tenant's key can serve them.
+    // Production already holds a `v1:` row on `FeatureFlag.description`,
+    // written by a platform admin with no tenant context to resolve a DEK
+    // from, so the KEK is not a change of posture here; it is what the data is
+    // already under. Declaring it keeps that row readable through the fan-out
+    // narrowing, which stops the middleware decrypting undeclared models.
+    'FeatureFlag',
 ]);
 
 /**
@@ -625,9 +632,30 @@ export function withEncryptionExtension<T extends { $extends: any }>(
 
                     // ── Write path ──
                     if (isWrite) {
-                        const targetModel = isEncryptedModel(model)
-                            ? model
-                            : '*';
+                        // #1222: the TOP-LEVEL model of an operation is always
+                        // KNOWN, so sending a non-manifest one to `'*'` used
+                        // the fan-out as a stand-in for "not in the manifest"
+                        // — and the fan-out matches field NAMES, so it
+                        // encrypted 18 (model, field) pairs nobody declared.
+                        // `ExchangeListing.description` was encrypted because
+                        // `Task`, `AccessReview` and `CostEntry` each declare a
+                        // `description`.
+                        //
+                        // Passing the real model narrows it with no new
+                        // machinery: `encryptDataNode` looks the model up in
+                        // the manifest and returns early when it is absent, so
+                        // an undeclared field is simply not encrypted.
+                        //
+                        // Nested writes get BETTER, not worse. Step 2 of
+                        // `walkWriteArgument` resolves a nested target from
+                        // (parent model, relation field) via the schema and
+                        // falls back to `'*'` only when that lookup misses —
+                        // and that resolution bails on a `'*'` parent. So a
+                        // real parent name means nested manifest models are
+                        // now targeted per-model instead of by name collision.
+                        // `'*'` survives for its documented purpose alone: a
+                        // node whose model is structurally unknowable.
+                        const targetModel = model;
 
                         // Writes always use the primary DEK (or fall
                         // back to global KEK when null). The previous
@@ -663,9 +691,12 @@ export function withEncryptionExtension<T extends { $extends: any }>(
 
                     // ── Read / result-decrypt path ──
                     if (isRead) {
-                        const targetModel = isEncryptedModel(model)
-                            ? model
-                            : '*';
+                        // Symmetrical with the write path, and the symmetry is
+                        // load-bearing: if reads kept fanning out while writes
+                        // stopped, a row written before this change would still
+                        // decrypt and the narrowing would look harmless right
+                        // up until the cache turned over.
+                        const targetModel = model;
                         walkReadResult(result, targetModel, deks);
                     }
 

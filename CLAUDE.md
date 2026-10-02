@@ -925,6 +925,42 @@ encrypted columns outside it. Add a model here ⇒ its manifest
 fields encrypt on every write and decrypt on every read
 transparently.
 
+**That sentence was ASPIRATIONAL until 2026-10-02 (#1222), and the
+gap is worth knowing about because it will rhyme.** The middleware
+resolved a model absent from the manifest to `'*'`, and the `'*'`
+branch matches field NAMES across the whole manifest without being
+able to tell models apart — so 18 `(model, field)` pairs were
+encrypted by collision rather than by decision.
+`ExchangeListing.description` was encrypted because `Task`,
+`AccessReview` and `CostEntry` each declare a `description`: three
+unrelated models deciding a fourth model's fate. The visible symptom
+was that an Exchange message recipient read `v2:…` instead of the
+message — two tenants, one tenant's DEK — but the cause was generic
+and the blast radius was 18 columns, not one.
+
+The write and read paths now pass the REAL model, so an undeclared
+field is simply not encrypted; `'*'` survives only for its documented
+purpose, a node whose model is structurally unknowable. **Which means
+the rule above is now enforced rather than hoped for.**
+
+Two consequences for anyone touching this:
+
+- **A field that carries a manifest field NAME but should stay
+  plaintext goes in `DELIBERATELY_PLAINTEXT`** (same file), keyed
+  `Model.field` — per FIELD, not per model, because a model can carry
+  two manifest-named fields wanting different answers. Each entry
+  needs a written reason; `tests/guards/deliberately-plaintext-is-honest.test.ts`
+  enforces no stale entries, no contradiction with `ENCRYPTED_FIELDS`,
+  and that the field is genuinely at risk.
+- **Narrowing stops DECRYPTION too, so order matters.** Declaring a
+  field must land in the same change as (or before) any narrowing —
+  a field left undeclared with ciphertext in it becomes unreadable to
+  everyone, with no error and no log. Measure first:
+  `npm run preflight:fanout` counts `v1:` AND `v2:` per affected pair,
+  derived from the manifest × schema rather than listed. It counts
+  both envelopes deliberately — `FeatureFlag.description` held a `v1:`
+  row, so a "misplaced v2" check would have missed it.
+
 Key hierarchy: `DATA_ENCRYPTION_KEY` (master KEK) wraps a per-tenant
 DEK on `Tenant.encryptedDek`. New tenants get a DEK at creation via
 `createTenantWithDek` (from `src/lib/security/tenant-key-manager.ts`);

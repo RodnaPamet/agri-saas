@@ -6,6 +6,7 @@ import { logEvent } from '../events/audit';
 import { notFound, badRequest } from '@/lib/errors/types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { assertWithinLimit } from '@/lib/billing/entitlements';
+import { sanitizePlainText } from '@/lib/security/sanitize';
 
 export interface CreateLocationInput {
     name: string;
@@ -114,9 +115,16 @@ export async function createLocation(ctx: RequestContext, data: CreateLocationIn
     // Plan gate: a startup-farmer (FREE) tenant caps the number of farms/fields.
     await assertWithinLimit(ctx, 'location');
     return runInTenantContext(ctx, async (db) => {
+        // #1222: `description` is encrypted at rest (it is in
+        // `ENCRYPTED_FIELDS` as of the fan-out narrowing, and production holds
+        // a `v2:` row), so it owes the D.2 pairing — encryption protects it
+        // from a database reader, sanitisation protects every renderer that
+        // decrypts it. Plain text, not HTML: a location description is a label,
+        // unlike a journal note.
+        const description = data.description != null ? sanitizePlainText(data.description) : null;
         const location = await LocationRepository.create(db, ctx, {
             name: data.name,
-            description: data.description ?? null,
+            description,
             ...(data.status ? { status: data.status } : {}),
             ownerUserId: data.ownerUserId || null,
             createdByUserId: ctx.userId,
@@ -143,9 +151,17 @@ export async function createLocation(ctx: RequestContext, data: CreateLocationIn
 export async function updateLocation(ctx: RequestContext, id: string, data: UpdateLocationInput) {
     assertCanWrite(ctx);
     return runInTenantContext(ctx, async (db) => {
+        // Three-state preserved: `undefined` leaves the column alone, an
+        // explicit null clears it, a string is sanitised.
+        const description =
+            data.description === undefined
+                ? undefined
+                : data.description != null
+                  ? sanitizePlainText(data.description)
+                  : null;
         const location = await LocationRepository.update(db, ctx, id, {
             name: data.name,
-            description: data.description,
+            description,
             status: data.status,
             ownerUserId:
                 data.ownerUserId === undefined ? undefined : data.ownerUserId || null,
