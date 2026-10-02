@@ -2,8 +2,9 @@
  * Epic O-3 — portfolio data access.
  *
  * Three read-only methods that drive every portfolio aggregation
- * usecase. All three use `runInGlobalContext` (i.e. the global
- * Prisma client, postgres role) — these queries cross tenant
+ * usecase. All three bypass RLS via `runWithoutRls` with the typed
+ * reason `org-portfolio-read` (P1.7; previously the untyped
+ * `runInGlobalContext`), i.e. the global Prisma client, postgres role — these queries cross tenant
  * boundaries by design and the rows being read are aggregate
  * snapshots + tenant metadata, NOT per-tenant business data.
  *
@@ -18,7 +19,7 @@
  */
 import type { ComplianceSnapshot } from '@prisma/client';
 
-import { runInGlobalContext } from '@/lib/db-context';
+import { runWithoutRls } from '@/lib/db/rls-middleware';
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -59,7 +60,7 @@ export class PortfolioRepository {
      * Returns rows ordered by name (case-insensitive) for stable UI.
      */
     static async getOrgTenantIds(orgId: string): Promise<OrgTenantMeta[]> {
-        return runInGlobalContext(async (db) => {
+        return runWithoutRls({ reason: 'org-portfolio-read' }, async (db) => {
             const tenants = await db.tenant.findMany({
                 // Hide soft-deleted (org-removed) tenants from the
                 // portfolio + the org tenants table.
@@ -91,7 +92,7 @@ export class PortfolioRepository {
         const fourteenDaysAgo = new Date(Date.now() - 14 * 86400 * 1000);
         fourteenDaysAgo.setUTCHours(0, 0, 0, 0);
 
-        return runInGlobalContext(async (db) => {
+        return runWithoutRls({ reason: 'org-portfolio-read' }, async (db) => {
             const rows = await db.complianceSnapshot.findMany({
                 where: {
                     tenantId: { in: tenantIds },
@@ -134,7 +135,7 @@ export class PortfolioRepository {
         );
         rangeStart.setUTCHours(0, 0, 0, 0);
 
-        return runInGlobalContext(async (db) => {
+        return runWithoutRls({ reason: 'org-portfolio-read' }, async (db) => {
             const grouped = await db.complianceSnapshot.groupBy({
                 by: ['snapshotDate'],
                 where: {

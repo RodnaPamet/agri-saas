@@ -77,7 +77,6 @@ function getPrismaClient(): PrismaClient {
 export {
     runInTenantContext,
     withTenantDb,
-    runInGlobalContext,
 } from '@/lib/db-context';
 export type { PrismaTx } from '@/lib/db-context';
 
@@ -105,7 +104,30 @@ export type RlsBypassReason =
     /** Library import / bootstrap of global catalogue data. */
     | 'library-import'
     /** Tests exercising the bypass path itself. */
-    | 'test';
+    | 'test'
+    /**
+     * Request-time read across the tenants of ONE organization, for the
+     * Epic O-3 portfolio summary. Reads aggregate `ComplianceSnapshot` rows
+     * and tenant metadata (id/slug/name) only — never per-tenant business
+     * data, which drills down through `runInTenantContext` with the CISO's
+     * auto-provisioned AUDITOR membership.
+     *
+     * Distinct from `cross-tenant-sweep`, which is for SCHEDULED jobs that
+     * iterate every tenant. This one runs on a user's request and is bounded
+     * to one org's tenants, so it would have been the wrong claim.
+     */
+    | 'org-portfolio-read'
+    /**
+     * Reading tenant-scoped `TenantModuleSettings` to compute a
+     * marketplace-wide exclusion — which sellers have the EXCHANGE module
+     * off. Selects tenant IDs only.
+     *
+     * The bypass is load-bearing rather than convenient: under the viewer's
+     * own context this read would see at most the viewer's own row, so the
+     * exclusion would silently do nothing and withdrawn sellers' listings
+     * would stay on the map fielding inquiries they cannot answer.
+     */
+    | 'module-availability';
 
 /**
  * Execute a callback with the raw `prisma` client — no tenant context,
@@ -157,16 +179,38 @@ export async function runWithoutRls<T>(
     return callback(getPrismaClient());
 }
 
-const KNOWN_REASONS: ReadonlySet<RlsBypassReason> = new Set<RlsBypassReason>([
-    'auth-tenant-discovery',
-    'auth-credentials',
-    'webhook-ingest',
-    'cross-tenant-sweep',
-    'seed',
-    'admin-script',
-    'library-import',
-    'test',
-]);
+/**
+ * Compile-time bridge between the documented union above and the runtime
+ * allowlist below.
+ *
+ * `Record<RlsBypassReason, true>` requires EVERY union member as a key, so
+ * adding a reason to the union without adding it here is a `tsc` error rather
+ * than a runtime throw at the one call site that uses it.
+ *
+ * These were two hand-maintained lists until P1.7, and the duplication bit
+ * immediately: I added `org-portfolio-read` and `module-availability` to the
+ * union and not to the Set. `tsc` passed — the union was the only thing it
+ * checked. The three migrated exchange suites passed too, because they MOCK
+ * `runWithoutRls` and so never reached the runtime check. Only the unmocked
+ * portfolio suites threw `unknown reason 'org-portfolio-read'`.
+ *
+ * A mocked test cannot see a defect in the thing it replaced. The duplication
+ * was the defect; this removes it rather than adding a guard for it.
+ */
+const REASON_REGISTRY: Record<RlsBypassReason, true> = {
+    'auth-tenant-discovery': true,
+    'auth-credentials': true,
+    'webhook-ingest': true,
+    'cross-tenant-sweep': true,
+    'seed': true,
+    'admin-script': true,
+    'library-import': true,
+    'test': true,
+    'org-portfolio-read': true,
+    'module-availability': true,
+};
+
+const KNOWN_REASONS: ReadonlySet<string> = new Set(Object.keys(REASON_REGISTRY));
 
 /**
  * Pull the first non-middleware frame out of a stack trace so the log

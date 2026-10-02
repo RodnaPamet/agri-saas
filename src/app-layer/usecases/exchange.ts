@@ -6,12 +6,8 @@ import {
 } from '../repositories/exchange';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
-import {
-    runInTenantContext,
-    runInGlobalContext,
-    withTenantDb,
-    PrismaTx,
-} from '@/lib/db-context';
+import { runInTenantContext, withTenantDb, PrismaTx } from '@/lib/db-context';
+import { runWithoutRls } from '@/lib/db/rls-middleware';
 import { EXCHANGE_CURRENCY } from '@/lib/exchange/currency';
 import { forbidden, notFound, badRequest, conflict } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
@@ -87,7 +83,7 @@ export interface CreateInquiryInput {
  * module — un-withdrawable. Every listing they had ever posted stayed on the
  * map, fielding inquiries they could no longer answer.
  *
- * Read RLS-FREE (`runInGlobalContext`), because `TenantModuleSettings` is
+ * Read RLS-FREE (`runWithoutRls`, reason `module-availability`), because `TenantModuleSettings` is
  * tenant-scoped: under the viewer's own context this would see at most the
  * viewer's row and the exclusion would silently do nothing. It selects
  * tenant IDS only.
@@ -97,7 +93,7 @@ export interface CreateInquiryInput {
  * the per-tenant toggle is the only thing that can turn it off.
  */
 async function sellerTenantsWithExchangeOff(): Promise<string[]> {
-    return runInGlobalContext((db) =>
+    return runWithoutRls({ reason: 'module-availability' }, (db) =>
         ExchangeRepository.listTenantIdsWithModuleDisabled(db, 'EXCHANGE'),
     );
 }
