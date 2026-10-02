@@ -44,6 +44,50 @@ import { DB_URL, DB_AVAILABLE } from './db-helper';
 const globalPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
+/**
+ * The reader and the app must address the SAME database.
+ *
+ * `DB_URL` (this suite's own client) and `process.env.DATABASE_URL` (what the
+ * app's prisma uses, and therefore what `withTenantDb` / `runInTenantContext`
+ * write through) are resolved by DIFFERENT code: `db-helper` applies the
+ * per-checkout slot unconditionally, while `jest.setup.js` repoints
+ * `DATABASE_URL` at a per-worker clone only when globalSetup wrote a
+ * `perWorker` marker. Under default workers they agree. Measured under
+ * `--maxWorkers=1` in this checkout they do NOT:
+ *
+ *     reader  127.0.0.1:5435/agri_saas_test_cde5cee23
+ *     app     127.0.0.1:5436/agri_saas        <- the DEV database
+ *
+ * A suite that seeds with one client and asserts through the other then reads a
+ * database its write never reached. Here that happens to fail loudly because
+ * 5436 is not listening, but on a machine with a dev database up it would be
+ * silent — a count of zero that looks exactly like a clean pass, and writes
+ * landing in development data.
+ *
+ * Found by Agrent backend 1 in `fanout-preflight-counts-v2.test.ts`, where it
+ * made the positive control unable to pass locally. Asserted here so this
+ * suite can never report a false negative for the same reason.
+ */
+function assertReaderAndAppAgree(): void {
+    const name = (u?: string): string => {
+        if (!u) return '(unset)';
+        const m = u.match(/@([^/]+)\/([^?]+)/);
+        return m ? `${m[1]}/${m[2]}` : '(unparsed)';
+    };
+    const reader = name(DB_URL);
+    const app = name(process.env.DATABASE_URL);
+    if (reader !== app) {
+        throw new Error(
+            `Reader and app address DIFFERENT databases, so this suite would ` +
+                `assert against a database the app never wrote to:\n` +
+                `  reader (DB_URL)            = ${reader}\n` +
+                `  app (process.env.DATABASE_URL) = ${app}\n` +
+                `Run without --maxWorkers=1, or make jest.setup.js repoint ` +
+                `DATABASE_URL unconditionally.`,
+        );
+    }
+}
+
 const TENANT_A = `t-ilead-a-${randomUUID()}`;
 const TENANT_B = `t-ilead-b-${randomUUID()}`;
 const createdIds: string[] = [];
@@ -78,6 +122,7 @@ describeFn('InsuranceLead RLS — cross-tenant isolation', () => {
     let LEAD_B = '';
 
     beforeAll(async () => {
+        assertReaderAndAppAgree();
         await globalPrisma.$connect();
         LEAD_A = await seedLead(TENANT_A);
         LEAD_B = await seedLead(TENANT_B);
