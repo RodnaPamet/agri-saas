@@ -1139,7 +1139,18 @@ data-bearing handler under `/api/scim` therefore calls
 list from the filesystem so a new route is covered the moment it exists. The
 one exemption is `ServiceProviderConfig` (RFC 7644 §4 discovery metadata), and
 the guard fails if that file ever touches the database. The trailing slash on
-the prefix is load-bearing — `'/api/scim'` would also open `/api/scimulator`.
+the prefix was LOAD-BEARING — `'/api/scim'` would also have opened
+`/api/scimulator` — and since 2026-10-02 it is belt-and-braces instead:
+`matchesPublicPrefix` requires a public-prefix match to end at `/`, `?`, `#` or
+the end of the string, so a sibling sharing a spelling is refused whether or
+not the entry carries a slash. **Keep writing the slash** on a prefix entry; it
+states the intent, and `'/api/scim/'` still correctly declines to open the bare
+`/api/scim`. What changed is that the OTHER 20 bare entries — `/api/metrics`,
+`/api/readyz`, `/api/admin/tenants` and the rest — are no longer one forgotten
+character away from publishing `/api/metrics-internal`. A convention that holds
+only where each of 27 authors remembered it was not a convention; measured
+across all 464 route paths under `src/app`, the narrowing costs zero real
+routes. See `tests/guards/public-prefix-segment-boundary.test.ts`.
 SCIM has its own rate tier (`SCIM_LIMIT` + `SCIM_IP_LIMIT`) because it is the
 one API surface an anonymous caller can use to reach a token comparison; the
 per-IP ceiling is the half that actually stops a brute force, since a caller
