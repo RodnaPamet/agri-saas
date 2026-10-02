@@ -161,14 +161,81 @@ const PUBLIC_PATH_EXACT = new Set([
 const STATIC_EXTENSIONS = /\.(ico|png|jpg|jpeg|gif|svg|webp|css|js|woff|woff2|ttf|eot|map|json|webmanifest|geojson)$/;
 
 /**
+ * Does `pathname` fall under a public `prefix`, at a SEGMENT boundary?
+ *
+ * ## Why a bare `startsWith` is the wrong predicate here
+ *
+ * `PUBLIC_PATH_PREFIXES` is a FAIL-OPEN list: an entry that matches means the
+ * auth gate is skipped. It was matched with `pathname.startsWith(prefix)`, and
+ * 20 of its 27 entries carry no trailing slash — so each one also opened every
+ * path that merely BEGINS with its characters. A future
+ * `/api/metrics-internal`, `/api/admin/tenants-purge` or `/api/readyz-debug`
+ * would have been public, and nothing would have said so: the failure is a
+ * route that is reachable without a session, which looks like a working route.
+ *
+ * This repo already knows the rule. `CLAUDE.md`, on the SCIM entry:
+ *
+ *   > The trailing slash on the prefix is load-bearing — `'/api/scim'` would
+ *   > also open `/api/scimulator`.
+ *
+ * `'/api/scim/'` is written correctly for exactly that reason. The other 20
+ * were the same hazard with no slash, and a convention that holds only when
+ * every author remembers it is not a convention — the same shape as the
+ * `getUserId` rate-limit opt-in (see `resolveRateLimitScope`).
+ *
+ * ## The rule
+ *
+ * A match must end at a path separator or at the end of the string, so a
+ * prefix opens the path itself and its CHILDREN, never a sibling that shares
+ * its spelling:
+ *
+ *     '/api/metrics'  opens  /api/metrics        (itself)
+ *                            /api/metrics/live   (a child)
+ *                     NOT    /api/metrics-internal
+ *
+ * An entry already ending in `/` is a declared prefix and keeps its meaning
+ * unchanged, which is why `'/api/scim/'` behaves identically before and after.
+ *
+ * ## What this changed, measured
+ *
+ * Checked against all 461 route paths under `src/app`: **zero** real routes
+ * lose public access. The predicate only ever NARROWS, and it narrows nothing
+ * that exists — it closes the door on names nobody has used yet. Held by
+ * `tests/guards/public-prefix-segment-boundary.test.ts`, which drives this
+ * function and derives the real-route half from the filesystem.
+ */
+const PREFIX_BOUNDARY = new Set(['/', '?', '#']);
+
+export function matchesPublicPrefix(pathname: string, prefix: string): boolean {
+    if (!pathname.startsWith(prefix)) return false;
+    // The prefix IS the whole path.
+    if (pathname.length === prefix.length) return true;
+    // An explicit trailing slash is a declared prefix; honour it verbatim.
+    if (prefix.endsWith('/')) return true;
+    // Otherwise the entry's last segment must END here — at a path separator,
+    // or at a query/fragment delimiter. Anything else is a sibling that merely
+    // shares a spelling.
+    //
+    // `?` and `#` are in that set because `tests/unit/guard.test.ts` pins
+    // `/login?next=/dashboard` as public, and it is right to: that is the real
+    // login-redirect shape. Production reaches here with
+    // `request.nextUrl.pathname`, which carries no query — but the other two
+    // call sites in this file take a caller-supplied pathname, and a predicate
+    // that fails CLOSED on a query string would gate the login page itself for
+    // whoever passes one. Neither delimiter weakens the rule: the sibling names
+    // this exists to refuse (`/api/metrics-internal`) contain neither.
+    return PREFIX_BOUNDARY.has(pathname[prefix.length]);
+}
+
+/**
  * Check if a pathname is public (should bypass auth).
  */
 export function isPublicPath(pathname: string): boolean {
     // Exact matches
     if (PUBLIC_PATH_EXACT.has(pathname)) return true;
 
-    // Prefix matches
-    if (PUBLIC_PATH_PREFIXES.some((p) => pathname.startsWith(p))) return true;
+    // Prefix matches, at a SEGMENT BOUNDARY — see `matchesPublicPrefix`.
+    if (PUBLIC_PATH_PREFIXES.some((prefix) => matchesPublicPrefix(pathname, prefix))) return true;
 
     // Static file extensions
     if (STATIC_EXTENSIONS.test(pathname)) return true;

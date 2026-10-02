@@ -1008,42 +1008,80 @@ re-wraps the per-tenant DEK. When every tenant reports zero `v1:`
 rows under the old key, remove `DATA_ENCRYPTION_KEY_PREVIOUS` from
 env.
 
-> **⚠️ THAT PROCEDURE IS INCOMPLETE. DO NOT ROTATE
-> `DATA_ENCRYPTION_KEY` TODAY.** It covers CIPHERTEXT and says nothing
-> about LOOKUP HASHES, which the same key derives and which nothing
-> rehashes.
+> **⚠️ ROTATING `DATA_ENCRYPTION_KEY` IS SAFE ONLY WHILE
+> `LOOKUP_HMAC_KEY` IS PINNED. Check `/api/readyz` first — not this
+> paragraph.** P1.1 shipped the mechanism; whether it is ACTIVE is a
+> per-deployment fact, and the two are easy to confuse.
 >
-> `hashForLookup` (`src/lib/security/encryption.ts`) HMACs with a key
-> derived from the CURRENT `DATA_ENCRYPTION_KEY` only. There is no
-> previous-key fallback on that path — a hash has no auth failure to
-> trigger one, so the lookup simply misses — and the rotation job
-> contains **zero** references to `hashForLookup` or `emailHash`
-> (verified 2026-10-01): it re-wraps the DEK and re-encrypts `v1:`
-> ciphertexts, nothing else.
+> `capabilities.lookupKey.pinned` on `/api/readyz` is the answer:
 >
-> So every `User.emailHash` in the database was computed under the old
-> key, and after a rotation every lookup by email misses. The failure is
-> NOT a clean error:
+> - **`true`** — the lookup hash derives from `LOOKUP_HMAC_KEY`, which stays
+>   put while the KEK moves. Rotate with `DATA_ENCRYPTION_KEY_PREVIOUS` + the
+>   sweep as described above; every `User.emailHash` keeps resolving and
+>   nothing needs rehashing. Proved end to end by
+>   `tests/integration/kek-rotation-login.test.ts`, which also reproduces the
+>   damage with the key unpinned so the positive half cannot pass for free.
+> - **`false`** — the key is BOOTSTRAPPED off `DATA_ENCRYPTION_KEY`, which is
+>   the pre-P1.1 behaviour, so **the hazard below is live and the master KEK is
+>   un-rotatable.** The fix is one environment variable, not a code change: set
+>   `LOOKUP_HMAC_KEY` to the material `DATA_ENCRYPTION_KEY` holds **today** —
+>   the same bytes, not a new secret — and restart. Setting it is inert until a
+>   rotation happens, so it is safe to do at any time.
+>
+> **What goes wrong when it is unpinned**, because the failure is silent and
+> worth knowing by heart. `hashForLookup` HMACs with a key derived from the
+> material it is given, and the rotation job re-wraps DEKs and re-encrypts
+> `v1:` ciphertexts — it contains **zero** references to `hashForLookup` or
+> `emailHash` (verified 2026-10-02). A hash has no authentication failure to
+> trigger a previous-key fallback, so a wrong key does not error; the lookup
+> simply MISSES:
 >
 > - sign-in reports no such user;
-> - password reset, email verification, invite redemption and SCIM
->   matching all fail to find existing accounts;
+> - password reset, email verification, invite redemption and SCIM matching
+>   all fail to find existing accounts;
 > - **registration SUCCEEDS and creates a DUPLICATE `User`**, because its
->   uniqueness check is the same `emailHash` that now misses. That is
->   silent data corruption, not an outage, and it is the expensive half.
+>   uniqueness check is the same `emailHash` that now misses — and the
+>   `@unique` constraint is on the hash, so the database does not refuse it
+>   either. That is silent data corruption, not an outage, and it is the
+>   expensive half.
 >
 > Sixteen files look a user up by `emailHash` (`src/auth.ts`,
 > `credentials.ts`, `password-management.ts`, `email-verification.ts`,
 > `invite-redemption.ts`, `scim-users.ts`, `tenant-invites.ts`,
 > `org-invites.ts`, `tenant-lifecycle.ts`, `sso.ts`, the register and
-> resend routes, and others).
+> resend routes, and others) — and they do it THEMSELVES, passing
+> `emailHash: hashForLookup(email)` straight through. That matters:
+> `src/lib/security/pii-middleware.ts` rewrites a plain `where: { email }` to
+> the hash column and is the rotation-safe path, but those sixteen never hand
+> it a plain field, so the middleware never sees them. Both populations are
+> affected by a KEK rotation (they derive from the same material); only the
+> middleware one is covered by the previous-key widening below.
+> `tests/guards/lookup-hash-call-sites-registered.test.ts` classifies all of
+> them and fails on a new one.
 >
-> **P1.1 is the fix**: a separate `LOOKUP_HMAC_KEY` (+ `_PREVIOUS`),
-> bootstrapped to today's derived bytes so nothing needs rehashing, with
-> HKDF-separated derivation per identifier kind. Rotation of the master
-> KEK becomes safe once the lookup hash no longer depends on it. Until
-> then, treat the master KEK as un-rotatable regardless of what the
-> paragraph above implies on its own.
+> **Rotating the LOOKUP key itself is a different, harder event.** Set
+> `LOOKUP_HMAC_KEY_PREVIOUS` and READS resolve under either key —
+> `hashForLookupCandidates` widens the predicate to `{ in: [...] }`, and
+> `pii-middleware` downgrades `findUnique` to `findFirst` when it does, because
+> Prisma rejects an `in` in a unique where. WRITES addressed by a unique where
+> (`update` / `delete` / `upsert`) use the **primary alone**, so a row not yet
+> rehashed is briefly not addressable BY EMAIL for those.
+>
+> **And the sixteen explicit call sites get no widening at all**, because they
+> never pass a plain field — so during a LOOKUP-key rotation a sign-in, a reset
+> and the registration uniqueness check all read the primary hash only and miss
+> any row not yet rehashed. Converting them to `hashForLookupCandidates` is
+> part of **P1.3** alongside the rehash sweep; the registry guard above is the
+> shrinking list. Until both land, treat a lookup-key rotation as unfinished
+> business and a KEK rotation as the supported one. A KEK rotation is
+> unaffected by any of this: the lookup key does not move, so no hash changes
+> and no fallback is wanted.
+>
+> **A new identifier kind gets its OWN HKDF info string; an existing one's is
+> frozen.** `LOOKUP_INFO` in `encryption.ts` maps `email` to the original
+> `inflect-data-lookup-hash`, and that inconsistency is load-bearing — every
+> stored `User.emailHash` and `UserIdentityLink.emailAtLinkTimeHash` was
+> computed with it. Renaming it is a REHASH, not an edit.
 
 Per-tenant DEK rotation (generating a fresh DEK for a single
 compromised tenant without touching the global KEK) is implemented
@@ -1101,7 +1139,18 @@ data-bearing handler under `/api/scim` therefore calls
 list from the filesystem so a new route is covered the moment it exists. The
 one exemption is `ServiceProviderConfig` (RFC 7644 §4 discovery metadata), and
 the guard fails if that file ever touches the database. The trailing slash on
-the prefix is load-bearing — `'/api/scim'` would also open `/api/scimulator`.
+the prefix was LOAD-BEARING — `'/api/scim'` would also have opened
+`/api/scimulator` — and since 2026-10-02 it is belt-and-braces instead:
+`matchesPublicPrefix` requires a public-prefix match to end at `/`, `?`, `#` or
+the end of the string, so a sibling sharing a spelling is refused whether or
+not the entry carries a slash. **Keep writing the slash** on a prefix entry; it
+states the intent, and `'/api/scim/'` still correctly declines to open the bare
+`/api/scim`. What changed is that the OTHER 20 bare entries — `/api/metrics`,
+`/api/readyz`, `/api/admin/tenants` and the rest — are no longer one forgotten
+character away from publishing `/api/metrics-internal`. A convention that holds
+only where each of 27 authors remembered it was not a convention; measured
+across all 464 route paths under `src/app`, the narrowing costs zero real
+routes. See `tests/guards/public-prefix-segment-boundary.test.ts`.
 SCIM has its own rate tier (`SCIM_LIMIT` + `SCIM_IP_LIMIT`) because it is the
 one API surface an anonymous caller can use to reach a token comparison; the
 per-IP ceiling is the half that actually stops a brute force, since a caller
