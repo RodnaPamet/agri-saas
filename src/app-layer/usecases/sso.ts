@@ -6,7 +6,7 @@ import { UpsertSsoConfigInput } from '@/app-layer/schemas/sso-config.schemas';
 import { forbidden, notFound } from '@/lib/errors/types';
 import prisma from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
-import { hashForLookup } from '@/lib/security/encryption';
+import { hashForLookup, hashForLookupCandidates } from '@/lib/security/encryption';
 
 /**
  * Enterprise SSO Usecases
@@ -327,8 +327,8 @@ export async function linkExternalIdentity(
     }
 
     // ── Step 4: Match by email ──
-    const user = await prisma.user.findUnique({
-        where: { emailHash: hashForLookup(normalizedEmail) },
+    const user = await prisma.user.findFirst({
+        where: { emailHash: { in: hashForLookupCandidates(normalizedEmail) } },
         select: { id: true },
     });
 
@@ -495,8 +495,8 @@ export async function checkSsoEnforcementForEmail(
     const normalizedEmail = email.toLowerCase();
 
     // Find user
-    const user = await prisma.user.findUnique({
-        where: { emailHash: hashForLookup(normalizedEmail) },
+    const user = await prisma.user.findFirst({
+        where: { emailHash: { in: hashForLookupCandidates(normalizedEmail) } },
         select: {
             id: true,
             passwordHash: true,

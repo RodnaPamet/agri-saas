@@ -50,7 +50,7 @@ import prisma from '@/lib/prisma';
 import { getAppBaseUrl } from './app-base-url';
 import { sendEmail } from '@/lib/mailer';
 import { logger } from '@/lib/observability/logger';
-import { hashForLookup } from '@/lib/security/encryption';
+import { hashForLookup, hashForLookupCandidates } from '@/lib/security/encryption';
 
 import { hashPassword, verifyPassword } from './passwords';
 import { translateFor } from '@/lib/i18n/server-messages';
@@ -116,8 +116,8 @@ export async function issuePasswordReset(
     const identifier = normaliseEmail(email);
     if (!identifier) return;
 
-    const user = await prisma.user.findUnique({
-        where: { emailHash: hashForLookup(identifier) },
+    const user = await prisma.user.findFirst({
+        where: { emailHash: { in: hashForLookupCandidates(identifier) } },
         select: { id: true, email: true, passwordHash: true, uiLanguage: true },
     });
 

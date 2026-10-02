@@ -22,13 +22,19 @@ const userFindUnique = jest.fn();
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
     default: {
-        user: { findUnique: (...a: unknown[]) => userFindUnique(...a) },
+        // #1237: the email lookup is `findFirst` now (an `in` predicate is not
+        // valid on `findUnique`). Same double, so the test's intent is unchanged.
+        user: {
+            findUnique: (...a: unknown[]) => userFindUnique(...a),
+            findFirst: (...a: unknown[]) => userFindUnique(...a),
+        },
     },
 }));
 
 jest.mock('@/lib/security/encryption', () => ({
     __esModule: true,
     hashForLookup: (v: string) => `hash:${v}`,
+    hashForLookupCandidates: (v: string) => [`hash:${v}`],
 }));
 
 const warn = jest.fn();

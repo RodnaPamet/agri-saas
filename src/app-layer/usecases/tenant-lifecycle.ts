@@ -20,7 +20,7 @@
  */
 
 import prisma from '@/lib/prisma';
-import { hashForLookup } from '@/lib/security/encryption';
+import { hashForLookup, hashForLookupCandidates } from '@/lib/security/encryption';
 import { appendAuditEntry } from '@/lib/audit/audit-writer';
 import { logger } from '@/lib/observability/logger';
 import { ValidationError, NotFoundError, ConflictError } from '@/lib/errors/types';
@@ -60,13 +60,25 @@ export async function createTenantWithOwner(
 
     // 1. Find-or-create the User row outside the main transaction so
     //    the upsert is idempotent and visible to the transaction below.
+    // An upsert's `where` takes a UNIQUE SCALAR, so it cannot carry the candidate
+    // list. Keyed on the primary hash alone it would MISS a row still holding the
+    // previous hash mid-rotation and CREATE A SECOND `User` for an address that
+    // already has one — the duplicate-User defect, arrived at from the write side.
+    // So the candidate read runs first, and the upsert is reached only when no row
+    // exists under EITHER key, where it still provides the ON CONFLICT guard
+    // against two concurrent creates.
     const emailHash = hashForLookup(email);
-    const user = await prisma.user.upsert({
-        where: { emailHash },
-        update: {},
-        create: { email, emailHash },
-        select: { id: true },
-    });
+    const user =
+        (await prisma.user.findFirst({
+            where: { emailHash: { in: hashForLookupCandidates(email) } },
+            select: { id: true },
+        })) ??
+        (await prisma.user.upsert({
+            where: { emailHash },
+            update: {},
+            create: { email, emailHash },
+            select: { id: true },
+        }));
 
     // 2. Wrap in a Prisma transaction so a midway failure rolls back
     //    the tenant row, the membership, and the onboarding row together.
@@ -212,8 +224,8 @@ export async function transferTenantOwnership(
     }
 
     // 1. Resolve the new owner's User row.
-    const newOwnerUser = await prisma.user.findUnique({
-        where: { emailHash: hashForLookup(email) },
+    const newOwnerUser = await prisma.user.findFirst({
+        where: { emailHash: { in: hashForLookupCandidates(email) } },
         select: { id: true },
     });
     if (!newOwnerUser) {
