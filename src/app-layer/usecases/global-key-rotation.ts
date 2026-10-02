@@ -384,6 +384,51 @@ const V2_REPAIR_TENANT_COLUMN: Readonly<Record<string, string>> = {
     ExchangeMessage: 'senderTenantId',
 };
 
+/**
+ * The column that ADDRESSES A ROW, per model, where it is not `id`.
+ *
+ * ── why this exists ──
+ *
+ * Every sweep in this file built `SELECT id … ORDER BY id` and `WHERE id = $2`
+ * directly. That held for every model in `GLOBAL_KEK_MODELS` when it was
+ * written — `Tenant`, `Company` and `ExchangeMessage` all key on `id` — and
+ * `FeatureFlag` keys on `key`. Found by Agrent backend 1 (#1252) when
+ * `FeatureFlag` entered the set: it has no `tenantId` and holds a `v1:` row, so
+ * `global-kek-models-covers-tenantless` requires it there, and the moment it
+ * did, the repair died with 42703 for EVERY model rather than just that one.
+ *
+ * The sharper half of the lesson is mine. `assertSweepableColumns` already
+ * carried a check for a missing `id`, with the comment "the UPDATE addresses
+ * rows by `id`; a model without one would fail mid-sweep, after some rows had
+ * already been rewritten". So the hazard was documented and then assumed three
+ * more times in the same file. A comment explaining why something is
+ * load-bearing is evidence the author knew — which makes every other site that
+ * assumes it a deliberate-looking accident.
+ *
+ * DECLARED rather than derived from the DMMF, for the reason
+ * `V2_REPAIR_TENANT_COLUMN` is: a human writes the entry and a guard checks it,
+ * instead of a schema change silently repointing which column a sweep addresses
+ * rows by.
+ *
+ * The value reaches raw SQL, so every read goes through `rowKeyFor`, which
+ * `assertIdentifier`-checks it. `assertSweepableColumns` additionally proves the
+ * column EXISTS and is a text type — the keyset cursor binds it as a string
+ * parameter, so a non-text key would page in the wrong order rather than fail
+ * loudly.
+ */
+const SWEEP_ROW_KEY: Readonly<Record<string, string>> = {
+    // `FeatureFlag.key` IS the primary key — "the key IS the identity" per the
+    // schema — so there is no `id` column to fall back to.
+    FeatureFlag: 'key',
+};
+
+/** The row-addressing column for a model, validated for raw-SQL use. */
+function rowKeyFor(model: string): string {
+    const key = SWEEP_ROW_KEY[model] ?? 'id';
+    assertIdentifier(key, 'row key column');
+    return key;
+}
+
 export interface V2RepairResult {
     model: string;
     column: string;
@@ -450,12 +495,13 @@ export async function repairMisplacedV2(): Promise<V2RepairResult[]> {
     for (const { model, table, column } of v2RepairColumns()) {
         const result: V2RepairResult = { model, column, found: 0, repaired: 0, errors: 0 };
         const tenantColumn = V2_REPAIR_TENANT_COLUMN[model];
+        const rowKey = rowKeyFor(model);
 
         const rows = await prisma.$queryRawUnsafe<Array<{ id: string; value: string; tenant: string | null }>>(
-            `SELECT id, "${column}" AS value${tenantColumn ? `, "${tenantColumn}" AS tenant` : ', NULL AS tenant'}
+            `SELECT "${rowKey}" AS id, "${column}" AS value${tenantColumn ? `, "${tenantColumn}" AS tenant` : ', NULL AS tenant'}
                FROM "${table}"
               WHERE "${column}" IS NOT NULL AND "${column}" LIKE 'v2:%'
-              ORDER BY id`,
+              ORDER BY "${rowKey}"`,
         );
         result.found = rows.length;
 
@@ -492,7 +538,7 @@ export async function repairMisplacedV2(): Promise<V2RepairResult[]> {
                 const previous = await getTenantPreviousDek(row.tenant);
                 const plaintext = decryptWithKeyOrPrevious(primary, previous, row.value);
                 await prisma.$executeRawUnsafe(
-                    `UPDATE "${table}" SET "${column}" = $1 WHERE id = $2`,
+                    `UPDATE "${table}" SET "${column}" = $1 WHERE "${rowKey}" = $2`,
                     encryptField(plaintext),
                     row.id,
                 );
@@ -608,29 +654,54 @@ export async function assertSweepableColumns(columns: SweepableColumn[]): Promis
     }
 
     const models = [...new Set(columns.map((c) => c.table))];
-    const rows = await prisma.$queryRawUnsafe<Array<{ table_name: string; column_name: string }>>(
-        `SELECT table_name, column_name
+    const rows = await prisma.$queryRawUnsafe<
+        Array<{ table_name: string; column_name: string; data_type: string }>
+    >(
+        `SELECT table_name, column_name, data_type
            FROM information_schema.columns
           WHERE table_schema = current_schema()
             AND table_name = ANY($1::text[])`,
         models,
     );
     const have = new Set(rows.map((r) => `${r.table_name}.${r.column_name}`));
+    const typeOf = new Map(rows.map((r) => [`${r.table_name}.${r.column_name}`, r.data_type]));
 
     const missing = columns.filter((c) => !have.has(`${c.table}.${c.column}`));
-    // The UPDATE addresses rows by `id`; a model without one would fail
-    // mid-sweep, after some rows had already been rewritten.
-    const noId = models.filter((m) => !have.has(`${m}.id`));
 
-    if (missing.length > 0 || noId.length > 0) {
+    // Every sweep addresses rows by the column `SWEEP_ROW_KEY` declares, `id` by
+    // default. This replaces a check that asked only "does `id` exist", which
+    // refused to sweep at all for a model keyed on anything else instead of
+    // addressing its rows correctly.
+    //
+    // The type check is not decoration: the keyset cursor binds this column as a
+    // STRING parameter, so a non-text key would compare by text coercion and page
+    // in the wrong order — a sweep that stops early and reports success, which is
+    // the exact failure this function exists to prevent.
+    const tableToModel = new Map<string, string>();
+    for (const c of columns) tableToModel.set(c.table, c.model);
+    const badKey: string[] = [];
+    for (const [table, model] of tableToModel) {
+        const key = rowKeyFor(model);
+        const id = `${table}.${key}`;
+        if (!have.has(id)) {
+            badKey.push(`${table} has no "${key}" column (row key for ${model})`);
+            continue;
+        }
+        const t = typeOf.get(id) ?? '(unknown)';
+        if (!/char|text|uuid/i.test(t)) {
+            badKey.push(`${table}."${key}" is ${t}, and the cursor binds it as text`);
+        }
+    }
+
+    if (missing.length > 0 || badKey.length > 0) {
         throw internal(
             'global-key-rotation: refusing to sweep — the schema does not match the manifests.\n' +
                 (missing.length
                     ? `  missing columns: ${missing.map((c) => `${c.table}.${c.column} — manifest says ${c.model}.${c.manifestName} (${c.manifest})`).join(', ')}\n`
                     : '') +
-                (noId.length ? `  models with no "id" column: ${noId.join(', ')}\n` : '') +
-                '  Fix the manifest or the schema. Skipping what cannot be found is how a ' +
-                'rotation reports success over half the data.',
+                (badKey.length ? `  unusable row keys: ${badKey.join('; ')}\n` : '') +
+                '  Fix the manifest, the schema, or SWEEP_ROW_KEY. Skipping what cannot be ' +
+                'found is how a rotation reports success over half the data.',
         );
     }
 }
@@ -651,8 +722,12 @@ export async function countUnmigrated(only?: readonly SweepFilter[]): Promise<{
     let total = 0;
 
     for (const { model, table, column } of columns) {
-        const rows = await prisma.$queryRawUnsafe<Array<{ id: string; value: string }>>(
-            `SELECT id, "${column}" AS value FROM "${table}"
+        // No row key selected at all: this counts values and never addresses a
+        // row, so the `id` it used to select was an unused column AND an
+        // unnecessary assumption. Removing it is the fix here, not generalising
+        // it.
+        const rows = await prisma.$queryRawUnsafe<Array<{ value: string }>>(
+            `SELECT "${column}" AS value FROM "${table}"
               WHERE "${column}" IS NOT NULL AND "${column}" LIKE 'v1:%'`,
         );
         // Counted in Node, not SQL: "is this readable under the primary key" is
@@ -700,17 +775,25 @@ export async function sweepGlobalKeyRotation(
     for (const { model, table, column } of columns) {
         const result: ColumnSweepResult = { model, column, scanned: 0, rewritten: 0, alreadyPrimary: 0, errors: 0 };
 
-        // Cursor on `id` rather than OFFSET: rows are UPDATEd as we go and an
-        // OFFSET walk over a changing set skips rows. The predicate does not
-        // change under us (a rewritten row is still `v1:`), so a plain
+        // Cursor on the row key rather than OFFSET: rows are UPDATEd as we go
+        // and an OFFSET walk over a changing set skips rows. The predicate does
+        // not change under us (a rewritten row is still `v1:`), so a plain
         // ascending cursor is both stable and complete.
+        //
+        // The three uses of `rowKey` below MUST agree: the comparison, the
+        // ORDER BY, and the column `after` is read from. A cursor that orders
+        // on one column and resumes on another pages in an order the `>` does
+        // not follow, which skips rows and then reports success — the failure
+        // `assertSweepableColumns` exists to prevent, arrived at from inside.
+        // It is aliased to `id` so everything downstream keeps its shape.
+        const rowKey = rowKeyFor(model);
         let after: string | null = null;
         for (;;) {
             const rows: Array<{ id: string; value: string }> = await prisma.$queryRawUnsafe(
-                `SELECT id, "${column}" AS value FROM "${table}"
+                `SELECT "${rowKey}" AS id, "${column}" AS value FROM "${table}"
                   WHERE "${column}" IS NOT NULL AND "${column}" LIKE 'v1:%'
-                    ${after === null ? '' : 'AND id > $2'}
-                  ORDER BY id
+                    ${after === null ? '' : `AND "${rowKey}" > $2`}
+                  ORDER BY "${rowKey}"
                   LIMIT $1`,
                 ...(after === null ? [batchSize] : [batchSize, after]),
             );
@@ -746,7 +829,7 @@ export async function sweepGlobalKeyRotation(
                     // re-encrypt an already-encrypted string, or map the column
                     // away entirely.
                     await prisma.$executeRawUnsafe(
-                        `UPDATE "${table}" SET "${column}" = $1 WHERE id = $2`,
+                        `UPDATE "${table}" SET "${column}" = $1 WHERE "${rowKey}" = $2`,
                         encryptField(plaintext),
                         row.id,
                     );
