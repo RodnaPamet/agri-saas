@@ -18,17 +18,17 @@ import {
     computeContractValue,
     summariseContractBook,
 } from '@/lib/grain/contract-value';
+import type { ValuableContract } from '@/lib/grain/contract-value';
 
 const D = (v: string) => new Prisma.Decimal(v);
 
-const contract = (over: Partial<Record<string, unknown>> = {}) =>
-    ({
-        status: 'ACTIVE',
-        volumeTonnes: D('100'),
-        pricePerTonne: D('200'),
-        priceCurrency: 'EUR',
-        ...over,
-    }) as any;
+const contract = (over: Partial<ValuableContract> = {}): ValuableContract => ({
+    status: 'ACTIVE',
+    volumeTonnes: D('100'),
+    pricePerTonne: D('200'),
+    priceCurrency: 'EUR',
+    ...over,
+});
 
 describe('computeContractValue', () => {
     it('multiplies volume by price', () => {
@@ -56,7 +56,7 @@ describe('computeContractValue', () => {
     ])('returns null when there is %s', (_label, volume, price) => {
         // Null, not zero: zero would claim the deal is worth nothing and
         // would silently drag a book total down.
-        expect(computeContractValue(volume as any, price as any)).toBeNull();
+        expect(computeContractValue(volume, price)).toBeNull();
     });
 
     it('survives a malformed stored value instead of throwing', () => {

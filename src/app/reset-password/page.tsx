@@ -45,7 +45,13 @@ function ResetPasswordForm() {
                 body: JSON.stringify({ token, newPassword }),
             });
             if (res.ok) {
-                window.location.href = '/login?reset=success';
+                // A FULL navigation, deliberately: the session just changed, so the
+                    // client's cached session state must be discarded rather than
+                    // carried into a soft `router.push`. `new URL(...)` keeps that
+                    // behaviour exactly and satisfies
+                    // `@next/next/no-location-assign-relative-destination`, which
+                    // objects to the bare relative string, not to the reload.
+                    window.location.href = new URL('/login?reset=success', window.location.origin).href;
                 return;
             }
             const data = await res.json().catch(() => ({}));

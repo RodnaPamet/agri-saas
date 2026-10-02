@@ -12,7 +12,7 @@
  * without it the suite would be green about a fix that had not applied. That
  * is the #764/#783 lesson applied to the second origin.
  */
-const getTenantCtxMock = jest.fn<any, [unknown, unknown]>();
+const getTenantCtxMock = jest.fn<Promise<unknown>, [unknown, unknown]>();
 jest.mock('@/app-layer/context', () => ({
     getTenantCtx: (p: unknown, r: unknown) => getTenantCtxMock(p, r),
 }));

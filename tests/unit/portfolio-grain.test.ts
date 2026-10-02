@@ -80,18 +80,48 @@ const locationFindManyArgs: Array<{ where: Record<string, unknown> }> = [];
 
 /** Every `contract.groupBy` arg object the usecase issued, in order —
  *  so a test can assert the WHERE shape, not just the result. */
-const contractGroupByArgs: Array<Record<string, any>> = [];
+/**
+ * The slices of the Prisma args these assertions actually read — `by[0]` on
+ * the groupBy and the `logEntryId` discriminator on the aggregate. A
+ * `Record<string, unknown>` would not compile against `a.by?.[0]`, and the
+ * real Prisma arg types carry XOR unions that need narrowing at every
+ * assertion, so a local view is both shorter and more honest about what is
+ * being pinned.
+ */
+interface RecordedContractWhere {
+    /** The live-book status scoping these mocks assert reaches each read. */
+    status?: { in?: string[] };
+    type?: string;
+}
+
+interface RecordedGroupByArgs {
+    by?: readonly string[];
+    where?: RecordedContractWhere;
+}
+
+interface RecordedFindManyArgs {
+    where?: RecordedContractWhere;
+}
+
+interface RecordedAggregateArgs {
+    where?: {
+        logEntryId?: { not: unknown } | null;
+        netTonnesStd?: unknown;
+    };
+}
+
+const contractGroupByArgs: RecordedGroupByArgs[] = [];
 
 /** Every `yieldRecord.aggregate` arg object, in order — production and the
  *  journal-linked subset are two different questions and a test should be
  *  able to prove BOTH were asked. */
-const yieldAggregateArgs: Array<Record<string, any>> = [];
+const yieldAggregateArgs: RecordedAggregateArgs[] = [];
 
 function fakeDbFor(tenantId: string) {
     const d = TENANT_DATA[tenantId];
     return {
         contract: {
-            groupBy: jest.fn(async (args: Record<string, any>) => {
+            groupBy: jest.fn(async (args: RecordedGroupByArgs) => {
                 contractGroupByArgs.push(args);
                 const allowed: string[] | undefined = args?.where?.status?.in;
                 const typeFilter: string | undefined = args?.where?.type;
@@ -130,7 +160,7 @@ function fakeDbFor(tenantId: string) {
             // Feeds the contract-VALUE rollup (a per-row product Prisma
             // cannot SUM) and, via `where.status`, proves the live-book
             // scoping reaches that read too.
-            findMany: jest.fn(async (args: Record<string, any>) => {
+            findMany: jest.fn(async (args: RecordedFindManyArgs) => {
                 if (!d.contracts) return [];
                 const allowed: string[] | undefined = args?.where?.status?.in;
                 return d.contracts
@@ -153,7 +183,7 @@ function fakeDbFor(tenantId: string) {
             // the journal-linked subset. Discriminate on the `where` so a
             // test proves the usecase asked the right question, rather than
             // both calls getting the same canned sum.
-            aggregate: jest.fn(async (args: any) => {
+            aggregate: jest.fn(async (args: RecordedAggregateArgs | undefined) => {
                 yieldAggregateArgs.push(args ?? {});
                 return ({
                     _sum: {
