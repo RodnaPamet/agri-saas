@@ -1,6 +1,11 @@
 /**
  * Platform flag console — read and flip runtime feature flags.
  *
+ * HTTP boundary only: verify the platform key, parse, call the usecase, shape
+ * the response. Every Prisma query, the cache invalidation and the log line
+ * live in `@/app-layer/usecases/feature-flag-admin` — the layer rule, and
+ * `tests/unit/no-direct-prisma.test.ts` enforces it on route handlers.
+ *
  * ── why this is platform-admin and not a tenant role ──
  *
  * `FeatureFlag` has no `tenantId` by design (see `prisma/schema/social.prisma`):
@@ -11,13 +16,14 @@
  * being able to launch a feature for every other tenant would be the wrong
  * boundary, and it is the obvious mistake here.
  *
- * ── flipping a flag invalidates the cache, and that is the whole point ──
+ * ── it has to be REACHABLE, which the gate below cannot tell you ──
  *
- * `readFlagTable` caches for 30s, so without an explicit invalidation a flip
- * would take up to 30s to be visible and an operator watching for it would
- * reasonably conclude the console was broken and flip it again. The write path
- * therefore calls `invalidateFlagCache()`; the TTL remains the backstop for a
- * Redis that dropped the DEL.
+ * The Edge calls `getToken()`, which understands only a NextAuth JWE, so an
+ * `x-platform-admin-key` request yields null and is 401'd before this handler
+ * runs — the SCIM / `iflk_` / signed-webhook shape, six prior instances. Both
+ * paths are therefore opened in `src/lib/auth/guard.ts`, as an EXACT entry plus
+ * a children prefix so a neighbouring path is not opened with them.
+ * `tests/unit/admin-feature-flags-console.test.ts` asserts both halves.
  *
  * ── the kill switch is NOT reachable from here, deliberately ──
  *
@@ -32,14 +38,8 @@ import { z } from 'zod';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { verifyPlatformApiKey, PlatformAdminError } from '@/lib/auth/platform-admin';
-import { prisma } from '@/lib/prisma';
-import {
-    invalidateFlagCache,
-    flagsForcedOff,
-    FLAG_KEY_PATTERN,
-    FLAG_KEY_MAX_LENGTH,
-} from '@/lib/feature-flags';
-import { logger } from '@/lib/observability/logger';
+import { flagsForcedOff, FLAG_KEY_PATTERN, FLAG_KEY_MAX_LENGTH } from '@/lib/feature-flags';
+import { listFeatureFlags, upsertFeatureFlag } from '@/app-layer/usecases/feature-flag-admin';
 import { LOGIN_LIMIT } from '@/lib/security/rate-limit';
 
 export const runtime = 'nodejs';
@@ -83,41 +83,22 @@ function platformGate(req: NextRequest): NextResponse | null {
     }
 }
 
-/**
- * Every flag, with its stored state.
- *
- * This is the RAW table, not a resolved view: an operator needs to see that a
- * flag is enabled-but-cohort-gated, which `/api/auth/me` deliberately collapses
- * to a single boolean per caller. Reporting the resolved value here would hide
- * exactly the state someone opens the console to inspect.
- */
 export const GET = withApiErrorHandling(async (req: NextRequest) => {
     const refused = platformGate(req);
     if (refused) return refused;
 
-    const flags = await prisma.featureFlag.findMany({
-        orderBy: { key: 'asc' },
-        select: { key: true, enabled: true, cohorts: true, description: true, updatedAt: true },
-    });
-
     return jsonResponse({
-        flags,
+        flags: await listFeatureFlags(),
         /**
          * Surfaced because it overrides every row above. Without it the console
          * would show `enabled: true` while every client sees the flag off, and
-         * the operator would have no way to tell from this screen.
+         * the operator would have no way to tell from this screen. The rows are
+         * NOT rewritten to false — that would misreport what a flip-back does.
          */
         forcedOff: flagsForcedOff(),
     });
 });
 
-/**
- * Create or update one flag.
- *
- * An upsert rather than separate create/update: the key IS the identity, and a
- * console that errors on "already exists" makes the caller do a read first for
- * no benefit.
- */
 export const PUT = withApiErrorHandling(
     async (req: NextRequest) => {
         const refused = platformGate(req);
@@ -130,43 +111,16 @@ export const PUT = withApiErrorHandling(
             return NextResponse.json({ error: 'invalid_request' }, { status: 400 });
         }
         const body = UpsertBody.parse(raw);
-        const cohorts = body.cohorts ?? [];
 
-        // `updatedByUserId` is left NULL, and that is the honest answer rather
-        // than a gap: the credential here is a platform API key, so there is no
-        // user in scope to record. Accepting an actor id from the body would put
-        // a caller-supplied name in an attribution field, which is worse than an
-        // absent one. The record of WHO flipped a flag is the operator's access
-        // to the key plus the log line below; a real platform audit chain is
-        // P1.9 (`PlatformAuditLog`), and this route is one of its first writers.
-        const flag = await prisma.featureFlag.upsert({
-            where: { key: body.key },
-            create: {
-                key: body.key,
-                enabled: body.enabled,
-                cohorts,
-                description: body.description ?? null,
-            },
-            update: {
-                enabled: body.enabled,
-                cohorts,
-                ...(body.description !== undefined ? { description: body.description } : {}),
-            },
-            select: { key: true, enabled: true, cohorts: true, description: true, updatedAt: true },
-        });
-
-        // Without this the flip is invisible for up to 30s and an operator
-        // would reasonably flip it again.
-        await invalidateFlagCache();
-
-        // A flag flip is a deployment event. Logged at INFO with the key and the
-        // resulting state — never the caller's key material, which the verifier
-        // never exposes anyway.
-        logger.info('feature-flag.updated', {
-            component: 'feature-flags',
-            key: flag.key,
-            enabled: flag.enabled,
-            cohortCount: flag.cohorts.length,
+        const flag = await upsertFeatureFlag({
+            key: body.key,
+            enabled: body.enabled,
+            // Resolved HERE rather than defaulted in the usecase, so the write
+            // is always explicit: `undefined` in a Prisma `update` means "leave
+            // it alone", and omitting cohorts must mean "everyone", not "keep
+            // whatever narrowing was there".
+            cohorts: body.cohorts ?? [],
+            description: body.description,
         });
 
         return jsonResponse({ flag, forcedOff: flagsForcedOff() });

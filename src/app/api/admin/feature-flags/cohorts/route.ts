@@ -1,6 +1,9 @@
 /**
  * Platform flag console — cohort membership.
  *
+ * HTTP boundary only; the queries and log lines live in
+ * `@/app-layer/usecases/feature-flag-admin`.
+ *
  * ── why this route exists at all ──
  *
  * `FeatureFlag.cohorts` is the limited-rollout half of the flag design: enabled
@@ -8,15 +11,6 @@
  * cohort, setting one makes the flag unreachable for everybody and the cohort
  * mechanism is inert — code-complete and never delivered. The sibling route
  * sets the cohort NAMES on a flag; this one puts people in them.
- *
- * ── no cache invalidation here, and that is not an omission ──
- *
- * `readFlagTable` caches the flag TABLE; `cohortsFor` reads membership per
- * request and is deliberately NOT cached (see the module docblock in
- * `@/lib/feature-flags`). So a membership change is visible on the caller's
- * next request, with no 30s window and nothing to invalidate. Copying the
- * sibling's `invalidateFlagCache()` call here would throw away every flag's
- * cached row to no effect.
  *
  * ── membership is by `userId`, not by email, until P1.1 ──
  *
@@ -31,8 +25,12 @@ import { z } from 'zod';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { verifyPlatformApiKey, PlatformAdminError } from '@/lib/auth/platform-admin';
-import { prisma } from '@/lib/prisma';
-import { logger } from '@/lib/observability/logger';
+import {
+    listCohortSizes,
+    listCohortMembers,
+    addCohortMember,
+    removeCohortMember,
+} from '@/app-layer/usecases/feature-flag-admin';
 import { LOGIN_LIMIT } from '@/lib/security/rate-limit';
 
 export const runtime = 'nodejs';
@@ -49,9 +47,6 @@ const MemberBody = z.object({
     userId: z.string().min(1).max(64),
 });
 
-/** Bounded so one cohort cannot return an unbounded body. */
-const MEMBER_PAGE_SIZE = 500;
-
 /** Convert the verifier's typed failure into its HTTP answer. */
 function platformGate(req: NextRequest): NextResponse | null {
     try {
@@ -65,15 +60,7 @@ function platformGate(req: NextRequest): NextResponse | null {
     }
 }
 
-/**
- * Members of one cohort, or every cohort's size when `cohort` is omitted.
- *
- * The no-argument form answers the question an operator actually arrives with —
- * "which cohorts exist, and are any of them empty?" — which the flag list
- * cannot answer: a flag names cohorts that may have no members at all, and an
- * enabled flag gated on an empty cohort is OFF for everyone while reading as a
- * live rollout.
- */
+/** Members of one cohort, or every cohort's size when `cohort` is omitted. */
 export const GET = withApiErrorHandling(async (req: NextRequest) => {
     const refused = platformGate(req);
     if (refused) return refused;
@@ -81,14 +68,7 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
     const cohort = req.nextUrl.searchParams.get('cohort');
 
     if (cohort === null) {
-        const grouped = await prisma.featureFlagCohortMember.groupBy({
-            by: ['cohortKey'],
-            _count: { _all: true },
-            orderBy: { cohortKey: 'asc' },
-        });
-        return jsonResponse({
-            cohorts: grouped.map((g) => ({ cohort: g.cohortKey, members: g._count._all })),
-        });
+        return jsonResponse({ cohorts: await listCohortSizes() });
     }
 
     const parsed = CohortKey.safeParse(cohort);
@@ -96,31 +76,11 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
         return NextResponse.json({ error: 'invalid_request' }, { status: 400 });
     }
 
-    const members = await prisma.featureFlagCohortMember.findMany({
-        where: { cohortKey: parsed.data },
-        select: { userId: true, createdAt: true },
-        orderBy: { createdAt: 'asc' },
-        take: MEMBER_PAGE_SIZE,
-    });
-
-    return jsonResponse({
-        cohort: parsed.data,
-        members,
-        // Surfaced rather than silently truncated: a console that shows 500 of
-        // 900 members without saying so is a console an operator trusts wrongly.
-        truncated: members.length === MEMBER_PAGE_SIZE,
-    });
+    const { members, truncated } = await listCohortMembers(parsed.data);
+    return jsonResponse({ cohort: parsed.data, members, truncated });
 });
 
-/**
- * Add a user to a cohort. Idempotent.
- *
- * `@@unique([cohortKey, userId])` makes a double-add a P2002, which is the
- * right outcome for the DATABASE and the wrong one for a console: re-running an
- * add should be a no-op, not an error an operator has to interpret. So the
- * unique constraint is relied on and the conflict is swallowed — `createMany`
- * with `skipDuplicates` rather than a read-then-write, which would race.
- */
+/** Add a user to a cohort. Idempotent — see the usecase. */
 export const POST = withApiErrorHandling(
     async (req: NextRequest) => {
         const refused = platformGate(req);
@@ -134,33 +94,17 @@ export const POST = withApiErrorHandling(
         }
         const body = MemberBody.parse(raw);
 
-        // The FK to `User` is what refuses a typo'd id; `cohortKey` has no FK by
-        // design (a cohort is a label), so a typo'd COHORT silently creates a
-        // new empty one. That asymmetry is why GET lists cohort sizes.
-        const result = await prisma.featureFlagCohortMember.createMany({
-            data: [{ cohortKey: body.cohort, userId: body.userId }],
-            skipDuplicates: true,
-        });
-
-        logger.info('feature-flag.cohort_member_added', {
-            component: 'feature-flags',
-            cohort: body.cohort,
-            // `created: 0` means it was already a member — the idempotent path.
-            created: result.count,
-        });
-
-        return jsonResponse({ cohort: body.cohort, added: result.count === 1 });
+        const { added } = await addCohortMember(body.cohort, body.userId);
+        return jsonResponse({ cohort: body.cohort, added });
     },
     { rateLimit: { config: LOGIN_LIMIT, scope: 'platform-flag-cohorts' } },
 );
 
 /**
- * Remove a user from a cohort. Idempotent, and answers 200 for a non-member.
+ * Remove a user from a cohort. Idempotent, and 200 for a non-member.
  *
- * `deleteMany` rather than `delete`, because `delete` throws P2025 on a missing
- * row and "they are not in the cohort" is the state the caller asked for. The
- * removed COUNT is returned so the operator can tell the two apart — the RLS
- * lesson: a delete that removes zero rows must not report as a delete.
+ * Both parameters are required: without them this would be a request to empty
+ * a whole cohort, which is not an operation this surface offers.
  */
 export const DELETE = withApiErrorHandling(
     async (req: NextRequest) => {
@@ -176,17 +120,8 @@ export const DELETE = withApiErrorHandling(
             return NextResponse.json({ error: 'invalid_request' }, { status: 400 });
         }
 
-        const result = await prisma.featureFlagCohortMember.deleteMany({
-            where: { cohortKey: parsed.data.cohort, userId: parsed.data.userId },
-        });
-
-        logger.info('feature-flag.cohort_member_removed', {
-            component: 'feature-flags',
-            cohort: parsed.data.cohort,
-            removed: result.count,
-        });
-
-        return jsonResponse({ cohort: parsed.data.cohort, removed: result.count });
+        const { removed } = await removeCohortMember(parsed.data.cohort, parsed.data.userId);
+        return jsonResponse({ cohort: parsed.data.cohort, removed });
     },
     { rateLimit: { config: LOGIN_LIMIT, scope: 'platform-flag-cohorts' } },
 );

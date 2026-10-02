@@ -103,14 +103,27 @@ function gateKeys(source: string): string[] {
     const code = codeOf(source);
     const keys: string[] = [];
     for (const callee of GATE_CALLEES) {
-        // The body excludes `$` and `{` as well as the quote characters, and
-        // that is not tidiness — it is what the mutation proof caught. A
-        // backtick template `social.${surface}` contains no quote character, so
-        // a `[^'"\`]*` body matched it end to end and an INTERPOLATED key read
-        // as a literal one: precisely the computed key this check exists to
-        // refuse. `+` rather than `*` for the same reason in the other
-        // direction — an empty literal is not a findable flag key.
-        const re = new RegExp(`\\b${callee}\\s*\\(\\s*(['"\`])([^'"\`\${}]+)\\1`, 'g');
+        // Built by CONCATENATION, not a template literal, and that is the
+        // second thing this line taught me. The body has to exclude `$` and
+        // `{` as well as the quote characters — the mutation proof caught
+        // that: a backtick template like a dollar-brace interpolation contains
+        // no quote character, so a quotes-only body matched it end to end and
+        // an INTERPOLATED key read as a literal one, precisely the computed
+        // key this check exists to refuse. `+` rather than `*` closes the same
+        // hole in the other direction, since an empty literal is not a
+        // findable flag key.
+        //
+        // Writing that character class inside a template literal needed `\$`
+        // to stop the `${` being read as interpolation — correct, and CodeQL
+        // flagged it `js/useless-regexp-character-escape` because `\$` and `$`
+        // are the same character and a reader cannot tell which meaning was
+        // intended. It was right to: the line had already been wrong twice.
+        // Concatenation has no template-escape layer, so the regex source
+        // reads as itself.
+        const re = new RegExp(
+            '\\b' + callee + '\\s*\\(\\s*([\'"`])([^\'"`${}]+)\\1',
+            'g',
+        );
         for (const m of code.matchAll(re)) keys.push(m[2]);
     }
     return keys;

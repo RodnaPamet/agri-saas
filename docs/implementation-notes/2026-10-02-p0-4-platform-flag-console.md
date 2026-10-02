@@ -82,12 +82,15 @@ route.
 
 | File | Role |
 | --- | --- |
-| `src/app/api/admin/feature-flags/route.ts` | GET the raw table + `forcedOff`; PUT upserts and invalidates |
-| `src/app/api/admin/feature-flags/cohorts/route.ts` | Cohort membership — sizes, members, idempotent add/remove |
+| `src/app-layer/usecases/feature-flag-admin.ts` | Every Prisma query, the invalidation and the log lines — the layer rule |
+| `src/app/api/admin/feature-flags/route.ts` | HTTP boundary: gate, parse, call the usecase, shape `forcedOff` alongside |
+| `src/app/api/admin/feature-flags/cohorts/route.ts` | HTTP boundary for cohort membership — sizes, members, add/remove |
 | `src/lib/feature-flags.ts` | `FLAG_KEY_PATTERN` + `FLAG_KEY_MAX_LENGTH` hoisted here, shared by three artefacts |
 | `src/lib/auth/guard.ts` | Edge opening: exact entry + children prefix, with the widening note |
 | `tests/guards/social-routes-flag-gated.test.ts` | The gating rule, built for a zero population |
 | `tests/unit/admin-feature-flags-console.test.ts` | 40 executing assertions, incl. the reachability pair |
+| `tests/unit/feature-flag-admin-usecase.test.ts` | 18 at the usecase boundary, incl. the write→invalidate ORDER |
+| `tests/unit/no-direct-prisma.test.ts` | `USECASE_ALLOWLIST` entry with the platform-scope reason |
 | `tests/guardrails/api-permission-coverage.test.ts` | Two platform-key exclusions with reasons |
 | `tests/guards/openapi-undocumented-baseline.json` | Both paths baselined; ceiling 239 → 241 |
 | `src/generated/route-inventory.json` | Regenerated: 371 entries, both new paths `live` |
@@ -163,6 +166,44 @@ Three defects, none of which a green run would have shown:
    denominator is verified and a zero in the subset is a fact about the repo
    rather than about the walk.
 3. **The Edge 401.** Covered above.
+
+Three more came from CI, after a local sweep I had wrongly scoped to
+`tests/guards` + `tests/guardrails` + `tests/contracts`:
+
+4. **Prisma in the route handlers.** `tests/unit/no-direct-prisma.test.ts` bans
+   it, and both routes queried `prisma` directly from the HTTP boundary. The
+   resolution was already precedented twice — `agri-events.ts` and
+   `news-derived-events.ts` are the same GLOBAL-catalogue, platform-key-gated,
+   no-`RequestContext` shape — and both took a USECASE on the global handle
+   with a written `USECASE_ALLOWLIST` reason, not a route-level exemption. So
+   `feature-flag-admin.ts` now holds every query, the invalidation and the log
+   lines, and the routes are gate → parse → call → shape. That exemption is
+   mutation-proved: deleting the allowlist entry reddens exactly this file.
+5. **An untested usecase.** `tests/guardrails/usecase-test-coverage.test.ts`
+   requires a test that IMPORTS each usecase via its `from '…'` specifier — a
+   lazy `require()` reads as untested. That forced a direct test, which turned
+   out to be worth more than the guard asked for: it is the only place the
+   write→invalidate ORDER can be asserted. Both orders return the same 200, so
+   no response assertion distinguishes them, and invalidating first leaves a
+   window in which a reader repopulates the cache from the pre-write table —
+   making the flip invisible for the full 30s TTL, i.e. exactly the failure the
+   invalidation exists to prevent. Mutation-proved by moving the call above the
+   write (2 red), by `>=` on the truncation boundary (3 red), and by dropping
+   `userId` from the removal predicate so it would empty a whole cohort (1 red).
+6. **A CodeQL high on `js/useless-regexp-character-escape`.** The literal-key
+   regex was built in a template literal, where the character class needed
+   `\$` to stop `${` being read as interpolation. Correct, and flagged because
+   `\$` and `$` are the same character so a reader cannot tell which meaning
+   was intended — on a line that had already been wrong twice. Rebuilt by
+   string concatenation, which has no template-escape layer, and the resulting
+   `RegExp.source` was compared against the four inputs the mutation table
+   covers.
+
+**The population I derive is itself a thing to get right.** Two of those three
+live in `tests/unit/`, which my first sweep did not include. The honest check
+is the whole `node` project — 1590 suites, 25145 assertions — and the `jsdom`
+project was cleared by derivation instead (0 of its 246 suites reference any
+changed module, with a positive control proving the search works).
 
 Four mutations of the routes were run against the console test, with the
 sources md5-restored afterwards: deleting `invalidateFlagCache()` (1 red),
