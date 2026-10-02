@@ -1,7 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- test doubles mirroring
- * runtime contracts (NextRequest, the logger); the file-level disable is this
- * codebase's standard pattern for these handler harnesses. */
-
 /**
  * Every request log line must carry WHICH CLIENT made the request.
  *
@@ -31,6 +27,7 @@
  * put unbounded attacker-controlled text on every line of the log stream.
  */
 import { NextRequest } from 'next/server';
+import type { RateLimitConfig } from '@/lib/security/rate-limit';
 
 const logInfo = jest.fn();
 const logWarn = jest.fn();
@@ -38,9 +35,9 @@ const logError = jest.fn();
 
 jest.mock('@/lib/observability/logger', () => ({
     logger: {
-        info: (...a: any[]) => logInfo(...a),
-        warn: (...a: any[]) => logWarn(...a),
-        error: (...a: any[]) => logError(...a),
+        info: (...a: unknown[]) => logInfo(...a),
+        warn: (...a: unknown[]) => logWarn(...a),
+        error: (...a: unknown[]) => logError(...a),
         debug: jest.fn(),
     },
     extractErrorMeta: (e: unknown) => ({ message: String(e) }),
@@ -64,9 +61,9 @@ jest.mock('@/lib/observability/sentry', () => ({ captureError: jest.fn() }));
  */
 const enforceMock = jest.fn();
 jest.mock('@/lib/security/rate-limit-middleware', () => ({
-    enforceRateLimit: (...a: any[]) => enforceMock(...a),
+    enforceRateLimit: (...a: unknown[]) => enforceMock(...a),
     isRateLimitBypassed: () => false,
-    API_MUTATION_LIMIT: { windowSeconds: 60, max: 10 },
+    API_MUTATION_LIMIT: { maxAttempts: 10, windowMs: 60_000 } satisfies RateLimitConfig,
 }));
 
 import { withApiErrorHandling } from '@/lib/errors/api';
@@ -101,7 +98,7 @@ beforeEach(() => jest.clearAllMocks());
 describe('the client reaches the log line', () => {
     it('a successful request logs the client on EVERY line it emits', async () => {
         const handler = withApiErrorHandling(async () => new Response('ok', { status: 200 }));
-        await handler(req('ios/1.0'), {} as any);
+        await handler(req('ios/1.0'), undefined);
 
         const metas = loggedMetas();
         // The denominator, printed as an assertion rather than assumed: a
@@ -116,7 +113,7 @@ describe('the client reaches the log line', () => {
         const handler = withApiErrorHandling(async () => {
             throw new Error('boom');
         });
-        await handler(req('ios/1.0'), {} as any);
+        await handler(req('ios/1.0'), undefined);
 
         expect(logError).toHaveBeenCalled();
         const failure = logError.mock.calls[0][1] as Record<string, unknown>;
@@ -129,7 +126,7 @@ describe('the client reaches the log line', () => {
 
     it('an absent header logs `unknown` rather than omitting the field', async () => {
         const handler = withApiErrorHandling(async () => new Response('ok', { status: 200 }));
-        await handler(req(null), {} as any);
+        await handler(req(null), undefined);
         // Omission and `unknown` read identically in a log search for
         // `client=ios/1.0`, but differ when asking "how many requests carried no
         // client at all" — a question with an answer only if the field is there.
@@ -139,7 +136,7 @@ describe('the client reaches the log line', () => {
     it('a HOSTILE header cannot put unbounded text on a log line', async () => {
         const handler = withApiErrorHandling(async () => new Response('ok', { status: 200 }));
         const hostile = 'ios/' + '9'.repeat(5000);
-        await handler(req(hostile), {} as any);
+        await handler(req(hostile), undefined);
 
         const metas = loggedMetas();
         expect(metas.length).toBeGreaterThan(0);
@@ -157,7 +154,7 @@ describe('the client reaches the log line', () => {
         const seen = new Set<unknown>();
         for (let i = 0; i < 25; i++) {
             jest.clearAllMocks();
-            await handler(req(`attacker/${i}.${i}`), {} as any);
+            await handler(req(`attacker/${i}.${i}`), undefined);
             for (const m of loggedMetas()) seen.add(m.client);
         }
         // 25 distinct headers collapse to ONE logged value. A log field is a
@@ -175,9 +172,14 @@ describe('the RATE-LIMITED line carries it too', () => {
 
         const handler = withApiErrorHandling(
             async () => new Response('unreached', { status: 200 }),
-            { rateLimit: { config: { windowSeconds: 60, max: 1 } as any, scope: 'test-scope' } },
+            {
+                rateLimit: {
+                    config: { maxAttempts: 1, windowMs: 60_000 } satisfies RateLimitConfig,
+                    scope: 'test-scope',
+                },
+            },
         );
-        const res = await handler(req('ios/1.0', '/api/t/acme/journal', 'POST'), {} as any);
+        const res = await handler(req('ios/1.0', '/api/t/acme/journal', 'POST'), undefined);
         expect(res.status).toBe(429);
 
         // Positive control FIRST: without it, a limiter that never blocked
@@ -193,7 +195,7 @@ describe('the RATE-LIMITED line carries it too', () => {
         // Guards the harness itself: the module-level mock above would silently
         // change every case in this file if GETs took the rate-limit path.
         const handler = withApiErrorHandling(async () => new Response('ok', { status: 200 }));
-        await handler(req('web/3.70'), {} as any);
+        await handler(req('web/3.70'), undefined);
         expect(enforceMock).not.toHaveBeenCalled();
         expect(logWarn).not.toHaveBeenCalled();
     });
