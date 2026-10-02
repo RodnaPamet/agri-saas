@@ -52,7 +52,15 @@ const pkg = JSON.parse(read('package.json')) as {
     devDependencies?: Record<string, string>;
 };
 const lock = JSON.parse(read('package-lock.json')) as {
-    packages: Record<string, { dependencies?: Record<string, string>; optionalDependencies?: Record<string, string>; libc?: unknown }>;
+    packages: Record<
+        string,
+        {
+            dependencies?: Record<string, string>;
+            optionalDependencies?: Record<string, string>;
+            libc?: unknown;
+            optional?: boolean;
+        }
+    >;
 };
 
 /** Packages whose install reaches the NETWORK for a platform binary. */
@@ -85,6 +93,47 @@ describe('image build survives a failed optional native download', () => {
             expect(root.optionalDependencies?.[name]).toBeDefined();
             expect(root.dependencies?.[name]).toBeUndefined();
         }
+    });
+
+    it('the lockfile ENTRY is flagged optional, not just the root declaration', () => {
+        // THE DEFECT THIS GUARD MISSED THE FIRST TIME.
+        //
+        // The assertions above check `package.json` and the lockfile ROOT. npm
+        // reads neither at install time to decide a failure is tolerable — it
+        // reads `"optional": true` on the PACKAGE ENTRY. My first fix moved the
+        // root declaration (hand-patched, because
+        // `npm install --package-lock-only` strips all 26 `libc` entries) and
+        // never set the entry flag, so `npm ci` still treated the package as
+        // required and the postinstall download was still fatal.
+        //
+        // It blocked a production deploy: `ghcr-publish` failed on main's tip
+        // with the identical ETIMEDOUT signature AFTER the "fix" had merged,
+        // leaving three merged PRs unpublished. Declaring a property is not
+        // delivering it, and this guard proved the declaration.
+        for (const name of NETWORK_POSTINSTALL) {
+            const entry = lock.packages[`node_modules/${name}`] as { optional?: boolean } | undefined;
+            expect(entry).toBeDefined();
+            expect(entry!.optional).toBe(true);
+        }
+    });
+
+    it('the optional CLOSURE is flagged, not only the named package', () => {
+        // npm marks the whole subtree reachable only through an optional edge,
+        // and it needs all of it: a dependency of an optional package left
+        // unflagged is itself required, so its install failure is fatal and the
+        // tolerance is defeated one level down. Measured here — the eight
+        // entries the first hand-patch missed were `onnxruntime-node` plus its
+        // closure (`onnxruntime-common`, `adm-zip`, `global-agent`, `matcher`,
+        // `escape-string-regexp`, `serialize-error`, `type-fest`).
+        //
+        // A FLOOR rather than an exact set: the closure is npm's to compute and
+        // a legitimate dependency change moves it. What a floor catches is the
+        // case that actually happened — a hand-patch that touched the root and
+        // left the entries alone, which drops this count by eight.
+        const optionalEntries = Object.values(lock.packages).filter(
+            (e) => e && typeof e === 'object' && (e as { optional?: boolean }).optional === true,
+        );
+        expect(optionalEntries.length).toBeGreaterThanOrEqual(199);
     });
 
     it('the lockfile still carries its platform (`libc`) entries', () => {
