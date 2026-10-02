@@ -39,11 +39,21 @@ export type PrismaTx = Omit<
  *
  * ── why pre-resolution, and why it is cheap ──
  *
- * Resolving the pair here costs the same one-or-two queries it always cost;
- * the only thing that changes is that they run with NO transaction open, so
- * they need the pool's first connection rather than its second. On a warm
- * cache both calls are `Map` lookups, so the steady-state request pays
- * nothing. The alternative — teaching the extension to read the `Tenant` row
+ * For any transaction that touches a manifest-eligible model — which is nearly
+ * all of them — this costs the same one-or-two queries it always cost; the only
+ * thing that changes is that they run with NO transaction open, so they need
+ * the pool's first connection rather than its second. On a warm cache both
+ * calls are `Map` lookups, so the steady-state request pays nothing.
+ *
+ * **It is unconditional, and that is a real if small cost.** A transaction
+ * whose body touches NO model — only `tx.$queryRaw`, which does not go through
+ * `$allModels` — or touches only `GLOBAL_KEK_MODELS` would previously have
+ * resolved no DEK at all, and on a COLD tenant now pays one or two queries it
+ * used to skip. It is paid once per tenant per process and outside any
+ * transaction. The alternative is to predict from outside the callback which
+ * models the callback will touch, which is not knowable here; the issue (#1223)
+ * named this trade for this fix shape as "changes when every request pays the
+ * lookup". The alternative — teaching the extension to read the `Tenant` row
  * on the transaction's own client — needs the extension to know it is inside
  * a transaction, which the Prisma 7 query-extension API does not tell it.
  *

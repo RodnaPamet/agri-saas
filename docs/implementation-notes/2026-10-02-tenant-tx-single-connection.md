@@ -37,10 +37,20 @@ through the GLOBAL prisma client — never through the `tx` the caller holds. Th
 value is cached per tenant per process, so the cost is one extra connection per
 COLD tenant: a fresh container, or a sweep touching many tenants at once.
 
-Pre-resolving costs the same one-or-two queries it always cost; the only thing
+For any transaction that touches a manifest-eligible model — nearly all of them
+— pre-resolving costs the same one-or-two queries it always cost; the only thing
 that changes is that they run with no transaction open, so they need the pool's
 FIRST connection rather than its second. On a warm cache both calls are `Map`
 lookups, so the steady-state request pays nothing.
+
+**The prewarm is unconditional, which is a real if small cost.** A transaction
+whose body touches NO model — only `tx.$queryRaw`, which does not go through
+`$allModels` — or touches only `GLOBAL_KEK_MODELS` previously resolved no DEK at
+all, and on a COLD tenant now pays one or two queries it used to skip (once per
+tenant per process, outside any transaction). Avoiding that would mean
+predicting from outside the callback which models the callback will touch, which
+is not knowable at the helper. #1223 named exactly this trade for this fix
+shape: it "changes when every request pays the lookup".
 
 The alternative shape the issue offered — teach the extension to read the
 `Tenant` row on the transaction's own client — needs the extension to know it is

@@ -2767,7 +2767,12 @@ negated. Say what remains instead:
       `$transaction`, so the lookup runs with nothing held and the in-transaction
       call is a cache hit. Costs nothing in steady state (a `Map` hit), and is
       skipped when the caller injects a client — a different pool cannot
-      deadlock this one, so the lookup would be waste. It never throws:
+      deadlock this one, so the lookup would be waste. It IS unconditional
+      otherwise, so a cold tenant whose transaction body touches no model
+      (raw SQL only, or `GLOBAL_KEK_MODELS` only) now pays a lookup it used to
+      skip — once per tenant per process, outside any transaction, and the
+      alternative is predicting from outside the callback what the callback
+      will touch. It never throws:
       `resolveTenantDekPair` owns the global-KEK fallback and must stay the
       authority on a failed lookup, so a propagating prewarm would make
       `withTenantDb` for a nonexistent tenant fail where it used to proceed.
