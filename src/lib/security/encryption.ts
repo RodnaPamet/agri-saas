@@ -9,8 +9,12 @@
  *   - ciphertext: variable length
  *   - authTag:   16 bytes (128-bit)
  *
- * Key derivation: HKDF-SHA256 from DATA_ENCRYPTION_KEY env var.
- * Each purpose (field encryption vs lookup hash) gets a distinct derived key.
+ * Key derivation: HKDF-SHA256. Field encryption derives from
+ * DATA_ENCRYPTION_KEY; the lookup hash derives from LOOKUP_HMAC_KEY (P1.1),
+ * which BOOTSTRAPS to DATA_ENCRYPTION_KEY's material when unset so no existing
+ * hash changes. Each purpose — and, for lookups, each identifier KIND — gets a
+ * distinct derived key. The separation is what makes the master KEK rotatable:
+ * see `isLookupKeyPinned`, and the rotation banner in CLAUDE.md.
  *
  * SECURITY NOTES:
  * - Never log plaintext PII after decryption.
@@ -53,6 +57,35 @@ const VERSION_PREFIX = VERSION_PREFIX_V1;
 // HKDF info strings — distinct per purpose to ensure key separation
 const ENCRYPT_INFO = 'inflect-data-encryption';
 const HMAC_INFO = 'inflect-data-lookup-hash';
+
+// ─── P1.1 — identifier kinds for the lookup hash ─────────────────────
+//
+// A lookup hash is derived per IDENTIFIER KIND, so a hash of an email and a
+// hash of some future phone number cannot be the same bytes. Without that
+// separation one deterministic value correlates a person across columns, and a
+// hash leaked from one table is a working lookup key against another.
+//
+// `email` is GRANDFATHERED onto the original `HMAC_INFO` string, and it has to
+// be. Every `User.emailHash` and `UserIdentityLink.emailAtLinkTimeHash` row in
+// the database was computed with it, and a hash has no authentication failure
+// to signal a wrong key — the lookup simply MISSES. Giving `email` a tidy new
+// info string would therefore not error: sign-in would report no such user,
+// password reset and invite redemption would fail to find existing accounts,
+// and registration would SUCCEED and create a duplicate, because its
+// uniqueness check is the same hash that now misses. Silent corruption, not an
+// outage. So the inconsistency below is load-bearing: the only kind that may
+// keep this info string is the one that already shipped under it.
+//
+// A NEW kind gets its own string and is free to be tidy. A rename of an
+// existing one is a REHASH, not an edit.
+export type LookupKind = 'email';
+
+const LOOKUP_INFO: Record<LookupKind, string> = {
+    email: HMAC_INFO,
+};
+
+/** Every kind, for tests and sweeps that must cover the whole surface. */
+export const LOOKUP_KINDS = Object.keys(LOOKUP_INFO) as LookupKind[];
 
 // ─── Key Management ─────────────────────────────────────────────────
 
@@ -178,17 +211,110 @@ function getPreviousEncryptionKey(): Buffer | null {
     return _cachedPreviousEncryptKey;
 }
 
+// ─── P1.1 — the lookup key is INDEPENDENT of the master KEK ──────────
+//
+// Until P1.1 the lookup HMAC key was HKDF-derived from DATA_ENCRYPTION_KEY, so
+// rotating the KEK moved every `emailHash` in the database and nothing
+// rehashed them. The rotation job re-encrypts `v1:` ciphertexts and re-wraps
+// per-tenant DEKs; it contains zero references to this path. That made the
+// master KEK effectively UN-ROTATABLE — see the banner in CLAUDE.md.
+//
+// `LOOKUP_HMAC_KEY` breaks the coupling. It BOOTSTRAPS to the KEK's material
+// when unset, so this change rehashes nothing and every existing row keeps
+// resolving; pinning it explicitly is what makes a KEK rotation safe, because
+// the pinned material then stays behind while DATA_ENCRYPTION_KEY moves.
+//
+// **Shipping this code does not by itself make the KEK rotatable.** While the
+// key is bootstrapped it still tracks the KEK, so the hazard is unchanged and
+// only LOOKS fixed. `isLookupKeyPinned()` exists so that distinction is
+// observable rather than inferred — `/api/readyz` reports it.
+
+/** Cache shape: the material it was derived from, plus one key per kind. */
+interface LookupKeyCache {
+    material: string;
+    keys: Partial<Record<LookupKind, Buffer>>;
+}
+let _lookupKeyCache: LookupKeyCache | null = null;
+let _lookupPreviousKeyCache: LookupKeyCache | null = null;
+
+/**
+ * Is the lookup key pinned to its own material, or bootstrapped off the KEK?
+ *
+ * The honest answer to "is the master KEK rotatable yet". Read from the
+ * environment per call, never captured at module load, so an operator setting
+ * the variable and restarting gets a truthful answer from the new process.
+ */
+export function isLookupKeyPinned(): boolean {
+    const pinned = process.env.LOOKUP_HMAC_KEY;
+    return typeof pinned === 'string' && pinned.length >= 32;
+}
+
+/**
+ * Material for the lookup hash: the pinned key, else the KEK's material.
+ *
+ * The length floor matches `getRawKeyMaterial`'s. A SHORT value is treated as
+ * absent rather than as an error, deliberately — a half-set variable must fall
+ * back to the bootstrap, because the alternative is that every lookup in the
+ * product starts missing on a typo.
+ */
+function getLookupKeyMaterial(): string {
+    const pinned = process.env.LOOKUP_HMAC_KEY;
+    if (pinned && pinned.length >= 32) return pinned;
+    return getRawKeyMaterial();
+}
+
+/**
+ * The outgoing lookup material during a lookup-key rotation, or null.
+ *
+ * Deliberately NOT falling back to `DATA_ENCRYPTION_KEY_PREVIOUS`: the two
+ * rotations are now independent events, and conflating them would make a KEK
+ * rotation silently start producing a second set of candidate hashes.
+ */
+function getPreviousLookupKeyMaterial(): string | null {
+    const previous = process.env.LOOKUP_HMAC_KEY_PREVIOUS;
+    if (!previous || previous.length < 32) return null;
+    return previous;
+}
+
+/** HKDF the per-kind lookup key, caching per (material, kind). */
+function lookupKeyFor(kind: LookupKind, material: string, previous: boolean): Buffer {
+    const slot = previous ? _lookupPreviousKeyCache : _lookupKeyCache;
+    if (slot && slot.material === material) {
+        const hit = slot.keys[kind];
+        if (hit) return hit;
+        const derived = deriveKey(material, LOOKUP_INFO[kind]);
+        slot.keys[kind] = derived;
+        return derived;
+    }
+    const derived = deriveKey(material, LOOKUP_INFO[kind]);
+    const fresh: LookupKeyCache = { material, keys: { [kind]: derived } };
+    if (previous) _lookupPreviousKeyCache = fresh;
+    else _lookupKeyCache = fresh;
+    return derived;
+}
+
 /**
  * Gets the HMAC key for deterministic lookup hashes.
+ *
+ * `_cachedHmacKey` is no longer consulted: it is keyed on the KEK's material,
+ * which is exactly the coupling this removes. The constant is still populated
+ * by `getEncryptionKey()` and still read by nothing else, left in place so this
+ * diff does not also reshape the encryption-key cache.
  */
-function getHmacKey(): Buffer {
-    const raw = getRawKeyMaterial();
-    if (_cachedHmacKey && _lastKeySource === raw) {
-        return _cachedHmacKey;
+function getHmacKey(kind: LookupKind = 'email'): Buffer {
+    return lookupKeyFor(kind, getLookupKeyMaterial(), false);
+}
+
+/** The outgoing lookup key for `kind`, or null when no rotation is in flight. */
+function getPreviousHmacKey(kind: LookupKind = 'email'): Buffer | null {
+    const material = getPreviousLookupKeyMaterial();
+    if (material === null) {
+        // Rotation either has not started or has finished — drop the cache so
+        // the next generation starts clean, mirroring the KEK's behaviour.
+        _lookupPreviousKeyCache = null;
+        return null;
     }
-    // Calling getEncryptionKey() populates both caches
-    getEncryptionKey();
-    return _cachedHmacKey!;
+    return lookupKeyFor(kind, material, true);
 }
 
 // ─── Public API ─────────────────────────────────────────────────────
@@ -341,16 +467,47 @@ export function decryptField(ciphertext: string): string {
  * to today's derived bytes so no existing hash changes. See the rotation banner in
  * CLAUDE.md before touching either key.
  */
-export function hashForLookup(value: string): string {
+export function hashForLookup(value: string, kind: LookupKind = 'email'): string {
     if (value === null || value === undefined) {
         throw new Error('hashForLookup: value must not be null or undefined');
     }
 
     const normalised = value.toLowerCase().trim();
-    const key = getHmacKey();
+    const key = getHmacKey(kind);
     return crypto.createHmac('sha256', key)
         .update(normalised, 'utf8')
         .digest('hex');
+}
+
+/**
+ * Every hash `value` could currently be stored under — primary first.
+ *
+ * ── why a lookup hash needs this and a ciphertext does not ──
+ *
+ * `decryptField` can TRY the previous key and know whether it worked, because
+ * AES-GCM authenticates: a wrong key raises. A hash has no such signal. Under
+ * the wrong key `hashForLookup` returns a perfectly well-formed hex string that
+ * simply matches no row, so a read cannot detect the miss and retry — the
+ * caller just sees "no such user". The only way to express "either key" is to
+ * widen the QUERY, which is why this returns a list and why
+ * `pii-middleware` emits `{ in: [...] }` during a rotation.
+ *
+ * One element in the steady state, so the common path is unchanged: a single
+ * candidate keeps `findUnique` a `findUnique`.
+ */
+export function hashForLookupCandidates(value: string, kind: LookupKind = 'email'): string[] {
+    const primary = hashForLookup(value, kind);
+    const previousKey = getPreviousHmacKey(kind);
+    if (!previousKey) return [primary];
+
+    const normalised = value.toLowerCase().trim();
+    const previous = crypto.createHmac('sha256', previousKey)
+        .update(normalised, 'utf8')
+        .digest('hex');
+    // Identical material in both variables is an operator mistake rather than
+    // an error, and collapsing it keeps a pointless `{ in: [x, x] }` — and the
+    // findUnique→findFirst downgrade that comes with it — out of every query.
+    return previous === primary ? [primary] : [primary, previous];
 }
 
 /**
@@ -531,4 +688,9 @@ export function _resetKeyCache(): void {
     _lastKeySource = null;
     _cachedPreviousEncryptKey = null;
     _lastPreviousKeySource = undefined;
+    // P1.1 — the lookup keys cache independently of the KEK, so a test that
+    // swapped LOOKUP_HMAC_KEY and called this hook would otherwise keep
+    // hashing under the old material and quietly prove nothing.
+    _lookupKeyCache = null;
+    _lookupPreviousKeyCache = null;
 }
