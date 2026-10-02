@@ -46,7 +46,9 @@
  *       // never 503 the probe.
  *       "satellite": { "configured": boolean, "missing": string[] },
  *       "basemap":   { "branch": "maptiler" | "demotiles" | "blind", ... },
- *       "email":     { "provider": "resend" | "smtp" | "console", "sends": boolean }
+ *       "email":     { "provider": "resend" | "smtp" | "console", "sends": boolean },
+ *       "lookupKey": { "pinned": boolean }   // false => the master KEK is
+ *                                            // NOT safely rotatable (P1.1)
  *     },
  *     "latencyMs": N           // total probe time
  *   }
@@ -66,6 +68,7 @@ import { HeadBucketCommand, S3Client } from '@aws-sdk/client-s3';
 import { env } from '@/env';
 import { geeConfigStatus } from '@/lib/agro/gee-config';
 import { emailCapabilityStatus } from '@/lib/email/provider-selection';
+import { isLookupKeyPinned } from '@/lib/security/encryption';
 import { basemapBranchStatus } from '@/lib/geo/basemap-bundle-scan';
 import { jsonResponse } from '@/lib/api-response';
 import { SERVICE_ID } from '@/lib/service-identity';
@@ -283,6 +286,15 @@ export async function GET() {
     // healthy instance.
     const email = emailCapabilityStatus(env);
 
+    // P1.1 — is the lookup hash pinned to its OWN key, or bootstrapped off the
+    // master KEK? Reported because "the code shipped" and "the capability is
+    // active" are different claims, and the capability in question is whether
+    // DATA_ENCRYPTION_KEY can be rotated at all. While bootstrapped, a KEK
+    // rotation silently breaks every lookup by email — so an operator about to
+    // rotate needs to read this, not a changelog. A boolean and nothing else:
+    // never the key, never its length, never a hash of it.
+    const lookupKey = { pinned: isLookupKeyPinned() };
+
     if (!allOk) {
         // Log the failure for observability — operators want to see
         // readyz failures in the logs even though the probe response
@@ -307,7 +319,7 @@ export async function GET() {
             version: process.env.BUILD_SHA || process.env.VERCEL_GIT_COMMIT_SHA || 'dev',
             checks,
             failed,
-            capabilities: { satellite, basemap, email },
+            capabilities: { satellite, basemap, email, lookupKey },
             latencyMs: Date.now() - start,
         },
         { status: allOk ? 200 : 503 },

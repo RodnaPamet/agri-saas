@@ -206,7 +206,13 @@ describe('hashForLookup', () => {
         expect(() => hashForLookup(undefined as unknown as string)).toThrow();
     });
 
-    it('hash changes when key changes', () => {
+    it('hash changes when the key it derives from changes', () => {
+        // Unchanged in substance, narrowed in claim. Pre-P1.1 the key it
+        // derives from WAS `DATA_ENCRYPTION_KEY`; now it is `LOOKUP_HMAC_KEY`,
+        // which BOOTSTRAPS to the KEK's material when unset — so with no
+        // pinned key this still measures what it always measured.
+        delete process.env.LOOKUP_HMAC_KEY;
+        _resetKeyCache();
         const hash1 = hashForLookup('user@example.com');
 
         _resetKeyCache();
@@ -214,6 +220,24 @@ describe('hashForLookup', () => {
         const hash2 = hashForLookup('user@example.com');
 
         expect(hash1).not.toBe(hash2);
+    });
+
+    it('P1.1 INVERTS that once the lookup key is pinned', () => {
+        // The property the whole phase exists for, asserted where the original
+        // claim lived so the two cannot drift apart. A pinned lookup key means
+        // rotating the master KEK leaves every stored `emailHash` resolvable —
+        // which is what makes `DATA_ENCRYPTION_KEY` rotatable at all.
+        process.env.DATA_ENCRYPTION_KEY = 'the-original-master-kek-for-this-test-min32!!';
+        process.env.LOOKUP_HMAC_KEY = 'a-pinned-lookup-key-independent-of-the-kek!!!';
+        _resetKeyCache();
+        const before = hashForLookup('user@example.com');
+
+        process.env.DATA_ENCRYPTION_KEY = 'a-completely-different-key-for-hash-testing-min32!!!';
+        _resetKeyCache();
+
+        expect(hashForLookup('user@example.com')).toBe(before);
+        delete process.env.LOOKUP_HMAC_KEY;
+        _resetKeyCache();
     });
 });
 

@@ -39,7 +39,7 @@
  * with the same guard — only structural identifiers (model, field
  * names) may appear in log payloads.
  */
-import { encryptField, decryptField, hashForLookup, isEncryptedValue } from './encryption';
+import { encryptField, decryptField, hashForLookup, hashForLookupCandidates, isEncryptedValue } from './encryption';
 import { logger } from '@/lib/observability/logger';
 
 // ─── Field Mappings ─────────────────────────────────────────────────
@@ -329,7 +329,32 @@ function decryptResult(result: unknown, model: string): unknown {
 function rewriteWhereForHash(
     where: Record<string, unknown>,
     fields: PiiFieldSpec[],
-): void {
+    allowMultiple: boolean,
+): boolean {
+    // True once any predicate has been widened to `{ in: [primary, previous] }`
+    // because a LOOKUP-key rotation is in flight. The caller needs to know,
+    // because `findUnique` cannot take an `in` — see the dispatcher.
+    let widened = false;
+
+    /**
+     * One value → the predicate to store.
+     *
+     * During a lookup-key rotation a value can be stored under either key and a
+     * hash gives no signal which, so the only expressible answer is BOTH. When
+     * widening is not permitted — a write addressed by a unique where — this
+     * falls back to the primary hash alone, which is today's behaviour and
+     * means such a write cannot address a row that has not yet been rehashed.
+     * That is the gap the P1.3 sweep closes, and it is bounded: reads resolve
+     * under either key throughout.
+     */
+    const predicateFor = (value: string): unknown => {
+        if (!allowMultiple) return hashForLookup(value);
+        const candidates = hashForLookupCandidates(value);
+        if (candidates.length === 1) return candidates[0];
+        widened = true;
+        return { in: candidates };
+    };
+
     for (const spec of fields) {
         // Only mapped fields with a hash column need rewriting; the
         // mapped column is ciphertext at the DB, so a literal lookup
@@ -340,7 +365,7 @@ function rewriteWhereForHash(
         const predicate = where[spec.plain];
         if (typeof predicate === 'string') {
             // Shape 1 — bare equality.
-            where[spec.hash] = hashForLookup(predicate);
+            where[spec.hash] = predicateFor(predicate);
             delete where[spec.plain];
         } else if (
             predicate &&
@@ -350,13 +375,21 @@ function rewriteWhereForHash(
             const obj = predicate as Record<string, unknown>;
             if (typeof obj.equals === 'string') {
                 // Shape 2 — { equals: 'x' }.
-                where[spec.hash] = hashForLookup(obj.equals);
+                where[spec.hash] = predicateFor(obj.equals);
                 delete where[spec.plain];
             } else if (Array.isArray(obj.in)) {
                 // Shape 3 — { in: ['x', 'y'] }.
+                // Shape 3 — already an `in`, so a rotation simply makes the
+                // list longer. `flatMap` rather than `map`: one value can
+                // contribute two candidates, and a nested array here would be
+                // an invalid Prisma predicate rather than a wider match.
                 const hashed = obj.in
                     .filter((v): v is string => typeof v === 'string')
-                    .map((v) => hashForLookup(v));
+                    .flatMap((v) =>
+                        allowMultiple ? hashForLookupCandidates(v) : [hashForLookup(v)],
+                    );
+                // An `in` is already not unique-addressable, so this shape
+                // never forced a downgrade and still does not.
                 where[spec.hash] = { in: hashed };
                 delete where[spec.plain];
             }
@@ -368,19 +401,27 @@ function rewriteWhereForHash(
         }
     }
 
-    // Recurse into compound clauses.
+    // Recurse into compound clauses. The widening flag has to come BACK out of
+    // the recursion: a nested `OR: [{ email }]` that widened makes the whole
+    // query non-unique-addressable just as a top-level one does.
     for (const key of ['AND', 'OR', 'NOT'] as const) {
         const compound = where[key];
         if (Array.isArray(compound)) {
             for (const sub of compound) {
                 if (sub && typeof sub === 'object') {
-                    rewriteWhereForHash(sub as Record<string, unknown>, fields);
+                    if (rewriteWhereForHash(sub as Record<string, unknown>, fields, allowMultiple)) {
+                        widened = true;
+                    }
                 }
             }
         } else if (compound && typeof compound === 'object') {
-            rewriteWhereForHash(compound as Record<string, unknown>, fields);
+            if (rewriteWhereForHash(compound as Record<string, unknown>, fields, allowMultiple)) {
+                widened = true;
+            }
         }
     }
+
+    return widened;
 }
 
 /**
@@ -390,12 +431,14 @@ function rewriteWhereForHash(
 function rewriteArgsWhere(
     args: Record<string, unknown> | undefined,
     fields: PiiFieldSpec[],
-): void {
-    if (!args || typeof args !== 'object') return;
+    allowMultiple: boolean,
+): boolean {
+    if (!args || typeof args !== 'object') return false;
     const where = args.where;
     if (where && typeof where === 'object' && !Array.isArray(where)) {
-        rewriteWhereForHash(where as Record<string, unknown>, fields);
+        return rewriteWhereForHash(where as Record<string, unknown>, fields, allowMultiple);
     }
+    return false;
 }
 
 // ─── Middleware ──────────────────────────────────────────────────────
@@ -503,11 +546,52 @@ async function runPiiEncryption(
             'deleteMany',
             'upsert',
         ];
+        // P1.1 — which actions may have their predicate WIDENED to
+        // `{ in: [primary, previous] }` during a lookup-key rotation.
+        //
+        // A hash gives no signal that it was computed under the wrong key — the
+        // lookup just misses — so "either key" can only be expressed by
+        // widening the query. That is fine for a read. It is NOT fine for
+        // `update` / `delete` / `upsert`, whose `where` must identify exactly
+        // one row: Prisma rejects an `in` there, and there is no `upsertMany`
+        // to fall back to. `updateMany` / `deleteMany` COULD take it, and are
+        // still excluded deliberately — widening them would change which rows a
+        // write touches, and the conservative behaviour mid-rotation is that
+        // writes address the primary key only while the P1.3 sweep moves the
+        // remainder. Reads resolve under either key throughout, so nothing
+        // becomes unfindable; some rows are briefly not addressable BY EMAIL
+        // for a unique-where write.
+        const WIDENABLE_ACTIONS = new Set([
+            'findUnique',
+            'findUniqueOrThrow',
+            'findFirst',
+            'findFirstOrThrow',
+            'findMany',
+            'count',
+            'aggregate',
+            'groupBy',
+        ]);
+        /** `findUnique` cannot take an `in`; its many-shaped twin can. */
+        const UNIQUE_DOWNGRADE: Record<string, string> = {
+            findUnique: 'findFirst',
+            findUniqueOrThrow: 'findFirstOrThrow',
+        };
+
         if (whereActions.includes(params.action)) {
-            rewriteArgsWhere(
+            const widened = rewriteArgsWhere(
                 params.args as Record<string, unknown> | undefined,
                 fields,
+                WIDENABLE_ACTIONS.has(params.action),
             );
+            if (widened && UNIQUE_DOWNGRADE[params.action]) {
+                // Without this the query throws: Prisma validates that a
+                // findUnique `where` names a unique field by equality. The
+                // downgrade is safe because the hash column is `@unique` and
+                // the candidate list holds at most one hash per key
+                // generation — so at most one row can match, which is the
+                // guarantee findUnique was providing.
+                params.action = UNIQUE_DOWNGRADE[params.action] as typeof params.action;
+            }
         }
     }
 
@@ -626,9 +710,29 @@ export function _getPiiFieldMap(model: string): readonly PiiFieldSpec[] | undefi
 export function _rewriteWhereForHash(
     where: Record<string, unknown>,
     model: string,
+    allowMultiple = true,
 ): Record<string, unknown> {
     const fields = PII_FIELD_MAP[model];
     if (!fields) return where;
-    rewriteWhereForHash(where, fields);
+    rewriteWhereForHash(where, fields, allowMultiple);
     return where;
+}
+
+/**
+ * Test-only: the rewrite AND whether it widened.
+ *
+ * Split from the hook above rather than changing its return type, because the
+ * widening decision is what drives the `findUnique` downgrade and a test that
+ * only sees the rewritten `where` cannot tell a one-candidate rotation from no
+ * rotation at all.
+ * @internal
+ */
+export function _rewriteWhereForHashWidened(
+    where: Record<string, unknown>,
+    model: string,
+    allowMultiple = true,
+): { where: Record<string, unknown>; widened: boolean } {
+    const fields = PII_FIELD_MAP[model];
+    if (!fields) return { where, widened: false };
+    return { where, widened: rewriteWhereForHash(where, fields, allowMultiple) };
 }
