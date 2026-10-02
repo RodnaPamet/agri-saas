@@ -399,7 +399,32 @@ function v2RepairColumns(): SweepableColumn[] {
     return sweepableColumns().filter((c) => GLOBAL_KEK_MODELS.has(c.model));
 }
 
-/** Misplaced `v2:` values — the signal that a repair is outstanding. */
+/**
+ * Misplaced `v2:` values — the signal that a repair is outstanding.
+ *
+ * READ THE SCOPE BEFORE TRUSTING THE NUMBER. This answers "which global-KEK
+ * rows are still under a tenant DEK", NOT "which rows hold `v2:`". Those read
+ * as the same question right up until a field leaves the manifest, and then
+ * they diverge silently:
+ *
+ *     v2RepairColumns() = sweepableColumns() ∩ GLOBAL_KEK_MODELS
+ *     sweepableColumns() = ENCRYPTED_FIELDS ∪ PII_MANAGED_MODELS
+ *
+ * So a model that is correctly tenant-scoped is filtered out by the
+ * intersection, and a field NARROWED TO PLAINTEXT leaves `ENCRYPTED_FIELDS`
+ * and so never enters the union at all. Narrowing a field to plaintext is BY
+ * DEFINITION removing it from the manifest, which means no manifest-driven
+ * counter — this one or any future one built the same way — can see the rows
+ * that a narrowing orphans. A sweep that must catch those has to derive its
+ * columns from the SCHEMA SHAPE instead (see `scripts/count-fanout-encrypted.ts`,
+ * which pairs manifest NAMES against schema models and therefore still sees a
+ * field on its way out).
+ *
+ * Identified by Agrent backend 1 while scoping the 18-model narrowing in #1222,
+ * after I told them this counter would widen to cover their half. It will not:
+ * their models add nothing to `GLOBAL_KEK_MODELS`, so every one of them is
+ * invisible here — structurally, not by omission.
+ */
 export async function countMisplacedV2(): Promise<number> {
     let n = 0;
     for (const { table, column } of v2RepairColumns()) {

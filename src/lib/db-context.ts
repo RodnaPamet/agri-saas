@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { prisma } from './prisma';
-import type { RequestContext } from '@/app-layer/types';
+import type { RequestContext, UserContext } from '@/app-layer/types';
 import { runWithAuditContext } from './audit-context';
 import { runWithAfterCommit } from './db/after-commit';
 
@@ -96,6 +96,73 @@ export async function runInTenantContext<T>(
     );
 }
 
+
+/**
+ * Runs a callback as a PERSON: `app_user` + `app.user_id`, and no tenant.
+ *
+ * The counterpart to `runInTenantContext` for person-scoped surfaces. It is
+ * deliberately NOT a variant of it with an optional tenant — the two set
+ * different session variables and are governed by different halves of the same
+ * RLS policy, and a single function with a nullable tenant would make "which
+ * arm am I being judged by" a property of an argument rather than of the call.
+ *
+ * ── it must NEVER set `app.tenant_id`, and that is why it is a separate scope ──
+ *
+ * P1.4 gave user-scoped rows a two-armed policy (migration
+ * `20261002080000_p1_4_user_scoped_null_tenant_rls`):
+ *
+ *     USING (
+ *         "tenantId" = current_setting('app.tenant_id', true)::text
+ *         OR ("tenantId" IS NULL AND "userId" = current_setting('app.user_id', true)::text)
+ *     )
+ *
+ * With `app.tenant_id` unset, `current_setting(..., true)` yields NULL, the
+ * first arm evaluates to NULL rather than true, and the row is judged solely by
+ * the second — "this row has no tenant and it is yours". Setting a tenant here
+ * would re-open the first arm and let a person-scoped query read a tenant's
+ * rows, which is the exact confusion the policy was written to end.
+ *
+ * `SET LOCAL` scopes both the role and the variables to this transaction, so a
+ * tenant value from an enclosing scope cannot leak in and nothing leaks out.
+ *
+ * ── the mutation the plan asks for ──
+ *
+ * P1's hardening list requires that removing `app.user_id` from this function
+ * turns CI red. It does: with the variable unset, `current_setting` yields NULL,
+ * the second arm's `"userId" = NULL` is NULL rather than true, and a user reads
+ * ZERO of their own rows. `tests/integration/p1-5-user-context.test.ts` asserts
+ * a non-zero count for exactly that reason — an assertion that the user sees
+ * "no more than their own" would pass on an empty result and prove nothing.
+ */
+export async function runInUserContext<T>(
+    ctx: UserContext,
+    callback: (db: PrismaTx) => Promise<T>,
+    options?: { customPrisma?: PrismaClient; timeout?: number; maxWait?: number },
+): Promise<T> {
+    const p = options?.customPrisma || prisma;
+    const txOptions: { timeout?: number; maxWait?: number } = {};
+    if (options?.timeout) txOptions.timeout = options.timeout;
+    if (options?.maxWait) txOptions.maxWait = options.maxWait;
+
+    // Same placement as the tenant helpers: the after-commit scope wraps the
+    // transaction so queued effects drain after COMMIT.
+    return runWithAfterCommit(() =>
+        // No `tenantId` in the audit context either — a person-scoped write has
+        // no tenant, and inventing one would misattribute it in the audit trail.
+        runWithAuditContext(
+            { actorUserId: ctx.userId, requestId: ctx.requestId, source: 'api' },
+            () =>
+                p.$transaction(async (tx) => {
+                    await tx.$executeRaw`SET LOCAL ROLE app_user`;
+                    await tx.$executeRaw`SELECT set_config('app.user_id', ${ctx.userId}, true)`;
+                    await tx.$executeRaw`SELECT set_config('app.request_id', ${ctx.requestId}, true)`;
+                    // NOTE: no `app.tenant_id`. See the docblock — this is the
+                    // load-bearing absence, not an omission.
+                    return callback(tx);
+                }, txOptions),
+        ) as Promise<T>,
+    );
+}
 
 /**
  * Executes a callback with the global Prisma Client, bypassing RLS.

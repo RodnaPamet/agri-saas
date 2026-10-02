@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { API_KEY_AUTH_ENABLED } from '@/lib/auth/api-key-availability';
 import { getSessionOrThrow } from '@/lib/auth';
 import { resolveTenantContext } from '@/lib/tenant-context';
-import { RequestContext, OrgContext } from './types';
+import { RequestContext, OrgContext, UserContext } from './types';
 import { randomUUID } from 'crypto';
 import { mergeRequestContext } from '@/lib/observability/context';
 import {
@@ -11,7 +11,7 @@ import {
     isApiKeyToken,
     verifyApiKey,
 } from '@/lib/auth/api-key-auth';
-import { badRequest, notFound, unauthorized } from '@/lib/errors/types';
+import { badRequest, forbidden, notFound, unauthorized } from '@/lib/errors/types';
 import prisma from '@/lib/prisma';
 import { getOrgPermissions } from '@/lib/permissions';
 import { logger } from '@/lib/observability/logger';
@@ -74,6 +74,119 @@ export async function getTenantCtx(
         permissions: ctx.permissions,
         appPermissions: ctx.appPermissions,
     };
+}
+
+/**
+ * Builds a `UserContext` — a PERSON with no tenant.
+ *
+ * For surfaces that belong to a human rather than a farm: their own profile,
+ * account settings, onboarding, the social graph. It sets no tenant, resolves
+ * no role and derives no permissions, because none of those mean anything when
+ * the subject is the caller themselves.
+ *
+ * ── it REFUSES three callers, and each refusal is load-bearing ──
+ *
+ * 1. **API keys.** A key is a tenant-scoped machine credential: it is issued
+ *    for one farm, carries scopes, and has no person behind it. There is no
+ *    correct `userId` to put in a `UserContext` for one, so the honest answer
+ *    is a refusal rather than a context attributed to whoever created the key.
+ *    Refused whether or not `API_KEY_AUTH_ENABLED` is on — with it off the key
+ *    is ignored everywhere else, and silently serving the cookie's user to a
+ *    request that presented a key would answer as the wrong principal.
+ *
+ * 2. **MFA-pending sessions.** `src/middleware.ts`'s MFA gate is wrapped in
+ *    `isTenantPath(pathname)`, so it does not fire for `/api/me/`,
+ *    `/api/social/`, `/account/` or `/onboarding/`. Until P1.6 adds that
+ *    parity this check is the ONLY thing between a half-authenticated session
+ *    and a person's own data — which is the data a stolen first factor is most
+ *    useful against.
+ *
+ * 3. **Operator-only users.** A MECHANISATOR is a machine-operator persona
+ *    confined to its "My work" screen. The middleware's lockdown keys on the
+ *    tenant slug in the URL, and a person-scoped path HAS no slug — so that
+ *    lockdown cannot fire here at all, and without this check the one persona
+ *    deliberately confined to a single screen would reach every person-scoped
+ *    surface in the product.
+ *
+ * ── why the operator decision reads the DATABASE and not the JWT ──
+ *
+ * The session's `memberships` array is capped at `MAX_JWT_MEMBERSHIPS` with a
+ * `membershipsTruncated` flag. "Every entry is MECHANISATOR" over a TRUNCATED
+ * list does not mean the user is operator-only — a non-operator membership may
+ * sit beyond the cap — and the failure direction is locking a legitimate user
+ * out of their own account. One indexed query on a low-traffic surface buys an
+ * authoritative answer, so the cap is simply not in the decision.
+ *
+ * @see runInUserContext — executes with this context, setting `app.user_id` only
+ */
+export async function getUserCtx(req?: NextRequest): Promise<UserContext> {
+    // FIRST, before any session work: a key presented here is a category error
+    // and must not be answered as the cookie's user.
+    if (req) {
+        const bearer = extractBearerToken(req.headers.get('authorization'));
+        if (bearer && isApiKeyToken(bearer)) {
+            // A code rather than prose, for the reason given at the MFA refusal.
+            throw forbidden('API_KEY_NOT_PERSON_SCOPED');
+        }
+    }
+
+    const session = await getSessionOrThrow();
+    const requestId = getRequestId(req);
+
+    if (session.mfaPending === true) {
+        // A machine-readable CODE, not prose.
+        //
+        // `tests/guards/no-server-authored-user-copy.test.ts` holds
+        // server-authored copy on a downward ratchet: a prose message thrown
+        // from `src/lib` or `src/app-layer` reaches the client verbatim —
+        // `ApiClientError` preserves `message` and the iOS app renders the raw
+        // envelope, English and all. A code is the half a client can translate.
+        //
+        // This deliberately does NOT match the middleware's tenant-path gate,
+        // which returns `forbiddenJson('MFA verification required')` — a
+        // different envelope (`{ error }` from the Edge) on a different path.
+        // Copying its English here would add a second untranslatable string to
+        // get a cosmetic match between two responses a client already has to
+        // handle separately. P1.6 brings the two paths together; when it does,
+        // the code is the thing worth agreeing on.
+        throw forbidden('MFA_REQUIRED');
+    }
+
+    if (await isOperatorOnly(session.userId)) {
+        // ALL-CAPS, which deliberately differs in CASE from the middleware's
+        // `{ error: 'operator_scope' }`. Not cosmetic: the copy ratchet reads
+        // `operator_scope` as two latin words and counts it as prose, while an
+        // ALL-CAPS identifier is exempt as a code. The two responses are
+        // different envelopes on different paths anyway — the Edge's bare
+        // `{ error }` versus this handler's error payload — so a client has to
+        // handle them separately regardless, and matching the case would have
+        // bought nothing while costing a slot on a ratchet meant to fall.
+        throw forbidden('OPERATOR_SCOPE');
+    }
+
+    // userId only — there is no tenant to merge, and writing one here would put
+    // a tenant on the log lines of a request that has none.
+    mergeRequestContext({ userId: session.userId });
+
+    return { requestId, userId: session.userId, email: session.email };
+}
+
+/**
+ * True when the user holds at least one active membership and EVERY one of
+ * them is MECHANISATOR.
+ *
+ * The `length > 0` half is not defensive clutter — `[].every(...)` is `true`,
+ * so without it a user with NO memberships reads as operator-only. That user
+ * is precisely who a person-scoped surface exists for: someone mid-onboarding
+ * who has not joined a farm yet. Refusing them would break the surface for its
+ * primary caller while every test with a seeded membership stayed green.
+ */
+async function isOperatorOnly(userId: string): Promise<boolean> {
+    const memberships = await prisma.tenantMembership.findMany({
+        where: { userId, status: 'ACTIVE', tenant: { deletedAt: null } },
+        select: { role: true },
+    });
+    return memberships.length > 0 && memberships.every((m) => m.role === 'MECHANISATOR');
 }
 
 /**

@@ -1,6 +1,35 @@
 import type { Role, OrgRole } from '@prisma/client';
 import type { PermissionSet, OrgPermissionSet } from '@/lib/permissions';
 
+/**
+ * A PERSON, with no tenant.
+ *
+ * The counterpart to `RequestContext` for surfaces that belong to a human
+ * rather than to a farm: their own profile, their account settings, their
+ * onboarding, the social graph. A request resolves to one or the other, never
+ * both — the same rule `OrgContext` follows.
+ *
+ * What is ABSENT here is the whole point, so it is listed rather than left to
+ * be noticed: no `tenantId`, no `role`, no `permissions`. A person-scoped
+ * surface has no tenant to scope to and no role to derive rights from; the
+ * only authority is "this row is yours". Adding a tenantId to this type would
+ * re-introduce exactly the ambiguity P1.4's RLS policy resolves, where a row
+ * with a NULL tenant is reachable by its OWNER and by nobody else.
+ *
+ * @see runInUserContext — the only sanctioned way to execute with one of these
+ * @see getUserCtx — builds one, and refuses the three callers that must not get one
+ */
+export interface UserContext {
+    /** Unique request identifier for log correlation. */
+    requestId: string;
+
+    /** The authenticated user ID. Sets `app.user_id` and nothing else. */
+    userId: string;
+
+    /** The user's email, for surfaces that display the signed-in identity. */
+    email: string;
+}
+
 export interface RequestContext {
     /** Unique request identifier for log correlation */
     requestId: string;

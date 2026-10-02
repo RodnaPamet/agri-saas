@@ -24,6 +24,19 @@ export interface JwtPayload {
     tenantId: string;
     email: string;
     role: Role;
+    /**
+     * True while the session has authenticated but not yet cleared its second
+     * factor. Carried through from the Auth.js session because `getSession`
+     * narrows it away otherwise, and `getUserCtx` must refuse on it: the
+     * middleware's MFA gate is scoped to `isTenantPath(pathname)`, so it does
+     * NOT cover person-scoped paths like `/api/me/` or `/account/`. Until P1.6
+     * adds that parity, this field is the only thing standing between a
+     * half-authenticated session and a person's own data.
+     *
+     * Undefined on the legacy-cookie path, which predates MFA entirely — the
+     * same value the middleware reads there, so the two agree.
+     */
+    mfaPending?: boolean;
 }
 
 // Legacy JWT secret — used only for reading old cookies during migration
@@ -45,6 +58,7 @@ export async function getSession(): Promise<JwtPayload | null> {
             tenantId: session.user.tenantId ?? '',
             email: session.user.email ?? '',
             role: session.user.role ?? 'READER',
+            mfaPending: session.user.mfaPending,
         };
     }
 
