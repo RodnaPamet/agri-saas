@@ -18,6 +18,8 @@ const REAL_KEY = 'r'.repeat(48); // pragma: allowlist secret -- test fixture
 const sweepMock = jest.fn();
 const countMock = jest.fn();
 const dekCountMock = jest.fn();
+const misplacedMock = jest.fn();
+const repairMock = jest.fn();
 const inFlightMock = jest.fn();
 
 function makeReq(opts: { method?: string; key?: string; body?: string } = {}): NextRequest {
@@ -35,6 +37,32 @@ function makeReq(opts: { method?: string; key?: string; body?: string } = {}): N
 
 type Handler = (req: NextRequest) => Promise<Response>;
 
+/** A request aimed at the CHILD path, so the gate and the URL agree. */
+function makeRepairReq(opts: { method?: string; key?: string } = {}): NextRequest {
+    const headers = new Headers();
+    if (opts.key !== undefined) headers.set(HEADER, opts.key);
+    const url = new URL('http://localhost:3000/api/admin/key-rotation/repair-v2');
+    return {
+        method: opts.method ?? 'GET',
+        headers,
+        nextUrl: url,
+        url: url.toString(),
+        text: async () => '',
+    } as unknown as NextRequest;
+}
+
+function loadRepairRoute(key: string | undefined): { GET: Handler; POST: Handler } {
+    jest.resetModules();
+    jest.doMock('@/env', () => ({
+        env: { PLATFORM_ADMIN_API_KEY: key, PLATFORM_ADMIN_API_KEY_PREVIOUS: undefined },
+    }));
+    jest.doMock('@/app-layer/usecases/global-key-rotation', () => ({
+        repairMisplacedV2: repairMock,
+        countMisplacedV2: misplacedMock,
+    }));
+    return require('@/app/api/admin/key-rotation/repair-v2/route');
+}
+
 function loadRoute(key: string | undefined): { GET: Handler; POST: Handler } {
     jest.resetModules();
     jest.doMock('@/env', () => ({
@@ -44,6 +72,7 @@ function loadRoute(key: string | undefined): { GET: Handler; POST: Handler } {
         sweepGlobalKeyRotation: sweepMock,
         countUnmigrated: countMock,
         countUnwrappedDeks: dekCountMock,
+        countMisplacedV2: misplacedMock,
         sweepableColumns: () => [
             { model: 'User', table: 'User', manifestName: 'emailEncrypted', column: 'emailEncrypted', manifest: 'pii' },
             { model: 'Task', table: 'Task', manifestName: 'description', column: 'description', manifest: 'encrypted-fields' },
@@ -60,6 +89,8 @@ beforeEach(() => {
     jest.clearAllMocks();
     countMock.mockResolvedValue({ total: 0, perColumn: [] });
     dekCountMock.mockResolvedValue(0);
+    misplacedMock.mockResolvedValue(0);
+    repairMock.mockResolvedValue([]);
     inFlightMock.mockReturnValue(true);
     sweepMock.mockResolvedValue({
         rotationInFlight: true,
@@ -93,6 +124,100 @@ describe('the route is REACHABLE, which the gate below cannot tell you', () => {
         // Unrelated route, different auth model (requirePermission). Opening it
         // would strip a real permission check.
         expect(isPublicPath('/api/t/acme/admin/key-rotation')).toBe(false);
+    });
+});
+
+describe('the repair is REACHABLE — it shipped once with no caller', () => {
+    /**
+     * `repairMisplacedV2` landed in #1248 defined, tested and callable from
+     * nothing: no route, no job. The tests proved it worked and production
+     * could not run it — on two live rows it was written for. This is the
+     * assertion that the migration has a door.
+     */
+    it('the repair path bypasses the Edge session gate', () => {
+        expect(isPublicPath('/api/admin/key-rotation/repair-v2')).toBe(true);
+    });
+
+    it('it rides the parent\'s CHILDREN prefix — no new Edge opening was needed', () => {
+        // `'/api/admin/key-rotation/'` was already in PUBLIC_PATH_PREFIXES as
+        // the children prefix of the parent's exact entry, so adding this route
+        // required no change to guard.ts. Pinned because the tempting
+        // alternative — a second bare prefix — would also have opened
+        // `/api/admin/key-rotation-anything`.
+        expect(isPublicPath('/api/admin/key-rotation/anything-else')).toBe(true);
+        expect(isPublicPath('/api/admin/key-rotation-report')).toBe(false);
+    });
+
+    /**
+     * These go through the HANDLER with the usecase doubled, which is the only
+     * shape that can actually fail. The tempting version — `require` the
+     * usecase and assert `typeof repairMisplacedV2 === 'function'` — is VACUOUS
+     * here: this suite `doMock`s that module, so the require returns the double
+     * and the assertion proves the double has the key I just typed into it.
+     * Calling the route and watching the mock get hit proves the ROUTE reaches
+     * it; `tests/integration/exchange-message-v2-repair.test.ts` proves the
+     * implementation preserves the plaintext. Those are the two halves.
+     */
+    it('GET reports the outstanding count — the operator can SEE the work', async () => {
+        misplacedMock.mockResolvedValue(2); // production's two rows
+        const res = await loadRepairRoute(REAL_KEY).GET(makeRepairReq({ key: REAL_KEY }));
+        expect(res.status).toBe(200);
+        const body = (await res.json()) as { misplacedV2: number; repairComplete: boolean };
+        expect(misplacedMock).toHaveBeenCalled();
+        expect(body.misplacedV2).toBe(2);
+        expect(body.repairComplete).toBe(false);
+    });
+
+    it('POST actually invokes the repair', async () => {
+        repairMock.mockResolvedValue([
+            { model: 'ExchangeMessage', column: 'body', found: 2, repaired: 2, errors: 0 },
+        ]);
+        misplacedMock.mockResolvedValue(0); // re-counted AFTER the repair
+        const res = await loadRepairRoute(REAL_KEY).POST(
+            makeRepairReq({ key: REAL_KEY, method: 'POST' }),
+        );
+        expect(res.status).toBe(200);
+        const body = (await res.json()) as {
+            totalFound: number;
+            totalRepaired: number;
+            totalErrors: number;
+            misplacedV2: number;
+            repairComplete: boolean;
+        };
+        expect(repairMock).toHaveBeenCalledTimes(1);
+        expect(body.totalFound).toBe(2);
+        expect(body.totalRepaired).toBe(2);
+        expect(body.totalErrors).toBe(0);
+        // The verdict is a FRESH count, not `found - repaired`. A row that threw
+        // is still misplaced, and arithmetic on the result would report success
+        // for it; re-reading the table cannot.
+        expect(body.misplacedV2).toBe(0);
+        expect(body.repairComplete).toBe(true);
+    });
+
+    it('a row that ERRORED leaves repairComplete false', async () => {
+        repairMock.mockResolvedValue([
+            { model: 'ExchangeMessage', column: 'body', found: 2, repaired: 1, errors: 1 },
+        ]);
+        misplacedMock.mockResolvedValue(1); // the failed row is still there
+        const res = await loadRepairRoute(REAL_KEY).POST(
+            makeRepairReq({ key: REAL_KEY, method: 'POST' }),
+        );
+        const body = (await res.json()) as { totalErrors: number; repairComplete: boolean };
+        expect(body.totalErrors).toBe(1);
+        expect(body.repairComplete).toBe(false);
+    });
+
+    it('both methods are gated, and the repair does NOT run for an unauthenticated caller', async () => {
+        const route = loadRepairRoute(REAL_KEY);
+        for (const method of ['GET', 'POST'] as const) {
+            const res = await route[method](makeRepairReq({ method }));
+            expect(res.status).toBe(401);
+        }
+        // The point of this assertion: a gate that refuses AFTER doing the work
+        // returns 401 and still rewrites the table.
+        expect(repairMock).not.toHaveBeenCalled();
+        expect(misplacedMock).not.toHaveBeenCalled();
     });
 });
 

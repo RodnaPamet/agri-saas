@@ -156,11 +156,49 @@ const NO_DEK_PAIR: TenantDekPair = { primary: null, previous: null };
  * tenant's context, and changing `PLATFORM_TENANT_SLUG` (or rotating that
  * tenant's DEK independently) would orphan every supplier's contact address.
  *
- * The rule: a model with no `tenantId` column belongs here if any of its
- * fields are encrypted. Tenant-scoped models must NOT be added — they would
- * lose per-tenant key isolation.
+ * `ExchangeMessage` (#1222) is here for a THIRD reason, and it is the one worth
+ * reading before adding a fourth entry. It is not a global catalogue — it is a
+ * TWO-PARTY row. The inquiring farm and the listing owner both read every
+ * message in the thread, and `listThreadMessages` runs in the VIEWING party's
+ * tenant context. A row encrypted under either party's DEK is therefore
+ * unreadable by the other, which is not a degradation but a break: measured on
+ * production, both messages on the only live thread were written by one tenant,
+ * so the recipient could read neither and saw `v2:…` where the text should be.
+ *
+ * There is no per-tenant key that works here. Letting party B decrypt party A's
+ * message would mean handing B party A's DEK — which would expose ALL of A's
+ * v2 data, not one message. So the global KEK is the only key both sides share,
+ * and `ExchangeMessage` has no `tenantId` column (the schema says so in terms:
+ * the idempotency key is "scoped to `senderTenantId` rather than a `tenantId`
+ * the row does not have"), so it satisfies the rule below on its face as well.
+ *
+ * The rule turns on HOW MANY TENANTS MUST READ THE ROW, not on whether a
+ * `tenantId` column exists — and the difference is not pedantic, because
+ * `PromotionLead` is a live counter-example to the simpler version. It has no
+ * `tenantId` and encrypted fields, yet is DELIBERATELY left on a per-tenant
+ * DEK: exactly one tenant reads it (the farm that wrote the enquiry), and the
+ * future lead-digest job is expected to resolve each lead's tenant context to
+ * decrypt. CLAUDE.md and `prisma/schema/promotions.prisma` both record that
+ * posture. A guard written to the simpler rule flagged it, and adding it here
+ * to go green would have reversed a documented decision.
+ *
+ * So: a model belongs here when no single tenant's key can serve its readers —
+ * because it has no tenant (a global catalogue), or because more than one
+ * tenant must read the same row. Tenant-scoped models must NOT be added; they
+ * would lose per-tenant key isolation, and for them that isolation is
+ * achievable. The exception list lives in
+ * `tests/guards/global-kek-models-covers-tenantless.test.ts`, which enforces
+ * both directions.
  */
-const GLOBAL_KEK_MODELS: ReadonlySet<string> = new Set(['Tenant', 'Company']);
+// Exported so the v2-repair sweep and its guard read THIS set rather than
+// keeping a copy. Two lists of which models are global-KEK is how the two
+// answers drift, and the drift would be silent: a model promoted here but
+// absent from the repair's view keeps its misplaced v2 rows forever.
+export const GLOBAL_KEK_MODELS: ReadonlySet<string> = new Set([
+    'Tenant',
+    'Company',
+    'ExchangeMessage',
+]);
 
 /**
  * Resolve the per-tenant DEK pair for the current operation, or the

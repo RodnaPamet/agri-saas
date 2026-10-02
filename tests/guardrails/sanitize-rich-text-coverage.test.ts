@@ -74,6 +74,20 @@ const RICH_TEXT_COVERAGE: Readonly<
         usecases: ['src/app-layer/usecases/task.ts', 'src/app-layer/usecases/issue.ts'],
         sanitizer: 'sanitizePlainText',
     },
+    // `ExchangeMessage.body` (#1222) — chat between two farms, and the single
+    // write seam is `sendThreadMessage`, which does
+    // `sanitizePlainText(body).trim()` before the insert. Sanitisation matters
+    // more here than almost anywhere in the product: it is text one tenant
+    // writes and ANOTHER tenant's browser renders, which the schema comment
+    // calls out as "the highest-risk surface in any product".
+    //
+    // Encrypted under the GLOBAL KEK rather than a tenant DEK — see
+    // `GLOBAL_KEK_MODELS` in encryption-middleware.ts. A two-party row cannot
+    // live under either party's key.
+    ExchangeMessage: {
+        usecases: ['src/app-layer/usecases/exchange-messaging.ts'],
+        sanitizer: 'sanitizePlainText',
+    },
     // Lease counterparty PII — sanitised at the single `mapLeaseData` write
     // seam that both create and update route through.
     ParcelLease: { usecases: ['src/app-layer/usecases/parcel-lease.ts'], sanitizer: 'sanitizePlainText' },

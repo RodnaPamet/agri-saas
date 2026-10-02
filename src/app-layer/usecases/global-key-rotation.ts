@@ -66,7 +66,13 @@ import {
 } from '@/lib/security/encryption';
 import { ENCRYPTED_FIELDS } from '@/lib/security/encrypted-fields';
 import { unwrapDek, wrapDek, isWrappedDek } from '@/lib/security/tenant-keys';
-import { clearTenantDekCache } from '@/lib/security/tenant-key-manager';
+import {
+    clearTenantDekCache,
+    getTenantDek,
+    getTenantPreviousDek,
+} from '@/lib/security/tenant-key-manager';
+import { decryptWithKeyOrPrevious } from '@/lib/security/encryption';
+import { GLOBAL_KEK_MODELS } from '@/lib/db/encryption-middleware';
 import { PII_MANAGED_MODELS, _getPiiFieldMap } from '@/lib/security/pii-middleware';
 
 /** Which manifest a column came from — reported so a reader can see the union. */
@@ -340,6 +346,146 @@ export async function rewrapTenantDeks(): Promise<DekRewrapResult> {
             }
         }
     }
+    return out;
+}
+
+/**
+ * Repairing MISPLACED `v2:` ciphertext — a row encrypted under a tenant DEK on a
+ * model that should only ever use the global KEK.
+ *
+ * ── when this is needed ──
+ *
+ * Promoting a model into `GLOBAL_KEK_MODELS` fixes every FUTURE write. It does
+ * nothing for rows already written under a tenant's DEK, and those rows are the
+ * ones with the user-visible problem: #1222, where `ExchangeMessage.body` was
+ * encrypted under the WRITER's DEK while `listThreadMessages` reads in the
+ * VIEWING party's context, so the other party saw `v2:…` instead of the message.
+ * Measured on production: both messages on the only live thread were written by
+ * one tenant, so the recipient could read neither.
+ *
+ * It will be needed again. The `'*'` fan-out encrypts 19 non-manifest models
+ * because it matches field NAMES across the whole manifest, so each one promoted
+ * into `GLOBAL_KEK_MODELS` (or removed from encryption entirely) arrives with
+ * the same question about its existing rows.
+ *
+ * ── why it cannot be generic ──
+ *
+ * Decrypting a `v2:` value needs the DEK of the tenant that WROTE it, and only
+ * the row knows which tenant that was — under a column whose name is
+ * model-specific (`senderTenantId` here, because the row has no `tenantId` at
+ * all). So the mapping is declared rather than derived, and a model with
+ * misplaced v2 rows and no entry here is an ERROR rather than a skip: silently
+ * covering less is how a repair reports success over half the data.
+ */
+const V2_REPAIR_TENANT_COLUMN: Readonly<Record<string, string>> = {
+    // The row has no `tenantId`; `senderTenantId` records which side wrote it,
+    // and the schema says it is stored "rather than derived so a message stays
+    // attributable after a listing is edited or a thread is closed".
+    ExchangeMessage: 'senderTenantId',
+};
+
+export interface V2RepairResult {
+    model: string;
+    column: string;
+    /** Rows carrying a `v2:` value on a global-KEK model. */
+    found: number;
+    /** Rows moved to a `v1:` envelope under the global KEK. */
+    repaired: number;
+    errors: number;
+}
+
+/** The columns a v2 repair covers: manifest columns of global-KEK models. */
+function v2RepairColumns(): SweepableColumn[] {
+    return sweepableColumns().filter((c) => GLOBAL_KEK_MODELS.has(c.model));
+}
+
+/** Misplaced `v2:` values — the signal that a repair is outstanding. */
+export async function countMisplacedV2(): Promise<number> {
+    let n = 0;
+    for (const { table, column } of v2RepairColumns()) {
+        const rows = await prisma.$queryRawUnsafe<Array<{ n: bigint }>>(
+            `SELECT count(*)::bigint AS n FROM "${table}"
+              WHERE "${column}" IS NOT NULL AND "${column}" LIKE 'v2:%'`,
+        );
+        n += Number(rows[0]?.n ?? 0);
+    }
+    return n;
+}
+
+/**
+ * Move misplaced `v2:` values onto the global KEK.
+ *
+ * Decrypts with the WRITING tenant's DEK (primary, falling back to that
+ * tenant's previous DEK if a per-tenant rotation is mid-flight) and re-encrypts
+ * with `encryptField`. Idempotent: a value already `v1:` is not selected.
+ */
+export async function repairMisplacedV2(): Promise<V2RepairResult[]> {
+    const out: V2RepairResult[] = [];
+
+    for (const { model, table, column } of v2RepairColumns()) {
+        const result: V2RepairResult = { model, column, found: 0, repaired: 0, errors: 0 };
+        const tenantColumn = V2_REPAIR_TENANT_COLUMN[model];
+
+        const rows = await prisma.$queryRawUnsafe<Array<{ id: string; value: string; tenant: string | null }>>(
+            `SELECT id, "${column}" AS value${tenantColumn ? `, "${tenantColumn}" AS tenant` : ', NULL AS tenant'}
+               FROM "${table}"
+              WHERE "${column}" IS NOT NULL AND "${column}" LIKE 'v2:%'
+              ORDER BY id`,
+        );
+        result.found = rows.length;
+
+        if (rows.length > 0 && !tenantColumn) {
+            // Loud, not skipped: the rows exist and cannot be attributed, so
+            // nothing can decrypt them and a human has to decide.
+            result.errors = rows.length;
+            logger.error('global-key-rotation.v2_repair_unattributable', {
+                component: 'global-key-rotation',
+                model,
+                column,
+                rows: rows.length,
+                detail:
+                    'misplaced v2 rows on a global-KEK model with no entry in ' +
+                    'V2_REPAIR_TENANT_COLUMN — cannot tell which tenant DEK wrote them',
+            });
+            out.push(result);
+            continue;
+        }
+
+        for (const row of rows) {
+            if (!row.tenant) {
+                result.errors++;
+                logger.error('global-key-rotation.v2_repair_no_tenant', {
+                    component: 'global-key-rotation',
+                    model,
+                    column,
+                    id: row.id,
+                });
+                continue;
+            }
+            try {
+                const primary = await getTenantDek(row.tenant);
+                const previous = await getTenantPreviousDek(row.tenant);
+                const plaintext = decryptWithKeyOrPrevious(primary, previous, row.value);
+                await prisma.$executeRawUnsafe(
+                    `UPDATE "${table}" SET "${column}" = $1 WHERE id = $2`,
+                    encryptField(plaintext),
+                    row.id,
+                );
+                result.repaired++;
+            } catch (err) {
+                result.errors++;
+                logger.error('global-key-rotation.v2_repair_failed', {
+                    component: 'global-key-rotation',
+                    model,
+                    column,
+                    id: row.id,
+                    error: err instanceof Error ? err.message : 'unknown',
+                });
+            }
+        }
+        out.push(result);
+    }
+
     return out;
 }
 
