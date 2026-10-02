@@ -62,7 +62,28 @@ import { pathToFileURL } from 'node:url';
  * @type {Array<{id: string, package: string, reason: string, review: string}>}
  */
 const REAL_EXEMPT = [
-    // Intentionally empty.
+    {
+        id: 'GHSA-86w9-cpqp-85rv',
+        package: 'node-forge',
+        reason:
+            'node-forge RSA PKCS#1 v1.5 signature VERIFICATION accepts extra nested ' +
+            'DigestAlgorithm elements. Range is `*` with `fixAvailable: false` — every ' +
+            'published version is affected, so no floor can fix this and the usual ' +
+            'override is unavailable. Removal is also unavailable: the only path to it ' +
+            'is `@google/earthengine` -> `googleapis` -> `google-auth-library` -> ' +
+            '`gtoken` -> `google-p12-pem` -> `node-forge`, and earthengine is live code ' +
+            '(`src/lib/agro/earth-engine.ts`, `gee-config.ts`, `index-recipes.ts`). ' +
+            'REACHABILITY: `google-p12-pem` calls exactly four forge functions — ' +
+            '`asn1.fromDer`, `pkcs12.pkcs12FromAsn1`, `pki.privateKeyToPem`, ' +
+            '`util.decode64` — all of which parse OUR OWN service-account P12 and export ' +
+            'its private key. None is signature verification. The JWT is then signed by ' +
+            '`jws.sign()` (gtoken/build/src/index.js:225), not by forge. So the vulnerable ' +
+            'predicate is never asked to judge a signature from anyone, let alone an ' +
+            'untrusted party. Verified by enumerating the call sites, not by assuming the ' +
+            'package is unused.',
+        review: '2026-11-03',
+    },
+    // Was intentionally empty until 2026-10-02.
     //
     // The adm-zip entry (GHSA-vwc7-r8mq-g2x9) that lived here was removed
     // when adm-zip 0.6.1 shipped. Its own rationale had predicted this:
