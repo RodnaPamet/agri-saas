@@ -217,7 +217,23 @@ crash-consistent (Postgres replays WAL on restore).
 Restores are drilled monthly by `infra/scripts/restore-test-gcp.sh`
 via `.github/workflows/restore-test.yml`, which runs it once per
 target from a job matrix — it boots a real Postgres over the restored
-data directory rather than just checking a snapshot exists. The
+data directory rather than just checking a snapshot exists.
+**The drill's validation battery runs on the VM, from a string the
+script builds — and that heredoc's delimiter is QUOTED (`cat
+<<'REMOTE'`) on purpose.** A quoted heredoc expands nothing, so the
+body's own prose cannot execute on the machine building it; the five
+values the VM cannot know (`PGDATA_VOLUME`, `STACK_DIR`, `PG_IMAGE`,
+`DB_USER_HINT`, `DB_NAME_HINT`) are injected ahead of it by a
+`printf %q` prelude. Never un-quote it and never write a host value
+into the body — while it was unquoted, markdown backticks in the
+body's COMMENTS were command substitutions that ran on the GitHub
+runner and left the drill dead for a month with the restore never
+attempted (#1179/#1212/#1225). `docs/backup-restore.md` →
+"Editing the remote half" is the operator-facing rule;
+`tests/guards/shell-heredoc-no-live-backticks.test.ts` pins the
+delimiter and `tests/guards/restore-drill-remote-script.test.ts`
+executes the drill against a stubbed `gcloud` and asserts the payload
+body is byte-identical to the heredoc source. The
 `DATA_ENCRYPTION_KEY` sits on the same disk as the data it protects
 (`/opt/agrent/.env`; `/opt/inflect/.env.prod`), so a whole-disk restore
 recovers key and ciphertext together; a pgdata-only copy is NOT a
