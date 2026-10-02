@@ -76,8 +76,32 @@ concurrency:
     # behaviour.
     #
     # Simulated over that same 199-run timeline at the worst-case 22.8-min
-    # build: 124 → 173 commits shipped, 458 → 95 minutes of build time
+    # build: 124 → 173 commits shipped, 458 → 0 minutes of build time
     # wasted, worst-case time a commit spends unshipped 63.1 → 45.5 min.
+    #
+    # Those are REPRODUCIBLE, not remembered: the fixture is
+    # `tests/fixtures/ghcr-publish-history.json` and the replay is
+    # `tests/guards/publish-starvation.test.ts`. Re-run it rather than
+    # re-deriving them.
+    #
+    # The waste figure read `458 → 95` until 2026-10-02 and was wrong. Replayed
+    # against the committed fixture it is 458.5 → 0.0, because `wastedMinutes`
+    # counts only runners that STARTED, and under `cancel-in-progress: false`
+    # a superseded run is dropped while PENDING: 26 such runs at the worst-case
+    # build, zero runner minutes each, versus 75 cancelled MID-BUILD under the
+    # old setting. Confirmed independently against live runs the same day —
+    # three cancelled publishes, all `total_count = 0`, no job ever allocated.
+    # The zero is over a NON-EMPTY set, which is the half worth checking.
+    #
+    # These figures do NOT move with #1231, which is worth saying because it
+    # looks like they should. #1231 made a failed `npm ci` publish run to
+    # completion (~10–16 min) instead of dying at ~55s, a 12–17× change on that
+    # path — but the two rows above give EVERY run the same flat full-length
+    # build (13.6 or 22.8 min), so a failure's real duration is not an input to
+    # them. The fixture's window carries exactly one `failure`, at 11.08 min,
+    # already full-length; the 55s fast-fail is from 2026-10-01, three weeks
+    # after the window closes. #1231 moved reality TOWARDS this model, not away
+    # from it.
     #
     # WHAT THIS COSTS, stated plainly. Serialising means the tip can wait up
     # to TWO build durations after the last merge of a burst instead of one,

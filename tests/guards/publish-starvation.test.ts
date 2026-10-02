@@ -393,7 +393,20 @@ describe('what the change costs, over the real 199-merge timeline', () => {
         const after = run(false, minutes);
 
         expect(after.imagesShipped).toBeGreaterThan(before.imagesShipped);
-        expect(after.wastedMinutes).toBeLessThan(before.wastedMinutes / 3);
+        // EXACTLY zero, not merely "a third of before" — that inequality is
+        // satisfied at 150 wasted minutes, and the workflow comment quoted a
+        // wrong `458 → 95` for however long it stood. Queueing wastes nothing
+        // because a superseded run never STARTS.
+        expect(after.wastedMinutes).toBe(0);
+        // ...over a NON-EMPTY set of cancellations, or the zero above is the
+        // empty-selection pass rather than the property. This is the same fact
+        // live runs show as `total_count = 0`: pending cancellation, no job.
+        expect(after.cancelledWhilePending).toBeGreaterThan(0);
+        expect(after.cancelledWhileRunning).toBe(0);
+        // ...and the OLD setting really did burn runners mid-build, or
+        // "wastes less" is a comparison against nothing.
+        expect(before.cancelledWhileRunning).toBeGreaterThan(0);
+        expect(before.wastedMinutes).toBeGreaterThan(100);
         expect(after.maxUnshippedMinutes).toBeLessThan(before.maxUnshippedMinutes);
         // Serialised in one group, so `:latest` only ever moves forward.
         expect(after.latestPointerRegressions).toBe(0);
