@@ -2446,6 +2446,26 @@ negated. Say what remains instead:
 ## Key Conventions
 
 - **Zod schemas** for all API input validation live in `src/app-layer/schemas/` (backend) and `src/lib/schemas/` (shared).
+- **A breaking API change is measured against the PR's BASE, and regenerating
+  the spec no longer silences it (#1228).** `tests/contracts/openapi-breaking-change.test.ts`
+  compared the committed `src/generated/openapi.json` against a spec generated
+  from the SAME tree — and step 1 of the documented contract procedure
+  (`npm run openapi:generate`, enforced for schema dirs by
+  `scripts/check-openapi-sync.sh`) makes those two sides equal, so the gate
+  held a tree against itself and reported no breakage whatever the API did.
+  The baseline now comes from the PR's base commit: CI materialises it into
+  `OPENAPI_BASE_SPEC` (the `test` job checks out at depth 1 and its base fetch
+  is `--filter=blob:none`, which supplies trees but not blobs), with
+  `RATCHET_BASE_SHA` as the fallback and `RATCHET_DELTA_REQUIRE_BASE=1` so a
+  base it cannot read is a hard failure rather than a silent skip. **So if you
+  remove a property, narrow an enum or make a field required, the gate goes red
+  and is supposed to** — regenerate the spec, and if the change is intended,
+  say so in the PR for a reviewer rather than looking for a way to quiet it.
+  The base-resolution logic is shared with the coverage ratchet in
+  `tests/helpers/ratchet-base.ts`; do not fork it. Its one subtlety is that
+  `git ls-tree` finding no file at the base means EITHER a genuinely new spec
+  OR a commit this clone never fetched, so `commitPresent` is asked first —
+  only the former is a pass.
 - **Money is integer CENTS and rates are BASIS POINTS — never a float, and
   never computed on the client.** `src/lib/insurance` is the worked example:
   `quotePremium` does round-half-up in integer arithmetic

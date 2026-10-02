@@ -735,8 +735,82 @@ jobs:
           RATCHET_DELTA_REQUIRE_BASE: "1"
         run: node --max-old-space-size=8192 ./node_modules/jest/bin/jest.js tests/guards/ --runInBand --forceExit --no-coverage
 
+      # ── The breaking-change gate needs a baseline from ANOTHER commit (#1228)
+      #
+      # The contract suite used to compare the committed spec against a spec
+      # generated from the SAME tree. Step 1 of the documented procedure above
+      # regenerates that file, and `scripts/check-openapi-sync.sh` enforces it
+      # for schema dirs — so on any well-formed PR the two sides were equal and
+      # the comparison held a tree against itself, reporting no breakage
+      # whatever the API did.
+      #
+      # Breakage is a change BETWEEN commits, so the baseline is the PR's base.
+      # Fetched HERE rather than in the test because this job checks out at
+      # depth 1 and the base fetch above is `--filter=blob:none`: that gives the
+      # base's TREES, which is all the `git ls-tree` ratchets need, and NOT its
+      # BLOBS, which reading a file's content does need. One API call avoids
+      # deepening a 6-shard checkout to move one file.
+      - name: Materialise the base OpenAPI spec for the breaking-change gate
+        if: matrix.shard == 1
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          SPEC="src/generated/openapi.json"
+          DEST="${RUNNER_TEMP}/openapi-base.json"
+
+          if [ -z "${BASE:-}" ] || [ "${BASE}" = "0000000000000000000000000000000000000000" ]; then
+            echo "::notice::no base sha on ${GITHUB_EVENT_NAME} (first push to a branch) — the gate will report that it did not run."
+            exit 0
+          fi
+
+          # `git show` first: free when the blob happens to be present.
+          if git cat-file -e "${BASE}^{commit}" 2>/dev/null \
+             && git show "${BASE}:${SPEC}" > "$DEST" 2>/dev/null; then
+            echo "base spec from git show ${BASE}"
+          else
+            # The expected path on this job. `.raw` returns the file itself.
+            if gh api -H "Accept: application/vnd.github.raw" \
+                 "repos/${GITHUB_REPOSITORY}/contents/${SPEC}?ref=${BASE}" > "$DEST" 2>/dev/null; then
+              echo "base spec from the contents API at ${BASE}"
+            else
+              # A 404 here means the spec did not exist at the base — a real
+              # pass the gate reports as "NEW in this PR". Any other failure
+              # leaves the env unset, and the gate then FAILS because
+              # RATCHET_DELTA_REQUIRE_BASE is on. Both are louder than a
+              # silently empty baseline, which would make the comparison
+              # vacuous in exactly the way this change exists to fix.
+              rm -f "$DEST"
+              echo "::warning::could not read ${SPEC} at base ${BASE} — the gate will say so rather than pass quietly."
+              exit 0
+            fi
+          fi
+
+          # A truncated or error-body write is worse than no baseline: it
+          # compares against almost nothing and finds almost no breakage. The
+          # suite has its own population control, and this is the cheaper copy.
+          if ! jq -e '(.paths | length) > 100' "$DEST" >/dev/null 2>&1; then
+            echo "::warning::base spec at ${BASE} parsed to fewer than 100 paths — refusing to use it as a baseline."
+            rm -f "$DEST"
+            exit 0
+          fi
+          echo "OPENAPI_BASE_SPEC=${DEST}" >> "$GITHUB_ENV"
+          echo "base spec ready: $(jq -r '.paths | length' "$DEST") paths"
+
       - name: "Gate: API contract tests"
         if: matrix.shard == 1
+        env:
+          # Same anchor as the guards step: GitHub knows the PR's base exactly,
+          # while `merge-base --fork-point` guesses and inverts on a branch that
+          # is behind. `OPENAPI_BASE_SPEC` is set by the step above when it
+          # succeeded; this is the fallback the gate tries second.
+          RATCHET_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          # The base is guaranteed here, so "I could not look" is a
+          # configuration failure rather than an environment fact — without
+          # this the gate degrades to a silent skip, which is the defect it was
+          # just rewritten to remove.
+          RATCHET_DELTA_REQUIRE_BASE: "1"
         run: node --max-old-space-size=8192 ./node_modules/jest/bin/jest.js tests/contracts/ --runInBand --forceExit --no-coverage --ci
 
   # ═══════════════════════════════════════════════════════════════

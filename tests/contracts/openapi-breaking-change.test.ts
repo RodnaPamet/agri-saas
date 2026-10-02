@@ -25,6 +25,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { buildOpenApiDoc, serializeDoc } from '../../scripts/openapi-build';
 import { findBreakingChanges } from '../../scripts/openapi-breaking';
+import {
+    baseSha,
+    blobPresentAt,
+    commitPresent,
+    readFileAtSha,
+    requireBase,
+} from '../helpers/ratchet-base';
 
 const COMMITTED = path.resolve(__dirname, '../../src/generated/openapi.json');
 
@@ -134,15 +141,28 @@ describe('breaking-change classifier — the ADDITIVE cases must stay SILENT', (
 });
 
 describe('the guard, against the real committed spec', () => {
-    // The CI gate. The committed spec is the baseline every PR is measured
-    // against, and it lives in the SAME test runtime as the generator
+    // The committed spec lives in the SAME test runtime as the generator
     // (scripts/generate-openapi.ts delegates to Jest precisely so the writer
     // and verifier share one module-loading path) — so a comparison here
     // cannot drift for reasons unrelated to the API.
     const committed = JSON.parse(fs.readFileSync(COMMITTED, 'utf-8'));
     const generated = JSON.parse(serializeDoc(buildOpenApiDoc({ verbose: false })));
 
-    it('HEAD introduces no breaking change against the committed contract', () => {
+    // ── This pair is a DRIFT check, not the breaking-change gate (#1228) ──
+    //
+    // `committed` is read from the WORKING TREE, and `generated` is built from
+    // that same tree's source. A PR that breaks the contract and regenerates
+    // the spec — which is step 1 of the documented procedure in ci.yml, and
+    // enforced for schema dirs by `scripts/check-openapi-sync.sh` — makes the
+    // two sides equal. The comparison then holds a tree against ITSELF and
+    // reports `[]` no matter what the API did.
+    //
+    // So this `it` keeps its value but not its old NAME: it proves the
+    // committed artifact matches what the generator emits, which is a real
+    // thing to know and is why a stale commit of the spec is caught. It is
+    // not, and never was, evidence that no breaking change shipped. The gate
+    // that is lives in the next describe, against the PR's BASE.
+    it('the committed spec matches what the generator emits (drift, not breakage)', () => {
         const found = findBreakingChanges(committed, generated);
         expect({ breaking: found }).toEqual({ breaking: [] });
     });
@@ -189,5 +209,137 @@ describe('the guard, against the real committed spec', () => {
             aBrandNewOptionalField: { type: 'string' },
         };
         expect(findBreakingChanges(committed, mutated)).toEqual([]);
+    });
+});
+
+/**
+ * The gate #1228 is about: this PR measured against its OWN BASE.
+ *
+ * The describe above compares the committed spec with the spec generated from
+ * the same tree, which is a drift check. Breakage is a change BETWEEN commits,
+ * so the baseline has to come from a different commit — the PR's base, the
+ * same anchor `rendered-coverage-floor` and the selector-teeth job already use.
+ *
+ * ## Where the baseline comes from, in order
+ *
+ * 1. `OPENAPI_BASE_SPEC` — a path CI materialises before the suite runs. CI
+ *    does the fetching because the `test` job checks out at depth 1 and its
+ *    base fetch is `--filter=blob:none`: that supplies the base's TREES, which
+ *    is all `git ls-tree` ratchets need, and NOT its blobs, which reading a
+ *    file's content does need. Doing it in the workflow keeps that problem
+ *    where tools to solve it exist, and keeps this file reading a path.
+ * 2. `git show <base>:<spec>` — works locally, and in any clone that has the
+ *    blob.
+ *
+ * ## The three absences, which are three different facts
+ *
+ * - **No base resolvable** — a local run with no `origin/main`. Degrade.
+ * - **Base resolved, spec ABSENT from its tree** — the spec is new in this PR.
+ *   Nothing to compare, and that is a real pass, not a skip.
+ * - **Base resolved, spec PRESENT in its tree, content unreadable** — the
+ *   unfetched-blob case. Returning quietly here would be a vacuous pass with
+ *   the require-flag ON, which is the hole the flag exists to close, so it is
+ *   fatal in CI.
+ *
+ * `blobPresentAt` is what separates the second from the third. Without it both
+ * read as "no baseline", and the lenient reading silently disables the gate —
+ * which is how the vacuous comparison survived in the first place.
+ */
+describe('the real gate: this PR against its BASE (#1228)', () => {
+    const SPEC_REL = 'src/generated/openapi.json';
+    const sha = baseSha();
+    const fromEnv = process.env.OPENAPI_BASE_SPEC?.trim();
+
+    let baseText: string | null = null;
+    let origin = 'none';
+    let existedAtBase: boolean | null = null;
+    let haveCommit = false;
+
+    if (fromEnv && fs.existsSync(fromEnv)) {
+        baseText = fs.readFileSync(fromEnv, 'utf-8');
+        origin = `OPENAPI_BASE_SPEC=${fromEnv}`;
+        existedAtBase = true;
+    } else if (sha) {
+        // The commit FIRST. `blobPresentAt` cannot tell "not in that tree"
+        // from "no such commit here", and conflating them is a vacuous pass.
+        haveCommit = commitPresent(sha);
+        existedAtBase = haveCommit ? blobPresentAt(sha, SPEC_REL) : null;
+        baseText = haveCommit ? readFileAtSha(sha, SPEC_REL) : null;
+        origin = `git show ${sha.slice(0, 9)}:${SPEC_REL}`;
+    }
+
+    const generatedDoc = JSON.parse(serializeDoc(buildOpenApiDoc({ verbose: false })));
+
+    it('execution status: says out loud whether the gate actually ran', () => {
+        // Modelled on `rls-coverage`'s always-running status test: a gate that
+        // did not run must not be indistinguishable from one that passed.
+        if (baseText) {
+            expect(baseText.length).toBeGreaterThan(1000);
+            return;
+        }
+
+        const detail =
+            sha === null
+                ? 'no base commit: RATCHET_BASE_SHA is unset and `git merge-base origin/main HEAD` failed'
+                : !haveCommit
+                  ? `base ${sha.slice(0, 9)} is NOT IN THIS CLONE (git cat-file says no such commit) — ` +
+                    'the gate did NOT run. A bogus or unfetched sha lands here.'
+                  : existedAtBase
+                    ? `base ${sha.slice(0, 9)} HAS ${SPEC_REL} in its tree but the blob is unreadable — ` +
+                      'this clone fetched trees only (--filter=blob:none). The gate did NOT run.'
+                    : `base ${sha.slice(0, 9)} has no ${SPEC_REL} — the spec is NEW in this PR, so there ` +
+                      'is no prior contract to break.';
+
+        // Exactly ONE absence is a real pass: the commit is readable and the
+        // spec genuinely was not in it. Everything else is "could not look".
+        if (haveCommit && existedAtBase === false) {
+            console.warn(`[breaking-change gate] ${detail}`);
+            return;
+        }
+        if (requireBase()) {
+            throw new Error(
+                `${detail}\n  CI sets OPENAPI_BASE_SPEC (preferred) or RATCHET_BASE_SHA with the ` +
+                    `base commit's blobs present. Fix the workflow rather than relaxing this.`,
+            );
+        }
+        console.warn(`[breaking-change gate] ${detail} (source: ${origin})`);
+    });
+
+    it('introduces no breaking change against the BASE contract', () => {
+        if (!baseText) return; // reported by the status test above
+        const found = findBreakingChanges(JSON.parse(baseText), generatedDoc);
+        expect({ breaking: found, base: origin }).toEqual({ breaking: [], base: origin });
+    });
+
+    it('control: the base and the generated doc are both real, populated specs', () => {
+        if (!baseText) return;
+        const base = JSON.parse(baseText);
+        // Without this, "no breaking changes" is satisfied by comparing two
+        // empty objects — and an empty baseline is exactly what a failed fetch
+        // that wrote a 0-byte file would produce.
+        expect(Object.keys(base.paths ?? {}).length).toBeGreaterThan(100);
+        expect(Object.keys(base.components?.schemas ?? {}).length).toBeGreaterThan(100);
+        expect(Object.keys(generatedDoc.paths ?? {}).length).toBeGreaterThan(100);
+    });
+
+    it('MUTATION PROOF: a removed property is caught against the BASE too', () => {
+        if (!baseText) return;
+        // The classifier is proven on synthetic pairs above; this proves the
+        // WIRING — that the base baseline is actually being compared, rather
+        // than the gate holding the generated doc against itself again.
+        const base = JSON.parse(baseText);
+        const victim = Object.keys(base.components.schemas).find((n) => {
+            const props = base.components.schemas[n]?.properties;
+            return props && Object.keys(props).length > 1;
+        });
+        expect(victim).toBeDefined();
+
+        const mutated = JSON.parse(JSON.stringify(generatedDoc));
+        const prop = Object.keys(mutated.components.schemas[victim as string].properties)[0];
+        delete mutated.components.schemas[victim as string].properties[prop];
+
+        const found = findBreakingChanges(base, mutated);
+        expect(found.length).toBeGreaterThan(0);
+        expect(JSON.stringify(found)).toContain(prop);
     });
 });

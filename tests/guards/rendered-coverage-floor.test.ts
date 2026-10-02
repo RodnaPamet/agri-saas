@@ -27,6 +27,7 @@
 import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { baseSha } from '../helpers/ratchet-base';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -290,33 +291,11 @@ function registrySize(): number {
     return (src.match(/primitive:\s*'/g) ?? []).length;
 }
 
-/**
- * The commit this branch is measured AGAINST.
- *
- * CI supplies it explicitly (`RATCHET_BASE_SHA`), using the same expression
- * the selector-teeth job already proved:
- * `github.event.pull_request.base.sha || github.event.before`. That is better
- * than deriving one here — GitHub knows the PR's base exactly, while
- * `merge-base --fork-point` is a guess that goes wrong on a branch that is
- * behind, reporting a PEER's merged work as YOUR deletions.
- *
- * Locally there is no such env, so fall back to a merge-base against
- * `origin/main`. A developer running jest is not the enforcement point; CI is.
- */
-function baseSha(): string | null {
-    const fromCi = process.env.RATCHET_BASE_SHA?.trim();
-    if (fromCi && /^[0-9a-f]{7,40}$/i.test(fromCi)) return fromCi;
-    try {
-        const sha = execFileSync('git', ['merge-base', 'origin/main', 'HEAD'], {
-            cwd: ROOT,
-            encoding: 'utf8',
-            stdio: ['ignore', 'pipe', 'ignore'],
-        }).trim();
-        return /^[0-9a-f]{40}$/i.test(sha) ? sha : null;
-    } catch {
-        return null;
-    }
-}
+// `baseSha` moved to `tests/helpers/ratchet-base.ts` (#1228) so the
+// breaking-change gate uses the SAME resolution rather than a second copy
+// that drifts — the reason `scripts/lib/coverage-groups.mjs` holds jest's
+// group algorithm once. Its docblock carries the rationale for preferring
+// CI's explicit sha over `merge-base --fork-point`.
 
 /**
  * The same population `countFiles` counts, as it was at `sha`.
