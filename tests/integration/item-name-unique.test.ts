@@ -51,14 +51,31 @@ beforeAll(async () => {
     const b = await prisma.tenant.create({ data: { name: `${TAG}-b`, slug: `${TAG}-b` } });
     tenantA = a.id;
     tenantB = b.id;
-    const unit = await prisma.unit.findFirst({ select: { id: true } });
-    unitId = unit!.id;
+    // Create the Unit this suite needs rather than reading one a SIBLING left
+    // behind (#1243). `findFirst(...)!` depended on another suite having run
+    // first in the same worker database — nothing seeds the catalogue for the
+    // `test` job (`tests/helpers/db.ts` runs `prisma migrate deploy` and
+    // nothing else; only the two e2e jobs seed), and no migration inserts
+    // Units. Five sibling suites create them, so it was green by file ordering.
+    //
+    // On a freshly-migrated database it failed 8/8 with
+    // `TypeError: Cannot read properties of null (reading 'id')` — a message
+    // that names neither `Unit` nor a missing fixture, because the `!` turns an
+    // absent dependency into a type error on a line that looks like plumbing.
+    const unit = await prisma.unit.create({
+        data: { key: `${TAG}-ea`, name: 'Each', symbol: 'ea', measure: 'COUNT' },
+    });
+    unitId = unit.id;
 });
 
 afterAll(async () => {
     if (!DB_AVAILABLE) return;
     await prisma.item.deleteMany({ where: { tenantId: { in: [tenantA, tenantB] } } });
     await prisma.tenant.deleteMany({ where: { id: { in: [tenantA, tenantB] } } });
+    // Owned by this suite now, so it cleans it up. Deleted AFTER the items that
+    // reference it — a Unit with a live `Item.defaultUnitId` is FK-protected,
+    // and the delete would fail rather than cascade.
+    if (unitId) await prisma.unit.deleteMany({ where: { id: unitId } });
     await prisma.$disconnect();
 });
 
