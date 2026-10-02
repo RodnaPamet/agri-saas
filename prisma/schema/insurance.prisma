@@ -3,7 +3,11 @@
 ///
 /// Lead-gen only — no insurer API. Like `PromotionLead` / `ExchangeInquiry`,
 /// `inquirerTenantId` is a PLAIN FK to Tenant.id (NOT a tenantId RLS column),
-/// so the row is not tenant-scoped and needs no RLS.
+/// so the row is not tenant-scoped. It IS RLS-protected as of P1.7 — this
+/// docblock previously said it "needs no RLS", which was wrong: the table was
+/// queried under `runInTenantContext` (as `app_user`, who holds full DML on
+/// every table) with no policy beneath the usecase's `where`. See
+/// `insurance_lead_inquirer_isolation` in migration 20261002190000.
 ///
 /// SEVERAL requests per parcel are allowed. This docblock used to say the
 /// `@@unique` capped a tenant to one open request per parcel; that unique —
@@ -13,7 +17,11 @@
 /// collapses a RETRY of the same request without refusing a new one.
 model InsuranceLead {
   id               String   @id @default(cuid())
-  /// Requesting tenant — plain FK to Tenant.id (NOT a tenantId RLS column).
+  /// Requesting tenant — plain FK to Tenant.id (NOT a tenantId RLS column),
+  /// which is why this model is classified as `cross-tenant-fk` in
+  /// `tests/guardrails/rls-coverage.test.ts` rather than entering the
+  /// tenantId-keyed inventory. RLS keys on THIS column — see
+  /// `insurance_lead_inquirer_isolation`, migration 20261002190000.
   inquirerTenantId String
   inquirerUserId   String
   /// The parcel the quote is about (free-form id, no FK — mirrors PromotionLead).
