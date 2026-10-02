@@ -6,6 +6,7 @@ import { withValidatedBody } from '@/lib/validation/route';
 import { UpdateLogEntrySchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
+import { parseIfMatch } from '@/lib/http/if-match';
 
 export const GET = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; id: string }> }) => {
     const params = await paramsPromise;
@@ -58,10 +59,13 @@ export const PUT = withApiErrorHandling(withValidatedBody(UpdateLogEntrySchema, 
     //
     // Absent headers = an online edit from the modal, which keeps
     // last-write-wins exactly as before.
-    const rawIfMatch = req.headers.get('If-Match');
-    const expectedVersion = rawIfMatch !== null && /^\d+$/.test(rawIfMatch)
-        ? Number.parseInt(rawIfMatch, 10)
-        : undefined;
+    // #1182: this used `/^\d+$/` and fell through to UNGUARDED on anything
+    // else — including `"5"`, the RFC 7232 strong tag, which is the form a
+    // well-behaved client sends. On this route that is the outbox replay path,
+    // so a lost precondition lets a queued edit clobber a supervisor's later
+    // change: the exact loss #919/#921 built the lock to prevent.
+    // Present-but-unparseable is now a 400.
+    const expectedVersion = parseIfMatch(req.headers.get('If-Match'));
     const idempotencyKey = req.headers.get('Idempotency-Key') || undefined;
     const entry = await updateLogEntry(ctx, params.id, body, expectedVersion, idempotencyKey);
     return jsonResponse({ success: true, entry });
