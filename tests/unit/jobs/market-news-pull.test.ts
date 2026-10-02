@@ -4,6 +4,7 @@
  * upsert shape, the 60-day prune cutoff, and per-feed fail-soft.
  */
 import { runMarketNewsPull } from '@/app-layer/jobs/market-news-pull';
+import type { MarketNewsPullDeps } from '@/app-layer/jobs/market-news-pull';
 import type { RawNewsItem } from '@/lib/news/rss-client';
 
 // One fixed feed list so the test is independent of the curated defaults / env.
@@ -26,16 +27,50 @@ function rawItem(over: Partial<RawNewsItem> = {}): RawNewsItem {
     };
 }
 
+/**
+ * The upsert / deleteMany arguments this job passes, as these tests read them.
+ *
+ * Deliberately NOT `Prisma.MarketNewsItemUpsertArgs`. There, `create` is an
+ * XOR of the checked and unchecked create inputs and `where.publishedAt` is a
+ * `DateTimeFilter | Date | string` union, so reading `.category` or `.lt` off
+ * them needs narrowing at every assertion — which trades `any` for noise and
+ * makes the assertions harder to read than the thing they assert.
+ *
+ * Mirrors `market-news-pull.ts:162` and `:191` field for field. If the job's
+ * upsert shape changes, these break, which is the point.
+ */
+interface NewsUpsertArgs {
+    where: { guidHash: string };
+    create: {
+        source: string;
+        category: string;
+        title: string;
+        summary: string;
+        url: string;
+        imageUrl: string | null;
+        publishedAt: Date;
+        guidHash: string;
+    };
+    update: Record<string, unknown>;
+}
+
+interface NewsDeleteManyArgs {
+    where: { publishedAt: { lt: Date } };
+}
+
+/** The job's `db` seam. One named cast here instead of `as any` at 11 call sites. */
+type NewsDbSeam = NonNullable<MarketNewsPullDeps['db']>;
+
 function fakeDb() {
-    const upserts: any[] = [];
-    const deletes: any[] = [];
+    const upserts: NewsUpsertArgs[] = [];
+    const deletes: NewsDeleteManyArgs[] = [];
     return {
         marketNewsItem: {
-            upsert: jest.fn(async (args: any) => {
+            upsert: jest.fn(async (args: NewsUpsertArgs) => {
                 upserts.push(args);
                 return {};
             }),
-            deleteMany: jest.fn(async (args: any) => {
+            deleteMany: jest.fn(async (args: NewsDeleteManyArgs) => {
                 deletes.push(args);
                 return { count: 3 };
             }),
@@ -43,6 +78,19 @@ function fakeDb() {
         _upserts: upserts,
         _deletes: deletes,
     };
+}
+
+/**
+ * The mock as the job sees it.
+ *
+ * The mock implements two of `marketNewsItem`'s methods and carries two
+ * recording fields the delegate does not have, so it is not assignable to the
+ * real delegate type. The cast is real and belongs in ONE named place rather
+ * than repeated at every call — and because it is not `any`, the assertions
+ * above it stay type-checked.
+ */
+function asDb(db: ReturnType<typeof fakeDb>): NewsDbSeam {
+    return db as unknown as NewsDbSeam;
 }
 
 const NOW = () => new Date('2026-07-15T12:00:00Z');
@@ -55,7 +103,7 @@ describe('runMarketNewsPull', () => {
             .mockResolvedValueOnce([rawItem({ guid: 'a' }), rawItem({ guid: 'b', url: 'https://x/2' })])
             .mockResolvedValueOnce([rawItem({ guid: 'c', url: 'https://x/3' })]);
 
-        const r = await runMarketNewsPull({}, { db: db as any, fetchFeedImpl, now: NOW });
+        const r = await runMarketNewsPull({}, { db: asDb(db), fetchFeedImpl, now: NOW });
 
         expect(fetchFeedImpl).toHaveBeenCalledTimes(2);
         expect(r).toEqual({ feeds: 2, fetched: 3, upserted: 3, pruned: 3 });
@@ -71,7 +119,7 @@ describe('runMarketNewsPull', () => {
             // ec-agrifood (default policy): a neutral headline keeps policy.
             .mockResolvedValueOnce([rawItem({ title: 'Weekly overview', guid: 'n' })]);
 
-        await runMarketNewsPull({}, { db: db as any, fetchFeedImpl, now: NOW });
+        await runMarketNewsPull({}, { db: asDb(db), fetchFeedImpl, now: NOW });
 
         const cats = db._upserts.map((u) => u.create.category);
         expect(cats).toEqual(['market', 'policy']);
@@ -83,7 +131,7 @@ describe('runMarketNewsPull', () => {
             rawItem({ title: 'Cena <b>x</b>', summary: '<script>alert(1)</script>hi', guid: 's' }),
         ]).mockResolvedValueOnce([]);
 
-        await runMarketNewsPull({}, { db: db as any, fetchFeedImpl, now: NOW });
+        await runMarketNewsPull({}, { db: asDb(db), fetchFeedImpl, now: NOW });
 
         const c = db._upserts[0].create;
         expect(c.title).not.toContain('<');
@@ -97,7 +145,7 @@ describe('runMarketNewsPull', () => {
             .mockResolvedValueOnce([rawItem({ guid: 'same' })])
             .mockResolvedValueOnce([rawItem({ guid: 'same' })]);
 
-        await runMarketNewsPull({}, { db: db as any, fetchFeedImpl, now: NOW });
+        await runMarketNewsPull({}, { db: asDb(db), fetchFeedImpl, now: NOW });
 
         const [h1, h2] = db._upserts.map((u) => u.where.guidHash);
         expect(h1).toMatch(/^[a-f0-9]{64}$/);
@@ -109,7 +157,7 @@ describe('runMarketNewsPull', () => {
         const db = fakeDb();
         const fetchFeedImpl = jest.fn().mockResolvedValue([]);
 
-        await runMarketNewsPull({}, { db: db as any, fetchFeedImpl, now: NOW });
+        await runMarketNewsPull({}, { db: asDb(db), fetchFeedImpl, now: NOW });
 
         expect(db.marketNewsItem.deleteMany).toHaveBeenCalledTimes(1);
         const cutoff: Date = db._deletes[0].where.publishedAt.lt;
@@ -124,7 +172,7 @@ describe('runMarketNewsPull', () => {
             .mockRejectedValueOnce(new Error('boom'))
             .mockResolvedValueOnce([rawItem({ guid: 'ok' })]);
 
-        const r = await runMarketNewsPull({}, { db: db as any, fetchFeedImpl, now: NOW });
+        const r = await runMarketNewsPull({}, { db: asDb(db), fetchFeedImpl, now: NOW });
 
         expect(r.upserted).toBe(1);
         expect(db.marketNewsItem.upsert).toHaveBeenCalledTimes(1);
@@ -136,7 +184,7 @@ describe('runMarketNewsPull', () => {
 
         const r = await runMarketNewsPull(
             { feedSlug: 'ec-agrifood' },
-            { db: db as any, fetchFeedImpl, now: NOW },
+            { db: asDb(db), fetchFeedImpl, now: NOW },
         );
 
         expect(fetchFeedImpl).toHaveBeenCalledTimes(1);
@@ -156,14 +204,12 @@ describe('runMarketNewsPull', () => {
             ])
             .mockResolvedValue([]);
 
-        const r = await runMarketNewsPull({}, { db: db as any, fetchFeedImpl, now: NOW });
+        const r = await runMarketNewsPull({}, { db: asDb(db), fetchFeedImpl, now: NOW });
 
         // The whole card is an anchor, so an item with no usable link is
         // skipped rather than stored linkless.
         expect(r.upserted).toBe(1);
-        const urls = db.marketNewsItem.upsert.mock.calls.map(
-            (c: any[]) => c[0].create.url,
-        );
+        const urls = db.marketNewsItem.upsert.mock.calls.map((c) => c[0].create.url);
         expect(urls).toEqual(['https://agro.bg/1']);
     });
 
@@ -176,7 +222,7 @@ describe('runMarketNewsPull', () => {
                 .mockResolvedValueOnce([rawItem({ url })])
                 .mockResolvedValue([]);
 
-            const r = await runMarketNewsPull({}, { db: db as any, fetchFeedImpl, now: NOW });
+            const r = await runMarketNewsPull({}, { db: asDb(db), fetchFeedImpl, now: NOW });
             expect(r.upserted).toBe(1);
         },
     );
@@ -190,7 +236,7 @@ describe('runMarketNewsPull', () => {
             ])
             .mockResolvedValue([]);
 
-        const r = await runMarketNewsPull({}, { db: db as any, fetchFeedImpl, now: NOW });
+        const r = await runMarketNewsPull({}, { db: asDb(db), fetchFeedImpl, now: NOW });
 
         // imageUrl is stored "for later" and rendered by nobody yet — which is
         // exactly why it is checked here and not at a render site.
@@ -210,7 +256,7 @@ describe('runMarketNewsPull', () => {
             ])
             .mockResolvedValue([]);
 
-        await runMarketNewsPull({}, { db: db as any, fetchFeedImpl, now: NOW });
+        await runMarketNewsPull({}, { db: asDb(db), fetchFeedImpl, now: NOW });
         expect(db.marketNewsItem.upsert.mock.calls[0][0].create.imageUrl).toBe(
             'https://agro.bg/i.jpg',
         );

@@ -41,6 +41,22 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
 
+/**
+ * Only what this file reads out of the workflow: each job's steps, and the
+ * `id` / `run` of one of them. `yaml.load` returns `unknown`, so SOMETHING has
+ * to assert a shape; naming the shape beats `any`, because a typo in `st?.id`
+ * then fails to compile instead of silently never matching — which for a guard
+ * means an assertion that can never fire.
+ */
+interface WorkflowStep {
+    id?: string;
+    run?: string;
+}
+
+interface WorkflowDoc {
+    jobs: Record<string, { steps?: WorkflowStep[] }>;
+}
+
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
@@ -276,12 +292,16 @@ describe('OI-3 — restore-test.yml wiring', () => {
         // drill failure — including a real one — goes GREEN while
         // `job.status` still reads success. Nothing else here would notice:
         // the executing test never reads this YAML.
-        const wf = yaml.load(read(WORKFLOW)) as any;
-        const steps: any[] = Object.values(wf.jobs).flatMap((j: any) => j.steps ?? []);
+        const wf = yaml.load(read(WORKFLOW)) as WorkflowDoc;
+        const steps = Object.values(wf.jobs).flatMap((j) => j.steps ?? []);
         const drill = steps.find((st) => st?.id === 'drill');
 
         // `id: drill` is what lets the summary read the exit code.
         expect(drill).toBeDefined();
+        // `expect` does not narrow for the compiler, and the previous `any`
+        // hid that. Throwing here fails with a readable reason rather than a
+        // `Cannot read properties of undefined` further down.
+        if (!drill?.run) throw new Error('the `id: drill` step has no `run` block');
         expect(drill.run).toMatch(/exit_code=\$\{code\}"?\s*>>\s*"\$GITHUB_OUTPUT"/);
         // The run block must END by re-raising the captured code.
         expect(drill.run.trim().split('\n').pop()!.trim()).toBe('exit $code');

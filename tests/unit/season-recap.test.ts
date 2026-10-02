@@ -27,13 +27,21 @@ jest.mock('@/lib/prisma', () => ({
 
 import { getSeasonRecap } from '@/app-layer/usecases/season-recap';
 
+/**
+ * The only field these mocks branch on: the `netTonnesStd === null` arm that
+ * distinguishes the unadjusted-gross aggregate from the adjusted one.
+ */
+interface SeasonAggregateArgs {
+    where?: { netTonnesStd?: unknown };
+}
+
 const ctx = { tenantId: 't1', userId: 'u', requestId: 'r', permissions: { canRead: true } } as unknown as RequestContext;
 
 /** Reset all mocks to an "empty tenant" baseline. */
 function resetEmpty() {
     db.season.findFirst.mockReset().mockResolvedValue(null);
     db.season.findMany.mockReset().mockResolvedValue([]);
-    db.yieldRecord.aggregate.mockReset().mockImplementation(async (args: any) =>
+    db.yieldRecord.aggregate.mockReset().mockImplementation(async (args: SeasonAggregateArgs | undefined) =>
         args?.where?.netTonnesStd === null
             ? { _sum: { grossTonnes: null } }
             : {
@@ -70,7 +78,7 @@ function mockYield(opts: {
         area?: string | null;
     }>;
 }) {
-    db.yieldRecord.aggregate.mockImplementation(async (args: any) =>
+    db.yieldRecord.aggregate.mockImplementation(async (args: SeasonAggregateArgs | undefined) =>
         args?.where?.netTonnesStd === null
             ? { _sum: { grossTonnes: opts.unadjustedGross ?? null } }
             : {

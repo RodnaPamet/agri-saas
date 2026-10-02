@@ -105,7 +105,11 @@ export default function AdminSecurityPage() {
             const res = await fetch(apiUrl('/security/sessions/revoke-current'), { method: 'POST' });
             if (res.ok) {
                 setSuccess(t('mySessionsRevoked'));
-                setTimeout(() => window.location.href = '/login', 2000);
+                setTimeout(() => {
+                    // Full navigation: the session was just revoked, so cached
+                    // client state must not survive into a soft router push.
+                    window.location.href = new URL('/login', window.location.origin).href;
+                }, 2000);
             } else {
                 throw new Error(t('revokeSessionsFailed'));
             }

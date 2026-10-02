@@ -49,7 +49,13 @@ export function ChangePasswordForm() {
             if (res.ok) {
                 setSuccess(true);
                 setTimeout(() => {
-                    window.location.href = '/login?passwordChanged=1';
+                    // A FULL navigation, deliberately: the session just changed, so the
+                    // client's cached session state must be discarded rather than
+                    // carried into a soft `router.push`. `new URL(...)` keeps that
+                    // behaviour exactly and satisfies
+                    // `@next/next/no-location-assign-relative-destination`, which
+                    // objects to the bare relative string, not to the reload.
+                    window.location.href = new URL('/login?passwordChanged=1', window.location.origin).href;
                 }, 1500);
                 return;
             }

@@ -93,7 +93,7 @@ describe('deriveContractWindowState', () => {
         ['undefined', undefined],
     ])('says nothing when deliveryEnd is %s', (_label, end) => {
         // Absence of a date is not a deadline of zero.
-        expect(deriveContractWindowState('ACTIVE', end as any, now)).toBeNull();
+        expect(deriveContractWindowState('ACTIVE', end, now)).toBeNull();
     });
 
     it('says nothing for an unparseable date rather than throwing', () => {

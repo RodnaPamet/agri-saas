@@ -16,7 +16,7 @@
  * the soft-204 fires only when `fetch` THROWS, so a 5xx from the upstream
  * surfaces as a 502 from our own API.
  */
-const getTenantCtxMock = jest.fn<any, [unknown, unknown]>();
+const getTenantCtxMock = jest.fn<Promise<unknown>, [unknown, unknown]>();
 jest.mock('@/app-layer/context', () => ({
     getTenantCtx: (p: unknown, r: unknown) => getTenantCtxMock(p, r),
 }));

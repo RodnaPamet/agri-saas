@@ -73,7 +73,7 @@ describe('parseCsvEnumParam', () => {
             // `undefined` lets the caller spread the filter away entirely.
             // Returning `[]` would become `{ in: [] }` — zero rows, i.e. a
             // cleared facet silently emptying the table.
-            expect(parseCsvEnumParam(raw as any, Status, 'status')).toBeUndefined();
+            expect(parseCsvEnumParam(raw, Status, 'status')).toBeUndefined();
         });
     });
 

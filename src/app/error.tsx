@@ -61,7 +61,7 @@ export default function GlobalError({
                     secondaryAction={{
                         label: 'Go to Dashboard',
                         onClick: () => {
-                            window.location.href = '/dashboard';
+                            window.location.href = new URL('/dashboard', window.location.origin).href;
                         },
                     }}
                     data-testid="global-error"
