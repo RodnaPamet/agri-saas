@@ -187,6 +187,19 @@ const EXCLUDED_ROUTES: ReadonlyArray<{ relPath: string; reason: string }> = [
         reason: 'Platform-admin-key-gated: POST /api/admin/tenants — tenant-scope does not apply.',
     },
     {
+        relPath: 'api/admin/feature-flags/route.ts',
+        reason:
+            'Platform-admin-key-gated: the flag console. `FeatureFlag` has no tenantId — a ' +
+            'dark-launch rail is flipped for the whole deployment — so a tenant-scoped ' +
+            'permission would let an ADMIN of any one tenant launch a feature for every other.',
+    },
+    {
+        relPath: 'api/admin/feature-flags/cohorts/route.ts',
+        reason:
+            'Platform-admin-key-gated: cohort membership for the flag console. Same scope ' +
+            'argument as the parent route — platform, not tenant.',
+    },
+    {
         relPath: 'api/admin/tenants/[slug]/transfer-ownership/route.ts',
         reason: 'Platform-admin-key-gated: transfer-ownership — tenant-scope does not apply.',
     },
