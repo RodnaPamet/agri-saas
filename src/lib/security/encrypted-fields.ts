@@ -128,6 +128,28 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     //  The consequence is deliberate and must be honoured by any future
     //  reader: a lead digest running outside that tenant cannot decrypt
     //  it, and has to resolve each lead's tenant context first.
+    // ─── Exchange messages (#1222) ─────────────────────
+    //  A two-party conversation: the inquiring farm and the listing
+    //  owner both read every message in the thread. It was ALREADY being
+    //  encrypted before this entry existed — not by decision, but by the
+    //  `'*'` fan-out in `encryption-middleware.ts`, which matches field
+    //  NAMES across the whole manifest and so caught `body` because
+    //  `TaskComment: ['body']` puts that name in the flat set.
+    //
+    //  The consequence was a live break: the fan-out encrypts under the
+    //  WRITER's tenant DEK, and `listThreadMessages` reads in the VIEWING
+    //  party's context, so each side read its own messages as text and the
+    //  other side's as `v2:…`. Measured on production: both messages on
+    //  the only thread were written by one tenant, so the recipient could
+    //  read neither.
+    //
+    //  Listed here to make the encryption a decision rather than an
+    //  accident — business free text written by a farmer, consistent with
+    //  Task.description / TaskComment.body / Contract.terms. The KEY is the
+    //  separate half: `ExchangeMessage` is in `GLOBAL_KEK_MODELS`, because a
+    //  row two tenants must read cannot live under either one's DEK.
+    ExchangeMessage: ['body'],
+
     PromotionLead: ['requestMessage'],
 
     // ─── Tenant security settings ──────────────────────
