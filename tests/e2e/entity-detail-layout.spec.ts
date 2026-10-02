@@ -20,6 +20,33 @@
 import { test, expect } from '@playwright/test';
 import { loginAndGetTenant, safeGoto, waitForHydration, expectRouteTransition } from './e2e-utils';
 
+// ── #1076 EXPERIMENT, not a fix. Remove before merge. ───────────────────
+//
+// The discriminator #1076 asks for: run this spec with the service worker
+// unable to take control, and see whether the DROPPED navigation survives.
+// `public/sw.js warmDocumentFor` fires ten concurrent full-document fetches
+// in the 0.7s window containing the click; three traces correlate, and
+// correlation across three traces is not a mechanism.
+//
+// `serviceWorkers: 'block'` rather than the `addInitScript` no-op the issue
+// proposes. No-opping `navigator.serviceWorker.register` is NOT sufficient:
+// `public/sw.js` calls `clients.claim()` on activate, so an already-active
+// worker controls a newly-opened page whether or not that page registers one.
+// Blocking at the context level means no worker can ever be installed, so the
+// arm is clean instead of nearly clean.
+//
+// `data-table-platform.spec.ts` is the IN-RUN CONTROL and is deliberately
+// left untouched: it shows the same dropped-transition shape and sat in the
+// same E2E shard on run 36900688054, so it runs on the same runner under the
+// same load in the same CI run. Comparing this spec against its own history
+// would compare across runner loads, which is the variable that matters.
+//
+// Read as: this spec clean + control still retrying -> the SW storm is the
+// mechanism, and the fix is in `isRscPrefetch` / `warmDocumentFor` (a real
+// user-facing bug, not a test-only one). Both still retrying -> the storm is
+// a bystander and the App Router transition itself is next.
+test.use({ serviceWorkers: 'block' });
+
 test.describe('EntityDetailLayout', () => {
     test('asset detail page renders the shell — breadcrumbs, header, body', async ({
         page,
