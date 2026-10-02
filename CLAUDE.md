@@ -2202,6 +2202,100 @@ only checks its own callers.
   Same argument as `public-routes-self-authenticate.test.ts`, where "either
   half alone is worse than neither".
 
+## Runtime feature flags and the social dark-launch rail
+
+Every social route and page the roadmap builds (P2-P6) sits behind a runtime
+feature flag that defaults to OFF. That is the only agreed way to turn one of
+those surfaces off in production — the alternative is shipping an image — so a
+social route that forgot its gate is a surface with no off switch.
+
+**`src/lib/feature-flags.ts` holds three rules, in precedence order, and the
+order is the design:**
+
+  1. `FEATURE_FLAGS_FORCE_OFF=1` turns EVERYTHING off, within one request. Read
+     from `process.env` per call and never cached, because a kill switch
+     defeated by a warm cache is a suggestion. It is deliberately **not
+     reachable from the API** — an endpoint that could clear it is an endpoint
+     that can be compromised into clearing it, and the switch exists for the
+     case where the application is the thing going wrong. Turning it off is an
+     operator action on the VM.
+  2. A flag absent from the table is OFF. There is no code path treating
+     "unknown" as enabled.
+  3. `enabled` **AND** cohort membership. A non-empty `cohorts` array NARROWS;
+     read as OR, an enabled flag with cohorts set would expose the surface to
+     the whole deployment.
+
+**Never `NEXT_PUBLIC_*` as a feature switch** — it is inlined at `next build`,
+so flipping it needs a rebuild, an image push and a rollout.
+`NEXT_PUBLIC_NOTIFICATIONS_SSE` is the live example: off in production and not
+turnable on without shipping.
+
+The flag TABLE is cached in Redis for 30s under one key, so a flip propagates
+in ≤30s. **Cohort membership is NOT cached** — it is per-user, and a stale
+membership is a wrong answer about one person rather than bounded staleness
+about the deployment. That asymmetry decides what each write path does: a flag
+flip calls `invalidateFlagCache()`, a membership change calls nothing.
+
+**The console is `/api/admin/feature-flags` (GET list, PUT upsert) and
+`/api/admin/feature-flags/cohorts` (GET, POST, DELETE).** Platform-admin-key
+gated via `verifyPlatformApiKey`, not a tenant permission: `FeatureFlag` has no
+`tenantId`, so `admin.manage` would let an ADMIN of any one tenant launch a
+feature for every other. Four things worth knowing before touching it:
+
+- **It is in `PUBLIC_PATH_PREFIXES`/`PUBLIC_PATH_EXACT` and has to be.** The
+  Edge calls `getToken()`, which understands only a NextAuth cookie, so an
+  `x-platform-admin-key` request is 401'd before the handler runs — the
+  SCIM / `iflk_` / signed-webhook shape, six prior instances. It is opened as
+  an EXACT entry for the console plus a `'/api/admin/feature-flags/'` prefix
+  for its children, rather than one bare prefix, so a future
+  `/api/admin/feature-flagsomething` is not opened too.
+  `tests/unit/admin-feature-flags-console.test.ts` asserts both halves —
+  reachable, and not widened.
+- **GET returns the RAW table plus `forcedOff`**, never a resolved per-caller
+  view. An operator opens this screen to see that a flag is
+  enabled-but-cohort-gated, which `/api/auth/me` deliberately collapses to one
+  boolean. `forcedOff` rides along because it overrides every row; without it
+  the console would show `enabled: true` while every client sees the flag off.
+- **`FeatureFlag.updatedByUserId` is left NULL.** The credential is an API key,
+  so there is no user in scope; accepting an actor id from the body would put a
+  caller-supplied name in an attribution field, which is worse than an absent
+  one. The record is the operator's access to the key plus the `INFO` log line.
+  A real platform audit chain is **P1.9** (`PlatformAuditLog`), and this route
+  is one of its first writers.
+- **Membership is by `userId`, not email.** Resolving an email would add a 17th
+  `hashForLookup` call site the week before **P1.1** re-keys that derivation
+  onto `LOOKUP_HMAC_KEY`. `GET /cohorts` with no argument lists cohort SIZES,
+  because a flag naming a cohort with zero members reads as a live rollout and
+  is off for everyone.
+
+**`FLAG_KEY_PATTERN` + `FLAG_KEY_MAX_LENGTH` live in `@/lib/feature-flags`, and
+three artefacts share them**: the console validates writes against the pattern,
+and `tests/guards/social-routes-flag-gated.test.ts` holds every key a social
+route gates on to it. A route gated on a key the console refuses is a surface
+with a gate and no way to open it — permanently off, reading as not-yet-built.
+Do not restate the regex at a call site.
+
+**`tests/guards/social-routes-flag-gated.test.ts` enforces the gating rule, and
+its population is ZERO until P2.** So it is built for that: it prints the
+denominator on every run, proves the detector against synthetic gated/ungated
+sources (the only mutation proof available before a real social route exists),
+and defends its own roots — every route or page path with a `social` SEGMENT
+must fall under a declared root, so landing a social surface at
+`api/t/[slug]/social` costs a visible line adding that root rather than a silent
+exclusion from the population. Account deletion and the DSA notice endpoints are
+LEGAL DUTIES and exempt; `FLAG_EXEMPT` is empty today and an entry lands in the
+PR that adds its route, with the duty named.
+
+A gate counts as a call to `assertFeatureEnabled` / `isFeatureEnabled` with a
+**string literal** key — an operator holding the console has to be able to find
+the flag that gates a route, and a key assembled at runtime is not findable by
+reading the route. The guard's own mutation proof is what caught the
+interpolated-template hole: `` `social.${surface}` `` contains no quote
+character, so a naive literal matcher read a computed key as a static one.
+
+This is the SERVER half. The iOS flags store (P0.9) is the client half, and
+neither subsumes the other.
+
 ## Failing tests
 
 A failing test on a branch is a failing test, full stop. "Pre-existing on

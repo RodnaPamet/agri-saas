@@ -89,6 +89,19 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
         // (list/approve/reject), invoked with no user session and therefore
         // no RequestContext — same rationale as agri-events.ts.
         'news-derived-events.ts',
+        // P0.4 — `FeatureFlag` + `FeatureFlagCohortMember` are PLATFORM-scoped
+        // by design (no tenantId; see prisma/schema/social.prisma), because a
+        // dark-launch rail is flipped for the whole deployment and the surfaces
+        // it gates are person-scoped rather than farm-scoped. Every caller is
+        // the PLATFORM_ADMIN_API_KEY-gated flag console, invoked with no user
+        // session and therefore no RequestContext — the same shape as the two
+        // entries above, and the reason this is a usecase at all: the first
+        // version put these queries in the route handlers and THIS guard caught
+        // it. There is no tenantId to filter on, so the global handle carries
+        // no RLS risk. (Both tables ship `rowsecurity=false`, recorded as
+        // P1.7/P1.5 debt on #1192 — that is about classifying non-tenant models
+        // generally, not about a missing tenant filter here.)
+        'feature-flag-admin.ts',
         'sso.ts', 'mfa.ts', 'mfa-enrollment.ts', 'mfa-challenge.ts',
         'session-security.ts', 'webhook-processor.ts', 'scim-users.ts',
         // EI-3 — scim-groups resolves SCIM externalIds → IC users via a global

@@ -39,6 +39,22 @@ import { getRedis } from '@/lib/redis';
 import { logger } from '@/lib/observability/logger';
 import { notFound } from '@/lib/errors/types';
 
+/**
+ * What a flag key may look like: dotted, lowercase, bounded.
+ *
+ * Lives HERE rather than in the console route because three artefacts have to
+ * agree on it and two of them cannot import a Next route module: the console
+ * validates writes against it, and `tests/guards/social-routes-flag-gated.test.ts`
+ * requires every key a social route gates on to be one the console can create.
+ * A route gated on a key the console refuses is a surface with a gate and no way
+ * to open it — permanently off, reading as not-yet-built.
+ *
+ * Bounded because the key is the primary key AND becomes a field name in the
+ * `/api/auth/me` payload every client parses.
+ */
+export const FLAG_KEY_PATTERN = /^[a-z0-9]+(\.[a-z0-9-]+)*$/;
+export const FLAG_KEY_MAX_LENGTH = 64;
+
 /** One key for the whole table — a flag flip invalidates every flag at once. */
 const CACHE_KEY = 'feature-flags:v1:all';
 /** 30s, so a flip propagates within the window the plan's hardening asserts. */

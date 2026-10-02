@@ -87,7 +87,14 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 // 313 -> 309: the four dashboard/briefing routes are described now
 // (`dashboard.paths.ts`), so they leave the baseline in the same diff that
 // documents them — which is what this guard's sibling assertion demands.
-const UNDOCUMENTED_CEILING = 239;
+// 239 -> 241: the two platform flag-console routes (P0.4). Baselined rather
+// than described, matching every other `/api/admin/*` platform-key route — the
+// consumer is an operator holding `PLATFORM_ADMIN_API_KEY`, not a client that
+// reads the spec. All twelve non-tenant /api/admin paths are baselined, these
+// two included, so describing only these would make the spec's coverage of that
+// surface harder to reason about, not easier.
+// Raising this is the visible line the guard's own error message asks for.
+const UNDOCUMENTED_CEILING = 241;
 
 interface Baseline {
     _README: string[];

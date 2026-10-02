@@ -70,6 +70,16 @@
       "documented": false
     },
     {
+      "path": "/api/admin/feature-flags",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/admin/feature-flags/cohorts",
+      "status": "live",
+      "documented": false
+    },
+    {
       "path": "/api/admin/news-derived-events",
       "status": "live",
       "documented": false

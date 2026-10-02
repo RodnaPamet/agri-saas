@@ -36,6 +36,8 @@
         "/api/admin/agri-events",
         "/api/admin/agri-events/{id}",
         "/api/admin/diagnostics",
+        "/api/admin/feature-flags",
+        "/api/admin/feature-flags/cohorts",
         "/api/admin/news-derived-events",
         "/api/admin/news-derived-events/{id}/approve",
         "/api/admin/news-derived-events/{id}/reject",

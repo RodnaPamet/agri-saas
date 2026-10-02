@@ -65,8 +65,9 @@ const PUBLIC_PATH_PREFIXES = [
                          // Do not add a route here without reading that guard.
     // ── Platform-admin API ──
     //
-    // Nine routes (tenant bootstrap, ownership transfer, agri-events,
-    // news-derived-events review, support-scheme review) authenticate with
+    // Eleven routes (tenant bootstrap, ownership transfer, agri-events,
+    // news-derived-events review, support-scheme review, and the P0.4 feature
+    // flag console + its cohort membership) authenticate with
     // `PLATFORM_ADMIN_API_KEY` via `verifyPlatformApiKey`, sent as the
     // `x-platform-admin-key` header by an operator with curl. No session
     // cookie, so `getToken()` returned null and the Edge refused every one
@@ -99,6 +100,13 @@ const PUBLIC_PATH_PREFIXES = [
     '/api/admin/news-derived-events',
     '/api/admin/support-schemes',
     '/api/admin/tenants',
+    // The flag console's CHILDREN. The console's own path is in
+    // PUBLIC_PATH_EXACT below rather than spelled as a bare prefix here,
+    // because `startsWith('/api/admin/feature-flags')` would also open a
+    // future `/api/admin/feature-flagsomething` — the `/api/scim` vs
+    // `/api/scimulator` hazard named a few lines up. The siblings above carry
+    // that latent widening; a new entry need not inherit it.
+    '/api/admin/feature-flags/',
     // ── Signed webhooks ──
     //
     // Each of these verifies its OWN credential — a Stripe signature, an
@@ -135,6 +143,13 @@ const PUBLIC_PATH_EXACT = new Set([
     '/favicon.ico',
     '/robots.txt',
     '/sitemap.xml',
+    // Not a static asset: the platform flag console (P0.4). Exact rather than a
+    // prefix so only this path and `/api/admin/feature-flags/...` open — see
+    // the note beside the prefix entry. It authenticates itself with
+    // `verifyPlatformApiKey` on every method, read paths included, which is
+    // what direction B of `public-routes-self-authenticate` requires and what
+    // `tests/unit/admin-feature-flags-console.test.ts` executes.
+    '/api/admin/feature-flags',
 ]);
 
 // `webmanifest` — the PWA manifest is fetched by the browser WITHOUT
