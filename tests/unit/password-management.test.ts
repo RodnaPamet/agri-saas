@@ -11,10 +11,16 @@
 
 // ─── Mocks (declared before the SUT import) ─────────────────────────
 
+// #1237 moved the email lookup to `findFirst` (an `in` predicate is not valid
+// on `findUnique`), while the change-password flow still resolves by id with
+// `findUnique`. Both doubles point at the SAME fn so each test's single
+// `mockResolvedValue` drives whichever method the flow under test calls.
+const mockUserFind = jest.fn();
 const mockPrisma = {
-    user: { findUnique: jest.fn(), update: jest.fn() },
+    user: { findUnique: mockUserFind, findFirst: mockUserFind, update: jest.fn() },
     passwordResetToken: {
         findUnique: jest.fn(),
+        findFirst: jest.fn(),
         create: jest.fn(),
         deleteMany: jest.fn(),
         updateMany: jest.fn(),
@@ -33,6 +39,9 @@ jest.mock('@/lib/auth/security-events', () => ({
 }));
 jest.mock('@/lib/security/encryption', () => ({
     hashForLookup: (s: string) => `lookup:${s}`,
+    // #1237: the reads moved to the candidate list. One element here, which
+    // is the no-rotation-in-flight case these tests are written for.
+    hashForLookupCandidates: (s: string) => [`lookup:${s}`],
 }));
 jest.mock('@/lib/auth/passwords', () => ({
     hashPassword: jest.fn(async () => 'NEW_BCRYPT_HASH'),

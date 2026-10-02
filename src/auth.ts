@@ -50,7 +50,7 @@ import { DEFAULT_LOCALE } from '@/lib/i18n/locales';
 import { isTokenExpired, refreshAccessToken } from '@/lib/auth/refresh';
 import type { Role } from '@prisma/client';
 import { edgeLogger } from '@/lib/observability/edge-logger';
-import { hashForLookup } from '@/lib/security/encryption';
+import { hashForLookup, hashForLookupCandidates } from '@/lib/security/encryption';
 import { redeemPendingInvites } from '@/lib/auth/invite-redemption';
 
 // ─── Type augmentation ──────────────────────────────────────────────
@@ -179,8 +179,8 @@ async function applyMembershipClaims(
     token: JWT,
     fallbackUserId?: string,
 ): Promise<void> {
-    const dbUser = await prisma.user.findUnique({
-        where: { emailHash: hashForLookup(token.email!) },
+    const dbUser = await prisma.user.findFirst({
+        where: { emailHash: { in: hashForLookupCandidates(token.email!) } },
         include: {
             tenantMemberships: {
                 // Exclude soft-deleted (org-removed) tenants so they
@@ -435,8 +435,8 @@ export const authOptions: NextAuthOptions = {
 
             // 1. Account linking for OAuth (not credentials).
             if (account.provider !== 'credentials' && user.email) {
-                const existingUser = await prisma.user.findUnique({
-                    where: { emailHash: hashForLookup(user.email) },
+                const existingUser = await prisma.user.findFirst({
+                    where: { emailHash: { in: hashForLookupCandidates(user.email) } },
                 });
 
                 if (existingUser && user.id !== existingUser.id) {

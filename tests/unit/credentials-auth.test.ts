@@ -37,6 +37,7 @@ jest.mock('@/lib/prisma', () => ({
     default: {
         user: {
             findUnique: (...args: unknown[]) => mockFindUnique(...args),
+            findFirst: (...args: unknown[]) => mockFindUnique(...args),
             update: (...args: unknown[]) => mockUpdate(...args),
         },
     },
@@ -82,7 +83,7 @@ jest.mock('@/lib/auth/security-events', () => ({
 
 import { authenticateWithPassword } from '@/lib/auth/credentials';
 import { BCRYPT_COST } from '@/lib/auth/passwords';
-import { hashForLookup } from '@/lib/security/encryption';
+import { hashForLookup, hashForLookupCandidates } from '@/lib/security/encryption';
 
 beforeEach(() => {
     mockFindUnique.mockReset();
@@ -156,13 +157,18 @@ describe('authenticateWithPassword — success', () => {
             password: u._plaintext,
         });
 
-        // GAP-21: lookup is now anchored on emailHash. The expected
-        // hash is computed from the normalised (lowercased + trimmed)
-        // form — proving both that normalisation happens AND that
-        // the call site no longer references the plaintext column.
+        // GAP-21: lookup is anchored on emailHash. The expected hash is
+        // computed from the normalised (lowercased + trimmed) form — proving
+        // both that normalisation happens AND that the call site does not
+        // reference the plaintext column.
+        //
+        // #1237 widened the predicate to the CANDIDATE list so a lookup-key
+        // rotation stays readable. Asserted through `hashForLookupCandidates`
+        // rather than as a hand-written one-element array, so the case keeps
+        // holding when a rotation is in flight and the list has two entries.
         expect(mockFindUnique).toHaveBeenCalledWith(
             expect.objectContaining({
-                where: { emailHash: hashForLookup('alice@example.com') },
+                where: { emailHash: { in: hashForLookupCandidates('alice@example.com') } },
             }),
         );
     });

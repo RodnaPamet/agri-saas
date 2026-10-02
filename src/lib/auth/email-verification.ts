@@ -39,7 +39,7 @@ import { getAppBaseUrl } from './app-base-url';
 import { sendEmail } from '@/lib/mailer';
 import { logger } from '@/lib/observability/logger';
 import { recordVerificationEmailDelivery } from '@/lib/observability/metrics';
-import { hashForLookup } from '@/lib/security/encryption';
+import { hashForLookup, hashForLookupCandidates } from '@/lib/security/encryption';
 import { translateFor } from '@/lib/i18n/server-messages';
 import { isLocale } from '@/lib/i18n/locales';
 import { escapeHtml } from '@/lib/security/escape-html';
@@ -263,8 +263,8 @@ export async function consumeEmailVerification(
     }
 
     const identifier = record.identifier;
-    const user = await prisma.user.findUnique({
-        where: { emailHash: hashForLookup(identifier) },
+    const user = await prisma.user.findFirst({
+        where: { emailHash: { in: hashForLookupCandidates(identifier) } },
         select: { id: true, email: true, emailVerified: true },
     });
     if (!user) {

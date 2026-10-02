@@ -27,7 +27,7 @@
  * semantics the redemption has always had at the sign-in boundary.
  */
 import prisma from '@/lib/prisma';
-import { hashForLookup } from '@/lib/security/encryption';
+import { hashForLookup, hashForLookupCandidates } from '@/lib/security/encryption';
 import { edgeLogger } from '@/lib/observability/edge-logger';
 
 export interface RedeemPendingInvitesInput {
@@ -79,8 +79,8 @@ export async function redeemPendingInvites(
     // row always exists (created by the adapter before jwt runs), even for
     // a first-time OAuth user whose signIn-callback `user.id` was the
     // provider subject.
-    const dbUser = await prisma.user.findUnique({
-        where: { emailHash: hashForLookup(userEmail) },
+    const dbUser = await prisma.user.findFirst({
+        where: { emailHash: { in: hashForLookupCandidates(userEmail) } },
         select: { id: true },
     });
     if (!dbUser) return;
