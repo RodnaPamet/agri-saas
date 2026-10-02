@@ -999,14 +999,36 @@ banner and `STARTUP_GUARD_REQUIRE_DOCKER=1` to make absence a
 failure). Until #674 only check 1 had ever executed.
 
 Master-KEK rotation: set `DATA_ENCRYPTION_KEY_PREVIOUS` alongside
-the new primary. `decryptField` falls back transparently. Admins
-trigger the v1→v2 re-encryption sweep via
-`POST /api/t/{slug}/admin/key-rotation`, which enqueues the
-background job in `src/app-layer/jobs/key-rotation.ts`. The job
-re-encrypts every `v1:` ciphertext under the new primary KEK and
-re-wraps the per-tenant DEK. When every tenant reports zero `v1:`
-rows under the old key, remove `DATA_ENCRYPTION_KEY_PREVIOUS` from
-env.
+the new primary. `decryptField` falls back transparently. **It takes
+TWO sweeps, and the per-tenant one alone does not finish a rotation.**
+
+`POST /api/t/{slug}/admin/key-rotation` enqueues the background job in
+`src/app-layer/jobs/key-rotation.ts`, which re-wraps that tenant's DEK
+and re-encrypts its `v1:` ciphertexts. It iterates `ENCRYPTED_FIELDS`
+and does `if (!hasTenantId) continue`, so `User`, `Account` and the
+ENTIRE PII manifest (`PII_FIELD_MAP` in `pii-middleware.ts`) are
+invisible to it — a second encryption manifest it has never
+referenced. Measured on production 2026-10-02: it could re-encrypt
+**0** values while **40** `v1:` values sat in the PII manifest,
+including six OAuth access tokens and six refresh tokens.
+
+`POST /api/admin/key-rotation` (platform-key gated) covers the union
+of both manifests, with no tenant filter — a `v1:` envelope IS the
+master-KEK envelope. Call it until `remaining` is 0; `only` narrows a
+pass to named columns.
+
+**Do NOT use "zero `v1:` rows" as the stop condition** — this
+paragraph said to, and it is unreachable. `encryptField` emits a `v1:`
+envelope, so a re-encrypted value is still `v1:` and `LIKE 'v1:%'`
+matches it on every run; the count never falls to zero and
+`key-rotation.ts`'s matching idempotency claim is false for the same
+reason. The measurable condition is
+`GET /api/admin/key-rotation` → `previousKeyRetirable`, derived from
+whether each value decrypts under the PRIMARY key
+(`isV1UnderPrimaryKey`). Only then remove
+`DATA_ENCRYPTION_KEY_PREVIOUS`.
+
+Full runbook: `docs/epic-b-encryption.md`.
 
 > **⚠️ ROTATING `DATA_ENCRYPTION_KEY` IS SAFE ONLY WHILE
 > `LOOKUP_HMAC_KEY` IS PINNED. Check `/api/readyz` first — not this

@@ -37,10 +37,37 @@
  * - DEK re-wrap is a no-op if the DEK is already wrapped under the
  *   primary KEK (we can't cheaply detect this; every re-run pays
  *   one re-wrap per tenant — acceptable, it's one row).
- * - v1 re-encrypt is gated by `WHERE "field" LIKE 'v1:%'`, so rows
- *   already processed in a prior run are skipped by the SELECT.
+ * - v1 re-encrypt is gated by `WHERE "field" LIKE 'v1:%'`. **That does NOT
+ *   skip rows processed in a prior run**, which this comment used to claim.
+ *   `encryptField` emits a `v1:` envelope, so a re-encrypted value is still
+ *   `v1:` and the predicate matches it again on every run. Re-running is
+ *   harmless (same plaintext, fresh IV) but it is not a no-op, and "zero v1
+ *   rows remain" — the condition the runbook names for retiring
+ *   `DATA_ENCRYPTION_KEY_PREVIOUS` — is a count that never reaches zero.
+ *   `isV1UnderPrimaryKey` (`@/lib/security/encryption`) is the predicate that
+ *   does answer it; `app-layer/usecases/global-key-rotation.ts` uses it and
+ *   exposes the remaining count through `GET /api/admin/key-rotation`.
  *
  * ## What this job does NOT do
+ *
+ *   - **The GLOBAL-key columns.** This job iterates `ENCRYPTED_FIELDS` and
+ *     does `if (!hasTenantId) continue`, so two populations are invisible to
+ *     it: models without a `tenantId` (`User`, `Account`), and the ENTIRE PII
+ *     manifest (`PII_FIELD_MAP` in `pii-middleware.ts` — `User`,
+ *     `UserIdentityLink`, `NotificationOutbox`, `Account`), which is a second
+ *     encryption manifest this file has never referenced. Measured on
+ *     production 2026-10-02: this job could re-encrypt **0** values while
+ *     **40** `v1:` values sat in the PII manifest, including six OAuth access
+ *     tokens and six refresh tokens. `app-layer/usecases/global-key-rotation.ts`
+ *     covers the union; run it alongside this one or `_PREVIOUS` can never be
+ *     retired.
+ *   - **Resolve `@map`'d names.** It interpolates `ENCRYPTED_FIELDS` names
+ *     straight into raw SQL, and those are PRISMA FIELD names, not columns.
+ *     It survives only because the single `@map`'d encrypted field today
+ *     (`PromotionLead.requestMessage` -> column `message`) sits on a model with
+ *     no `tenantId` and is skipped for an unrelated reason. `@map` one on a
+ *     tenant-scoped model and the next rotation throws 42703 mid-sweep. Held by
+ *     `tests/guards/encrypted-manifests-resolve-to-columns.test.ts`.
  *
  *   - Tenant-DEK rotation (generating a new per-tenant DEK and
  *     re-encrypting every v2 ciphertext). That's a separate

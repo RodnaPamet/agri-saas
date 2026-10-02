@@ -430,6 +430,67 @@ export function decryptField(ciphertext: string): string {
 }
 
 /**
+ * Is this `v1:` ciphertext readable under the CURRENT primary KEK alone?
+ *
+ * ── why this has to exist ──
+ *
+ * `encryptField` always emits a `v1:` envelope, so RE-ENCRYPTING a v1 value
+ * under a new KEK produces another v1 value. The envelope version therefore
+ * cannot distinguish a row that has been migrated from one that has not, and
+ * `WHERE "col" LIKE 'v1:%'` selects both. `key-rotation.ts`'s docblock claims
+ * "rows already processed in a prior run are skipped by the SELECT" — that is
+ * false, and it is why "remove `DATA_ENCRYPTION_KEY_PREVIOUS` once every tenant
+ * reports zero v1 rows" was not a measurable instruction: the count it names
+ * never reaches zero.
+ *
+ * `decryptField` cannot answer it either. It tries the primary, falls back to
+ * the previous, and returns the plaintext without saying which key worked — by
+ * design, because every other caller only wants the value.
+ *
+ * So the predicate is spelled out here: a successful decrypt under the PRIMARY
+ * key means the row is already on the new key. That makes rotation progress
+ * observable, and `_PREVIOUS` safely retirable, for the first time.
+ *
+ * ── what `false` means ──
+ *
+ * Either "needs the previous key" or "corrupt". Those are different problems
+ * and this cannot tell them apart; a caller that goes on to decrypt will find
+ * out, because a corrupt value fails under both keys. Callers that only need
+ * "is there work left" may treat them alike — both need attention.
+ *
+ * THROWS on a non-`v1:` input rather than returning false. A `v2:` ciphertext
+ * is wrapped under a per-tenant DEK and the question is not meaningful for it;
+ * answering `false` would tell a sweep to migrate something it must not touch.
+ */
+export function isV1UnderPrimaryKey(ciphertext: string): boolean {
+    if (!ciphertext || !ciphertext.startsWith(VERSION_PREFIX_V1)) {
+        throw new Error(
+            'isV1UnderPrimaryKey: expected a v1: ciphertext. A v2: value is ' +
+                'wrapped under a per-tenant DEK and is not a master-KEK question.',
+        );
+    }
+    try {
+        decryptV1Payload(getEncryptionKey(), ciphertext.slice(VERSION_PREFIX_V1.length));
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Is a master-KEK rotation currently in flight?
+ *
+ * True exactly when `DATA_ENCRYPTION_KEY_PREVIOUS` is configured and usable.
+ * The global sweep reports it, because a sweep run with NO previous key
+ * configured cannot migrate anything off an old key — it re-encrypts values
+ * under the key they already carry, and would report a rewritten count that
+ * reads like progress.
+ */
+export function kekRotationInFlight(): boolean {
+    return getPreviousEncryptionKey() !== null;
+}
+
+/**
  * Produces a deterministic HMAC-SHA256 hash for indexed lookups.
  *
  * Use this to populate `<field>Hash` columns so you can do:

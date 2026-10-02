@@ -107,6 +107,13 @@ const PUBLIC_PATH_PREFIXES = [
     // `/api/scimulator` hazard named a few lines up. The siblings above carry
     // that latent widening; a new entry need not inherit it.
     '/api/admin/feature-flags/',
+    // Platform-level master-KEK rotation (the global-column sweep). Same gate
+    // and same reachability argument as the flag console above:
+    // `verifyPlatformApiKey` fails closed in every direction, and without this
+    // entry the Edge 401s an `x-platform-admin-key` request before the handler
+    // runs. Spelled with the trailing slash for children; the path itself is in
+    // PUBLIC_PATH_EXACT below.
+    '/api/admin/key-rotation/',
     // ── Signed webhooks ──
     //
     // Each of these verifies its OWN credential — a Stripe signature, an
@@ -150,6 +157,12 @@ const PUBLIC_PATH_EXACT = new Set([
     // what direction B of `public-routes-self-authenticate` requires and what
     // `tests/unit/admin-feature-flags-console.test.ts` executes.
     '/api/admin/feature-flags',
+    // Platform master-KEK rotation. Exact rather than a bare prefix for the
+    // same reason as the flag console: `startsWith('/api/admin/key-rotation')`
+    // would also open a future `/api/admin/key-rotation-report`. Note the
+    // TENANT-scoped `/api/t/{slug}/admin/key-rotation` is unrelated and stays
+    // behind the session gate, where it belongs.
+    '/api/admin/key-rotation',
 ]);
 
 // `webmanifest` — the PWA manifest is fetched by the browser WITHOUT

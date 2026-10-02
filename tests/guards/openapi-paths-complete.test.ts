@@ -94,7 +94,10 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 // two included, so describing only these would make the spec's coverage of that
 // surface harder to reason about, not easier.
 // Raising this is the visible line the guard's own error message asks for.
-const UNDOCUMENTED_CEILING = 241;
+// 241 -> 242: the platform master-KEK rotation sweep. Baselined like every
+// other non-tenant /api/admin path — the consumer is an operator mid-rotation
+// with curl, not a client reading the spec.
+const UNDOCUMENTED_CEILING = 242;
 
 interface Baseline {
     _README: string[];
