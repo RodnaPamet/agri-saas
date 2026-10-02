@@ -3,11 +3,94 @@ import { prisma } from './prisma';
 import type { RequestContext, UserContext } from '@/app-layer/types';
 import { runWithAuditContext } from './audit-context';
 import { runWithAfterCommit } from './db/after-commit';
+import { logger } from '@/lib/observability/logger';
+// Namespace, and read at call time — see `prewarmTenantKeys`. This module sits
+// in a cycle with `@/lib/prisma`, which re-exports `withTenantDb` from here.
+import * as tenantKeyManager from './security/tenant-key-manager';
 
 export type PrismaTx = Omit<
     PrismaClient,
     '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'
 >;
+
+/**
+ * Warm this process's tenant-DEK caches BEFORE a tenant transaction opens.
+ *
+ * ── the defect this exists for (#1223) ──
+ *
+ * `withEncryptionExtension`'s `resolveTenantDekPair` awaits
+ * `getTenantDek(tenantId)` on EVERY model read and write, and
+ * `tenant-key-manager` reads the `Tenant` row through the GLOBAL prisma
+ * client — not through the `tx` the caller is holding. So the FIRST model
+ * operation of a transaction asked the pool for a SECOND connection while
+ * already holding one of its `max`. Once every slot is held by a transaction
+ * in that state, none of them can get the connection it is waiting for and
+ * none can release the one it has: `pg` is given no `connectionTimeoutMillis`
+ * and waits indefinitely, so each transaction sits until Prisma's own 5s
+ * interactive timeout fires (P2028) or its 2s `maxWait` expires.
+ *
+ * Measured 2026-10-01 (#1191's P0.8 sweep) and reproduced here: with a COLD
+ * cache the cliff is exactly at `PG_POOL_MAX` — 11 concurrent transactions
+ * are fine, 12 all fail — and a `pg_stat_activity` sample 1.5s in shows 12
+ * backends `idle in transaction`, every one of them last having run
+ * `SELECT set_config('app.tenant_id', $1, true)`. A WARM cache cleared 40,
+ * which is the tell that the cost is one connection per tenant per process
+ * rather than one per query.
+ *
+ * ── why pre-resolution, and why it is cheap ──
+ *
+ * Resolving the pair here costs the same one-or-two queries it always cost;
+ * the only thing that changes is that they run with NO transaction open, so
+ * they need the pool's first connection rather than its second. On a warm
+ * cache both calls are `Map` lookups, so the steady-state request pays
+ * nothing. The alternative — teaching the extension to read the `Tenant` row
+ * on the transaction's own client — needs the extension to know it is inside
+ * a transaction, which the Prisma 7 query-extension API does not tell it.
+ *
+ * ── three properties that are load-bearing ──
+ *
+ * 1. **It never throws.** `resolveTenantDekPair` treats a failed lookup as
+ *    "use the global KEK" and logs; it must keep being the authority on that.
+ *    If this helper propagated, a `withTenantDb` for a tenant row that does
+ *    not exist would start failing where it previously proceeded.
+ * 2. **`previous` is only attempted when `primary` resolved**, mirroring the
+ *    middleware: there, a `getTenantDek` throw returns the empty pair and
+ *    `getTenantPreviousDek` is never reached.
+ * 3. **Skipped when the caller injected a client.** `getTenantDek` is bound to
+ *    the global singleton, so with an injected client the transaction and the
+ *    DEK read sit in DIFFERENT pools and cannot deadlock each other — there is
+ *    nothing to pre-resolve, and the lookup would be pure waste. It also stops
+ *    the unit suites that drive these helpers against a FAKE client
+ *    (`tests/unit/db-context-after-commit.test.ts`) from making a pointless
+ *    connection attempt. **That second reason is cost, not correctness, and
+ *    the distinction was measured rather than assumed**: removing this
+ *    condition and running that suite against an unreachable database leaves
+ *    it 5/5 GREEN, because property 1 swallows the connection error. So do not
+ *    read the condition as the thing keeping that suite passing — it is the
+ *    thing keeping it from dialling a database to no purpose.
+ *
+ * The namespace import above is the shape `encryption-middleware.ts` settled
+ * on for this same module: `tenant-key-manager` imports `@/lib/prisma`, which
+ * re-exports `withTenantDb` from this file, and reading the bindings at
+ * call time keeps Turbopack's production minifier from resolving the cycle to
+ * `undefined`.
+ */
+async function prewarmTenantKeys(tenantId: string): Promise<void> {
+    try {
+        await tenantKeyManager.getTenantDek(tenantId);
+        await tenantKeyManager.getTenantPreviousDek(tenantId);
+    } catch (err) {
+        // Deliberately swallowed — property 1 above. The middleware re-attempts
+        // the same lookup and owns the global-KEK fallback; all this loses is
+        // the pre-warm, which turns a deadlock back into the old behaviour
+        // rather than into an error.
+        logger.debug('db-context.dek_prewarm_failed', {
+            component: 'db-context',
+            tenantId,
+            reason: err instanceof Error ? err.message : 'unknown',
+        });
+    }
+}
 
 /**
  * Runs a function within a Prisma transaction where the Postgres session
@@ -27,6 +110,11 @@ export async function withTenantDb<T>(
     customPrisma?: PrismaClient // used for testing to dependency-inject the client
 ): Promise<T> {
     const p = customPrisma || prisma;
+
+    // #1223 — BEFORE `$transaction`, so the DEK lookup the encryption
+    // extension makes on this transaction's first model operation is already a
+    // cache hit and needs no second pool connection. See `prewarmTenantKeys`.
+    if (!customPrisma) await prewarmTenantKeys(tenantId);
 
     // `runWithAfterCommit` is OUTSIDE `$transaction` deliberately: effects
     // queued with `afterCommit` inside the callback drain once this promise
@@ -70,6 +158,10 @@ export async function runInTenantContext<T>(
     const txOptions: { timeout?: number; maxWait?: number } = {};
     if (options?.timeout) txOptions.timeout = options.timeout;
     if (options?.maxWait) txOptions.maxWait = options.maxWait;
+
+    // #1223 — same reason as `withTenantDb`: pre-resolve the tenant's DEK pair
+    // while no transaction is open. See `prewarmTenantKeys`.
+    if (!options?.customPrisma) await prewarmTenantKeys(ctx.tenantId);
 
     // Same placement as `withTenantDb`: the after-commit scope wraps the
     // transaction, so a usecase may queue a notification, an SSE publish or an

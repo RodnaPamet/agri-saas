@@ -2750,18 +2750,57 @@ negated. Say what remains instead:
   pool is `pg`'s and that parameter is read by nobody.
   `tests/guards/pg-pool-size-fits-pgbouncer.test.ts` re-derives it from the
   compose file rather than trusting the comment.
-  **Two things inside a tenant transaction reach for a SECOND connection, and
-  that is the real concurrency ceiling** — measured 2026-10-01, the cliff is
-  exactly at `max` (11 concurrent fine, 12 all fail with P2028 after ~5.2s, and
-  a `pg_stat_activity` sample shows 12 backends all `idle in transaction`):
-  `withEncryptionExtension`'s `resolveTenantDekPair` reads the `Tenant` row
-  through the global client on EVERY model read and write (cached per tenant per
-  process, so it costs the extra connection once per tenant — a COLD tenant is
-  the dangerous one), and `appendAuditEntry` opens its own `$transaction` on the
-  global client for every audited write and is not cached. So the supportable
-  concurrency for audited writes is `max - 1`, which is why the P0.8 hardening
-  test runs 11 sends and not the 20 its roadmap asked for. Full sweep in
-  `docs/implementation-notes/2026-10-01-p0-8-after-commit-notifications.md`.
+  **A transaction that holds one slot and then wants a second cannot make
+  progress once every slot is held that way** — nobody can acquire, so nobody
+  can release, and `pg` has no `connectionTimeoutMillis` so the wait is
+  unbounded. The caller sees Prisma's 5s interactive timeout (`P2028`) or its 2s
+  `maxWait`; neither error names a pool, which is why this reads as a Prisma
+  bug. Measured 2026-10-01 (#1191's P0.8) with a `pg_stat_activity` sample
+  showing 12 backends all `idle in transaction`. Two things did it; **one is
+  fixed and one is not, and they fail in opposite directions.**
+    - **The DEK read is FIXED (#1223).** `withEncryptionExtension`'s
+      `resolveTenantDekPair` awaits `getTenantDek(tenantId)` on every model read
+      and write, and `tenant-key-manager` reads the `Tenant` row through the
+      GLOBAL client rather than the caller's `tx` — so the first model operation
+      of a COLD tenant's transaction wanted slot 13. Both helpers in
+      `src/lib/db-context.ts` now call `prewarmTenantKeys(tenantId)` BEFORE
+      `$transaction`, so the lookup runs with nothing held and the in-transaction
+      call is a cache hit. Costs nothing in steady state (a `Map` hit), and is
+      skipped when the caller injects a client — a different pool cannot
+      deadlock this one, so the lookup would be waste. It never throws:
+      `resolveTenantDekPair` owns the global-KEK fallback and must stay the
+      authority on a failed lookup, so a propagating prewarm would make
+      `withTenantDb` for a nonexistent tenant fail where it used to proceed.
+      `tests/integration/tenant-tx-single-connection.test.ts` asserts the
+      PROPERTY at `max` concurrency, cold, barrier-synchronised so every
+      transaction is provably open — and carries a positive control that takes a
+      second connection BY HAND and still deadlocks, because three green
+      concurrency tests are also what a harness that never achieved concurrency
+      produces. Before the fix: 12/12 stalled barrier-synchronised, 9/12 as an
+      unsynchronised burst.
+    - **`appendAuditEntry` still reaches for a second connection, and past `max`
+      it loses the audit row SILENTLY.** It opens its own `$transaction` on the
+      global client for every audited write and is not cached. The failure is
+      not the visible one: measured 2026-10-02 at exactly `max`, with every DEK
+      warm and disjoint tenants per run — `max - 1` wrote 11 tasks and 11 audit
+      rows, `max` wrote **12 tasks and 0 audit rows, with zero rejections**, and
+      a repeat run wrote 12 tasks and 4 audit rows. The audit transaction's 2s
+      `maxWait` expires inside the caller's 5s budget, the extension's
+      best-effort `catch` swallows it (it only logs under
+      `NODE_ENV === 'development'`), and the caller's own write then commits
+      fine. So the supportable concurrency for an AUDITED write is still
+      `max - 1` — which is why the P0.8 hardening test runs 11 sends and not the
+      20 its roadmap asked for — and past it the hash-chained trail silently
+      loses entries rather than erroring. **It cannot be fixed by reusing the
+      `afterCommit` seam**: that queue is addressed through
+      `AsyncLocalStorage`, and a Prisma query extension runs detached from the
+      ALS chain (which is the documented reason `audit-context.ts` uses a
+      module-level stack at all), so `afterCommit` called from inside the
+      extension finds no scope and fires inline — changing nothing.
+  Full sweep in
+  `docs/implementation-notes/2026-10-01-p0-8-after-commit-notifications.md`;
+  the fix and the remaining half in
+  `docs/implementation-notes/2026-10-02-tenant-tx-single-connection.md`.
 - **Page-section rhythm** (Roadmap-5 PR-9): the spacing scale
   (`tight` / `compact` / `default` / `section` / `page`) is rich, but
   vertical page rhythm wants only TWO answers most of the time.
