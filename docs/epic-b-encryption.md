@@ -44,7 +44,7 @@
 | Variable | Required | Default | When to set |
 |---|---|---|---|
 | `DATA_ENCRYPTION_KEY` | **REQUIRED** in production (≥32 chars). Dev: dev-fallback + WARN log. Test: dev-fallback (silent). | — | Production boot exits 1 if missing, too short, or equal to the dev-fallback string. Three independent checks — zod schema (`src/env.ts`), startup hook (`src/instrumentation.ts` + `scripts/worker.ts` + `scripts/scheduler.ts`), and Compose `:?error` syntax — each refuses to start the process. Set once in every prod environment, identical across replicas, distinct between staging and prod. |
-| `DATA_ENCRYPTION_KEY_PREVIOUS` | Optional (≥32 chars) | unset | Set ONLY during a master-key rotation. When set, `decryptField` tries primary, then falls back to previous on auth-tag failure. **Remove after the rotation job reports zero remaining v1 rows.** |
+| `DATA_ENCRYPTION_KEY_PREVIOUS` | Optional (≥32 chars) | unset | Set ONLY during a master-key rotation. When set, `decryptField` tries primary, then falls back to previous on auth-tag failure. **Remove when `GET /api/admin/key-rotation` reports `previousKeyRetirable: true`** — NOT when "v1 rows reach zero", which never happens (a re-encrypted value is still `v1:`). |
 
 `AUTH_TEST_MODE` / `RATE_LIMIT_ENABLED` don't affect the encryption layer directly — they gate the Epic A middleware this system integrates with.
 
@@ -106,17 +106,22 @@ The system tolerates mixed state at every stage. A given environment can sit at 
         Reads dispatch per-value on envelope prefix.
 
   6. Periodic master-KEK rotation (Epic B.3):
-        a. Generate the NEW key material.
-        b. Deploy with
+        a. CHECK /api/readyz capabilities.lookupKey.pinned == true.
+           While false the lookup hash still derives from the KEK and
+           rotating it breaks every lookup by email, SILENTLY. See the
+           banner in CLAUDE.md.
+        b. Generate the NEW key material.
+        c. Deploy with
               DATA_ENCRYPTION_KEY=<new>
               DATA_ENCRYPTION_KEY_PREVIOUS=<old>
            Dual-KEK fallback keeps all reads working.
-        c. Per tenant, trigger rotation:
+        d. GLOBAL columns (User, Account and the whole PII manifest):
+              POST /api/admin/key-rotation      (repeat until remaining == 0)
+        e. Per tenant, the DEK re-wrap:
               POST /api/t/{tenantSlug}/admin/key-rotation
-           The background job re-wraps the tenant DEK + re-encrypts
-           any remaining v1 ciphertexts under the new KEK.
-        d. When every tenant reports zero v1 rows remaining,
-           deploy with DATA_ENCRYPTION_KEY_PREVIOUS unset.
+        f. GET /api/admin/key-rotation -> previousKeyRetirable == true,
+           THEN deploy with DATA_ENCRYPTION_KEY_PREVIOUS unset.
+           Do NOT use "zero v1 rows" as the condition — see below.
 ```
 
 ## Runbooks
@@ -181,23 +186,48 @@ SELECT COUNT(*) FROM "Tenant" WHERE "encryptedDek" IS NULL;
 ### Rotating keys safely
 
 Pre-flight:
+- [ ] **`GET /api/readyz` reports `capabilities.lookupKey.pinned: true`.** While it is false the
+      lookup hash still derives from `DATA_ENCRYPTION_KEY`, and rotating it makes every lookup by
+      email MISS — sign-in reports no such user, reset/invite/SCIM stop matching, and registration
+      silently creates duplicates. Fix by setting `LOOKUP_HMAC_KEY` to the material
+      `DATA_ENCRYPTION_KEY` holds *today* (the same bytes, not a new secret) and restarting.
 - [ ] New `DATA_ENCRYPTION_KEY` generated (`openssl rand -base64 48`).
-- [ ] Both replicas have the new key deployed in env AND the old key as `DATA_ENCRYPTION_KEY_PREVIOUS`.
-- [ ] Rolling restart completed; smoke-test reads/writes still work.
+- [ ] The new key in env AND the old key as `DATA_ENCRYPTION_KEY_PREVIOUS`.
+      (One VM, one `app` container — `deploy/apply.sh`, not a rolling restart. Note Watchtower
+      recreates containers with the EXISTING env, so an image pull alone does NOT load a new
+      variable.)
+- [ ] Restart completed; `/api/readyz` still `ready`.
 
-Per tenant:
+**Global columns first** — `User`, `Account` and the whole PII manifest have no tenant to be
+scoped by, and the per-tenant job below cannot see them:
+
+```bash
+# repeat until .remaining is 0
+curl -sX POST -H "X-Platform-Admin-Key: $PLATFORM_ADMIN_API_KEY" \
+  https://app.agrent.bg/api/admin/key-rotation | jq '{rewritten:.totalRewritten, remaining, errors:.totalErrors}'
+
+# the completion signal — this is the condition for retiring the previous key
+curl -s -H "X-Platform-Admin-Key: $PLATFORM_ADMIN_API_KEY" \
+  https://app.agrent.bg/api/admin/key-rotation | jq '{remaining, previousKeyRetirable}'
+```
+
+`--data '{"only":[{"model":"Account","column":"accessTokenEncrypted"}]}'` narrows a pass, e.g. to
+move third-party OAuth credentials first and watch them finish. A filtered run's `remaining: 0` is
+a claim about those columns only, which is why the response carries `filtered`.
+
+Per tenant (the DEK re-wrap):
 
 ```bash
 curl -X POST \
   -H "Cookie: <admin session>" \
-  https://inflect.example.com/api/t/<tenantSlug>/admin/key-rotation
+  https://app.agrent.bg/api/t/<tenantSlug>/admin/key-rotation
 ```
 
 Response `202 Accepted` with a `jobId`. Poll state:
 
 ```bash
 curl -H "Cookie: <admin session>" \
-  "https://inflect.example.com/api/t/<tenantSlug>/admin/key-rotation?jobId=<id>"
+  "https://app.agrent.bg/api/t/<tenantSlug>/admin/key-rotation?jobId=<id>"
 ```
 
 Success looks like:
@@ -215,7 +245,10 @@ Success looks like:
 }
 ```
 
-Post-flight, once every tenant is rotated:
+Post-flight:
+- [ ] **`GET /api/admin/key-rotation` reports `previousKeyRetirable: true`** (and `filtered: false`).
+      Any non-zero `remaining` is a value that does not decrypt under the new key — either still on
+      the old one, or corrupt. Removing the previous key with work outstanding loses data.
 - [ ] Remove `DATA_ENCRYPTION_KEY_PREVIOUS` from env.
 - [ ] Rolling restart.
 - [ ] Verify smoke-test reads still work.
@@ -255,7 +288,9 @@ Grep the structured log stream for these keys when troubleshooting:
 | Plaintext backfill | Irreversible without the KEK + a reverse script. In practice: don't. |
 | Tenant-DEK column | `ALTER TABLE "Tenant" DROP COLUMN "encryptedDek"` — safe but deprecates every v2 ciphertext (they require the wrapped DEK). Only sensible if you immediately re-encrypt everything as v1. |
 | Rotation in flight | Remove `DATA_ENCRYPTION_KEY_PREVIOUS` before completing the job ⇒ partially-rotated tenants can't read rows written under the old KEK. **Never** remove the previous key mid-rotation. |
-| Failed rotation | The job's `attempts: 1` policy means no auto-retry. Re-enqueue manually after diagnosing the per-tenant error. The job is idempotent: already-rewritten rows match `NOT LIKE 'v1:%'` on a second run and are skipped. |
+| Failed rotation | The job's `attempts: 1` policy means no auto-retry. Re-enqueue manually after diagnosing the per-tenant error. Re-running is SAFE but **not a no-op**: see the next row. |
+| "already-rewritten rows are skipped" | **FALSE, and this row used to assert it.** `encryptField` emits a `v1:` envelope, so a re-encrypted value is still `v1:` and `LIKE 'v1:%'` matches it again on every run. A re-run re-encrypts everything (same plaintext, fresh IV — harmless, but it is work). More importantly it means **"zero v1 rows remain" is a count that never reaches zero**, so it cannot be the condition for removing the previous key. Use `GET /api/admin/key-rotation` → `previousKeyRetirable`, which is derived from whether each value decrypts under the PRIMARY key (`isV1UnderPrimaryKey`). |
+| The per-tenant job alone | Does **not** finish a rotation. It iterates `ENCRYPTED_FIELDS` and does `if (!hasTenantId) continue`, so `User`, `Account` and the entire PII manifest (`PII_FIELD_MAP`) are invisible to it. Measured on production 2026-10-02: it could re-encrypt **0** values while **40** sat in the PII manifest, including six OAuth access tokens and six refresh tokens. Run `POST /api/admin/key-rotation` as well. |
 
 ## Remaining non-blocking caveats
 
