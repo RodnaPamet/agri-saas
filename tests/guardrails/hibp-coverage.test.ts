@@ -25,9 +25,17 @@
  * right thing to do for a request schema, because that module is the single
  * source of truth for the generated OpenAPI spec; it used to cost the route
  * its visibility to this guard, and no longer does (#1166).
+ *
+ * It also finds the field however the field is SPELLED. `password:
+ * z.string().min(8)` and `password: PasswordFieldSchema` are both reported —
+ * the second being this repo's usual idiom for a reusable Zod field, and the
+ * one the detector was blind to until the #1166 follow-up. Write the schema
+ * whichever way suits the contract; there is no longer a shape this guard
+ * requires you to use.
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
@@ -233,9 +241,137 @@ describe('HIBP coverage guardrail — curated list integrity', () => {
     );
 });
 
+/**
+ * Ask the REAL detector about a throwaway module.
+ *
+ * Shape controls need a witness, and the shapes worth controlling for are by
+ * definition the ones no file in the tree uses — a detector blind spot
+ * survives precisely because the live population does not exercise it, so
+ * measuring the live population can never find it. Hence a fixture.
+ *
+ * It goes through `findPasswordFields` rather than the matcher underneath, so
+ * it pins the CALL SITES too: the matcher is used at two of them (the route's
+ * own declarations, and declarations reached through an import) and a revert
+ * of either one has to fail something.
+ */
+function detectInSource(
+    source: string,
+    extraFiles: Record<string, string> = {},
+): ReturnType<typeof findPasswordFields> {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hibp-shape-'));
+    try {
+        for (const [name, content] of Object.entries(extraFiles)) {
+            fs.writeFileSync(path.join(dir, name), content, 'utf8');
+        }
+        const file = path.join(dir, 'route.ts');
+        fs.writeFileSync(file, source, 'utf8');
+        return findPasswordFields(file);
+    } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+    }
+}
+
 // ── Test 2 — structural scan ───────────────────────────────────────────────
 
 describe('HIBP coverage guardrail — structural scan', () => {
+    it('detects a password field however the field is spelled', () => {
+        // The #1166 follow-up. `PASSWORD_FIELD_RE` requires a literal `z.`
+        // after the colon, so the detector read
+        //
+        //     password: z.string().min(8)                 ✓ seen
+        //     password: PasswordFieldSchema               ✗ INVISIBLE
+        //
+        // and the second is this repo's normal idiom for a reusable Zod
+        // field — 23 uses across 12 files in `src/lib/schemas` and
+        // `src/app-layer/schemas` (`category: CostCategorySchema`,
+        // `geometry: PolygonGeometrySchema`, …). No route happened to use it
+        // for a password, so the before/after flagged SET over the live tree
+        // is identical (3 of 374 either way) and the live population could
+        // not have shown the gap. A probe did: an unregistered route parsing
+        // `z.object({ password: PasswordFieldSchema })` left this whole file
+        // green at 13/13, while the inline-shaped probe sitting beside it was
+        // reported by name.
+        const inline = detectInSource(`
+            import { z } from 'zod';
+            export const S = z.object({ password: z.string().min(8) });
+        `);
+        expect(inline.map((h) => h.field)).toEqual(['password']);
+
+        const named = detectInSource(`
+            import { z } from 'zod';
+            const PasswordFieldSchema = z.string().min(8);
+            export const S = z.object({ password: PasswordFieldSchema });
+        `);
+        expect(named.map((h) => h.field)).toEqual(['password']);
+
+        // All four names, in the shape that used to be invisible — a
+        // vocabulary entry the matcher does not actually look for would be
+        // caught by test 1, but only for a name someone registered.
+        for (const field of PASSWORD_FIELD_NAMES) {
+            const hit = detectInSource(`
+                import { z } from 'zod';
+                const Field = z.string().min(8);
+                export const S = z.object({ ${field}: Field });
+            `);
+            expect(hit.map((h) => h.field)).toEqual([field]);
+        }
+
+        // The new shape ACROSS a module boundary, which is the combination
+        // nothing in the tree exercises: `auth/register` reaches its schema
+        // through an import but spells the field `password: z.…`, so the
+        // import-reached matcher could be reverted to the old regex and
+        // every other assertion here would still pass. This is the one that
+        // fails.
+        const crossModule = detectInSource(
+            `
+            import { SignupSchema } from './schema';
+            export const S = SignupSchema;
+            `,
+            {
+                'schema.ts': `
+                    import { z } from 'zod';
+                    const PasswordFieldSchema = z.string().min(8);
+                    export const SignupSchema = z.object({ password: PasswordFieldSchema });
+                `,
+            },
+        );
+        expect(crossModule.map((h) => h.field)).toEqual(['password']);
+        // Declared elsewhere, so the hit must carry more than one hop.
+        expect(crossModule[0].via.length).toBeGreaterThan(1);
+        expect(crossModule[0].declaredIn).not.toBe('route.ts');
+    });
+
+    it('a password-named property outside a schema is NOT a hit (negative control)', () => {
+        // The other half of the above, and the reason the field-name matcher
+        // is gated on a Zod-shaped declaration. Ungated, name matching flags
+        // 4 of 374 routes instead of 3; the extra one is real and in the
+        // tree:
+        //
+        //   src/app/api/staging/seed/route.ts
+        //     return jsonResponse({ login: { email, password: 'password123' } })
+        //
+        // A hardcoded seed credential returned by a handler that 403s in
+        // production is not a user-chosen password, so flagging it is a false
+        // positive — and a guard with a false positive is a guard someone
+        // switches off. Asserted against the real file, so if that route ever
+        // does start taking a password this control fails and says so.
+        const seed = path.join(REPO_ROOT, 'src/app/api/staging/seed/route.ts');
+        expect(fs.existsSync(seed)).toBe(true);
+        expect(fs.readFileSync(seed, 'utf8')).toContain("password: 'password123'");
+        expect(findPasswordFields(seed)).toEqual([]);
+
+        // Prose cannot register as a declaration either — the matcher runs on
+        // the AST, and `AuthRegisterSchema`'s own `.openapi()` description
+        // contains the word password.
+        const prose = detectInSource(`
+            import { z } from 'zod';
+            /** Takes a password: z.string() — see the docs. */
+            // password: z.string().min(8)
+            export const S = z.object({ email: z.string() });
+        `);
+        expect(prose).toEqual([]);
+    });
+
     it('the scan reaches EVERY route it polices (positive control)', () => {
         // WITHOUT THIS THE STRUCTURAL HALF IS VACUOUS. The scan below is a
         // `for` over a collected list, so an empty list produces no
@@ -274,6 +410,24 @@ describe('HIBP coverage guardrail — structural scan', () => {
             (r) => findPasswordFields(path.join(REPO_ROOT, r.file)).length === 0,
         ).map((r) => r.file);
         expect(blind).toEqual([]);
+
+        // The exact fields, per route. This is the no-regression half of the
+        // #1166 follow-up: the field-name matcher was added as a UNION with
+        // the regex so the population could only grow, and a "widening" that
+        // quietly stopped reporting one of these would otherwise be invisible
+        // — `blind === []` is satisfied by finding any one field per route,
+        // and change-password declares two.
+        const fieldsByRoute = Object.fromEntries(
+            HIBP_REQUIRED_ROUTES.map((r) => [
+                r.file,
+                [...new Set(findPasswordFields(path.join(REPO_ROOT, r.file)).map((h) => h.field))].sort(),
+            ]),
+        );
+        expect(fieldsByRoute).toEqual({
+            'src/app/api/auth/register/route.ts': ['password'],
+            'src/app/api/auth/change-password/route.ts': ['currentPassword', 'newPassword'],
+            'src/app/api/auth/reset-password/route.ts': ['newPassword'],
+        });
 
         // Import-following is the capability that closed it, so assert the
         // capability and not just the outcome. A detector that had quietly
