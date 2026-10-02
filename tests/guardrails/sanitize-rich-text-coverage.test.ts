@@ -127,6 +127,43 @@ const RICH_TEXT_COVERAGE: Readonly<
     // middleware persists them, so every renderer that decrypts them (the
     // ДНЕВНИК PDF) sees safe content.
     FarmProfile: { usecases: ['src/app-layer/usecases/farm-profile.ts'], sanitizer: 'sanitizePlainText' },
+
+    // ─── #1222: declared because they were ALREADY sanitised ──────────
+    //
+    // These eight arrived in `ENCRYPTED_FIELDS` with the fan-out narrowing.
+    // They were already being encrypted (by field-name collision, not by
+    // decision) and are now declared — and declaring was FREE for exactly
+    // these, because their write paths already sanitise the field. That is the
+    // rule the narrowing used: declare a field if it holds ciphertext or is
+    // already sanitised, plaintext otherwise. The ones with neither went to
+    // `DELIBERATELY_PLAINTEXT` rather than buying a ratchet entry each to
+    // protect zero rows.
+    //
+    // `crop-planning.ts` sanitises `notes` at both its write seams
+    // (`:99` on create, `:149` on update) and writes all five of these models.
+    CropPlan: { usecases: ['src/app-layer/usecases/crop-planning.ts'], sanitizer: 'sanitizePlainText' },
+    CropType: { usecases: ['src/app-layer/usecases/crop-planning.ts'], sanitizer: 'sanitizePlainText' },
+    CropVariety: { usecases: ['src/app-layer/usecases/crop-planning.ts'], sanitizer: 'sanitizePlainText' },
+    Planting: { usecases: ['src/app-layer/usecases/crop-planning.ts'], sanitizer: 'sanitizePlainText' },
+    Season: { usecases: ['src/app-layer/usecases/crop-planning.ts'], sanitizer: 'sanitizePlainText' },
+    // `parcel-history.ts` routes both through its own `cleanNotes` helper,
+    // which calls `sanitizePlainText` — the repo-local-helper shape this
+    // guard resolves transitively rather than pushing into an exemption.
+    ParcelCropSeason: { usecases: ['src/app-layer/usecases/parcel-history.ts'], sanitizer: 'sanitizePlainText' },
+    ParcelWeedObservation: { usecases: ['src/app-layer/usecases/parcel-history.ts'], sanitizer: 'sanitizePlainText' },
+    // `LogEntry.notes` is the one of the eight using the HTML sanitiser:
+    // journal notes are rich text by design (`journal.ts:253` on create,
+    // `:433` on update), unlike the plain-text `notes` above. It also holds
+    // the most ciphertext of the 18 on production (3 rows), so it had to be
+    // declared regardless — the sanitiser only made it free.
+    LogEntry: { usecases: ['src/app-layer/usecases/journal.ts'], sanitizer: 'sanitizeRichTextHtml' },
+    // These two held ciphertext but had NO sanitiser, so declaring them would
+    // have bought a `KNOWN_UNCOVERED` entry each — tripling a ratchet whose
+    // own comment says "if this grows, the diff is the conversation". Wiring
+    // the sanitiser was about ten lines and left the ratchet at 1, which is
+    // the better trade: the debt was ~10 lines of work, not a policy question.
+    Location: { usecases: ['src/app-layer/usecases/location.ts'], sanitizer: 'sanitizePlainText' },
+    FeatureFlag: { usecases: ['src/app-layer/usecases/feature-flag-admin.ts'], sanitizer: 'sanitizePlainText' },
 };
 
 /**

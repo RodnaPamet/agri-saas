@@ -253,6 +253,73 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     //      supplier's name on an invoice is not the commercial detail this
     //      manifest exists to protect. It is still sanitised on write.
     CostEntry: ['description'],
+
+    // ─── #1222: the `'*'` fan-out's reach, now DECLARED ────────────────
+    //
+    //  Every entry below was ALREADY being encrypted before this change, by
+    //  accident. `encryption-middleware.ts`'s `'*'` fan-out matches field
+    //  NAMES across the whole manifest and cannot tell models apart, so a
+    //  model absent from this file got a column encrypted because some
+    //  unrelated model declared a field of the same name. Measured: 18
+    //  (model, field) pairs, and `ExchangeListing.description` was encrypted
+    //  because `Task`, `AccessReview` and `CostEntry` each declare a
+    //  `description` — three unrelated models deciding a fourth model's fate.
+    //
+    //  The fan-out is narrowed in the same change, which is why these have to
+    //  be here: narrowing stops the middleware DECRYPTING a non-manifest
+    //  model as well as encrypting it, so a field left undeclared with
+    //  ciphertext in it becomes unreadable to everyone, with no error and no
+    //  log. Declaring first and narrowing second is not a style preference;
+    //  the reverse order is a silent data loss. Production holds ciphertext on
+    //  three of these (`LogEntry.notes` 3×v2, `Location.description` 1×v2,
+    //  `FeatureFlag.description` 1×v1), so the wrong order has live victims.
+    //
+    //  ONE rule decided which of the 18 land here and which land in
+    //  `DELIBERATELY_PLAINTEXT`, and it is mechanical rather than taste:
+    //
+    //    declare if the field HOLDS CIPHERTEXT on production, or if its write
+    //    path ALREADY SANITISES it; otherwise plaintext, recorded.
+    //
+    //  Holding ciphertext forces the hand — narrowing an undeclared field
+    //  orphans its rows. Already sanitising makes declaring FREE: the D.2
+    //  guardrail (`sanitize-rich-text-coverage`) requires every encrypted
+    //  business-content model to be classified, so a field with no sanitiser
+    //  would otherwise buy a `KNOWN_UNCOVERED` entry on a ratchet that is
+    //  supposed to trend to zero, in exchange for protecting zero rows.
+    //
+    //  Measured per field with `npm run preflight:fanout`; the sanitiser
+    //  bindings are `crop-planning.ts:99,149` (sanitizePlainText),
+    //  `parcel-history.ts::cleanNotes` and `journal.ts:253,433`
+    //  (sanitizeRichTextHtml). Two fields hold ciphertext and are NOT
+    //  sanitised — `Location.description` and `FeatureFlag.description` — so
+    //  they are declared and carry honest `KNOWN_UNCOVERED` entries. That debt
+    //  is PRE-EXISTING: both were already encrypted and already unsanitised,
+    //  and the guard could not see them only because they were not in this
+    //  manifest.
+    CropPlan: ['notes'],
+    CropType: ['notes'],
+    CropVariety: ['notes'],
+    Location: ['description'],
+    LogEntry: ['notes'],
+    ParcelCropSeason: ['notes'],
+    ParcelWeedObservation: ['notes'],
+    Planting: ['notes'],
+    Season: ['notes'],
+
+    //  `FeatureFlag` is the one global table in that set that must stay
+    //  encrypted, and it is here because of what production actually holds: a
+    //  `v1:` row, not a `v2:` one. The model has no `tenantId`, so a
+    //  platform-admin write resolved no tenant DEK and the value landed under
+    //  the GLOBAL KEK. Narrowing would orphan it exactly as a `v2:` row would
+    //  — which is why the pre-flight counts BOTH envelopes, and why counting
+    //  only "misplaced v2" would have missed this one.
+    //
+    //  It is in `GLOBAL_KEK_MODELS` as well, which `global-kek-models-covers-
+    //  tenantless` requires: no `tenantId` plus encrypted means the key has to
+    //  be one every reader shares. Here every reader is a platform admin, so
+    //  the KEK is not a compromise — it is the only correct key.
+    FeatureFlag: ['description'],
+
 } as const;
 
 /** Set of model names with at least one encrypted field. Fast-path check. */
@@ -278,6 +345,80 @@ export const ENCRYPTED_MODELS: ReadonlySet<string> = new Set(
  * the manifest) are safe: they don't have the `v1:` prefix so the
  * decrypt is skipped.
  */
+/**
+ * Fields that carry a manifest field NAME but are deliberately NOT encrypted.
+ *
+ * The sibling of `DELIBERATELY_TENANT_DEK` in `encryption-middleware.ts`: both
+ * say "deliberately not the default for this shape", so neither silence can be
+ * read as an oversight. Without this map, narrowing the `'*'` fan-out would
+ * leave these plaintext by DEFAULT, and #1222 is precisely the cost of a
+ * default nobody chose — these were encrypted by accident before, and would be
+ * plaintext by accident after.
+ *
+ * ## Keyed `Model.field`, not by model
+ *
+ * Unlike `DELIBERATELY_TENANT_DEK`, which is model-keyed because a model's DEK
+ * serves all of its fields, plaintext-versus-encrypted is a PER-FIELD call. A
+ * non-manifest model could carry two manifest-named fields and want different
+ * answers for each, and a model-keyed map would exempt the second one silently.
+ * Measured today: none of the 18 affected models carries two such fields, so
+ * the hole is latent rather than live — which is the cheaper moment to close it.
+ *
+ * ## What an entry is a CLAIM about
+ *
+ * That the field holds nothing warranting encryption at rest, AND that the
+ * database it will run against holds no ciphertext for it. The second half is
+ * not inferable from the code: `scripts/count-fanout-encrypted.ts` is how it
+ * was checked, and every entry here was measured at zero `v1:` and zero `v2:`
+ * on production before being added. An entry whose field later acquires
+ * ciphertext is a bug this map cannot catch — the pre-flight is what catches
+ * it, which is why it is a committed script rather than a one-off query.
+ */
+export const DELIBERATELY_PLAINTEXT: Readonly<Record<string, string>> = {
+    //  Prod: 0 rows. A public agricultural-events feed — the whole point is
+    //  that every tenant reads it, and it carries no farm's private data.
+    'AgriEvent.description': 'Platform-wide public events feed; no tenant owns a row and nothing in it is private.',
+
+    //  Prod: 0 rows. An `eik` is a Bulgarian company registration number from
+    //  a PUBLIC register. `ParcelLease.lessorEik` IS encrypted, deliberately —
+    //  but that is a third party named on one farm's lease, which is personal
+    //  data about an identifiable counterparty. A row in the cadastre owners
+    //  table is the public register itself, and КАИС import only keeps
+    //  legal-entity owners precisely because individuals are masked.
+    'CadastreOwner.eik': 'Company registration number from a public register; individual owners are masked at import (see CLAUDE.md cadastre ownership).',
+
+    //  Prod: 3 rows, 0 encrypted. The usecase groups this with `commodity` and
+    //  `sellerDisplayName` and calls all three PUBLIC free text in one comment
+    //  — every tenant browsing the exchange reads them. The other two are
+    //  plaintext because they carry no manifest name; encrypting one of three
+    //  fields the code treats as one group was incoherent whichever way it was
+    //  cut. Plaintext also keeps a future description search possible, which
+    //  encryption would foreclose.
+    'ExchangeListing.description': 'Public listing copy read by every tenant, grouped in-code with two plaintext siblings as PUBLIC free text.',
+
+    //  Prod: 0 rows. Marketing copy the platform shows to tenants. Same shape
+    //  as AgriEvent: written to be read by everyone.
+    'Promotion.body': 'Platform marketing copy shown to all tenants; nothing tenant-private in it.',
+
+    // ── Tenant-scoped, but zero ciphertext AND no sanitiser ───────────
+    //
+    //  These four are tenant-scoped, so a per-tenant DEK WOULD work for them —
+    //  unlike the four above, where encryption was incoherent on its face.
+    //  They are plaintext for a different reason: production holds zero
+    //  ciphertext for each, and none of their write paths sanitises the field.
+    //  Declaring them would therefore protect no existing row while buying a
+    //  `KNOWN_UNCOVERED` entry each on a ratchet meant to trend to zero.
+    //
+    //  All four are configuration rather than farm content, which is what
+    //  makes that trade comfortable. If any later carries farmer free text,
+    //  the correct move is to WIRE A SANITISER and declare it — in that order,
+    //  and in its own change.
+    'AssetMaintenance.description': 'Maintenance-record description; 0 encrypted rows on prod and no sanitiser on the write path (AssetMaintenanceRepository writes it directly).',
+    'AutomationRule.description': 'Operator-authored rule label, written by automation-event-dispatch; configuration rather than farm content, 0 encrypted rows.',
+    'ProcessMap.description': 'Process-map metadata written straight through ProcessMapRepository; configuration, 0 encrypted rows.',
+    'TenantCustomRole.description': 'RBAC role description — configuration an admin types once, 0 encrypted rows, and it is read back into a permissions UI rather than a farm record.',
+};
+
 export const ALL_ENCRYPTED_FIELD_NAMES: ReadonlySet<string> = new Set(
     Object.values(ENCRYPTED_FIELDS).flat(),
 );

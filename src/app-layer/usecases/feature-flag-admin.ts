@@ -30,6 +30,7 @@
 import { prisma } from '@/lib/prisma';
 import { invalidateFlagCache } from '@/lib/feature-flags';
 import { logger } from '@/lib/observability/logger';
+import { sanitizePlainText } from '@/lib/security/sanitize';
 
 /** One row as the console renders it — the STORED state, not a resolved view. */
 export interface FlagAdminRow {
@@ -80,13 +81,25 @@ export async function listFeatureFlags(): Promise<FlagAdminRow[]> {
  * benefit.
  */
 export async function upsertFeatureFlag(input: UpsertFlagInput): Promise<FlagAdminRow> {
+    // #1222: `description` is encrypted at rest (declared with the fan-out
+    // narrowing; production holds a `v1:` row, under the global KEK because a
+    // platform-admin write resolves no tenant DEK). Encrypted business text
+    // owes a sanitiser at the write seam — the flag console renders this back,
+    // and the author being a platform admin lowers the risk without removing
+    // the surface.
+    const description =
+        input.description === undefined
+            ? undefined
+            : input.description != null
+              ? sanitizePlainText(input.description)
+              : null;
     const flag = await prisma.featureFlag.upsert({
         where: { key: input.key },
         create: {
             key: input.key,
             enabled: input.enabled,
             cohorts: input.cohorts,
-            description: input.description ?? null,
+            description: description ?? null,
         },
         update: {
             enabled: input.enabled,
@@ -98,7 +111,7 @@ export async function upsertFeatureFlag(input: UpsertFlagInput): Promise<FlagAdm
             cohorts: input.cohorts,
             // `description` keeps the three-state contract: absent leaves it,
             // explicit null clears it.
-            ...(input.description !== undefined ? { description: input.description } : {}),
+            ...(description !== undefined ? { description } : {}),
         },
         // `updatedByUserId` is left NULL, and that is the honest answer rather
         // than a gap: the credential upstream is a platform API key, so there
