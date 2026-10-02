@@ -17,6 +17,7 @@ const REAL_KEY = 'r'.repeat(48); // pragma: allowlist secret -- test fixture
 
 const sweepMock = jest.fn();
 const countMock = jest.fn();
+const dekCountMock = jest.fn();
 const inFlightMock = jest.fn();
 
 function makeReq(opts: { method?: string; key?: string; body?: string } = {}): NextRequest {
@@ -42,6 +43,7 @@ function loadRoute(key: string | undefined): { GET: Handler; POST: Handler } {
     jest.doMock('@/app-layer/usecases/global-key-rotation', () => ({
         sweepGlobalKeyRotation: sweepMock,
         countUnmigrated: countMock,
+        countUnwrappedDeks: dekCountMock,
         sweepableColumns: () => [
             { model: 'User', table: 'User', manifestName: 'emailEncrypted', column: 'emailEncrypted', manifest: 'pii' },
             { model: 'Task', table: 'Task', manifestName: 'description', column: 'description', manifest: 'encrypted-fields' },
@@ -57,6 +59,7 @@ function loadRoute(key: string | undefined): { GET: Handler; POST: Handler } {
 beforeEach(() => {
     jest.clearAllMocks();
     countMock.mockResolvedValue({ total: 0, perColumn: [] });
+    dekCountMock.mockResolvedValue(0);
     inFlightMock.mockReturnValue(true);
     sweepMock.mockResolvedValue({
         rotationInFlight: true,
@@ -67,6 +70,7 @@ beforeEach(() => {
         totalAlreadyPrimary: 0,
         totalErrors: 0,
         remaining: 0,
+        deks: { scanned: 3, rewrapped: 3, alreadyPrimary: 0, errors: 0 },
         durationMs: 12,
     });
 });
@@ -140,6 +144,51 @@ describe('GET answers "may I remove DATA_ENCRYPTION_KEY_PREVIOUS yet?"', () => {
         expect(body.previousKeyRetirable).toBe(false);
     });
 
+    it('an UNWRAPPED DEK blocks the verdict even with every column done', async () => {
+        // The defect this closes. `Tenant.encryptedDek` is master-KEK ciphertext
+        // in NEITHER manifest, so the column union does not reach it. Reporting
+        // `previousKeyRetirable: true` here would green-light removing the
+        // previous key while every DEK still needed it — making every DEK
+        // unwrappable and every v2 ciphertext unreadable.
+        countMock.mockResolvedValue({ total: 0, perColumn: [] });
+        dekCountMock.mockResolvedValue(2);
+        const { GET } = loadRoute(REAL_KEY);
+        const body = await (await GET(makeReq({ key: REAL_KEY }))).json();
+        expect(body.columnsRemaining).toBe(0);
+        expect(body.unwrappedDeks).toBe(2);
+        expect(body.remaining).toBe(2);
+        expect(body.previousKeyRetirable).toBe(false);
+    });
+
+    it('both at zero -> retirable, and the two counts are reported separately', async () => {
+        // Separately, because "columns done, DEKs outstanding" and the reverse
+        // are different operator situations and a single total hides which.
+        countMock.mockResolvedValue({ total: 0, perColumn: [] });
+        dekCountMock.mockResolvedValue(0);
+        const { GET } = loadRoute(REAL_KEY);
+        const body = await (await GET(makeReq({ key: REAL_KEY }))).json();
+        expect(body.columnsRemaining).toBe(0);
+        expect(body.unwrappedDeks).toBe(0);
+        expect(body.previousKeyRetirable).toBe(true);
+    });
+
+    it('a FILTERED report never counts DEKs, and is never retirable', async () => {
+        // A filter names manifest columns; a DEK is not one. And "these columns
+        // are done" is not "the previous key is retirable".
+        countMock.mockResolvedValue({ total: 0, perColumn: [] });
+        dekCountMock.mockResolvedValue(5);
+        const { GET } = loadRoute(REAL_KEY);
+        const req = makeReq({ key: REAL_KEY });
+        (req as unknown as { nextUrl: URL }).nextUrl = new URL(
+            'http://localhost:3000/api/admin/key-rotation?only=User.emailEncrypted',
+        );
+        const body = await (await GET(req)).json();
+        expect(body.filtered).toBe(true);
+        expect(body.unwrappedDeks).toBe(0);
+        expect(dekCountMock).not.toHaveBeenCalled();
+        expect(body.previousKeyRetirable).toBe(false);
+    });
+
     it('reports whether a rotation is in flight', async () => {
         inFlightMock.mockReturnValue(false);
         const { GET } = loadRoute(REAL_KEY);
@@ -160,6 +209,9 @@ describe('POST runs a pass and reports the manifest union', () => {
         // Surfaced so an operator can SEE that both manifests are covered —
         // the whole defect was a sweep that silently knew only one.
         expect(body.manifests).toEqual(['encrypted-fields', 'pii']);
+        // The DEK re-wrap rides along on an unfiltered pass, so one call
+        // finishes a master rotation without needing a tenant admin session.
+        expect(body.deks.rewrapped).toBe(3);
     });
 
     it('an empty body is fine; a malformed one is 400 without sweeping', async () => {

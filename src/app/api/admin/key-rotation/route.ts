@@ -43,6 +43,7 @@ import { verifyPlatformApiKey, PlatformAdminError } from '@/lib/auth/platform-ad
 import {
     sweepGlobalKeyRotation,
     countUnmigrated,
+    countUnwrappedDeks,
     sweepableColumns,
 } from '@/app-layer/usecases/global-key-rotation';
 import { kekRotationInFlight } from '@/lib/security/encryption';
@@ -97,10 +98,18 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
         .filter((parts) => parts.length === 2)
         .map(([model, column]) => ({ model, column }));
     const { total, perColumn } = await countUnmigrated(only.length > 0 ? only : undefined);
+    // The wrapped tenant DEKs are master-KEK ciphertext in NEITHER manifest, so
+    // the column union does not reach them. Leaving them out of the verdict is
+    // how `previousKeyRetirable` could have said yes while every DEK still
+    // needed the old key — see the usecase's DEK_COLUMNS docblock. Counted only
+    // for an UNFILTERED report, since a filtered one is a claim about columns.
+    const unwrappedDeks = only.length > 0 ? 0 : await countUnwrappedDeks();
     return jsonResponse({
         rotationInFlight: kekRotationInFlight(),
         filtered: only.length > 0,
-        remaining: total,
+        remaining: total + unwrappedDeks,
+        columnsRemaining: total,
+        unwrappedDeks,
         /**
          * The whole point of the field: `true` means every master-KEK
          * ciphertext in the deployment is readable under the CURRENT key, so
@@ -112,7 +121,7 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
          * the same claim, and conflating them is how a previous key gets
          * dropped while something still needs it.
          */
-        previousKeyRetirable: only.length === 0 && total === 0,
+        previousKeyRetirable: only.length === 0 && total === 0 && unwrappedDeks === 0,
         columns: perColumn,
     });
 });

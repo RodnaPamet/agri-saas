@@ -159,6 +159,59 @@ weakened; the route reports manifests, the usecase does not.
 that matched neither the implementation nor each other. Rewritten to compare
 against a freshly-computed expectation.
 
+## Follow-up, same day: the completion signal did not cover the wrapped DEKs
+
+Caught while writing the rotation runbook, before running the rotation — which
+is the only reason it was caught at all, because nothing was red.
+
+`Tenant.encryptedDek` holds a per-tenant DEK wrapped by `wrapDek`, which is
+`encryptField` — so it is a `v1:` envelope under the master KEK, unwrapped by
+`decryptField` with the same dual-key fallback as any other ciphertext. But it
+is in **neither** encryption manifest, because it is key material rather than a
+business field, so the column union does not reach it.
+
+The sweep as first merged therefore reported **`previousKeyRetirable: true`
+while every DEK was still wrapped under the OLD key.** Acting on that signal —
+removing `DATA_ENCRYPTION_KEY_PREVIOUS` — makes every DEK unwrappable and every
+`v2:` ciphertext unreadable. It is the same defect this whole file exists to
+fix, one level up: **a completion signal that does not cover what the decision
+depends on.**
+
+Two things were missing, not one:
+
+- **Counting.** `remaining` is now `columnsRemaining + unwrappedDeks`, and the
+  route reports both separately — "columns done, DEKs outstanding" and the
+  reverse are different operator situations and a single total hides which.
+- **Doing.** `jobs/key-rotation.ts` does re-wrap, but only through
+  `POST /api/t/{slug}/admin/key-rotation`, which needs a tenant **admin
+  session** per tenant. An operator rotating the master key holds a platform
+  key and has no reason to have admin sessions for every tenant, so the
+  rotation could not be completed from the surface that owns it. An unfiltered
+  platform pass now re-wraps them, which makes the global endpoint a superset of
+  the per-tenant job for a master rotation.
+
+**The safety property is that the DEK BYTES do not change** — only the wrap.
+Asserted by unwrapping before and after and comparing, because "it re-wrapped"
+and "it re-wrapped the same key" are different claims and only the second is
+safe; if the bytes moved, every `v2:` ciphertext in that tenant would be lost
+while the wrap looked perfectly healthy.
+
+A filtered pass deliberately does **not** touch DEKs: a filter names manifest
+columns, a wrapped DEK is not one, and re-wrapping key material because someone
+asked to sweep `User.emailEncrypted` would be a side effect they did not
+request.
+
+Mutation-proved both ways — neutering `countUnwrappedDeks` reddens the two
+counting assertions (the defect itself), and re-wrapping with fresh bytes
+reddens the safety property and the decisive test.
+
+**And I walked into the shared-database aggregate problem a second time.**
+`rewrapTenantDeks` has no filter, so other suites' tenants — whose DEKs are
+wrapped under the dev fallback key — are correctly counted as errors, and my
+`expect(result.errors).toBe(0)` was wrong for exactly the reason the column
+sweep's aggregate zeros were wrong an hour earlier. Knowing the lesson is not
+the same as applying it to the next aggregate.
+
 ## Not in this change
 
 - **The rotation itself.** This is the tool; the operator runbook step is to set
