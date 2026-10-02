@@ -187,6 +187,15 @@ export function withApiErrorHandling<Context = unknown>(
         // so a rate-limited request and a completed one cannot be attributed to
         // different clients. Both are low-cardinality enums and neither can fail
         // the request — see normaliseClient.
+        //
+        // `usageClient` also goes onto every request log line below, which is
+        // only safe because it is NORMALISED rather than the raw header: an
+        // attacker-controlled `x-agrent-client` is collapsed to one of a fixed
+        // allowlist, or to `other`/`unknown`. Logging the raw header would put
+        // unbounded caller-controlled text into the log stream. `usageDevice` is
+        // deliberately NOT logged — three values that answer no question the
+        // client axis does not already answer, and every field on a
+        // per-request line is paid on every request.
         const usageClient = normaliseClient(req.headers.get('x-agrent-client'));
         const usageDevice = normaliseDevice(req.headers.get('sec-ch-ua-mobile'));
         const method = req.method;
@@ -208,7 +217,11 @@ export function withApiErrorHandling<Context = unknown>(
                     });
 
                     // ── Request started ──
-                    logger.info('request started', { component: 'api', method });
+                    logger.info('request started', {
+                        component: 'api',
+                        method,
+                        client: usageClient,
+                    });
 
                     try {
                         // ── Rate-limit check (Epic A.2) ──
@@ -240,6 +253,7 @@ export function withApiErrorHandling<Context = unknown>(
                                     method,
                                     scope: rateScope.scope,
                                     durationMs,
+                                    client: usageClient,
                                 });
                                 rateBlocked.headers.set('x-request-id', requestId);
                                 rateBlocked.headers.set(API_VERSION_HEADER, API_VERSION);
@@ -267,6 +281,7 @@ export function withApiErrorHandling<Context = unknown>(
                             method,
                             status,
                             durationMs,
+                            client: usageClient,
                         });
 
                         // Apply request ID + API version header. Wrapped
@@ -331,6 +346,7 @@ export function withApiErrorHandling<Context = unknown>(
                             durationMs,
                             errorCode: payload.error.code,
                             error: extractErrorMeta(error),
+                            client: usageClient,
                         });
 
                         return NextResponse.json(payload, {
