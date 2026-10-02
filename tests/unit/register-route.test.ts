@@ -55,6 +55,7 @@ jest.mock('@/lib/prisma', () => ({
     default: {
         user: {
             findUnique: (...a: unknown[]) => mockUserFindUnique(...a),
+            findFirst: (...a: unknown[]) => mockUserFindUnique(...a),
             create: (...a: unknown[]) => mockSingletonUserCreate(...a),
         },
         tenant: { create: (...a: unknown[]) => mockSingletonTenantCreate(...a) },

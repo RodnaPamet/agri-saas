@@ -13,7 +13,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { logger } from '@/lib/observability/logger';
 import { jsonResponse } from '@/lib/api-response';
-import { hashForLookup } from '@/lib/security/encryption';
+import { hashForLookup, hashForLookupCandidates } from '@/lib/security/encryption';
 
 export async function POST(req: NextRequest) {
     // ── Gate 1: Environment check ──
@@ -61,11 +61,19 @@ export async function POST(req: NextRequest) {
         });
 
         const adminEmail = 'admin@acme.com';
-        const admin = await prisma.user.upsert({
-            where: { emailHash: hashForLookup(adminEmail) },
-            update: {},
-            create: { email: adminEmail, emailHash: hashForLookup(adminEmail), passwordHash: pwd, name: 'Alice Admin' },
-        });
+        // Same reasoning as `createTenantWithOwner`: an upsert `where` cannot
+        // carry the candidate list, so the candidate read runs first. This route
+        // 403s in production, but it seeds the E2E database — a duplicate admin
+        // there is a confusing test failure rather than a user-visible defect.
+        const admin =
+            (await prisma.user.findFirst({
+                where: { emailHash: { in: hashForLookupCandidates(adminEmail) } },
+            })) ??
+            (await prisma.user.upsert({
+                where: { emailHash: hashForLookup(adminEmail) },
+                update: {},
+                create: { email: adminEmail, emailHash: hashForLookup(adminEmail), passwordHash: pwd, name: 'Alice Admin' },
+            }));
 
         await prisma.tenantMembership.upsert({
             where: { tenantId_userId: { tenantId: tenant.id, userId: admin.id } },

@@ -32,10 +32,12 @@ jest.mock('@/lib/prisma', () => ({
     prisma: {
         tenantInvite: {
             findUnique: jest.fn(),
+            findFirst: jest.fn(),
             updateMany: jest.fn(),
         },
         tenant: {
             findUnique: jest.fn(),
+            findFirst: jest.fn(),
         },
         tenantMembership: {
             upsert: jest.fn(),
@@ -88,7 +90,15 @@ describe('createInviteToken — RBAC + OWNER guard', () => {
         upsertResult?: object;
     } = {}) {
         return {
-            user: { findUnique: jest.fn().mockResolvedValue(opts.existingUser ?? null) },
+            user: (() => {
+            // #1237: the email lookup is `findFirst` over the candidate list
+            // (an `in` predicate is not valid on `findUnique`). ONE fn behind
+            // both names, so a test's single `mockResolvedValue` drives the
+            // code whichever method it calls — two separate fns silently stop
+            // reaching it and every lookup reports "not found".
+            const find = jest.fn().mockResolvedValue(opts.existingUser ?? null);
+            return { findUnique: find, findFirst: find };
+        })(),
             tenantMembership: {
                 findUnique: jest.fn().mockResolvedValue(
                     opts.existingMembershipStatus
@@ -483,6 +493,7 @@ describe('redeemInvite — atomic claim + email binding', () => {
                 tenantMembership: { upsert: upsertSpy },
                 tenant: {
                     findUnique: jest.fn().mockResolvedValue({ slug: 'acme' }),
+                    findFirst: jest.fn().mockResolvedValue({ slug: 'acme' }),
                 },
             }),
         );

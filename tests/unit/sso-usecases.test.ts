@@ -15,7 +15,15 @@ jest.mock('@/lib/prisma', () => ({
     default: {
         tenant: { findUnique: jest.fn() },
         tenantMembership: { findUnique: jest.fn(), findMany: jest.fn() },
-        user: { findUnique: jest.fn() },
+        user: (() => {
+            // #1237: the email lookup is `findFirst` over the candidate list
+            // (an `in` predicate is not valid on `findUnique`). ONE fn behind
+            // both names, so a test's single `mockResolvedValue` drives the
+            // code whichever method it calls — two separate fns silently stop
+            // reaching it and every lookup reports "not found".
+            const find = jest.fn();
+            return { findUnique: find, findFirst: find };
+        })(),
         tenantIdentityProvider: { findMany: jest.fn(), findFirst: jest.fn() },
         userIdentityLink: {
             findUnique: jest.fn(),
@@ -51,7 +59,7 @@ import {
 const mockPrisma = prisma as unknown as {
     tenant: { findUnique: jest.Mock };
     tenantMembership: { findUnique: jest.Mock; findMany: jest.Mock };
-    user: { findUnique: jest.Mock };
+    user: { findUnique: jest.Mock; findFirst: jest.Mock };
     tenantIdentityProvider: { findMany: jest.Mock; findFirst: jest.Mock };
     userIdentityLink: {
         findUnique: jest.Mock;

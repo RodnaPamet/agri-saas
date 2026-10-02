@@ -33,11 +33,15 @@ const userUpdate = jest.fn();
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
     default: {
-        user: { findUnique: (...a: unknown[]) => findUnique(...a), update: userUpdate },
+        user: {
+            // #1237: the email lookup is `findFirst` now — an `in`
+            // predicate is not valid on `findUnique`. Same double.
+            findFirst: (...a: unknown[]) => findUnique(...a), findUnique: (...a: unknown[]) => findUnique(...a), update: userUpdate },
         passwordResetToken: {
             create: jest.fn().mockResolvedValue({}),
             deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
             findUnique: jest.fn(),
+            findFirst: jest.fn(),
         },
         verificationToken: {
             create: jest.fn().mockResolvedValue({}),

@@ -14,7 +14,7 @@ import { signToken } from '@/lib/auth';
 import { issueEmailVerification } from '@/lib/auth/email-verification';
 import { hashPassword, validatePasswordPolicy } from '@/lib/auth/passwords';
 import { checkPasswordAgainstHIBP } from '@/lib/security/password-check';
-import { hashForLookup } from '@/lib/security/encryption';
+import { hashForLookup, hashForLookupCandidates } from '@/lib/security/encryption';
 import { withValidatedBody } from '@/lib/validation/route';
 import { AuthActionSchema } from '@/lib/schemas';
 import { env } from '@/env';
@@ -87,8 +87,8 @@ async function handleRegister(body: any) {
     // HMAC of the normalised email). Checking by hash is what the
     // unique constraint enforces, so a duplicate signup races
     // through the same gate as the DB.
-    const existing = await prisma.user.findUnique({
-        where: { emailHash: hashForLookup(email) },
+    const existing = await prisma.user.findFirst({
+        where: { emailHash: { in: hashForLookupCandidates(email) } },
     });
     if (existing) {
         return jsonResponse({ error: 'Email already registered' }, { status: 409 });
