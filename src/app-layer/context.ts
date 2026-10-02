@@ -12,6 +12,7 @@ import {
     verifyApiKey,
 } from '@/lib/auth/api-key-auth';
 import { badRequest, forbidden, notFound, unauthorized } from '@/lib/errors/types';
+import { personSurfaceOf, type PersonSurface } from '@/lib/auth/guard';
 import prisma from '@/lib/prisma';
 import { getOrgPermissions } from '@/lib/permissions';
 import { logger } from '@/lib/observability/logger';
@@ -119,7 +120,10 @@ export async function getTenantCtx(
  *
  * @see runInUserContext — executes with this context, setting `app.user_id` only
  */
-export async function getUserCtx(req?: NextRequest): Promise<UserContext> {
+export async function getUserCtx(
+    req?: NextRequest,
+    opts?: { surface?: PersonSurface },
+): Promise<UserContext> {
     // FIRST, before any session work: a key presented here is a category error
     // and must not be answered as the cookie's user.
     if (req) {
@@ -152,15 +156,32 @@ export async function getUserCtx(req?: NextRequest): Promise<UserContext> {
         throw forbidden('MFA_REQUIRED');
     }
 
-    if (await isOperatorOnly(session.userId)) {
+    // P1.6 narrowed this from "every person-scoped surface" to the SOCIAL half.
+    //
+    // Owner ruling, 2026-10-02: the MECHANISATOR lockdown keeps a shared field
+    // device off the FARM's data, not off the person's own identity. Refusing
+    // an operator everywhere meant they could never reach `/account/security`
+    // to change their own password — a lockdown that locks someone out of
+    // their own credentials.
+    //
+    // The surface is derived from the request path with `personSurfaceOf`, the
+    // SAME predicate the Edge gate uses, so the two enforcement points cannot
+    // drift into disagreeing about what "social" means. An explicit
+    // `opts.surface` overrides it for callers with no request (a server
+    // component), and the default there is `account`: every social surface is
+    // an API route and always has a request, so an unclassifiable call is an
+    // account path — and the Edge already blocks operators from `/api/social/`
+    // independently, which is what makes defaulting open here safe rather than
+    // merely convenient.
+    const surface = opts?.surface ?? (req ? personSurfaceOf(req.nextUrl.pathname) : 'account');
+    if (surface === 'social' && (await isOperatorOnly(session.userId))) {
         // ALL-CAPS, which deliberately differs in CASE from the middleware's
         // `{ error: 'operator_scope' }`. Not cosmetic: the copy ratchet reads
         // `operator_scope` as two latin words and counts it as prose, while an
         // ALL-CAPS identifier is exempt as a code. The two responses are
         // different envelopes on different paths anyway — the Edge's bare
         // `{ error }` versus this handler's error payload — so a client has to
-        // handle them separately regardless, and matching the case would have
-        // bought nothing while costing a slot on a ratchet meant to fall.
+        // handle them separately regardless.
         throw forbidden('OPERATOR_SCOPE');
     }
 

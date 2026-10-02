@@ -284,6 +284,72 @@ export function isTenantPath(pathname: string): boolean {
 }
 
 /**
+ * PERSON-scoped paths: surfaces that belong to a human rather than to a farm.
+ *
+ * The third scope, alongside `isTenantPath` and `isOrgPath`. A request resolves
+ * to one of the three, and these are the ones with no tenant in the URL at all:
+ * a person's own account, their onboarding, and the social graph.
+ *
+ * ── it gates paths that mostly DO NOT EXIST YET, deliberately ──
+ *
+ * Measured 2026-10-02: of the four prefixes, only `/account/` has routes (6
+ * files under `src/app/account/`). `/api/me/`, `/api/social/` and
+ * `/onboarding/` have none. That is the intended order — the gate lands before
+ * the routes, so a surface added later is behind it by default rather than
+ * needing someone to remember. It also means the usual danger applies in
+ * reverse: a test that relied on real routes existing would pass vacuously, so
+ * `tests/unit/person-path-parity.test.ts` drives SYNTHETIC pathnames through
+ * the real middleware and prints the population it covers.
+ */
+export function isPersonPath(pathname: string): boolean {
+    return (
+        pathname === '/account' ||
+        pathname.startsWith('/account/') ||
+        pathname === '/onboarding' ||
+        pathname.startsWith('/onboarding/') ||
+        pathname === '/api/me' ||
+        pathname.startsWith('/api/me/') ||
+        pathname === '/api/social' ||
+        pathname.startsWith('/api/social/')
+    );
+}
+
+/**
+ * The SOCIAL half of the person paths — the part an operator-only user is kept
+ * out of.
+ *
+ * Owner ruling, 2026-10-02: the MECHANISATOR lockdown does NOT extend to a
+ * field operator's own account. The lockdown exists to keep a shared field
+ * device off the FARM's data, not off the person's own identity, and blocking
+ * `/account/` would mean an operator could never change their own password.
+ * So `/account/` and `/onboarding/` stay open to them and the social graph does
+ * not.
+ *
+ * `/social/` (the web surface) is listed although no such route exists yet, for
+ * the same gate-before-routes reason as `isPersonPath`. Adding the page later
+ * must not silently open it to a persona confined to one screen.
+ */
+export function isOperatorBlockedPersonPath(pathname: string): boolean {
+    return (
+        pathname === '/api/social' ||
+        pathname.startsWith('/api/social/') ||
+        pathname === '/social' ||
+        pathname.startsWith('/social/')
+    );
+}
+
+/** Which half of the person scope a path belongs to. */
+export type PersonSurface = 'account' | 'social';
+
+/**
+ * Classify a person path. Shared by the Edge gate and `getUserCtx` so the two
+ * enforcement points cannot drift into disagreeing about what "social" means.
+ */
+export function personSurfaceOf(pathname: string): PersonSurface {
+    return isOperatorBlockedPersonPath(pathname) ? 'social' : 'account';
+}
+
+/**
  * Check if a pathname is an org-scoped route.
  *
  * Mirror of `isTenantPath` for the hub-and-spoke organization layer.

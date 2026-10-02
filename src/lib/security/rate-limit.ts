@@ -225,6 +225,26 @@ export const API_READ_LIMIT: RateLimitConfig = {
 };
 
 /**
+ * PUBLIC read API: 60 requests per minute per IP. P1.6.
+ *
+ * Half the authenticated read budget, and keyed by IP ALONE because there is
+ * no user to key on — these are unauthenticated requests that never reach the
+ * JWT check. That makes the budget coarser than it looks: carrier-grade NAT
+ * puts many subscribers behind one public IPv4, so 60/min is shared by everyone
+ * behind a village's cell tower. The figure is a deliberate compromise between
+ * that and the thing it defends against — an unauthenticated caller probing
+ * invite tokens, where each probe is a database read and a token guess.
+ *
+ * It applies to a SMALL, named set of paths rather than "everything public":
+ * see `isPublicReadRateLimited`, which lists why each of the other public
+ * prefixes is excluded.
+ */
+export const PUBLIC_READ_LIMIT: RateLimitConfig = {
+    maxAttempts: 60,
+    windowMs: 60 * 1000,
+};
+
+/**
  * SCIM provisioning: 300/min per bearer, 600/min per IP.
  *
  * `/api/scim/` is in `PUBLIC_PATH_PREFIXES`, so these requests are NOT

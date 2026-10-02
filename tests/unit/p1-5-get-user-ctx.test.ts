@@ -40,10 +40,21 @@ import { getUserCtx } from '@/app-layer/context';
 /** A well-formed key token, built from the real prefix constant. */
 const API_KEY = `${API_KEY_PREFIX}${'a'.repeat(48)}`; // pragma: allowlist secret -- test fixture
 
-function req(headers: Record<string, string> = {}): NextRequest {
+/**
+ * P1.6 made the PATH part of the contract: `getUserCtx` derives the person
+ * surface from it, and the operator refusal fires only on the social half. So
+ * a case that is about the operator rule has to say which surface it means.
+ */
+const ACCOUNT_PATH = '/api/me/profile';
+const SOCIAL_PATH = '/api/social/feed';
+
+function req(
+    headers: Record<string, string> = {},
+    pathname: string = ACCOUNT_PATH,
+): NextRequest {
     const h = new Headers();
     for (const [k, v] of Object.entries(headers)) h.set(k, v);
-    const url = new URL('http://localhost:3000/api/me/profile');
+    const url = new URL(`http://localhost:3000${pathname}`);
     return { method: 'GET', headers: h, nextUrl: url, url: url.toString() } as unknown as NextRequest;
 }
 
@@ -140,7 +151,11 @@ describe('refusal 2 — MFA-pending sessions', () => {
 describe('refusal 3 — operator-only users', () => {
     it('refuses a user whose every active membership is MECHANISATOR', async () => {
         findMany.mockResolvedValue([{ role: 'MECHANISATOR' }, { role: 'MECHANISATOR' }]);
-        await expect(getUserCtx(req())).rejects.toMatchObject({
+        // SOCIAL path: P1.6 narrowed this refusal to the social half, because
+        // the lockdown keeps a field device off the FARM's data, not off the
+        // person's own identity — blocking `/account/` would mean a field
+        // operator could never change their own password.
+        await expect(getUserCtx(req({}, SOCIAL_PATH))).rejects.toMatchObject({
             status: 403,
             // ALL-CAPS, and that case is load-bearing: the copy ratchet
             // counts `operator_scope` as prose (two latin words) and exempts an
@@ -156,12 +171,36 @@ describe('refusal 3 — operator-only users', () => {
         // operator-only and is refused from the surface built for them. Every
         // test with a seeded membership would stay green.
         findMany.mockResolvedValue([]);
-        await expect(getUserCtx(req())).resolves.toMatchObject({ userId: 'u-1' });
+        await expect(getUserCtx(req({}, SOCIAL_PATH))).resolves.toMatchObject({ userId: 'u-1' });
     });
 
     it('ALLOWS a user who is an operator at one farm and something else at another', async () => {
         findMany.mockResolvedValue([{ role: 'MECHANISATOR' }, { role: 'EDITOR' }]);
-        await expect(getUserCtx(req())).resolves.toMatchObject({ userId: 'u-1' });
+        await expect(getUserCtx(req({}, SOCIAL_PATH))).resolves.toMatchObject({ userId: 'u-1' });
+    });
+
+    it('ALLOWS an operator-only user on an ACCOUNT surface — P1.6', async () => {
+        // The narrowing itself, asserted rather than assumed. Same token that
+        // is refused on the social path above.
+        findMany.mockResolvedValue([{ role: 'MECHANISATOR' }, { role: 'MECHANISATOR' }]);
+        await expect(getUserCtx(req({}, ACCOUNT_PATH))).resolves.toMatchObject({ userId: 'u-1' });
+    });
+
+    it('does not even ASK the database on an account surface', async () => {
+        // The query is skipped, not merely ignored. A version that queried and
+        // then discarded the answer would pass the case above while still
+        // paying for it on every person-scoped request.
+        findMany.mockResolvedValue([{ role: 'MECHANISATOR' }]);
+        await getUserCtx(req({}, ACCOUNT_PATH));
+        expect(findMany).not.toHaveBeenCalled();
+    });
+
+    it('an explicit opts.surface overrides the path', async () => {
+        // The escape hatch for a caller with no request — a server component.
+        findMany.mockResolvedValue([{ role: 'MECHANISATOR' }]);
+        await expect(
+            getUserCtx(req({}, ACCOUNT_PATH), { surface: 'social' }),
+        ).rejects.toMatchObject({ status: 403 });
     });
 
     it('asks the DATABASE, scoped to active memberships of live tenants', async () => {
@@ -170,7 +209,7 @@ describe('refusal 3 — operator-only users', () => {
         // list can be true while the user holds a non-operator membership past
         // the cap — and the failure direction is locking a legitimate user out.
         // This pins that the decision does not read the capped list.
-        await getUserCtx(req());
+        await getUserCtx(req({}, SOCIAL_PATH));
         expect(findMany).toHaveBeenCalledWith({
             where: { userId: 'u-1', status: 'ACTIVE', tenant: { deletedAt: null } },
             select: { role: true },
