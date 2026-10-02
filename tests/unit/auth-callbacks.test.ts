@@ -27,16 +27,22 @@ const accountCreate = jest.fn();
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
     default: {
-        user: { findUnique: (...a: unknown[]) => userFindUnique(...a) },
+        user: {
+            // #1237: the email lookup is `findFirst` now — an `in`
+            // predicate is not valid on `findUnique`. Same double.
+            findFirst: (...a: unknown[]) => userFindUnique(...a), findUnique: (...a: unknown[]) => userFindUnique(...a) },
         tenantSecuritySettings: {
             findUnique: (...a: unknown[]) => secSettingsFindUnique(...a),
+            findFirst: (...a: unknown[]) => secSettingsFindUnique(...a),
         },
         userMfaEnrollment: {
             findUnique: (...a: unknown[]) => mfaFindUnique(...a),
+            findFirst: (...a: unknown[]) => mfaFindUnique(...a),
         },
         account: {
             updateMany: (...a: unknown[]) => accountUpdateMany(...a),
             findUnique: (...a: unknown[]) => accountFindUnique(...a),
+            findFirst: (...a: unknown[]) => accountFindUnique(...a),
             create: (...a: unknown[]) => accountCreate(...a),
         },
     },

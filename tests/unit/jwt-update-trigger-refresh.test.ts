@@ -18,7 +18,10 @@ const findUnique = jest.fn();
 
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
-    default: { user: { findUnique: (...a: unknown[]) => findUnique(...a) } },
+    default: { user: {
+            // #1237: the email lookup is `findFirst` now — an `in`
+            // predicate is not valid on `findUnique`. Same double.
+            findFirst: (...a: unknown[]) => findUnique(...a), findUnique: (...a: unknown[]) => findUnique(...a) } },
 }));
 
 import { authOptions } from '@/auth';

@@ -35,10 +35,16 @@
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
     default: {
-        user: {
-            upsert: jest.fn(),
-            findUnique: jest.fn(),
-        },
+        // #1237: `transferTenantOwnership` resolves the new owner with
+        // `findFirst` over the candidate list, and the owner bootstrap reads
+        // candidates before its upsert. `findUnique` and `findFirst` share one
+        // fn so each test's existing `mockResolvedValue` drives whichever the
+        // flow under test calls — separate fns silently stopped reaching the
+        // code and every ownership guard reported "no user found".
+        user: (() => {
+            const find = jest.fn();
+            return { upsert: jest.fn(), findUnique: find, findFirst: find };
+        })(),
         tenant: {
             findUnique: jest.fn(),
         },

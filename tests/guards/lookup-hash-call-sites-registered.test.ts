@@ -71,61 +71,29 @@ interface Registration {
  * reading the file.
  */
 const REGISTERED: Readonly<Record<string, Registration>> = {
-    'src/auth.ts': {
-        kind: 'read-primary-only',
-        note: 'Two reads in the jwt/session callbacks resolving the persisted User by email.',
-    },
-    'src/lib/auth/credentials.ts': {
-        kind: 'read-primary-only',
-        note: 'Three reads: the sign-in lookup plus two failure-recording probes.',
-    },
-    'src/lib/auth/password-management.ts': {
-        kind: 'read-primary-only',
-        note: 'Reset/change flows resolve the account by email before issuing a token.',
-    },
-    'src/lib/auth/email-verification.ts': {
-        kind: 'read-primary-only',
-        note: 'Resolves the account a verification token belongs to.',
-    },
-    'src/lib/auth/invite-redemption.ts': {
-        kind: 'read-primary-only',
-        note: 'Resolves the persisted User.id by email inside the jwt callback.',
-    },
-    'src/app-layer/usecases/tenant-invites.ts': {
-        kind: 'read-primary-only',
-        note: 'Matches a pending invite against an IdP-verified sign-in email.',
-    },
-    'src/app-layer/usecases/org-invites.ts': {
-        kind: 'read-primary-only',
-        note: 'Org-invite counterpart of the tenant-invite match.',
-    },
     'src/app-layer/usecases/scim-users.ts': {
-        kind: 'read-primary-only',
-        note: 'SCIM matches an existing account by email; also WRITES one on create.',
+        kind: 'write',
+        note: 'Writes the hash when SCIM provisions an account. Its MATCH read is on candidates.',
     },
     'src/app-layer/usecases/sso.ts': {
-        kind: 'read-primary-only',
-        note: 'Reads User and UserIdentityLink by hash; also writes both on first link.',
+        kind: 'write',
+        note: 'Writes emailHash and emailAtLinkTimeHash on first identity link. Both reads are on candidates.',
     },
     'src/app/api/auth/register/route.ts': {
-        kind: 'read-primary-only',
-        note: 'The uniqueness pre-check, and the write that follows it. A miss here is the duplicate-User defect.',
-    },
-    'src/app/api/auth/verify-email/resend/route.ts': {
-        kind: 'read-primary-only',
-        note: 'Resolves the account to re-send verification to.',
-    },
-    'src/app/api/staging/seed/route.ts': {
-        kind: 'read-primary-only',
-        note: 'Non-production seed route (403s in prod); upsert by hash. Lowest priority to convert.',
+        kind: 'write',
+        note: 'Writes the hash for the new account. The uniqueness pre-check ahead of it reads candidates.',
     },
     'src/app-layer/usecases/tenant-lifecycle.ts': {
-        kind: 'local-then-used',
-        note: 'Line 63 assigns a local `emailHash` used by the owner-bootstrap upsert — read the file.',
+        kind: 'write',
+        note: 'Owner bootstrap: the candidate read runs first, and this hash keys the upsert that follows it.',
     },
     'src/app-layer/usecases/org-members.ts': {
-        kind: 'local-then-used',
-        note: 'Line 279 assigns a local `emailHash`; same shape as tenant-lifecycle.',
+        kind: 'write',
+        note: 'Org-member placeholder: same find-on-candidates-then-upsert shape as tenant-lifecycle.',
+    },
+    'src/app/api/staging/seed/route.ts': {
+        kind: 'write',
+        note: 'Non-production seed (403s in prod); the candidate read precedes the upsert this hash keys.',
     },
 };
 
@@ -155,7 +123,18 @@ describe('every direct hashForLookup call site is registered', () => {
         expect(FILES.length).toBeGreaterThan(500);
         // The detector must find the sites that demonstrably exist. A zero here
         // means the collector or the pattern broke, not that the repo is clean.
-        expect(CALLERS.length).toBeGreaterThan(10);
+        //
+        // Recalibrated from `> 10` to the post-conversion truth. Sixteen reads
+        // moved to `hashForLookupCandidates`, which does not match the detector,
+        // so the caller count fell to the six files that still WRITE the hash.
+        // Pinned at the real figure rather than relaxed to a number a broken
+        // selector would also satisfy — the whole job of this case is to tell a
+        // clean repo apart from a detector that stopped looking.
+        expect(CALLERS.length).toBeGreaterThanOrEqual(6);
+        // And the two must agree: a caller the registry does not know about is
+        // caught below, but a detector finding FEWER files than the registry
+        // lists would otherwise read as "nothing left to classify".
+        expect(CALLERS.length).toBe(Object.keys(REGISTERED).length);
     });
 
     it('no unregistered caller', () => {
@@ -186,14 +165,30 @@ describe('every direct hashForLookup call site is registered', () => {
         }
     });
 
-    it('the conversion list is non-empty, and shrinking it is the P1.3 work', () => {
-        // A ratchet in the honest direction: when a site is converted to
-        // candidates its entry leaves, and this number goes down. If it ever
-        // reaches zero, a lookup-key rotation is readable end to end and this
-        // assertion is what should be deleted — deliberately, not by accident.
-        const toConvert = Object.values(REGISTERED).filter((r) => r.kind === 'read-primary-only');
-        expect(toConvert.length).toBeGreaterThan(0);
-        expect(toConvert.length).toBeLessThanOrEqual(12);
+    it('the conversion is COMPLETE — no site reads the primary hash alone', () => {
+        // This assertion replaces the shrinking ratchet that stood here while
+        // the conversion was outstanding ("non-empty, and ≤ 12"). It has
+        // reached zero, which was its stated exit condition, so the direction
+        // flips: the old form would now FAIL on success, and keeping it would
+        // have meant a green suite required a known gap to exist.
+        //
+        // What it guards from here is the regression. Every remaining entry is
+        // a WRITE, which is correct on the primary hash; a new read registered
+        // as `read-primary-only` or `local-then-used` fails here rather than
+        // being quietly absorbed into a list that used to have room for it.
+        const unconverted = Object.entries(REGISTERED).filter(
+            ([, r]) => r.kind !== 'write',
+        );
+        expect(unconverted).toEqual([]);
+    });
+
+    it('the write entries are real, not an empty set dressed as completion', () => {
+        // The positive control for the assertion above. `[].every(…)` is true
+        // and `[].filter(…)` is empty, so an emptied registry would satisfy it
+        // while proving nothing. These files genuinely still write the hash.
+        const writes = Object.values(REGISTERED).filter((r) => r.kind === 'write');
+        expect(writes.length).toBeGreaterThanOrEqual(6);
+        expect(writes.length).toBe(Object.keys(REGISTERED).length);
     });
 });
 

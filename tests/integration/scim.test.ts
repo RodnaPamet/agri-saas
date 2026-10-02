@@ -14,6 +14,10 @@ import { createHash } from 'crypto';
 
 // ─── Mock Prisma ────────────────────────────────────────────────────
 
+// Hoisted via a function declaration rather than a `const`: a jest.mock
+// factory is hoisted above the file, and a const reference would throw
+// "Cannot access before initialization".
+const scimUserFind = jest.fn();
 const mockPrisma = {
     tenantScimToken: {
         findUnique: jest.fn(),
@@ -28,7 +32,13 @@ const mockPrisma = {
         count: jest.fn(),
     },
     user: {
-        findUnique: jest.fn(),
+        // #1237: SCIM's match read is `findFirst` over the candidate list now
+        // (an `in` predicate is not valid on `findUnique`). Both names share
+        // ONE fn so every existing `mockPrisma.user.findUnique.mockResolvedValue`
+        // in this file keeps driving the match -- including the idempotent and
+        // reactivation cases, which set an EXISTING user rather than null.
+        findUnique: scimUserFind,
+        findFirst: scimUserFind,
         create: jest.fn(),
         update: jest.fn(),
     },

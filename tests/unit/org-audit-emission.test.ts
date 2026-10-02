@@ -10,6 +10,7 @@
  * and `org-audit-immutability.test.ts` (integration).
  */
 const userUpsertMock = jest.fn();
+const userFindFirstMock = jest.fn();
 const orgMembershipFindUniqueMock = jest.fn();
 const orgMembershipCreateMock = jest.fn();
 const orgMembershipDeleteMock = jest.fn();
@@ -23,9 +24,18 @@ const appendOrgAuditEntryMock = jest.fn();
 
 jest.mock('@/lib/prisma', () => {
     const client = {
-        user: { upsert: (...a: unknown[]) => userUpsertMock(...a) },
+        user: {
+            upsert: (...a: unknown[]) => userUpsertMock(...a),
+            // #1237: a candidate read now runs BEFORE the upsert, because an
+            // upsert `where` cannot hold the candidate list and keying it on the
+            // primary hash alone would create a duplicate User mid-rotation.
+            // Returning undefined falls through to the upsert, which is exactly
+            // the path these tests already exercise.
+            findFirst: (...a: unknown[]) => userFindFirstMock(...a),
+        },
         orgMembership: {
             findUnique: (...a: unknown[]) => orgMembershipFindUniqueMock(...a),
+            findFirst: (...a: unknown[]) => orgMembershipFindUniqueMock(...a),
             create: (...a: unknown[]) => orgMembershipCreateMock(...a),
             delete: (...a: unknown[]) => orgMembershipDeleteMock(...a),
             update: (...a: unknown[]) => orgMembershipUpdateMock(...a),

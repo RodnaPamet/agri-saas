@@ -73,12 +73,14 @@ jest.mock('@/lib/prisma', () => ({
     default: {
         user: {
             findUnique: jest.fn(async () => fakeUser),
+            findFirst: jest.fn(async () => fakeUser),
             update: jest.fn(async () => fakeUser),
         },
     },
     prisma: {
         user: {
             findUnique: jest.fn(async () => fakeUser),
+            findFirst: jest.fn(async () => fakeUser),
             update: jest.fn(async () => fakeUser),
         },
     },

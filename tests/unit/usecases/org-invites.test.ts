@@ -70,10 +70,17 @@ jest.mock('@/app-layer/usecases/org-provisioning', () => ({
 
 jest.mock('@/lib/security/encryption', () => ({
     hashForLookup: jest.fn((s: string) => `hash(${s})`),
+    hashForLookupCandidates: jest.fn((s: string) => [`hash(${s})`]),
 }));
 
 const mockPrisma: any = {
-    user: { findUnique: jest.fn() },
+    // #1237: the email lookup is `findFirst` over the candidate list now. Both
+    // names share ONE fn so a test's single `mockResolvedValue` drives the code
+    // whichever method it calls.
+    user: (() => {
+        const find = jest.fn();
+        return { findUnique: find, findFirst: find };
+    })(),
     orgMembership: { findUnique: jest.fn(), upsert: jest.fn() },
     orgInvite: {
         findUnique: jest.fn(),

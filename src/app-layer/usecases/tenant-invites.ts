@@ -28,7 +28,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { assertWithinLimit } from '@/lib/billing/entitlements';
 import { notFound, badRequest, forbidden, gone, internal } from '@/lib/errors/types';
 import { prisma } from '@/lib/prisma';
-import { hashForLookup } from '@/lib/security/encryption';
+import { hashForLookup, hashForLookupCandidates } from '@/lib/security/encryption';
 
 // ─── Constants ──────────────────────────────────────────────────────
 
@@ -82,8 +82,8 @@ export async function createInviteToken(
 
     const invite = await runInTenantContext(ctx, async (db) => {
         // Guard: reject if there's already an ACTIVE membership for this email.
-        const existingUser = await db.user.findUnique({
-            where: { emailHash: hashForLookup(normalizedEmail) },
+        const existingUser = await db.user.findFirst({
+            where: { emailHash: { in: hashForLookupCandidates(normalizedEmail) } },
             select: { id: true },
         });
         if (existingUser) {
