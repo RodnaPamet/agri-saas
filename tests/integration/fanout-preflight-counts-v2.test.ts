@@ -35,7 +35,33 @@ import { affectedPairs, countAffected } from '../../scripts/count-fanout-encrypt
 
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 
-const bare = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+/**
+ * The database the APP actually writes to — not `DB_URL`.
+ *
+ * `db-helper`'s `DB_URL` applies the per-checkout slot unconditionally, while
+ * `jest.setup.js` repoints `process.env.DATABASE_URL` at a per-worker clone
+ * ONLY when globalSetup wrote a `perWorker` marker. In local single-worker
+ * mode those DISAGREE -- measured here: reader `agri_saas_test_c1a111b87`,
+ * writer `agri_saas_test` -- so a raw client built from `DB_URL` reads a
+ * database the write never reached, scores the counter at zero, and the
+ * absolute-zero assertion this file used to carry PASSED on that zero.
+ *
+ * That is the same false negative this file's docblock warns about one level
+ * up, reintroduced inside the test. The counter's whole claim is "it sees the
+ * database the app wrote to", so the reader is derived from the app's own
+ * connection and the two can no longer drift apart silently.
+ */
+const APP_DB_URL = process.env.DATABASE_URL ?? DB_URL;
+
+const dbNameOf = (url: string): string => {
+    try {
+        return new URL(url).pathname.replace(/^\//, '');
+    } catch {
+        return url;
+    }
+};
+
+const bare = new PrismaClient({ adapter: new PrismaPg({ connectionString: APP_DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 const TENANT = `t-preflight-${randomUUID()}`;
 const LOC_ID = `loc-${randomUUID()}`;
@@ -44,7 +70,7 @@ describeFn('#1222 pre-flight: the fan-out v2 counter', () => {
     let client: Client;
 
     beforeAll(async () => {
-        client = new Client({ connectionString: DB_URL });
+        client = new Client({ connectionString: APP_DB_URL });
         await client.connect();
         await createTenantWithDek({ id: TENANT, name: 'preflight', slug: TENANT });
     });
@@ -54,6 +80,18 @@ describeFn('#1222 pre-flight: the fan-out v2 counter', () => {
         await bare.tenant.deleteMany({ where: { id: TENANT } });
         await client.end();
         await bare.$disconnect();
+    });
+
+    it('control: the counter reads the database the app WRITES to', () => {
+        // The discriminator, printed next to the answer. Every assertion below
+        // compares a count taken through `client` against a write made through
+        // the app's Prisma client; if those two reach different databases the
+        // counts are about the wrong tree and a zero means nothing. This is
+        // not hypothetical -- see the APP_DB_URL docblock for the measured
+        // local split that made the previous absolute-zero assertion pass.
+        expect(dbNameOf(APP_DB_URL)).toBe(dbNameOf(process.env.DATABASE_URL ?? APP_DB_URL));
+        // ...and it must be a database this repo owns, never a dev or prod one.
+        expect(dbNameOf(APP_DB_URL)).toMatch(/^(agri_saas_test|ci_testdb)(_c[0-9a-f]{8})?(_w\d+)?$/);
     });
 
     it('control: the pair set is DERIVED, and shrinks as models are declared', () => {
@@ -80,19 +118,38 @@ describeFn('#1222 pre-flight: the fan-out v2 counter', () => {
         expect(pairs.some((p) => p.model === 'ExchangeMessage')).toBe(false);
     });
 
-    it('reads ZERO before anything encrypted is written', async () => {
-        const before = await countAffected(client, [
-            { model: 'Location', field: 'description', tenantScoped: true },
-        ]);
-        expect(before[0].error).toBeUndefined();
-        expect(before[0].v2).toBe(0);
-    });
+    it('sees a row appear — measured as a DELTA, because zero is not assertable', async () => {
+        // THE POSITIVE CONTROL, and its SHAPE matters as much as its subject.
+        //
+        // This was two tests: `before.v2 === 0`, then `after.v2 >= 1`. Both
+        // were green in CI and the first is FALSE on any database the seed has
+        // touched -- `acme-corp` carries one `Location.description` holding a
+        // CORRECTLY encrypted `v2:` row. `countAffected`'s SQL is
+        // `FROM \"Location\"` with no tenant filter, deliberately (a blast
+        // radius is a total, not a slice), so the count is whole-database and
+        // a global `=== 0` asserts THE DATABASE IS EMPTY rather than anything
+        // about the counter.
+        //
+        // It stayed green for an ENVIRONMENTAL reason, which is the part worth
+        // keeping: CI's `test` job runs `prisma migrate deploy` and NO seed --
+        // only the two `e2e-shard` jobs seed -- so the table is empty there and
+        // `0` is the honest answer to the wrong question. Red for anyone
+        // running locally after a `db:reset`, which is how a peer found it.
+        //
+        // A delta is assertable on ANY database and is strictly stronger. `0`
+        // then `>= 1` is satisfied by a counter that cannot see the row this
+        // test wrote, as long as it sees some other row; `+1` exactly says it
+        // counted THIS write. The old pair could not tell those apart, and on
+        // an empty database it never had to.
+        const pair = [{ model: 'Location', field: 'description', tenantScoped: true }];
 
-    it('sees the row once one is written through the app path', async () => {
-        // THE POSITIVE CONTROL. `runInTenantContext` + the extended client is
-        // the path that encrypts; a raw insert would store plaintext and prove
-        // nothing (which is how production's one `ExchangeListing` row came to
-        // be plaintext and send two sessions chasing a phantom escape).
+        const before = await countAffected(client, pair);
+        expect(before[0].error).toBeUndefined();
+
+        // `runInTenantContext` + the extended client is the path that
+        // ENCRYPTS; a raw insert would store plaintext and prove nothing
+        // (which is how production's one `ExchangeListing` row came to be
+        // plaintext and sent two sessions chasing a phantom escape).
         await runInTenantContext(
             { requestId: 'preflight', userId: 'u-preflight', tenantId: TENANT, role: 'ADMIN' } as never,
             async (db) =>
@@ -101,12 +158,10 @@ describeFn('#1222 pre-flight: the fan-out v2 counter', () => {
                 }),
         );
 
-        const after = await countAffected(client, [
-            { model: 'Location', field: 'description', tenantScoped: true },
-        ]);
+        const after = await countAffected(client, pair);
         expect(after[0].error).toBeUndefined();
-        expect(after[0].v2).toBeGreaterThanOrEqual(1);
-        expect(after[0].rows).toBeGreaterThanOrEqual(1);
+        expect(after[0].v2).toBe(before[0].v2 + 1);
+        expect(after[0].rows).toBe(before[0].rows + 1);
     });
 
     it('a table it cannot read is reported as an ERROR, never as zero', async () => {
