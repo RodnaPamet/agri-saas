@@ -307,9 +307,20 @@ async function createInsuranceLeadImpl(
     const key = idempotencyKey ?? null;
 
     const lead = await runInTenantContext(ctx, async (db) => {
-        // Replay check. `inquirerTenantId` is the ONLY thing scoping this
-        // lookup — InsuranceLead is not tenant-scoped and carries no RLS — so
-        // one farm's key can never return another farm's lead.
+        // Replay check, scoped by `inquirerTenantId`.
+        //
+        // This comment used to read "InsuranceLead is not tenant-scoped and
+        // carries no RLS — so one farm's key can never return another farm's
+        // lead", which had the causality backwards: the safety came from the
+        // `where` below, and offering the ABSENCE of a policy as the reason
+        // gave the next reader no cause to add one.
+        //
+        // As of P1.7 the table DOES carry RLS
+        // (`insurance_lead_inquirer_isolation`, migration 20261002190000), so
+        // there are now two independent reasons this cannot cross farms: the
+        // predicate here, and the policy underneath it. The predicate is still
+        // required — RLS is a floor, not a substitute for asking the right
+        // question.
         if (key) {
             const existing = await db.insuranceLead.findFirst({
                 where: { inquirerTenantId: ctx.tenantId, clientMutationId: key },

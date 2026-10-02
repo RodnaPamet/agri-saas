@@ -67,6 +67,7 @@ import * as path from 'path';
 import { DB_AVAILABLE, DB_URL } from '../integration/db-helper';
 import { prismaTestClient } from '../helpers/db';
 import type { PrismaClient } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { TENANT_SCOPED_MODELS } from '@/lib/db/rls-middleware';
 
 // Epic O-1 — hub-and-spoke organization layer.
@@ -122,9 +123,49 @@ const ORG_SCOPED_MODELS: ReadonlyMap<string, string> = new Map([
 // is no nullable-row case, and per-command policies would be permissive
 // siblings OR'd together (the Epic D.1 lesson).
 // See migration 20260728120000_exchange_inquiry_rls.
+// `InsuranceLead` is the THIRD instance of the same shape, fixed in P1.7
+// (migration 20261002190000). It holds one farm's contact PII — the free-text
+// `message` they wrote, plus the asking user and tenant — and keys on
+// `inquirerTenantId`, a plain FK. Measured before the fix: the table carried no
+// RLS at all, while `src/app-layer/usecases/insurance.ts` queries it under
+// `runInTenantContext`, i.e. as `app_user`, who holds full DML on every table.
+//
+// It was a MISSING BACKSTOP rather than a live leak, and the distinction is
+// worth keeping: all four call sites already filtered by `inquirerTenantId`, so
+// no farm could read another's enquiries. What was absent was the floor under
+// that discipline. The model's docblock asserted it "needs no RLS", and
+// `insurance.ts` went further and offered the ABSENCE of RLS as the reason one
+// farm's key cannot return another's lead — the causality backwards, since the
+// safety came from the `where`. Both are corrected.
 const CROSS_TENANT_SCOPED_MODELS: ReadonlyMap<string, string> = new Map([
     ['PromotionLead', 'promotion_lead_inquirer_isolation'],
     ['ExchangeInquiry', 'exchange_inquiry_party_isolation'],
+    ['InsuranceLead', 'insurance_lead_inquirer_isolation'],
+]);
+
+// Models whose RLS keys on the PAIR of parties to a conversation rather than on
+// one tenant. All three carry FORCE RLS and were verified present by query, not
+// assumed: ExchangeBlock has FIVE policies because the commands are split
+// deliberately — the blocked party must be able to READ the row that refuses
+// them (a refusal they cannot see cannot refuse them) but must not be able to
+// DELETE it, and one USING clause would have governed DELETE too and let a
+// blocked tenant unblock itself.
+//
+// A LIST of policy names per model, not one name: `ExchangeBlock`'s are
+// per-command, so a single-name map would have asserted a policy that does not
+// exist. (I first wrote `exchange_block_party_isolation` by analogy with its
+// two siblings; querying pg_policy showed the real names are
+// `exchange_block_{select,insert,update,delete}`. An entry naming a
+// non-existent policy fails loudly here, but only because this file checks
+// them — the analogy was wrong and the check is what caught it.)
+const PARTY_SCOPED_MODELS: ReadonlyMap<string, readonly string[]> = new Map([
+    ['ExchangeThread', ['exchange_thread_party_isolation']],
+    ['ExchangeMessage', ['exchange_message_party_isolation']],
+    [
+        'ExchangeBlock',
+        ['exchange_block_select', 'exchange_block_insert',
+         'exchange_block_update', 'exchange_block_delete'],
+    ],
 ]);
 
 // Models that are GLOBAL BY DESIGN — deliberately readable across every
@@ -145,7 +186,180 @@ const GLOBAL_BY_DESIGN_MODELS: ReadonlyMap<string, string> = new Map([
             'layer (ctx.tenantId === listing.sellerTenantId), and the PRIVATE ' +
             'half of the marketplace — ExchangeInquiry — is RLS-protected above.',
     ],
+    // The reference catalogues. Every one of these says so in its own schema
+    // docblock — "GLOBAL ... NO tenantId ... no RLS: every tenant reads the
+    // same shared list" — and is written by a platform-admin surface or a
+    // scheduled job, never by a tenant. Listed here so the ratchet can tell
+    // "considered and exempted" from "nobody looked"; the reasons are
+    // deliberately short because the schema is the long form.
+    ['Unit', 'Global unit-of-measure catalogue, seeded by scripts/import-units.ts.'],
+    ['AgriEvent', 'Global agri-events catalogue; written only by the PLATFORM_ADMIN_API_KEY surface.'],
+    ['Promotion', 'Global supplier-promotions feed, curated by platform support. Lead-gen only.'],
+    ['Company', 'Global supplier catalogue behind Promotion; every tenant sees the same suppliers.'],
+    ['SupportScheme', 'Government ДФЗ/МЗХ/EC measures — the same facts for every farm.'],
+    ['SoilSample', 'Global soil cache keyed by a rounded lat/lon cell; open non-tenant data.'],
+    ['CadastreArchive', 'Global cache of a КАИС OpenData settlement archive, keyed by ЕКАТТЕ.'],
+    ['CadastreOwner', 'Legal-entity cadastral ownership from КАИС open data. Physical persons are never stored.'],
+    ['MarketPriceSeries', 'Global market-price series — public reference data / k-anonymised aggregate.'],
+    ['MarketPricePoint', 'A dated observation on a MarketPriceSeries; inherits the series decision.'],
+    ['MarketNewsItem', 'Global agri-news cache aggregated from public feeds.'],
+    ['NewsDerivedEvent', 'AI-derived calendar proposal from a global news item; a deadline is one fact for everyone.'],
 ]);
+
+/**
+ * Models with NO row-level security, protected instead by never being queried
+ * as `app_user`.
+ *
+ * This is a WEAKER protection than a policy and the map is named for the claim
+ * so that stays visible: RLS is inert on these tables, and what keeps them safe
+ * is that every access path uses the global Prisma client or an explicitly
+ * privileged role, so `superuser_bypass`-style reasoning never comes into play.
+ * The same basis P1.4 recorded for the null-tenant auth tables.
+ *
+ * MEASURED 2026-10-02, not assumed. For each model below, every `src/` call
+ * site was checked against `runInTenantContext` / `withTenantDb` /
+ * `runInUserContext`; none sits inside one. The two apparent hits for `Account`
+ * were prose in docblocks — and `src/lib/auth/native/refresh-tokens.ts:25`
+ * states outright that "token issue and refresh run OUTSIDE
+ * `runInTenantContext` by construction".
+ *
+ * An entry here is therefore a claim that can GO STALE: the day one of these is
+ * read under `runInTenantContext`, it becomes the `InsuranceLead` case — PII
+ * reachable by `app_user` with nothing beneath it. That is why the reason
+ * records the access shape rather than just saying "internal".
+ */
+const NO_RLS_NOT_APP_USER_MODELS: ReadonlyMap<string, string> = new Map([
+    ['User', 'The person. Read via the global client on auth paths; pii-middleware handles the encrypted columns.'],
+    ['Account', 'NextAuth OAuth link rows, owned by the adapter. No src/ call site runs under app_user.'],
+    ['AuthSession', 'NextAuth adapter session table (@@map "Session"). ZERO src/ references — the adapter owns it.'],
+    ['PasswordResetToken', 'Single-purpose reset tokens, claimed by a conditional updateMany on the auth path.'],
+    ['VerificationToken', 'Single-purpose verify-email tokens, keyed by identifier rather than by user.'],
+    ['Tenant', 'The tenant row itself. Written by platform/org flows; read by slug resolution before any tenant context exists.'],
+    ['FeatureFlag', 'Platform runtime switches, written only via the X-Platform-Admin-Key console.'],
+    ['FeatureFlagCohortMember', 'Cohort membership behind those flags; same platform-admin-only write path.'],
+    ['OrgAuditLog', 'Org-layer audit rows. Append-only, read by org APIs on the privileged path.'],
+    ['OrgDashboardWidget', 'Org dashboard layout, written by org APIs on the privileged path.'],
+    ['OrgInvite', 'Org invitations, resolved by token on a public path that runs as the global client.'],
+]);
+
+// ═══════════════════════════════════════════════════════════════════
+// P1.7 — EVERY model is classified, derived from the DMMF.
+// ═══════════════════════════════════════════════════════════════════
+//
+// The gap this closes, in the words of this file's own earlier comment: "a
+// model that simply has no `tenantId` is invisible to this file's inventory".
+// The inventory was built from `TENANT_SCOPED_MODELS`, which is DMMF-derived
+// but filtered to models WITH a `tenantId` — so the 32 models without one were
+// outside it, and the three manual maps covered 5 of those 32. `InsuranceLead`
+// is what the other 27 looked like.
+//
+// Measured on 2026-10-02: 120 models, 88 with a `tenantId`, 32 without.
+//
+// `dbName ?? name` is NOT optional. `AuthSession` is `@@map("Session")`, and a
+// probe of mine that queried `pg_class.relname` using MODEL names reported it
+// as having no table at all — a false absence that looked exactly like a
+// missing migration. Any check here that crosses from the DMMF to the database
+// has to resolve the table name the same way.
+const ALL_MODELS: readonly string[] = Prisma.dmmf.datamodel.models
+    .map((m) => m.name)
+    .sort();
+
+/** model -> the table it actually lives in. */
+const TABLE_OF: ReadonlyMap<string, string> = new Map(
+    Prisma.dmmf.datamodel.models.map((m) => [m.name, m.dbName ?? m.name]),
+);
+
+const CLASSIFIED: ReadonlyMap<string, string> = new Map([
+    ...[...TENANT_SCOPED_MODELS].map((m) => [m, 'tenant-scoped'] as const),
+    ...[...ORG_SCOPED_MODELS.keys()].map((m) => [m, 'org-scoped'] as const),
+    ...[...CROSS_TENANT_SCOPED_MODELS.keys()].map((m) => [m, 'cross-tenant-fk'] as const),
+    ...[...PARTY_SCOPED_MODELS.keys()].map((m) => [m, 'party-scoped'] as const),
+    ...[...GLOBAL_BY_DESIGN_MODELS.keys()].map((m) => [m, 'global-by-design'] as const),
+    ...[...NO_RLS_NOT_APP_USER_MODELS.keys()].map((m) => [m, 'no-rls-not-app-user'] as const),
+]);
+
+describe('Guardrail: every model is classified (no database required)', () => {
+    it('reports the population, so a zero would be visible', () => {
+        // A broken DMMF read would otherwise make every assertion below pass
+        // over an empty set.
+        expect(ALL_MODELS.length).toBeGreaterThanOrEqual(100);
+        expect(TENANT_SCOPED_MODELS.size).toBeGreaterThanOrEqual(60);
+    });
+
+    it('EVERY model carries a classification', () => {
+        const unclassified = ALL_MODELS.filter((m) => !CLASSIFIED.has(m));
+        if (unclassified.length > 0) {
+            throw new Error(
+                `${unclassified.length} model(s) have no access classification:\n  ` +
+                    unclassified.join('\n  ') +
+                    `\n\nAdd each to exactly ONE map in this file with a written reason. ` +
+                    `A model with no \`tenantId\` is invisible to the tenant inventory, which ` +
+                    `is how InsuranceLead held one farm's PII readable by app_user with no ` +
+                    `policy beneath it. The classification is how "considered and exempted" ` +
+                    `is told from "nobody looked".`,
+            );
+        }
+    });
+
+    it('no model is classified TWICE', () => {
+        // Two buckets means two different claims about one table, and the
+        // weaker one is the one that silently wins.
+        const seen = new Map<string, string[]>();
+        const add = (m: string, cls: string): void => {
+            seen.set(m, [...(seen.get(m) ?? []), cls]);
+        };
+        for (const m of TENANT_SCOPED_MODELS) add(m, 'tenant-scoped');
+        for (const m of ORG_SCOPED_MODELS.keys()) add(m, 'org-scoped');
+        for (const m of CROSS_TENANT_SCOPED_MODELS.keys()) add(m, 'cross-tenant-fk');
+        for (const m of PARTY_SCOPED_MODELS.keys()) add(m, 'party-scoped');
+        for (const m of GLOBAL_BY_DESIGN_MODELS.keys()) add(m, 'global-by-design');
+        for (const m of NO_RLS_NOT_APP_USER_MODELS.keys()) add(m, 'no-rls-not-app-user');
+        const dupes = [...seen].filter(([, v]) => v.length > 1);
+        expect(dupes.map(([m, v]) => `${m}: ${v.join(' + ')}`)).toEqual([]);
+    });
+
+    it('every classification names a model that EXISTS', () => {
+        // The stale half. A renamed or deleted model leaves an entry that reads
+        // as coverage and protects nothing.
+        const ghosts = [...CLASSIFIED.keys()].filter((m) => !ALL_MODELS.includes(m));
+        expect(ghosts).toEqual([]);
+    });
+
+    it('the no-RLS and global buckets hold nothing with a tenantId', () => {
+        // Consistency between the bucket and the schema: a model WITH a
+        // `tenantId` belongs on the tenant axis, and putting it here would
+        // exempt a tenant-scoped table from the ratchet by misfiling it.
+        const withTenantId = new Set(
+            Prisma.dmmf.datamodel.models
+                .filter((m) => m.fields.some((f) => f.name === 'tenantId'))
+                .map((m) => m.name),
+        );
+        const misfiled = [
+            ...GLOBAL_BY_DESIGN_MODELS.keys(),
+            ...NO_RLS_NOT_APP_USER_MODELS.keys(),
+        ].filter((m) => withTenantId.has(m));
+        expect(misfiled).toEqual([]);
+    });
+
+    it('every reason is a real sentence, not a placeholder', () => {
+        for (const [model, reason] of [
+            ...GLOBAL_BY_DESIGN_MODELS,
+            ...NO_RLS_NOT_APP_USER_MODELS,
+        ]) {
+            expect(reason.length).toBeGreaterThan(40);
+            expect(ALL_MODELS).toContain(model);
+        }
+    });
+
+    it('TABLE_OF resolves @@map, and at least one model actually needs it', () => {
+        // The positive control for the mapping rule above. If no model were
+        // mapped, `dbName ?? name` would be untested and the next person could
+        // simplify it away.
+        const mapped = [...TABLE_OF].filter(([m, t]) => m !== t);
+        expect(mapped.length).toBeGreaterThan(0);
+        expect(TABLE_OF.get('AuthSession')).toBe('Session');
+    });
+});
 
 // ═══════════════════════════════════════════════════════════════════
 // Execution visibility — always runs, with or without a database.
@@ -575,6 +789,44 @@ describeFn(DB_SUITE_NAME, () => {
                     `non-tenantId axis is unprotected. Restore the relevant ` +
                     `statements in prisma/migrations/` +
                     `20260721090000_promotion_lead_consent_rls:\n  ` +
+                    problems.join('\n  '),
+            );
+        }
+    });
+
+    test('every party-scoped model carries ALL its named policies + bypass + FORCE', () => {
+        // P1.7. The Exchange trio keys its RLS on the PAIR of parties to a
+        // conversation, not on one tenant, so it sits on neither the tenantId
+        // axis nor the single-column cross-tenant axis — and was therefore
+        // classified nowhere before this.
+        //
+        // A LIST per model rather than one name, because `ExchangeBlock`'s
+        // policies are per-command. That split is deliberate and load-bearing:
+        // the blocked party must be able to READ the row that refuses them —
+        // a refusal they cannot see cannot refuse them — but must not be able
+        // to DELETE it, and a single USING clause would have governed DELETE
+        // too and let a blocked tenant unblock itself. So asserting "has some
+        // policy" would pass a table that had lost exactly the asymmetry.
+        const problems: string[] = [];
+        for (const [model, expected] of PARTY_SCOPED_MODELS) {
+            const names = policiesFor(model);
+            for (const policy of expected) {
+                if (!names.includes(policy)) {
+                    problems.push(`${model} → missing policy '${policy}'`);
+                }
+            }
+            if (!names.includes('superuser_bypass')) {
+                problems.push(`${model} → missing 'superuser_bypass'`);
+            }
+            if (!forcedTables.has(model)) {
+                problems.push(`${model} → FORCE ROW LEVEL SECURITY not enabled`);
+            }
+        }
+        if (problems.length > 0) {
+            throw new Error(
+                `Party-scoped RLS gap — a table holding a private buyer↔seller ` +
+                    `conversation is unprotected, or has lost the per-command ` +
+                    `asymmetry that stops a blocked tenant unblocking itself:\n  ` +
                     problems.join('\n  '),
             );
         }
