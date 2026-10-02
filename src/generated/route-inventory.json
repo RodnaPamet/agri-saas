@@ -85,6 +85,11 @@
       "documented": false
     },
     {
+      "path": "/api/admin/key-rotation/repair-v2",
+      "status": "live",
+      "documented": false
+    },
+    {
       "path": "/api/admin/news-derived-events",
       "status": "live",
       "documented": false

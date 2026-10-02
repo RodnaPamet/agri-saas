@@ -97,7 +97,9 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 // 241 -> 242: the platform master-KEK rotation sweep. Baselined like every
 // other non-tenant /api/admin path — the consumer is an operator mid-rotation
 // with curl, not a client reading the spec.
-const UNDOCUMENTED_CEILING = 242;
+// 242 -> 243: the misplaced-v2 repair. Baselined like every other non-tenant
+// /api/admin path — an operator mid-migration with curl, not a spec reader.
+const UNDOCUMENTED_CEILING = 243;
 
 interface Baseline {
     _README: string[];

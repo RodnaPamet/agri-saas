@@ -44,6 +44,7 @@ import {
     sweepGlobalKeyRotation,
     countUnmigrated,
     countUnwrappedDeks,
+    countMisplacedV2,
     sweepableColumns,
 } from '@/app-layer/usecases/global-key-rotation';
 import { kekRotationInFlight } from '@/lib/security/encryption';
@@ -104,12 +105,20 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
     // needed the old key — see the usecase's DEK_COLUMNS docblock. Counted only
     // for an UNFILTERED report, since a filtered one is a claim about columns.
     const unwrappedDeks = only.length > 0 ? 0 : await countUnwrappedDeks();
+    // Reported so the work is DISCOVERABLE from the surface an operator already
+    // reads — but deliberately NOT part of `remaining` or
+    // `previousKeyRetirable`. A misplaced v2 row is encrypted under a tenant
+    // DEK, which the rotation re-wraps, so it stays decryptable and does not
+    // block retiring the previous key. Separate problem, separate signal; the
+    // repair lives at ./repair-v2.
+    const misplacedV2 = only.length > 0 ? 0 : await countMisplacedV2();
     return jsonResponse({
         rotationInFlight: kekRotationInFlight(),
         filtered: only.length > 0,
         remaining: total + unwrappedDeks,
         columnsRemaining: total,
         unwrappedDeks,
+        misplacedV2,
         /**
          * The whole point of the field: `true` means every master-KEK
          * ciphertext in the deployment is readable under the CURRENT key, so

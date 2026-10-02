@@ -187,6 +187,13 @@ const EXCLUDED_ROUTES: ReadonlyArray<{ relPath: string; reason: string }> = [
         reason: 'Platform-admin-key-gated: POST /api/admin/tenants — tenant-scope does not apply.',
     },
     {
+        relPath: 'api/admin/key-rotation/repair-v2/route.ts',
+        reason:
+            'Platform-admin-key-gated: repairs ciphertext encrypted under the wrong KEY on ' +
+            'models that must use the global KEK (e.g. ExchangeMessage, read by TWO tenants). ' +
+            'It spans tenants by construction, so there is no tenant to scope a permission to.',
+    },
+    {
         relPath: 'api/admin/key-rotation/route.ts',
         reason:
             'Platform-admin-key-gated: the GLOBAL master-KEK rotation sweep. It re-encrypts ' +
