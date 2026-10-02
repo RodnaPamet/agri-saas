@@ -19,9 +19,22 @@ jest.mock('@/lib/db-context', () => ({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     runInTenantContext: jest.fn(async (_ctx: any, fn: (db: any) => any) => fn(mockDb)),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    runInGlobalContext: jest.fn(async (fn: (db: any) => any) => fn(mockDb)),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     withTenantDb: jest.fn(async (_id: string, fn: (db: any) => any) => fn(mockDb)),
+}));
+
+// P1.7 — the RLS-free read of "which tenants switched EXCHANGE off" moved from
+// the untyped `runInGlobalContext` to `runWithoutRls({ reason })`. Mocked here
+// so the stub also asserts the REASON: a bypass that silently changed its
+// stated justification would otherwise pass.
+jest.mock('@/lib/db/rls-middleware', () => ({
+    __esModule: true,
+    runWithoutRls: jest.fn(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        async (opts: { reason: string }, fn: (db: any) => any) => {
+            expect(opts.reason).toBe('module-availability');
+            return fn(mockDb);
+        },
+    ),
 }));
 jest.mock('@/app-layer/repositories/exchange', () => ({
     ExchangeRepository: {

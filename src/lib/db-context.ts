@@ -164,14 +164,21 @@ export async function runInUserContext<T>(
     );
 }
 
-/**
- * Executes a callback with the global Prisma Client, bypassing RLS.
- * Use this SAFELY and specifically for unauthenticated public routes 
- * where tenant context cannot be established (e.g. share links).
+/*
+ * `runInGlobalContext` was deleted in P1.7.
+ *
+ * It took a callback and handed it the raw client. No reason, no record, no
+ * constraint — "use this SAFELY and specifically for unauthenticated public
+ * routes" was the whole of its contract, and nothing enforced it. Four
+ * production sites used it; none was an unauthenticated public route.
+ *
+ * Replaced by `runWithoutRls({ reason })` in `@/lib/db/rls-middleware`, which
+ * demands a reason from a closed union, rejects an unknown one at runtime, and
+ * logs every invocation with a caller fingerprint so an audit can enumerate
+ * the bypasses without a grep.
+ *
+ * That helper already existed, fully tested, with ZERO production callers —
+ * a security control that was code-complete and inert while every real bypass
+ * went through the untyped door beside it. `tests/guards/no-untyped-rls-bypass.test.ts`
+ * is what stops the door being rebuilt.
  */
-export async function runInGlobalContext<T>(
-    callback: (db: PrismaTx) => Promise<T>,
-    customPrisma?: PrismaClient
-): Promise<T> {
-    return callback(customPrisma || prisma);
-}
