@@ -143,7 +143,18 @@ export function emitSql(pairs: Pair[] = affectedPairs()): string {
     return pairs
         .map(
             (p) =>
-                `SELECT '${p.model}.${p.field}' AS target, '${p.tenantScoped ? 'tenant' : 'GLOBAL'}' AS scope, ` +
+                `SELECT '${p.model}.${p.field}' AS target, ` +
+                // The counts below are WHOLE-DATABASE -- `FROM \"Model\"`, no
+                // `WHERE tenantId`. This column therefore describes the MODEL
+                // (does it carry a tenantId at all), never the count's scope.
+                // It read `AS scope` with the value `tenant`, next to a count,
+                // which invites exactly one reading: "one row, in one tenant".
+                // A peer read `Location.description v2=1` off this output and
+                // began writing up a live production orphan before checking
+                // the manifest. Whole-database is CORRECT here -- a blast
+                // radius is a total -- so the query is right and the label was
+                // the defect.
+                `'${p.tenantScoped ? 'tenant-scoped model' : 'tenantless model'}' AS model_shape, ` +
                 `count(*)::int AS rows, ` +
                 `count(*) FILTER (WHERE "${p.field}" LIKE 'v2:%')::int AS v2, ` +
                 `count(*) FILTER (WHERE "${p.field}" LIKE 'v1:%')::int AS v1 ` +
@@ -166,8 +177,11 @@ async function main(): Promise<void> {
     await client.connect();
 
     console.log(`\n  ${pairs.length} affected (model, field) pairs, derived from the manifest + schema\n`);
-    console.log(`  ${'model.field'.padEnd(40)} ${'scope'.padEnd(8)} ${'rows'.padStart(6)} ${'v2'.padStart(5)} ${'v1'.padStart(5)}`);
+    // `rows`/`v2`/`v1` are ALL-ROWS counts; the second column describes the
+    // model, not the count. See the note in `emitSql`.
+    console.log(`  ${'model.field'.padEnd(40)} ${'model'.padEnd(8)} ${'rows*'.padStart(6)} ${'v2*'.padStart(5)} ${'v1*'.padStart(5)}`);
     console.log(`  ${'-'.repeat(40)} ${'-'.repeat(8)} ${'-'.repeat(6)} ${'-'.repeat(5)} ${'-'.repeat(5)}`);
+    console.log(`  ${' '.repeat(40)} ${' '.repeat(8)} * whole-database, never tenant-filtered`);
 
     const counts = await countAffected(client, pairs);
     let totalV2 = 0;
