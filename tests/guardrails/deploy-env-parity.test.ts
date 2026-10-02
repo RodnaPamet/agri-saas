@@ -46,7 +46,17 @@ const ALSO_REQUIRED_IN_PROD = ['REDIS_URL', 'DATA_ENCRYPTION_KEY', 'NEXTAUTH_URL
  * what the default disables — the key alone is not enough, because an operator
  * reading `NATIVE_AUTH_REDIRECT_ALLOWLIST=` learns nothing from it.
  */
-const FEATURE_DISABLING_DEFAULTS = ['NATIVE_AUTH_REDIRECT_ALLOWLIST'];
+const FEATURE_DISABLING_DEFAULTS = [
+    'NATIVE_AUTH_REDIRECT_ALLOWLIST',
+    // P1.1 — `LOOKUP_HMAC_KEY` defaults to "", which BOOTSTRAPS the lookup
+    // hash off DATA_ENCRYPTION_KEY. Nothing breaks and nothing logs; what is
+    // silently absent is the ability to rotate the master KEK, because while
+    // bootstrapped the lookup hash still moves with it and nothing rehashes
+    // `User.emailHash`. Exactly this category: no boot error, no log line, a
+    // capability that simply does not work — and the capability in question is
+    // the recovery path from a leaked key.
+    'LOOKUP_HMAC_KEY',
+];
 
 function serverBlock(src: string): string {
     const start = src.indexOf('server: {');

@@ -205,6 +205,34 @@ export const env = createEnv({
         // remaining v1 rows under the previous key.
         DATA_ENCRYPTION_KEY_PREVIOUS: z.string().min(32).optional(),
 
+        // P1.1 — the LOOKUP HASH key, independent of the master KEK.
+        //
+        // EMPTY BY DEFAULT, and empty means the lookup hash BOOTSTRAPS off
+        // DATA_ENCRYPTION_KEY's material — which is the pre-P1.1 behaviour and
+        // is why shipping this rehashes nothing. What empty DISABLES is master
+        // KEK rotation: while bootstrapped, `hashForLookup` still tracks
+        // DATA_ENCRYPTION_KEY, so rotating it moves every `User.emailHash` and
+        // `UserIdentityLink.emailAtLinkTimeHash` with nothing to rehash them.
+        // That failure is silent, not an outage — sign-in reports no such user,
+        // reset / verification / invite / SCIM stop matching existing accounts,
+        // and registration SUCCEEDS into a duplicate because its uniqueness
+        // check is the same hash that now misses.
+        //
+        // Set it to the material DATA_ENCRYPTION_KEY holds TODAY. Not a new
+        // secret — the same bytes, written down, so a later KEK rotation leaves
+        // the lookup derivation behind. `isLookupKeyPinned()` reports which
+        // state a process is in and `/api/readyz` surfaces it, because "the
+        // code shipped" and "the capability is active" are different claims.
+        LOOKUP_HMAC_KEY: z.string().default(""),
+        // The outgoing lookup material while rotating the LOOKUP key itself (a
+        // separate event from a KEK rotation). Reads try both — see
+        // `hashForLookupCandidates`; a hash has no auth failure, so "either
+        // key" can only be expressed by widening the query. Writes addressed by
+        // a unique where use the primary alone, so a row still hashed under the
+        // previous key is not addressable by email for those until the P1.3
+        // rehash sweep runs. Remove once that sweep reports zero rows.
+        LOOKUP_HMAC_KEY_PREVIOUS: z.string().min(32).optional(),
+
         // Security / CORS
         CORS_ALLOWED_ORIGINS: z.string().default(""),
 
@@ -661,6 +689,8 @@ export const env = createEnv({
 
         DATA_ENCRYPTION_KEY: process.env.DATA_ENCRYPTION_KEY,
         DATA_ENCRYPTION_KEY_PREVIOUS: process.env.DATA_ENCRYPTION_KEY_PREVIOUS,
+        LOOKUP_HMAC_KEY: process.env.LOOKUP_HMAC_KEY,
+        LOOKUP_HMAC_KEY_PREVIOUS: process.env.LOOKUP_HMAC_KEY_PREVIOUS,
 
         CORS_ALLOWED_ORIGINS: process.env.CORS_ALLOWED_ORIGINS,
         NATIVE_AUTH_REDIRECT_ALLOWLIST: process.env.NATIVE_AUTH_REDIRECT_ALLOWLIST,
