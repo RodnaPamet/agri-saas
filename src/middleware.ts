@@ -7,6 +7,10 @@ import {
     isApiReadRateLimited,
 } from '@/lib/rate-limit/apiReadRateLimit';
 import { isScimRateLimited, checkScimRateLimit } from '@/lib/rate-limit/scimRateLimit';
+import {
+    isPublicReadRateLimited,
+    checkPublicReadRateLimit,
+} from '@/lib/rate-limit/publicReadRateLimit';
 import { isApiKeyRateLimited, checkApiKeyRateLimit } from '@/lib/rate-limit/apiKeyRateLimit';
 import { API_KEY_AUTH_ENABLED } from '@/lib/auth/api-key-availability';
 import { env } from '@/env';
@@ -28,6 +32,8 @@ import {
     checkTenantAccess,
     checkOrgAccess,
     isOperatorAllowedPath,
+    isPersonPath,
+    isOperatorBlockedPersonPath,
 } from '@/lib/auth/guard';
 import { generateNonce, buildCspHeader, CSP_NONCE_HEADER, CSP_REPORT_PATH, CSP_REPORT_GROUP, getCspHeaderName, isCspReportOnly } from '@/lib/security/csp';
 import { applySecurityHeaders } from '@/lib/security/headers';
@@ -114,6 +120,19 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
         // lives in `withApiErrorHandling`, which these handlers do not use.
         if (isScimRateLimited(pathname)) {
             const rl = await checkScimRateLimit(req);
+            if (!rl.ok && rl.response) return rl.response;
+        }
+
+        // P1.6's public read tier (60/min/IP), here for the same reason and by
+        // the same precedent: this branch RETURNS, so a limiter placed after it
+        // never sees a public request. It covers the public, unauthenticated,
+        // token-parameterised GET reads — the invite lookups — where an
+        // anonymous caller can probe tokens and each probe is a database read.
+        // Deliberately NOT every public GET; `isPublicReadRateLimited` lists
+        // why each other public prefix is excluded, probes and `/api/auth`
+        // among them.
+        if (isPublicReadRateLimited(req.method, pathname)) {
+            const rl = await checkPublicReadRateLimit(req);
             if (!rl.ok && rl.response) return rl.response;
         }
         return NextResponse.next();
@@ -288,14 +307,28 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
     }
 
     // ── 4. MFA enforcement ──
-    if (isTenantPath(pathname) && !isMfaAllowedPath(pathname)) {
+    //
+    // P1.6: PERSON-scoped paths are gated too. They were not, and the omission
+    // was invisible because this block was wrapped in `isTenantPath` alone — so
+    // `/account/`, `/onboarding/`, `/api/me/` and `/api/social/` were reachable
+    // by a session that had authenticated but not cleared its second factor.
+    // That is exactly the session a stolen first factor produces, and a
+    // person's own account is what it is most useful against. `getUserCtx`
+    // refuses those sessions at the handler (P1.5); this is the Edge half, and
+    // the only half that can protect a PAGE.
+    if ((isTenantPath(pathname) || isPersonPath(pathname)) && !isMfaAllowedPath(pathname)) {
         const mfaPending = token.mfaPending === true;
 
         if (mfaPending) {
             // Extract tenant slug from path: /t/:slug/... or /api/t/:slug/...
             const segments = pathname.split('/');
             const tIndex = segments.indexOf('t');
-            const tenantSlug = tIndex >= 0 ? segments[tIndex + 1] : null;
+            // A person path carries no slug, so fall back to the session's
+            // primary tenant: the MFA challenge page is tenant-scoped
+            // (`/t/:slug/auth/mfa`) and has no person-scoped equivalent.
+            const tenantSlug = (tIndex >= 0 ? segments[tIndex + 1] : null)
+                ?? (token.tenantSlug as string | undefined)
+                ?? null;
 
             if (isApiRoute(pathname)) {
                 return forbiddenJson('MFA verification required');
@@ -305,6 +338,19 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
                 const mfaUrl = new URL(`/t/${tenantSlug}/auth/mfa`, req.nextUrl.origin);
                 mfaUrl.searchParams.set('next', pathname);
                 return NextResponse.redirect(mfaUrl);
+            }
+
+            // No tenant anywhere: there is no MFA page to send them to, so
+            // land on `/no-tenant` rather than fall through onto the person
+            // page with a second factor still outstanding. Defensive — MFA is
+            // enrolled per tenant, so a tenantless session should not be able
+            // to be mfaPending — but falling through is the one outcome that
+            // would make this whole gate a no-op for the case it cannot
+            // classify, and `/no-tenant` is public so there is no redirect
+            // loop. Person paths only: a tenant path always yields a slug, and
+            // changing its behaviour is not this PR's business.
+            if (isPersonPath(pathname)) {
+                return NextResponse.redirect(new URL('/no-tenant', req.nextUrl.origin));
             }
         }
     }
@@ -399,6 +445,43 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
             // see today via the layout's `notFound()` collapse, so a
             // probing user can't tell whether the slug exists.
             return NextResponse.redirect(new URL('/no-tenant', req.nextUrl.origin));
+        }
+    }
+
+    // ── 5d. Operator lockdown on PERSON-scoped paths (P1.6) ──
+    //
+    // The tenant lockdown in stage 5 keys on the slug in the URL, and a person
+    // path has none — so it could not fire here at all, and the one persona
+    // deliberately confined to a single screen would have reached every
+    // person-scoped surface in the product.
+    //
+    // Scope is the SOCIAL half only, per the owner's ruling: `/account/` and
+    // `/onboarding/` stay open to an operator because the lockdown exists to
+    // keep a shared field device off the FARM's data, not off the person's own
+    // identity — and blocking `/account/security` would mean a field operator
+    // could never change their own password.
+    //
+    // It FAILS OPEN on a truncated membership list, deliberately. The Edge has
+    // no database, and `memberships` is capped at MAX_JWT_MEMBERSHIPS: "every
+    // entry is MECHANISATOR" over a truncated list can be true while the user
+    // holds a non-operator membership past the cap, and the cost of being wrong
+    // is locking a legitimate user out. `getUserCtx` makes the authoritative
+    // call against the database, so this is defence in depth rather than the
+    // only gate.
+    if (isOperatorBlockedPersonPath(pathname)) {
+        const memberships = token.memberships ?? [];
+        const operatorOnly =
+            token.membershipsTruncated !== true &&
+            memberships.length > 0 &&
+            memberships.every((m) => m.role === 'MECHANISATOR');
+
+        if (operatorOnly) {
+            if (isApiRoute(pathname)) {
+                // Same code the tenant lockdown returns, so a client that
+                // handles one handles both.
+                return NextResponse.json({ error: 'operator_scope' }, { status: 403 });
+            }
+            return NextResponse.redirect(new URL('/', req.nextUrl.origin));
         }
     }
 
