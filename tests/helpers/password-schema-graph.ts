@@ -53,12 +53,42 @@
  * password — and a regex over whole files would read prose as a declaration.
  * Matching runs against the AST text of ONE declaration at a time.
  *
+ * ## It matches the field NAME, not the field's spelling (#1166 follow-up)
+ *
+ * `PASSWORD_FIELD_RE` requires a literal `z.` after the colon, so it saw
+ * `password: z.string().min(8)` and nothing else. That is one of two shapes a
+ * Zod field takes in this repo, and the other one — `password: PwFieldSchema`,
+ * a named sub-schema — is the idiom the schema layer actually prefers for a
+ * reusable field (23 uses across 12 files in `src/lib/schemas` and
+ * `src/app-layer/schemas`). Measured 2026-10-02 over 374 route files:
+ *
+ *     detector                                    routes flagged
+ *     regex only (before)                              3
+ *     + field-name match, Zod-gated (now)              3     same set
+ *     + field-name match, UNGATED                      4     staging/seed, false
+ *
+ * The before/after SET is identical, which is the point: nothing in the tree
+ * used the blind shape, so no measurement of the live population could have
+ * revealed this. What revealed it was a probe — an unregistered route
+ * parsing `z.object({ password: PasswordFieldSchema })`, against which the
+ * whole guard passed 13/13 while reporting the inline-shaped probe beside it.
+ * `passwordFieldsIn` is the union of the two matchers, so the population can
+ * only grow.
+ *
  * ## What it deliberately does not do
  *
- * It does not type-check. A schema assembled at runtime (`schemas[key]`), or
- * reached through a namespace import, is invisible to it. `hibp-coverage`
- * asserts that no route file uses a repo-internal namespace import, so that
- * second gap cannot open without a test saying so.
+ * It does not type-check. A schema assembled at runtime (`schemas[key]`), a
+ * computed field key (`[FIELD]: z.string()`), or a schema reached through a
+ * namespace import is invisible to it. `hibp-coverage` asserts that no route
+ * file uses a repo-internal namespace import, so that last gap cannot open
+ * without a test saying so.
+ *
+ * It also reports a DECLARATION, not an ingestion: a route that takes
+ * `req.json()` straight into a helper with no Zod field at all is outside
+ * this detector by construction. #1216 measured that population (a
+ * destructure-site matcher covers `auth/register` and misses the other two)
+ * and chose not to bolt a second, differently-blind pattern on beside this
+ * one.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -88,9 +118,24 @@ export const PASSWORD_FIELD_RE = new RegExp(
 );
 
 /**
- * Does a declaration look like a Zod schema? The gate on following
- * composition — see the module docblock. Non-global on purpose: `.test()` is
- * called on it, and a `/g` regex would make that stateful.
+ * Does a declaration look like a Zod schema?
+ *
+ * This gates two different things, and it is a different KIND of gate in
+ * each — measured, because the two readings disagree:
+ *
+ *  - On following COMPOSITION it is a **cost** bound. Removing it reports
+ *    the same routes 38x more expensively (#1216, see the module docblock).
+ *  - On reporting a HIT it is a **correctness** bound, and the witness is in
+ *    the tree: `src/app/api/staging/seed/route.ts` returns
+ *    `login: { email, password: 'password123' }` — a property literally
+ *    named `password` in a plain object literal. Ungated, field-name
+ *    matching flags that route (measured: 4 routes of 374 ungated vs 3
+ *    gated). It is a hardcoded seed credential on a handler that 403s in
+ *    production, not a user-chosen password, so flagging it is a false
+ *    positive — and a false positive is how a guard gets switched off.
+ *
+ * Non-global on purpose: `.test()` is called on it, and a `/g` regex would
+ * make that stateful.
  */
 export const ZOD_SHAPED_RE = /\bz\s*\./;
 
@@ -255,6 +300,74 @@ export function indexModule(abs: string): ModuleIndex {
     return index;
 }
 
+/**
+ * Password-shaped PROPERTY NAMES declared inside one declaration.
+ *
+ * `PASSWORD_FIELD_RE` requires the value to begin with a literal `z.`, so it
+ * reads `password: z.string().min(8)` and is blind to
+ * `password: PasswordFieldSchema`. That second shape is not hypothetical —
+ * it is this repo's dominant idiom for a reusable Zod field, used 23 times
+ * across 12 files in `src/lib/schemas` and `src/app-layer/schemas`
+ * (`category: CostCategorySchema`, `geometry: PolygonGeometrySchema`,
+ * `type: IdentityProviderTypeSchema`, …). Measured 2026-10-02: a route
+ * parsing `z.object({ password: PasswordFieldSchema })` scored ZERO and the
+ * whole guard stayed green at 13 passed with that route unregistered in the
+ * tree.
+ *
+ * So the question asked here is "is a field with this NAME declared?" rather
+ * than "is a field with this name declared THIS WAY" — what makes a route
+ * password-handling is the name it binds off the request body, not the
+ * expression that validates it.
+ *
+ * Matching is on the AST, so it cannot read prose: `AuthRegisterSchema`'s own
+ * `.openapi()` description contains the word password, and a property named
+ * `password` inside a docblock is not a `PropertyAssignment`. A computed key
+ * (`[FIELD]: z.string()`) is still invisible, as it is to the regex.
+ */
+export function passwordPropertyNames(node: ts.Node): string[] {
+    const out: string[] = [];
+    const visit = (n: ts.Node): void => {
+        if (ts.isPropertyAssignment(n)) {
+            const name = ts.isIdentifier(n.name)
+                ? n.name.text
+                : ts.isStringLiteral(n.name)
+                  ? n.name.text
+                  : null;
+            if (name && (PASSWORD_FIELD_NAMES as readonly string[]).includes(name)) {
+                out.push(name);
+            }
+        }
+        ts.forEachChild(n, visit);
+    };
+    visit(node);
+    return out;
+}
+
+/**
+ * Every password-shaped field one declaration declares — the UNION of the
+ * two detectors, deduplicated.
+ *
+ * A union rather than a replacement so the population can only grow: the
+ * regex keeps whatever it already matched (a `password: z.…` outside a
+ * `PropertyAssignment` — in a type literal, say) and the name matcher adds
+ * the shapes it could not see. `hibp-coverage` asserts the three known
+ * routes still report exactly the fields they did before, which is the
+ * assertion that would catch a "widening" that quietly dropped a case.
+ */
+export function passwordFieldsIn(node: ts.Node, source: ts.SourceFile): string[] {
+    const text = node.getText(source);
+
+    // Cheap pre-filter: an AST walk is only worth doing if one of the names
+    // appears in the text at all. A property named `password` cannot be
+    // present without the substring being present.
+    const mentionsAny = PASSWORD_FIELD_NAMES.some((n) => text.includes(n));
+    if (!mentionsAny) return [];
+
+    const fields = [...text.matchAll(PASSWORD_FIELD_RE)].map((m) => m[1]);
+    if (ZOD_SHAPED_RE.test(text)) fields.push(...passwordPropertyNames(node));
+    return [...new Set(fields)];
+}
+
 /** Every identifier named inside a declaration, deduplicated. */
 function identifiersIn(node: ts.Node): string[] {
     const names = new Set<string>();
@@ -299,8 +412,8 @@ export function findPasswordFields(routeAbs: string): PasswordFieldHit[] {
     //    per DECLARATION rather than over the whole file so a docblock
     //    quoting `password: z.string()` cannot register as one.
     for (const [name, node] of routeIndex.decls) {
-        for (const m of node.getText(routeIndex.source).matchAll(PASSWORD_FIELD_RE)) {
-            hits.push({ field: m[1], declaredIn: routeRel, via: [`${routeRel}#${name}`] });
+        for (const field of passwordFieldsIn(node, routeIndex.source)) {
+            hits.push({ field, declaredIn: routeRel, via: [`${routeRel}#${name}`] });
         }
     }
 
@@ -350,8 +463,8 @@ export function findPasswordFields(routeAbs: string): PasswordFieldHit[] {
 
         const text = decl.getText(index.source);
         const via = [...item.via, `${rel}#${item.symbol}`];
-        for (const m of text.matchAll(PASSWORD_FIELD_RE)) {
-            hits.push({ field: m[1], declaredIn: rel, via });
+        for (const field of passwordFieldsIn(decl, index.source)) {
+            hits.push({ field, declaredIn: rel, via });
         }
 
         // Follow composition only out of a Zod-shaped declaration. Removing

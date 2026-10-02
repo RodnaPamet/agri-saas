@@ -1489,8 +1489,8 @@ user-chosen password MUST import AND call
 `src/app/api/**/route.ts` for password-shaped Zod fields. An
 in-memory mutation regression proof confirms the detector catches
 removals. The structural scan auto-fails any new route that parses
-a `password` / `newPassword` / `currentPassword` Zod field without
-registering.
+a `password` / `newPassword` / `currentPassword` /
+`confirmPassword` Zod field without registering.
 
 **The scan FOLLOWS IMPORTS** (`tests/helpers/password-schema-graph.ts`,
 #1166), and the sentence that used to end this paragraph — *"define
@@ -1515,6 +1515,25 @@ schema in `@/lib/schemas` as GAP-10 says, and import it by NAME** —
 resolution is per-symbol, and a namespace import
 (`import * as s from '@/lib/schemas'`) has no symbol to follow, which
 the guard asserts no route file uses.
+
+**It matches the field NAME, not the field's spelling.** The regex
+required a literal `z.` after the colon, so it read
+`password: z.string().min(8)` and was blind to
+`password: PwFieldSchema` — which is this repo's normal idiom for a
+reusable Zod field (23 uses across 12 files in `src/lib/schemas` and
+`src/app-layer/schemas`: `category: CostCategorySchema`,
+`geometry: PolygonGeometrySchema`, …). No password route happened to
+use it, so the flagged set is **3 of 374 route files before and
+after** and no measurement of the live tree could have shown the gap;
+a probe did — an unregistered route parsing
+`z.object({ password: PasswordFieldSchema })` left the guard green at
+13/13 while the inline-shaped probe beside it was reported by name.
+So there is no longer a shape this guard requires you to use. Name
+matching is gated on the declaration being Zod-shaped, and that gate
+is CORRECTNESS here rather than cost (it is cost on the composition
+walk): ungated it also flags `api/staging/seed`, which returns
+`login: { password: 'password123' }` — a hardcoded seed credential on
+a handler that 403s in production.
 
 **See `docs/epic-e-observability.md`** for the Epic E operator
 runbook (verification commands, rollback procedures, how to add a

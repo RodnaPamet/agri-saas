@@ -50,6 +50,15 @@ structural scan flags any password-accepting route that skips it; the
 schemas are defined inline in the route files precisely so the scan
 sees them.
 
+> **Superseded (#1166).** That last clause was the convention at the
+> time and is no longer a requirement. The scan follows imports per
+> symbol (`tests/helpers/password-schema-graph.ts`) and matches the
+> field by NAME rather than by a literal `z.` after the colon, so a
+> password field declared in a shared schema module — or bound to a
+> named sub-schema — is seen either way. These two routes keep their
+> inline schemas because there was no reason to move them, not
+> because the guard needs them there.
+
 ## Files
 
 | File | Role |
