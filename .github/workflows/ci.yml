@@ -1431,16 +1431,69 @@ jobs:
           # that a spec ever failed — which biases every stability figure taken
           # from the run list downwards. A notice costs nothing on a clean run
           # and leaves the evidence attached to the run that saw it.
-          if [ "${#MARKED[@]}" -gt 0 ]; then
+          #
+          # A KNOWN flake and a BRAND-NEW one are byte-identical here, and that
+          # is the gap #1076 is actually about: its spec needed a retry on
+          # essentially every run for weeks, stayed a notice every time, and
+          # was only noticed when the retries ran out and it blocked #1036.
+          # So the split below is between ledgered and unledgered, NOT between
+          # flake and failure — a new flake is new information and earns a
+          # warning; a known one stays the notice it already was, because the
+          # reverted-error experiment above is still right about crying wolf.
+          LEDGER="tests/e2e/known-flakes.json"
+          if [ ! -f "$LEDGER" ]; then
+            echo "::warning::$LEDGER is missing, so every flake below reads as unledgered. That is the safe direction, but fix the path rather than trusting the classification."
+          fi
+
+          KNOWN=(); UNKNOWN=()
+          for line in "${MARKED[@]}"; do
+            # Matched on spec file + title substring. NOT the line number: a
+            # comment added above a test moves it (entity-detail-layout went
+            # :24 -> :51 inside one PR) while the test itself is unchanged.
+            # `. as $f` first: inside contains(), `.` is the STRING input, so a
+            # bare `.spec` resolves against $l and errors — which read as
+            # "unledgered" for every line, ledgered ones included. Caught by
+            # running this against real log lines before shipping it.
+            if [ -f "$LEDGER" ] && jq -e --arg l "$line" \
+                 '.flakes | any(. as $f | ($l | contains($f.spec)) and ($l | contains($f.title)))' \
+                 "$LEDGER" >/dev/null 2>&1; then
+              KNOWN+=("$line")
+            else
+              UNKNOWN+=("$line")
+            fi
+          done
+
+          if [ "${#KNOWN[@]}" -gt 0 ]; then
             {
-              echo "### E2E shard ${{ matrix.shard }} — ${#MARKED[@]} spec(s) failed then passed on retry"
+              echo "### E2E shard ${{ matrix.shard }} — ${#KNOWN[@]} KNOWN flake(s), passed on retry"
+              echo
+              echo "Ledgered in \`$LEDGER\`. Expected, tracked, not news."
               echo
               echo '```'
-              printf '%s\n' "${MARKED[@]}"
+              printf '%s\n' "${KNOWN[@]}"
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
-            for line in "${MARKED[@]}"; do
-              echo "::notice::flaky (passed on retry): ${line}"
+            for line in "${KNOWN[@]}"; do
+              echo "::notice::flaky (known, see $LEDGER): ${line}"
+            done
+          fi
+
+          if [ "${#UNKNOWN[@]}" -gt 0 ]; then
+            {
+              echo "### :rotating_light: E2E shard ${{ matrix.shard }} — ${#UNKNOWN[@]} UNLEDGERED flake(s)"
+              echo
+              echo "These specs failed an attempt and passed on retry, and are NOT in"
+              echo "\`$LEDGER\`. The shard is green and nothing is blocked — but this is"
+              echo "the first run that could have told anyone, and on a green run nobody"
+              echo "re-reads the log. Either fix the spec, or add it to the ledger with a"
+              echo "reason and an issue so the next occurrence is correctly quiet."
+              echo
+              echo '```'
+              printf '%s\n' "${UNKNOWN[@]}"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            for line in "${UNKNOWN[@]}"; do
+              echo "::warning::NEW flake, not in $LEDGER: ${line}"
             done
           fi
 

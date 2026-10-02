@@ -1788,6 +1788,31 @@ duplicating the limits table).
       sub-steps. Assigning a top-level `let` in a `beforeEach` /
       `beforeAll` is fine. Enforced by
       `tests/guards/e2e-isolation.test.ts`.
+    - **A flake that is already known is quiet; a NEW one is not.** `retries: 2`,
+      so a spec that fails an attempt and passes on retry leaves the shard
+      green — and in the log it is byte-identical to one that has done so every
+      run for a month. That is #1076: its spec needed a retry on essentially
+      every run, stayed a `::notice` every time, and surfaced only when the
+      retries ran out and it blocked an unrelated dependency bump (#1036).
+      `ci.yml`'s "Name the failing specs" step now classifies each flake
+      against **`tests/e2e/known-flakes.json`** — ledgered ones stay a notice,
+      unledgered ones become a warning with their own step-summary section.
+      **When your spec starts flaking, either fix it or add it to that ledger
+      with an issue and a written reason** — an unledgered flake is the only
+      kind that shouts, which is what keeps the shouting worth reading.
+      The split is KNOWN vs NEW and deliberately NOT flake vs failure:
+      annotating every green-run flake as an error was tried, measured on run
+      35427726541, and reverted, because a step that cries wolf on clean runs
+      is one people learn to ignore — the same ending as the silence it was
+      written to fix. Matching is on spec file + title SUBSTRING, never a line
+      number (a comment added above a test moved one from `:24` to `:51`
+      inside a single PR). `tests/guards/known-flake-ledger.test.ts` holds the
+      ledger's hygiene, and its load-bearing assertion is that every ledgered
+      title still occurs in its spec: a renamed-but-shortened title would
+      otherwise start matching a DIFFERENT test and silently excuse a flake
+      nobody ledgered. It deliberately does NOT assert a flake has stopped —
+      absence is not observable from one run — so pruning a fixed entry is a
+      human review.
     - Use existing HTML `id` attributes — do NOT add `data-testid`
       attributes.
     - Scope `#id` / role locators to `getByRole('main')` where a
