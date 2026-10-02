@@ -1014,8 +1014,21 @@ including six OAuth access tokens and six refresh tokens.
 
 `POST /api/admin/key-rotation` (platform-key gated) covers the union
 of both manifests, with no tenant filter — a `v1:` envelope IS the
-master-KEK envelope. Call it until `remaining` is 0; `only` narrows a
-pass to named columns.
+master-KEK envelope — AND re-wraps every tenant DEK. So one platform
+call finishes a master rotation and the per-tenant route is not needed
+for one (it requires a tenant admin session per tenant, which an
+operator holding a platform key has no reason to have). Call it until
+`remaining` is 0; `only` narrows a pass to named columns and then
+deliberately skips the DEKs.
+
+**`Tenant.encryptedDek` is master-KEK ciphertext in NEITHER manifest.**
+`wrapDek` is `encryptField`, so a wrapped DEK is a `v1:` envelope, but
+it is key material rather than a business field and the manifest union
+does not reach it. An earlier version of the endpoint therefore reported
+`previousKeyRetirable: true` with every DEK still on the old key —
+removing the previous key then makes every DEK unwrappable and every
+`v2:` ciphertext unreadable. `remaining` is now
+`columnsRemaining + unwrappedDeks`.
 
 **Do NOT use "zero `v1:` rows" as the stop condition** — this
 paragraph said to, and it is unreachable. `encryptField` emits a `v1:`

@@ -65,6 +65,8 @@ import {
     kekRotationInFlight,
 } from '@/lib/security/encryption';
 import { ENCRYPTED_FIELDS } from '@/lib/security/encrypted-fields';
+import { unwrapDek, wrapDek, isWrappedDek } from '@/lib/security/tenant-keys';
+import { clearTenantDekCache } from '@/lib/security/tenant-key-manager';
 import { PII_MANAGED_MODELS, _getPiiFieldMap } from '@/lib/security/pii-middleware';
 
 /** Which manifest a column came from — reported so a reader can see the union. */
@@ -159,7 +161,14 @@ export interface GlobalSweepResult {
     totalRewritten: number;
     totalAlreadyPrimary: number;
     totalErrors: number;
-    /** v1 values still NOT under the primary key after this run. */
+    /** The tenant-DEK re-wrap, which is not a manifest column. */
+    deks: DekRewrapResult;
+    /**
+     * v1 values still NOT under the primary key after this run — manifest
+     * columns AND wrapped DEKs. `previousKeyRetirable` is derived from this, so
+     * leaving the DEKs out of it would green-light removing the previous key
+     * while every DEK still needed it.
+     */
     remaining: number;
     durationMs: number;
 }
@@ -215,6 +224,123 @@ function applyFilter(columns: SweepableColumn[], only?: readonly SweepFilter[]):
         );
     }
     return selected;
+}
+
+/**
+ * The WRAPPED-DEK columns, which are master-KEK ciphertext and in NEITHER
+ * manifest.
+ *
+ * ── why this had to be added, and what it was about to cost ──
+ *
+ * `Tenant.encryptedDek` holds a per-tenant DEK wrapped with `wrapDek`, which is
+ * `encryptField` — so it is a `v1:` envelope under the master KEK, unwrapped by
+ * `decryptField` with the same dual-key fallback every other ciphertext gets.
+ * But it
+ * appears in neither `ENCRYPTED_FIELDS` nor `PII_FIELD_MAP`, because it is key
+ * material rather than a business field, so the manifest union does not reach it.
+ *
+ * The first version of this sweep therefore reported `previousKeyRetirable: true`
+ * while every DEK was still wrapped under the OLD key. Removing
+ * `DATA_ENCRYPTION_KEY_PREVIOUS` on that signal would have made every DEK
+ * unwrappable and every `v2:` ciphertext unreadable — a completion signal that
+ * did not cover what the decision depends on, which is the same shape as the
+ * defect this whole file exists to fix, one level up.
+ *
+ * ── and why re-wrapping belongs HERE rather than only in the per-tenant job ──
+ *
+ * `jobs/key-rotation.ts` does re-wrap, but it is reached through
+ * `POST /api/t/{slug}/admin/key-rotation`, which needs a tenant ADMIN SESSION
+ * per tenant. An operator rotating the master key has a platform key and no
+ * reason to hold admin sessions for every tenant on the deployment, so the
+ * rotation could not actually be completed from the surface that owns it.
+ *
+ * `previousEncryptedDek` is included because it is wrapped the same way — it
+ * holds the outgoing DEK during a TENANT-DEK rotation (a separate event), and a
+ * master rotation must leave it readable too.
+ */
+const DEK_COLUMNS = ['encryptedDek', 'previousEncryptedDek'] as const;
+
+export interface DekRewrapResult {
+    /** Tenants whose DEK was examined. */
+    scanned: number;
+    /** DEKs re-wrapped under the current primary KEK. */
+    rewrapped: number;
+    /** DEKs already wrapped under the primary — nothing to do. */
+    alreadyPrimary: number;
+    errors: number;
+}
+
+/** Tenants whose wrapped DEK does NOT read under the current primary KEK. */
+export async function countUnwrappedDeks(): Promise<number> {
+    const rows = await prisma.$queryRawUnsafe<Array<{ encryptedDek: string | null; previousEncryptedDek: string | null }>>(
+        `SELECT "encryptedDek", "previousEncryptedDek" FROM "Tenant"`,
+    );
+    let n = 0;
+    for (const row of rows) {
+        for (const col of DEK_COLUMNS) {
+            const v = row[col];
+            // Only a v1 envelope is a master-KEK question. A null DEK is handled
+            // by tenant-key-manager's lazy init and is not outstanding work.
+            if (typeof v === 'string' && v.startsWith('v1:') && !isV1UnderPrimaryKey(v)) n++;
+        }
+    }
+    return n;
+}
+
+/**
+ * Re-wrap every tenant DEK under the current primary KEK.
+ *
+ * The DEK BYTES do not change — only the wrap — so this is safe to re-run and
+ * invisible to every reader. `clearTenantDekCache` is called per tenant so a
+ * later request re-unwraps from the new wrap rather than a cached unwrap whose
+ * provenance is now stale.
+ */
+export async function rewrapTenantDeks(): Promise<DekRewrapResult> {
+    const out: DekRewrapResult = { scanned: 0, rewrapped: 0, alreadyPrimary: 0, errors: 0 };
+    const rows = await prisma.$queryRawUnsafe<
+        Array<{ id: string; encryptedDek: string | null; previousEncryptedDek: string | null }>
+    >(`SELECT id, "encryptedDek", "previousEncryptedDek" FROM "Tenant" ORDER BY id`);
+
+    for (const row of rows) {
+        out.scanned++;
+        for (const col of DEK_COLUMNS) {
+            const wrapped = row[col];
+            if (typeof wrapped !== 'string' || !wrapped.startsWith('v1:')) continue;
+            if (isV1UnderPrimaryKey(wrapped)) {
+                out.alreadyPrimary++;
+                continue;
+            }
+            if (!isWrappedDek(wrapped)) {
+                out.errors++;
+                logger.error('global-key-rotation.dek_not_wrapped', {
+                    component: 'global-key-rotation',
+                    tenantId: row.id,
+                    column: col,
+                });
+                continue;
+            }
+            try {
+                // Dual-KEK unwrap, then wrap under the primary. Identical bytes.
+                const fresh = wrapDek(unwrapDek(wrapped));
+                await prisma.$executeRawUnsafe(
+                    `UPDATE "Tenant" SET "${col}" = $1 WHERE id = $2`,
+                    fresh,
+                    row.id,
+                );
+                clearTenantDekCache(row.id);
+                out.rewrapped++;
+            } catch (err) {
+                out.errors++;
+                logger.error('global-key-rotation.dek_rewrap_failed', {
+                    component: 'global-key-rotation',
+                    tenantId: row.id,
+                    column: col,
+                    error: err instanceof Error ? err.message : 'unknown',
+                });
+            }
+        }
+    }
+    return out;
 }
 
 /** Default rows per SELECT. Small because each row costs two AES operations. */
@@ -472,17 +598,31 @@ export async function sweepGlobalKeyRotation(
         perColumn.push(result);
     }
 
+    // ── the wrapped DEKs ──
+    //
+    // Only on an UNFILTERED run. A filter names manifest COLUMNS, and a DEK is
+    // not one; re-wrapping key material because someone asked to sweep
+    // `User.emailEncrypted` would be a side effect they did not request. The
+    // unfiltered run is the "finish the rotation" run, which is exactly where
+    // this belongs.
+    const filtered = columns.length !== all.length;
+    const deks: DekRewrapResult = filtered
+        ? { scanned: 0, rewrapped: 0, alreadyPrimary: 0, errors: 0 }
+        : await rewrapTenantDeks();
+
     // Scoped to what this run swept. An unfiltered run therefore reports the
-    // deployment-wide figure (which is what `previousKeyRetirable` needs), and a
-    // filtered run reports only its own columns — never a number that mixes the
-    // two.
-    const { total: remaining } = await countUnmigrated(opts.only);
+    // deployment-wide figure (which is what `previousKeyRetirable` needs) and
+    // INCLUDES the wrapped DEKs; a filtered run reports only its own columns —
+    // never a number that mixes the two.
+    const { total: columnsRemaining } = await countUnmigrated(opts.only);
+    const remaining = filtered ? columnsRemaining : columnsRemaining + (await countUnwrappedDeks());
     const sum = (f: (r: ColumnSweepResult) => number): number => perColumn.reduce((a, r) => a + f(r), 0);
 
     const out: GlobalSweepResult = {
         rotationInFlight,
-        filtered: columns.length !== all.length,
+        filtered,
         columns: columns.length,
+        deks,
         perColumn,
         totalScanned: sum((r) => r.scanned),
         totalRewritten: sum((r) => r.rewritten),
@@ -495,7 +635,10 @@ export async function sweepGlobalKeyRotation(
     logger.info('global-key-rotation.completed', {
         component: 'global-key-rotation',
         rotationInFlight,
+        filtered,
         columns: out.columns,
+        deksRewrapped: deks.rewrapped,
+        dekErrors: deks.errors,
         scanned: out.totalScanned,
         rewritten: out.totalRewritten,
         alreadyPrimary: out.totalAlreadyPrimary,

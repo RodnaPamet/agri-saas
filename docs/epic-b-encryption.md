@@ -115,11 +115,13 @@ The system tolerates mixed state at every stage. A given environment can sit at 
               DATA_ENCRYPTION_KEY=<new>
               DATA_ENCRYPTION_KEY_PREVIOUS=<old>
            Dual-KEK fallback keeps all reads working.
-        d. GLOBAL columns (User, Account and the whole PII manifest):
+        d. ONE platform call does the whole rotation:
               POST /api/admin/key-rotation      (repeat until remaining == 0)
-        e. Per tenant, the DEK re-wrap:
-              POST /api/t/{tenantSlug}/admin/key-rotation
-        f. GET /api/admin/key-rotation -> previousKeyRetirable == true,
+           It sweeps both encryption manifests AND re-wraps every tenant
+           DEK. The per-tenant route is NOT needed for a master rotation —
+           it needs a tenant admin session per tenant, which an operator
+           holding a platform key has no reason to have.
+        e. GET /api/admin/key-rotation -> previousKeyRetirable == true,
            THEN deploy with DATA_ENCRYPTION_KEY_PREVIOUS unset.
            Do NOT use "zero v1 rows" as the condition — see below.
 ```
@@ -213,9 +215,23 @@ curl -s -H "X-Platform-Admin-Key: $PLATFORM_ADMIN_API_KEY" \
 
 `--data '{"only":[{"model":"Account","column":"accessTokenEncrypted"}]}'` narrows a pass, e.g. to
 move third-party OAuth credentials first and watch them finish. A filtered run's `remaining: 0` is
-a claim about those columns only, which is why the response carries `filtered`.
+a claim about those columns only, which is why the response carries `filtered` — and a filtered
+pass deliberately does NOT touch DEKs, because a filter names manifest columns and a wrapped DEK
+is not one.
 
-Per tenant (the DEK re-wrap):
+**The wrapped tenant DEKs are counted in the verdict, and that is load-bearing.**
+`Tenant.encryptedDek` holds a per-tenant DEK wrapped by `wrapDek` — which is `encryptField`, so a
+`v1:` envelope under the master KEK — but it is in NEITHER encryption manifest, because it is key
+material rather than a business field. The column union therefore does not reach it, and an earlier
+version of this endpoint would answer `previousKeyRetirable: true` while every DEK was still
+wrapped under the OLD key. Removing the previous key on that signal makes every DEK unwrappable and
+every `v2:` ciphertext unreadable. `remaining` is now `columnsRemaining + unwrappedDeks`, and the
+response reports both so "columns done, DEKs outstanding" is distinguishable from the reverse.
+
+An unfiltered pass re-wraps them. The DEK BYTES do not change — only the wrap — so it is invisible
+to every reader and safe to re-run.
+
+Per tenant — **not needed for a master-KEK rotation**, kept for a single-tenant operation:
 
 ```bash
 curl -X POST \
