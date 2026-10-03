@@ -133,7 +133,28 @@ export function applyCheckoutSlot(url: string): string {
  */
 export function getBaseTestDatabaseUrl(): string {
     // 1. Explicit test env var (set by CI scripts or jest.setup.js)
-    if (process.env.DATABASE_URL_TEST) return process.env.DATABASE_URL_TEST;
+    // #1265 — a pin from CI is returned VERBATIM; a value dotenv injected from
+    // `.env.test` gets the checkout slot like any other local source.
+    //
+    // The verbatim rule exists because CI exports `DATABASE_URL_TEST` and runs
+    // `prisma migrate deploy` against that exact name OUTSIDE jest, so a slot
+    // would migrate one database and test another. What the rule could not see
+    // is that **dotenv loads `.env.test` into `process.env`** — the run prints
+    // `injected env (1) from .env.test` — so a LOCAL file value arrived through
+    // the same door as a CI pin and was treated as one. Branch 2 below reads
+    // the identical value from the identical file and DOES slot it, so the same
+    // configuration resolved to two different databases depending on whether
+    // dotenv had run yet. That is what made the app client and the test client
+    // disagree locally (#1265) and produced 23 FK violations when they were
+    // aligned.
+    //
+    // `CI` is the discriminator because it is what actually distinguishes the
+    // two worlds, and it is set by GitHub Actions for every job.
+    if (process.env.DATABASE_URL_TEST) {
+        return process.env.CI
+            ? process.env.DATABASE_URL_TEST
+            : applyCheckoutSlot(process.env.DATABASE_URL_TEST);
+    }
 
     // 2. .env.test file
     const envTestPath = path.resolve(__dirname, '../../.env.test');
