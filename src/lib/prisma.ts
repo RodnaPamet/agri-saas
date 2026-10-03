@@ -10,6 +10,31 @@ import { withRlsTripwireExtension } from './db/rls-middleware';
 import { PG_POOL_MAX } from './db/pool-config';
 import { logger as auditMiddlewareLogger } from '@/lib/observability/logger';
 import { recordAuditWriteFailure } from '@/lib/observability/metrics';
+/**
+ * The chain writer, as a STATIC namespace import with the dereference deferred
+ * to call time.
+ *
+ * This file and `audit/audit-writer.ts` are a runtime cycle: audit-writer does
+ * `import * as prismaModule from '../prisma'` and reads `prismaModule.prisma`
+ * inside a function, for exactly this reason. Its ARCHITECTURE NOTE records
+ * why, having been bitten by `require('../prisma').prisma` returning
+ * `undefined` in a production bundle.
+ *
+ * The same fix was never applied to THIS edge. `require('./audit/audit-writer')`
+ * here returned a module whose `appendAuditEntry` was `undefined` in the
+ * `next build --webpack` production bundle, so the audit extension threw
+ * `s is not a function` on every audited write and #1269's catch logged and
+ * swallowed it. Measured on green main `e1acca2c5`, one E2E shard: 275 failed
+ * audit writes across 28 models and NOT ONE success. The extension writes the
+ * SYSTEM-actor half of a hash-chained trail, and it was writing nothing.
+ *
+ * `import * as` gives a live namespace binding, and reading the property when
+ * the handler runs happens long after both modules have evaluated — so the
+ * cycle is never dereferenced at module-init time. Do not "simplify" this to a
+ * named import (it would be dereferenced at init, inside the cycle) and do not
+ * put it back to `require()`.
+ */
+import * as auditWriterModule from './audit/audit-writer';
 
 // ─── Write actions to intercept ───
 const WRITE_ACTIONS = new Set([
@@ -194,8 +219,7 @@ function buildAuditExtension() {
             }
             detailsJson.summary = `${action} ${model}${entityId !== 'unknown' ? ` ${entityId}` : ''}`;
 
-            const { appendAuditEntry } = require('./audit/audit-writer');
-            await appendAuditEntry({
+            await auditWriterModule.appendAuditEntry({
                 tenantId,
                 userId: actorUserId,
                 actorType: 'SYSTEM',
