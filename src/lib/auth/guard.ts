@@ -163,6 +163,13 @@ const PUBLIC_PATH_EXACT = new Set([
     // TENANT-scoped `/api/t/{slug}/admin/key-rotation` is unrelated and stays
     // behind the session gate, where it belongs.
     '/api/admin/key-rotation',
+    // The lookup-hash rehash sweep (#1237). EXACT and with NO children prefix,
+    // because unlike the two above it has no child paths — adding a prefix
+    // "for symmetry" would open paths that do not exist yet, which is how
+    // `/api/scim` nearly opened `/api/scimulator`. Same platform gate and the
+    // same reachability argument: `x-platform-admin-key` carries no NextAuth
+    // JWE, so without this entry the Edge 401s before the handler runs.
+    '/api/admin/lookup-rehash',
 ]);
 
 // `webmanifest` — the PWA manifest is fetched by the browser WITHOUT
