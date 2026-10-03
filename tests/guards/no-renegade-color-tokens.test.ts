@@ -164,6 +164,21 @@ describe('no renegade colour tokens', () => {
 
     it('every <utility>-<group>-<token> names a token that exists', () => {
         const offenders: Offence[] = [];
+        /**
+         * Every class the scan RESOLVED, offending or not.
+         *
+         * `scripts/selector-teeth.mjs` found this gap: gutting `codeOf()` to
+         * `return ''` made the guard read nothing from every file, so it found
+         * no classes, so it found no offences, and it PASSED. The floors above
+         * check the file count and the token groups — neither of which goes to
+         * zero when the file CONTENTS vanish.
+         *
+         * So the population the assertion ranges over is counted and floored.
+         * `text-content-muted` alone has over 900 uses after P2.2, so a floor
+         * of 500 is far below the real figure and will not move on ordinary
+         * feature work.
+         */
+        let resolved = 0;
         // `(?<![\w-])` lets a Tailwind modifier prefix through (`hover:`,
         // `md:`, `group-hover:`) while refusing a match mid-identifier.
         const re = new RegExp(
@@ -178,6 +193,7 @@ describe('no renegade colour tokens', () => {
                     const [cls, , group, token] = m;
                     const defined = groups.get(group);
                     if (!defined) continue; // not one of ours — see the docblock
+                    resolved++;
                     if (defined.has(token)) continue;
                     // `shadow-canvas-recess` names a boxShadow, not a colour.
                     if (cls.startsWith('shadow-') && shadows.has(`${group}-${token}`)) continue;
@@ -190,6 +206,9 @@ describe('no renegade colour tokens', () => {
                 }
             });
         }
+        // The denominator, asserted BEFORE the verdict — an empty scan must
+        // never be able to report "no offences".
+        expect(resolved).toBeGreaterThan(500);
         if (offenders.length > 0) {
             throw new Error(
                 `${offenders.length} colour class(es) name a token that does not exist. ` +
