@@ -228,15 +228,26 @@ function buildAuditExtension() {
             // legitimate (jobs, scripts, the staging seed) and must still be
             // audited, so that case falls back to the writer's own
             // transaction exactly as before.
+            // The writer is resolved HERE and handed to the queue, never
+            // re-resolved inside it. `prisma.ts -> ./audit/audit-writer` is the
+            // proven edge of the cycle: this extension used it for every
+            // audited write before the queue existed, and the no-scope fallback
+            // below still does. Resolving the same module from inside
+            // `db/before-commit.ts` crosses the cycle the other way, and the
+            // production webpack build returned it WITHOUT the export — `e is
+            // not a function`, 274 lost rows in one E2E shard, tenant creation
+            // and invite creation both 500ing on the fail-closed tier, and
+            // every unit test green. Keep the resolution on this side.
+            const { appendAuditEntry } = require('./audit/audit-writer');
             const { enqueueAuditEntry } = require('./db/before-commit');
             const queued = enqueueAuditEntry({
                 input: payload,
                 failClosed: isFailClosedAuditEntity(model),
                 model,
                 operation,
+                write: appendAuditEntry,
             });
             if (!queued) {
-                const { appendAuditEntry } = require('./audit/audit-writer');
                 await appendAuditEntry(payload);
             }
         } catch (auditError) {

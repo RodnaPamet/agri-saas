@@ -54,6 +54,17 @@ import { logger } from '@/lib/observability/logger';
 import { recordAuditWriteFailure } from '@/lib/observability/metrics';
 
 /** One queued chain append. `input` is the writer's `AppendAuditInput`. */
+/**
+ * The chain-append writer, as this module needs it.
+ *
+ * Structural rather than imported, which is the whole point: see `PendingAudit.write`.
+ */
+export type AuditChainWriter = (
+    input: unknown,
+    client?: unknown,
+    opts?: { onCallerTransaction?: boolean; isolateFailure?: boolean },
+) => Promise<unknown>;
+
 export interface PendingAudit {
     input: Record<string, unknown>;
     /** Fail-closed entries abort the caller's write; best-effort are isolated. */
@@ -61,6 +72,23 @@ export interface PendingAudit {
     /** Carried for the loss report, so a gap names what it was. */
     model: string;
     operation: string;
+    /**
+     * The writer, INJECTED by the caller — never resolved in this module.
+     *
+     * `audit-writer` statically imports `@/lib/prisma`, and `prisma.ts` reaches
+     * this module, so requiring the writer from HERE crosses that cycle in the
+     * direction nothing had proven. Under jest it resolved; in the production
+     * webpack build it came back without the export, and every queued row was
+     * lost to `e is not a function` — 274 in a single E2E shard, with each
+     * fail-closed write surfacing as a 500 (tenant creation, invite creation),
+     * and the unit tests green the whole time.
+     *
+     * `prisma.ts -> ./audit/audit-writer` is the edge that IS proven — the
+     * extension used it for every audited write before this queue existed, and
+     * the no-scope fallback still does. So the caller passes what it already
+     * holds, and this module resolves nothing.
+     */
+    write: AuditChainWriter;
 }
 
 interface AuditQueueScope {
@@ -111,6 +139,26 @@ export async function runWithAuditQueue<T>(tx: TxClient, body: () => Promise<T>)
 export function enqueueAuditEntry(entry: PendingAudit): boolean {
     const scope = scopeStorage.getStore();
     if (!scope) return false;
+    // A writer that is not callable must not become a queue of rows nothing can
+    // write. Refusing here returns the row to the caller's own fallback, so it
+    // is still WRITTEN rather than lost, and names the reason. Deliberately NOT
+    // `reportLostAuditRow`: no row is lost on this path, and raising
+    // `audit.write_failed` would fire the AuditRowLost alert for a write that
+    // then succeeds.
+    if (typeof entry.write !== 'function') {
+        try {
+            logger.error('audit.enqueue_rejected', {
+                component: 'before-commit-queue',
+                reason: 'writer-not-callable',
+                writerType: typeof entry.write,
+                model: entry.model,
+                operation: entry.operation,
+            });
+        } catch {
+            /* A broken logger must not break a write that is about to commit. */
+        }
+        return false;
+    }
     scope.queue.push(entry);
     return true;
 }
@@ -143,20 +191,11 @@ async function drain(scope: AuditQueueScope, tx: TxClient): Promise<void> {
     if (scope.queue.length === 0) return;
     const pending = scope.queue.splice(0, scope.queue.length);
 
-    // Lazy require: `audit-writer` reaches `@/lib/prisma`, which imports this
-    // module. The cycle is already documented in audit-writer's ARCHITECTURE
-    // NOTE and this is the convention it established.
-    const { appendAuditEntry } = require('../audit/audit-writer') as {
-        appendAuditEntry: (
-            input: unknown,
-            client?: unknown,
-            opts?: { onCallerTransaction?: boolean; isolateFailure?: boolean },
-        ) => Promise<unknown>;
-    };
-
+    // No require here, by design — the writer rides with the entry. See
+    // `PendingAudit.write` for what resolving it in this module cost.
     for (const entry of pending) {
         try {
-            await appendAuditEntry(entry.input, tx, {
+            await entry.write(entry.input, tx, {
                 onCallerTransaction: true,
                 isolateFailure: !entry.failClosed,
             });

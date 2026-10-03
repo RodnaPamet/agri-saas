@@ -150,7 +150,6 @@ describe('Dynamic require() usage is minimized', () => {
      * - prisma.ts → require('./audit/audit-writer')
      * - audit-writer.ts → require('../prisma')
      * - prisma.ts → require('./db/before-commit')
-     * - db/before-commit.ts → require('../audit/audit-writer')
      * - retention-purge.ts → require('./audit/audit-writer')
      * - evidence-maintenance.ts → require('@/lib/audit/audit-writer')
      *
@@ -175,7 +174,6 @@ describe('Dynamic require() usage is minimized', () => {
         // both carry the explanation at the call site as well as here — a
         // reader of prisma.ts should not have to find this file to learn it.
         'lib/prisma.ts': ['./audit/audit-writer', './db/before-commit'],
-        'lib/db/before-commit.ts': ['../audit/audit-writer'],
         'lib/retention-purge.ts': ['./audit/audit-writer'],
         'lib/mailer.ts': ['@/env'],
         'lib/observability/instrumentation.ts': ['./logger'],
