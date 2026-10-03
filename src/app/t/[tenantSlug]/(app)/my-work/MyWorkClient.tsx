@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Heading } from '@/components/ui/typography';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { AsyncState } from '@/components/ui/async-state';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
@@ -36,6 +36,7 @@ function TypeChip({ label }: { label: string }) {
 }
 
 export function MyWorkClient({ tenantSlug: _tenantSlug }: { tenantSlug: string }) {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('myWork');
     const href = useTenantHref();
     const apiUrl = useTenantApiUrl();

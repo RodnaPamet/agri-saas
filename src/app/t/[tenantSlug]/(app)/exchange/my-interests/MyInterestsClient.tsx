@@ -26,7 +26,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { CopyText } from '@/components/ui/copy-text';
 import { ErrorState } from '@/components/ui/error-state';
 import { Skeleton } from '@/components/ui/skeleton';
-import { formatDate, formatDateTime } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { localizedRegionName } from '@/lib/geo/bulgaria-regions';
 import { formatPricePerTonne } from '@/lib/exchange/currency';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
@@ -48,6 +48,7 @@ const STATUS_KEY: Record<string, string> = {
 };
 
 export function MyInterestsClient() {
+    const { formatDate, formatDateTime } = useDateFormat();
     const t = useTranslations('exchange.myInterests');
     const locale = useLocale();
     const tonne = t('unitTonne');

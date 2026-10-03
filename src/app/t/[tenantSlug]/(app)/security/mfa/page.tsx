@@ -4,7 +4,7 @@
  * carries an inline disable directive; collectively they should
  * migrate to useTenantSWR (Epic 69 shape) so the rule can lift. */
 
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { Card, cardVariants } from '@/components/ui/card';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { cn } from '@/lib/cn';
@@ -37,6 +37,7 @@ interface EnrollmentResult {
 type Step = 'status' | 'enrolling' | 'verifying';
 
 export default function UserMfaPage() {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('mfa');
     const te = useTranslations('mfa.enroll');
     const apiUrl = useTenantApiUrl();

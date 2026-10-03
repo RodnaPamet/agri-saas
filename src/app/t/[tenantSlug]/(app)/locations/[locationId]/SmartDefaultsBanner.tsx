@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import type { LocationSmartDefaults } from '@/app-layer/usecases/smart-defaults';
 
 /**
@@ -40,6 +40,7 @@ function formatHour(hour: number): string {
 }
 
 export function SmartDefaultsBanner({ data }: { data?: LocationSmartDefaults | null }) {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('locations.smart');
     const sprayWindow = data?.sprayWindow ?? null;
     const nextPlanting = data?.nextPlanting ?? null;

@@ -35,7 +35,15 @@ jest.mock('react-map-gl/maplibre', () => {
         Marker: ({ children }: { children?: React.ReactNode }) => React.createElement('div', null, children),
     };
 });
-jest.mock('next-intl', () => ({ useTranslations: () => (key: string) => key }));
+// P2.1c — `useLocale` added: it is part of this module, and without it the
+// first component calling `useDateFormat()` threw "useLocale is not a
+// function". The project-wide mock in tests/rendered/setup.ts already
+// provides it; a per-suite factory replaces that wholesale, so each one
+// has to carry it too.
+jest.mock('next-intl', () => ({
+    useTranslations: () => (key: string) => key,
+    useLocale: () => 'en',
+}));
 
 import { MapCanvas } from '@/components/ui/map/MapCanvas';
 

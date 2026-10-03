@@ -40,7 +40,7 @@ import { Fab } from '@/components/ui/fab';
 import { PullToRefresh, useToastWithUndo } from '@/components/ui/hooks';
 import { ScrollToTop } from '@/components/ui/scroll-to-top';
 import { Plus, PenWriting, Trash } from '@/components/ui/icons/nucleo';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 
 interface LeaseRow {
     id: string;
@@ -81,6 +81,7 @@ export function RentClient({
     tenantSlug: string;
     permissions: { canWrite: boolean };
 }) {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('ag.rent');
     const tl = useTranslations('ag.lease');
     const tc = useTranslations('common');

@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { CACHE_KEYS } from '@/lib/swr-keys';
-import { formatDateTime } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { ManualTriggerPanel } from '@/components/processes/ManualTriggerPanel';
 
 interface ExecRow {
@@ -35,6 +35,7 @@ const STATUS_VARIANT: Record<string, StatusBadgeVariant> = {
 };
 
 export function MonitorTab() {
+    const { formatDateTime } = useDateFormat();
     const t = useTranslations('processes.monitor');
     const apiUrl = useTenantApiUrl();
     const key = apiUrl(CACHE_KEYS.automation.executions.live());

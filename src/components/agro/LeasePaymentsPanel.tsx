@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Heading } from '@/components/ui/typography';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { rentTotalSuffix } from '@/lib/agro/rent-units';
 
 export interface LeasePaymentRow {
@@ -40,6 +40,7 @@ export function LeasePaymentsPanel({
     canWrite: boolean;
     onChanged?: () => void;
 }) {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('ag.leasePayments');
     const buildUrl = useTenantApiUrl();
     const [rows, setRows] = useState<LeasePaymentRow[]>([]);

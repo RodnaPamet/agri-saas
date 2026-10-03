@@ -29,7 +29,8 @@
  * flag a hydration mismatch.
  */
 
-import { formatDateTimeLong, formatRelativeTime } from '@/lib/format-date';
+import { formatRelativeTime } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
 import { Tooltip } from '@/components/ui/tooltip';
 
@@ -69,6 +70,7 @@ export function TimestampTooltip({
     tooltipSide,
     'data-testid': testId,
 }: TimestampTooltipProps) {
+    const { formatDateTimeLong } = useDateFormat();
     const hydratedNow = useHydratedNow();
     // Distinguish "caller didn't supply now" (use the hook) from
     // "caller explicitly passed null" (force the SSR fallback path).

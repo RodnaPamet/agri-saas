@@ -15,7 +15,7 @@ import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-bad
 import { Button } from '@/components/ui/button';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { CACHE_KEYS } from '@/lib/swr-keys';
-import { formatDateTime } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 
 interface ExecutionRow {
     id: string;
@@ -41,6 +41,7 @@ export function ExecutionsPanel({
     ruleId: string;
     ruleEnabled: boolean;
 }) {
+    const { formatDateTime } = useDateFormat();
     const t = useTranslations('ui');
     const apiUrl = useTenantApiUrl();
     const key = apiUrl(CACHE_KEYS.automation.rules.executions(ruleId));

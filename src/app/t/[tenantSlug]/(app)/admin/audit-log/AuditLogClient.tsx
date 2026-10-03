@@ -1,6 +1,6 @@
 'use client';
 /* eslint-disable @typescript-eslint/no-explicit-any -- Client component receiving server-rendered domain data; tanstack column callbacks carry implicit-any on `row` / `getValue` and the per-cell narrowing requires importing CellContext generics from tanstack — outside the scope of this layout move. */
-import { formatDateTime } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { useMemo } from 'react';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { ListPageShell } from '@/components/layout/ListPageShell';
@@ -24,6 +24,7 @@ interface AuditLogClientProps {
  * dedicated page so admin landing reads as a pure pill-nav surface.
  */
 export function AuditLogClient({ auditLog, translations: t }: AuditLogClientProps) {
+    const { formatDateTime } = useDateFormat();
     const logColumns = useMemo(() => createColumns<any>([
         {
             id: 'time',
@@ -57,7 +58,7 @@ export function AuditLogClient({ auditLog, translations: t }: AuditLogClientProp
             cell: ({ getValue }: any) => <span className="text-content-muted max-w-xs truncate">{getValue()}</span>,
             meta: { mobileCard: { slot: 'meta', label: t.details } },
         },
-    ]), [t]);
+    ]), [t, formatDateTime]);
 
     return (
         <ListPageShell.Body>

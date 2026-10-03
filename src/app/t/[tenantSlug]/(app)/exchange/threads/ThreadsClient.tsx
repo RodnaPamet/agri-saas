@@ -24,7 +24,7 @@ import { Heading } from '@/components/ui/typography';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { ErrorState } from '@/components/ui/error-state';
 import { Skeleton } from '@/components/ui/skeleton';
-import { formatDateTime } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 import { ExchangeNav } from '../ExchangeNav';
@@ -44,6 +44,7 @@ interface ThreadSummary {
 }
 
 export function ThreadsClient() {
+    const { formatDateTime } = useDateFormat();
     const t = useTranslations('exchange.messaging');
     const tenantHref = useTenantHref();
     const { data, isLoading, error, mutate } = useTenantSWR<{ threads: ThreadSummary[] }>(

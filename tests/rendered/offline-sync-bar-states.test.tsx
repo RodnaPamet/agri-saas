@@ -27,6 +27,9 @@ import en from '../../messages/en.json';
 jest.mock('next-intl', () => {
     const en = require('../../messages/en.json');
     return {
+        // P2.1c — part of the module; without it `useDateFormat()` threw
+        // "useLocale is not a function" in every suite stubbing this barrel.
+        useLocale: () => 'en',
         useTranslations: (ns: string) => (key: string, values?: Record<string, unknown>) => {
             const msg = key
                 .split('.')

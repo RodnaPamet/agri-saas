@@ -13,7 +13,7 @@ import { useToastWithUndo } from '@/components/ui/hooks';
 import { haptic } from '@/lib/haptics';
 import { cn } from '@/lib/cn';
 import { cardVariants } from '@/components/ui/card';
-import { formatDateTime } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { useTranslations } from 'next-intl';
 
 interface PhotoLink {
@@ -57,6 +57,7 @@ function mintPreviewUrl(file: File): string | null {
 }
 
 export function JournalPhotosTab({ entryId, photos, apiUrl, canWrite, onChanged }: JournalPhotosTabProps) {
+    const { formatDateTime } = useDateFormat();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const cameraInputRef = useRef<HTMLInputElement>(null);
     const [uploading, setUploading] = useState(false);

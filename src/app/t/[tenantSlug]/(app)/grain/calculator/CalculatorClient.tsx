@@ -100,7 +100,7 @@ import {
 } from '@/lib/grain/cost-metrics';
 import { haToDca } from '@/lib/agro/rate-calc';
 import { formatDecimal } from '@/lib/number-format';
-import { formatDate, formatDateTime } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import {
     UNCERTAINTY,
     explainRefusal,
@@ -261,6 +261,7 @@ function UnvaluedNote({
 
 
 export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
+    const { formatDate, formatDateTime } = useDateFormat();
     const t = useTranslations('grainEnums');
     const tc = useTranslations('grain.calculator');
     const tCommodity = useTranslations('trends.commodities');

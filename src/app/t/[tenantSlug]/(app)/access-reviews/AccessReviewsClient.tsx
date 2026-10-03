@@ -25,7 +25,7 @@ import { ListPageShell } from '@/components/layout/ListPageShell';
 import { DatePicker } from '@/components/ui/date-picker';
 import type { CappedList } from '@/lib/list-backfill-cap';
 import { TruncationBanner } from '@/components/ui/TruncationBanner';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 
@@ -65,6 +65,7 @@ interface Props {
 }
 
 export function AccessReviewsClient({ tenantSlug, initialReviews }: Props) {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('accessReviews');
     const apiUrl = (path: string) =>
         `/api/t/${tenantSlug}/access-reviews${path}`;
@@ -167,7 +168,7 @@ export function AccessReviewsClient({ tenantSlug, initialReviews }: Props) {
                     },
                 },
             ]),
-        [tenantSlug, t],
+        [tenantSlug, t, formatDate],
     );
 
     return (

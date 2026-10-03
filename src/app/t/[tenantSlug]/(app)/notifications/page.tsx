@@ -1,5 +1,5 @@
 'use client';
-import { formatDateTime } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
@@ -19,6 +19,7 @@ type Notification = {
 };
 
 export default function NotificationsPage() {
+    const { formatDateTime } = useDateFormat();
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const t = useTranslations('notifications');

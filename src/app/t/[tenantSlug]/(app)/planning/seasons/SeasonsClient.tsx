@@ -18,7 +18,7 @@ import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { DatePicker } from '@/components/ui/date-picker';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 
 interface SeasonRow {
     id: string;
@@ -36,6 +36,7 @@ interface SeasonsClientProps {
 }
 
 export function SeasonsClient({ initialSeasons, tenantSlug, permissions }: SeasonsClientProps) {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('planning.seasons');
     const tp = useTranslations('planning');
     const tenantHref = (path: string) => `/t/${tenantSlug}${path}`;
@@ -155,7 +156,7 @@ export function SeasonsClient({ initialSeasons, tenantSlug, permissions }: Seaso
                     ),
                 },
             ]),
-        [downloadSeasonDiary, t, permissions.canWrite],
+        [downloadSeasonDiary, t, permissions.canWrite, formatDate],
     );
 
     return (

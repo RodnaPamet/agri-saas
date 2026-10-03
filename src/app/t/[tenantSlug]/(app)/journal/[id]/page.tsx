@@ -23,7 +23,7 @@ import { InlineNotice } from '@/components/ui/inline-notice';
 import { EmptyState } from '@/components/ui/empty-state';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { sanitizeRichTextHtml } from '@/lib/security/sanitize';
-import { formatDateTime } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { JournalEntryModal } from '../JournalEntryModal';
 import { JournalPhotosTab } from './JournalPhotosTab';
 import { PestSuggestionCard, type PestSuggestionData } from '@/components/ag/pest-suggestion-card';
@@ -93,6 +93,7 @@ interface LogEntryDetail {
 }
 
 export default function JournalDetailPage() {
+    const { formatDateTime } = useDateFormat();
     const params = useParams();
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();

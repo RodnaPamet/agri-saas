@@ -18,7 +18,7 @@
  * the viewport-clamp pattern that ListPageShell exists for.
  */
 
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { useTranslations } from 'next-intl';
 import { Card, cardVariants } from '@/components/ui/card';
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
@@ -219,6 +219,7 @@ function MemberRowActions({
 }
 
 export default function MembersAdminPage() {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('admin.members');
     // Tenant roles and membership statuses were rendered as the RAW ENUM —
     // a Bulgarian admin read "OWNER" and "ACTIVE". `authEnums` is the shared
@@ -887,7 +888,7 @@ export default function MembersAdminPage() {
                 ),
             },
         ]),
-        [],
+        [formatDate],
     );
 
     // ─── Loading state ───

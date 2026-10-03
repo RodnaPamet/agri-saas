@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { AgStatusBadge } from '@/components/ag/ag-status';
 import { ProgressBar } from '@/components/ui/progress-bar';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { formatDecimal } from '@/lib/number-format';
 import { BinFormModal } from '../BinFormModal';
 import { BlendModal } from './BlendModal';
@@ -56,6 +56,7 @@ function qualityValue(attrs: Record<string, unknown> | null, key: string): strin
 }
 
 export function BinDetailClient({ bin, tenantSlug, permissions }: Props) {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('grain.bins');
     const router = useRouter();
     const [editing, setEditing] = useState(false);
@@ -110,7 +111,7 @@ export function BinDetailClient({ bin, tenantSlug, permissions }: Props) {
                     meta: { mobileCard: { slot: 'meta', label: t('detail.colExpires') } },
                 },
             ]),
-        [t],
+        [t, formatDate],
     );
 
     const fillPctDisplay =

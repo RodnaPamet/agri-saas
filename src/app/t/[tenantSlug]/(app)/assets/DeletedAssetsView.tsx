@@ -23,7 +23,7 @@ import { Modal } from '@/components/ui/modal';
 import { Input } from '@/components/ui/input';
 import { FormField } from '@/components/ui/form-field';
 import { ChevronLeft } from '@/components/ui/icons/nucleo';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 
 interface DeletedAssetsViewProps {
     tenantSlug: string;
@@ -112,6 +112,7 @@ function PurgeAssetDialog({
 }
 
 export function DeletedAssetsView({ tenantSlug, onBack }: DeletedAssetsViewProps) {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('assets');
     const queryClient = useQueryClient();
     const apiUrl = (path: string) => `/api/t/${tenantSlug}${path}`;

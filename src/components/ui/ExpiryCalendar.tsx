@@ -23,7 +23,7 @@
  */
 
 import { useTranslations } from 'next-intl';
-import { formatDateCompact } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { Heading } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card-variants';
 import { cn } from '@/lib/cn';
@@ -75,13 +75,6 @@ function urgencyConfig(u: Urgency) {
     }
 }
 
-// Epic 58 — delegate to the canonical `formatDateCompact` so the
-// widget's day label ("16 Apr") reads identically to chart axes and
-// mini calendars elsewhere in the app.
-function formatDate(iso: string): string {
-    return formatDateCompact(iso + 'T00:00:00Z');
-}
-
 // ─── Component ──────────────────────────────────────────────────────
 
 export default function ExpiryCalendar({
@@ -89,6 +82,18 @@ export default function ExpiryCalendar({
     className = '',
     id,
 }: ExpiryCalendarProps) {
+    const { formatDateCompact } = useDateFormat();
+    /**
+     * Epic 58 — delegate to the canonical `formatDateCompact` so the widget's
+     * day label reads identically to chart axes and mini calendars elsewhere.
+     *
+     * P2.1c — this was a module-level `formatDate(iso)`, which is why the
+     * automated conversion refused the file: a hook cannot be called from a
+     * top-level helper, and inserting one there would have compiled and then
+     * thrown `Invalid hook call` at runtime. Moved inside the component, and
+     * renamed so it cannot be mistaken for the canonical `formatDate`.
+     */
+    const formatDay = (iso: string): string => formatDateCompact(iso + 'T00:00:00Z');
     const t = useTranslations('ui');
 
     const urgencyLabel = (u: Urgency): string => {
@@ -167,7 +172,7 @@ export default function ExpiryCalendar({
                                                 <span className="text-xs text-content-default truncate">{item.title}</span>
                                             </div>
                                             <div className="flex items-center gap-tight shrink-0">
-                                                <span className="text-[10px] text-content-subtle">{formatDate(item.nextReviewDate)}</span>
+                                                <span className="text-[10px] text-content-subtle">{formatDay(item.nextReviewDate)}</span>
                                                 <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${itemConfig.badge} tabular-nums`}>
                                                     {formatDaysUntil(item.daysUntil)}
                                                 </span>
