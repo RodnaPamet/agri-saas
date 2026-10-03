@@ -51,6 +51,16 @@ const pkg = JSON.parse(read('package.json')) as {
     optionalDependencies?: Record<string, string>;
     devDependencies?: Record<string, string>;
 };
+/**
+ * The floors are SHARED with `scripts/check-optional-closure.mjs`, which runs
+ * before `npm ci` and is the only one of the two that can fire when the flags
+ * are actually missing (this suite never runs — the install dies first). Two
+ * copies of a ratchet drift, so both read the same file.
+ */
+const FLOORS = JSON.parse(read('scripts/optional-closure-floors.json')) as {
+    optionalEntries: number;
+};
+
 const lock = JSON.parse(read('package-lock.json')) as {
     packages: Record<
         string,
@@ -133,7 +143,7 @@ describe('image build survives a failed optional native download', () => {
         const optionalEntries = Object.values(lock.packages).filter(
             (e) => e && typeof e === 'object' && (e as { optional?: boolean }).optional === true,
         );
-        expect(optionalEntries.length).toBeGreaterThanOrEqual(199);
+        expect(optionalEntries.length).toBeGreaterThanOrEqual(FLOORS.optionalEntries);
     });
 
     it('the lockfile still carries its platform (`libc`) entries', () => {

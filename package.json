@@ -44,6 +44,7 @@
         "test:coverage": "jest --coverage",
         "test:all": "jest && playwright test",
         "typecheck": "tsc --noEmit && tsc -p tsconfig.scripts.json --noEmit",
+        "check:optional-closure": "node scripts/check-optional-closure.mjs",
         "lint": "tsx scripts/lint-ceiling.ts",
         "count-any": "node scripts/count-any.js",
         "ci:local": "node scripts/ci-local.mjs",

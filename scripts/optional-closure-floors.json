@@ -1,0 +1,28 @@
+{
+  "_why": [
+    "The floor for the optional-dependency CLOSURE, read by BOTH",
+    "scripts/check-optional-closure.mjs (pre-install, zero-dependency) and",
+    "tests/guards/image-build-install-resilience.test.ts (post-install). One",
+    "file because two copies of a ratchet drift.",
+    "",
+    "optionalEntries: `optional: true` package entries in package-lock.json.",
+    "  npm reads that flag on the ENTRY, not package.json's",
+    "  optionalDependencies, so a regeneration that drops it makes",
+    "  onnxruntime-node's network postinstall fatal again (#1231).",
+    "  Dependabot's grouped dev-dependency update dropped exactly 8 --",
+    "  199 -> 191 -- which is #1159.",
+    "",
+    "A FLOOR rather than an exact set: the closure is npm's to compute and a",
+    "legitimate dependency change moves it. Raising it is a visible line in a",
+    "diff; lowering it should be too.",
+    "",
+    "`libc` entries are deliberately NOT here. They have their own guard",
+    "(tests/guards/lockfile-libc-preserved.test.ts, floor 22 over a partial",
+    "record) and they do not need a PRE-install check: a libc-stripped",
+    "lockfile still installs, it just ships wrong-platform binaries, so that",
+    "guard runs normally. Only the optional flags kill `npm ci` before any",
+    "test can fire, which is the whole reason this file is shared with a",
+    "script that runs first."
+  ],
+  "optionalEntries": 199
+}
