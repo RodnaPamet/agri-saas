@@ -129,7 +129,7 @@ export function MyInterestsClient() {
                                     tracking. Price is the field whose absence sent
                                     them back to the browse page every time. */}
                                 {l && (
-                                    <p className="text-sm text-content-secondary">
+                                    <p className="text-sm text-content-muted">
                                         {l.quantityTonnes} {tonne} · {l.pricePerTonne
                                             ? formatPricePerTonne(l.pricePerTonne, l.priceCurrency, tonne)
                                             : t('marketNegotiable')}
@@ -140,7 +140,7 @@ export function MyInterestsClient() {
                                     </p>
                                 )}
 
-                                <p className="text-sm text-content-secondary">{iq.message}</p>
+                                <p className="text-sm text-content-muted">{iq.message}</p>
                                 {iq.quantityTonnes && (
                                     <p className="text-xs text-content-muted">{t('quantityOfInterest', { qty: iq.quantityTonnes })}</p>
                                 )}

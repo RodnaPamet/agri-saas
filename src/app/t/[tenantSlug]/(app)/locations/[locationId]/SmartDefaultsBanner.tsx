@@ -49,12 +49,12 @@ export function SmartDefaultsBanner({ data }: { data?: LocationSmartDefaults | n
         <Card density="compact" className="flex flex-wrap items-center gap-x-section gap-y-tight">
             {sprayWindow && (
                 <div className="min-w-0">
-                    <p className="text-xs text-content-secondary">{t('sprayWindowToday')}</p>
+                    <p className="text-xs text-content-muted">{t('sprayWindowToday')}</p>
                     <p className={cn('text-sm font-medium', SPRAY_TONE[sprayWindow.status])}>
                         {t(SPRAY_LABEL_KEY[sprayWindow.status])}
                     </p>
                     {(sprayWindow.windows ?? []).length > 0 ? (
-                        <p className="text-xs text-content-secondary">
+                        <p className="text-xs text-content-muted">
                             {t('bestSprayWindow')}:{' '}
                             {(sprayWindow.windows ?? [])
                                 .map((w) => t('sprayWindowRange', { from: formatHour(w.startHour), to: formatHour(w.endHour) }))
@@ -74,7 +74,7 @@ export function SmartDefaultsBanner({ data }: { data?: LocationSmartDefaults | n
             )}
             {nextPlanting && (
                 <div className="min-w-0">
-                    <p className="text-xs text-content-secondary">{t('nextCropPlanTask')}</p>
+                    <p className="text-xs text-content-muted">{t('nextCropPlanTask')}</p>
                     <p className="text-sm font-medium">
                         {t(STAGE_LABEL_KEY[nextPlanting.stage])} {nextPlanting.label}
                     </p>

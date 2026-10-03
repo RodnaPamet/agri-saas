@@ -95,7 +95,7 @@ export function GreetingHeader({
                 <Heading level={1} className="text-xl">
                     {greetingLine}
                 </Heading>
-                <p className="text-sm text-content-secondary">{statusLine}</p>
+                <p className="text-sm text-content-muted">{statusLine}</p>
             </div>
         </Card>
     );

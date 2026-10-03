@@ -25,7 +25,7 @@ export function FeedbackPrefsCard() {
                 <Heading level={2} className="text-sm">
                     {t('title')}
                 </Heading>
-                <p className="text-xs text-content-secondary">
+                <p className="text-xs text-content-muted">
                     {t('description')}
                 </p>
             </div>

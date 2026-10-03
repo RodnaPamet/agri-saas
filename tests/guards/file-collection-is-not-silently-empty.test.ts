@@ -177,7 +177,6 @@ const HAND_ROLLED_COLLECTORS: readonly string[] = [
     'tests/guards/no-raw-skeleton-pulse.test.ts',
     'tests/guards/no-raw-tables-in-app-pages.test.ts',
     'tests/guards/no-raw-white-foreground.test.ts',
-    'tests/guards/no-renegade-bg-tokens.test.ts',
     'tests/guards/no-unsafe-any.test.ts',
     'tests/guards/no-untyped-api-response.test.ts',
     'tests/guards/no-usestate-any.test.ts',

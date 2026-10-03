@@ -78,12 +78,12 @@ export function ShareableStatCard({
                     <Heading level={2} className="text-lg">
                         {title}
                     </Heading>
-                    {subtitle && <p className="text-sm text-content-secondary">{subtitle}</p>}
+                    {subtitle && <p className="text-sm text-content-muted">{subtitle}</p>}
                 </div>
                 <dl className="grid grid-cols-2 gap-default">
                     {stats.map((s) => (
                         <div key={s.label}>
-                            <dt className="text-xs text-content-secondary">{s.label}</dt>
+                            <dt className="text-xs text-content-muted">{s.label}</dt>
                             <dd className="text-xl font-semibold text-content-emphasis">{s.value}</dd>
                         </div>
                     ))}

@@ -103,7 +103,7 @@ export function BinDetailClient({ bin, tenantSlug, permissions }: Props) {
                     header: t('detail.colExpires'),
                     accessorFn: (l) => l.expiresAt ?? '',
                     cell: ({ row }) => (
-                        <span className="text-xs text-content-secondary">
+                        <span className="text-xs text-content-muted">
                             {row.original.expiresAt ? formatDate(row.original.expiresAt) : '—'}
                         </span>
                     ),
@@ -205,12 +205,12 @@ export function BinDetailClient({ bin, tenantSlug, permissions }: Props) {
             >
                 <div className="space-y-section">
                     {bin.description && (
-                        <p className="text-sm text-content-secondary">{bin.description}</p>
+                        <p className="text-sm text-content-muted">{bin.description}</p>
                     )}
                     {/* Unconvertible stock is stated, not folded into the tonnes
                         above — a bin can legitimately hold bagged seed. */}
                     {bin.unconvertible.length > 0 && (
-                        <p className="text-sm text-content-secondary">
+                        <p className="text-sm text-content-muted">
                             {t('detail.alsoHolds', {
                                 items: bin.unconvertible
                                     .map((u) => `${formatDecimal(u.quantity, 2)} ${u.symbol}`)

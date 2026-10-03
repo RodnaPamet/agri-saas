@@ -90,7 +90,7 @@ export function PushOptIn({ className }: { className?: string }) {
     if (status === 'subscribed') {
         return (
             <span data-testid="push-subscribed" className={className}>
-                <span className="text-xs text-content-secondary">{t('alertsOn')}</span>
+                <span className="text-xs text-content-muted">{t('alertsOn')}</span>
             </span>
         );
     }

@@ -198,7 +198,7 @@ export function MyListingsClient({ exchangeEnabled = true }: MyListingsClientPro
                 {!exchangeEnabled && (
                     <div
                         role="status"
-                        className="mb-default rounded-lg border border-border-emphasis bg-bg-subtle p-3 text-sm text-content-secondary"
+                        className="mb-default rounded-lg border border-border-emphasis bg-bg-subtle p-3 text-sm text-content-muted"
                     >
                         {t('moduleDisabledNotice')}
                     </div>
@@ -232,7 +232,7 @@ export function MyListingsClient({ exchangeEnabled = true }: MyListingsClientPro
                                 <StatusBadge variant={statusVariant(l.status)}>
                                     {LISTING_STATUS_KEY[l.status] ? t(LISTING_STATUS_KEY[l.status]) : l.status}
                                 </StatusBadge>
-                                <span className="text-sm text-content-secondary">
+                                <span className="text-sm text-content-muted">
                                     {l.quantityTonnes} {tonne}
                                     {l.pricePerTonne
                                         ? ` · ${formatPricePerTonne(l.pricePerTonne, l.priceCurrency, tonne)}`
@@ -286,7 +286,7 @@ export function MyListingsClient({ exchangeEnabled = true }: MyListingsClientPro
                                                 <span className="text-xs text-content-muted">
                                                     {formatDateTime(iq.createdAt)}
                                                 </span>
-                                                <span className="text-content-secondary">{iq.message}</span>
+                                                <span className="text-content-muted">{iq.message}</span>
                                                 {iq.status === 'PENDING' && (
                                                     <span className="ml-auto flex gap-compact">
                                                         <Button variant="secondary" size="sm" onClick={() => respond(iq.id, 'ACCEPTED')} loading={isBusy(`${iq.id}:ACCEPTED`)}>

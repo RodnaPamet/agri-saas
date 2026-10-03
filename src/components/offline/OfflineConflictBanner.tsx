@@ -35,7 +35,7 @@ export function OfflineConflictBanner({ conflicts, onResolve, busyId }: OfflineC
                 >
                     <div>
                         <p className="text-sm font-medium text-content-warning">{t('title')}</p>
-                        <p className="text-sm text-content-secondary">{t('description', { label: c.label })}</p>
+                        <p className="text-sm text-content-muted">{t('description', { label: c.label })}</p>
                     </div>
                     <div className="flex flex-wrap gap-tight">
                         <Button

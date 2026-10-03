@@ -150,7 +150,7 @@ export function CompaniesAdminClient({ tenantSlug }: { tenantSlug: string }) {
                         className="mb-1"
                     />
                     <Heading level={1}>{t('title')}</Heading>
-                    <p className="text-sm text-content-secondary">{t('description')}</p>
+                    <p className="text-sm text-content-muted">{t('description')}</p>
                 </div>
             </ListPageShell.Header>
 
@@ -188,7 +188,7 @@ export function CompaniesAdminClient({ tenantSlug }: { tenantSlug: string }) {
                 <Modal.Body>
                     <div className="space-y-default">
                         {error && (
-                            <p role="alert" className="text-sm text-content-danger">
+                            <p role="alert" className="text-sm text-content-error">
                                 {error}
                             </p>
                         )}

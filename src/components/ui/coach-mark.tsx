@@ -88,8 +88,8 @@ export function CoachMark({
                         PLACEMENT_POS[placement],
                     )}
                 >
-                    <p className="text-sm font-semibold text-content-primary">{title}</p>
-                    <p className="mt-1 text-xs text-content-secondary">{body}</p>
+                    <p className="text-sm font-semibold text-content-emphasis">{title}</p>
+                    <p className="mt-1 text-xs text-content-muted">{body}</p>
                     <div className="mt-default flex justify-end">
                         <Button variant="primary" size="sm" onClick={dismiss}>
                             {t('coachMark.gotIt')}

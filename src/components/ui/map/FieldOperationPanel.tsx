@@ -137,8 +137,8 @@ export function FieldOperationPanel({ taskId }: FieldOperationPanelProps) {
         }
     };
 
-    if (isLoading && !data) return <div className="text-sm text-content-secondary">{t('fieldOp.loading')}</div>;
-    if (!data) return <div className="text-sm text-content-secondary">{t('fieldOp.notFound')}</div>;
+    if (isLoading && !data) return <div className="text-sm text-content-muted">{t('fieldOp.loading')}</div>;
+    if (!data) return <div className="text-sm text-content-muted">{t('fieldOp.notFound')}</div>;
 
     // Spray-job complete → offer a shareable card. Area covered = the done
     // parcels' hectarage; the job's product is shared across its lines.
@@ -159,7 +159,7 @@ export function FieldOperationPanel({ taskId }: FieldOperationPanelProps) {
                 />
             )}
             <div className="flex items-center justify-between">
-                <div className="text-sm text-content-secondary">
+                <div className="text-sm text-content-muted">
                     {t('fieldOp.parcelsComplete', { done: data.progress.done, total: data.progress.total })}
                 </div>
                 <div className="text-sm font-medium">
@@ -173,7 +173,7 @@ export function FieldOperationPanel({ taskId }: FieldOperationPanelProps) {
                         <div className="flex items-center justify-between gap-default">
                         <div>
                             <div className="text-sm font-medium">{l.parcel?.name ?? t('parcel')}</div>
-                            <div className="text-xs text-content-secondary">
+                            <div className="text-xs text-content-muted">
                                 {l.product?.name} · {String(l.doseValue)} {l.doseUnit?.symbol} · {l.parcel?.areaHa != null ? t('fieldOp.areaDca', { dca: trimNumber(haToDca(l.parcel.areaHa)) }) : '–'}
                             </div>
                             {/* Amounts needed for THIS parcel — rate × its area

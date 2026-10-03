@@ -105,7 +105,7 @@ export function InstallPrompt() {
             >
                 <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold text-content-emphasis">{t('installTitle')}</p>
-                    <p className="text-xs text-content-secondary">{t('installDesc')}</p>
+                    <p className="text-xs text-content-muted">{t('installDesc')}</p>
                 </div>
                 <Button variant="secondary" size="sm" onClick={snooze} data-testid="install-dismiss" aria-label={t('dismissPrompt')}>{t('notNow')}</Button>
                 <Button variant="primary" size="sm" onClick={() => void install()} data-testid="install-accept">{t('install')}</Button>
@@ -123,7 +123,7 @@ export function InstallPrompt() {
             >
                 <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold text-content-emphasis">{t('a2hsTitle')}</p>
-                    <p className="text-xs text-content-secondary">
+                    <p className="text-xs text-content-muted">
                         {t('a2hsDesc')}
                     </p>
                 </div>

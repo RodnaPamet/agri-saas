@@ -23,7 +23,7 @@ export function UpdateAvailableBanner({ onApply }: UpdateAvailableBannerProps) {
             id="sw-update-banner"
             className="fixed inset-x-0 bottom-0 z-50 flex items-center justify-between gap-default border-t border-border-subtle bg-bg-elevated px-4 py-3 md:inset-x-auto md:right-4 md:bottom-4 md:max-w-sm md:rounded-lg md:border"
         >
-            <span className="text-sm text-content-secondary">{t('ready')}</span>
+            <span className="text-sm text-content-muted">{t('ready')}</span>
             <Button size="sm" variant="primary" onClick={onApply}>
                 {t('refresh')}
             </Button>

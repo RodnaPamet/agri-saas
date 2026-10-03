@@ -714,10 +714,10 @@ function LocationDetailBody() {
                     {/* Compact info row below the tabs — just the two headline
                         figures (parcel count + total area). */}
                     <dl className="grid grid-cols-2 gap-default text-sm">
-                        <div><dt className="text-content-secondary">{t('overviewParcels')}</dt><dd className="font-medium">{loc?._count?.parcels ?? parcels.length}</dd></div>
-                        <div><dt className="text-content-secondary">{t('overviewTotalArea')}</dt><dd className="font-medium">{trimNumber(haToDca(totalAreaHa))} dca</dd></div>
+                        <div><dt className="text-content-muted">{t('overviewParcels')}</dt><dd className="font-medium">{loc?._count?.parcels ?? parcels.length}</dd></div>
+                        <div><dt className="text-content-muted">{t('overviewTotalArea')}</dt><dd className="font-medium">{trimNumber(haToDca(totalAreaHa))} dca</dd></div>
                         {leasedCount > 0 ? (
-                            <div><dt className="text-content-secondary">{t('overviewLeased')}</dt><dd className="font-medium">{leasedCount}</dd></div>
+                            <div><dt className="text-content-muted">{t('overviewLeased')}</dt><dd className="font-medium">{leasedCount}</dd></div>
                         ) : null}
                     </dl>
 
@@ -735,7 +735,7 @@ function LocationDetailBody() {
                     ) : null}
                     {loc?.description && <p className="text-sm">{loc.description}</p>}
                     {parcels.length === 0 && (
-                        <div className="rounded-lg border border-border-subtle p-6 text-sm text-content-secondary">
+                        <div className="rounded-lg border border-border-subtle p-6 text-sm text-content-muted">
                             {t('noParcelsHint')}
                         </div>
                     )}
@@ -786,7 +786,7 @@ function LocationDetailBody() {
                                 <AccordionTrigger size="sm" className="px-4">
                                     <span className="flex items-center gap-tight">
                                         <span className="font-medium">{t('parcelsAccordion')}</span>
-                                        <span className="text-xs text-content-secondary">
+                                        <span className="text-xs text-content-muted">
                                             {/* Any active facet ⇒ show what is actually
                                                 on screen. Keying this off the crop chip
                                                 alone would print the unfiltered total
@@ -923,7 +923,7 @@ function LocationDetailBody() {
                                 <span>{t('imageryNotConfigured', { index: activeSpec.label })}</span>
                             ) : indexTileUrl ? (
                                 <>
-                                    <span className="font-medium text-content-secondary">{activeSpec.label}</span>
+                                    <span className="font-medium text-content-muted">{activeSpec.label}</span>
                                     <span>{tLegend(activeSpec.lowKey)}</span>
                                     <span
                                         aria-hidden="true"
@@ -1117,7 +1117,7 @@ function LocationDetailBody() {
             {tab === 'operations' && (
                 <div className="space-y-section">
                     {(opsQ.data ?? []).length === 0 ? (
-                        <div className="rounded-lg border border-border-subtle p-6 text-sm text-content-secondary">
+                        <div className="rounded-lg border border-border-subtle p-6 text-sm text-content-muted">
                             {t('noSprayJobs')}
                         </div>
                     ) : (
@@ -1130,7 +1130,7 @@ function LocationDetailBody() {
                                         className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-bg-muted/50"
                                     >
                                         <span className="text-sm font-medium">{op.key ? `${op.key} · ` : ''}{op.title}</span>
-                                        <span className="text-xs text-content-secondary">{tAgStatus.has(`operation.${op.status}`) ? tAgStatus(`operation.${op.status}`) : op.status} · {t('opParcels', { count: op._count?.operationParcels ?? 0 })}</span>
+                                        <span className="text-xs text-content-muted">{tAgStatus.has(`operation.${op.status}`) ? tAgStatus(`operation.${op.status}`) : op.status} · {t('opParcels', { count: op._count?.operationParcels ?? 0 })}</span>
                                     </button>
                                     {activeJob === op.id && (
                                         <div className="border-t border-border-subtle p-4">

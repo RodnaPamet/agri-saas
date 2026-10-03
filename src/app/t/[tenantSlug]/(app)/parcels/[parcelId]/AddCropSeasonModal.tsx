@@ -71,7 +71,7 @@ export function AddCropSeasonModal({
                         setSelected={(o) => setCrop(o?.value ?? null)}
                     />
                 </FormField>
-                {err ? <p className="text-sm text-content-danger">{err}</p> : null}
+                {err ? <p className="text-sm text-content-error">{err}</p> : null}
                 <div className="flex justify-end gap-tight">
                     <Button variant="secondary" size="sm" onClick={() => setOpen(false)}>
                         {t('cancel')}

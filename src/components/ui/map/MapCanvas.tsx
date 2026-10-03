@@ -1054,7 +1054,7 @@ export function MapCanvas({
                                 {lbl.name}
                             </div>
                             {lbl.areaHa != null && (
-                                <div className="text-[10px] leading-tight text-content-secondary">
+                                <div className="text-[10px] leading-tight text-content-muted">
                                     {Math.round(lbl.areaHa * 10) / 10} ha
                                 </div>
                             )}
@@ -1132,7 +1132,7 @@ export function MapCanvas({
                         every match to the "No X yet" title voice — including a
                         BODY, which is allowed prose and needs its full stop. */}
                     <p className="text-xs font-medium text-content-emphasis">{t('backdropMissingTitle')}</p>
-                    <p className="text-xs text-content-secondary">{t('backdropMissingBody')}</p>
+                    <p className="text-xs text-content-muted">{t('backdropMissingBody')}</p>
                 </div>
             )}
 
@@ -1218,7 +1218,7 @@ export function MapCanvas({
                         never dominates the (short, mobile) map pane. */}
                     {soilMode && soilOverlay && (
                         <div className="pointer-events-auto absolute bottom-3 left-3 z-10 flex max-h-[45%] w-24 flex-col overflow-hidden rounded-lg border border-border-subtle bg-bg-default/95 shadow-md">
-                            <p className="flex-shrink-0 border-b border-border-subtle px-2 py-1 text-[10px] font-medium text-content-secondary">
+                            <p className="flex-shrink-0 border-b border-border-subtle px-2 py-1 text-[10px] font-medium text-content-muted">
                                 {t('soilRegions')}
                             </p>
                             <div className="min-h-0 overflow-y-auto p-1">
@@ -1236,7 +1236,7 @@ export function MapCanvas({
                             aria-live="polite"
                             data-testid="map-geo-error"
                             className={cn(
-                                'pointer-events-none absolute inset-x-3 rounded-lg border border-border-subtle bg-bg-default/95 px-3 py-2 text-xs text-content-secondary shadow-md',
+                                'pointer-events-none absolute inset-x-3 rounded-lg border border-border-subtle bg-bg-default/95 px-3 py-2 text-xs text-content-muted shadow-md',
                                 // The no-basemap notice owns top-3; sit below it.
                                 basemapUnavailable ? 'top-20' : 'top-3',
                             )}

@@ -170,7 +170,7 @@ export function PromotionImageField({
             />
             <p className="text-xs text-content-muted">{t('imageHint')}</p>
             {error && (
-                <p role="alert" className="text-xs text-content-danger">
+                <p role="alert" className="text-xs text-content-error">
                     {error}
                 </p>
             )}

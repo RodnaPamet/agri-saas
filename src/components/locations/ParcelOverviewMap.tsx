@@ -1056,7 +1056,7 @@ export function ParcelOverviewMap({
             </div>
 
             {selection && (
-                <p aria-live="polite" className="text-xs text-content-secondary">
+                <p aria-live="polite" className="text-xs text-content-muted">
                     {selection.id === UNPOSITIONED_CLUSTER_ID
                         ? t('clusterActiveUnpositioned', { count: selection.count })
                         : t('clusterActive', {
@@ -1147,7 +1147,7 @@ export function ParcelOverviewMap({
                 <p
                     aria-live="polite"
                     data-testid="parcel-step-position"
-                    className="text-xs text-content-secondary"
+                    className="text-xs text-content-muted"
                 >
                     {t('stepPosition', {
                         name: steppedName ?? t('clusterUnnamed'),
@@ -1158,7 +1158,7 @@ export function ParcelOverviewMap({
             )}
 
             {overview?.truncated && (
-                <p className="text-xs text-content-secondary">
+                <p className="text-xs text-content-muted">
                     {t('overviewMapTruncated', { count: overview.positionedCount + overview.unpositionedCount })}
                 </p>
             )}
@@ -1184,7 +1184,7 @@ export function ParcelOverviewMap({
                                     'flex min-h-[44px] items-center rounded-lg border px-3 text-xs',
                                     selection?.id === c.id
                                         ? 'border-border-emphasis text-content-emphasis'
-                                        : 'border-border-subtle text-content-secondary',
+                                        : 'border-border-subtle text-content-muted',
                                 )}
                             >
                                 {t('clusterChip', {
@@ -1204,7 +1204,7 @@ export function ParcelOverviewMap({
                                     'flex min-h-[44px] items-center rounded-lg border px-3 text-xs',
                                     selection?.id === UNPOSITIONED_CLUSTER_ID
                                         ? 'border-border-emphasis text-content-emphasis'
-                                        : 'border-border-subtle text-content-secondary',
+                                        : 'border-border-subtle text-content-muted',
                                 )}
                             >
                                 {t('clusterUnpositioned', { count: unpositionedCount })}

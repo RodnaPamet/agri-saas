@@ -400,7 +400,7 @@ function ExchangeInner() {
                     </span>
                     {ticker.offers > 0 ? (
                         <>
-                            <span className="whitespace-nowrap font-mono tabular-nums text-content-secondary">
+                            <span className="whitespace-nowrap font-mono tabular-nums text-content-muted">
                                 {t('tickerSummary', {
                                     tonnes: ticker.tonnes.toLocaleString(),
                                     offers: ticker.offers,
@@ -491,19 +491,19 @@ function ExchangeInner() {
                                         <span className="font-medium text-content-emphasis">
                                             {commodityLabel(tCommodity, o.commodity)}
                                         </span>
-                                        <span className="rounded bg-bg-subtle px-1.5 py-0.5 text-[10px] font-medium text-content-secondary">
+                                        <span className="rounded bg-bg-subtle px-1.5 py-0.5 text-[10px] font-medium text-content-muted">
                                             {t(KIND_LABEL_KEY[o.kind])}
                                         </span>
                                         <span className="text-xs text-content-muted">
                                             {o.side === 'SELL' ? t('selling') : t('buying')}
                                         </span>
                                         {o.isOwn && (
-                                            <span className="ml-auto rounded bg-bg-subtle px-1.5 py-0.5 text-[10px] font-medium text-content-secondary">
+                                            <span className="ml-auto rounded bg-bg-subtle px-1.5 py-0.5 text-[10px] font-medium text-content-muted">
                                                 {t('yourOffer')}
                                             </span>
                                         )}
                                     </div>
-                                    <div className="text-sm text-content-secondary">
+                                    <div className="text-sm text-content-muted">
                                         {o.quantityTonnes} {tonne}
                                         {o.pricePerTonne
                                             ? ` · ${formatPricePerTonne(o.pricePerTonne, o.priceCurrency, tonne)}`
@@ -584,12 +584,12 @@ function ExchangeInner() {
                                         : selectedOffer.status}
                                 </StatusBadge>
                                 {selectedOffer.isOwn && (
-                                    <span className="rounded bg-bg-subtle px-1.5 py-0.5 text-[10px] font-medium text-content-secondary">
+                                    <span className="rounded bg-bg-subtle px-1.5 py-0.5 text-[10px] font-medium text-content-muted">
                                         {t('yourOffer')}
                                     </span>
                                 )}
                             </div>
-                            <dl className="grid grid-cols-[auto_1fr] gap-x-section gap-y-tight text-content-secondary">
+                            <dl className="grid grid-cols-[auto_1fr] gap-x-section gap-y-tight text-content-muted">
                                 <dt className="text-content-muted">{t('detailQuantity')}</dt>
                                 <dd>{selectedOffer.quantityTonnes} {tonne}</dd>
                                 <dt className="text-content-muted">{t('detailPrice')}</dt>
@@ -650,7 +650,7 @@ function ExchangeInner() {
                                         {tMsg('messageSeller')}
                                     </Button>
                                     {openThreadFailed && (
-                                        <p className="text-xs text-content-danger">{tMsg('openFailed')}</p>
+                                        <p className="text-xs text-content-error">{tMsg('openFailed')}</p>
                                     )}
                                 </div>
                             )}

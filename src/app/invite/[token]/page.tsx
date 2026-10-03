@@ -96,7 +96,7 @@ export default async function InvitePage({ params, searchParams }: InvitePagePro
 
                 <a
                     href={isReady ? acceptUrl : loginUrl}
-                    className="block w-full text-center rounded-md bg-brand-primary px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity"
+                    className="block w-full text-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity"
                 >
                     {isReady ? t('acceptInvitation') : t('signInToAccept')}
                 </a>

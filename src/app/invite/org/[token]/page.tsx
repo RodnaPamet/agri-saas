@@ -98,7 +98,7 @@ export default async function OrgInvitePage({ params, searchParams }: InvitePage
                 ) : (
                     <a
                         href={loginUrl}
-                        className="block w-full text-center rounded-md bg-brand-primary px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity"
+                        className="block w-full text-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity"
                         data-testid="org-invite-signin-cta"
                     >
                         {t('signInToAccept')}
@@ -126,7 +126,7 @@ async function OrgInviteAcceptForm({ token }: { token: string }) {
         <form action={`/api/org/invite/${token}/accept-redirect`} method="POST">
             <button
                 type="submit"
-                className="w-full rounded-md bg-brand-primary px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity"
+                className="w-full rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity"
                 data-testid="org-invite-accept"
             >
                 {t('acceptInvitation')}

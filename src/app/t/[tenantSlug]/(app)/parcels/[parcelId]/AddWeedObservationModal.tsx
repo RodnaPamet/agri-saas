@@ -87,7 +87,7 @@ export function AddWeedObservationModal({
                 <FormField label={t('otherWeed')}>
                     <Input value={other} onChange={(e) => setOther(e.target.value)} />
                 </FormField>
-                {err ? <p className="text-sm text-content-danger">{err}</p> : null}
+                {err ? <p className="text-sm text-content-error">{err}</p> : null}
                 <div className="flex justify-end gap-tight">
                     <Button variant="secondary" size="sm" onClick={() => setOpen(false)}>
                         {t('cancel')}
