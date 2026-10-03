@@ -31,6 +31,7 @@ import { prisma } from '@/lib/prisma';
 import { invalidateFlagCache } from '@/lib/feature-flags';
 import { logger } from '@/lib/observability/logger';
 import { sanitizePlainText } from '@/lib/security/sanitize';
+import { appendPlatformAuditEntry } from '@/lib/audit/platform-audit-writer';
 
 /** One row as the console renders it — the STORED state, not a resolved view. */
 export interface FlagAdminRow {
@@ -137,6 +138,31 @@ export async function upsertFeatureFlag(input: UpsertFlagInput): Promise<FlagAdm
         key: flag.key,
         enabled: flag.enabled,
         cohortCount: flag.cohorts.length,
+    });
+
+    // P1.9 — the audit chain this function's docblock has been promising.
+    //
+    // The log line above is the operational record and rotation ages it out; a
+    // flag flip changes behaviour for every user of the deployment, so it owes
+    // a durable one. `updatedByUserId` stays NULL for the reason given above —
+    // the credential is a key, not a person — and the chain records that
+    // honestly via `actorType: PLATFORM_ADMIN` rather than inventing an actor.
+    //
+    // AFTER the write and the cache invalidation: an entry recording a flip
+    // that then failed to persist, or that persisted but is still masked by a
+    // stale cache, describes a state nobody was in.
+    await appendPlatformAuditEntry({
+        scope: 'feature-flags',
+        action: 'FEATURE_FLAG_UPSERTED',
+        detailsJson: {
+            key: flag.key,
+            enabled: flag.enabled,
+            cohorts: flag.cohorts,
+            // Whether a description exists, never its text: the chain is read
+            // by anyone with platform access and the body adds nothing to
+            // "what changed".
+            hasDescription: flag.description != null,
+        },
     });
 
     return flag;

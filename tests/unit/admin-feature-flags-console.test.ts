@@ -87,6 +87,13 @@ function loadRoutes(key: string | undefined): {
     jest.doMock('@/lib/prisma', () => ({
         prisma: { featureFlag: mockFeatureFlag, featureFlagCohortMember: mockCohortMember },
     }));
+    // P1.9 — this route appends to the platform audit chain, which opens a
+    // prisma transaction. Doubled so the route stays the subject.
+    jest.doMock('@/lib/audit/platform-audit-writer', () => ({
+        appendPlatformAuditEntry: jest.fn(async () => ({
+            id: 'audit-1', entryHash: 'h', previousHash: null, occurredAt: 'now',
+        })),
+    }));
     jest.doMock('@/lib/feature-flags', () => ({
         ...jest.requireActual('@/lib/feature-flags'),
         invalidateFlagCache: invalidateSpy,

@@ -33,6 +33,7 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { verifyPlatformApiKey, PlatformAdminError } from '@/lib/auth/platform-admin';
 import { repairMisplacedV2, countMisplacedV2 } from '@/app-layer/usecases/global-key-rotation';
+import { appendPlatformAuditEntry } from '@/lib/audit/platform-audit-writer';
 import { LOGIN_LIMIT } from '@/lib/security/rate-limit';
 
 export const runtime = 'nodejs';
@@ -81,6 +82,26 @@ export const POST = withApiErrorHandling(
         const sum = (f: (r: (typeof perColumn)[number]) => number): number =>
             perColumn.reduce((a, r) => a + f(r), 0);
         const remaining = await countMisplacedV2();
+
+        // P1.9 — a platform action with no audit trail. This rewrites
+        // ciphertext on rows nobody else can read; the chain is what lets
+        // someone later establish WHEN it ran and over how many rows, without
+        // relying on a log line that rotation can age out.
+        //
+        // AFTER the work, not before: an entry claiming a repair that then
+        // failed is worse than no entry. The totals are what make it useful.
+        await appendPlatformAuditEntry({
+            scope: 'key-rotation',
+            action: 'KEY_ROTATION_V2_REPAIRED',
+            requestId: req.headers.get('x-request-id'),
+            detailsJson: {
+                totalFound: sum((r) => r.found),
+                totalRepaired: sum((r) => r.repaired),
+                totalErrors: sum((r) => r.errors),
+                remainingAfter: remaining,
+                perColumn,
+            },
+        });
 
         return jsonResponse({
             perColumn,

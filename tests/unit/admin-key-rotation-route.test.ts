@@ -19,6 +19,7 @@ const sweepMock = jest.fn();
 const countMock = jest.fn();
 const dekCountMock = jest.fn();
 const misplacedMock = jest.fn();
+const auditMock = jest.fn();
 const repairMock = jest.fn();
 const inFlightMock = jest.fn();
 
@@ -56,6 +57,12 @@ function loadRepairRoute(key: string | undefined): { GET: Handler; POST: Handler
     jest.doMock('@/env', () => ({
         env: { PLATFORM_ADMIN_API_KEY: key, PLATFORM_ADMIN_API_KEY_PREVIOUS: undefined },
     }));
+    // P1.9 — the repair route appends to the platform audit chain (it rewrites
+    // ciphertext nobody else can read, so WHEN it ran and over how many rows
+    // belongs in a durable record). Doubled so the route stays the subject.
+    jest.doMock('@/lib/audit/platform-audit-writer', () => ({
+        appendPlatformAuditEntry: (...a: unknown[]) => auditMock(...a),
+    }));
     jest.doMock('@/app-layer/usecases/global-key-rotation', () => ({
         repairMisplacedV2: repairMock,
         countMisplacedV2: misplacedMock,
@@ -78,6 +85,13 @@ function loadRoute(key: string | undefined): { GET: Handler; POST: Handler } {
             { model: 'Task', table: 'Task', manifestName: 'description', column: 'description', manifest: 'encrypted-fields' },
         ],
     }));
+    // P1.9 — this route appends to the platform audit chain, which opens a
+    // prisma transaction. Doubled so the route stays the subject.
+    jest.doMock('@/lib/audit/platform-audit-writer', () => ({
+        appendPlatformAuditEntry: jest.fn(async () => ({
+            id: 'audit-1', entryHash: 'h', previousHash: null, occurredAt: 'now',
+        })),
+    }));
     jest.doMock('@/lib/security/encryption', () => ({
         ...jest.requireActual('@/lib/security/encryption'),
         kekRotationInFlight: inFlightMock,
@@ -90,6 +104,7 @@ beforeEach(() => {
     countMock.mockResolvedValue({ total: 0, perColumn: [] });
     dekCountMock.mockResolvedValue(0);
     misplacedMock.mockResolvedValue(0);
+    auditMock.mockResolvedValue({ id: 'a1', entryHash: 'h', previousHash: null, occurredAt: 'now' });
     repairMock.mockResolvedValue([]);
     inFlightMock.mockReturnValue(true);
     sweepMock.mockResolvedValue({
