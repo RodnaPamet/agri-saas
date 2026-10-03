@@ -178,6 +178,12 @@ COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 # "datasource.url property is required in your Prisma config file".
 COPY --from=builder --chown=nextjs:nodejs /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/entrypoint.sh ./scripts/entrypoint.sh
+# P1.8 — the worker's command runs this before consuming jobs. Copied
+# INDIVIDUALLY like entrypoint.sh because this stage never copies `scripts/`
+# wholesale; a script referenced by compose but absent from the image is a
+# crash-loop at deploy time, not a build error.
+# `tests/guards/compose-scripts-ship-in-image.test.ts` enforces the pairing.
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/wait-for-migrations.sh ./scripts/wait-for-migrations.sh
 # The compiled BullMQ worker + scheduler bundles — run by the
 # `worker` compose service, a separate process from `next start`.
 COPY --from=builder --chown=nextjs:nodejs /app/dist ./dist
@@ -190,7 +196,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/src/lib/pdf/fonts ./src/lib/pdf/f
 # already owned by nextjs:nodejs via the per-COPY --chown above, so we
 # only chown the freshly-created upload dir here — NOT a recursive
 # `chown -R /app`, which duplicated the whole tree into its own layer.
-RUN chmod +x ./scripts/entrypoint.sh && \
+RUN chmod +x ./scripts/entrypoint.sh ./scripts/wait-for-migrations.sh && \
     mkdir -p /data/uploads && \
     chown nextjs:nodejs /data/uploads
 

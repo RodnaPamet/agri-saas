@@ -140,7 +140,16 @@ services:
     labels:
       - com.centurylinklabs.watchtower.enable=true
     entrypoint: ["/bin/sh", "-c"]
-    command: ["node dist/scheduler.mjs && node dist/worker.mjs"]
+    # P1.8 — wait for the schema BEFORE consuming jobs.
+    #
+    # This container overrides the image ENTRYPOINT, which is where
+    # `prisma migrate deploy` lives, so it has never waited for a migration.
+    # `depends_on` waits for pgbouncer/redis HEALTH, and a healthy database is
+    # not a migrated one — Watchtower recreates app and worker together, so on
+    # a deploy carrying a migration the worker could consume jobs against the
+    # old schema while the app was still applying it.
+    command:
+      - "./scripts/wait-for-migrations.sh && node dist/scheduler.mjs && node dist/worker.mjs"
     depends_on:
       pgbouncer:
         condition: service_healthy
