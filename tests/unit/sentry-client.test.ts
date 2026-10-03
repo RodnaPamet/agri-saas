@@ -43,6 +43,18 @@ describe('initClientSentry', () => {
         expect(cfg.tracesSampleRate).toBeLessThanOrEqual(0.1); // traces sampled low
     });
 
+    it('#1158 — sendDefaultPii is explicitly false on the BROWSER side', () => {
+        // The client default is what attaches the VISITOR'S IP to every event,
+        // so an inherited default is the difference between knowing an error
+        // happened and recording who it happened to. `@sentry/nextjs` 11
+        // enables data collection by default; this option was unset.
+        //
+        // `toBe(false)` rather than `toBeFalsy()`, because `undefined` is
+        // falsy and is precisely the state being fixed.
+        initClientSentry('https://pub@o1.ingest.sentry.io/1');
+        expect(initMock.mock.calls[0][0].sendDefaultPii).toBe(false);
+    });
+
     it('initialises at most once (the once-guard holds)', () => {
         initClientSentry('https://pub@o1.ingest.sentry.io/1');
         initClientSentry('https://pub@o1.ingest.sentry.io/1');

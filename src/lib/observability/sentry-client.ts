@@ -41,6 +41,13 @@ export function initClientSentry(dsn: string | undefined, opts: ClientSentryOpti
 
     Sentry.init({
         dsn,
+
+        // #1158 — explicit for the same reason as the server init: this was
+        // unset, and `@sentry/nextjs` 11 enables data collection by default.
+        // On the BROWSER side the default is what attaches the visitor's IP to
+        // every event, so an inherited default is the difference between
+        // knowing an error happened and recording who it happened to.
+        sendDefaultPii: false,
         environment: opts.environment || process.env.NODE_ENV || 'production',
         release: opts.release,
         // Errors always on; traces low; NO session replay (see file header).
