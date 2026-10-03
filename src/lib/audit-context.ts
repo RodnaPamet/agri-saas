@@ -9,6 +9,29 @@
  *    within the $use middleware on the same tick
  * 3. The stack supports nesting (e.g., runInTenantContext inside withTenantDb)
  *
+ * ⚠️ THE PREMISE ABOVE IS STALE AND REASON 2 IS FALSE. Read before reusing it.
+ *
+ * `$use` was REMOVED in Prisma 7 and the audit trail now runs as a
+ * `$extends({ query })` extension. Measured 2026-10-02 in
+ * `tests/integration/prisma-extension-als-reachability.test.ts`: a Prisma 7
+ * query extension DOES see the AsyncLocalStorage store (an `afterCommit` call
+ * from inside one is deferred to the post-commit drain rather than fired
+ * inline). So "ALS does not reach the middleware" is no longer a reason to
+ * prefer this stack — do not re-derive it from the paragraph above.
+ *
+ * And reason 2 is not how the extension is actually read. A query extension is
+ * `async` and awaits `query(args)`, so reads are NOT confined to one tick, and
+ * `getAuditContext()` returns the TOP of this stack — which under concurrent
+ * requests is whichever request pushed LAST, not the caller. `after-commit.ts`
+ * documents choosing ALS specifically to avoid that; the audit trail still
+ * reads the stack and consequently misattributes rows across tenants under
+ * concurrency. Measured and filed as #1259: eleven concurrent writes to eleven
+ * DISTINCT tenants produced eleven audit rows all carrying ONE tenant's id.
+ * `resolveTenantDekPair` reads the same context.
+ *
+ * This comment is a correction only — nothing here changes behaviour. The fix
+ * belongs with #1259, which owns the test population for it.
+ *
  * Usage:
  *   await runWithAuditContext({ tenantId, actorUserId: userId, requestId }, async () => {
  *       await prisma.evidence.create({ data: { ... } });

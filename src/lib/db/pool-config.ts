@@ -44,10 +44,25 @@
  * `connectionTimeoutMillis`. `pg` waits indefinitely for a free client, so
  * exhaustion presents as a hang rather than an error — unpleasant, but adding
  * a timeout converts a transient burst into 500s, and that is a different
- * change with a different failure mode. The nesting removal in this same PR
- * takes away the only known way to exhaust the pool DEADLOCKED (a transaction
- * holding one client while waiting for a second); capping the wait is the
- * answer to a different question and belongs with its own measurement.
+ * change with a different failure mode; capping the wait is the answer to a
+ * different question and belongs with its own measurement.
+ *
+ * ## One claim here was wrong, and it is worth keeping the correction
+ *
+ * This docblock used to say the Exchange nesting removal in #1224 "takes away
+ * the ONLY known way to exhaust the pool DEADLOCKED (a transaction holding one
+ * client while waiting for a second)". That was false when written, and the
+ * same PR's own implementation note said so: it measured TWO other second-
+ * connection users and filed them as #1223. Un-nesting the notify removed one
+ * route to the deadlock, not the class.
+ *
+ * Of those two, the DEK read is fixed — `src/lib/db-context.ts` pre-resolves
+ * the tenant's DEK pair before `$transaction` opens, see `prewarmTenantKeys`.
+ * `appendAuditEntry` still opens its own `$transaction` on the global client
+ * for every audited write, so an AUDITED write's supportable concurrency is
+ * still `PG_POOL_MAX - 1`; past it the audit row is lost silently rather than
+ * erroring, because the extension's `catch` is best-effort by contract. See
+ * the CLAUDE.md pool section for the measurement.
  */
 
 /** pgbouncer `DEFAULT_POOL_SIZE` for the runtime user/database pair. */
