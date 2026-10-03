@@ -71,3 +71,65 @@ model OrgAuditLog {
   @@index([organizationId, action])
   @@index([organizationId, entryHash])
 }
+
+/// Platform-level actions, chained per SCOPE. P1.9.
+///
+/// Generalised from `OrgAuditLog`: same append-only hash chain, same canonical
+/// payload discipline, same advisory-lock-then-timestamp ordering. What differs
+/// is the CHAIN KEY. `OrgAuditLog` chains per `organizationId` and `AuditLog`
+/// per `tenantId`; a platform action belongs to neither, so the chain key is a
+/// free-form `scope` naming the subsystem acted on.
+///
+/// Per-scope chains rather than one platform chain, deliberately: the append
+/// takes an advisory lock on the chain key, so one global chain would serialise
+/// every platform write against every other. Scopes are also the unit a reader
+/// verifies — "is the key-rotation history intact" is answerable without
+/// replaying feature-flag edits.
+enum PlatformAuditAction {
+  FEATURE_FLAG_UPSERTED
+  FEATURE_FLAG_COHORT_ADDED
+  FEATURE_FLAG_COHORT_REMOVED
+  KEY_ROTATION_SWEEP_RUN
+  KEY_ROTATION_DEK_REWRAPPED
+  KEY_ROTATION_V2_REPAIRED
+}
+
+model PlatformAuditLog {
+  id String @id @default(cuid())
+
+  /// The chain key: which platform subsystem this entry belongs to, e.g.
+  /// `feature-flags` or `key-rotation`. Free-form at the schema layer and
+  /// constrained by `PLATFORM_AUDIT_SCOPES` at the write boundary, so a typo
+  /// cannot silently start a second chain that looks empty.
+  scope String
+
+  /// Defaults to PLATFORM_ADMIN rather than USER: these surfaces authenticate
+  /// with `X-Platform-Admin-Key`, which is a credential and not a person.
+  actorType String @default("PLATFORM_ADMIN")
+
+  /// NULLABLE and usually null, with NO foreign key to User — unlike
+  /// `OrgAuditLog.actorUserId`. A platform-admin request carries a key, not a
+  /// session, so there is no user to point at. An FK would have forced either a
+  /// fictitious user or a nullable relation that never resolves.
+  actorUserId String?
+
+  action      PlatformAuditAction
+  detailsJson Json?
+  requestId   String?
+  occurredAt  DateTime            @default(now())
+
+  /// SHA-256 over the canonical payload INCLUDING `previousHash`, so altering
+  /// any earlier entry invalidates every later one.
+  entryHash String
+
+  /// Null for the first entry in a scope's chain.
+  previousHash String?
+
+  /// Hash-payload schema version. Bumping it changes the hash of new entries
+  /// only; old entries verify against the version they were written with.
+  version Int @default(1)
+
+  @@index([scope, occurredAt])
+  @@index([scope, action])
+  @@index([scope, entryHash])
+}

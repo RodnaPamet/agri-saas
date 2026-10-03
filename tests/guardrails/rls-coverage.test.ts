@@ -240,6 +240,7 @@ const NO_RLS_NOT_APP_USER_MODELS: ReadonlyMap<string, string> = new Map([
     ['OrgAuditLog', 'Org-layer audit rows. Append-only, read by org APIs on the privileged path.'],
     ['OrgDashboardWidget', 'Org dashboard layout, written by org APIs on the privileged path.'],
     ['OrgInvite', 'Org invitations, resolved by token on a public path that runs as the global client.'],
+    ['PlatformAuditLog', 'Platform-level audit chain (P1.9). Written only by the platform-admin surfaces on the privileged role; append-only at the DB via platform_audit_log_immutable. app_user holds SELECT/INSERT as defence in depth but no code path reads it under a tenant context.'],
 ]);
 
 // ═══════════════════════════════════════════════════════════════════

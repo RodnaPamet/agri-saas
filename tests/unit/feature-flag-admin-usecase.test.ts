@@ -37,6 +37,16 @@ jest.mock('@/lib/prisma', () => ({
         },
     },
 }));
+// P1.9 — the usecase now appends to the platform audit chain, which opens a
+// prisma transaction. Mocked rather than widening the prisma double with
+// `$transaction`: the chain's own behaviour is proved in
+// tests/integration/platform-audit-chain.test.ts, and what belongs HERE is
+// that the usecase calls it, and calls it LAST.
+const auditMock = jest.fn();
+jest.mock('@/lib/audit/platform-audit-writer', () => ({
+    appendPlatformAuditEntry: (...a: unknown[]) => auditMock(...a),
+}));
+
 jest.mock('@/lib/feature-flags', () => ({
     ...jest.requireActual('@/lib/feature-flags'),
     invalidateFlagCache: jest.fn(),
@@ -88,13 +98,20 @@ describe('upsertFeatureFlag writes, THEN invalidates', () => {
         invalidateSpy.mockImplementation(async () => {
             order.push('invalidate');
         });
+        auditMock.mockImplementation(async () => {
+            order.push('audit');
+            return { id: 'a1', entryHash: 'h', previousHash: null, occurredAt: 'now' };
+        });
 
         await flagAdmin.upsertFeatureFlag({ key: 'social.feed', enabled: true, cohorts: [] });
 
         // Invalidating first leaves a window in which a reader repopulates the
         // cache from the OLD table, and the flip is then invisible for the full
         // 30s TTL — indistinguishable from the console not working.
-        expect(order).toEqual(['write', 'invalidate']);
+        // The audit entry is LAST, and that order is the claim: an entry
+        // recording a flip that had not yet persisted, or that was still masked
+        // by a stale cache, describes a state nobody was in.
+        expect(order).toEqual(['write', 'invalidate', 'audit']);
     });
 
     it('still invalidates when the row did not change value', async () => {
