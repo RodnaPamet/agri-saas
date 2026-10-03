@@ -2838,7 +2838,15 @@ negated. Say what remains instead:
       error and no trace, which is why the measurement above had to count rows
       to find it. Each reporter is individually try-wrapped — a committed write
       must never fail because the telemetry for its missing audit row broke.
-      The LOSS itself is still unfixed; it is now ALERTABLE, pinned by
+      The LOSS itself is still unfixed, and "alertable" would overstate what
+      shipped: the error log is the signal that reaches a human, because
+      agri-saas deploys NO OTel→Prometheus→Alertmanager pipeline (the live
+      alerting is one GCP uptime check on `/api/readyz`). The `AuditRowLost`
+      threshold is DECLARED in
+      `infra/observability/prometheus/rules/alerting-rules.yml` — `> 0` over a
+      window rather than a ratio, because one missing entry is a permanent gap
+      in a tamper-evident chain — and fires only if that pipeline is ever
+      deployed. Pinned by
       `tests/integration/audit-write-failure-is-loud.test.ts` with a negative
       control (a reporter firing unconditionally would satisfy the regression
       test and alert on every healthy write).
