@@ -75,6 +75,19 @@ describe('Static Analysis: No process.env fallbacks', () => {
             // redeploy, and the unit test can toggle it per-case via env
             // mutation. Reading the cached env.ts snapshot would freeze it.
             if (file.endsWith('webhook-headers.ts')) continue;
+            // The fail-closed audit tier's kill switch reads
+            // AUDIT_FAIL_CLOSED_ENABLED at call time, the same convention as
+            // webhook-headers.ts above and for a sharper reason: it exists to
+            // be flipped DURING an incident, when the audit writer is failing
+            // wholesale and taking every tenant, invite and role change down
+            // with it. The env.ts snapshot freezes at import, so routing it
+            // there would make the switch need the very restart it exists to
+            // avoid. (`audit-stream.ts` reads its sibling flag through env.ts
+            // instead, which is fine for its purpose -- changing an env var and
+            // restarting the container needs no new image -- but a RESTART is
+            // exactly what is unaffordable mid-incident here.) Exact-string
+            // `=== '0'` only, so a typo cannot disarm an audit control.
+            if (file.endsWith('audit/fail-closed-entities.ts')) continue;
             // GAP-17 read-tier rate limiter follows the same convention
             // as rate-limit-middleware.ts above — NEXT_TEST_MODE must be
             // read at request time so the Playwright suite can flip the
