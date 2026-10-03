@@ -90,6 +90,11 @@
       "documented": false
     },
     {
+      "path": "/api/admin/lookup-rehash",
+      "status": "live",
+      "documented": false
+    },
+    {
       "path": "/api/admin/news-derived-events",
       "status": "live",
       "documented": false

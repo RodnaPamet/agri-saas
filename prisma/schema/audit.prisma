@@ -92,6 +92,9 @@ enum PlatformAuditAction {
   KEY_ROTATION_SWEEP_RUN
   KEY_ROTATION_DEK_REWRAPPED
   KEY_ROTATION_V2_REPAIRED
+  // #1237 — the LOOKUP-hash rehash sweep. In the `key-rotation` scope with the
+  // three above, because an operator reads "retiring a key" as one history.
+  LOOKUP_HASH_REHASHED
 }
 
 model PlatformAuditLog {

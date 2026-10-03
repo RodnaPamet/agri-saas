@@ -187,6 +187,15 @@ const EXCLUDED_ROUTES: ReadonlyArray<{ relPath: string; reason: string }> = [
         reason: 'Platform-admin-key-gated: POST /api/admin/tenants — tenant-scope does not apply.',
     },
     {
+        relPath: 'api/admin/lookup-rehash/route.ts',
+        reason:
+            'Platform-admin-key-gated: the LOOKUP-hash rehash sweep (#1237). It rewrites ' +
+            'emailHash on User and UserIdentityLink, neither of which carries a tenantId — ' +
+            'a person exists before and across tenants — so there is no tenant to scope a ' +
+            'permission to. Distinct from the KEK sweep beside it: that moves ciphertext, ' +
+            'this moves the lookup HMAC.',
+    },
+    {
         relPath: 'api/admin/key-rotation/repair-v2/route.ts',
         reason:
             'Platform-admin-key-gated: repairs ciphertext encrypted under the wrong KEY on ' +
