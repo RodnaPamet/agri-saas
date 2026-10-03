@@ -819,6 +819,141 @@ jobs:
         run: node --max-old-space-size=8192 ./node_modules/jest/bin/jest.js tests/contracts/ --runInBand --forceExit --no-coverage --ci
 
   # ═══════════════════════════════════════════════════════════════
+  #  Key rotation drill (P1.10) — both rotations, previous keys REMOVED
+  #
+  #  Eight suites already cover pieces of key rotation. Every one of them
+  #  leaves the previous key in place, because that is what makes its
+  #  assertions readable — so collectively they prove the FALLBACK works,
+  #  which is the opposite of proving you can stop relying on it. This job
+  #  runs the one sequence none of them does: rotate, sweep, then DELETE
+  #  the old key and read again.
+  #
+  #  ── why it is not in the sharded matrix ──
+  #
+  #  The sweeps have no row scope by design: an operator rotates the
+  #  deployment, not a subset. Inside a shard that means re-encrypting every
+  #  row in the database the other suites in that shard are using, and the
+  #  shards run against ONE shared database (`marker.perWorker === false`).
+  #  So the drill is inert unless KEY_ROTATION_DRILL=1, which only this job
+  #  sets, and this job declares its own Postgres service.
+  #
+  #  ── why it is NOT gated on `changes` ──
+  #
+  #  P1.10's exit criterion is "green on 3 consecutive main runs", and a
+  #  skipped check is not a green one — this file's own `changes` banner
+  #  says a skipped required check counts as passing under branch
+  #  protection. Path-filtering this job would make the criterion
+  #  unanswerable on any run that touched only docs.
+  # ═══════════════════════════════════════════════════════════════
+  key-rotation-drill:
+    name: Key rotation drill
+    runs-on: ubuntu-latest
+    # Same exclusion as `test`: the weekly cron exists to refresh the
+    # CodeQL + Trivy scans, not to re-run suites.
+    if: ${{ github.event_name != 'schedule' }}
+    timeout-minutes: 20
+
+    env:
+      # `ci_testdb` because `assertIsTestDatabase` allows exactly
+      # `agri_saas_test` and `ci_testdb` (plus `_c<slot>` / `_w<n>`). A
+      # bespoke name is REFUSED, which is the correct behaviour — pointing a
+      # run that migrates and DROPs databases at one it does not own has
+      # destroyed another product's data in this repo's history.
+      DATABASE_URL: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
+      DATABASE_URL_TEST: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
+      DIRECT_DATABASE_URL: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
+      # Enables AND requires the drill. One variable rather than two, so the
+      # combination that reads as success and proves nothing — required but
+      # not enabled — cannot be expressed.
+      KEY_ROTATION_DRILL: "1"
+      # The drill overrides both key variables per step; this is here so the
+      # suite boots the same way the sharded job does.
+      DATA_ENCRYPTION_KEY: ci-test-data-encryption-key-32-chars-or-more-deterministic-x
+      INTEGRATION_REQUIRE_DB: "1"
+
+    services:
+      postgres:
+        # Pinned literal repeated from .github/postgis-image, the single
+        # source of truth; `services.<id>.image` accepts no `env` context.
+        # tests/guards/postgis-image-single-source.test.ts fails CI if this
+        # and that file disagree (#860).
+        image: postgres:16-trixie
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci_password
+          POSTGRES_DB: ci_testdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U ci -d ci_testdb"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node + Prisma client
+        uses: ./.github/actions/setup-node-prisma
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Create PostgreSQL roles for RLS
+        run: |
+          PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb <<'SQL'
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_user') THEN CREATE ROLE app_user NOLOGIN; END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'postgres') THEN CREATE ROLE postgres NOLOGIN; END IF;
+          END $$;
+          GRANT app_user TO ci;
+          GRANT app_user TO postgres;
+          SQL
+
+      - name: Enable pgvector (PGDG)
+        uses: ./.github/actions/enable-pgvector
+
+      - name: Apply Prisma migrations
+        run: ./node_modules/.bin/prisma migrate deploy
+
+      # `--json` and a count check, not just the exit code. A suite gated on
+      # an env var is one typo away from being SKIPPED, and a skipped suite
+      # exits 0 with nothing run — which is the failure mode this repo has
+      # already recorded as "absence reads as success". So the step demands a
+      # positive number of passing tests and prints the figure.
+      - name: Run the drill
+        run: |
+          set -uo pipefail
+          status=0
+          node --max-old-space-size=8192 ./node_modules/jest/bin/jest.js \
+            --ci --runInBand tests/drills \
+            --json --outputFile=drill-result.json || status=$?
+
+          passed=$(jq -r '.numPassedTests // 0' drill-result.json 2>/dev/null || echo 0)
+          failed=$(jq -r '.numFailedTests // 0' drill-result.json 2>/dev/null || echo 0)
+          skipped=$(jq -r '(.numPendingTests // 0) + (.numTodoTests // 0)' drill-result.json 2>/dev/null || echo 0)
+          echo "drill: $passed passed, $failed failed, $skipped skipped (jest exit $status)"
+
+          if [ "$status" -ne 0 ]; then
+            echo "::error::The key-rotation drill FAILED. A rotation step did not survive removing the previous key."
+            exit "$status"
+          fi
+          if [ "$passed" -lt 8 ]; then
+            echo "::error::The drill reported only $passed passing tests (expected at least 8, one per step)."
+            echo "::error::A green run over a SKIPPED drill is the failure this check exists to prevent —"
+            echo "::error::confirm KEY_ROTATION_DRILL=1 reached the suite and the database was reachable."
+            exit 1
+          fi
+
+      - name: Upload the drill result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: key-rotation-drill-result
+          path: drill-result.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  # ═══════════════════════════════════════════════════════════════
   #  Job 3b: Test (summary) — single required check for the matrix
   #
   #  GitHub branch-protection rules can target a stable check name;
