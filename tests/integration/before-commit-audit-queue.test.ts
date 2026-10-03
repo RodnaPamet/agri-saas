@@ -205,7 +205,14 @@ describe('the queue never resolves its own writer (#1223)', () => {
 
         await runWithAuditQueue(fakeTx as never, async () => {
             const queued = enqueueAuditEntry({
-                input: { tenantId: 'T', requestId: 'R', action: 'CREATE' },
+                input: {
+                    tenantId: 'T',
+                    userId: null,
+                    entity: 'Location',
+                    entityId: 'loc-1',
+                    action: 'CREATE',
+                    requestId: 'R',
+                },
                 failClosed: false,
                 model: 'Location',
                 operation: 'create',
@@ -229,7 +236,13 @@ describe('the queue never resolves its own writer (#1223)', () => {
         const write = jest.fn().mockResolvedValue(undefined);
         await runWithAuditQueue(fakeTx as never, async () => {
             enqueueAuditEntry({
-                input: { tenantId: 'T' },
+                input: {
+                    tenantId: 'T',
+                    userId: null,
+                    entity: 'TenantInvite',
+                    entityId: 'inv-1',
+                    action: 'CREATE',
+                },
                 failClosed: true,
                 model: 'TenantInvite',
                 operation: 'create',
@@ -251,7 +264,13 @@ describe('the queue never resolves its own writer (#1223)', () => {
         // routes the row to the caller's own fallback — so it is still WRITTEN.
         await runWithAuditQueue(fakeTx as never, async () => {
             const queued = enqueueAuditEntry({
-                input: { tenantId: 'T' },
+                input: {
+                    tenantId: 'T',
+                    userId: null,
+                    entity: 'Location',
+                    entityId: 'loc-2',
+                    action: 'CREATE',
+                },
                 failClosed: false,
                 model: 'Location',
                 operation: 'create',
@@ -276,10 +295,25 @@ describe('the queue never resolves its own writer (#1223)', () => {
         // Positive control: the file was found and is the one we mean.
         expect(src).toContain('export function enqueueAuditEntry');
         expect(src).toContain('entry.write(');
-        // The teeth. Narrow to the RESOLUTION forms on purpose: the docblock
-        // above names `audit-writer` in prose to explain why it is absent, and
-        // an assertion that banned the word would fail on its own explanation.
+        // The teeth. Narrow to the RUNTIME resolution forms on purpose, for two
+        // separate reasons:
+        //
+        //  - the docblock above names `audit-writer` in prose to explain why
+        //    the module is not resolved here, and an assertion that banned the
+        //    word would fail on its own explanation;
+        //  - `import type` is ERASED at compile time. It is not a runtime edge
+        //    and is deliberately allowed — the queue needs `AppendAuditInput`
+        //    to type the injected writer, because a writer accepting a narrower
+        //    input than the queue declared is not assignable to it.
+        //
+        // A VALUE import of the same module is still the defect, so the
+        // lookahead excludes only `type`.
         expect(src).not.toMatch(/\brequire\s*\(/);
-        expect(src).not.toMatch(/^\s*import[^;]*audit-writer/m);
+        expect(src).not.toMatch(/^\s*import\s+(?!type\b)[^;]*audit-writer/m);
+        // ...and this is what stops that allowance from being vacuous: the
+        // type-only import IS present, so the pattern above is evaluated
+        // against a file that genuinely contains the module's name. Without it,
+        // deleting the import entirely would also pass.
+        expect(src).toMatch(/^\s*import type\s+\{[^}]*\}\s+from\s+'\.\.\/audit\/audit-writer';/m);
     });
 });

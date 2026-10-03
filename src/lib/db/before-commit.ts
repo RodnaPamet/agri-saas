@@ -53,6 +53,16 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { logger } from '@/lib/observability/logger';
 import { recordAuditWriteFailure } from '@/lib/observability/metrics';
 
+// TYPE-ONLY import, and the distinction is load-bearing: `import type` is
+// ERASED at compile time, so this adds no runtime edge to `audit-writer` and
+// the module still resolves nothing (the structural test below the queue pins
+// that). Do NOT turn it into a value import to "tidy" it -- that recreates at
+// runtime exactly the cycle #1287 was about. The types are here because the
+// writer's first parameter is `AppendAuditInput`, and a writer that accepts a
+// narrower type than the queue declares is not assignable to it: typing the
+// queue's `input` as `unknown` made the injection fail to compile.
+import type { AppendAuditInput } from '../audit/audit-writer';
+
 /** One queued chain append. `input` is the writer's `AppendAuditInput`. */
 /**
  * The chain-append writer, as this module needs it.
@@ -60,13 +70,13 @@ import { recordAuditWriteFailure } from '@/lib/observability/metrics';
  * Structural rather than imported, which is the whole point: see `PendingAudit.write`.
  */
 export type AuditChainWriter = (
-    input: unknown,
-    client?: unknown,
+    input: AppendAuditInput,
+    client?: TxClient,
     opts?: { onCallerTransaction?: boolean; isolateFailure?: boolean },
 ) => Promise<unknown>;
 
 export interface PendingAudit {
-    input: Record<string, unknown>;
+    input: AppendAuditInput;
     /** Fail-closed entries abort the caller's write; best-effort are isolated. */
     failClosed: boolean;
     /** Carried for the loss report, so a gap names what it was. */
