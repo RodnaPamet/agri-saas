@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { prisma } from './prisma';
 import type { RequestContext, UserContext } from '@/app-layer/types';
 import { runWithAuditContext } from './audit-context';
+import { runWithAuditQueue } from './db/before-commit';
 import { runWithAfterCommit } from './db/after-commit';
 import { logger } from '@/lib/observability/logger';
 // Namespace, and read at call time — see `prewarmTenantKeys`. This module sits
@@ -140,7 +141,12 @@ export async function withTenantDb<T>(
                 // It automatically resets when the transaction commits or rolls back.
                 // $executeRaw safely parameterizes the value.
                 await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
-                return callback(tx);
+                // #1223 — the audit EXTENSION cannot reach `tx` (a query
+                // handler is given no client), so it queues its rows and this
+                // frame drains them onto THIS transaction before COMMIT. A
+                // nested helper joins the scope and does not drain; see
+                // src/lib/db/before-commit.ts.
+                return runWithAuditQueue(tx, () => callback(tx));
             })
         ) as Promise<T>,
     );
@@ -192,7 +198,12 @@ export async function runInTenantContext<T>(
                     await tx.$executeRaw`SET LOCAL ROLE app_user`;
                     await tx.$executeRaw`SELECT set_config('app.tenant_id', ${ctx.tenantId}, true)`;
                     await tx.$executeRaw`SELECT set_config('app.request_id', ${ctx.requestId}, true)`;
-                    return callback(tx);
+                    // #1223 — the audit EXTENSION cannot reach `tx` (a query
+                // handler is given no client), so it queues its rows and this
+                // frame drains them onto THIS transaction before COMMIT. A
+                // nested helper joins the scope and does not drain; see
+                // src/lib/db/before-commit.ts.
+                return runWithAuditQueue(tx, () => callback(tx));
                 }, txOptions)
         ) as Promise<T>,
     );
@@ -260,7 +271,12 @@ export async function runInUserContext<T>(
                     await tx.$executeRaw`SELECT set_config('app.request_id', ${ctx.requestId}, true)`;
                     // NOTE: no `app.tenant_id`. See the docblock — this is the
                     // load-bearing absence, not an omission.
-                    return callback(tx);
+                    // #1223 — the audit EXTENSION cannot reach `tx` (a query
+                // handler is given no client), so it queues its rows and this
+                // frame drains them onto THIS transaction before COMMIT. A
+                // nested helper joins the scope and does not drain; see
+                // src/lib/db/before-commit.ts.
+                return runWithAuditQueue(tx, () => callback(tx));
                 }, txOptions),
         ) as Promise<T>,
     );

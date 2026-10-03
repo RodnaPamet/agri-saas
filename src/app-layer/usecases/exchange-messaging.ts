@@ -487,7 +487,9 @@ async function notifyOtherParty(
             // and returns null, which reads as "duplicate skipped, carry on".
             // Postgres does not agree: a statement error ABORTS the
             // transaction, and only a SAVEPOINT taken beforehand can clear
-            // that — there is none anywhere in `src/` or `prisma/`. So the
+            // that — and there is none HERE. (Since #1223 the repo has exactly
+            // one, in `audit-writer.ts`'s isolated append; this path still has
+            // none, which is why the reasoning below stands.) So the
             // COMMIT silently became a ROLLBACK and the notification the
             // operator needed went with it.
             //
