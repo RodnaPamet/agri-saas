@@ -2887,6 +2887,32 @@ negated. Say what remains instead:
       material, or creates or destroys a TENANCY. The agronomic surface is
       deliberately excluded: a field entry must not be blocked by an audit
       subsystem problem.
+      **The tier has an operator KILL SWITCH, and `shouldFailClosed` is the one
+      place that reads it.** `AUDIT_FAIL_CLOSED_ENABLED=0` degrades every
+      fail-closed entity to best-effort; anything else — unset, empty,
+      `false`, a typo — leaves it ENFORCING, because an audit control must not
+      be disarmed by a misspelling. It is read from `process.env` on every
+      call, never hoisted and never routed through `src/env.ts`, both of which
+      would need a restart; that is the `AUDIT_STREAM_RETRY_ENABLED`
+      convention and the only reason a mid-incident switch is worth having.
+      It exists because the tier is designed for a PER-ROW failure while the
+      writer can fail WHOLESALE: measured 2026-10-03, the chain append failed
+      on 275 of 275 attempts under the E2E runtime and took tenant creation
+      and invite creation down with it (production was unaffected — #1287 —
+      but the shape is real, and the only other lever was a deploy).
+      Degrading is a LOSS, not a fix: each row that would have aborted now
+      commits unaudited and is reported by `reportLostAuditRow`, and a WARN
+      fires once per process so a switch left on is visible in the log rather
+      than only in someone's memory of an incident. `isFailClosedAuditEntity`
+      stays PURE and answers the other question — whether the ENTITY is
+      compliance-critical, which no env var changes — so tests and
+      enumerations keep using it while write paths use `shouldFailClosed`.
+      Both callers (the Prisma extension via the queue, and `logEvent`) go
+      through it, because two spellings of one policy is how a tier ends up
+      enforced on one path and not the other. Held by
+      `tests/unit/audit-fail-closed-kill-switch.test.ts`, mutation-proved
+      against a hoisted read (3 failures), a truthiness check (1) and an inert
+      switch (3).
       On observability, "alertable" would overstate what
       shipped: the error log is the signal that reaches a human, because
       agri-saas deploys NO OTel→Prometheus→Alertmanager pipeline (the live

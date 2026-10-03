@@ -8,7 +8,7 @@ import { appendAuditEntry } from '@/lib/audit';
 // "isFailClosedAuditEntity is not a function" at the first audited write.
 // This module is pure and dependency-free, so a direct import is also the
 // honest shape. Do not "tidy" it back to the barrel.
-import { isFailClosedAuditEntity } from '@/lib/audit/fail-closed-entities';
+import { shouldFailClosed } from '@/lib/audit/fail-closed-entities';
 import { reportLostAuditRow } from '@/lib/db/before-commit';
 import { validateAuditDetailsJson } from '../schemas/json-columns.schemas';
 
@@ -40,7 +40,7 @@ export async function logEvent(db: PrismaTx, ctx: RequestContext, payload: Audit
     // the row atomic with the write it describes. Everything else keeps the
     // best-effort behaviour, because on the caller's transaction a tolerated
     // failure would abort it — see `fail-closed-entities.ts`.
-    const failClosed = isFailClosedAuditEntity(payload.entityType);
+    const failClosed = shouldFailClosed(payload.entityType);
     // Sanitize metadata to avoid accidental secret leak
     const safeMetadata = payload.metadata ? JSON.parse(JSON.stringify(payload.metadata)) : undefined;
 

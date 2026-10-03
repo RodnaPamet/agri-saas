@@ -13,7 +13,7 @@ import { recordAuditWriteFailure } from '@/lib/observability/metrics';
 // Imported DIRECTLY, not through `@/lib/audit` — seven unit suites mock that
 // barrel with a partial factory and anything unlisted resolves to `undefined`
 // (#1271). This module is pure and dependency-free.
-import { isFailClosedAuditEntity } from './audit/fail-closed-entities';
+import { shouldFailClosed } from './audit/fail-closed-entities';
 
 // ─── Write actions to intercept ───
 const WRITE_ACTIONS = new Set([
@@ -242,7 +242,7 @@ function buildAuditExtension() {
             const { enqueueAuditEntry } = require('./db/before-commit');
             const queued = enqueueAuditEntry({
                 input: payload,
-                failClosed: isFailClosedAuditEntity(model),
+                failClosed: shouldFailClosed(model),
                 model,
                 operation,
                 write: appendAuditEntry,
