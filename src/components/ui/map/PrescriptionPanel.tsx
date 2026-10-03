@@ -95,7 +95,7 @@ export function PrescriptionPanel({ locationId, tenantSlug, selectedParcelIds, o
 
     return (
         <div className="space-y-default">
-            <p className="text-sm text-content-secondary">
+            <p className="text-sm text-content-muted">
                 {t('parcelsSelected', { count: selectedParcelIds.length })}
             </p>
             {error && (

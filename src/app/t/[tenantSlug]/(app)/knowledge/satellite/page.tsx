@@ -140,7 +140,7 @@ export default function SatelliteImageryGuidePage() {
                     {t('back')}
                 </Button>
                 <Heading level={1}>{t('title')}</Heading>
-                <p className="max-w-prose text-content-secondary">{t('intro')}</p>
+                <p className="max-w-prose text-content-muted">{t('intro')}</p>
                 {/* W5 — the sections below are sourced from this same GLOBAL
                     article category; this link is how a reader finds it in
                     the searchable /knowledge list too. See the module doc
@@ -198,12 +198,12 @@ export default function SatelliteImageryGuidePage() {
                                 // write-time sanitise, mirroring the article
                                 // detail page's `renderVersionContent`.
                                 <div
-                                    className="max-w-prose space-y-tight text-content-secondary [&_strong]:text-content-default"
+                                    className="max-w-prose space-y-tight text-content-muted [&_strong]:text-content-default"
                                     data-testid={`satellite-article-content-${idx.id}`}
                                     dangerouslySetInnerHTML={{ __html: articleHtml }}
                                 />
                             ) : (
-                                <p className="max-w-prose text-content-secondary">{t(`${idx.id}.blurb`)}</p>
+                                <p className="max-w-prose text-content-muted">{t(`${idx.id}.blurb`)}</p>
                             )}
 
                             {/* How to read the colours — the exact gradient the map
@@ -219,7 +219,7 @@ export default function SatelliteImageryGuidePage() {
                                 </div>
                                 {/* Already folded into articleHtml above when present. */}
                                 {!articleHtml && (
-                                    <p className="max-w-prose text-sm text-content-secondary">
+                                    <p className="max-w-prose text-sm text-content-muted">
                                         {t(`${idx.id}.colours`)}
                                     </p>
                                 )}

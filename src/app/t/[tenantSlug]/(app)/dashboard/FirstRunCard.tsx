@@ -127,7 +127,7 @@ export default function FirstRunCard({
                         <Heading level={2} className="text-base">
                             {t('sampleTitle')}
                         </Heading>
-                        <p className="text-sm text-content-secondary">
+                        <p className="text-sm text-content-muted">
                             {t('sampleDesc')}
                         </p>
                     </div>
@@ -163,7 +163,7 @@ export default function FirstRunCard({
                             <Heading level={2} className="text-base">
                                 {t('onboardingTitle')}
                             </Heading>
-                            <p className="text-sm text-content-secondary">
+                            <p className="text-sm text-content-muted">
                                 {t('onboardingDesc')}
                             </p>
                         </div>
@@ -200,7 +200,7 @@ export default function FirstRunCard({
                                         {step.label}
                                     </p>
                                     {!done && (
-                                        <p className="text-xs text-content-secondary">{step.hint}</p>
+                                        <p className="text-xs text-content-muted">{step.hint}</p>
                                     )}
                                 </div>
                                 {!done && (

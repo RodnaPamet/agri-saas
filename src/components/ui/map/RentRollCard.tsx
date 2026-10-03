@@ -76,7 +76,7 @@ export function RentRollCard({
         return (
             <div className="space-y-default rounded-lg border border-border-subtle bg-bg-default p-4">
                 <Heading level={3}>{t('title')}</Heading>
-                <p className="text-sm text-content-secondary">{t('noActive')}</p>
+                <p className="text-sm text-content-muted">{t('noActive')}</p>
             </div>
         );
     }
@@ -100,19 +100,19 @@ export function RentRollCard({
 
             <dl className="grid grid-cols-2 gap-default text-sm sm:grid-cols-5">
                 <div>
-                    <dt className="text-content-secondary">{t('leasedArea')}</dt>
+                    <dt className="text-content-muted">{t('leasedArea')}</dt>
                     <dd className="font-medium tabular-nums">{num(data.totalLeasedDca)} дка</dd>
                 </div>
                 <div>
-                    <dt className="text-content-secondary">{t('lessors')}</dt>
+                    <dt className="text-content-muted">{t('lessors')}</dt>
                     <dd className="font-medium tabular-nums">{data.lessorCount}</dd>
                 </div>
                 <div>
-                    <dt className="text-content-secondary">{t('leases')}</dt>
+                    <dt className="text-content-muted">{t('leases')}</dt>
                     <dd className="font-medium tabular-nums">{data.activeLeaseCount}</dd>
                 </div>
                 <div>
-                    <dt className="text-content-secondary">{t('rentSeason')}</dt>
+                    <dt className="text-content-muted">{t('rentSeason')}</dt>
                     {/* One figure PER UNIT — „12 300 лв · 4 200 кг", never blended. */}
                     <dd className="font-medium tabular-nums">
                         {data.totals.length > 0
@@ -123,7 +123,7 @@ export function RentRollCard({
                     </dd>
                 </div>
                 <div>
-                    <dt className="text-content-secondary">{t('outstanding')}</dt>
+                    <dt className="text-content-muted">{t('outstanding')}</dt>
                     <dd className="font-medium tabular-nums">
                         {data.totals.length > 0
                             ? data.totals

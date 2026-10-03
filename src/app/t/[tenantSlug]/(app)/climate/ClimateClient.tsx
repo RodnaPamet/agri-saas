@@ -251,7 +251,7 @@ export function ClimateClient({
                 className="mb-1"
             />
             <Heading level={1}>{t('title')}</Heading>
-            <p className="text-sm text-content-secondary">{t('description')}</p>
+            <p className="text-sm text-content-muted">{t('description')}</p>
         </div>
     );
 

@@ -888,7 +888,7 @@ export function ExchangeMap({
                     </div>
                     {/* This offer's OWN price in its OWN currency — the popup
                         used to relabel it with a blanket €/t. */}
-                    <div className="text-xs text-content-secondary">
+                    <div className="text-xs text-content-muted">
                         {popupListing.quantityTonnes} {tonne}
                         {popupListing.pricePerTonne
                             ? ` · ${formatPricePerTonne(popupListing.pricePerTonne, popupListing.priceCurrency, tonne)}`

@@ -551,7 +551,7 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
                             className="mb-1"
                         />
                         <Heading level={1}>{t('title')}</Heading>
-                        <p className="text-sm text-content-secondary">{t('subtitle')}</p>
+                        <p className="text-sm text-content-muted">{t('subtitle')}</p>
                     </div>
                     <div className="flex items-center gap-compact">
                         <Button variant="secondary" size="sm" onClick={openNewProduct}>{t('newProduct')}</Button>
@@ -768,7 +768,7 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
                     )}
                     {lotDetail && (
                         <div className="mb-default flex items-center justify-between gap-compact">
-                            <span className="text-sm text-content-secondary">{lotDetail.item.name}</span>
+                            <span className="text-sm text-content-muted">{lotDetail.item.name}</span>
                             <Button
                                 variant="secondary"
                                 size="sm"
@@ -823,7 +823,7 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
                                 title={t('qrTitle', { code: lotDetail?.lotCode ?? '' })}
                                 className="shrink-0 rounded-md bg-white p-1"
                             />
-                            <p className="text-xs text-content-secondary">
+                            <p className="text-xs text-content-muted">
                                 {t('qrHint')}
                             </p>
                         </div>
@@ -996,7 +996,7 @@ function TraceGroup({
                                     {n.quantityOnHand} {n.unitSymbol}
                                 </span>
                             </div>
-                            <p className="mt-1 text-sm text-content-secondary">{n.item.name}</p>
+                            <p className="mt-1 text-sm text-content-muted">{n.item.name}</p>
                             {n.fields.length > 0 && (
                                 <p className="mt-1 text-xs text-content-subtle">
                                     {t('fields', { fields: n.fields.map((f) => f.name).join(', ') })}

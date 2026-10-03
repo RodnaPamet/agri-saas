@@ -86,9 +86,9 @@ export function ThreadsClient() {
                             <Link
                                 key={th.id}
                                 href={tenantHref(`/exchange/threads/${th.id}`)}
-                                className="flex items-center gap-default rounded-lg border border-border-subtle p-4 hover:bg-surface-subtle"
+                                className="flex items-center gap-default rounded-lg border border-border-subtle p-4 hover:bg-bg-muted/50"
                             >
-                                <span className="font-medium text-content-strong">{th.listingCommodity}</span>
+                                <span className="font-medium text-content-emphasis">{th.listingCommodity}</span>
                                 {/*
                                   * Region and tonnage, because commodity alone
                                   * could not tell two wheat listings apart. The

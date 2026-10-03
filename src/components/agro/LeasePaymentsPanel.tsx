@@ -117,9 +117,9 @@ export function LeasePaymentsPanel({
             <Heading level={3}>{t('title')}</Heading>
 
             {loading ? (
-                <p className="text-sm text-content-secondary">{t('loading')}</p>
+                <p className="text-sm text-content-muted">{t('loading')}</p>
             ) : rows.length === 0 ? (
-                <p className="text-sm text-content-secondary">{t('none')}</p>
+                <p className="text-sm text-content-muted">{t('none')}</p>
             ) : (
                 <ul className="space-y-tight">
                     {rows.map((p) => (

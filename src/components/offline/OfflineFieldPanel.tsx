@@ -243,7 +243,7 @@ export function OfflineFieldPanel({ taskId }: { taskId: string }) {
         [resolveConflict, mutate],
     );
 
-    if (isLoading && !view) return <div className="p-6 text-base text-content-secondary">{t('loadingFieldOp')}</div>;
+    if (isLoading && !view) return <div className="p-6 text-base text-content-muted">{t('loadingFieldOp')}</div>;
     if (!view) {
         // "Not found" and "never cached" are DIFFERENT answers, and this panel
         // exists for the case that produces the second one (#885/#862). A
@@ -255,11 +255,11 @@ export function OfflineFieldPanel({ taskId }: { taskId: string }) {
         //
         // The copy already existed in both locales and had no caller.
         return online ? (
-            <div className="p-6 text-base text-content-secondary">{t('fieldOpNotFound')}</div>
+            <div className="p-6 text-base text-content-muted">{t('fieldOpNotFound')}</div>
         ) : (
             <div className="p-6">
                 <p className="text-base font-medium text-content-emphasis">{t('needsConnectionTitle')}</p>
-                <p className="mt-1 text-base text-content-secondary">{t('needsConnectionBody')}</p>
+                <p className="mt-1 text-base text-content-muted">{t('needsConnectionBody')}</p>
             </div>
         );
     }
@@ -284,7 +284,7 @@ export function OfflineFieldPanel({ taskId }: { taskId: string }) {
             <div className="flex items-start justify-between gap-default">
                 <div className="min-w-0">
                     <Heading level={2}>{view.task.key ? `${view.task.key} · ` : ''}{view.task.title}</Heading>
-                    <p className="text-sm text-content-secondary">{t('progress', { done: view.progress.done, total: view.progress.total, status: view.task.status })}</p>
+                    <p className="text-sm text-content-muted">{t('progress', { done: view.progress.done, total: view.progress.total, status: view.task.status })}</p>
                 </div>
                 <PushOptIn className="shrink-0" />
             </div>
@@ -323,7 +323,7 @@ export function OfflineFieldPanel({ taskId }: { taskId: string }) {
                     >
                         <div className="mb-3">
                             <div className="text-base font-semibold">{l.parcel?.name ?? t('parcelDefault')}</div>
-                            <div className="text-sm text-content-secondary">
+                            <div className="text-sm text-content-muted">
                                 {l.product?.name} · {String(l.doseValue)} {l.doseUnit?.symbol} · {l.parcel?.areaHa ?? '–'} ha
                             </div>
                         </div>

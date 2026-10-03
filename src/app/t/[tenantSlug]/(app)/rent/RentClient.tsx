@@ -260,7 +260,7 @@ export function RentClient({
                     id: 'parcel',
                     header: t('colParcel'),
                     cell: ({ row }) => (
-                        <span className="text-content-secondary">
+                        <span className="text-content-muted">
                             {row.original.parcel.name}
                             <span className="text-content-subtle"> · {row.original.parcel.location.name}</span>
                         </span>
@@ -364,14 +364,14 @@ export function RentClient({
                             className="mb-1"
                         />
                         <Heading level={1}>{t('title')}</Heading>
-                        <p className="text-sm text-content-secondary">{t('description')}</p>
+                        <p className="text-sm text-content-muted">{t('description')}</p>
                         {rentRollQ.data?.truncated ? (
                             <p className="mt-1 text-sm text-content-warning" id="rent-truncated-hint">
                                 {t('truncatedHint', { count: rentRollQ.data.leaseCap })}
                             </p>
                         ) : null}
                         {locationId ? (
-                            <p className="mt-1 text-sm text-content-secondary">
+                            <p className="mt-1 text-sm text-content-muted">
                                 {locationName ? t('filteredTo', { location: locationName }) : null}{' '}
                                 <a href={tenantHref('/rent')} className="text-content-link hover:underline">
                                     {t('clearFilter')}

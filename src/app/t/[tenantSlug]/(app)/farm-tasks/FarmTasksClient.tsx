@@ -370,7 +370,7 @@ function FarmTasksInner({ tenantSlug, currentUserId }: { tenantSlug: string; cur
                     id: 'taskType',
                     header: t('colTaskType'),
                     accessorFn: (r) => resolveTaskTypeName(r, typeLabel),
-                    cell: ({ getValue }) => (<span className="text-content-secondary">{getValue() as string}</span>),
+                    cell: ({ getValue }) => (<span className="text-content-muted">{getValue() as string}</span>),
                     meta: { mobileCard: { slot: 'subtitle' } },
                 },
                 {

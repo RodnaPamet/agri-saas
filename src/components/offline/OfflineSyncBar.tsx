@@ -92,12 +92,12 @@ export function OfflineSyncBar({
                         {online ? t('online') : t('offline')}
                     </StatusBadge>
                     {mutations > 0 && (
-                        <span className="text-content-secondary" data-testid="offline-pending-count">
+                        <span className="text-content-muted" data-testid="offline-pending-count">
                             {t('savedOnPhone', { count: mutations })}
                         </span>
                     )}
                     {pendingPhotos > 0 && (
-                        <span className="text-content-secondary" data-testid="offline-pending-photos">
+                        <span className="text-content-muted" data-testid="offline-pending-photos">
                             {t('photosOnPhone', { count: pendingPhotos })}
                         </span>
                     )}

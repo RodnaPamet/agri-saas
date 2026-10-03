@@ -67,7 +67,7 @@ export function FieldBriefingCard() {
             >
                 <div className="space-y-tight">
                     <p className="text-sm font-medium text-content-emphasis">{briefing.headline}</p>
-                    <p className="text-sm text-content-secondary">{briefing.summary}</p>
+                    <p className="text-sm text-content-muted">{briefing.summary}</p>
                 </div>
 
                 {briefing.actions.length > 0 && (

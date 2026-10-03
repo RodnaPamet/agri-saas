@@ -191,7 +191,7 @@ export function BlendModal({
                                         <span className="flex-1">
                                             {`${lot.lotCode} — ${lot.itemName}`}
                                         </span>
-                                        <span className="tabular-nums text-content-secondary">
+                                        <span className="tabular-nums text-content-muted">
                                             {`${formatDecimal(lot.quantity, 2)} ${lot.unitSymbol}`}
                                         </span>
                                     </label>
@@ -209,7 +209,7 @@ export function BlendModal({
                                     })}
                                 </p>
                                 {Object.keys(preview).length > 0 && (
-                                    <p className="mt-1 text-content-secondary">
+                                    <p className="mt-1 text-content-muted">
                                         {Object.entries(preview)
                                             .map(([k, v]) => `${t(`quality_${k}`)}: ${formatDecimal(v, 2)}`)
                                             .join(' · ')}

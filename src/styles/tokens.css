@@ -83,6 +83,32 @@
   --content-default:  #DCEBE4;   /* green-tinted white — body text, table cells, default content */
   --content-muted:    #A9C7BB;   /* pale sage — secondary text, placeholders, captions (AA, 7.7:1 on bg-default) */
   --content-subtle:   #8AB0A1;   /* deeper sage — disabled text, hints, tertiary info (AA, 5.4:1 on bg-default) */
+  /* P2.2 — the LINK role, finally named.
+   *
+   * Twelve navigational links used `text-content-link` and no such token had
+   * ever existed, so Tailwind emitted nothing and all twelve inherited their
+   * parent's colour. The intent was already recorded one tier up:
+   * `--brand-default` is commented "brand accent, links".
+   *
+   * Defined as `var(--brand-default)` rather than a literal, so P2.4's
+   * rebrand moves every link in the product by changing one value. */
+  --content-link:     var(--brand-default);
+  /* ── Social surface: bubbles, presence, unread (P2.2) ─────────────
+   *
+   * Defined as `var(--...)` indirections onto the semantic tiers that already
+   * exist, not as fresh hexes. Two reasons: P2.4 rebrands by changing those
+   * tiers, and inventing six new colours here would be six more things for
+   * P2.3's contrast test to have to justify.
+   *
+   * `bubble-own` carries the brand tint so your own messages read as yours;
+   * `bubble-other` is the raised neutral surface. Presence reuses the
+   * success/warning/subtle trio rather than minting a traffic-light palette. */
+  --bubble-own:       var(--brand-subtle);
+  --bubble-other:     var(--bg-elevated);
+  --presence-online:  var(--content-success);
+  --presence-away:    var(--content-warning);
+  --presence-offline: var(--content-subtle);
+  --unread:           var(--primary);
   /* The ink that rides every BRIGHT surface — the gold primary button, and
    * the solid status chips (`--bg-*-emphasis`). Its floor is set by the
    * WORST of those pairings, which is solid red: `EnvironmentBadge`
@@ -725,6 +751,25 @@
   --content-emphasis: #1A1A1A;   /* deep charcoal — headings, selected, bold labels */
   --content-default:  #3D3D3D;   /* dark charcoal — body text, table cells (11.4:1) */
   --content-muted:    #525252;   /* darker warm gray — secondary text, captions (7.2:1 on bg-default) */
+  /* P2.2 — see the :root block. #8A6200 here, whose own comment already
+   * claims ">=4.5:1 (WCAG AA) as link/accent text on the cream page". */
+  --content-link:     var(--brand-default);
+  /* ── Social surface: bubbles, presence, unread (P2.2) ─────────────
+   *
+   * Defined as `var(--...)` indirections onto the semantic tiers that already
+   * exist, not as fresh hexes. Two reasons: P2.4 rebrands by changing those
+   * tiers, and inventing six new colours here would be six more things for
+   * P2.3's contrast test to have to justify.
+   *
+   * `bubble-own` carries the brand tint so your own messages read as yours;
+   * `bubble-other` is the raised neutral surface. Presence reuses the
+   * success/warning/subtle trio rather than minting a traffic-light palette. */
+  --bubble-own:       var(--brand-subtle);
+  --bubble-other:     var(--bg-elevated);
+  --presence-online:  var(--content-success);
+  --presence-away:    var(--content-warning);
+  --presence-offline: var(--content-subtle);
+  --unread:           var(--primary);
   --content-subtle:   #6B6B6B;   /* warm medium gray — hints, disabled, tertiary (4.9:1 on bg-default) */
   --content-inverted: #FAF9F7;   /* warm off-white — text on inverted/dark surfaces */
 
@@ -1074,6 +1119,27 @@
   /* High-contrast: a bright-gold gradient on white would fail contrast, so the
      featured number falls back to a solid deep bronze (AAA on white). */
   --grad-gold: linear-gradient(#5A3F06, #5A3F06);
+  /* P2.2 — and the same applies to LINK text. `var(--brand-default)` would
+   * inherit :root's #D4AF37 here, which is roughly 1.9:1 on white: a plain
+   * WCAG failure. This block does not override --brand-default, so the link
+   * token needs its own value, and the deep bronze above is the precedent
+   * with a contrast claim already attached to it. */
+  --content-link: #5A3F06;
+  /* P2.2 — explicit values, not the indirections the other two themes use.
+   * This block defines only a neutral palette: it does NOT override
+   * --brand-subtle, --content-success, --content-warning or --primary, so
+   * `var(--content-success)` here would resolve to :root's green, which is
+   * tuned for a dark ground and lands near 2:1 on white.
+   *
+   * (That is a PRE-EXISTING gap, not one P2.2 introduces — `text-content-success`
+   * already inherits that way in high contrast today. P2.3's contrast test
+   * across all three themes is where it gets caught.) */
+  --bubble-own:       #e8e8e8;   /* = --bg-muted here */
+  --bubble-other:     #ffffff;   /* = --bg-elevated here */
+  --presence-online:  #0B5D1E;   /* dark green, >=7:1 on white */
+  --presence-away:    #8A5A00;   /* dark amber, >=4.5:1 on white */
+  --presence-offline: #555555;   /* = --content-subtle here */
+  --unread:           #5A3F06;   /* the block's documented AAA bronze */
 }
 
 /* ─────────────────────────────────────────────────────────────────

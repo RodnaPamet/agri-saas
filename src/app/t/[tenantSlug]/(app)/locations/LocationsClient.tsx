@@ -112,7 +112,7 @@ export function LocationsClient({ tenantSlug }: { tenantSlug: string }) {
                             className="mb-1"
                         />
                         <Heading level={1}>{t('title')}</Heading>
-                        <p className="text-sm text-content-secondary">{t('description')}</p>
+                        <p className="text-sm text-content-muted">{t('description')}</p>
                     </div>
                     <Button variant="primary" size="sm" onClick={() => setShowNew(true)}>{t('newLocation')}</Button>
                 </div>

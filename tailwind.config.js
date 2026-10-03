@@ -96,6 +96,10 @@ module.exports = {
                     error: 'var(--content-error)',
                     info: 'var(--content-info)',
                     attention: 'var(--content-attention)',
+                    // P2.2 — the LINK role. Twelve call sites used
+                    // `text-content-link` with nothing behind it; the CSS
+                    // variable now exists in all three theme blocks.
+                    link: 'var(--content-link)',
                 },
 
                 // ── Semantic border tokens ──
@@ -107,6 +111,13 @@ module.exports = {
                     warning: 'var(--border-warning)',
                     error: 'var(--border-error)',
                     info: 'var(--border-info)',
+                    // P2.2 — `--border-attention` has existed in tokens.css
+                    // since the attention tier landed, but it was never
+                    // exposed here, so `border-border-attention` compiled to
+                    // nothing. `src/lib/filters/status-colors.ts` uses it: a
+                    // complete info/attention/warning/error x bg/text/border
+                    // matrix with exactly this one hole.
+                    attention: 'var(--border-attention)',
                 },
 
                 // ── Process canvas surfaces (Roadmap-27) ──
@@ -119,6 +130,24 @@ module.exports = {
                     node: 'var(--canvas-node)',
                     'node-muted': 'var(--canvas-node-muted)',
                     border: 'var(--canvas-border)',
+                },
+                // ── Social surface (P2.2) ────────────────────────────────────
+                //
+                // Exposed as their own groups rather than folded into `bg`/`content`,
+                // because a chat bubble and a presence dot are roles, not tones — and
+                // `tests/guards/no-renegade-color-tokens.test.ts` derives its groups
+                // from this object, so both are covered the moment they appear here.
+                bubble: {
+                    own: 'var(--bubble-own)',
+                    other: 'var(--bubble-other)',
+                },
+                presence: {
+                    online: 'var(--presence-online)',
+                    away: 'var(--presence-away)',
+                    offline: 'var(--presence-offline)',
+                },
+                unread: {
+                    DEFAULT: 'var(--unread)',
                 },
 
                 // ── Inverted surface (used directly as bg-inverted) ──

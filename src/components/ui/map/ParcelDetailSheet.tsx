@@ -313,13 +313,13 @@ export function ParcelDetailSheet({
                 {/* Parcel summary + editable crop. */}
                 <dl className="grid grid-cols-2 gap-default text-sm">
                     <div>
-                        <dt className="text-content-secondary">{t('parcelSheet.area')}</dt>
+                        <dt className="text-content-muted">{t('parcelSheet.area')}</dt>
                         <dd className="font-medium" data-testid="parcel-sheet-area">
                             {areaSummary ?? '—'}
                         </dd>
                     </div>
                     <div>
-                        <dt className="text-content-secondary">{t('parcelSheet.crop')}</dt>
+                        <dt className="text-content-muted">{t('parcelSheet.crop')}</dt>
                         <dd data-testid="parcel-sheet-crop">
                             <Combobox
                                 options={cropOptions}
@@ -393,7 +393,7 @@ export function ParcelDetailSheet({
                     </div>
 
                     {inputTotal && (
-                        <p className="text-sm text-content-secondary" aria-live="polite" data-testid="parcel-sheet-total">
+                        <p className="text-sm text-content-muted" aria-live="polite" data-testid="parcel-sheet-total">
                             {t('parcelSheet.totalNeeded', { total: inputTotal })}
                         </p>
                     )}

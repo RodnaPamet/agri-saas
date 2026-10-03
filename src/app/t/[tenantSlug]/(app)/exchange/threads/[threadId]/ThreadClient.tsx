@@ -242,7 +242,7 @@ export function ThreadClient({ threadId }: { threadId: string }) {
                             <div
                                 key={m.id}
                                 className={`max-w-[80%] rounded-lg border border-border-subtle p-3 ${
-                                    m.mine ? 'ml-auto bg-surface-subtle' : ''
+                                    m.mine ? 'ml-auto bg-bg-subtle' : ''
                                 }`}
                             >
                                 <div className="flex items-center gap-tight text-xs text-content-muted">
@@ -269,7 +269,7 @@ export function ThreadClient({ threadId }: { threadId: string }) {
                                     className={
                                         m.deleted
                                             ? 'whitespace-pre-wrap text-sm italic text-content-muted'
-                                            : 'whitespace-pre-wrap text-sm text-content-strong'
+                                            : 'whitespace-pre-wrap text-sm text-content-emphasis'
                                     }
                                 >
                                     {m.deleted ? t('deleted') : m.body}
@@ -313,9 +313,9 @@ export function ThreadClient({ threadId }: { threadId: string }) {
                         </Button>
                     </div>
                 )}
-                {sendError ? <p className="text-sm text-content-danger">{t('sendFailed')}</p> : null}
-                {closeError ? <p className="text-sm text-content-danger">{t('closeFailed')}</p> : null}
-                {blockError ? <p className="text-sm text-content-danger">{t('blockFailed')}</p> : null}
+                {sendError ? <p className="text-sm text-content-error">{t('sendFailed')}</p> : null}
+                {closeError ? <p className="text-sm text-content-error">{t('closeFailed')}</p> : null}
+                {blockError ? <p className="text-sm text-content-error">{t('blockFailed')}</p> : null}
             </div>
         </EntityDetailLayout>
     );

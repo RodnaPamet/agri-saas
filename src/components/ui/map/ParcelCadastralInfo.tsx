@@ -93,7 +93,7 @@ export function ParcelCadastralInfo({
         return (
             <>
                 <div className={className}>
-                    <dt className="text-content-secondary">{t('cadastralId')}</dt>
+                    <dt className="text-content-muted">{t('cadastralId')}</dt>
                     <dd className="flex flex-wrap items-center gap-tight font-medium">
                         {link}
                         {mismatchBadge}
@@ -114,7 +114,7 @@ export function ParcelCadastralInfo({
                 </div>
                 {companyOwners.length > 0 ? (
                     <div className={className}>
-                        <dt className="text-content-secondary">{t('legalOwner')}</dt>
+                        <dt className="text-content-muted">{t('legalOwner')}</dt>
                         <dd className="space-y-0.5 font-medium">
                             {companyOwners.map((o, i) => (
                                 <div key={`${o.eik}-${i}`} className="flex flex-wrap items-baseline gap-tight">
