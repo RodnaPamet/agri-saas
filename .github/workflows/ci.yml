@@ -535,6 +535,11 @@ jobs:
       # is read by that one test file and nothing else.
       REDIS_URL_TEST: redis://localhost:6379
       BULLMQ_SMOKE_REQUIRE_REDIS: "1"
+      # P1.8 — the VM-Redis rate-limit suite gates on a reachable redis.
+      # This job DECLARES one, so a skip there would mean the service was
+      # declared for nothing and the Lua window went unproven. Same
+      # reasoning as the three escalations beside it.
+      REDIS_RATE_LIMIT_REQUIRE_REDIS: "1"
       # Same argument, applied to the database this job also declares.
       # tests/guardrails/rls-coverage.test.ts skips its DB-backed
       # assertions when Postgres is unreachable — deliberately, so a

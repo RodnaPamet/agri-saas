@@ -111,7 +111,12 @@ export const env = createEnv({
 
         // Rate Limiting
         RATE_LIMIT_ENABLED: z.enum(["0", "1"]).optional(),
-        RATE_LIMIT_MODE: z.enum(["upstash", "memory"]).default("upstash"),
+        // P1.8 — "redis" is the VM's OWN Redis (ioredis via REDIS_URL), for a
+        // self-hosted single-container deployment where Upstash is not used and
+        // the in-process Map resets on every deploy. "memory" stays
+        // DEFINITIVE: an operator who sets it to debug gets the Map, not a
+        // silent upgrade to a shared store.
+        RATE_LIMIT_MODE: z.enum(["upstash", "redis", "memory"]).default("upstash"),
         AUTH_TEST_MODE: z.enum(["0", "1"]).optional(),
         // E2E ONLY. "1" makes the per-location basemap tile proxy serve a
         // fixture tile instead of fetching the public demotiles upstream.

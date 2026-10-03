@@ -47,6 +47,11 @@ import {
 import { edgeLogger } from '@/lib/observability/edge-logger';
 
 import { getUpstashRedis } from './upstashClient';
+import {
+    checkRateLimitRedis,
+    resetRateLimitRedis,
+    redisRateLimitAvailable,
+} from './redisBucket';
 
 const KEY_PREFIX = 'rl:mut';
 
@@ -89,7 +94,21 @@ export async function checkRateLimitDistributed(
 ): Promise<RateLimitResult> {
     const limiter = limiterFor(config);
     if (!limiter) {
-        // No Redis — in-process Map (single-node self-host / tests).
+        // P1.8 — before the in-process Map, try the VM's OWN Redis.
+        //
+        // Production runs `RATE_LIMIT_MODE=memory` with no Upstash, in a single
+        // container, so the Map was the whole store and every deploy reset
+        // every counter. Watchtower recreates the container on each image push,
+        // so a throttled caller was un-throttled minutes later.
+        //
+        // `null` means Redis could not answer inside its budget. Degrade to the
+        // Map rather than fail open, matching the posture below: a limiter that
+        // still counts locally beats no limiter.
+        if (redisRateLimitAvailable()) {
+            const viaRedis = await checkRateLimitRedis(key, config);
+            if (viaRedis) return viaRedis;
+        }
+        // No Redis either — in-process Map (tests, or a self-host without one).
         return checkRateLimitInMemory(key, config);
     }
 
@@ -121,6 +140,12 @@ export async function checkRateLimitDistributed(
  */
 export async function resetRateLimitDistributed(key: string): Promise<void> {
     resetRateLimitInMemory(key);
+    // P1.8 — clear the VM-Redis counter too. Unconditional and best-effort for
+    // the same reason the Upstash DEL below is: a missed reset only means the
+    // caller keeps an already-consumed budget until the window rolls off, never
+    // a lock-out, because the success that triggered this already let them
+    // through.
+    if (redisRateLimitAvailable()) await resetRateLimitRedis(key);
     const redis = getUpstashRedis();
     if (!redis) return;
     try {
