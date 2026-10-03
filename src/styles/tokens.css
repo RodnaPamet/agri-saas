@@ -35,31 +35,7 @@
    content and danger, so every other signal needs a colour the theme
    is not already using for something else.
    ═══════════════════════════════════════════════════════════════════ */
-
-/* ===================================================================
- * P2.3 — THE DECLARATIONS MOVED, THE REASONING DID NOT.
- *
- * Every `--token: value;` now lives in `design/tokens.json` and is emitted
- * into `./tokens.generated.css` by `scripts/generate-tokens.mjs`, so one
- * edit changes the web CSS and `design/Tokens.swift` together and the two
- * platforms cannot drift apart unnoticed.
- *
- * This file keeps what JSON hosts badly: the paragraphs. 757 of this file’s
- * 1,170 lines were comments carrying WCAG measurements, the GAP-CI-77
- * history and the reasoning behind each tier. Short per-token notes DO live
- * in the JSON, beside the value they describe, and the generator emits them
- * as trailing comments.
- *
- * `npm run tokens:check` fails if the generated files drift from the JSON.
- * =================================================================== */
-
-@import './tokens.generated.css';
-
-/* ===================================================================
- * dark / default (:root) — design notes
- * =================================================================== */
-
-/* (notes for --bg-page and what follows it) */
+:root {
   /* ── Surfaces ──────────────────────────────────────────────────── */
   /* Bulgarian tricolour, read as a ROLE HIERARCHY rather than a palette.
    *
@@ -75,14 +51,20 @@
    * success-coloured page says nothing. So the ground is the flag green
    * pulled down in saturation and lightness until it recedes, and the
    * vivid green is spent only where it has to carry meaning. */
+  --bg-page:      #05231B;  /* deepest forest — page ground (gradient base, see --grad-page) */
+  --bg-default:   #0A3327;  /* deep green — cards, panels, tables, modals, popovers */
+  --bg-muted:     #07291F;  /* darker green — hover surfaces, pressed/active states */
+  --bg-subtle:    rgba(21, 94, 72, 0.30);  /* green @ 30% — selection bg, disabled surfaces, faint tints */
+  --bg-elevated:  #0E4232;  /* lifted green — tooltips, dropdowns sitting above default */
+  --bg-inverted:  #D4AF37;  /* Agrent gold — inverted surface (primary button bg) */
+  --bg-overlay:   rgba(2, 18, 13, 0.72);  /* deep green backdrop behind modals/drawers */
 
-/* (notes for --grad-page and what follows it) */
   /* The page ground as a gradient — deep at the edges, marginally lifted
    * through the upper middle so a full-height page has somewhere to look.
    * Kept to ~3% luminance travel: any more and every card boundary starts
    * fighting the wash behind it. */
+  --grad-page: linear-gradient(168deg, #0A3327 0%, #06261D 46%, #041C15 100%);
 
-/* (notes for --content-emphasis and what follows it) */
   /* ── Content / Text ────────────────────────────────────────────── */
   /*
    * GAP-CI-77: bumped `--content-muted` and `--content-subtle` so
@@ -97,8 +79,10 @@
    * sits IN the surface instead of looking pasted onto it. The tier ratios
    * against `--bg-default` (#0A3327) are held above the GAP-CI-77 floor —
    * 12px body text at `--content-subtle` still clears WCAG AA 4.5:1. */
-
-/* (notes for --content-link and what follows it) */
+  --content-emphasis: #FFFFFF;  /* the flag's white — headings, selected items, bold labels */
+  --content-default:  #DCEBE4;  /* green-tinted white — body text, table cells, default content */
+  --content-muted:    #A9C7BB;  /* pale sage — secondary text, placeholders, captions (AA, 7.7:1 on bg-default) */
+  --content-subtle:   #8AB0A1;  /* deeper sage — disabled text, hints, tertiary info (AA, 5.4:1 on bg-default) */
   /* P2.2 — the LINK role, finally named.
    *
    * Twelve navigational links used `text-content-link` and no such token had
@@ -108,8 +92,7 @@
    *
    * Defined as `var(--brand-default)` rather than a literal, so P2.4's
    * rebrand moves every link in the product by changing one value. */
-
-/* (notes for --bubble-own and what follows it) */
+  --content-link:     var(--brand-default);
   /* ── Social surface: bubbles, presence, unread (P2.2) ─────────────
    *
    * Defined as `var(--...)` indirections onto the semantic tiers that already
@@ -120,8 +103,12 @@
    * `bubble-own` carries the brand tint so your own messages read as yours;
    * `bubble-other` is the raised neutral surface. Presence reuses the
    * success/warning/subtle trio rather than minting a traffic-light palette. */
-
-/* (notes for --content-inverted and what follows it) */
+  --bubble-own:       var(--brand-subtle);
+  --bubble-other:     var(--bg-elevated);
+  --presence-online:  var(--content-success);
+  --presence-away:    var(--content-warning);
+  --presence-offline: var(--content-subtle);
+  --unread:           var(--primary);
   /* The ink that rides every BRIGHT surface — the gold primary button, and
    * the solid status chips (`--bg-*-emphasis`). Its floor is set by the
    * WORST of those pairings, which is solid red: `EnvironmentBadge`
@@ -136,11 +123,13 @@
    *   amber #D97706 5.58:1.
    * Still the deepest forest — it sits between `--canvas-surface` (#041B14)
    * and `--bg-page` (#05231B), so it reads as the same ink, just denser. */
+  --content-inverted: #041C15;  /* deepest forest — ink on inverted (gold) + solid-status surfaces */
 
-/* (notes for --border-default and what follows it) */
   /* ── Borders / Dividers ────────────────────────────────────────── */
+  --border-default:  #17553F;  /* green border — standard borders */
+  --border-subtle:   rgba(23, 85, 63, 0.55);  /* green @ 55% — soft dividers, card edges */
+  --border-emphasis: #2A7F5E;  /* brighter green — focused inputs, emphasized outlines */
 
-/* (notes for --canvas-surface and what follows it) */
   /* ── Process canvas (Roadmap-27) ───────────────────────────────────
    * A dedicated surface ramp for the node-based Processes editor. The
    * canvas plane is the DEEPEST surface — a recessed "work pit"; the
@@ -155,8 +144,16 @@
    * a ground change intact: surface 0.65x, frame 1.6x, node-muted
    * 2.5x, node 4.7x, edge 11.9x. Those are the navy ladder's own
    * ratios, re-expressed in green. */
+  --canvas-surface:    #041B14;  /* recessed work plane — deepest */
+  --canvas-frame:      #082E22;  /* workspace frame + chrome strips */
+  --canvas-grid:       rgba(150, 205, 178, 0.10);  /* dot grid — faint sage light */
+  --canvas-edge:       #327B5E;  /* default connection stroke (R27-PR-B) */
+  --canvas-node:       #135038;  /* node fill — elevated flow card */
+  --canvas-node-muted: #0C3A29;  /* node fill — context (quieter) */
+  --canvas-border:     rgba(150, 205, 178, 0.20);  /* hairline inside the workspace */
+  --canvas-shadow:     0 8px 20px -10px rgba(0, 0, 0, 0.70), 0 1px 2px rgba(0, 0, 0, 0.45);  /* elevated-node lift */
+  --canvas-recess:     inset 0 11px 20px -16px rgba(0, 0, 0, 0.90);  /* top inner shadow — plane reads sunk below the chrome */
 
-/* (notes for --brand-default and what follows it) */
   /* ── Brand / Primary (Agrent gold) ─────────────────────────────────
    *
    * Gold is kept as the brand accent on the new green ground, and that is
@@ -175,21 +172,21 @@
    *   green = ground, white = content, GOLD = brand, red = DANGER ONLY.
    * Gold on deep green is legible (6.6:1 as link text on --bg-default,
    * 7.9:1 on --bg-page) and it is the identity the product already had. */
-
-/* (notes for --grad-gold and what follows it) */
+  --brand-default:  #D4AF37;  /* Agrent metallic gold — brand accent, links */
+  --brand-emphasis: #B8860B;  /* dark goldenrod — primary buttons, active brand */
+  --brand-muted:    #E4C55C;  /* lighter gold — hover accent */
+  --brand-subtle:   rgba(212, 175, 55, 0.16);  /* gold @ 16% — brand tint backgrounds */
   /* Metallic-gold text gradient for featured dashboard numbers (.metric-gradient).
      Light-to-deep polished-gold sheen; reads bright on the green ground. */
-
-/* (notes for --font-display and what follows it) */
+  --grad-gold: linear-gradient(142deg, #F6E7AC 0%, #E4C55C 22%, #D4AF37 52%, #A9760B 100%);
   /* Display face — Bricolage Grotesque for the big numbers (Latin digits only;
      Bricolage has no Cyrillic, so it is NEVER used on text). */
-
-/* (notes for --font-heading and what follows it) */
+  --font-display: 'Bricolage Grotesque', 'Inter', system-ui, sans-serif;
   /* Heading face — Onest, for page + section headings. Chosen over Bricolage
      for headings because it carries a full Cyrillic set (the product ships in
      Bulgarian); a cool modern grotesque that pairs with the Bricolage numbers. */
+  --font-heading: 'Onest', 'Inter', system-ui, sans-serif;
 
-/* (notes for --brand-secondary-default and what follows it) */
   /* ── Brand / Secondary (the flag's white — neutral counterpoint) ─────
    *
    * Roadmap-13 introduced a SECONDARY brand colour so chrome can express
@@ -206,24 +203,36 @@
    * a flag colour, and it reads as "current" without borrowing meaning from
    * `info`. Tier order is muted (lightest) > default > emphasis (deepest),
    * tinted toward the ground so it belongs to the surface. */
+  --brand-secondary-default:  #DCEBE4;  /* the flag's white, ground-tinted — secondary brand */
+  --brand-secondary-emphasis: #A9C7BB;  /* deepest rung — bottom band stop, active surface tint */
+  --brand-secondary-muted:    #FFFFFF;  /* lightest rung — band highlight midstop, hover accent */
+  --brand-secondary-subtle:   rgba(220, 235, 228, 0.18);  /* @ 18% — secondary tint backgrounds */
 
-/* (notes for --bg-success and what follows it) */
   /* ── Status: Success ───────────────────────────────────────────── */
   /* Success has to out-LUMINATE the ground, not merely differ in hue from
    * it: on a green page, emerald-400 reads as "page", so the whole tier is
    * pushed brighter until a badge separates at a glance. */
+  --bg-success:          rgba(95, 227, 155, 0.16);  /* spring green @ 16% — badge tint */
+  --bg-success-emphasis: #14B866;  /* solid actionable surface (success buttons, indicator dots) */
+  --content-success:     #5FE39B;  /* bright spring green — separates from the ground */
+  --border-success:      rgba(95, 227, 155, 0.32);
 
-/* (notes for --bg-warning and what follows it) */
   /* ── Status: Warning ───────────────────────────────────────────── */
+  --bg-warning:          rgba(245, 158, 11, 0.15);  /* amber-500 @ 15% — badge tint */
+  --bg-warning-emphasis: #D97706;  /* amber-600 — solid actionable surface */
+  --content-warning:     #fbbf24;  /* amber-400 */
+  --border-warning:      rgba(245, 158, 11, 0.30);  /* amber-500 @ 30% */
 
-/* (notes for --bg-error and what follows it) */
   /* ── Status: Error / Danger ────────────────────────────────────── */
   /* Red is reserved for DANGER — it is not the brand accent (gold is), so
    * there is nothing else on the page competing for "alarm". Kept slightly
    * hotter and lighter than stock red-500 so it still separates cleanly
    * from the deep green ground. */
+  --bg-error:          rgba(255, 91, 74, 0.16);  /* alarm red @ 16% — badge tint */
+  --bg-error-emphasis: #F04438;  /* solid actionable surface (danger buttons, indicator dots) */
+  --content-error:     #FF8A7A;  /* bright coral-red — reads hotter than brand */
+  --border-error:      rgba(255, 91, 74, 0.34);
 
-/* (notes for --bg-info and what follows it) */
   /* ── Status: Info ──────────────────────────────────────────────────
    * The LAST blue in the dark theme, and it stays on purpose. Blue is the
    * universal information hue; recolouring it would cost comprehension to
@@ -232,17 +241,25 @@
    * the theme is not already using for something else. Chrome is a
    * different matter — the sidebar, button fills and edges carried blue for
    * no semantic reason and have been swept to white/gold. */
+  --bg-info:          rgba(59, 130, 246, 0.15);  /* blue-500 @ 15% — badge tint */
+  --bg-info-emphasis: #2563EB;  /* blue-600 — solid actionable surface */
+  --content-info:     #60a5fa;  /* blue-400 */
+  --border-info:      rgba(59, 130, 246, 0.30);  /* blue-500 @ 30% */
 
-/* (notes for --bg-attention and what follows it) */
   /* ── Status: Attention (pending / needs-action) ────────────────── */
+  --bg-attention:      rgba(251, 191, 36, 0.15);  /* amber-400 @ 15% */
+  --content-attention: #fbbf24;  /* amber-400 */
+  --border-attention:  rgba(251, 191, 36, 0.30);  /* amber-400 @ 30% */
 
-/* (notes for --ring-default and what follows it) */
   /* ── Interactive / Focus ───────────────────────────────────────── */
+  --ring-default: rgba(212, 175, 55, 0.55);  /* Agrent gold focus ring */
+  --focus-ring:   rgba(255, 205, 17, 0.55);  /* alias for components that use a different name */
 
-/* (notes for --ring and what follows it) */
   /* shadcn / Radix compatibility tokens */
+  --ring:                   rgba(255, 205, 17, 0.55);
+  --ring-offset-background: #05231B;
+  --primary:                #D4AF37;
 
-/* (notes for --glass-bg and what follows it) */
   /* ── Glass ─────────────────────────────────────────────────────── */
   /* `.glass-card` is the surface under EVERY KPI tile, metric card,
    * dashboard widget and loading skeleton in the app, so it has to be
@@ -251,14 +268,22 @@
    * gradient it lands on #0A3629, a hair above `--bg-default`
    * (#0A3327), which is exactly the "solid card, faintly lifted"
    * read the navy original had against the navy page. */
+  --glass-bg:     rgba(11, 58, 44, 0.82);  /* green glass-card background */
+  --glass-border: rgba(23, 85, 63, 0.50);  /* --border-default @ 50% — glass-card border */
+  --glass-blur:   12px;  /* backdrop blur radius */
 
-/* (notes for --radius-sm and what follows it) */
   /* ── Radius ────────────────────────────────────────────────────── */
+  --radius-sm:   6px;
+  --radius:      8px;
+  --radius-lg:   12px;
+  --radius-xl:   16px;
+  --radius-full: 9999px;
 
-/* (notes for --shadow-sm and what follows it) */
   /* ── Shadows ───────────────────────────────────────────────────── */
+  --shadow-sm:  0 1px 2px rgba(0, 0, 0, 0.30);
+  --shadow:     0 4px 12px rgba(0, 0, 0, 0.40);
+  --shadow-lg:  0 8px 24px rgba(0, 0, 0, 0.50);
 
-/* (notes for --btn-carbon-overlay and what follows it) */
   /* ── Liquid-carbon button surface (Roadmap-19) ─────────────────────
    * Buttons read as LIQUID CARBON — a deep, dark, voluminous
    * surface, wet-looking but never a hard mirror shine. Think a
@@ -291,15 +316,15 @@
    * DARK theme values below; the LIGHT theme block carries its
    * own (a liquid pool in light mode needs a deeper bottom pool
    * + a crisper catch-light to read at all). */
-
-/* (notes for --btn-carbon-border and what follows it) */
+  --btn-carbon-overlay: radial-gradient(ellipse 130% 80% at 50% -10%, rgba(255, 255, 255, 0.11) 0%, rgba(255, 255, 255, 0.02) 32%, rgba(0, 0, 0, 0.10) 62%, rgba(0, 0, 0, 0.20) 100%);
+  --btn-carbon-bevel: inset 0 1px 1px rgba(255, 255, 255, 0.10), inset 0 -2px 3px rgba(255, 255, 255, 0.03), 0 1px 2px rgba(0, 0, 0, 0.38);
   /* R22-PR-B — softened from α 0.30 → 0.18. R19's 30%-black
    * meniscus edge read as "loud" against the carbon surface in
    * R22 review — the silhouette competed with the iridescent
    * edge instead of supporting it. 18% is the quiet anchor the
    * iridescent + aura layers want underneath. */
+  --btn-carbon-border: rgba(0, 0, 0, 0.18);
 
-/* (notes for --btn-carbon-grain and what follows it) */
   /* --btn-carbon-grain (Roadmap-19 PR-C) — the micro-grain that
    * gives the liquid-carbon surface TACTILITY. A grayscale
    * fractal-noise tile painted as the TOP layer of every carbon
@@ -311,8 +336,8 @@
    * the dark + light variant fills, so it lives once in :root
    * (no per-theme override). `stitchTiles='stitch'` keeps the
    * 90px tile seamless when it repeats across a wide button. */
+  --btn-carbon-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='90' height='90'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.05'/%3E%3C/svg%3E");
 
-/* (notes for --btn-ambient-rest and what follows it) */
   /* ── R20 ambient elevation (4-stop, DARK theme) ─────────────────────
    * R19 gave buttons a CARBON SURFACE — bevel, pool, grain — but the
    * outer drop never changed. R20 splits the drop into a four-stop
@@ -338,14 +363,15 @@
    * mode (a 24%-black drop on a near-white surface barely registers,
    * whereas the same alpha on a near-black surface is too heavy).
    * The LIGHT block carries the warm-tinted parallel. */
-
-/* (notes for --btn-ambient-focus and what follows it) */
+  --btn-ambient-rest:  0 1px 2px rgba(0, 0, 0, 0.24), 0 2px 6px rgba(0, 0, 0, 0.16);
+  --btn-ambient-hover: 0 2px 4px rgba(0, 0, 0, 0.28), 0 6px 16px rgba(0, 0, 0, 0.22);
+  --btn-ambient-press: 0 1px 1px rgba(0, 0, 0, 0.32);
   /* R22-PR-B — focus ring tightened from 4px → 3px. The 4px
    * ring read as "default Tailwind focus" — generic. 3px matches
    * the form-control `--ctrl-edge-focus` shape, so a focused
    * button and a focused input now wear the EXACT same halo. */
+  --btn-ambient-focus: 0 0 0 3px rgba(255, 205, 17, 0.22), 0 1px 2px rgba(0, 0, 0, 0.24), 0 2px 6px rgba(0, 0, 0, 0.16);
 
-/* (notes for --btn-iridescent-gradient and what follows it) */
   /* ── R20 iridescent edge (DARK theme) ───────────────────────────────
    * A linear gradient sweeping from a whisper of brand yellow in
    * the top-left to a whisper of secondary blue in the bottom-right.
@@ -354,8 +380,8 @@
    * the edge reads as iridescent on close inspection, NEVER as a
    * gradient outline. Static (no animation) — the iridescence is a
    * material property, not a motion gimmick. */
+  --btn-iridescent-gradient: linear-gradient(135deg, rgba(255, 205, 17, 0.55) 0%, rgba(255, 205, 17, 0.18) 35%, rgba(255, 255, 255, 0.18) 65%, rgba(255, 255, 255, 0.55) 100%);
 
-/* (notes for --btn-gradient-primary and what follows it) */
   /* ── Primary action-button FILL gradient (DARK theme) ───────────────
    * 2026-06-01. OPAQUE brand→secondary diagonal fill (135°): brand is
    * dominant through the first 60%, ramping to the cool secondary only
@@ -371,8 +397,8 @@
      dissolving into the page; on green it put `info` blue on the one
      surface meant to be pure brand. Now a LIGHTER GOLD — same "subtler
      gradient" intent UI-11 asked for, no foreign hue. */
+  --btn-gradient-primary: linear-gradient(135deg, var(--brand-default) 0%, var(--brand-default) 50%, #F0D98A 100%);
 
-/* (notes for --btn-aura-primary and what follows it) */
   /* ── R20 aura wash (DARK theme) ─────────────────────────────────────
    * The soft brand-tinted halo a primary button casts on hover, as a
    * pre-composed multi-stop box-shadow string. THREE stops: a 1px
@@ -386,8 +412,9 @@
    * Consumed via `::after` (PR-B) so the hover lift composes with
    * the existing carbon surface without colliding with R19's
    * `::before` depth-overlay. */
+  --btn-aura-primary: 0 0 0 1px rgba(255, 205, 17, 0.00), 0 4px 18px rgba(255, 205, 17, 0.32), 0 12px 36px rgba(255, 205, 17, 0.14);
+  --btn-aura-neutral: 0 0 0 1px rgba(255, 255, 255, 0.00), 0 4px 18px rgba(255, 255, 255, 0.10), 0 12px 36px rgba(255, 255, 255, 0.06);
 
-/* (notes for --ctrl-edge-rest and what follows it) */
   /* ── R20 form-control parity edge (DARK theme) ──────────────────────
    * Form controls (Input, Combobox trigger, DatePicker trigger,
    * Select) don't carbon-FILL — they're hollow surfaces. R20 brings
@@ -395,8 +422,8 @@
    * border at rest, an emphasised border on hover, an iridescent
    * border + brand-tinted glow on focus. Three tokens drive the
    * three states. Consumed by PR-B via `control-variants.ts`. */
-
-/* (notes for --ctrl-edge-focus and what follows it) */
+  --ctrl-edge-rest:  rgba(255, 255, 255, 0.14);
+  --ctrl-edge-hover: rgba(255, 255, 255, 0.28);
   /* R20-PR-D — enriched focus halo. The 3px brand ring (originally
    * just the focus indicator) now also carries a 2-stop ambient
    * drop so a focused control reads "warm AND raised" the way a
@@ -405,8 +432,8 @@
    * --ctrl-edge-focus already provides at 3px). Gives form controls
    * the same tactile-lift presence on focus that the button family
    * wears. */
+  --ctrl-edge-focus: 0 0 0 3px rgba(255, 205, 17, 0.20), 0 1px 2px rgba(0, 0, 0, 0.24), 0 2px 6px rgba(0, 0, 0, 0.16);
 
-/* (notes for --btn-glass-tint and what follows it) */
   /* ── R24 liquid-glass button material (DARK theme) ──────────────────
    *
    * R19–R22 built the SOLID/machined "carved carbon" button. R24 swaps
@@ -464,8 +491,11 @@
    * vibrancy materials use (tint 0.18–0.28, inner highlight 0.28,
    * blur 12px). The translucency now clearly communicates "glass
    * surface" rather than "navy panel with a faint highlight". */
+  --btn-glass-tint: linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.08) 100%);
+  --btn-glass-blur: 12px;
+  --btn-glass-edge: linear-gradient(135deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0.16) 45%, rgba(0, 0, 0, 0.18) 100%);
+  --btn-glass-inner: inset 0 1px 0 rgba(255, 255, 255, 0.28), inset 0 -1px 0 rgba(0, 0, 0, 0.24);
 
-/* (notes for --btn-glass-fill-primary and what follows it) */
   /* R24-hotfix — per-variant translucent fills (DARK theme).
    * The R24-PR-B variant arrays painted OPAQUE brand colours on
    * top of the glass tint, so the backdrop-blur had no transparent
@@ -483,16 +513,14 @@
    * more translucent yellow read as a pale wash in dark theme — a deeper,
    * more saturated gold at higher alpha gives the create button real
    * presence and pairs with the deep `text-content-inverted` label. */
-
-/* (notes for --btn-glass-fill-secondary and what follows it) */
+  --btn-glass-fill-primary: rgba(232, 185, 4, 0.85);
   /* 2026-07-30 — secondary was the old page navy (rgba(0,60,122,0.55)),
    * which survived the ground change as a literal blue pill: every
    * Cancel button, every `<Combobox>` trigger and every list-header
    * icon button rendered navy on green. It is now the ELEVATED green
    * at the same alpha — composites to #0D4030 over a card, i.e. a
    * quiet raised surface in the ground's own family. */
-
-/* (notes for --btn-glass-fill-destructive and what follows it) */
+  --btn-glass-fill-secondary: rgba(16, 74, 56, 0.55);
   /* 2026-07-30 — destructive re-pointed to the theme's alarm red
    * (`--bg-error-emphasis` #F04438) and its alpha raised 0.55 → 0.88.
    * At 0.55 over a GREEN card the old red-600 composited to #893C30 —
@@ -500,11 +528,14 @@
    * The old navy card happened to flatter it; green does not. 0.88
    * composites to #D44236 (unmistakably red) and still clears WCAG AA
    * with the `text-white` label at 4.52:1. */
+  --btn-glass-fill-destructive: rgba(240, 68, 56, 0.88);
+  --btn-glass-shadow: 0 1px 3px rgba(0, 0, 0, 0.28), 0 6px 14px rgba(0, 0, 0, 0.18);
 
-/* (notes for --duration-fast and what follows it) */
   /* ── Transitions ───────────────────────────────────────────────── */
+  --duration-fast:    100ms;
+  --duration-default: 150ms;
+  --duration-slow:    300ms;
 
-/* (notes for --nav-band-glow and what follows it) */
   /* ── Sidebar band glow (R13-PR2) ───────────────────────────────── */
   /*
    * The 3-stop brand-gradient band on the `<NavItem>` casts a soft
@@ -517,8 +548,8 @@
    * ground without screaming. 6px blur is the sweet spot — wider feels
    * smoky, narrower disappears at non-Retina rendering.
    */
+  --nav-band-glow: 0 0 6px rgba(255, 205, 17, 0.35);
 
-/* (notes for --nav-band-glow-active and what follows it) */
   /* ── Sidebar band glow — ACTIVE variant (R13-PR4) ──────────────── */
   /*
    * When a NavItem is the current page, the band's gradient swaps
@@ -528,8 +559,8 @@
    * its stops. A mismatched glow (yellow around a blue band) would
    * read as accidental colour bleed.
    */
+  --nav-band-glow-active: 0 0 6px rgba(255, 255, 255, 0.35);
 
-/* (notes for --nav-gloss-highlight and what follows it) */
   /* ── Sidebar gloss highlight (R13-PR6) ─────────────────────────── */
   /*
    * A 1-px wide top-edge `::after` line on `<NavItem>` rows reveals
@@ -539,8 +570,8 @@
    * the row appears to lift slightly toward the cursor without any
    * actual geometry change.
    */
+  --nav-gloss-highlight: rgba(255, 255, 255, 0.08);
 
-/* (notes for --nav-bevel-shadow and what follows it) */
   /* ── Sidebar bevel shadow (R13-PR7) ────────────────────────────── */
   /*
    * A subtle inner shadow at the bottom edge of the row, applied on
@@ -554,8 +585,8 @@
    * subtle concavity. Heavier alpha would make the row look bruised;
    * lighter would disappear entirely.
    */
+  --nav-bevel-shadow: inset 0 -1px 1px 0 rgba(0, 0, 0, 0.25);
 
-/* (notes for --nav-row-liquid-tint and what follows it) */
   /* R15-PR7 — `liquid sweep` brand-tint colour for the NavItem
    * row's hover background. The hover paints a narrow diagonal
    * gradient (`transparent → tint → transparent`) that sweeps
@@ -567,8 +598,8 @@
    * contrast. Same alpha would make the orange disappear
    * against cream.
    */
+  --nav-row-liquid-tint: rgba(255, 205, 17, 0.14);
 
-/* (notes for --nav-row-aura-color and what follows it) */
   /* R15-PR9 — outer brand-coloured aura around the ACTIVE row.
    * The active row's band already glows (R13-PR2 `--nav-band-
    * glow`); this token extends a halo of the SECONDARY brand
@@ -581,8 +612,8 @@
    * rather than as an outline. Blur is 12px so the edges
    * dissipate softly into the sidebar surface, no hard ring.
    */
+  --nav-row-aura-color: rgba(255, 255, 255, 0.18);
 
-/* (notes for --chart-series-1-start and what follows it) */
   /* ───────────────────────────────────────────────────────────────
    * R16-PR1 — Lickable Chart palette + motion (METRO theme).
    *
@@ -606,35 +637,42 @@
    * earth tones against cream. Same six families — different
    * brightness curves.
    * ─────────────────────────────────────────────────────────── */
-  /* Series 1 — primary brand (yellow). */
 
-/* (notes for --chart-series-2-start and what follows it) */
+  /* Series 1 — primary brand (yellow). */
+  --chart-series-1-start: #D4AF37;
+  --chart-series-1-end:   #B8860B;
+
   /* Series 2 — cyan / electric blue. Pairs with series-1 across
    * a warm→cool transition. */
+  --chart-series-2-start: #06B6D4;
+  --chart-series-2-end:   #0E7490;
 
-/* (notes for --chart-series-3-start and what follows it) */
   /* Series 3 — violet. Pairs with series-2 across the
    * cyan→indigo arc. */
+  --chart-series-3-start: #8B5CF6;
+  --chart-series-3-end:   #6D28D9;
 
-/* (notes for --chart-series-4-start and what follows it) */
   /* Series 4 — coral / hot pink. Bridges series-3 violet and
    * series-5 emerald — sits in the warm-magenta neighbourhood. */
+  --chart-series-4-start: #F472B6;
+  --chart-series-4-end:   #BE185D;
 
-/* (notes for --chart-series-5-start and what follows it) */
   /* Series 5 — emerald. The "growth" / "positive" tone in trends. */
+  --chart-series-5-start: #10B981;
+  --chart-series-5-end:   #047857;
 
-/* (notes for --chart-series-6-start and what follows it) */
   /* Series 6 — amber / warm orange. The "alert" / "due-soon"
    * tone in trends. Closes the loop visually toward series-1
    * (warm-yellow) so a 6-segment donut reads as a continuous
    * colour wheel. */
+  --chart-series-6-start: #F59E0B;
+  --chart-series-6-end:   #B45309;
 
-/* (notes for --chart-series-muted and what follows it) */
   /* Empty / disabled / projected series fill. Sits at low alpha
    * over the surrounding bg so the segment reads as "data
    * pending" without competing for attention. */
+  --chart-series-muted: rgba(148, 163, 184, 0.32);
 
-/* (notes for --chart-hover-pop-distance and what follows it) */
   /* Motion — hover-pop + gradient flow (R16-PR4 consumers).
    * `hover-pop-distance` is the OUTWARD translation distance for
    * a donut segment on hover (radial direction). `hover-lift` is
@@ -651,8 +689,12 @@
    * `mount-duration` paces the initial path-draw on mount
    * (LineChart in R16-PR7). 600ms keeps the draw deliberate
    * without making the page feel slow. */
+  --chart-hover-pop-distance: 4px;
+  --chart-hover-lift: 2px;
+  --chart-hover-duration: 200ms;
+  --chart-flow-duration: 1.4s;
+  --chart-mount-duration: 600ms;
 
-/* (notes for --chart-soft-shadow and what follows it) */
   /* ── Roadmap-18 — Charts II: Fluid & Glossy ──────────────────────
    * `chart-soft-shadow` is the drop shadow chart SURFACES cast to
    * lift off the card behind them — the donut ring, a bar cluster,
@@ -669,15 +711,35 @@
    * than a per-shape progress value). 520ms matches
    * CHART_SPRING_DURATION_MS so the CSS path and the JS path read
    * as the same motion. */
+  --chart-soft-shadow: 0 6px 12px rgba(0, 0, 0, 0.38);
+  --chart-bubble-duration: 520ms;
+}
 
-/* ===================================================================
- * light ([data-theme="light"]) — design notes
- * =================================================================== */
 
-/* (notes for --bg-page and what follows it) */
+/* ═══════════════════════════════════════════════════════════════════
+   LIGHT THEME — PwC-inspired enterprise palette.
+
+   Activated by ThemeProvider setting `data-theme="light"` on <html>.
+   Designed around:
+     - warm off-white / cream backgrounds (not cold blue-slate)
+     - charcoal text hierarchy (not blue-tinted)
+     - PwC signature orange as the primary accent
+     - warm neutral borders
+     - conservative, document-friendly status colors
+
+   Palette origin: PwC brand language + Tailwind warm neutrals.
+   Contrast: all text/surface pairs meet WCAG 2.1 AA (4.5:1+).
+   ═══════════════════════════════════════════════════════════════════ */
+[data-theme="light"] {
   /* ── Surfaces ──────────────────────────────────────────────────── */
+  --bg-page:      #F4F2ED;  /* warm off-white — app background */
+  --bg-default:   #F8F6F3;  /* warm off-white — cards, panels, modals */
+  --bg-muted:     #F0EDE7;  /* warm light gray — hover, pressed */
+  --bg-subtle:    rgba(139, 130, 118, 0.07);  /* warm taupe @ 7% — selection, faint tints */
+  --bg-elevated:  #FDFCFA;  /* lightest off-white — tooltips, dropdowns above default */
+  --bg-inverted:  #1A1A1A;  /* near-black — primary button bg */
+  --bg-overlay:   rgba(26, 26, 26, 0.45);  /* charcoal overlay — modals, drawers */
 
-/* (notes for --content-emphasis and what follows it) */
   /* ── Content / Text ────────────────────────────────────────────── */
   /*
    * GAP-CI-77: bumped `--content-muted` and `--content-subtle` so
@@ -686,12 +748,12 @@
    * 3.05:1 — the latter failed `text-xs` (12px) body text. The new
    * values preserve the muted > subtle tier ordering.
    */
-
-/* (notes for --content-link and what follows it) */
+  --content-emphasis: #1A1A1A;  /* deep charcoal — headings, selected, bold labels */
+  --content-default:  #3D3D3D;  /* dark charcoal — body text, table cells (11.4:1) */
+  --content-muted:    #525252;  /* darker warm gray — secondary text, captions (7.2:1 on bg-default) */
   /* P2.2 — see the :root block. #8A6200 here, whose own comment already
    * claims ">=4.5:1 (WCAG AA) as link/accent text on the cream page". */
-
-/* (notes for --bubble-own and what follows it) */
+  --content-link:     var(--brand-default);
   /* ── Social surface: bubbles, presence, unread (P2.2) ─────────────
    *
    * Defined as `var(--...)` indirections onto the semantic tiers that already
@@ -702,22 +764,41 @@
    * `bubble-own` carries the brand tint so your own messages read as yours;
    * `bubble-other` is the raised neutral surface. Presence reuses the
    * success/warning/subtle trio rather than minting a traffic-light palette. */
+  --bubble-own:       var(--brand-subtle);
+  --bubble-other:     var(--bg-elevated);
+  --presence-online:  var(--content-success);
+  --presence-away:    var(--content-warning);
+  --presence-offline: var(--content-subtle);
+  --unread:           var(--primary);
+  --content-subtle:   #6B6B6B;  /* warm medium gray — hints, disabled, tertiary (4.9:1 on bg-default) */
+  --content-inverted: #FAF9F7;  /* warm off-white — text on inverted/dark surfaces */
 
-/* (notes for --border-default and what follows it) */
   /* ── Borders / Dividers ────────────────────────────────────────── */
+  --border-default:  #E5E2DE;  /* warm gray — standard borders */
+  --border-subtle:   rgba(229, 226, 222, 0.60);  /* warm gray @ 60% — soft dividers */
+  --border-emphasis: #C9C5BE;  /* medium warm gray — focused inputs */
 
-/* (notes for --canvas-surface and what follows it) */
   /* ── Process canvas (Roadmap-27) — light mirror ──────────────────
    *   depth ramp (light → dark): node < frame < page < surface;
    *   the recessed plane is the only surface DARKER than the page. */
+  --canvas-surface:    #ECE9E1;  /* recessed work plane — soft warm gray */
+  --canvas-frame:      #FBFAF8;  /* workspace frame + chrome strips */
+  --canvas-grid:       rgba(74, 64, 52, 0.12);  /* dot grid — faint warm */
+  --canvas-edge:       #ADA395;  /* default connection stroke (R27-PR-B) */
+  --canvas-node:       #FFFFFF;  /* node fill — elevated flow card */
+  --canvas-node-muted: #F4F1EA;  /* node fill — context (quieter) */
+  --canvas-border:     rgba(74, 64, 52, 0.14);  /* hairline inside the workspace */
+  --canvas-shadow:     0 6px 16px -10px rgba(60, 50, 40, 0.28), 0 1px 2px rgba(60, 50, 40, 0.12);
+  --canvas-recess:     inset 0 11px 20px -16px rgba(60, 50, 40, 0.22);
 
-/* (notes for --brand-default and what follows it) */
   /* ── Brand / Primary (PwC-inspired orange) ──────────────────────── */
-
-/* (notes for --grad-gold and what follows it) */
+  --brand-default:  #8A6200;  /* Agrent gold — deep goldenrod; ≥4.5:1 (WCAG AA) as link/accent text on the cream page AND on --brand-subtle gold tiles */
+  --brand-emphasis: #7A5800;  /* deep bronze-gold — active brand + text on --brand-subtle tiles; ≥4.5:1 (WCAG AA), one rung darker than default */
+  --brand-muted:    #D4AF37;  /* metallic gold — hover accent */
+  --brand-subtle:   rgba(212, 175, 55, 0.16);  /* gold @ 16% — brand tint backgrounds */
   /* Deep-gold gradient tuned for the cream ground (AA-legible bronze→gold). */
+  --grad-gold: linear-gradient(142deg, #B98A22 0%, #9A6E12 45%, #6E4E08 100%);
 
-/* (notes for --brand-secondary-default and what follows it) */
   /* ── Brand / Secondary (deep navy — complementary cool counterpoint) ──
    *
    * Roadmap-13's two-tone state vocabulary lands on the light theme
@@ -731,8 +812,11 @@
    * primitive that paints text or a band in this token will be
    * unmissable without looking aggressive.
    */
+  --brand-secondary-default:  #1E3A8A;  /* deep navy — secondary brand, complementary to orange */
+  --brand-secondary-emphasis: #172554;  /* deeper navy — primary band stop, active surfaces */
+  --brand-secondary-muted:    #3B82F6;  /* lighter blue — band highlight midstop, hover accent (R13-PR4) */
+  --brand-secondary-subtle:   rgba(30, 58, 138, 0.09);  /* navy @ 9% — secondary tint backgrounds */
 
-/* (notes for --bg-success and what follows it) */
   /* ── Status: Success ───────────────────────────────────────────── */
   /*
    * GAP-CI-77: status content colours darkened so the badge text
@@ -742,29 +826,51 @@
    * codebase paints over the tinted surface — which is darker than
    * cream and breaks the contrast assumption.
    */
+  --bg-success:          rgba(22, 128, 57, 0.07);  /* forest green @ 7% — badge tint */
+  --bg-success-emphasis: #047857;  /* green-700 — solid actionable surface, AA on white */
+  --content-success:     #0E6332;  /* green-800 — darker for badge tint AA (5.4:1) */
+  --border-success:      rgba(22, 128, 57, 0.20);
 
-/* (notes for --bg-warning and what follows it) */
   /* ── Status: Warning ───────────────────────────────────────────── */
+  --bg-warning:          rgba(180, 83, 9, 0.07);  /* warm amber @ 7% — badge tint */
+  --bg-warning-emphasis: #B45309;  /* amber-700 — solid actionable surface */
+  --content-warning:     #92420A;  /* amber-800 — darker for badge tint AA (5.6:1) */
+  --border-warning:      rgba(180, 83, 9, 0.20);
 
-/* (notes for --bg-error and what follows it) */
   /* ── Status: Error / Danger ────────────────────────────────────── */
+  --bg-error:          rgba(185, 28, 28, 0.07);  /* deep red @ 7% — badge tint */
+  --bg-error-emphasis: #B91C1C;  /* red-700 — solid actionable surface, AA on white */
+  --content-error:     #991616;  /* red-800 — darker for badge tint AA (6.2:1) */
+  --border-error:      rgba(185, 28, 28, 0.20);
 
-/* (notes for --bg-info and what follows it) */
   /* ── Status: Info ──────────────────────────────────────────────── */
+  --bg-info:          rgba(29, 78, 216, 0.07);  /* steel blue @ 7% — badge tint */
+  --bg-info-emphasis: #1D4ED8;  /* blue-700 — solid actionable surface */
+  --content-info:     #1A41B8;  /* blue-800 — darker for badge tint AA (6.0:1) */
+  --border-info:      rgba(29, 78, 216, 0.20);
 
-/* (notes for --bg-attention and what follows it) */
   /* ── Status: Attention ─────────────────────────────────────────── */
+  --bg-attention:      rgba(180, 83, 9, 0.07);
+  --content-attention: #92420A;  /* matches warning — same tint AA fix */
+  --border-attention:  rgba(180, 83, 9, 0.20);
 
-/* (notes for --ring-default and what follows it) */
   /* ── Interactive / Focus ───────────────────────────────────────── */
+  --ring-default: rgba(184, 134, 11, 0.45);  /* Agrent gold focus ring (light) */
+  --focus-ring:   rgba(208, 74, 2, 0.40);
+  --ring:                   rgba(208, 74, 2, 0.40);
+  --ring-offset-background: #F8F6F3;
+  --primary:                #8A6200;
 
-/* (notes for --glass-bg and what follows it) */
   /* ── Glass (warm light variant) ─────────────────────────────────── */
+  --glass-bg:     rgba(248, 246, 243, 0.85);  /* tinted to --bg-default so .glass-card matches solid card surfaces */
+  --glass-border: rgba(229, 226, 222, 0.50);
+  --glass-blur:   12px;
 
-/* (notes for --shadow-sm and what follows it) */
   /* ── Shadows — warm-tinted, subtle ──────────────────────────────── */
+  --shadow-sm:  0 1px 2px rgba(60, 50, 40, 0.06);
+  --shadow:     0 4px 12px rgba(60, 50, 40, 0.08);
+  --shadow-lg:  0 8px 24px rgba(60, 50, 40, 0.12);
 
-/* (notes for --btn-carbon-overlay and what follows it) */
   /* ── Liquid-carbon button surface — LIGHT theme ────────────────────
    * See the dark-theme block for the rationale. The light theme
    * needs a DEEPER bottom pool — on a light-ish variant surface a
@@ -774,28 +880,29 @@
    * top-highlight lifts to 50% white — a liquid surface in light
    * mode catches a sharper top-edge gleam. The border is warm-
    * tinted to match the PwC palette rather than pure black. */
-
-/* (notes for --btn-carbon-border and what follows it) */
+  --btn-carbon-overlay: radial-gradient(ellipse 130% 80% at 50% -10%, rgba(255, 252, 248, 0.13) 0%, rgba(255, 252, 248, 0.03) 32%, rgba(40, 30, 20, 0.14) 62%, rgba(40, 30, 20, 0.26) 100%);
+  --btn-carbon-bevel: inset 0 1px 1px rgba(255, 255, 255, 0.50), inset 0 -2px 3px rgba(255, 255, 255, 0.10), 0 1px 2px rgba(60, 50, 40, 0.20);
   /* R22-PR-B — softened α 0.24 → 0.16, warm-graphite preserved. */
+  --btn-carbon-border: rgba(60, 50, 40, 0.16);
 
-/* (notes for --btn-ambient-rest and what follows it) */
   /* ── R20 ambient elevation (4-stop, LIGHT theme) ────────────────────
    * Warm-tinted parallel of the dark-theme block. Light-mode shadow
    * needs to LEAN cooler-warm (a true black drop reads dirty on a
    * cream surface) — alphas come down, the colour shifts to a soft
    * warm graphite (60/50/40). Focus ring switches to brand orange. */
-
-/* (notes for --btn-ambient-focus and what follows it) */
+  --btn-ambient-rest:  0 1px 2px rgba(60, 50, 40, 0.10), 0 2px 6px rgba(60, 50, 40, 0.06);
+  --btn-ambient-hover: 0 2px 4px rgba(60, 50, 40, 0.14), 0 6px 16px rgba(60, 50, 40, 0.10);
+  --btn-ambient-press: 0 1px 1px rgba(60, 50, 40, 0.14);
   /* R22-PR-B — focus ring tightened 4px → 3px (light-theme parallel). */
+  --btn-ambient-focus: 0 0 0 3px rgba(208, 74, 2, 0.18), 0 1px 2px rgba(60, 50, 40, 0.10), 0 2px 6px rgba(60, 50, 40, 0.06);
 
-/* (notes for --btn-iridescent-gradient and what follows it) */
   /* ── R20 iridescent edge (LIGHT theme) ──────────────────────────────
    * Brand orange ↔ secondary navy. Slightly higher alphas than dark
    * — on light surfaces, a 55%-alpha gradient stop reads softer
    * than the same on dark, so the iridescent edge holds its
    * presence without becoming a hard outline. */
+  --btn-iridescent-gradient: linear-gradient(135deg, rgba(208, 74, 2, 0.60) 0%, rgba(208, 74, 2, 0.18) 35%, rgba(30, 58, 138, 0.18) 65%, rgba(30, 58, 138, 0.60) 100%);
 
-/* (notes for --btn-gradient-primary and what follows it) */
   /* ── Primary action-button FILL gradient (LIGHT theme) ──────────────
    * Brand orange dominant through the first 60%, ramping to a SUBTLE
    * navy (#1e3a8a) corner in the final stretch (135°). See the
@@ -803,28 +910,29 @@
    * white label, distinct from the 1px iridescent EDGE). */
   /* UI-11: see dark-theme note. Light-theme cool tail lightened from the very
      dark navy #1e3a8a to a soft periwinkle, transition starting at 50%. */
+  --btn-gradient-primary: linear-gradient(135deg, var(--brand-default) 0%, var(--brand-default) 50%, #5e7fc0 100%);
 
-/* (notes for --btn-aura-primary and what follows it) */
   /* ── R20 aura wash (LIGHT theme) ───────────────────────────────────
    * Brand orange for primary; warm-neutral for secondary. Outer
    * bloom is tighter than dark (lift on a light surface needs less
    * spread to read), inner glow holds the same haptic edge. */
+  --btn-aura-primary: 0 0 0 1px rgba(208, 74, 2, 0.00), 0 4px 14px rgba(208, 74, 2, 0.28), 0 10px 28px rgba(208, 74, 2, 0.12);
+  --btn-aura-neutral: 0 0 0 1px rgba(60, 50, 40, 0.00), 0 4px 14px rgba(60, 50, 40, 0.10), 0 10px 28px rgba(60, 50, 40, 0.06);
 
-/* (notes for --ctrl-edge-rest and what follows it) */
   /* ── R20 form-control parity edge (LIGHT theme) ─────────────────────
    * Warmer borders. Rest: 22% warm-grey (a softer outline than the
    * cool one used in dark, suits cream surfaces). Hover: 38%. Focus
    * ring: brand orange. The hover/focus alphas are slightly higher
    * than dark because cream surfaces swallow contrast. */
-
-/* (notes for --ctrl-edge-focus and what follows it) */
+  --ctrl-edge-rest:  rgba(60, 50, 40, 0.22);
+  --ctrl-edge-hover: rgba(60, 50, 40, 0.38);
   /* R20-PR-D — enriched focus halo (light theme). Warm-tinted
    * ambient drop matches the rest of the light-theme shadow scale
    * (alphas dropped to the warm-graphite range so the lift reads
    * subtle on cream surfaces). See the dark-theme block above for
    * the rationale. */
+  --ctrl-edge-focus: 0 0 0 3px rgba(208, 74, 2, 0.20), 0 1px 2px rgba(60, 50, 40, 0.10), 0 2px 6px rgba(60, 50, 40, 0.06);
 
-/* (notes for --btn-glass-tint and what follows it) */
   /* ── R24 liquid-glass button material (LIGHT theme) ─────────────────
    *
    * Light-theme glass tokens — mirror of the dark-theme R24 block above
@@ -841,15 +949,21 @@
    * but inner highlight + outer shadow bumped in proportion so the
    * light + dark experiences are equally visible. Blur matches at
    * 12px. */
+  --btn-glass-tint: linear-gradient(180deg, rgba(255, 252, 248, 0.55) 0%, rgba(255, 252, 248, 0.28) 100%);
+  --btn-glass-blur: 12px;
+  --btn-glass-edge: linear-gradient(135deg, rgba(255, 255, 255, 0.75) 0%, rgba(255, 255, 255, 0.26) 45%, rgba(60, 50, 40, 0.18) 100%);
+  --btn-glass-inner: inset 0 1px 0 rgba(255, 255, 255, 0.80), inset 0 -1px 0 rgba(60, 50, 40, 0.14);
+  --btn-glass-shadow: 0 1px 3px rgba(60, 50, 40, 0.14), 0 6px 14px rgba(60, 50, 40, 0.10);
 
-/* (notes for --btn-glass-fill-primary and what follows it) */
   /* R24-hotfix — per-variant translucent fills (LIGHT theme).
    * Higher base alpha (0.65) than dark theme — light surfaces need
    * more colour density than dark to read as the same brand
    * identity. Brand orange + warm graphite + red, all translucent
    * enough for the backdrop-blur to work. */
+  --btn-glass-fill-primary: rgba(208, 74, 2, 0.65);
+  --btn-glass-fill-secondary: rgba(60, 50, 40, 0.18);
+  --btn-glass-fill-destructive: rgba(220, 38, 38, 0.65);
 
-/* (notes for --nav-band-glow and what follows it) */
   /* ── Sidebar band glow (R13-PR2) ───────────────────────────────── */
   /*
    * PwC: orange @ 35% on the cream `--bg-default` (#F8F6F3). Same
@@ -858,8 +972,8 @@
    * disappear on cream; 0.35 lets the glow read at peripheral
    * vision without compromising legibility of the band itself.
    */
+  --nav-band-glow: 0 0 6px rgba(208, 74, 2, 0.35);
 
-/* (notes for --nav-band-glow-active and what follows it) */
   /* ── Sidebar band glow — ACTIVE variant (R13-PR4) ──────────────── */
   /*
    * PwC active rows paint the band with deep navy. The active glow
@@ -868,8 +982,8 @@
    * blur) so the visual weight of the active state feels balanced
    * across themes.
    */
+  --nav-band-glow-active: 0 0 6px rgba(30, 58, 138, 0.35);
 
-/* (notes for --nav-gloss-highlight and what follows it) */
   /* ── Sidebar gloss highlight (R13-PR6) ─────────────────────────── */
   /*
    * On the cream PwC surface a white-on-cream highlight is much
@@ -881,8 +995,8 @@
    * the gloss (1px line, top edge) is identical across themes; only
    * the alpha tunes for surface luminance.
    */
+  --nav-gloss-highlight: rgba(255, 255, 255, 0.70);
 
-/* (notes for --nav-bevel-shadow and what follows it) */
   /* ── Sidebar bevel shadow (R13-PR7) ────────────────────────────── */
   /*
    * On cream the bevel shadow is a warm-tinted alpha rather than
@@ -892,8 +1006,8 @@
    * sensitive to dark inserts; a heavier value would make the row
    * look smudged.
    */
+  --nav-bevel-shadow: inset 0 -1px 1px 0 rgba(60, 50, 40, 0.08);
 
-/* (notes for --nav-row-liquid-tint and what follows it) */
   /* R15-PR7 — light-theme liquid sweep tint. PwC orange at 16%
    * opacity. Slightly higher alpha than METRO (0.14) because the
    * cream surface (`--bg-default: #FAF7F2`) has lower contrast
@@ -901,8 +1015,8 @@
    * yellow — equalising the perceived wash strength across
    * themes.
    */
+  --nav-row-liquid-tint: rgba(208, 74, 2, 0.16);
 
-/* (notes for --nav-row-aura-color and what follows it) */
   /* R15-PR9 — light-theme active-row aura. Deep navy
    * (rgba(30, 58, 138, …) = `--brand-secondary-default` on the
    * light theme) at 18% alpha. Same alpha as METRO for theme
@@ -910,8 +1024,8 @@
    * strength because the underlying brand-secondary RGB
    * compensates for cream-surface absorption.
    */
+  --nav-row-aura-color: rgba(30, 58, 138, 0.18);
 
-/* (notes for --chart-series-1-start and what follows it) */
   /* ───────────────────────────────────────────────────────────────
    * R16-PR1 — Lickable Chart palette + motion (PwC theme).
    *
@@ -928,58 +1042,106 @@
    * so the gradient meeting (R16-PR2 onwards) reads as fluid,
    * not jarring.
    * ─────────────────────────────────────────────────────────── */
+
   /* Series 1 — primary brand (PwC orange, slightly muted for
    * cream contrast). */
+  --chart-series-1-start: #D4AF37;
+  --chart-series-1-end:   #B8860B;
 
-/* (notes for --chart-series-2-start and what follows it) */
   /* Series 2 — navy. Direct counterpart to METRO series-2 cyan;
    * navy keeps the cool weight on cream. */
+  --chart-series-2-start: #1E3A8A;
+  --chart-series-2-end:   #172554;
 
-/* (notes for --chart-series-3-start and what follows it) */
   /* Series 3 — teal. Replaces METRO violet — teal anchors the
    * cool family on cream where violet would feel kitschy. */
+  --chart-series-3-start: #0F766E;
+  --chart-series-3-end:   #134E4A;
 
-/* (notes for --chart-series-4-start and what follows it) */
   /* Series 4 — rose. Bridges teal → forest through warm-pink. */
+  --chart-series-4-start: #BE185D;
+  --chart-series-4-end:   #831843;
 
-/* (notes for --chart-series-5-start and what follows it) */
   /* Series 5 — forest. The "growth" tone in PwC trend cards. */
+  --chart-series-5-start: #15803D;
+  --chart-series-5-end:   #14532D;
 
-/* (notes for --chart-series-6-start and what follows it) */
   /* Series 6 — amber-warm. Closes the loop toward series-1
    * orange so a 6-segment donut reads as continuous wheel. */
+  --chart-series-6-start: #B45309;
+  --chart-series-6-end:   #78350F;
 
-/* (notes for --chart-series-muted and what follows it) */
   /* Empty / disabled / projected. */
+  --chart-series-muted: rgba(120, 113, 108, 0.28);
 
-/* (notes for --chart-hover-pop-distance and what follows it) */
   /* Motion — same shape + values as METRO. Chart motion is
    * theme-independent; tempo + distance both stay constant so
    * the chart-language reads identically across themes. */
+  --chart-hover-pop-distance: 4px;
+  --chart-hover-lift: 2px;
+  --chart-hover-duration: 200ms;
+  --chart-flow-duration: 1.4s;
+  --chart-mount-duration: 600ms;
 
-/* (notes for --chart-soft-shadow and what follows it) */
   /* Roadmap-18 — see the dark-theme block for the rationale.
    * LIGHT theme: the shadow is softer + lighter (15% vs 38%) —
    * on a near-white card a 38%-black shadow would read as a
    * hard smudge; 15% gives the same "floating glossy object"
    * lift without the heaviness. */
+  --chart-soft-shadow: 0 6px 12px rgba(15, 23, 42, 0.15);
+  --chart-bubble-duration: 520ms;
+}
 
-/* ===================================================================
- * high contrast ([data-contrast="high"]) — design notes
- * =================================================================== */
-
-/* (notes for --grad-gold and what follows it) */
+/* ─────────────────────────────────────────────────────────────────
+ * "Sunlight" — high-contrast outdoor mode (feat/delight-personality).
+ * Applied as data-contrast="high" ON TOP of the light theme: the theme
+ * provider sets data-theme="light" + data-contrast="high" together, so
+ * sunlight inherits the FULL light palette and only overrides the key
+ * surfaces — backgrounds toward white, text + borders toward black — for
+ * legibility in direct field sun. Same specificity as [data-theme="light"]
+ * but declared AFTER it, so these win wherever both match. Keeping it an
+ * overlay (not a third [data-theme] block) preserves the dark+light token
+ * invariant the theme-structure guards rely on.
+ * ───────────────────────────────────────────────────────────────── */
+[data-contrast="high"] {
+  --bg-page: #ffffff;
+  --bg-default: #ffffff;
+  --bg-subtle: #f5f5f5;
+  --bg-muted: #e8e8e8;
+  --bg-elevated: #ffffff;
+  --content-emphasis: #000000;
+  --content-default: #141414;
+  --content-muted: #3a3a3a;
+  --content-subtle: #555555;
+  /* P2.3 — the semantic tones, which this block had never defined.
+   *
+   * It carries only a neutral palette, so `--content-success` and friends fell
+   * through to :root's dark-tuned values and were measured on this theme's
+   * WHITE ground at 1.62:1 (success), 1.67:1 (warning/attention), 2.29:1
+   * (error) and 2.54:1 (info). WCAG AA is 4.5:1 — between a third and half of
+   * it, in the theme whose entire purpose is contrast. `text-content-success`
+   * has been doing that in production.
+   *
+   * Replaced with AAA values (>=7:1 on white), measured not guessed, and
+   * asserted every run by `tests/guards/token-contrast-wcag.test.ts` across
+   * all three themes. Values come from design/tokens.json. */
+  --content-success: #0B5D1E;  /* dark green — 8.08:1 on white (AAA). P2.3: was inheriting :root #5FE39B at 1.62:1 */
+  --content-warning: #7A4F00;  /* dark amber — 7.13:1 on white (AAA). P2.3: was inheriting #fbbf24 at 1.67:1 */
+  --content-error: #A4161A;  /* deep red — 7.75:1 on white (AAA). P2.3: was inheriting #FF8A7A at 2.29:1 */
+  --content-info: #1A43B8;  /* deep blue — 8.27:1 on white (AAA). P2.3: was inheriting #60a5fa at 2.54:1 */
+  --content-attention: #7A4F00;  /* dark amber — 7.13:1 on white (AAA). P2.3: was inheriting #fbbf24 at 1.67:1 */
+  --border-default: #2b2b2b;
+  --border-subtle: #8a8a8a;
+  --border-emphasis: #000000;
   /* High-contrast: a bright-gold gradient on white would fail contrast, so the
      featured number falls back to a solid deep bronze (AAA on white). */
-
-/* (notes for --content-link and what follows it) */
+  --grad-gold: linear-gradient(#5A3F06, #5A3F06);
   /* P2.2 — and the same applies to LINK text. `var(--brand-default)` would
    * inherit :root's #D4AF37 here, which is roughly 1.9:1 on white: a plain
    * WCAG failure. This block does not override --brand-default, so the link
    * token needs its own value, and the deep bronze above is the precedent
    * with a contrast claim already attached to it. */
-
-/* (notes for --bubble-own and what follows it) */
+  --content-link: #5A3F06;
   /* P2.2 — explicit values, not the indirections the other two themes use.
    * This block defines only a neutral palette: it does NOT override
    * --brand-subtle, --content-success, --content-warning or --primary, so
@@ -989,6 +1151,13 @@
    * (That is a PRE-EXISTING gap, not one P2.2 introduces — `text-content-success`
    * already inherits that way in high contrast today. P2.3's contrast test
    * across all three themes is where it gets caught.) */
+  --bubble-own:       #e8e8e8;  /* = --bg-muted here */
+  --bubble-other:     #ffffff;  /* = --bg-elevated here */
+  --presence-online:  var(--content-success);  /* follows --content-success, which this theme now defines (P2.3) */
+  --presence-away:    var(--content-warning);  /* follows --content-warning, which this theme now defines (P2.3) */
+  --presence-offline: #555555;  /* = --content-subtle here */
+  --unread:           #5A3F06;  /* the block's documented AAA bronze */
+}
 
 /* ─────────────────────────────────────────────────────────────────
  * Reduced-motion preference (WCAG 2.1 SC 2.3.3 — Animation from
@@ -1015,3 +1184,4 @@
     scroll-behavior: auto !important;
   }
 }
+
