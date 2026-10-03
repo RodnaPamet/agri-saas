@@ -377,9 +377,54 @@ log "4/5  mounting restored disk and starting Postgres over the recovered data d
 
 # The restored disk is a byte copy of the production BOOT disk, so the
 # Postgres data lives at the Docker volume path inside its filesystem.
-REMOTE_SCRIPT=$(cat <<REMOTE
+#
+# ── The delimiter is QUOTED, and that is the whole design ──
+#
+# `<<'REMOTE'` expands NOTHING. Every `$`, `${…}`, `$(…)` and backtick below is
+# a byte handed to the VM, not something this machine evaluates while building
+# the string — so the body's own PROSE cannot execute here.
+#
+# It could, until #1225. #1179 died because an UNQUOTED heredoc made a comment
+# executable: a markdown backtick opened a command substitution on the GitHub
+# runner, which swallowed the rest of the body and ran it locally. #1212 escaped
+# every backtick, which closed that instance and left the class open — a `$(…)`
+# or a `${VAR}` written in prose still expanded here, and a dropped backslash on
+# a `\$` meant for the remote still expanded to nothing, shipping
+# `sudo test -d ""`, which SUCCEEDS and reports a corrupt backup on a backup
+# that is fine. Quoting removes the possibility instead of relying on discipline.
+#
+# The cost is that the values the VM cannot know have to be injected explicitly,
+# as the generated PRELUDE below. These five are the complete set — MEASURED off
+# the unquoted body, not assumed: 11 host-expanded `${…}` references over
+# exactly these five names, and zero `$(…)` and zero bare `$VAR`.
+#
+#   PGDATA_VOLUME / STACK_DIR / PG_IMAGE   the per-stack configuration.
+#   DB_USER_HINT / DB_NAME_HINT            FIRST CANDIDATES only, and renamed on
+#                                          purpose: the remote script assigns
+#                                          DB_USER and DB_NAME itself from what
+#                                          the restored cluster actually has, so
+#                                          a prelude using those names would be
+#                                          clobbered one line later.
+#
+# `%q` shell-quotes, so a value carrying a space or a quote cannot break the
+# script it is pasted into, and an empty PG_IMAGE still renders as `PG_IMAGE=''`
+# rather than vanishing — the VM runs `[ -n "${PG_IMAGE}" ]` under `set -u`.
+#
+# tests/guards/restore-drill-remote-script.test.ts executes this script against
+# a stubbed `gcloud` and asserts the captured payload's body is BYTE-IDENTICAL
+# to the heredoc source below. That is what quoting buys, stated as a test: if
+# the delimiter is ever un-quoted, or the host substitutes anything at all into
+# the body, the two stop matching.
+REMOTE_SCRIPT=$(
+    printf '%s=%q\n' \
+        PGDATA_VOLUME "${PGDATA_VOLUME}" \
+        STACK_DIR "${STACK_DIR}" \
+        PG_IMAGE "${PG_IMAGE}" \
+        DB_USER_HINT "${DB_USER}" \
+        DB_NAME_HINT "${DB_NAME}"
+    cat <<'REMOTE'
 set -euo pipefail
-for i in \$(seq 1 60); do [ -f /var/log/restore-drill-ready ] && break; sleep 5; done
+for i in $(seq 1 60); do [ -f /var/log/restore-drill-ready ] && break; sleep 5; done
 [ -f /var/log/restore-drill-ready ] || { echo "startup script never finished"; exit 1; }
 
 sudo mkdir -p /mnt/restored
@@ -387,12 +432,12 @@ sudo mkdir -p /mnt/restored
 sudo mount -o rw /dev/disk/by-id/google-restored-part1 /mnt/restored
 PGDATA_HOST=/mnt/restored/var/lib/docker/volumes/${PGDATA_VOLUME}/_data
 # NOTE the sudo on both probes. /var/lib/docker is mode 0710, so an
-# unprivileged \`test -d\` on anything beneath it returns FALSE for a
+# unprivileged `test -d` on anything beneath it returns FALSE for a
 # path that exists — which reads identically to "the backup has no
 # database in it". Found by running the drill.
-sudo test -d "\$PGDATA_HOST" || { echo "restored disk has no ${PGDATA_VOLUME} volume at \$PGDATA_HOST"; exit 1; }
-sudo test -f "\$PGDATA_HOST/PG_VERSION" || { echo "\$PGDATA_HOST is not a Postgres data directory"; exit 1; }
-echo "  data directory found, PG_VERSION=\$(sudo cat \$PGDATA_HOST/PG_VERSION)"
+sudo test -d "$PGDATA_HOST" || { echo "restored disk has no ${PGDATA_VOLUME} volume at $PGDATA_HOST"; exit 1; }
+sudo test -f "$PGDATA_HOST/PG_VERSION" || { echo "$PGDATA_HOST is not a Postgres data directory"; exit 1; }
+echo "  data directory found, PG_VERSION=$(sudo cat $PGDATA_HOST/PG_VERSION)"
 
 # The encryption key must be in the backup too: a database restored
 # WITHOUT it is a pile of unreadable ciphertext (docs/epic-b-encryption.md).
@@ -402,8 +447,8 @@ echo "  data directory found, PG_VERSION=\$(sudo cat \$PGDATA_HOST/PG_VERSION)"
 # where the key was in fact perfectly recoverable. Asserts PRESENCE
 # ONLY and never prints a value.
 STACK_HOST=/mnt/restored${STACK_DIR}
-sudo test -d "\$STACK_HOST" || { echo "restored disk has no ${STACK_DIR} — wrong disk, or the stack moved"; exit 1; }
-sudo grep -rlq 'DATA_ENCRYPTION_KEY=.\+' "\$STACK_HOST" 2>/dev/null \
+sudo test -d "$STACK_HOST" || { echo "restored disk has no ${STACK_DIR} — wrong disk, or the stack moved"; exit 1; }
+sudo grep -rlq 'DATA_ENCRYPTION_KEY=.\+' "$STACK_HOST" 2>/dev/null \
     || { echo "no DATA_ENCRYPTION_KEY anywhere under ${STACK_DIR} — encrypted columns would be unrecoverable from this backup"; exit 1; }
 echo "  ✓ ${STACK_DIR} present and carries DATA_ENCRYPTION_KEY"
 
@@ -417,9 +462,9 @@ echo "  ✓ ${STACK_DIR} present and carries DATA_ENCRYPTION_KEY"
 # single source of truth) and the package list must match, since PostGIS is
 # now INSTALLED rather than baked into the base.
 #
-# The \`Acquire::Check-Valid-Until=false\` flag this heredoc used to carry is
+# The `Acquire::Check-Valid-Until=false` flag this heredoc used to carry is
 # gone with #832. It was required while the base was bullseye, whose security
-# Release file expired 2026-09-07 — without it \`apt-get update\` exits 100 and
+# Release file expired 2026-09-07 — without it `apt-get update` exits 100 and
 # this drill cannot build a Postgres to restore INTO, which reads as a FAILED
 # RESTORE rather than as a broken build. That is why the flag mattered here
 # more than anywhere else, and why trixie (supported to 2028-08-09) is worth
@@ -430,22 +475,25 @@ echo "  ✓ ${STACK_DIR} present and carries DATA_ENCRYPTION_KEY"
 # drift silently.
 #
 # The PACKAGE LIST is enforced too, since #979. That same guard parses the
-# \`apt-get install\` set out of THIS heredoc and out of deploy/postgres/Dockerfile
+# `apt-get install` set out of THIS heredoc and out of deploy/postgres/Dockerfile
 # and requires them equal, so the two cannot disagree about which extensions get
-# installed. It reads the heredoc specifically, not this file: \`docker.io\` is
+# installed. It reads the heredoc specifically, not this file: `docker.io` is
 # installed further up to prepare the VM, and the guard asserts that name never
 # appears in the parsed set.
 #
-# Worth keeping in mind when editing below: this heredoc is nested inside an
-# UNQUOTED outer heredoc, so its \`\`-continuations collapse to one physical
-# line when REMOTE_SCRIPT is built. A \`#\` comment inside the RUN would therefore
-# comment out everything after it.
+# Worth keeping in mind when editing below: the OUTER delimiter is QUOTED, so
+# this nested heredoc reaches the VM byte-identical to what is written here, and
+# its trailing-backslash continuations arrive as continuations. They did NOT
+# until #1225: an unquoted outer heredoc consumed them while building the
+# string, collapsing the whole RUN onto one physical line, which is why a `#`
+# comment inside the RUN used to comment out the collapsed remainder. That
+# hazard is gone.
 if [ -n "${PG_IMAGE}" ]; then
     RESTORE_IMAGE="${PG_IMAGE}"
-    sudo docker pull "\$RESTORE_IMAGE" >/dev/null
+    sudo docker pull "$RESTORE_IMAGE" >/dev/null
 else
     RESTORE_IMAGE=agrent-db:local
-    sudo docker build -t "\$RESTORE_IMAGE" - <<'DOCKERFILE'
+    sudo docker build -t "$RESTORE_IMAGE" - <<'DOCKERFILE'
 FROM postgres:16-trixie
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -458,14 +506,14 @@ fi
 # Start Postgres directly on the restored directory. A crash-consistent
 # snapshot lands mid-transaction by design; Postgres replays WAL on
 # start, and THAT is the property this drill proves.
-sudo docker run -d --name restore-pg \\
-    -v "\$PGDATA_HOST":/var/lib/postgresql/data \\
-    -e POSTGRES_PASSWORD=drill-only-never-persisted \\
-    "\$RESTORE_IMAGE" >/dev/null
+sudo docker run -d --name restore-pg \
+    -v "$PGDATA_HOST":/var/lib/postgresql/data \
+    -e POSTGRES_PASSWORD=drill-only-never-persisted \
+    "$RESTORE_IMAGE" >/dev/null
 
-for i in \$(seq 1 60); do
+for i in $(seq 1 60); do
     if sudo docker exec restore-pg pg_isready >/dev/null 2>&1; then
-        echo "  ✓ Postgres accepted connections after WAL recovery (\${i}s)"; break
+        echo "  ✓ Postgres accepted connections after WAL recovery (${i}s)"; break
     fi
     sleep 2
 done
@@ -475,73 +523,73 @@ sudo docker exec restore-pg pg_isready >/dev/null 2>&1 || {
 # Discover the superuser and the application database FROM THE RESTORED
 # CLUSTER, rather than parsing them out of the stack's config. The two
 # stacks spell their config differently (env file vs compose keys, with
-# \${VAR:-default} interpolation in the latter), and a drill that
+# ${VAR:-default} interpolation in the latter), and a drill that
 # mis-parses the role reports "role does not exist" — which reads like a
 # corrupt backup when the backup is fine. The cluster is the authority.
 DB_USER=""
-for cand in "${DB_USER}" postgres inflect; do
-    [ -n "\$cand" ] || continue
-    if sudo docker exec restore-pg psql -U "\$cand" -d postgres -tAc 'SELECT 1' >/dev/null 2>&1; then
-        DB_USER="\$cand"; break
+for cand in "${DB_USER_HINT}" postgres inflect; do
+    [ -n "$cand" ] || continue
+    if sudo docker exec restore-pg psql -U "$cand" -d postgres -tAc 'SELECT 1' >/dev/null 2>&1; then
+        DB_USER="$cand"; break
     fi
 done
-[ -n "\$DB_USER" ] || { echo "no usable superuser on the restored cluster (tried ${DB_USER}, postgres, inflect)"; exit 1; }
+[ -n "$DB_USER" ] || { echo "no usable superuser on the restored cluster (tried ${DB_USER_HINT}, postgres, inflect)"; exit 1; }
 
-DB_NAME="${DB_NAME}"
-if ! sudo docker exec restore-pg psql -U "\$DB_USER" -d "\$DB_NAME" -tAc 'SELECT 1' >/dev/null 2>&1; then
-    DB_NAME="\$(sudo docker exec restore-pg psql -U "\$DB_USER" -d postgres -tAc \
+DB_NAME="${DB_NAME_HINT}"
+if ! sudo docker exec restore-pg psql -U "$DB_USER" -d "$DB_NAME" -tAc 'SELECT 1' >/dev/null 2>&1; then
+    DB_NAME="$(sudo docker exec restore-pg psql -U "$DB_USER" -d postgres -tAc \
         "SELECT datname FROM pg_database WHERE datname NOT IN ('postgres','template0','template1') ORDER BY datname LIMIT 1")"
 fi
-[ -n "\$DB_NAME" ] || { echo "restored cluster has no application database"; exit 1; }
-echo "  ✓ restored cluster exposes database '\$DB_NAME'"
+[ -n "$DB_NAME" ] || { echo "restored cluster has no application database"; exit 1; }
+echo "  ✓ restored cluster exposes database '$DB_NAME'"
 
-psql() { sudo docker exec restore-pg psql -U \${DB_USER} -d \${DB_NAME} -tAc "\$1"; }
+psql() { sudo docker exec restore-pg psql -U ${DB_USER} -d ${DB_NAME} -tAc "$1"; }
 
 echo "── validation battery ──"
 
 # Schema reachable at all.
-[ "\$(psql 'SELECT 1')" = "1" ] || { echo "SELECT 1 failed"; exit 1; }
+[ "$(psql 'SELECT 1')" = "1" ] || { echo "SELECT 1 failed"; exit 1; }
 echo "  ✓ SELECT 1"
 
 # Core tables present and readable.
-# \`psql ... && echo "✓"\` used to stand here. \`cmd && echo\` is not an
-# assertion: under \`set -euo pipefail\` a failing left side short-circuits,
+# `psql ... && echo "✓"` used to stand here. `cmd && echo` is not an
+# assertion: under `set -euo pipefail` a failing left side short-circuits,
 # prints nothing and does NOT trip errexit, so a missing or unreadable
 # core table sailed through the drill. Assigning from the substitution
 # does trip errexit, which is why every OTHER check in this battery is
 # written the way these two now are.
-TENANTS=\$(psql 'SELECT count(*) FROM "Tenant"')
-[ -n "\$TENANTS" ] || { echo "Tenant table unreadable"; exit 1; }
-echo "  ✓ Tenant table reachable (\$TENANTS rows)"
-USERS=\$(psql 'SELECT count(*) FROM "User"')
-[ -n "\$USERS" ] || { echo "User table unreadable"; exit 1; }
-echo "  ✓ User table reachable (\$USERS rows)"
+TENANTS=$(psql 'SELECT count(*) FROM "Tenant"')
+[ -n "$TENANTS" ] || { echo "Tenant table unreadable"; exit 1; }
+echo "  ✓ Tenant table reachable ($TENANTS rows)"
+USERS=$(psql 'SELECT count(*) FROM "User"')
+[ -n "$USERS" ] || { echo "User table unreadable"; exit 1; }
+echo "  ✓ User table reachable ($USERS rows)"
 
 # Migrations applied — catches a restore of a half-migrated cluster.
-MIGRATIONS=\$(psql 'SELECT count(*) FROM _prisma_migrations WHERE finished_at IS NOT NULL')
-[ "\$MIGRATIONS" -gt 0 ] || { echo "_prisma_migrations is empty"; exit 1; }
-echo "  ✓ _prisma_migrations: \$MIGRATIONS applied"
+MIGRATIONS=$(psql 'SELECT count(*) FROM _prisma_migrations WHERE finished_at IS NOT NULL')
+[ "$MIGRATIONS" -gt 0 ] || { echo "_prisma_migrations is empty"; exit 1; }
+echo "  ✓ _prisma_migrations: $MIGRATIONS applied"
 
 # Recent activity — catches a snapshot that is technically valid but
 # stale, or restored from a long-dead disk.
-RECENT=\$(psql 'SELECT count(*) FROM "AuditLog" WHERE "createdAt" > now() - INTERVAL '"'"'14 days'"'"'')
+RECENT=$(psql 'SELECT count(*) FROM "AuditLog" WHERE "createdAt" > now() - INTERVAL '"'"'14 days'"'"'')
 # Informational ONLY, deliberately. This used to carry
-# \`[ "\$RECENT" -gt 0 ] || echo "⚠ ..."\`, which is a warning in a monthly
+# `[ "$RECENT" -gt 0 ] || echo "⚠ ..."`, which is a warning in a monthly
 # cron log — i.e. nothing. The staleness it claimed to catch is already
 # hard-failed upstream (SNAPSHOT_AGE_HOURS vs MAX_SNAPSHOT_AGE_HOURS),
 # and the only case left is a fresh snapshot of an idle database, which
 # is not a restore failure. A number in the log beats a fake assertion.
-echo "  ℹ AuditLog rows in the last 14 days: \$RECENT (informational; snapshot age is gated upstream)"
+echo "  ℹ AuditLog rows in the last 14 days: $RECENT (informational; snapshot age is gated upstream)"
 
 # RLS survived the restore. Tenant isolation is the product's core
 # security property; a restore that loses policies is a breach.
-POLICIES=\$(psql "SELECT count(*) FROM pg_policies WHERE policyname = 'tenant_isolation'")
-[ "\$POLICIES" -gt 0 ] || { echo "no tenant_isolation policies in pg_policies — RLS did NOT survive"; exit 1; }
-echo "  ✓ pg_policies: \$POLICIES tenant_isolation policies"
+POLICIES=$(psql "SELECT count(*) FROM pg_policies WHERE policyname = 'tenant_isolation'")
+[ "$POLICIES" -gt 0 ] || { echo "no tenant_isolation policies in pg_policies — RLS did NOT survive"; exit 1; }
+echo "  ✓ pg_policies: $POLICIES tenant_isolation policies"
 
 # The role the policies GRANT to must exist, or RLS is inert.
-APP_USER=\$(psql "SELECT count(*) FROM pg_roles WHERE rolname = 'app_user'")
-[ "\$APP_USER" = "1" ] || { echo "role app_user missing — RLS policies would be inert"; exit 1; }
+APP_USER=$(psql "SELECT count(*) FROM pg_roles WHERE rolname = 'app_user'")
+[ "$APP_USER" = "1" ] || { echo "role app_user missing — RLS policies would be inert"; exit 1; }
 echo "  ✓ pg_roles: app_user present"
 REMOTE
 )

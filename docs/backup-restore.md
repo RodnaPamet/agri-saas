@@ -142,6 +142,38 @@ gcloud compute instances list --filter='name~restore-test-'
 gcloud compute disks list --filter='name~restore-test-'
 ```
 
+### Editing the remote half
+
+Steps 4-6 all run **on the VM**, from a string the script builds locally and
+hands to `gcloud compute ssh --command`. That string is built from a **quoted**
+heredoc (`cat <<'REMOTE'`), which expands nothing at all, so everything in the
+body — every `$`, `${…}`, `$(…)` and backtick — is a byte the VM receives rather
+than something the local machine evaluates.
+
+**Do not un-quote that delimiter**, and do not reach for a host value inside the
+body. The five values the VM cannot know are injected ahead of it as a generated
+prelude:
+
+```
+PGDATA_VOLUME=…   STACK_DIR=…   PG_IMAGE=…   DB_USER_HINT=…   DB_NAME_HINT=…
+```
+
+`printf %q` shell-quotes each one, so a value carrying a space or a quote
+arrives as data. Add a sixth by extending that `printf`, never by writing
+`${NEW_THING}` into the body.
+
+The reason is the 2026-10-01 row below: while the delimiter was unquoted, a
+markdown backtick in the body's own COMMENTS was a command substitution
+evaluated on the GitHub runner, and the drill ran its own prose as commands for
+a month without ever opening an SSH connection. #1212 escaped the backticks;
+#1225 quoted the delimiter, which removes the whole class — a `$(…)` or a
+`${VAR}` written in prose, or a dropped backslash shipping `test -d ""`, were
+all still live with the backtick count at zero. Two tests hold it:
+`tests/guards/shell-heredoc-no-live-backticks.test.ts` pins the delimiter, and
+`tests/guards/restore-drill-remote-script.test.ts` runs the drill against a
+stubbed `gcloud` and asserts the captured payload's body is byte-identical to
+the heredoc source.
+
 ### Running it from CI
 
 CI needs credentials for the production project. Configure Workload
@@ -171,6 +203,8 @@ last-run record, so it lives here rather than only in the Actions tab.
 | 2026-09-01 | schedule | **exit 75 — NOT TESTED.** Both targets hit `ZONE_RESOURCE_POOL_EXHAUSTED` for a pd-balanced disk in `europe-west1-b`. The backups were fine: schedule attached and newest snapshot 6h old on both, verified before it stopped. This was the FIRST scheduled run of the current drill, and it is what the zone fallback above exists for. |
 | 2026-09-01 | manual | **PASSED on both targets** (run 33512186670), re-run the same afternoon once capacity came back — the correct response to an exit 75. |
 | 2026-10-01 | schedule | **failed — a defect in the drill, not in the backup** (run 36851363940, issue #1179). Both targets died at step 4 with `PGDATA_HOST: unbound variable` after a pile of `command not found`. Cause: the remote script was built with an UNQUOTED heredoc, so backticks in its own COMMENTS were command substitutions evaluated on the runner. #990 added a comment with an odd number of them; the unterminated substitution swallowed the rest of the heredoc and ran it locally — `apt-get`, a real `docker build`, then `docker run -v "$PGDATA_HOST"` with the variable unset. No SSH connection was ever opened, so the restore was never attempted and the whole validation battery was unreachable. Fixed by #1212 (escape every backtick in the body) with `tests/guards/shell-heredoc-no-live-backticks.test.ts` to keep it that way, plus `tests/guards/restore-drill-remote-script.test.ts`, which EXECUTES the drill against a stubbed `gcloud` and asserts the payload that reaches the VM is complete and `bash -n`-clean. |
+
+| 2026-10-02 | manual | **PASSED on both targets** (run 36979511033, `12f52f0d` — i.e. main WITH #1212 and #1226). The first green drill since #1179 broke it, and the evidence that the backup itself was never the problem: snapshot restored to a WAL-recovered Postgres with migrations, RLS policies and `app_user` intact. 4m07s (agrent) and 3m40s (inflect-compliance) against `timeout-minutes: 45`. Dispatched rather than scheduled, because `gh run rerun` replays the original commit and could never clear a drill broken by a code defect. **#1225's change to the heredoc landed after this run and has NOT been exercised against real GCP** — the next scheduled run is 2026-11-01. |
 
 Three things that table is here to stop being misread:
 

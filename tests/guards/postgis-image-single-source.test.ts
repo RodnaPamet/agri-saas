@@ -455,9 +455,15 @@ describe('.github/postgis-image is the single source of truth', () => {
          *
          * A whole-file hash would be the wrong shape: the two files differ
          * legitimately — the Dockerfile carries a 28-line comment header the
-         * heredoc structurally cannot (it is nested inside an UNQUOTED outer
-         * heredoc, so a `#` would comment out the collapsed remainder), and it
-         * has a blank line the heredoc lacks.
+         * heredoc does not, and it has a blank line the heredoc lacks.
+         *
+         * That first difference used to be STRUCTURAL rather than editorial:
+         * while the outer heredoc was unquoted it consumed the nested one's
+         * `\`-continuations, collapsing the whole RUN onto one physical line, so
+         * a `#` inside it would have commented out the remainder. #1225 quoted
+         * the outer delimiter, so the nested heredoc now reaches the VM byte
+         * for byte and a comment in it would be safe. Nothing here changes: the
+         * two files are still compared on the package SET, not on bytes.
          */
         function aptPackages(dockerfile: string): string[] {
             const stripped = dockerfile.replace(/^\s*#.*$/gm, '');
