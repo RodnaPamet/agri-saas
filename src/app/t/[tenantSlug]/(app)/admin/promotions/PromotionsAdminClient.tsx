@@ -33,7 +33,7 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Plus } from '@/components/ui/icons/nucleo';
 import { useToast } from '@/components/ui/hooks';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { PROMOTION_CATEGORIES } from '@/app-layer/schemas/promotion-admin.schemas';
 import { PromotionImageField } from './PromotionImageField';
 
@@ -72,6 +72,7 @@ function isoToDate(v: string | null | undefined): Date | null {
 }
 
 export function PromotionsAdminClient({ tenantSlug }: { tenantSlug: string }) {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('admin.promotions');
     const tc = useTranslations('common');
     const buildUrl = useTenantApiUrl();

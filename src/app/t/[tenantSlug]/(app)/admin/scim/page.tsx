@@ -4,7 +4,7 @@
  * carries an inline disable directive; collectively they should
  * migrate to useTenantSWR (Epic 69 shape) so the rule can lift. */
 
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
@@ -36,6 +36,7 @@ interface ScimState {
 }
 
 export default function ScimAdminPage() {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('admin.scim');
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();

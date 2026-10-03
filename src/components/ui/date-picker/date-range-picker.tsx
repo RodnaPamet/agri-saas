@@ -55,7 +55,7 @@ import {
 } from 'react';
 import type { DateRange as RDPDateRange } from 'react-day-picker';
 
-import { formatDateRange } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 
 import { useKeyboardShortcut, useMediaQuery } from '../hooks';
 import { Popover } from '../popover';
@@ -128,6 +128,7 @@ export function DateRangePicker({
     clearable = true,
     ...props
 }: DateRangePickerProps) {
+    const { formatDateRange } = useDateFormat();
     const t = useTranslations('ui');
     const resolvedPlaceholder = placeholder ?? t('datePicker.selectDateRange');
     const { isDesktop } = useMediaQuery();

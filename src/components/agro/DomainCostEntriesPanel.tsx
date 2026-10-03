@@ -31,7 +31,7 @@ import { useTranslations } from 'next-intl';
 import { Badge } from '@/components/ui/badge';
 import { Heading } from '@/components/ui/typography';
 import { Paperclip } from '@/components/ui/icons/nucleo';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { formatDecimal } from '@/lib/number-format';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantHref } from '@/lib/tenant-context-provider';
@@ -81,6 +81,7 @@ export function DomainCostEntriesPanel({
     noteKey,
     registerHref,
 }: DomainCostEntriesPanelProps) {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('grain.costs');
     const tEnums = useTranslations('grainEnums');
     const tenantHref = useTenantHref();

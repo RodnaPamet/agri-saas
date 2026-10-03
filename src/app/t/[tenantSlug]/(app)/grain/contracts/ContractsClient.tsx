@@ -22,7 +22,7 @@ import { AgStatusBadge } from '@/components/ag/ag-status';
 import { InfoTooltip, Tooltip } from '@/components/ui/tooltip';
 import { Pen2, Trash, StackY3 } from '@/components/ui/icons/nucleo';
 import { useDebounce, useToastWithUndo } from '@/components/ui/hooks';
-import { formatDateRange } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { formatDecimal } from '@/lib/number-format';
 import {
     buildContractFilters,
@@ -142,6 +142,7 @@ function ContractsPageInner({
     tenantSlug,
     permissions,
 }: ContractsClientProps) {
+    const { formatDateRange } = useDateFormat();
     const t = useTranslations('grain.contracts');
     const tEnums = useTranslations('grainEnums');
     // Enum MEMBER labels — the same `ag.status.contract.*` keys the

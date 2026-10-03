@@ -23,7 +23,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Sheet } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { Pen2 } from '@/components/ui/icons/nucleo';
 import Link from 'next/link';
 import { textLinkVariants } from '@/components/ui/typography';
@@ -95,6 +95,7 @@ export function EvidenceDetailSheet({
     onEdit,
     onReview,
 }: EvidenceDetailSheetProps) {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('evidence');
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();

@@ -27,7 +27,7 @@ import { Heading } from '@/components/ui/typography';
 import { Trash } from '@/components/ui/icons/nucleo';
 import { Tooltip } from '@/components/ui/tooltip';
 import { useToastWithUndo } from '@/components/ui/hooks';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { fmtTonnes } from './ContractFulfilmentCell';
 import type { ContractFulfilmentDto, ContractRow } from './ContractsClient';
 
@@ -62,6 +62,7 @@ export function DeliveriesSheet({
     canWrite,
     onChanged,
 }: DeliveriesSheetProps) {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('grain.contracts.deliveries');
     const queryClient = useQueryClient();
     const triggerUndoToast = useToastWithUndo();

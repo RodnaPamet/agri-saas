@@ -26,7 +26,7 @@ import { Folder5 } from '@/components/ui/icons/nucleo/folder5';
 import { FileContent } from '@/components/ui/icons/nucleo/file-content';
 import { ChevronRight } from '@/components/ui/icons/nucleo/chevron-right';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 
 export interface SpPickedItem {
     driveId: string;
@@ -76,6 +76,7 @@ export function SharePointFilePicker({
     folderSelect?: boolean;
     onConfirmFolder?: (sel: { driveId: string; folderId?: string; folderName: string }) => void;
 }) {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('sharepointPicker');
     const apiUrl = useTenantApiUrl();
     const [sites, setSites] = useState<Opt[]>([]);

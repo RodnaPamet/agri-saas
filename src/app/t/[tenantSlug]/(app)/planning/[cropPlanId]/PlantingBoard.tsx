@@ -37,7 +37,7 @@ import { Button } from '@/components/ui/button';
 import { Popover } from '@/components/ui/popover';
 import { NumberStepper } from '@/components/ui/number-stepper';
 import { CircleCheck, Pen2, Plus } from '@/components/ui/icons/nucleo';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
 import { dcaToHa, haToDca, trimNumber } from '@/lib/agro/rate-calc';
@@ -159,6 +159,7 @@ function SoilCell({ plantingId }: { plantingId: string }) {
 
 /** A planned date beside its actual realisation (or an em-dash). */
 function PlannedActual({ planned, actual }: { planned: string | null; actual: string | null }) {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('planning.board');
     if (!planned && !actual) return <span className="text-content-subtle">—</span>;
     return (

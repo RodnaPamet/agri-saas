@@ -27,7 +27,7 @@ import { Modal } from '@/components/ui/modal';
 import { Input } from '@/components/ui/input';
 import { FormField } from '@/components/ui/form-field';
 import { ChevronLeft } from '@/components/ui/icons/nucleo';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { LOG_ENTRY_TYPE_LABELS } from './filter-defs';
 
 interface DeletedEntryRow {
@@ -117,6 +117,7 @@ export function DeletedJournalView({
     tenantSlug: string;
     onBack: () => void;
 }) {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('journal.trash');
     const te = useTranslations('journalEnums');
     const buildUrl = useTenantApiUrl();

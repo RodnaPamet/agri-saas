@@ -53,7 +53,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip } from '@/components/ui/tooltip';
 import { useDebounce, useToastWithUndo } from '@/components/ui/hooks';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { formatDecimal } from '@/lib/number-format';
 import { buildCostFilters, COST_FILTER_KEYS } from './filter-defs';
 import { CostEntryFormModal } from './CostEntryFormModal';
@@ -117,6 +117,7 @@ function CostsPageInner({
     tenantSlug,
     permissions,
 }: CostsClientProps) {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('grain.costs');
     const tEnums = useTranslations('grainEnums');
     const apiUrl = useCallback((path: string) => `/api/t/${tenantSlug}${path}`, [tenantSlug]);

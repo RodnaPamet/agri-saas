@@ -11,13 +11,28 @@ import { render, screen } from '@testing-library/react';
 // Deterministic translator: echoes `spray:<key>` + interpolated params so the
 // test can assert the translation path is used (and the raw English is NOT).
 jest.mock('next-intl', () => ({
+    // P2.1c — `useLocale` is part of this module and these mocks did not
+    // provide it, so the first component to call it threw
+    // "useLocale is not a function". The mock was incomplete relative to the
+    // module, not wrong about this suite: `useDateFormat()` needs the active
+    // locale, and a partial barrel mock turns a new dependency into a crash
+    // across every suite that stubs it.
+    useLocale: () => 'en',
     useTranslations: () => (key: string, params?: Record<string, unknown>) =>
         params && Object.keys(params).length
             ? `spray:${key}(${Object.entries(params).map(([k, v]) => `${k}=${v}`).join(',')})`
             : `spray:${key}`,
 }));
 
-jest.mock('@/lib/format-date', () => ({ formatDate: () => '2026-07-14' }));
+// P2.1c — stub the HOOK, not the module behind it. This mocked
+// `@/lib/format-date` with a single `formatDate`, and the component now reaches
+// it through `useDateFormat()`, so the partial mock threw
+// "createDateFormatters is not a function". Stubbing what the component
+// actually depends on is both smaller and accurate; a partial barrel mock
+// turns any new export on that module into a crash here.
+jest.mock('@/lib/i18n/use-date-format', () => ({
+    useDateFormat: () => ({ formatDate: () => '2026-07-14' }),
+}));
 
 import { SmartDefaultsBanner } from '@/app/t/[tenantSlug]/(app)/locations/[locationId]/SmartDefaultsBanner';
 

@@ -56,7 +56,7 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { currencyOptions } from '@/lib/grain/currencies';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { COST_CATEGORY_VALUES } from './filter-defs';
@@ -194,6 +194,7 @@ export function CostEntryFormModal({
     record,
     onSaved,
 }: CostEntryFormModalProps) {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('grain.costs.form');
     const tEnums = useTranslations('grainEnums');
     const apiUrl = useTenantApiUrl();

@@ -1,6 +1,6 @@
 'use client';
 
-import { formatDate, formatDateTime } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
@@ -98,6 +98,7 @@ export function FarmTaskDetailClient({
     taskId: string;
     currentUserId: string | null;
 }) {
+    const { formatDate, formatDateTime } = useDateFormat();
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const { permissions, role } = useTenantContext();
@@ -1069,6 +1070,7 @@ function TaskLinksTable({
     canWrite: boolean;
     onRemove: (id: string) => void;
 }) {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('tasks.detail.links');
     const te = useTranslations('taskEnums');
     const entityTypeLabel = (et: string) => (te.has(`entityType.${et}`) ? te(`entityType.${et}`) : et.replace(/_/g, ' '));

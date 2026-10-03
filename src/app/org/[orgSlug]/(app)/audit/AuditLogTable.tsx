@@ -8,7 +8,7 @@ import { ListPageShell } from '@/components/layout/ListPageShell';
 import { DataTable, createColumns, TableEmptyState } from '@/components/ui/table';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
-import { formatDateTime } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { Heading } from '@/components/ui/typography';
 
 interface UserRef {
@@ -122,6 +122,7 @@ function summarize(
 }
 
 export function AuditLogTable({ orgSlug, initialRows, initialNextCursor }: Props) {
+    const { formatDateTime } = useDateFormat();
     const t = useTranslations('org.audit');
     const [rows, setRows] = useState<AuditRow[]>(initialRows);
     const [cursor, setCursor] = useState<string | null>(initialNextCursor);

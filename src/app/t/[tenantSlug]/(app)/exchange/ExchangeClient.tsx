@@ -47,7 +47,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/cn';
 import { useTenantHref, useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { apiGet, apiPost } from '@/lib/api-client';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { localizedRegionName } from '@/lib/geo/bulgaria-regions';
 import {
@@ -120,6 +120,7 @@ function SideDot({ side }: { side: 'SELL' | 'BUY' }) {
 }
 
 function ExchangeInner() {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('exchange.client');
     const tMsg = useTranslations('exchange.messaging');
     const tFilters = useTranslations('exchangeFilters');

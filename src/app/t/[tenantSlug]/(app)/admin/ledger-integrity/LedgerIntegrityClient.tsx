@@ -12,7 +12,7 @@ import { InlineNotice } from '@/components/ui/inline-notice';
 import { Heading } from '@/components/ui/typography';
 import { useToast } from '@/components/ui/hooks/use-toast';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
-import { formatDateTime } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { cn } from '@/lib/cn';
 
 interface LedgerReconciliationRun {
@@ -40,6 +40,7 @@ interface LedgerReconciliationRun {
  *   • History — every past run, newest first.
  */
 export function LedgerIntegrityClient({ history }: { history: LedgerReconciliationRun[] }) {
+    const { formatDateTime } = useDateFormat();
     const t = useTranslations('admin.ledgerIntegrity');
     const router = useRouter();
     const apiUrl = useTenantApiUrl();
@@ -182,6 +183,7 @@ export function LedgerIntegrityClient({ history }: { history: LedgerReconciliati
 
 /** The big verdict block on the left of the hero card. */
 function StatusHero({ latest }: { latest: LedgerReconciliationRun | null }) {
+    const { formatDateTime } = useDateFormat();
     const t = useTranslations('admin.ledgerIntegrity');
     if (!latest) {
         return (

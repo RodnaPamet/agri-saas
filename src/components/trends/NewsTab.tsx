@@ -35,7 +35,7 @@ import { ErrorState } from '@/components/ui/error-state';
 import { usePermissions } from '@/lib/tenant-context-provider';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { TabSelect } from '@/components/ui/tab-select';
-import { formatRelativeTime } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import type { TrendNewsResponse, NewsItem } from '@/app-layer/usecases/trends';
 import { InterestsModal } from './InterestsModal';
 import { sourceDisplayName } from '@/lib/news/feeds';
@@ -67,6 +67,12 @@ function matchesKeyword(item: NewsItem, kw: string): boolean {
 // ─── News card ───────────────────────────────────────────────────────
 
 function NewsCard({ item, now }: { item: NewsItem; now: Date }) {
+    /**
+     * P2.1c — this card called `formatRelativeTime`, the date-fns helper,
+     * which renders ENGLISH whatever the viewer's language: "2 hours ago" in
+     * a Bulgarian news feed. Same defect as the notifications bell, same fix.
+     */
+    const { formatChatTime } = useDateFormat();
     const t = useTranslations('trends');
     const variant = CATEGORY_VARIANT[item.category] ?? 'neutral';
     return (
@@ -82,7 +88,7 @@ function NewsCard({ item, now }: { item: NewsItem; now: Date }) {
                         {t(`news.categories.${item.category}`)}
                     </StatusBadge>
                     <span className="text-xs text-content-muted tabular-nums">
-                        {formatRelativeTime(item.publishedAt, now)}
+                        {formatChatTime(item.publishedAt, now)}
                     </span>
                 </div>
                 <p className="font-medium text-content-emphasis">{item.title}</p>

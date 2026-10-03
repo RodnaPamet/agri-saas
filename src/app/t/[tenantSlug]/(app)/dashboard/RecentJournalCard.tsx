@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { Card } from '@/components/ui/card';
 import { Heading, TextLink } from '@/components/ui/typography';
 import type { AgDashboardJournalItem } from '@/app-layer/usecases/ag-dashboard';
@@ -21,6 +21,7 @@ interface RecentJournalCardProps {
  * Each row links to the journal section; the heading is a section link.
  */
 export default function RecentJournalCard({ href, items }: RecentJournalCardProps) {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('dashboard.recentJournal');
     return (
         <Card>

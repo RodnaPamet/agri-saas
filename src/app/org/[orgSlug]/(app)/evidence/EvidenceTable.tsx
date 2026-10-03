@@ -11,7 +11,7 @@ import { TableEmptyState } from '@/components/ui/table';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
 import { useCursorPagination } from '@/components/ui/hooks';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import type { OverdueEvidenceRow } from '@/app-layer/schemas/portfolio';
 import { Heading } from '@/components/ui/typography';
 
@@ -39,6 +39,7 @@ function OverdueBadge({ days }: { days: number }) {
 }
 
 export function EvidenceTable({ rows: initialRows, nextCursor: initialNextCursor, orgSlug }: Props) {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('evidence');
     const [sortBy, setSortBy] = useState<string>('daysOverdue');
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');

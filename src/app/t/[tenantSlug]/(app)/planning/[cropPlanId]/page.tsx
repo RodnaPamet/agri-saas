@@ -30,7 +30,7 @@ import { useToast } from '@/components/ui/hooks';
 import { Dots, PenWriting, Trash } from '@/components/ui/icons/nucleo';
 import { Card, cardVariants } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { PlantingBoard } from './PlantingBoard';
 import { EditCropPlanModal } from './EditCropPlanModal';
 
@@ -84,6 +84,7 @@ interface JournalRow {
 }
 
 export default function CropPlanDetailPage() {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('planning.detail');
     const tp = useTranslations('planning');
     const te = useTranslations('planningEnums');

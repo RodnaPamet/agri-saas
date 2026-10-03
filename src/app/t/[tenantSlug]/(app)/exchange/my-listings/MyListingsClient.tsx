@@ -31,7 +31,7 @@ import { useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { apiPatch } from '@/lib/api-client';
-import { formatDateTime } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { localizedRegionName } from '@/lib/geo/bulgaria-regions';
 import { formatPricePerTonne } from '@/lib/exchange/currency';
 import type { ExchangePublicListing } from '@/lib/exchange/public-listing';
@@ -90,6 +90,7 @@ interface MyListingsClientProps {
 }
 
 export function MyListingsClient({ exchangeEnabled = true }: MyListingsClientProps = {}) {
+    const { formatDateTime } = useDateFormat();
     const t = useTranslations('exchange.myListings');
     const locale = useLocale();
     const tonne = t('unitTonne');

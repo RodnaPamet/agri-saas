@@ -23,7 +23,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { Combobox } from '@/components/ui/combobox';
 import { ToggleGroup } from '@/components/ui/toggle-group';
 import { DatePicker } from '@/components/ui/date-picker';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { QrCode } from '@/components/ui/qr-code';
 import { DomainCostEntriesPanel } from '@/components/agro/DomainCostEntriesPanel';
 
@@ -152,6 +152,7 @@ interface StorageLocationRow {
 }
 
 export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('inventory');
     const buildUrl = useTenantApiUrl();
     // FLAG 5 — lot list: first page via SWR (so create-lot / movement

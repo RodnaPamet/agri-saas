@@ -32,7 +32,7 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import type { YieldRow } from './YieldClient';
 
@@ -136,6 +136,7 @@ export function YieldFormModal({
     record,
     onSaved,
 }: YieldFormModalProps) {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('grain.yield.form');
     const apiUrl = useTenantApiUrl();
     const queryClient = useQueryClient();

@@ -33,7 +33,7 @@ import { Button } from '@/components/ui/button';
 import { CalendarMonth } from '@/components/ui/CalendarMonth';
 import { Skeleton } from '@/components/ui/skeleton';
 import { queryKeys } from '@/lib/queryKeys';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { dayKeyInTz } from '@/lib/calendar-day-key';
 import { getLocalizedMonthNames } from '@/lib/calendar-locale-names';
 import { NewTaskModal } from '@/components/tasks/NewTaskModal';
@@ -112,6 +112,7 @@ export function CalendarClient({
     initialRange,
     tz,
 }: CalendarClientProps) {
+    const { formatDate } = useDateFormat();
     const [monthCursor, setMonthCursor] = React.useState<Date>(
         () => startOfUtcMonth(new Date()),
     );

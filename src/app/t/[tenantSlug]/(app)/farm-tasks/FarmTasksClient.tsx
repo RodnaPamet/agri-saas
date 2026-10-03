@@ -48,7 +48,7 @@ import { UserCombobox } from '@/components/ui/user-combobox';
 import { DatePicker } from '@/components/ui/date-picker';
 import { parseYMD, toYMD, startOfUtcDay } from '@/components/ui/date-picker/date-utils';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { TERMINAL_WORK_ITEM_STATUSES } from '@/app-layer/domain/work-item-status';
 import { FilterProvider, useFilterContext, useFilters } from '@/components/ui/filter';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
@@ -121,6 +121,7 @@ export function FarmTasksClient({ tenantSlug, currentUserId }: { tenantSlug: str
 type FarmKpiId = 'total' | 'open' | 'overdue' | 'dueWeek';
 
 function FarmTasksInner({ tenantSlug, currentUserId }: { tenantSlug: string; currentUserId: string | null }) {
+    const { formatDate } = useDateFormat();
     const buildUrl = useTenantApiUrl();
     const tenantHref = (path: string) => `/t/${tenantSlug}${path}`;
     const router = useRouter();

@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 import { Card } from '@/components/ui/card';
 import { Heading } from '@/components/ui/typography';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import type { FieldBriefingPayload } from '@/app-layer/usecases/satellite-briefing';
 import type { BriefingAction } from '@/app-layer/ai/field-briefing';
 
@@ -26,6 +26,7 @@ const PRIORITY_DOT: Record<BriefingAction['priority'], string> = {
  * live satellite imagery or the farm's records.
  */
 export function FieldBriefingCard() {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('dashboard.fieldBriefing');
     const { data } = useTenantSWR<FieldBriefingPayload>('/reports/field-briefing');
 

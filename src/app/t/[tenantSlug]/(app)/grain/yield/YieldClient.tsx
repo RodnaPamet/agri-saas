@@ -21,7 +21,7 @@ import { TableTitleCell } from '@/components/ui/table-title-cell';
 import { Tooltip } from '@/components/ui/tooltip';
 import { Pen2, Trash } from '@/components/ui/icons/nucleo';
 import { useToastWithUndo } from '@/components/ui/hooks';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { formatDecimal } from '@/lib/number-format';
 import { buildYieldFilters, YIELD_FILTER_KEYS } from './filter-defs';
 import { YieldFormModal } from './YieldFormModal';
@@ -79,6 +79,7 @@ function YieldPageInner({
     tenantSlug,
     permissions,
 }: YieldClientProps) {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('grain.yield');
     const tEnums = useTranslations('grainEnums');
     const apiUrl = useCallback(

@@ -23,6 +23,13 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 // A bare arrow is a double too SMALL for the code under test — it throws before
 // any assertion runs, which at least fails loudly rather than passing green.
 jest.mock('next-intl', () => ({
+    // P2.1c — `useLocale` is part of this module and these mocks did not
+    // provide it, so the first component to call it threw
+    // "useLocale is not a function". The mock was incomplete relative to the
+    // module, not wrong about this suite: `useDateFormat()` needs the active
+    // locale, and a partial barrel mock turns a new dependency into a crash
+    // across every suite that stubs it.
+    useLocale: () => 'en',
     useTranslations: () => Object.assign((key: string) => key, {
         has: () => false,
         rich: (key: string) => key,

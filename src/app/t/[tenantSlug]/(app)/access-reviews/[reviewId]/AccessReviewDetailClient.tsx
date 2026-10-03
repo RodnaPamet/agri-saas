@@ -33,7 +33,7 @@ import { FormField } from '@/components/ui/form-field';
 import { ToggleGroup } from '@/components/ui/toggle-group';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { DataTable, createColumns } from '@/components/ui/table';
-import { formatDate, formatDateTime } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 
 const ALL_ROLES = ['OWNER', 'ADMIN', 'EDITOR', 'READER', 'AUDITOR', 'MECHANISATOR'] as const;
@@ -105,6 +105,7 @@ export function AccessReviewDetailClient({
     currentUserId,
     isAdmin,
 }: Props) {
+    const { formatDate, formatDateTime } = useDateFormat();
     const t = useTranslations('accessReviews');
     const queryClient = useQueryClient();
     const router = useRouter();

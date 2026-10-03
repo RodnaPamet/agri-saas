@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Tooltip } from '@/components/ui/tooltip';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { Heading } from '@/components/ui/typography';
 
 interface MemberRow {
@@ -63,6 +63,7 @@ const ROLE_DESC_KEY: Record<MemberRow['role'], string> = {
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function MembersTable({ orgSlug, currentUserId, rows, invites }: Props) {
+    const { formatDate } = useDateFormat();
     const router = useRouter();
     const t = useTranslations('org.members');
 
@@ -1067,6 +1068,7 @@ interface PendingInvitesSectionProps {
 }
 
 function PendingInvitesSection({ orgSlug, invites, onMutate }: PendingInvitesSectionProps) {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('org.members');
     const [revokingId, setRevokingId] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
