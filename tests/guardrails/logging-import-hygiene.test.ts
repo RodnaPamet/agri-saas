@@ -146,12 +146,17 @@ describe('Dynamic require() usage is minimized', () => {
     /**
      * Allowed require() patterns and WHY they're allowed:
      *
-     * Circular dependency avoidance (prisma ↔ audit-writer):
-     * - prisma.ts → require('./audit/audit-writer')
-     * - audit-writer.ts → require('../prisma')
-     * - retention-purge.ts → require('./audit/audit-writer')
-     * - evidence-maintenance.ts → require('@/lib/audit/audit-writer')
      *
+     * Circular dependency avoidance:
+     * - audit-writer.ts → require('../prisma')   [see its ARCHITECTURE NOTE]
+     *
+     * The four audit-writer entries that used to sit here are GONE, and must
+     * not come back: `require()` of that module returned it WITHOUT the
+     * `appendAuditEntry` export in the webpack production bundle, so every
+     * audited write threw and #1269's catch swallowed it — 275 failures and
+     * zero successes in one E2E shard on green main. The three call sites are
+     * static imports now (a namespace import with a deferred read in
+     * prisma.ts, where the cycle is real; plain named imports elsewhere).
      * Startup-time lazy loading:
      * - mailer.ts → require('@/env') in initMailerFromEnv()
      * - instrumentation.ts → require('./logger') at bootstrap
@@ -166,15 +171,12 @@ describe('Dynamic require() usage is minimized', () => {
      * - readyz/route.ts → require('@/lib/redis')
      */
     const REQUIRE_ALLOWLIST: Record<string, string[]> = {
-        'lib/prisma.ts': ['./audit/audit-writer'],
-        'lib/retention-purge.ts': ['./audit/audit-writer'],
         'lib/mailer.ts': ['@/env'],
         'lib/observability/instrumentation.ts': ['./logger'],
         'lib/storage/index.ts': ['./s3-provider', './local-provider'],
         // Feature 1 — @tmcw/togeojson is CJS; lazy-required to keep it out
         // of the spatial parser's static graph (the KML parse path).
         'lib/spatial/parse.ts': ['@tmcw/togeojson'],
-        'app-layer/usecases/evidence-maintenance.ts': ['@/lib/audit/audit-writer'],
         'app/api/readyz/route.ts': ['@/lib/redis'],
         // GAP-13 — same conditional Redis check pattern as readyz.
         'app/api/health/route.ts': ['@/lib/redis'],
