@@ -196,23 +196,43 @@ describe("eslint's config resolves for every extension it lints", () => {
     });
 
     it('the premise holds: some extension ESLint lints is outside the preset glob', () => {
-        // Without this, a preset that one day covered everything would leave
-        // the run below probing only extensions whose plugins the preset
-        // already registers — green, and about nothing.
+        // Two directions, and BOTH have to hold for the run below to mean
+        // anything. A preset that one day covered everything would leave it
+        // probing only extensions whose plugins are already registered —
+        // green, and about nothing. And a derivation that silently produced
+        // NO extensions is the same defect wearing the opposite mask: every
+        // extension then reads as "uncovered" while the probe set collapses
+        // to ESLint's three built-in defaults.
         expect({
             presetGlobs: PRESET_GLOBS,
             probed: PROBE_EXTENSIONS,
             uncoveredByPreset: UNCOVERED,
+            presetCoversSomething: PRESET_EXTENSIONS.size > 0,
             someExtensionIsUncovered: UNCOVERED.length > 0,
         }).toEqual({
             presetGlobs: PRESET_GLOBS,
             probed: PROBE_EXTENSIONS,
             uncoveredByPreset: UNCOVERED,
+            presetCoversSomething: true,
             someExtensionIsUncovered: true,
         });
     });
 
     it('lints one file per extension in a single run and exits 0', () => {
+        // The fixtures have to be REAL source in the right module system
+        // first. An empty file still reaches config resolution, so "exit 0
+        // over eight empty files" would look identical to the thing this
+        // test claims — and a `.cjs` holding ESM syntax would fail for a
+        // reason that has nothing to do with plugin scope.
+        const malformed = PROBE_EXTENSIONS.filter((ext) => {
+            const text = fs.readFileSync(path.join(PROBE_DIR, `probe.${ext}`), 'utf8');
+            return !text.includes(ext === 'cjs' ? 'module.exports' : 'export const');
+        });
+        expect({ fixtures: PROBE_EXTENSIONS.length, malformed }).toEqual({
+            fixtures: PROBE_EXTENSIONS.length,
+            malformed: [],
+        });
+
         const run = runEslint(['-f', 'json', ...fixturePaths]);
 
         // The abort prints to stderr and leaves stdout empty, so report it.
