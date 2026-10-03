@@ -149,6 +149,8 @@ describe('Dynamic require() usage is minimized', () => {
      * Circular dependency avoidance (prisma ↔ audit-writer):
      * - prisma.ts → require('./audit/audit-writer')
      * - audit-writer.ts → require('../prisma')
+     * - prisma.ts → require('./db/before-commit')
+     * - db/before-commit.ts → require('../audit/audit-writer')
      * - retention-purge.ts → require('./audit/audit-writer')
      * - evidence-maintenance.ts → require('@/lib/audit/audit-writer')
      *
@@ -166,7 +168,14 @@ describe('Dynamic require() usage is minimized', () => {
      * - readyz/route.ts → require('@/lib/redis')
      */
     const REQUIRE_ALLOWLIST: Record<string, string[]> = {
-        'lib/prisma.ts': ['./audit/audit-writer'],
+        // #1281 — the before-commit audit queue closes the SAME cycle one
+        // hop further out: prisma.ts → db/before-commit.ts →
+        // audit/audit-writer.ts → ../prisma (a STATIC import, at
+        // audit-writer.ts:27). Both hops are lazy for that one reason, and
+        // both carry the explanation at the call site as well as here — a
+        // reader of prisma.ts should not have to find this file to learn it.
+        'lib/prisma.ts': ['./audit/audit-writer', './db/before-commit'],
+        'lib/db/before-commit.ts': ['../audit/audit-writer'],
         'lib/retention-purge.ts': ['./audit/audit-writer'],
         'lib/mailer.ts': ['@/env'],
         'lib/observability/instrumentation.ts': ['./logger'],
