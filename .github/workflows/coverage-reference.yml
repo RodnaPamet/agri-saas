@@ -100,6 +100,11 @@ jobs:
       DIRECT_DATABASE_URL: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
       REDIS_URL_TEST: redis://localhost:6379
       BULLMQ_SMOKE_REQUIRE_REDIS: "1"
+      # P1.8 — the VM-Redis rate-limit suite gates on a reachable redis.
+      # This job DECLARES one, so a skip there would mean the service was
+      # declared for nothing and the Lua window went unproven. Same
+      # reasoning as the three escalations beside it.
+      REDIS_RATE_LIMIT_REQUIRE_REDIS: "1"
       RLS_GUARDRAIL_REQUIRE_DB: "1"
       # Same argument again, for the OTHER skip gate over the same
       # Postgres. tests/integration/db-helper.ts probes the database at
