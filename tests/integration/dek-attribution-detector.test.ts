@@ -37,7 +37,7 @@ import {
     unwrapDek,
     gcmDecrypt,
     masterKeyFromEnv,
-} from '../../scripts/audit-dek-attribution.cjs';
+} from '../../scripts/audit-dek-attribution.js';
 
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 

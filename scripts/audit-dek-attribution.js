@@ -32,7 +32,7 @@
  * Usage (production):
  *   gcloud compute ssh agrent --zone europe-west1-b --command \
  *     "sudo docker compose -f /opt/agrent/docker-compose.vm.yml exec -T app \
- *        node /tmp/audit-dek-attribution.cjs"
+ *        node /tmp/audit-dek-attribution.js"
  */
 const crypto = require('node:crypto');
 
