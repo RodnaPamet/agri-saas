@@ -1,43 +1,65 @@
 /**
- * Audit Context — request-scoped context store for Prisma audit middleware.
+ * Audit Context — request-scoped context for the Prisma audit + encryption
+ * extensions.
  *
- * DESIGN NOTE: We use a simple module-level context stack instead of AsyncLocalStorage.
- * Prisma's $use middleware runs in a detached async context that loses ALS state.
- * A context stack is safe because:
- * 1. Node.js is single-threaded — no race conditions between set/get
- * 2. Context is set synchronously before the Prisma call and read synchronously
- *    within the $use middleware on the same tick
- * 3. The stack supports nesting (e.g., runInTenantContext inside withTenantDb)
+ * ## This was a module-level stack, and that was a cross-tenant defect
  *
- * ⚠️ THE PREMISE ABOVE IS STALE AND REASON 2 IS FALSE. Read before reusing it.
+ * Until #1259 the store was `const contextStack: AuditContextData[] = []` —
+ * one array shared by every in-flight request in the process — defended by
+ * this argument:
  *
- * `$use` was REMOVED in Prisma 7 and the audit trail now runs as a
- * `$extends({ query })` extension. Measured 2026-10-02 in
- * `tests/integration/prisma-extension-als-reachability.test.ts`: a Prisma 7
- * query extension DOES see the AsyncLocalStorage store (an `afterCommit` call
- * from inside one is deferred to the post-commit drain rather than fired
- * inline). So "ALS does not reach the middleware" is no longer a reason to
- * prefer this stack — do not re-derive it from the paragraph above.
+ *   > Prisma's `$use` middleware runs in a detached async context that loses
+ *   > ALS state. A context stack is safe because: 1. Node.js is
+ *   > single-threaded — no race conditions between set/get. 2. Context is set
+ *   > synchronously before the Prisma call and read synchronously within the
+ *   > `$use` middleware on the same tick.
  *
- * And reason 2 is not how the extension is actually read. A query extension is
- * `async` and awaits `query(args)`, so reads are NOT confined to one tick, and
- * `getAuditContext()` returns the TOP of this stack — which under concurrent
- * requests is whichever request pushed LAST, not the caller. `after-commit.ts`
- * documents choosing ALS specifically to avoid that; the audit trail still
- * reads the stack and consequently misattributes rows across tenants under
- * concurrency. Measured and filed as #1259: eleven concurrent writes to eleven
- * DISTINCT tenants produced eleven audit rows all carrying ONE tenant's id.
- * `resolveTenantDekPair` reads the same context.
+ * Every clause was true when written and all of them were false by 2026-10-03:
  *
- * This comment is a correction only — nothing here changes behaviour. The fix
- * belongs with #1259, which owns the test population for it.
+ *   - **"Single-threaded" rules out torn reads, not INTERLEAVING.** Another
+ *     request pushes its context while this one is suspended at an `await`,
+ *     and `getAuditContext()` then returns the wrong tenant.
+ *   - **`$use` no longer exists.** Prisma 7 removed it; the live path is an
+ *     async `$extends({ query })` handler that awaits, so "the same tick" is
+ *     gone.
+ *   - **The REASON for avoiding ALS was also obsolete** — a `$extends`
+ *     handler DOES see the ALS store, measured by
+ *     `tests/integration/prisma-extension-als-reachability.test.ts`.
  *
- * Usage:
+ * What made it a defect rather than a tidiness problem: `resolveTenantDekPair`
+ * in `src/lib/db/encryption-middleware.ts` reads this context to choose WHICH
+ * TENANT'S DEK encrypts a row. Measured on the stack — 8 concurrent writes
+ * across 8 distinct tenants, cold DEK cache — **1 correct, 7 encrypted under
+ * another tenant's key**, unreadable by their owners, with the per-tenant key
+ * boundary that Epic B exists to enforce not holding at all.
+ *
+ * ## Why ALS is correct here, including when it returns nothing
+ *
+ * `AsyncLocalStorage` scopes the store to the async subtree that established
+ * it, so interleaving cannot alias one request's context onto another's.
+ *
+ * It also changes the NO-CONTEXT case, in the safe direction. A Prisma call
+ * with no enclosing `runWithAuditContext` used to pick up whatever happened to
+ * be on top of the stack — possibly another tenant's — and encrypt under that
+ * tenant's DEK, which only that tenant can read. It now gets `undefined`, so
+ * `resolveTenantDekPair` returns `NO_DEK_PAIR` and the value is written under
+ * the GLOBAL KEK (`v1:`). Still not what the caller intended, but recoverable:
+ * the global KEK can decrypt it, and the envelope prefix makes it visible to
+ * the `v1`→`v2` sweep. An unrecoverable row beats neither.
+ *
+ * The thenable handling the stack needed is gone with it. `als.run()`
+ * propagates through the whole continuation chain via async_hooks, so there is
+ * no pop to schedule and no need to special-case Prisma's thenable-but-not-
+ * Promise `PrismaPromise`.
+ *
+ * Usage is unchanged:
+ *
  *   await runWithAuditContext({ tenantId, actorUserId: userId, requestId }, async () => {
  *       await prisma.evidence.create({ data: { ... } });
- *       // Middleware reads context from the stack
+ *       // the extensions read it via getAuditContext()
  *   });
  */
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 export interface AuditContextData {
     /** Tenant ID for the current request */
@@ -51,15 +73,14 @@ export interface AuditContextData {
 }
 
 /**
- * Context stack — supports nesting. The top of the stack is the current context.
- * Push on enter, pop on exit.
+ * The store. Nesting works by construction — an inner `run` shadows the outer
+ * one for its own subtree and nothing has to be unwound.
  */
-const contextStack: AuditContextData[] = [];
+const asyncLocalStorage = new AsyncLocalStorage<AuditContextData>();
 
 /**
- * Checks if a value is "thenable" (has a .then method).
- * This is more robust than instanceof Promise because Prisma returns
- * PrismaPromise objects that are thenable but not instanceof Promise.
+ * Is this thenable? More robust than `instanceof Promise`, because Prisma
+ * returns `PrismaPromise` objects which are thenable but not Promises.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function isThenable(value: any): value is PromiseLike<any> {
@@ -67,60 +88,60 @@ function isThenable(value: any): value is PromiseLike<any> {
 }
 
 /**
- * Execute a function within an audit context.
- * All Prisma operations within `fn` will have access to this context
- * via getAuditContext().
+ * Execute `fn` within an audit context.
  *
- * IMPORTANT: The fn should be an async function (not returning a bare PrismaPromise).
- * If you must pass a non-async function that returns a PrismaPromise,
- * wrap it: () => appPrisma.risk.create({...}).then(r => r)
+ * ## Why the thenable branch is load-bearing, and not stack-era residue
+ *
+ * `als.run()` keeps the store alive for the synchronous call and for every
+ * async continuation created INSIDE it. That is not sufficient on its own,
+ * because **a `PrismaPromise` is LAZY**: `prisma.asset.create(...)` builds a
+ * thenable and starts no query until something calls `.then()` on it. Several
+ * call sites pass a NON-async callback that hands one straight back —
+ *
+ *     runWithAuditContext(ctx, () => appPrisma.asset.create({ … }))
+ *
+ * — so returning that object out of `als.run` means the caller's `await`
+ * subscribes OUTSIDE the scope, the query executes with no store, and
+ * `getAuditContext()` returns undefined. The audit extension then takes its
+ * `if (!tenantId) return query(args)` fast path and writes NO audit row, with
+ * nothing failing. Measured: it silently cost all 7 assertions in
+ * `tests/integration/audit-middleware.test.ts` on the first attempt at this
+ * migration.
+ *
+ * Subscribing here, inside the scope, is what starts the query in context. The
+ * stack era handled the same hazard by deferring its `pop` until the promise
+ * settled, and warned about it in prose; this is the same requirement, met by
+ * construction instead of by asking callers to remember.
  */
 export function runWithAuditContext<T>(
     ctx: AuditContextData,
     fn: () => T | Promise<T>,
 ): T | Promise<T> {
-    contextStack.push(ctx);
-    try {
+    return asyncLocalStorage.run(ctx, () => {
         const result = fn();
-        // Handle both sync and async/thenable functions.
-        // We check for thenable (not just Promise) because Prisma returns
-        // PrismaPromise objects that are thenable but NOT instanceof Promise.
-        if (isThenable(result)) {
-            return new Promise<T>((resolve, reject) => {
-                (result as PromiseLike<T>).then(
-                    (value) => {
-                        contextStack.pop();
-                        resolve(value);
-                    },
-                    (err) => {
-                        contextStack.pop();
-                        reject(err);
-                    },
-                );
-            });
-        }
-        contextStack.pop();
-        return result;
-    } catch (err) {
-        contextStack.pop();
-        throw err;
-    }
+        // `Promise.resolve` calls `.then` on the thenable HERE, which is what
+        // makes a lazy PrismaPromise begin executing inside the store.
+        return isThenable(result) ? Promise.resolve(result) : result;
+    });
 }
 
-/**
- * Get the current audit context, or undefined if not within a runWithAuditContext call.
- */
+/** The current audit context, or undefined outside `runWithAuditContext`. */
 export function getAuditContext(): AuditContextData | undefined {
-    return contextStack.length > 0 ? contextStack[contextStack.length - 1] : undefined;
+    return asyncLocalStorage.getStore();
 }
 
 /**
  * Set/override individual fields on the current audit context.
- * Only works if already inside a runWithAuditContext call.
  * Returns false if no context is active.
+ *
+ * This mutates the stored OBJECT, which is how it has always worked — but the
+ * blast radius shrank with the store: on the stack a merge was visible to
+ * every concurrent request, and it is now confined to the subtree that owns
+ * the context.
  */
 export function mergeAuditContext(partial: Partial<AuditContextData>): boolean {
-    if (contextStack.length === 0) return false;
-    Object.assign(contextStack[contextStack.length - 1], partial);
+    const store = asyncLocalStorage.getStore();
+    if (!store) return false;
+    Object.assign(store, partial);
     return true;
 }

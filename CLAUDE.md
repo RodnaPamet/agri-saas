@@ -2762,9 +2762,12 @@ negated. Say what remains instead:
   cannot know whether it is the outermost transaction. `runInTenantContext` IS a
   `$transaction` and usecases call usecases, so a helper that moved its own
   notify one level out would still be inside somebody else's. The queue is
-  addressed through `AsyncLocalStorage` — NOT the module-level stack
-  `audit-context.ts` uses, whose top under concurrent requests is whichever
-  request pushed last.
+  addressed through `AsyncLocalStorage`, because the top of a shared stack
+  under concurrent requests is whichever request pushed last. This used to read
+  "NOT the module-level stack `audit-context.ts` uses" — that contrast is gone:
+  the same reasoning turned out to apply to `audit-context.ts` itself (#1259,
+  7 of 8 concurrent writes encrypted under the WRONG tenant's DEK), and it is
+  AsyncLocalStorage now too.
   The defect it was built for: `notifyOtherParty` (exchange-messaging) wrote the
   bell rows, published the SSE events and enqueued the mail from inside the
   sender's still-open transaction, under a comment claiming the opposite. Those
@@ -2876,17 +2879,20 @@ negated. Say what remains instead:
       `tests/integration/audit-write-failure-is-loud.test.ts` with a negative
       control (a reporter firing unconditionally would satisfy the regression
       test and alert on every healthy write).
-        Supportable concurrency for an audited write is therefore `max` on the
-        FAIL-CLOSED tier and still `max - 1` on the best-effort tier — which is
-        why the P0.8 hardening test runs 11 sends and not the
-        20 its roadmap asked for. Past that the best-effort trail still
+      Supportable concurrency for an audited write is therefore `max` on the
+      FAIL-CLOSED tier and still `max - 1` on the best-effort tier — which is
+      why the P0.8 hardening test runs 11 sends and not the
+      20 its roadmap asked for. Past that the best-effort trail still
       loses entries rather than erroring — now with a log line and a counter
       saying so.
       **The `afterCommit` seam IS reachable from the extension, contrary to what
-      this file said for a day and to what `audit-context.ts`'s docblock
-      implies.** That docblock's "Prisma's $use middleware runs in a detached
-      async context that loses ALS state" is a statement about Prisma **5**, and
-      `$use` was removed in Prisma 7. Measured 2026-10-02 by
+      this file said for a day, and to what `audit-context.ts`'s docblock
+      CLAIMED until #1259.** That docblock's "Prisma's $use middleware runs in a
+      detached async context that loses ALS state" is a statement about Prisma
+      **5**, and `$use` was removed in Prisma 7 — and `audit-context.ts` is
+      AsyncLocalStorage itself since #1259, so that docblock now records the
+      claim as corrected history rather than making it.
+      Measured 2026-10-02 by
       `tests/integration/prisma-extension-als-reachability.test.ts`: a
       `$extends({ query })` handler calling `afterCommit` has its effect
       DEFERRED to the post-commit drain, not fired inline — so a query extension
