@@ -201,7 +201,7 @@ const ROOT = path.resolve(__dirname, '../..');
 // Raised because this PR ADDS verification, which is what this ratchet asks of a
 // PR that adds rendered tests. Nothing here lowers a floor or widens a baseline
 // to go green — #1122's brief forbids that, and the two are opposite moves.
-const RENDERED_TEST_FLOOR = 241;
+const RENDERED_TEST_FLOOR = 242;
 // Lowered 55 → 54 in the risk-quantification uproot (2026-08-08).
 // `ai-risk-assessment.spec.ts` and `new-risk-modal.spec.ts` were both
 // wholly about the deleted register; the specs that merely REFERENCED a
