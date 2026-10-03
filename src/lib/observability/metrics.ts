@@ -36,6 +36,7 @@
  *   audit_stream.delivery.duration — Histogram (outcome) [ms]
  *   audit_stream.buffer.overflow_dropped — Counter
  *   audit_stream.buffer.depth      — Observable Gauge
+ *   audit.write.failures           — Counter   (model, action)
  *     One delivery-outcome record per batch (after the retry loop).
  *     success + failures give the delivery success ratio; attempts
  *     shows retry pressure; buffer.depth + overflow_dropped show
@@ -457,6 +458,7 @@ let _auditStreamFailures: ReturnType<ReturnType<typeof getMeter>['createCounter'
 let _auditStreamAttempts: ReturnType<ReturnType<typeof getMeter>['createHistogram']> | null = null;
 let _auditStreamDuration: ReturnType<ReturnType<typeof getMeter>['createHistogram']> | null = null;
 let _auditStreamOverflow: ReturnType<ReturnType<typeof getMeter>['createCounter']> | null = null;
+let _auditWriteFailures: ReturnType<ReturnType<typeof getMeter>['createCounter']> | null = null;
 
 function getAuditStreamSuccess() {
     if (!_auditStreamSuccess) {
@@ -547,6 +549,32 @@ export function recordAuditStreamDelivery(attrs: {
  */
 export function recordAuditStreamBufferOverflow(): void {
     getAuditStreamOverflow().add(1);
+}
+
+function getAuditWriteFailures() {
+    if (!_auditWriteFailures) {
+        _auditWriteFailures = getMeter().createCounter('audit.write.failures', {
+            description:
+                'Audited writes whose hash-chained AuditLog row could NOT be written. ' +
+                'The business write already committed, so each count is a GAP in the ' +
+                'audit trail — see #1223.',
+            unit: '1',
+        });
+    }
+    return _auditWriteFailures;
+}
+
+/**
+ * An audited write committed and its audit row did not.
+ *
+ * Attributes are deliberately limited to the MODEL and the ACTION. The audit
+ * payload carries business content (`diffJson.after` is the changed row) and
+ * `tenantId` would make this series per-tenant and high-cardinality, so
+ * neither belongs on a metric. The accompanying log line carries the
+ * identifying context; this is the number you alert on.
+ */
+export function recordAuditWriteFailure(attrs: { model: string; action: string }): void {
+    getAuditWriteFailures().add(1, { model: attrs.model, action: attrs.action });
 }
 
 // ── Auth verification-email delivery counters ─────────────────────────

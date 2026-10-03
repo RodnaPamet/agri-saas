@@ -2819,19 +2819,42 @@ negated. Say what remains instead:
       produces. Before the fix: 12/12 stalled barrier-synchronised, 9/12 as an
       unsynchronised burst.
     - **`appendAuditEntry` still reaches for a second connection, and past `max`
-      it loses the audit row SILENTLY.** It opens its own `$transaction` on the
+      it LOSES the audit row — no longer silently.** It opens its own `$transaction` on the
       global client for every audited write and is not cached. The failure is
       not the visible one: measured 2026-10-02 at exactly `max`, with every DEK
       warm and disjoint tenants per run — `max - 1` wrote 11 tasks and 11 audit
       rows, `max` wrote **12 tasks and 0 audit rows, with zero rejections**, and
       a repeat run wrote 12 tasks and 4 audit rows. The audit transaction's 2s
       `maxWait` expires inside the caller's 5s budget, the extension's
-      best-effort `catch` swallows it (it only logs under
-      `NODE_ENV === 'development'`), and the caller's own write then commits
-      fine. So the supportable concurrency for an AUDITED write is still
+      best-effort `catch` absorbs it, and the caller’s own write then commits
+      fine.
+      **The catch now REPORTS the gap**: `auditMiddlewareLogger.error`
+      (`audit.write_failed`, carrying tenantId / requestId / model / operation —
+      never `diffJson`, which holds the changed row) plus the
+      `audit.write.failures` counter, both UNGATED. Until the #1223
+      observability change that log sat inside
+      `if (env.NODE_ENV === 'development')`, so in PRODUCTION the catch was
+      EMPTY: a hole in the hash-chained trail emitted no log, no metric, no
+      error and no trace, which is why the measurement above had to count rows
+      to find it. Each reporter is individually try-wrapped — a committed write
+      must never fail because the telemetry for its missing audit row broke.
+      The LOSS itself is still unfixed, and "alertable" would overstate what
+      shipped: the error log is the signal that reaches a human, because
+      agri-saas deploys NO OTel→Prometheus→Alertmanager pipeline (the live
+      alerting is one GCP uptime check on `/api/readyz`). The `AuditRowLost`
+      threshold is DECLARED in
+      `infra/observability/prometheus/rules/alerting-rules.yml` — `> 0` over a
+      window rather than a ratio, because one missing entry is a permanent gap
+      in a tamper-evident chain — and fires only if that pipeline is ever
+      deployed. Pinned by
+      `tests/integration/audit-write-failure-is-loud.test.ts` with a negative
+      control (a reporter firing unconditionally would satisfy the regression
+      test and alert on every healthy write).
+      So the supportable concurrency for an AUDITED write is still
       `max - 1` — which is why the P0.8 hardening test runs 11 sends and not the
-      20 its roadmap asked for — and past it the hash-chained trail silently
-      loses entries rather than erroring.
+      20 its roadmap asked for — and past it the hash-chained trail still
+      loses entries rather than erroring — now with a log line and a counter
+      saying so.
       **The `afterCommit` seam IS reachable from the extension, contrary to what
       this file said for a day and to what `audit-context.ts`'s docblock
       implies.** That docblock's "Prisma's $use middleware runs in a detached

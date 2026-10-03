@@ -283,3 +283,47 @@ groups:
             be unreachable and today's WeatherObservation rows may be missing —
             agro-signals (GDD, spray windows) degrade on stale weather.
           runbook_url: "https://docs.inflect.internal/observability/runbooks/ag-weather-ingestion-lag"
+
+  # ===========================================================================
+  # audit_integrity — a hash-chained audit row was lost (#1223)
+  # ---------------------------------------------------------------------------
+  # LIVENESS, stated because the rest of this file invites the wrong
+  # assumption: agri-saas production alerting is ONE GCP Cloud Monitoring
+  # uptime check on /api/readyz (`infra/alerts/external-uptime.yml` is what
+  # CLAUDE.md names as actually running). No OTel Collector → Prometheus →
+  # Alertmanager pipeline is deployed, so this records the THRESHOLD and the
+  # runbook rather than firing today. The signal that reaches a human now is
+  # the `audit.write_failed` error log emitted beside this counter.
+  # ===========================================================================
+  - name: audit_integrity
+    rules:
+      # No acceptable RATE. The trail is hash-chained, so one missing entry is
+      # a permanent gap in a tamper-evident record — hence `> 0` against a
+      # window, not a ratio against total writes. The business write survived;
+      # what was lost is the evidence that it happened.
+      - alert: AuditRowLost
+        expr: increase(audit_write_failures[15m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          slo: audit_integrity
+        annotations:
+          summary: "An audited write committed WITHOUT its hash-chained audit row"
+          description: >-
+            One or more writes committed while their AuditLog row failed.
+            The trail now has a gap that verifyAuditChain will report as a
+            broken chain for the affected tenant. Known cause (#1223):
+            appendAuditEntry opens its own transaction on the global client, so
+            at PG_POOL_MAX it cannot obtain a connection — measured at exactly
+            max, 12 writes committed with 0 audit rows and 0 rejections.
+            Production pgbouncer is pool_mode=transaction with
+            default_pool_size=25 shared across app and worker, so the same
+            arithmetic caps concurrent audited writes at roughly 12 globally;
+            raising PG_POOL_MAX moves the wait into pgbouncer's queue rather
+            than removing it. Runbook: grep the app logs for
+            audit.write_failed and read tenantId/model/operation off each line;
+            the counter's model and action labels say which writes lost their
+            trail. A gap cannot be back-filled — each entry hashes against its
+            predecessor, so a late insert would not restore the link. Record
+            the gap rather than attempting a repair.
+          runbook_url: "https://docs.internal/runbooks/audit-chain-gap"
