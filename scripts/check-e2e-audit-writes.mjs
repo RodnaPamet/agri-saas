@@ -62,7 +62,7 @@
  *
  * Usage:  node scripts/check-e2e-audit-writes.mjs <path-to-e2e-step-log>
  */
-import { appendFileSync, readFileSync, statSync } from 'node:fs';
+import { appendFileSync, readFileSync } from 'node:fs';
 
 // ── The two markers, and where they come from ──
 // Both are emitted by `src/lib/prisma.ts` (the audit extension's catch, and
@@ -100,15 +100,19 @@ if (!logPath) {
 // ── Read the log, and treat every way of not reading it as a FAILURE ──
 // "I could not look" must never be reported as "nothing is wrong". A
 // missing file is the ordinary shape of a moved path or a renamed step.
+//
+// ONE filesystem call, deliberately. An earlier version `statSync`'d for the
+// size and then `readFileSync`'d the same path, which CodeQL flags as
+// `js/file-system-race` (TOCTOU) and is right to: the two calls can see
+// different files. The size is derived from the bytes actually read instead.
 let raw = null;
 let readError = null;
-let sizeOnDisk = null;
 try {
-    sizeOnDisk = statSync(logPath).size;
     raw = readFileSync(logPath, 'utf8');
 } catch (err) {
     readError = err instanceof Error ? err.message : String(err);
 }
+const sizeRead = raw === null ? 0 : Buffer.byteLength(raw, 'utf8');
 
 if (readError !== null) {
     failures.push(
@@ -123,7 +127,7 @@ const lines = text.split('\n');
 
 if (readError === null && text.trim().length === 0) {
     failures.push(
-        `${logPath} is empty (${sizeOnDisk ?? 0} bytes on disk). An empty log satisfies ` +
+        `${logPath} is empty (${sizeRead} bytes read). An empty log satisfies ` +
             `"zero audit failures" and proves nothing — the suite's output did not reach it.`,
     );
 }
