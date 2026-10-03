@@ -2321,6 +2321,15 @@ Four codebase-hygiene invariants are held by structural guardrails
   named files (`lib/observability/edge-logger.ts`, `lib/api-client.ts`,
   `instrumentation.ts`), four `components/ui/` prefixes, and a blanket
   skip for any file whose first line is `'use client'`.
+  **Every exemption map in that file is SHRINK-ONLY and pinned to disk**
+  — the two console lists and the `require()` allowlist each have a
+  no-stale-entries test asserting the key still names something under
+  `src/` (#1285). Four `require('@/env')` entries had outlived the
+  vendor-questionnaire usecases the GRC teardown (#547) deleted, which
+  kept those four PATHS pre-approved for whatever was created there
+  next; nothing detected it, because this was the one baseline in the
+  repo with no existence test. Delete an entry in the same diff as its
+  file.
 - **Route handlers type `params` as `Promise<…>`.** Next 15+
   contract; `tests/guards/async-params-route-typing.test.ts` blocks
   a regression. The old transparent-await shim is retired.
