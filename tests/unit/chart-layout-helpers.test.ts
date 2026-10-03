@@ -349,10 +349,18 @@ describe('formatters', () => {
         // `toLocaleDateString('en-US', …)` this function used to
         // call was host-TZ-sensitive, which produced different
         // labels on server vs. client across a UTC-midnight boundary.
-        const earlyMorningUTC = new Date('2026-04-16T01:00:00Z');
-        const lateEveningUTC = new Date('2026-04-16T23:00:00Z');
-        expect(formatShortDate(earlyMorningUTC)).toBe('16 Apr');
-        expect(formatShortDate(lateEveningUTC)).toBe('16 Apr');
+        // The PROPERTY this case is named for — a fixed, explicit zone rather
+        // than the host's — still holds; the EXAMPLE had to change, because it
+        // demonstrated the property using UTC-day truncation. 23:00Z is 02:00
+        // the next day in Sofia, so those two instants legitimately differ now.
+        //
+        // Picked instead: two instants inside the same Sofia day that straddle
+        // UTC midnight. Under a host-sensitive formatter these would disagree;
+        // under an explicit zone they agree, which is the parity being claimed.
+        const beforeUtcMidnight = new Date('2026-04-16T22:30:00Z'); // 01:30 Sofia, 17th
+        const afterUtcMidnight = new Date('2026-04-17T00:30:00Z'); // 03:30 Sofia, 17th
+        expect(formatShortDate(beforeUtcMidnight)).toBe('17 Apr');
+        expect(formatShortDate(afterUtcMidnight)).toBe('17 Apr');
     });
 
     it('formatNumericTick renders `value.toString()`', () => {

@@ -131,11 +131,11 @@ describe('TimestampTooltip — tooltip content', () => {
             />,
         );
         const tooltip = getByTestId('tooltip-content');
-        // formatDateTimeLong produces "Thursday, 16 April 2026 at 08:00:45"
-        // (en-GB / UTC). Don't pin the exact Intl string (separator
+        // formatDateTimeLong produces "Thursday, 16 April 2026 at 11:00:45"
+        // (en-GB, Europe/Sofia). Do not pin the exact Intl string (separator
         // varies across CLDR data) but require the load-bearing parts.
         expect(tooltip.textContent).toMatch(/16 April 2026/);
-        expect(tooltip.textContent).toMatch(/08:00:45/);
+        expect(tooltip.textContent).toMatch(/11:00:45/);
         expect(tooltip.textContent).toMatch(/Thursday/);
     });
 });

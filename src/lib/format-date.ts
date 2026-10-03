@@ -82,12 +82,37 @@
 
 const LOCALE = 'en-GB';
 
+/**
+ * The zone every helper here renders in.
+ *
+ * ── why this is Europe/Sofia and not UTC ──
+ *
+ * It was UTC, and the reasoning in the header above is still right about the
+ * HAZARD and was wrong about the FIX. The hazard is an AMBIENT zone: one
+ * resolved from the host or browser, which differs between server and client
+ * and produces a hydration mismatch. UTC avoided that by being explicit — and
+ * so does any other named zone. "Explicit" is the property that matters;
+ * "UTC" was one way to get it.
+ *
+ * Meanwhile UTC was wrong about the DATA. Every user of this product is a
+ * Bulgarian farm, and a spray logged at 18:00 local rendered as 16:00. For a
+ * journal entry that feeds re-entry intervals and pre-harvest windows, a
+ * two-hour error in the displayed time is not cosmetic.
+ *
+ * Measured before changing it: a `@db.Date` column arrives from Postgres as
+ * UTC midnight, and UTC midnight renders as the SAME calendar day in Sofia
+ * (02:00 or 03:00) — including on both 2026 DST transition dates. So date-only
+ * fields do not shift a day. A real `timestamptz` near midnight does shift,
+ * which is correct: 23:30Z IS 01:30 the next day in Sofia.
+ */
+const DISPLAY_TIME_ZONE = 'Europe/Sofia';
+
 /** Shared Intl.DateTimeFormat instances (created once, reused — fast). */
 const DATE_FMT = new Intl.DateTimeFormat(LOCALE, {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
-    timeZone: 'UTC',
+    timeZone: DISPLAY_TIME_ZONE,
 });
 
 const DATETIME_FMT = new Intl.DateTimeFormat(LOCALE, {
@@ -96,21 +121,21 @@ const DATETIME_FMT = new Intl.DateTimeFormat(LOCALE, {
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
-    timeZone: 'UTC',
+    timeZone: DISPLAY_TIME_ZONE,
 });
 
 const DATE_SHORT_FMT = new Intl.DateTimeFormat(LOCALE, {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
-    timeZone: 'UTC',
+    timeZone: DISPLAY_TIME_ZONE,
 });
 
 const DATE_LONG_FMT = new Intl.DateTimeFormat(LOCALE, {
     day: 'numeric',
     month: 'long',
     year: 'numeric',
-    timeZone: 'UTC',
+    timeZone: DISPLAY_TIME_ZONE,
 });
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -160,7 +185,7 @@ const DATETIME_LONG_FMT = new Intl.DateTimeFormat(LOCALE, {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
-    timeZone: 'UTC',
+    timeZone: DISPLAY_TIME_ZONE,
 });
 
 /**
@@ -245,12 +270,12 @@ export function formatDateLong(
 const DATE_COMPACT_FMT = new Intl.DateTimeFormat(LOCALE, {
     day: 'numeric',
     month: 'short',
-    timeZone: 'UTC',
+    timeZone: DISPLAY_TIME_ZONE,
 });
 
 const MONTH_FMT = new Intl.DateTimeFormat(LOCALE, {
     month: 'short',
-    timeZone: 'UTC',
+    timeZone: DISPLAY_TIME_ZONE,
 });
 
 /**
@@ -316,4 +341,129 @@ export function formatDateRange(
 
     // Different years — both endpoints carry their year.
     return `${DATE_FMT.format(a)} – ${DATE_FMT.format(b)}`;
+}
+
+// ─── Bulgarian chat time + quantities (P2.1) ─────────────────────────────────
+
+/**
+ * The calendar day an instant falls on, IN THE DISPLAY ZONE.
+ *
+ * `en-CA` because it yields `YYYY-MM-DD`, which compares as a string. Doing
+ * this with `getDate()` would ask the HOST's zone and give the wrong answer on
+ * a server running UTC — the same ambient-zone hazard the header describes,
+ * one level down.
+ */
+const DAY_KEY_FMT = new Intl.DateTimeFormat('en-CA', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone: DISPLAY_TIME_ZONE,
+});
+
+/** `HH:mm` in the display zone, 24-hour — the form Bulgarian users expect. */
+const TIME_FMT = new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: DISPLAY_TIME_ZONE,
+});
+
+/**
+ * Relative phrasing for a chat or feed timestamp.
+ *
+ * ── why Intl.RelativeTimeFormat and not date-fns ──
+ *
+ * `formatRelativeTime` above calls date-fns `formatDistance`, which renders
+ * ENGLISH regardless of the user's language — "2 hours ago" to a Bulgarian
+ * farmer. Fixing that with date-fns means importing and switching locale
+ * bundles; `Intl` already ships the data.
+ *
+ * It also writes the copy for us, which is the part that matters for the
+ * `no-hardcoded-ui-strings` ratchet: with `numeric: 'auto'` and
+ * `style: 'short'`, `bg` yields «преди 5 мин», «вчера», «преди 3 ч», and even
+ * «онзи ден» / «вдругиден». Hand-writing those would have put Cyrillic UI copy
+ * in a .ts file, which the ratchet refuses — correctly, because then it could
+ * never be translated.
+ */
+function relative(locale: string, value: number, unit: Intl.RelativeTimeFormatUnit): string {
+    return new Intl.RelativeTimeFormat(locale, {
+        numeric: 'auto',
+        style: 'short',
+    }).format(value, unit);
+}
+
+/**
+ * A chat/feed timestamp: «преди 5 мин», «вчера, 14:20», «15.01.2026, 14:20».
+ *
+ * `now` is a REQUIRED argument rather than a `new Date()` inside, for the
+ * reason `formatRelativeTime` already takes it: a relative string computed on
+ * the server and re-computed on the client is a hydration mismatch by
+ * construction. The caller owns the clock — on the client that is
+ * `useHydratedNow()`, which is why `<TimestampTooltip>` exists.
+ */
+export function formatChatTime(
+    value: string | Date | null | undefined,
+    now: Date | null | undefined,
+    locale = 'bg',
+    fallback = '—',
+): string {
+    const d = toDate(value);
+    if (!d || !now) return fallback;
+
+    const deltaMs = now.getTime() - d.getTime();
+    const seconds = Math.round(deltaMs / 1000);
+
+    // Future timestamps are possible (clock skew between a phone and the
+    // server) and must not render as a huge "ago". Intl handles the sign.
+    if (seconds > -60 && seconds < 60) return relative(locale, -seconds, 'second');
+    const minutes = Math.round(seconds / 60);
+    if (minutes > -60 && minutes < 60) return relative(locale, -minutes, 'minute');
+
+    const today = DAY_KEY_FMT.format(now);
+    const then = DAY_KEY_FMT.format(d);
+    // Same calendar day in SOFIA — not "within 24 hours", which would call
+    // 23:00 yesterday "today" at 01:00.
+    if (today === then) return TIME_FMT.format(d);
+
+    const yesterday = DAY_KEY_FMT.format(new Date(now.getTime() - 86_400_000));
+    if (then === yesterday) return `${relative(locale, -1, 'day')}, ${TIME_FMT.format(d)}`;
+
+    return `${DATE_SHORT_FMT.format(d)}, ${TIME_FMT.format(d)}`;
+}
+
+/**
+ * A quantity with its unit: «1 234,5 т».
+ *
+ * ── two things Intl will not do, and the reasons they are not bugs ──
+ *
+ * 1. `useGrouping: 'always'` is REQUIRED. `bg` sets `minimumGroupingDigits: 2`,
+ *    so a four-digit number groups only from 10000 by default — 1234.5 renders
+ *    `1234,5`. The product shows tonnages in the low thousands constantly, so
+ *    the separator is wanted there.
+ *
+ * 2. The unit is the CALLER's, from `t()`. `Intl.NumberFormat` rejects
+ *    `tonne`, `metric-ton` AND `ton` outright (only `kilogram`/`gram` are in
+ *    its sanctioned list, and they render Latin "kg"), so there is no way to
+ *    get «т» out of Intl. Taking the translated string as an argument keeps
+ *    this function pure and keeps the abbreviation in `messages/`, where it
+ *    can be translated, instead of as Cyrillic in a .ts file.
+ *
+ * The separator between number and unit is U+00A0, a NO-BREAK space, so a
+ * value never wraps away from its unit. Note bg's own group separator is also
+ * U+00A0 — a test asserting a plain ASCII space passes nothing and the diff
+ * looks identical, which is why the unit test spells the codepoints out.
+ */
+export function formatQuantity(
+    value: number | null | undefined,
+    unit?: string,
+    locale = 'bg',
+    options: { maximumFractionDigits?: number } = {},
+    fallback = '—',
+): string {
+    if (value == null || !Number.isFinite(value)) return fallback;
+    const n = new Intl.NumberFormat(locale, {
+        useGrouping: 'always',
+        maximumFractionDigits: options.maximumFractionDigits ?? 1,
+    }).format(value);
+    return unit ? `${n}\u00A0${unit}` : n;
 }
