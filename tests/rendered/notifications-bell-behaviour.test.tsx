@@ -143,7 +143,7 @@ describe('<NotificationsBell> — behavioural (Tier 2)', () => {
         expect(bell.className).toContain('hover:text-content-emphasis');
     });
 
-    it('renders RELATIVE timestamps ("5m", "2h", "3d") — not raw dates', async () => {
+    it('renders LOCALISED relative timestamps — not "5m", and not raw dates', async () => {
         const user = userEvent.setup();
         fetchMock.mockResolvedValue({
             ok: true,
@@ -151,39 +151,43 @@ describe('<NotificationsBell> — behavioural (Tier 2)', () => {
             json: async () => makeNotifications(),
         });
         render(<NotificationsBell />);
-        // Wait for the mount-time fetch so the popover has data.
         await waitFor(() => expect(fetchMock).toHaveBeenCalled());
 
-        await user.click(
-            screen.getByTestId('top-chrome-notifications-bell'),
-        );
-
+        await user.click(screen.getByTestId('top-chrome-notifications-bell'));
         const list = await screen.findByTestId('notifications-list');
-
-        // The fixture rows are 5 minutes, 150 minutes, and 3 days old.
-        // The bell's relative-time formatter must render "5m", "2h",
-        // "3d" — compact relative strings.
         await waitFor(() => {
-            expect(within(list).getByText('5m')).toBeInTheDocument();
+            expect(list.querySelectorAll('.tabular-nums').length).toBeGreaterThan(0);
         });
-        expect(within(list).getByText('2h')).toBeInTheDocument();
-        expect(within(list).getByText('3d')).toBeInTheDocument();
 
-        // The exact regression the audit named: NO raw
-        // `toLocaleDateString` output. A locale date for a 5-minute-
-        // old notification would contain a slash or a month name and
-        // a 4-digit year. Assert none of the rendered time chips
-        // looks like a full date.
+        // P2.1 — this used to assert the literal tokens "5m", "2h", "3d".
+        // Those were hand-built in this file and were ENGLISH for every user:
+        // a Bulgarian farmer saw "5m". `formatChatTime` takes the phrasing
+        // from Intl, so the assertions move from fixed strings to the SHAPE
+        // each row should have.
+        const chips = Array.from(list.querySelectorAll('.tabular-nums')).map(
+            (c) => c.textContent ?? '',
+        );
+        expect(chips).toHaveLength(3);
+
+        // 5 minutes → relative phrasing, in whatever language is active.
+        expect(chips[0]).toMatch(/ago|преди|min|мин/i);
+        // 150 minutes → earlier TODAY, so a time of day rather than "2h".
+        expect(chips[1]).toMatch(/^\d{2}:\d{2}$/);
+        // 3 days → still relative, not a date.
+        expect(chips[2]).toMatch(/ago|преди|day|дни|дни|онзи/i);
+
+        // The original regression this case was written for: no raw
+        // `toLocaleDateString` output in a time chip. The length bound moves
+        // 8 → 16 because a LOCALISED relative phrase is simply longer than
+        // "5m" («преди 5 мин» is eleven characters) — but it stays a bound,
+        // and 16 still excludes "30/09/2026, 15:43" (17) and every full
+        // date-plus-time form. The slash and year checks are untouched, and
+        // they are what actually separate a token from a date.
         const year = new Date().getFullYear().toString();
-        const timeChips = list.querySelectorAll('.tabular-nums');
-        expect(timeChips.length).toBeGreaterThan(0);
-        for (const chip of Array.from(timeChips)) {
-            const text = chip.textContent ?? '';
-            // Relative chips are short tokens; a raw locale date is
-            // long and carries the current year.
+        for (const text of chips) {
             expect(text).not.toContain('/');
             expect(text).not.toContain(year);
-            expect(text.length).toBeLessThanOrEqual(8);
+            expect(text.length).toBeLessThanOrEqual(16);
         }
     });
 
