@@ -34,8 +34,15 @@ describe('formatDateCompact', () => {
         expect(formatDateCompact(null, 'n/a')).toBe('n/a');
     });
 
-    it('accepts ISO strings and truncates to the UTC day', () => {
-        expect(formatDateCompact('2026-04-16T23:59:59Z')).toBe('16 Apr');
+    it('accepts ISO strings and resolves to the SOFIA day', () => {
+        // Was `.toBe('16 Apr')` under the old UTC display zone, and the case
+        // name said "the UTC day" — both now wrong rather than merely stale.
+        // 23:59:59Z on 16 April is 02:59:59 on the 17th in Sofia (+3 in
+        // April), so the 17th is the correct answer for a Bulgarian reader.
+        expect(formatDateCompact('2026-04-16T23:59:59Z')).toBe('17 Apr');
+        // And the same instant one hour earlier is still the 16th, which is
+        // what makes the line above a boundary rather than an off-by-one.
+        expect(formatDateCompact('2026-04-16T20:59:59Z')).toBe('16 Apr');
     });
 });
 

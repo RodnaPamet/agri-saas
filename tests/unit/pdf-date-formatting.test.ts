@@ -28,8 +28,13 @@ const FIXED_INSTANT = '2026-04-16T08:00:45Z';
 
 describe('Epic 58 — PDF date formatting', () => {
     describe('cover page "Generated:" label', () => {
-        it('renders via formatDateTime — "16 Apr 2026, 08:00"', () => {
-            expect(formatDateTime(FIXED_INSTANT)).toBe('16 Apr 2026, 08:00');
+        it('renders via formatDateTime — "16 Apr 2026, 11:00" (Sofia)', () => {
+            // 08:00:45Z is 11:00 in Sofia (+3 in April). The PDF deliberately
+            // carries LOCAL time: these documents are the БАБХ ДНЕВНИК and
+            // farm receipts, read by a Bulgarian operator and an inspector,
+            // and a "Generated" stamp two hours off the wall clock is a
+            // defect in a regulatory record rather than a formatting detail.
+            expect(formatDateTime(FIXED_INSTANT)).toBe('16 Apr 2026, 11:00');
         });
 
         it('is stable regardless of host timezone', () => {
@@ -50,7 +55,7 @@ describe('Epic 58 — PDF date formatting', () => {
             // date+time+seconds; we keep it rather than override the
             // locale's defaults.
             expect(formatDateTimeLong(FIXED_INSTANT)).toBe(
-                'Thursday, 16 April 2026 at 08:00:45',
+                'Thursday, 16 April 2026 at 11:00:45',
             );
         });
 
@@ -61,8 +66,8 @@ describe('Epic 58 — PDF date formatting', () => {
             const early = formatDateTimeLong('2026-04-16T08:00:05Z');
             const late = formatDateTimeLong('2026-04-16T08:00:55Z');
             expect(early).not.toBe(late);
-            expect(early).toMatch(/08:00:05$/);
-            expect(late).toMatch(/08:00:55$/);
+            expect(early).toMatch(/11:00:05$/);
+            expect(late).toMatch(/11:00:55$/);
         });
     });
 
