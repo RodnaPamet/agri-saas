@@ -140,7 +140,7 @@ export function MaintenanceTab({ assetId, canWrite, assetStatus, onStatusChange 
                         ) : null,
                 },
             ]),
-        [t, canWrite],
+        [t, canWrite, formatDate],
     );
 
     const handleClose = async () => {

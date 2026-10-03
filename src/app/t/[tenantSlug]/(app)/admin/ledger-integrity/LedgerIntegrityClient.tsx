@@ -102,7 +102,7 @@ export function LedgerIntegrityClient({ history }: { history: LedgerReconciliati
                     ),
                 },
             ]),
-        [],
+        [formatDateTime],
     );
 
     const runReconciliation = useCallback(async () => {

@@ -223,7 +223,7 @@ export function AccessReviewDetailClient({
                 },
             },
         ]),
-        [canDecide, review.lastActivityByUser, t],
+        [canDecide, review.lastActivityByUser, t, formatDate],
     );
 
     return (

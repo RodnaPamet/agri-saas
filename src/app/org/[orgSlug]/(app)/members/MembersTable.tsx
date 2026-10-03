@@ -173,7 +173,7 @@ export function MembersTable({ orgSlug, currentUserId, rows, invites }: Props) {
                     },
                 },
             ]),
-        [currentUserId, t],
+        [currentUserId, t, formatDate],
     );
 
     return (
@@ -1177,7 +1177,7 @@ function PendingInvitesSection({ orgSlug, invites, onMutate }: PendingInvitesSec
                     ),
                 },
             ]),
-        [revokingId, revoke, t],
+        [revokingId, revoke, t, formatDate],
     );
 
     return (

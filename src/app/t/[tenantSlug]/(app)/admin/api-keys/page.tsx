@@ -399,7 +399,7 @@ export default function ApiKeysPage() {
         // include it so an eslint-exhaustive-deps warning doesn't slip in
         // if someone refactors it into a useCallback later.
 
-        [],
+        [formatDateTime],
     );
 
     const inactiveKeyColumns = useMemo(
@@ -437,7 +437,7 @@ export default function ApiKeysPage() {
                     ),
                 },
             ]),
-        [],
+        [formatDateTime],
     );
 
     if (loading) {

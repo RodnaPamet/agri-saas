@@ -285,7 +285,7 @@ export function PromotionsAdminClient({ tenantSlug }: { tenantSlug: string }) {
         // `t` is stable per render pass; the row-action closures read state
         // through setters, so the defs don't need to churn on every keystroke
         // in the modal.
-        [t, tc],
+        [t, tc, formatDate],
     );
 
     const heading = editing ? t('editTitle') : t('newTitle');

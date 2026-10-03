@@ -888,7 +888,7 @@ export default function MembersAdminPage() {
                 ),
             },
         ]),
-        [],
+        [formatDate],
     );
 
     // ─── Loading state ───

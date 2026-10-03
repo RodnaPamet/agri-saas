@@ -130,7 +130,7 @@ export function EvidenceTable({ rows: initialRows, nextCursor: initialNextCursor
                     meta: { mobileCard: { slot: 'meta', label: t('overdue.colReviewDue') } },
                 },
             ]),
-        [t],
+        [t, formatDate],
     );
 
     return (

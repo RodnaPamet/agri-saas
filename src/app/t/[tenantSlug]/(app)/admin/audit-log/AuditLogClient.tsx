@@ -58,7 +58,7 @@ export function AuditLogClient({ auditLog, translations: t }: AuditLogClientProp
             cell: ({ getValue }: any) => <span className="text-content-muted max-w-xs truncate">{getValue()}</span>,
             meta: { mobileCard: { slot: 'meta', label: t.details } },
         },
-    ]), [t]);
+    ]), [t, formatDateTime]);
 
     return (
         <ListPageShell.Body>

@@ -514,7 +514,7 @@ function ContractsPageInner({
                         ) : null,
                 },
             ]),
-        [permissions.canWrite, handleDelete, t],
+        [permissions.canWrite, handleDelete, t, formatDateRange],
     );
 
     return (

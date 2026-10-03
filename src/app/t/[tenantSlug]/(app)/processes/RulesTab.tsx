@@ -177,7 +177,7 @@ function RulesTabInner({ tenantSlug }: { tenantSlug: string }) {
                     ),
                 },
             ]),
-        [t],
+        [t, formatDate],
     );
 
     return (

@@ -363,7 +363,7 @@ function YieldPageInner({
                         ) : null,
                 },
             ]),
-        [permissions.canWrite, handleDelete, t],
+        [permissions.canWrite, handleDelete, t, formatDate],
     );
 
     return (

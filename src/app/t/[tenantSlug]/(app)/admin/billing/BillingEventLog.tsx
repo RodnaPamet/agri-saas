@@ -67,7 +67,7 @@ export function BillingEventLog({ events }: { events: BillingEvent[] }) {
                 </span>
             ),
         },
-    ]), []);
+    ]), [formatDateTime]);
 
     return (
         <DataTable

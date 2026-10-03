@@ -536,7 +536,7 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
                     meta: { mobileCard: { slot: 'meta', label: t('colLocation') } },
                 },
             ]),
-        [t],
+        [t, formatDate],
     );
 
     const rows = lotRows;

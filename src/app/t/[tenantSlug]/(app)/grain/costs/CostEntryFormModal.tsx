@@ -427,7 +427,7 @@ export function CostEntryFormModal({
             default:
                 return [];
         }
-    }, [watchedLinkKind, plantingsQuery.data, seasonsQuery.data, locationsQuery.data, itemsQuery.data, leasesQuery.data, parcelOptions, t]);
+    }, [watchedLinkKind, plantingsQuery.data, seasonsQuery.data, locationsQuery.data, itemsQuery.data, leasesQuery.data, parcelOptions, t, formatDate]);
 
     const currencyChoices = useMemo(
         () => currencyOptions(watchedCurrency ?? record?.currency),

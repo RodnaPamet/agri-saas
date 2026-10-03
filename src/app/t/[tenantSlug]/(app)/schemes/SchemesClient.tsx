@@ -167,7 +167,7 @@ function SupportSchemesInner({ initialSchemes }: Props) {
                     },
                 },
             ]),
-        [t],
+        [t, formatDate],
     );
 
     const filterDefs = useMemo(

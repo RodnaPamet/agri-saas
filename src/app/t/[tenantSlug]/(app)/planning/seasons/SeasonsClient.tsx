@@ -156,7 +156,7 @@ export function SeasonsClient({ initialSeasons, tenantSlug, permissions }: Seaso
                     ),
                 },
             ]),
-        [downloadSeasonDiary, t, permissions.canWrite],
+        [downloadSeasonDiary, t, permissions.canWrite, formatDate],
     );
 
     return (

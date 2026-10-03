@@ -111,7 +111,7 @@ export function BinDetailClient({ bin, tenantSlug, permissions }: Props) {
                     meta: { mobileCard: { slot: 'meta', label: t('detail.colExpires') } },
                 },
             ]),
-        [t],
+        [t, formatDate],
     );
 
     const fillPctDisplay =

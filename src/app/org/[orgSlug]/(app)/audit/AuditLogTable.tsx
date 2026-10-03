@@ -206,7 +206,7 @@ export function AuditLogTable({ orgSlug, initialRows, initialNextCursor }: Props
                     meta: { mobileCard: { slot: 'subtitle' } },
                 },
             ]),
-        [t],
+        [t, formatDateTime],
     );
 
     return (

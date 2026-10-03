@@ -168,7 +168,7 @@ export function AccessReviewsClient({ tenantSlug, initialReviews }: Props) {
                     },
                 },
             ]),
-        [tenantSlug, t],
+        [tenantSlug, t, formatDate],
     );
 
     return (

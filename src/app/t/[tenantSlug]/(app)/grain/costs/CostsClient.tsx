@@ -359,7 +359,7 @@ function CostsPageInner({
                         ) : null,
                 },
             ]),
-        [t, tEnums, permissions.canWrite, handleDelete, attributionOf],
+        [t, tEnums, permissions.canWrite, handleDelete, attributionOf, formatDate],
     );
 
     return (

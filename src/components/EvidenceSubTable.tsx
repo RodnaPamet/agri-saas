@@ -262,7 +262,7 @@ export function EvidenceSubTable({
                       ]
                     : []),
             ]),
-        [canWrite, onUnlink, onUnlinkEvidence, tenantHref, t],
+        [canWrite, onUnlink, onUnlinkEvidence, tenantHref, t, formatDate],
     );
 
     // E2E semantics — preserve the pre-migration contract:

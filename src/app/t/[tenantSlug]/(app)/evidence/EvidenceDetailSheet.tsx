@@ -192,7 +192,7 @@ export function EvidenceDetailSheet({
             });
         }
         return rows;
-    }, [evidence, tenantHref, t]);
+    }, [evidence, tenantHref, t, formatDate]);
 
     return (
         <Sheet
