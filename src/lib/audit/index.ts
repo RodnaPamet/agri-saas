@@ -48,3 +48,10 @@ export { buildAuditEntry } from './event-builder';
 // Hash-chained writer
 export { appendAuditEntry, verifyAuditChain } from './audit-writer';
 export type { AppendAuditInput, AppendAuditResult, ChainVerificationResult } from './audit-writer';
+
+// #1223 — which entities may not lose their audit row.
+// Exported here for discoverability, but `logEvent` imports the module
+// DIRECTLY: seven unit suites mock this barrel with a partial factory, and
+// anything they do not list resolves to `undefined`. If you add a consumer on
+// a path that runs under those tests, import the module, not the barrel.
+export { isFailClosedAuditEntity, failClosedAuditEntities } from './fail-closed-entities';
