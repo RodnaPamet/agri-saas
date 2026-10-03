@@ -68,7 +68,7 @@ function makeNotifications(): NotifFixture[] {
             message: 'Q2 audit cycle has begun.',
             read: false,
             linkUrl: null,
-            createdAt: isoMinutesAgo(150), // 2.5h → "2h"
+            createdAt: isoMinutesAgo(150), // 2.5h → earlier TODAY, so a time of day
         },
         {
             id: 'n3',
@@ -144,6 +144,41 @@ describe('<NotificationsBell> — behavioural (Tier 2)', () => {
     });
 
     it('renders LOCALISED relative timestamps — not "5m", and not raw dates', async () => {
+        // The clock is FROZEN to local noon, and that is load-bearing rather
+        // than tidiness. `isoMinutesAgo` builds its fixtures from the real
+        // `Date.now()`, and the 150-minute case below asserts the chip renders
+        // as a TIME OF DAY because that notification is "earlier today" — which
+        // is false for 150 minutes after midnight. Measured 2026-10-04 at 00:37
+        // local: this test failed on unmodified main with
+        //     Expected pattern: /^\d{2}:\d{2}$/
+        //     Received string:  "yesterday, 21:55"
+        // and it failed the same way on CI run 111295862750, on a PR whose diff
+        // touched only CLAUDE.md and one guard file. A ~2.5-hour window each
+        // day in which the suite goes red for every branch.
+        //
+        // Only `Date` is faked. `userEvent` drives real timers, so faking those
+        // too would hang the click below — hence `doNotFake` listing every
+        // other fakeable API. Noon local (not UTC) so the "earlier today"
+        // premise holds in any timezone the runner happens to use.
+        jest.useFakeTimers({
+            now: new Date(2026, 5, 15, 12, 0, 0),
+            doNotFake: [
+                'setTimeout',
+                'clearTimeout',
+                'setInterval',
+                'clearInterval',
+                'setImmediate',
+                'clearImmediate',
+                'queueMicrotask',
+                'requestAnimationFrame',
+                'cancelAnimationFrame',
+                'requestIdleCallback',
+                'cancelIdleCallback',
+                'nextTick',
+                'performance',
+                'hrtime',
+            ],
+        });
         const user = userEvent.setup();
         fetchMock.mockResolvedValue({
             ok: true,
