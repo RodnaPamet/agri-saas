@@ -12,9 +12,13 @@
  * The obvious fix — write the row on the caller's transaction — is correct for
  * some entities and dangerous for others, and the dividing line is what this
  * file is. On the caller's transaction a failed insert ABORTS that transaction,
- * and there are no SAVEPOINTs anywhere in `src/` or `prisma/` (their absence is
- * documented at `exchange-messaging.ts` and relied on at `farm-profile.ts`, and
- * measured by `tests/integration/notify-transaction-abort.test.ts`). So a
+ * and until #1223 there were no SAVEPOINTs anywhere in `src/` or `prisma/` (that
+ * absence was documented at `exchange-messaging.ts`, relied on at
+ * `farm-profile.ts`, and
+ * measured by `tests/integration/notify-transaction-abort.test.ts`). #1223 added
+ * the repo's first and only one, in `audit-writer.ts`'s isolated append, which is
+ * what lets the best-effort tier run on the caller's transaction at all. Before
+ * it, a
  * best-effort audit on the caller's transaction would turn its COMMIT into a
  * silent ROLLBACK and destroy the business write — strictly worse than losing
  * the audit row, which is #1102/#1168 verbatim.

@@ -10,6 +10,10 @@ import { withRlsTripwireExtension } from './db/rls-middleware';
 import { PG_POOL_MAX } from './db/pool-config';
 import { logger as auditMiddlewareLogger } from '@/lib/observability/logger';
 import { recordAuditWriteFailure } from '@/lib/observability/metrics';
+// Imported DIRECTLY, not through `@/lib/audit` — seven unit suites mock that
+// barrel with a partial factory and anything unlisted resolves to `undefined`
+// (#1271). This module is pure and dependency-free.
+import { isFailClosedAuditEntity } from './audit/fail-closed-entities';
 
 // ─── Write actions to intercept ───
 const WRITE_ACTIONS = new Set([
@@ -194,8 +198,7 @@ function buildAuditExtension() {
             }
             detailsJson.summary = `${action} ${model}${entityId !== 'unknown' ? ` ${entityId}` : ''}`;
 
-            const { appendAuditEntry } = require('./audit/audit-writer');
-            await appendAuditEntry({
+            const payload = {
                 tenantId,
                 userId: actorUserId,
                 actorType: 'SYSTEM',
@@ -208,7 +211,34 @@ function buildAuditExtension() {
                 metadataJson,
                 diffJson,
                 detailsJson,
+            };
+
+            // #1223 — prefer the CALLER's open transaction.
+            //
+            // This handler is given `model`, `operation`, `args` and `query` —
+            // never the transaction client — so it cannot write on the open
+            // transaction itself. It queues instead, and the helpers in
+            // `db-context.ts` that DO hold `tx` drain the queue before COMMIT.
+            // That removes the second pool connection this write needed, which
+            // is what lost the row at `PG_POOL_MAX`: measured 12 writes, 11
+            // audit rows, every one of them this path.
+            //
+            // `enqueueAuditEntry` returns false when there is no open queue — a
+            // Prisma write outside `withTenantDb` / `runInTenantContext` is
+            // legitimate (jobs, scripts, the staging seed) and must still be
+            // audited, so that case falls back to the writer's own
+            // transaction exactly as before.
+            const { enqueueAuditEntry } = require('./db/before-commit');
+            const queued = enqueueAuditEntry({
+                input: payload,
+                failClosed: isFailClosedAuditEntity(model),
+                model,
+                operation,
             });
+            if (!queued) {
+                const { appendAuditEntry } = require('./audit/audit-writer');
+                await appendAuditEntry(payload);
+            }
         } catch (auditError) {
             // #1223 — the business write has ALREADY COMMITTED by the time we
             // get here (`query(args)` resolved above), so this catch is what

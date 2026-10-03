@@ -2821,7 +2821,26 @@ negated. Say what remains instead:
       concurrency tests are also what a harness that never achieved concurrency
       produces. Before the fix: 12/12 stalled barrier-synchronised, 9/12 as an
       unsynchronised burst.
-    - **`appendAuditEntry` reaches for a second connection on the BEST-EFFORT tier only,
+    - **`appendAuditEntry` no longer reaches for a second connection at all,
+      since #1223's before-commit collector.** It used to open its own
+      `$transaction` on the global client for every audited write, so each one
+      needed a SECOND pool connection; at `max` it could not get one and the
+      row was lost while the write committed. Measured at exactly `max`: 12
+      writes, 11 audit rows, every one of them `actorType: SYSTEM` — the rows
+      the EXTENSION writes, which `logEvent`'s #1271 fix could not reach
+      because a `$extends({ query })` handler is given no transaction client.
+      `src/lib/db/before-commit.ts` closes it: the extension ENQUEUES into an
+      ALS-scoped queue and the `db-context.ts` helpers, which hold `tx`, drain
+      it onto that transaction before COMMIT — the mirror of `afterCommit`.
+      After: 12 writes, 12 audit rows. **The queue and the drain are ONE
+      function on purpose** — splitting them lets a nested helper drain the
+      OUTER transaction's rows onto its own `tx`, and `runInTenantContext` IS
+      a `$transaction` that usecases nest. Two further consequences, both
+      deliberate: audit rows are now ATOMIC with the write they describe (a
+      rolled-back write no longer leaves a row asserting it happened, which it
+      did before), and the per-tenant advisory lock is taken once per
+      transaction instead of once per row. The historical detail below is kept
+      because the MEASUREMENTS are what make the shape defensible:
       and past `max` that tier still loses the audit row — no longer silently.** It opens its own `$transaction` on the
       global client for every audited write and is not cached. The failure is
       not the visible one: measured 2026-10-02 at exactly `max`, with every DEK
@@ -2851,7 +2870,8 @@ negated. Say what remains instead:
       `PG_POOL_MAX` concurrent fail-closed audited writes all commit AND all
       get their row, and reverting the routing fails that same assertion.
       **Why not everywhere.** On the caller's transaction a failed insert
-      ABORTS it, and there are no SAVEPOINTs in `src/` or `prisma/` (stated at
+      ABORTS it, and until #1223 there were no SAVEPOINTs in `src/` or
+      `prisma/` at all (stated at
       `exchange-messaging.ts`, relied on by `farm-profile.ts`, measured by
       `tests/integration/notify-transaction-abort.test.ts`). A TOLERATED
       failure there would turn the caller's COMMIT into a silent ROLLBACK and
@@ -2879,12 +2899,15 @@ negated. Say what remains instead:
       `tests/integration/audit-write-failure-is-loud.test.ts` with a negative
       control (a reporter firing unconditionally would satisfy the regression
       test and alert on every healthy write).
-      Supportable concurrency for an audited write is therefore `max` on the
-      FAIL-CLOSED tier and still `max - 1` on the best-effort tier — which is
+      Supportable concurrency for an audited write is now `max` on BOTH tiers.
+      It was `max - 1` on the best-effort tier until the collector landed, which is
       why the P0.8 hardening test runs 11 sends and not the
-      20 its roadmap asked for. Past that the best-effort trail still
-      loses entries rather than erroring — now with a log line and a counter
-      saying so.
+      20 its roadmap asked for — that test's bound is now historical rather
+      than required. A best-effort row can still be lost if its insert fails
+      for some OTHER reason: the savepoint rolls it back, the write commits,
+      and the gap is
+      reported by the same `audit.write_failed` log line and
+      `audit.write.failures` counter #1269 added, with a `stage` field saying where.
       **The `afterCommit` seam IS reachable from the extension, contrary to what
       this file said for a day, and to what `audit-context.ts`'s docblock
       CLAIMED until #1259.** That docblock's "Prisma's $use middleware runs in a

@@ -9,6 +9,7 @@ import { appendAuditEntry } from '@/lib/audit';
 // This module is pure and dependency-free, so a direct import is also the
 // honest shape. Do not "tidy" it back to the barrel.
 import { isFailClosedAuditEntity } from '@/lib/audit/fail-closed-entities';
+import { reportLostAuditRow } from '@/lib/db/before-commit';
 import { validateAuditDetailsJson } from '../schemas/json-columns.schemas';
 
 export interface AuditEventPayload {
@@ -39,7 +40,7 @@ export async function logEvent(db: PrismaTx, ctx: RequestContext, payload: Audit
     // the row atomic with the write it describes. Everything else keeps the
     // best-effort behaviour, because on the caller's transaction a tolerated
     // failure would abort it — see `fail-closed-entities.ts`.
-    const onCallerTransaction = isFailClosedAuditEntity(payload.entityType);
+    const failClosed = isFailClosedAuditEntity(payload.entityType);
     // Sanitize metadata to avoid accidental secret leak
     const safeMetadata = payload.metadata ? JSON.parse(JSON.stringify(payload.metadata)) : undefined;
 
@@ -48,8 +49,7 @@ export async function logEvent(db: PrismaTx, ctx: RequestContext, payload: Audit
     let combinedDetails = payload.details ? payload.details + '\n\n' : '';
     combinedDetails += `Context: ${JSON.stringify(standardContext)}`;
 
-    await appendAuditEntry(
-        {
+    const entry = {
             tenantId: ctx.tenantId,
             userId: ctx.userId,
             actorType: 'USER',
@@ -60,8 +60,34 @@ export async function logEvent(db: PrismaTx, ctx: RequestContext, payload: Audit
             detailsJson: validateAuditDetailsJson(payload.detailsJson),
             requestId: ctx.requestId,
             metadataJson: safeMetadata,
-        },
-        onCallerTransaction ? (db as never) : undefined,
-        { onCallerTransaction },
-    );
+    };
+
+    // #1223 — EVERY entry now goes on the caller's transaction; only the cost
+    // of a failure differs.
+    //
+    // FAIL-CLOSED: the error propagates and the caller's write aborts. That is
+    // the point of the tier.
+    //
+    // BEST-EFFORT: the writer rolls the insert back to a SAVEPOINT, so the
+    // transaction is usable, and the error is swallowed HERE after being
+    // reported. That is a real behaviour change worth naming: before #1223 an
+    // explicit `logEvent` failure propagated and failed the usecase, despite
+    // the documented "best-effort, never breaks the original write" contract.
+    // It now honours it — and the gap is visible, which is what #1269 added.
+    try {
+        await appendAuditEntry(entry, db as never, {
+            onCallerTransaction: true,
+            isolateFailure: !failClosed,
+        });
+    } catch (err) {
+        if (failClosed) throw err;
+        reportLostAuditRow({
+            tenantId: ctx.tenantId,
+            requestId: ctx.requestId,
+            model: payload.entityType,
+            operation: payload.action,
+            error: err,
+            stage: 'log-event-best-effort',
+        });
+    }
 }

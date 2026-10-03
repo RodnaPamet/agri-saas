@@ -65,6 +65,31 @@ const verifier = new PrismaClient({ adapter: new PrismaPg({ connectionString: AP
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
+/**
+ * Rows for one entity, optionally narrowed by actor type.
+ *
+ * The narrowing matters: a model write triggers the EXTENSION's automatic
+ * audit (`actorType: 'SYSTEM'`, no actor id) as well as any explicit
+ * `logEvent` (`actorType: 'USER'`). A count over both cannot tell "logEvent's
+ * row was correctly dropped" from "no row was written at all" — which is how
+ * this helper's first version made the best-effort case look broken when the
+ * behaviour was right.
+ */
+async function auditRowsForActor(
+    tenantId: string,
+    entity: string,
+    actorType: string,
+): Promise<number> {
+    const rows: Array<{ n: bigint }> = await verifier.$queryRawUnsafe(
+        `SELECT count(*)::bigint AS n FROM "AuditLog"
+         WHERE "tenantId" = $1 AND "entity" = $2 AND "actorType" = $3`,
+        tenantId,
+        entity,
+        actorType,
+    );
+    return Number(rows[0].n);
+}
+
 async function auditRowsFor(tenantId: string, entity: string): Promise<number> {
     const rows: Array<{ n: bigint }> = await verifier.$queryRawUnsafe(
         `SELECT count(*)::bigint AS n FROM "AuditLog" WHERE "tenantId" = $1 AND "entity" = $2`,
@@ -163,10 +188,18 @@ describeFn('a fail-closed audit row is atomic with its write (#1223)', () => {
         expect(await auditRowsFor(TENANT, 'TenantMembership')).toBe(before);
     });
 
-    it('BEST EFFORT: the same rollback LEAVES the audit row — status quo', async () => {
-        // The discriminator. If the classification were ignored, this would
-        // behave like the test above and both would pass for the wrong reason.
-        const before = await auditRowsFor(TENANT, 'Location');
+    it('BOTH tiers now roll back with the write (#1223 before-commit drain)', async () => {
+        // This test USED to be the discriminator: the same rollback left a
+        // best-effort row and removed a fail-closed one. #1223's before-commit
+        // collector moved every audit write onto the caller's transaction, so
+        // both tiers are atomic now and that difference is gone.
+        //
+        // Keeping the case, inverted, because the OLD behaviour was the
+        // defect: a best-effort row survived a write that rolled back, so the
+        // trail asserted something that did not happen. For a hash-chained
+        // record that is the wrong direction to be wrong in.
+        const beforeBE = await auditRowsFor(TENANT, 'Location');
+        const beforeFC = await auditRowsFor(TENANT, 'TenantMembership');
 
         await expect(
             withTenantDb(TENANT, async (db) => {
@@ -180,9 +213,75 @@ describeFn('a fail-closed audit row is atomic with its write (#1223)', () => {
             }),
         ).rejects.toThrow('deliberate rollback');
 
-        // Its own committed transaction, so it survives — and now asserts
-        // something that did not happen. Pre-existing; see the docblock.
-        expect(await auditRowsFor(TENANT, 'Location')).toBe(before + 1);
+        expect(await auditRowsFor(TENANT, 'Location')).toBe(beforeBE);
+        // ...and the fail-closed count is untouched by a best-effort rollback,
+        // so this is not just "the whole table is empty".
+        expect(await auditRowsFor(TENANT, 'TenantMembership')).toBe(beforeFC);
+    });
+
+    it('THE DISCRIMINATOR: an audit failure aborts a FAIL-CLOSED write', async () => {
+        // The two tiers are now separated by what an audit FAILURE costs, not
+        // by rollback behaviour. Forced without mocking: `AuditLog.userId` is a
+        // real FK, so an actor that does not exist makes the chain insert fail
+        // with 23503 — a realistic failure rather than a stubbed one.
+        const bogus = makeRequestContext('ADMIN', {
+            tenantId: TENANT,
+            userId: `ghost-${randomUUID()}`,
+        });
+        const locId = `loc-fc-${randomUUID()}`;
+
+        await expect(
+            withTenantDb(TENANT, async (db) => {
+                await db.location.create({ data: { id: locId, tenantId: TENANT, name: 'fc' } });
+                await logEvent(db, bogus, {
+                    action: 'UPDATE',
+                    entityType: 'TenantMembership',
+                    entityId: `m-${randomUUID()}`,
+                    detailsJson: { category: 'access', granted: true } as never,
+                });
+            }),
+        ).rejects.toThrow();
+
+        // The business write is GONE — the audit failure took it with it.
+        const found = await (verifier as any).location.findUnique({ where: { id: locId } });
+        expect(found).toBeNull();
+    });
+
+    it('THE DISCRIMINATOR: an audit failure LEAVES a best-effort write committed', async () => {
+        // Same forced failure, best-effort entity. The savepoint rolls the
+        // audit insert back and the transaction stays usable, so the write
+        // commits with no audit row — which is what "best effort" has always
+        // claimed and, before #1223, could not deliver without a second pool
+        // connection.
+        const bogus = makeRequestContext('ADMIN', {
+            tenantId: TENANT,
+            userId: `ghost-${randomUUID()}`,
+        });
+        const locId = `loc-be-${randomUUID()}`;
+        // USER-attributed only: the `location.create` below also produces the
+        // extension's own SYSTEM row, which has no actor and so does not hit
+        // the FK — counting both would hide the result.
+        const beforeUser = await auditRowsForActor(TENANT, 'Location', 'USER');
+        const beforeSystem = await auditRowsForActor(TENANT, 'Location', 'SYSTEM');
+
+        await withTenantDb(TENANT, async (db) => {
+            await db.location.create({ data: { id: locId, tenantId: TENANT, name: 'be' } });
+            await logEvent(db, bogus, {
+                action: 'UPDATE',
+                entityType: 'Location',
+                entityId: `loc-${randomUUID()}`,
+                detailsJson: { category: 'custom', legacyText: 'probe' } as never,
+            });
+        });
+
+        // The write SURVIVED, and logEvent's row did not.
+        const found = await (verifier as any).location.findUnique({ where: { id: locId } });
+        expect(found).not.toBeNull();
+        expect(await auditRowsForActor(TENANT, 'Location', 'USER')).toBe(beforeUser);
+        // ...while the extension's own audit of that same write DID land, which
+        // is what proves the transaction stayed usable after the savepoint
+        // rollback rather than the whole audit path having gone silent.
+        expect(await auditRowsForActor(TENANT, 'Location', 'SYSTEM')).toBe(beforeSystem + 1);
     });
 
     it('FAIL CLOSED: a COMMITTED write keeps its audit row', async () => {

@@ -139,10 +139,17 @@ type AuditWriterClient = {
     $queryRawUnsafe<T = unknown>(query: string, ...values: unknown[]): Promise<T>;
 };
 
+/**
+ * Monotonic savepoint suffix. Module-scoped on purpose: it only has to be
+ * unique WITHIN one transaction, and a process-wide counter is the cheapest
+ * way to guarantee that without threading state through.
+ */
+let savepointSeq = 0;
+
 export async function appendAuditEntry(
     input: AppendAuditInput,
     client?: PrismaClient | AuditWriterClient,
-    opts?: { onCallerTransaction?: boolean },
+    opts?: { onCallerTransaction?: boolean; isolateFailure?: boolean },
 ): Promise<AppendAuditResult> {
     const id = generateCuid();
     const actorType = input.actorType || 'USER';
@@ -253,12 +260,58 @@ export async function appendAuditEntry(
         return { id, entryHash, previousHash };
     };
 
+    /**
+     * Run the chain append on a transaction the CALLER owns.
+     *
+     * With `isolate`, the insert is wrapped in a SAVEPOINT. This is the only
+     * way to tolerate a failure on somebody else's transaction: a failed
+     * statement ABORTS a Postgres transaction, so catching the error and
+     * carrying on leaves a transaction whose COMMIT silently becomes a
+     * ROLLBACK — #1102/#1168 verbatim, and the reason this repo had no
+     * savepoints until #1223.
+     *
+     * Note the advisory lock is NOT released by rolling back to a savepoint:
+     * `pg_advisory_xact_lock` is held until the transaction ends. A failed
+     * isolated append therefore still holds the per-tenant lock for the rest
+     * of the caller's transaction, which is the same contention the
+     * fail-closed path already accepted.
+     *
+     * Savepoint names are generated, because a name reused inside one
+     * transaction silently releases the earlier savepoint of that name — and
+     * nested audited writes are ordinary here.
+     */
+    const appendChainEntryOnCaller = async (
+        tx: AuditWriterClient,
+        isolate: boolean,
+    ): Promise<AppendAuditResult> => {
+        if (!isolate) return appendChainEntry(tx);
+        const name = `audit_sp_${++savepointSeq}`;
+        await tx.$executeRawUnsafe(`SAVEPOINT ${name}`);
+        try {
+            const r = await appendChainEntry(tx);
+            await tx.$executeRawUnsafe(`RELEASE SAVEPOINT ${name}`);
+            return r;
+        } catch (err) {
+            // Restore the transaction to a usable state, THEN rethrow so the
+            // caller's own best-effort catch reports the gap (#1269's log and
+            // counter). Swallowing here would make the loss invisible again.
+            await tx.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT ${name}`);
+            throw err;
+        }
+    };
+
     const result = opts?.onCallerTransaction
         ? // On the CALLER's transaction: no second connection, and the advisory
-          // lock is held for the rest of that transaction. A failure here
-          // aborts the caller's write, which is the fail-closed semantics the
-          // compliance-critical entities are routed here for.
-          await appendChainEntry(db as AuditWriterClient)
+          // lock is held for the rest of that transaction.
+          //
+          // `isolateFailure` decides what a failure costs. Without it a failure
+          // aborts the caller's write — the fail-closed semantics the
+          // compliance-critical entities are routed here for. With it the
+          // insert runs inside a SAVEPOINT, so a failure is rolled back to that
+          // point and the caller's transaction stays usable: best-effort
+          // semantics WITHOUT the second pool connection that made the row
+          // losable in the first place (#1223).
+          await appendChainEntryOnCaller(db as AuditWriterClient, opts?.isolateFailure === true)
         : await (db as PrismaClient).$transaction(appendChainEntry);
 
     // Epic C.4 — best-effort outbound streaming. The audit row is

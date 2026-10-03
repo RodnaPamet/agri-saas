@@ -363,9 +363,10 @@ export async function upsertFarmProfile(
      *
      * Two callers can both pass the existence check with no row and both reach
      * `create`; the loser violates the unique `tenantId`. That error has already
-     * ABORTED the transaction by the time it surfaces, and there are no
-     * SAVEPOINTs in this codebase (the one textual mention, at
-     * exchange-messaging.ts:473, is a comment explaining their absence), so
+     * ABORTED the transaction by the time it surfaces, and there is no
+     * SAVEPOINT here. (#1223 added the repo's only one, in
+     * `audit-writer.ts`'s isolated chain append — taking one here would be a
+     * different change, and nobody has needed it.) So
      * nothing further can run inside it — a catch-and-continue here reads
      * correctly and silently commits nothing, which is exactly how #1168's
      * swallowed notification looked.
