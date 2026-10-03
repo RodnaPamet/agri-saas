@@ -1637,6 +1637,42 @@ jobs:
             done
           fi
 
+      # ── #1289: a green shard must have WRITTEN its audit rows, not
+      #    swallowed them ──
+      #
+      # The audit extension logs `audit.write_failed` and SWALLOWS, by
+      # design: the business write has already COMMITTED and failing it
+      # afterwards would be worse (#1269). The cost is that at this gate a
+      # working audit subsystem and a completely dead one are the same
+      # observation — and on main `e1acca2c5` they were. That shard attempted
+      # 275 audit writes, succeeded at none of them, and reported success.
+      # #1288 fixed the cause; nothing stopped it recurring.
+      #
+      # Measured on the four real job logs, counted INSIDE this step's own
+      # tee'd window rather than across the whole job:
+      #   e1acca2c5    (green): 275 failures on shard 1, 85 on shard 2
+      #   post-#1288   (green):   0 and 0
+      # with the positive control `pii.middleware_registered` at 2 on all
+      # four. So the signal discriminates, and the control is never zero on a
+      # healthy shard. Both halves live in the script and both are mandatory:
+      # a count with no control is satisfied perfectly by an unreadable log,
+      # which is how this check would otherwise fail toward green.
+      #
+      # NOT a new top-level job, on purpose. Nine checks are required by
+      # `repos/.../branches/main/protection`, a SKIPPED required check counts
+      # as PASSING, and a new job would be both a protection change and a
+      # thing that can pass by not running. A step inside a job that is
+      # already required fails that job.
+      #
+      # No `if:` on purpose either. A step with the default condition runs
+      # only when every previous step succeeded — exactly the case this is
+      # about, a GREEN shard concealing a dead audit path. A shard that
+      # already failed is red without this step, so being skipped there can
+      # never read as a pass. It sits BEFORE the uploads so that when it
+      # fails, the Playwright report still attaches.
+      - name: "Gate: E2E actually wrote its audit rows — #1289"
+        run: node scripts/check-e2e-audit-writes.mjs "${RUNNER_TEMP}/e2e-shard-${{ matrix.shard }}.log"
+
       # ── Artifacts (always on non-success) ──
       # `failure() || cancelled()`, not `failure()`: the header has always
       # claimed "on non-success", and a cancellation is the non-success whose

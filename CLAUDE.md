@@ -2110,8 +2110,8 @@ duplicating the limits table).
 
 ### Green is not the same as executed
 
-Three mechanisms in this repo let a check pass without verifying anything.
-All read as green forever, so all are named here.
+Several mechanisms in this repo let a check pass without verifying
+anything. All read as green forever, so all are named here.
 
 **Guards assert on source text, not behaviour.** Every file under
 `tests/guards/` — and most of `tests/guardrails/` — `readFileSync`s a
@@ -2199,6 +2199,32 @@ thing whose behaviour you actually depend on, it verifies your wiring and
 nothing about the dependency — so a dependency bump needs a path that runs the
 real thing. See
 `docs/implementation-notes/2026-08-17-bullmq-real-api-smoke.md`.
+
+**A fail-safe write path reports nothing, so a dead subsystem reads exactly
+like a working one.** The audit extension logs `audit.write_failed` and
+SWALLOWS, because the business write has already COMMITTED and failing it
+afterwards would be worse (#1269). That decision is right and it stays — and
+it means a green E2E run with 275 swallowed audit failures and a green E2E run
+with 275 successes are the same observation. On main `e1acca2c5` it was the
+first: 275 attempted audit writes on shard 1 and 85 on shard 2, **zero**
+successes, 28 models, every run green, for an unknown period. #1288 fixed the
+cause (the bundled Next runtime could not resolve the chain writer), and note
+which tests did NOT catch it — `audit-write-failure-is-loud.test.ts` and
+`before-commit-audit-queue.test.ts` both execute the writer and assert rows
+appear, and both passed throughout, because jest resolves the module fine. The
+defect lived only in the bundled runtime. So the closure is a STEP inside the
+`e2e-shard` job (#1289), never a new job — a skipped required check counts as
+PASSING, so a new job is both a protection change and a thing that can pass by
+not running. `scripts/check-e2e-audit-writes.mjs` reads that step's own tee'd
+log and requires BOTH `audit.write_failed` at 0 and the positive control
+`pii.middleware_registered` above 0: the count alone is satisfied perfectly by
+an unreadable, empty or moved log, so the control is the half that stops a
+broken input from reading as a clean run. Measured on the four real shard logs
+— 275/85 failures before, 0/0 after, control at 2 in every one.
+**When you add a fail-safe path — a catch that logs and continues so a
+committed write survives — add the check that counts its log line in the same
+diff.** `tests/guards/e2e-audit-writes-not-silently-zero.test.ts` holds the
+wiring and EXECUTES the checker, including that it fails on an empty log.
 
 **Under jsdom the app is a PHONE, so a whole branch may be unreachable.**
 `tests/rendered/setup.ts` stubs `matchMedia` to answer `matches: false` to
