@@ -235,7 +235,7 @@ const NO_RLS_NOT_APP_USER_MODELS: ReadonlyMap<string, string> = new Map([
     ['PasswordResetToken', 'Single-purpose reset tokens, claimed by a conditional updateMany on the auth path.'],
     ['VerificationToken', 'Single-purpose verify-email tokens, keyed by identifier rather than by user.'],
     ['Tenant', 'The tenant row itself. Written by platform/org flows; read by slug resolution before any tenant context exists.'],
-    ['FeatureFlag', 'Platform runtime switches, written only via the X-Platform-Admin-Key console.'],
+    // MUTATION C (P1.10 proof): FeatureFlag's classification deliberately deleted.
     ['FeatureFlagCohortMember', 'Cohort membership behind those flags; same platform-admin-only write path.'],
     ['OrgAuditLog', 'Org-layer audit rows. Append-only, read by org APIs on the privileged path.'],
     ['OrgDashboardWidget', 'Org dashboard layout, written by org APIs on the privileged path.'],

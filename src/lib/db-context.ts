@@ -256,7 +256,7 @@ export async function runInUserContext<T>(
             () =>
                 p.$transaction(async (tx) => {
                     await tx.$executeRaw`SET LOCAL ROLE app_user`;
-                    await tx.$executeRaw`SELECT set_config('app.user_id', ${ctx.userId}, true)`;
+                    // MUTATION A (P1.10 proof): app.user_id deliberately NOT set.
                     await tx.$executeRaw`SELECT set_config('app.request_id', ${ctx.requestId}, true)`;
                     // NOTE: no `app.tenant_id`. See the docblock — this is the
                     // load-bearing absence, not an omission.
