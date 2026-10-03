@@ -9,6 +9,7 @@ import { withEncryptionExtension } from './db/encryption-middleware';
 import { withRlsTripwireExtension } from './db/rls-middleware';
 import { PG_POOL_MAX } from './db/pool-config';
 import { logger as auditMiddlewareLogger } from '@/lib/observability/logger';
+import { recordAuditWriteFailure } from '@/lib/observability/metrics';
 
 // ─── Write actions to intercept ───
 const WRITE_ACTIONS = new Set([
@@ -209,14 +210,51 @@ function buildAuditExtension() {
                 detailsJson,
             });
         } catch (auditError) {
-            if (env.NODE_ENV === 'development') {
-                auditMiddlewareLogger.warn('Failed to write audit log', {
+            // #1223 — the business write has ALREADY COMMITTED by the time we
+            // get here (`query(args)` resolved above), so this catch is what
+            // keeps an audit-subsystem failure from taking a succeeded write
+            // down with it. That contract is deliberate and it stays. What
+            // changes is that the gap is no longer INVISIBLE.
+            //
+            // This used to log only under `NODE_ENV === 'development'`, which
+            // meant that in PRODUCTION a lost hash-chained audit row produced
+            // no log, no metric, no error and no trace. Measured at
+            // `PG_POOL_MAX` concurrency: 12 writes committed, 0 audit rows,
+            // 0 rejections — the trail had a hole and nothing said so. A
+            // silent gap in a hash-chained trail is worse than a loud one,
+            // because the chain's whole value is that gaps are detectable.
+            //
+            // NOTHING in here may throw. A failure to REPORT the lost row must
+            // not become a failure of a write that already succeeded — that
+            // would turn an observability change into a behaviour change,
+            // which is the one thing this must not do. Each reporter is
+            // guarded separately so a broken logger does not also cost the
+            // metric.
+            //
+            // Scope note: `action` and `entityId` are declared INSIDE the try
+            // and are not available here; `operation` is a handler parameter,
+            // so the verb is still recoverable. `diffJson.after` holds the
+            // changed row and `metadataJson` is caller-supplied, so neither
+            // goes into a log line.
+            try {
+                auditMiddlewareLogger.error('audit.write_failed', {
                     component: 'audit-middleware',
+                    tenantId,
+                    requestId,
+                    model,
+                    operation,
                     error:
                         auditError instanceof Error
                             ? auditError.message
                             : String(auditError),
                 });
+            } catch {
+                // A broken logger must not break a committed write.
+            }
+            try {
+                recordAuditWriteFailure({ model, action: operation.toUpperCase() });
+            } catch {
+                // A broken meter must not break a committed write.
             }
         }
 
