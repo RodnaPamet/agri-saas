@@ -351,6 +351,14 @@ jobs:
       - name: Run ESLint
         run: npm run lint
 
+      # P2.3 — design/tokens.json is the single source for the web CSS and
+      # design/Tokens.swift. `tests/guards/tokens-generated-in-sync.test.ts`
+      # covers this too, but that lands in a test shard twenty minutes in;
+      # forgetting to regenerate is a thirty-second mistake and deserves a
+      # thirty-second answer.
+      - name: "Tokens: generated files match design/tokens.json"
+        run: npm run tokens:check
+
       - name: i18n parity + untranslated check
         # Fails on MISSING / ORPHAN / PLACEHOLDER-DRIFT / UNTRANSLATED-COPY
         # between en.json and every locale. Rides the required "Lint" check;

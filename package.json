@@ -59,6 +59,8 @@
         "openapi:generate": "tsx scripts/generate-openapi.ts",
         "preflight:fanout": "tsx scripts/count-fanout-encrypted.ts",
         "routes:inventory": "tsx scripts/generate-route-inventory.ts",
+        "tokens:generate": "node scripts/generate-tokens.mjs",
+        "tokens:check": "node scripts/generate-tokens.mjs --check",
         "load:auth": "k6 run tests/load/auth.js",
         "load:lists": "k6 run tests/load/lists.js",
         "load:ag-parcels": "k6 run tests/load/ag-parcel-list.js",
