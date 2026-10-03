@@ -35,6 +35,9 @@ import {
     lookupPreviousKeyRetirable,
 } from '@/app-layer/usecases/lookup-rehash';
 import { isLookupKeyPinned } from '@/lib/security/encryption';
+import { appendPlatformAuditEntry } from '@/lib/audit/platform-audit-writer';
+import { PlatformAuditAction } from '@prisma/client';
+import { logger } from '@/lib/observability/logger';
 import { LOGIN_LIMIT } from '@/lib/security/rate-limit';
 
 export const runtime = 'nodejs';
@@ -112,6 +115,50 @@ export const POST = withApiErrorHandling(
         // UPDATE collided is still stale, and `scanned - rehashed` would report
         // it as finished.
         const verdict = await lookupPreviousKeyRetirable();
+
+        /**
+         * Append to the `key-rotation` chain (P1.9).
+         *
+         * This is the class of action that chain was built for: it rewrites
+         * `emailHash` on every `User` row, and the operator then DELETES a key
+         * on the strength of the verdict below. Without an entry there is no
+         * record of who swept, when, or what the verdict said at the moment the
+         * key was retired.
+         *
+         * The `key-rotation` scope rather than a `lookup-rehash` one of its
+         * own: both are steps in retiring a key, an operator reads them as one
+         * history, and a second chain verifies cleanly while the history you
+         * meant to append to looks untouched.
+         *
+         * The audit write does NOT fail the response. The sweep has already
+         * COMMITTED by this point — rows are rewritten — so throwing here would
+         * report a failure over work that succeeded, and an operator would
+         * re-run a pass that had nothing left to do. The failure is logged at
+         * error level instead, and `verifyPlatformChain` reports a gap as a
+         * gap rather than as tampering.
+         */
+        try {
+            await appendPlatformAuditEntry({
+                scope: 'key-rotation',
+                action: PlatformAuditAction.LOOKUP_HASH_REHASHED,
+                detailsJson: {
+                    totalScanned: sum((r) => r.scanned),
+                    totalRehashed: sum((r) => r.rehashed),
+                    totalAlreadyCurrent: sum((r) => r.alreadyCurrent),
+                    totalErrors: sum((r) => r.errors),
+                    collisionCount: perColumn.reduce((a, r) => a + r.collisions.length, 0),
+                    staleAfter: verdict.stale,
+                    undecryptableAfter: verdict.undecryptable,
+                    previousKeyRetirable: verdict.retirable,
+                    batchSize: body.batchSize ?? null,
+                },
+            });
+        } catch (err) {
+            logger.error('lookup-rehash.audit_append_failed', {
+                component: 'lookup-rehash',
+                error: err instanceof Error ? err.message : 'unknown',
+            });
+        }
 
         return jsonResponse({
             perColumn,

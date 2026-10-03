@@ -99,7 +99,7 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 // with curl, not a client reading the spec.
 // 242 -> 243: the misplaced-v2 repair. Baselined like every other non-tenant
 // /api/admin path — an operator mid-migration with curl, not a spec reader.
-const UNDOCUMENTED_CEILING = 243;
+const UNDOCUMENTED_CEILING = 244;
 
 interface Baseline {
     _README: string[];

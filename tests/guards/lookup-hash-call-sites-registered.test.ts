@@ -56,12 +56,44 @@ type SiteKind =
     /** Writes the hash. Correct as-is — a write should use the primary key. */
     | 'write'
     /** Assigns to a local and uses it later; read the file before changing it. */
-    | 'local-then-used';
+    | 'local-then-used'
+    /**
+     * Compares a STORED hash against what the current key produces.
+     *
+     * The one kind where this guard's standing advice — "use
+     * `hashForLookupCandidates`" — is not merely unnecessary but WRONG.
+     * Candidates include the previous key's hash, so a row still on the old key
+     * would match and be judged current; the rehash sweep's `stale` count would
+     * read zero from the first pass, and an operator would retire
+     * `LOOKUP_HMAC_KEY_PREVIOUS` while rows still depended on it.
+     *
+     * A site of this kind must therefore use the PRIMARY hash deliberately, and
+     * saying so is the whole value of registering it.
+     */
+    | 'compare-to-current';
 
 interface Registration {
     kind: SiteKind;
     note: string;
 }
+
+/**
+ * Kinds that are CORRECT on the primary hash alone.
+ *
+ * A write should use the primary key — that is what a rotation then sweeps
+ * forward. A comparison against the current key must use it, because
+ * candidates would match a row still on the previous key and report it as
+ * current.
+ */
+const SAFE_KINDS = ['write', 'compare-to-current'] as const;
+
+/**
+ * Kinds that MISS rows during a lookup-key rotation.
+ *
+ * The conversion list. It has reached empty; an entry appearing here again is
+ * a regression, which is what the case below asserts.
+ */
+const UNSAFE_KINDS = ['read-primary-only', 'local-then-used'] as const;
 
 /**
  * Every file in `src/` that calls `hashForLookup` directly, with what it does.
@@ -94,6 +126,14 @@ const REGISTERED: Readonly<Record<string, Registration>> = {
     'src/app/api/staging/seed/route.ts': {
         kind: 'write',
         note: 'Non-production seed (403s in prod); the candidate read precedes the upsert this hash keys.',
+    },
+    'src/app-layer/usecases/lookup-rehash.ts': {
+        kind: 'compare-to-current',
+        note:
+            'The P1.3 rehash sweep. Asks "is this stored hash what the current key produces", ' +
+            'which is a COMPARISON, not a lookup — so the primary hash is required and ' +
+            'candidates would make every stale row read as current and the stop condition ' +
+            'unreachable. This is the site that RETIRES the other kinds.',
     },
 };
 
@@ -157,10 +197,15 @@ describe('every direct hashForLookup call site is registered', () => {
         expect(stale).toEqual([]);
     });
 
-    it('every registration carries a real note', () => {
+    it('every registration carries a real note and a KNOWN kind', () => {
         for (const [file, reg] of Object.entries(REGISTERED)) {
             expect(reg.note.length).toBeGreaterThan(25);
-            expect(['read-primary-only', 'write', 'local-then-used']).toContain(reg.kind);
+            // Both lists, not a denylist of the unsafe ones. A kind that is
+            // neither listed as safe nor as unsafe fails HERE, which is what
+            // forces the next person adding a kind to say which it is — a
+            // denylist would admit it silently, and that is the shape of a
+            // guard quietly losing its teeth.
+            expect([...SAFE_KINDS, ...UNSAFE_KINDS]).toContain(reg.kind);
             expect(file.startsWith('src/')).toBe(true);
         }
     });
@@ -172,12 +217,18 @@ describe('every direct hashForLookup call site is registered', () => {
         // flips: the old form would now FAIL on success, and keeping it would
         // have meant a green suite required a known gap to exist.
         //
-        // What it guards from here is the regression. Every remaining entry is
-        // a WRITE, which is correct on the primary hash; a new read registered
-        // as `read-primary-only` or `local-then-used` fails here rather than
-        // being quietly absorbed into a list that used to have room for it.
-        const unconverted = Object.entries(REGISTERED).filter(
-            ([, r]) => r.kind !== 'write',
+        // What it guards from here is the regression. A new read registered as
+        // `read-primary-only` or `local-then-used` fails here rather than being
+        // quietly absorbed into a list that used to have room for it.
+        //
+        // This read `r.kind !== 'write'` while WRITE was the only safe kind.
+        // #1237 added a second — `compare-to-current`, the rehash sweep, which
+        // must use the primary hash and would be BROKEN by candidates — so the
+        // test now names the unsafe kinds it is actually about. Spelled as the
+        // unsafe set rather than widened to "not one of the safe ones" so the
+        // assertion still says what it means.
+        const unconverted = Object.entries(REGISTERED).filter(([, r]) =>
+            (UNSAFE_KINDS as readonly string[]).includes(r.kind),
         );
         expect(unconverted).toEqual([]);
     });
@@ -188,7 +239,22 @@ describe('every direct hashForLookup call site is registered', () => {
         // while proving nothing. These files genuinely still write the hash.
         const writes = Object.values(REGISTERED).filter((r) => r.kind === 'write');
         expect(writes.length).toBeGreaterThanOrEqual(6);
-        expect(writes.length).toBe(Object.keys(REGISTERED).length);
+
+        // And the rehash sweep is here, which is the one entry that would
+        // disappear unnoticed: it is the site that RETIRES the whole problem,
+        // so a build where it vanished would look tidier and be worse.
+        const compares = Object.values(REGISTERED).filter(
+            (r) => r.kind === 'compare-to-current',
+        );
+        expect(compares.length).toBeGreaterThanOrEqual(1);
+
+        // Every registration accounted for by a SAFE kind — the form the
+        // previous `writes.length === total` had while `write` was the only
+        // one. An entry of some third, unexamined kind fails here.
+        const safe = Object.values(REGISTERED).filter((r) =>
+            (SAFE_KINDS as readonly string[]).includes(r.kind),
+        );
+        expect(safe.length).toBe(Object.keys(REGISTERED).length);
     });
 });
 

@@ -111,6 +111,20 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
         // CIPHERTEXT, not a value the encryption extension or pii-middleware has
         // already decrypted on its way out.
         'global-key-rotation.ts',
+        // #1237 — the LOOKUP-hash rehash sweep, the companion to the sweep
+        // above and exempt for the same reason one level sharper: the two
+        // models it touches (`User`, `UserIdentityLink`) have no `tenantId`
+        // because a PERSON exists before and across tenants. There is nothing
+        // to scope to, no RequestContext during an operator sweep, and the
+        // caller is the PLATFORM_ADMIN_API_KEY-gated route.
+        //
+        // Raw SQL for the same reason as well, and it is load-bearing here: the
+        // sweep compares the STORED hash against what the current key produces,
+        // so it must read the column as it sits on disk. A read through
+        // pii-middleware would hand back a value the middleware had already
+        // resolved, and the comparison would answer about the middleware rather
+        // than about the data.
+        'lookup-rehash.ts',
         'sso.ts', 'mfa.ts', 'mfa-enrollment.ts', 'mfa-challenge.ts',
         'session-security.ts', 'webhook-processor.ts', 'scim-users.ts',
         // EI-3 — scim-groups resolves SCIM externalIds → IC users via a global

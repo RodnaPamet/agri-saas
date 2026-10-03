@@ -26,6 +26,7 @@ const countMock = jest.fn();
 const rehashMock = jest.fn();
 const retirableMock = jest.fn();
 const pinnedMock = jest.fn();
+const auditMock = jest.fn();
 
 type Handler = (req: NextRequest) => Promise<Response>;
 
@@ -53,6 +54,9 @@ function loadRoute(key: string | undefined): { GET: Handler; POST: Handler } {
         lookupPreviousKeyRetirable: retirableMock,
     }));
     jest.doMock('@/lib/security/encryption', () => ({ isLookupKeyPinned: pinnedMock }));
+    jest.doMock('@/lib/audit/platform-audit-writer', () => ({
+        appendPlatformAuditEntry: auditMock,
+    }));
     return require('@/app/api/admin/lookup-rehash/route');
 }
 
@@ -74,6 +78,7 @@ const CLEAN = {
 beforeEach(() => {
     jest.clearAllMocks();
     pinnedMock.mockReturnValue(true);
+    auditMock.mockResolvedValue({ id: 'pal_1', entryHash: 'h', previousHash: null });
     countMock.mockResolvedValue(CLEAN);
     retirableMock.mockResolvedValue({ retirable: true, stale: 0, undecryptable: 0 });
     rehashMock.mockResolvedValue([]);
@@ -183,10 +188,14 @@ describe('GET answers the question an operator is actually asking', () => {
         expect(body.lookupKeyPinned).toBe(false);
     });
 
-    it('does not WRITE', async () => {
+    it('does not WRITE, and does not append an audit entry either', async () => {
+        // A read is not an event. Auditing GET would fill the chain with
+        // polling noise from the runbook loop ("POST until GET says retirable")
+        // and bury the entries that record an actual mutation.
         const route = loadRoute(REAL_KEY);
         await route.GET(makeReq({ key: REAL_KEY }));
         expect(rehashMock).not.toHaveBeenCalled();
+        expect(auditMock).not.toHaveBeenCalled();
     });
 });
 
@@ -273,6 +282,67 @@ describe('POST runs one pass and re-READS the verdict', () => {
             makeReq({ method: 'POST', key: REAL_KEY, body: JSON.stringify({ batchSize: 50 }) }),
         );
         expect(rehashMock).toHaveBeenCalledWith({ batchSize: 50 });
+    });
+
+    it('appends to the platform audit chain — a sweep this size leaves a record', async () => {
+        // P1.9's chain exists for exactly this: the pass rewrites `emailHash`
+        // on every `User` row and the operator then DELETES a key on the
+        // verdict's strength. Asserting the CALL rather than trusting the
+        // import, because an import that nothing invokes is the defect this
+        // repo has shipped three times.
+        rehashMock.mockResolvedValue(PASS);
+        const route = loadRoute(REAL_KEY);
+        await route.POST(makeReq({ method: 'POST', key: REAL_KEY }));
+
+        expect(auditMock).toHaveBeenCalledTimes(1);
+        const entry = auditMock.mock.calls[0][0];
+        // The `key-rotation` scope, not a chain of its own: an unlisted scope
+        // would start a SECOND history that verifies cleanly while the one you
+        // meant to append to looks untouched.
+        expect(entry.scope).toBe('key-rotation');
+        expect(entry.action).toBe('LOOKUP_HASH_REHASHED');
+        expect(entry.detailsJson).toMatchObject({
+            totalScanned: 4,
+            totalRehashed: 3,
+            previousKeyRetirable: true,
+            staleAfter: 0,
+            undecryptableAfter: 0,
+        });
+    });
+
+    it('records the VERDICT in the entry, which is what the operator acted on', async () => {
+        // The reason the details carry the verdict and not just the counts: the
+        // audit question after a key is deleted is "what did the system say at
+        // the moment I deleted it", and counts alone do not answer it.
+        rehashMock.mockResolvedValue(PASS);
+        retirableMock.mockResolvedValue({ retirable: false, stale: 7, undecryptable: 2 });
+        const route = loadRoute(REAL_KEY);
+        await route.POST(makeReq({ method: 'POST', key: REAL_KEY }));
+        expect(auditMock.mock.calls[0][0].detailsJson).toMatchObject({
+            staleAfter: 7,
+            undecryptableAfter: 2,
+            previousKeyRetirable: false,
+        });
+    });
+
+    it('a FAILING audit write does not fail the response', async () => {
+        // The rows are already committed by this point. Throwing here would
+        // report a failure over work that succeeded, and the operator would
+        // re-run a pass with nothing left to do. `verifyPlatformChain` reports
+        // a gap as a gap rather than as tampering, so the honest behaviour is
+        // to log and answer.
+        rehashMock.mockResolvedValue(PASS);
+        auditMock.mockRejectedValue(new Error('chain unavailable'));
+        const route = loadRoute(REAL_KEY);
+        const res = await route.POST(makeReq({ method: 'POST', key: REAL_KEY }));
+        expect(res.status).toBe(200);
+        expect((await res.json()).totalRehashed).toBe(3);
+    });
+
+    it('a REFUSED request writes no audit entry', async () => {
+        const route = loadRoute(REAL_KEY);
+        await route.POST(makeReq({ method: 'POST' }));
+        expect(auditMock).not.toHaveBeenCalled();
     });
 
     it('refuses malformed JSON with a 400 and sweeps nothing', async () => {
