@@ -101,8 +101,21 @@ describe('formatChatTime — Bulgarian, from Intl rather than hand-written copy'
         expect(formatChatTime('2026-01-14T22:30:00Z', now)).toBe('00:30');
     });
 
-    it('falls back to a full date beyond yesterday', () => {
-        expect(formatChatTime('2026-01-10T12:20:00Z', now)).toBe('10/01/2026, 14:20');
+    it('stays RELATIVE for 2–6 days, which is what a 10px chip can hold', () => {
+        // Was `.toBe('10/01/2026, 14:20')` — a full date AND time. The
+        // notifications-bell suite failed on exactly that: these strings land
+        // in a 10px chip and the case there exists to keep them short tokens
+        // rather than raw dates. Intl gives «преди 5 дни» and «онзи ден».
+        expect(formatChatTime('2026-01-10T12:20:00Z', now)).toBe('преди 5 дни');
+        expect(formatChatTime('2026-01-13T12:20:00Z', now)).toBe('онзи ден');
+    });
+
+    it('collapses to a COMPACT date beyond a week — never a date plus a time', () => {
+        // "20.12" — bg renders {day:'numeric', month:'short'} numerically,
+        // not as «20 дек.» which is what I assumed. Measured.
+        expect(formatChatTime('2025-12-20T12:20:00Z', now)).toBe('20.12');
+        // en-GB for contrast, so the case shows the shape is locale-driven.
+        expect(formatChatTime('2025-12-20T12:20:00Z', now, 'en-GB')).toBe('20 Dec');
     });
 
     it('a FUTURE timestamp (clock skew) does not render as a huge "ago"', () => {

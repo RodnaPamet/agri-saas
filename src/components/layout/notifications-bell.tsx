@@ -42,7 +42,8 @@ import { Bell, CheckCheck } from 'lucide-react';
 
 import { Popover } from '@/components/ui/popover';
 import { EmptyState } from '@/components/ui/empty-state';
-import { formatDateCompact } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
+import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
 import { env } from '@/env';
 import { NAV_BAR_SLOT_PRESS } from './nav-bar';
 
@@ -96,29 +97,25 @@ const ROW_UNREAD_CLASS = 'bg-bg-subtle';
 
 // ─── Helpers ───────────────────────────────────────────────────────
 
-/**
- * Relative-time formatter. Returns "5m", "2h", "3d", "Mar 12".
- * Avoids dependency on date-fns / dayjs — this is the only place in
- * the bell that needs date formatting.
- */
-function formatRelativeTime(t: ReturnType<typeof useTranslations>, iso: string): string {
-    const then = new Date(iso).getTime();
-    if (Number.isNaN(then)) return '';
-    const diff = Date.now() - then;
-    const minutes = Math.floor(diff / 60_000);
-    if (minutes < 1) return t('now');
-    if (minutes < 60) return `${minutes}m`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h`;
-    const days = Math.floor(hours / 24);
-    if (days < 7) return `${days}d`;
-    return formatDateCompact(iso);
-}
-
 // ─── Component ─────────────────────────────────────────────────────
 
 export function NotificationsBell() {
     const t = useTranslations('notificationsBell');
+    /**
+     * P2.1 — the bell used to format its own relative times and returned
+     * "5m", "2h", "3d": Latin abbreviations, hardcoded, shown to Bulgarian
+     * users whatever their language. Only `t('now')` was ever translated.
+     * `formatChatTime` gets «преди 5 мин» / «преди 3 ч» from Intl instead.
+     *
+     * It also called `Date.now()` during render, which is a hydration
+     * mismatch by construction — the server and the client compute different
+     * nows. `useHydratedNow()` returns null until mounted, which is why the
+     * call below passes an absolute date as the FALLBACK: the first paint
+     * shows a real date rather than a dash, and upgrades to relative phrasing
+     * once hydrated.
+     */
+    const fmt = useDateFormat();
+    const now = useHydratedNow();
     const [open, setOpen] = useState(false);
     const [items, setItems] = useState<NotificationRow[] | null>(null);
     const [loading, setLoading] = useState(false);
@@ -344,7 +341,7 @@ export function NotificationsBell() {
                                                 {n.title}
                                             </p>
                                             <span className="flex-shrink-0 text-[10px] text-content-subtle tabular-nums">
-                                                {formatRelativeTime(t, n.createdAt)}
+                                                {fmt.formatChatTime(n.createdAt, now, fmt.formatDateCompact(n.createdAt))}
                                             </span>
                                         </div>
                                         <p className="text-xs text-content-muted line-clamp-2">

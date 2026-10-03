@@ -86,8 +86,20 @@ describe('formatDateRange', () => {
         );
     });
 
-    it('swaps to same-day when both strings land on the same UTC day', () => {
+    it('collapses to one date only when both endpoints share a SOFIA day', () => {
+        // This case previously asserted that 00:00Z–23:59Z on 16 April
+        // collapses to the single date "16 Apr 2026", and its name said "the
+        // same UTC day". Under the display zone those two instants are 03:00
+        // on the 16th and 02:59 on the **17th** — two different days for the
+        // reader — so collapsing them printed a single date while the range
+        // genuinely spanned two days. The range comparison now asks the
+        // display zone, and this is the case that proves it.
         expect(formatDateRange('2026-04-16T00:00Z', '2026-04-16T23:59Z')).toBe(
+            '16 – 17 Apr 2026',
+        );
+        // Within one Sofia day it still collapses, which is what stops the
+        // line above from being an off-by-one rather than a zone fix.
+        expect(formatDateRange('2026-04-16T06:00Z', '2026-04-16T18:00Z')).toBe(
             '16 Apr 2026',
         );
     });
