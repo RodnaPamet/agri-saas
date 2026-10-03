@@ -25,6 +25,22 @@ async function getFiles(pattern: string): Promise<string[]> {
     return glob(pattern, { cwd: SRC_DIR, posix: true });
 }
 
+/**
+ * What does an allowlist key name on disk right now?
+ *
+ * Every exemption map in this file is keyed by a path relative to `src/`, and
+ * an exemption for a path that no longer exists is worse than untidy — see the
+ * no-stale-entries tests below. `'missing'` also covers a key that escapes
+ * `src/` (`../…`), which would otherwise satisfy a bare existence check while
+ * naming something this guard never scans.
+ */
+function srcEntryKind(relativePath: string): 'file' | 'dir' | 'missing' {
+    const abs = path.resolve(path.join(SRC_DIR, relativePath));
+    if (abs !== SRC_DIR && !abs.startsWith(SRC_DIR + path.sep)) return 'missing';
+    if (!fs.existsSync(abs)) return 'missing';
+    return fs.statSync(abs).isDirectory() ? 'dir' : 'file';
+}
+
 // ─── Console.* Guardrail ────────────────────────────────────────────
 
 describe('No console.* in backend server code', () => {
@@ -138,6 +154,41 @@ describe('No console.* in backend server code', () => {
             expect(f.startsWith('lib/dub-utils/')).toBe(false);
         }
     });
+
+    it('control: the console allowlists are non-empty and the probe discriminates', () => {
+        // The no-stale assertion below is "this filtered list is empty", which
+        // an empty allowlist and a probe that answers "present" for everything
+        // both satisfy. No upper population floor: these lists are allowed to
+        // shrink to nothing, so only emptiness-of-input is pinned.
+        expect(CONSOLE_ALLOWLIST.size).toBeGreaterThan(0);
+        expect(CONSOLE_ALLOWLIST_PREFIXES.length).toBeGreaterThan(0);
+        expect(srcEntryKind('lib/api-client.ts')).toBe('file');
+        expect(srcEntryKind('components/ui/charts/')).toBe('dir');
+        expect(srcEntryKind('__no-such-path-console-probe__/')).toBe('missing');
+        expect(srcEntryKind('../package.json')).toBe('missing');
+    });
+
+    it('the console allowlists only shrink — no stale entries', () => {
+        // Same rule as REQUIRE_ALLOWLIST below (#1285): a carve-out whose
+        // subject has been deleted keeps that PATH pre-approved for whatever
+        // is created there next. CONSOLE_ALLOWLIST keys are files;
+        // CONSOLE_ALLOWLIST_PREFIXES mixes directory prefixes with one file,
+        // so either kind counts as live.
+        const staleFiles = [...CONSOLE_ALLOWLIST].filter((rel) => srcEntryKind(rel) !== 'file');
+        const stalePrefixes = CONSOLE_ALLOWLIST_PREFIXES.filter(
+            (rel) => srcEntryKind(rel) === 'missing',
+        );
+        const stale = [...staleFiles, ...stalePrefixes];
+        if (stale.length > 0) {
+            throw new Error(
+                `${stale.length} console.* exemption(s) name a path that no longer exists ` +
+                    `under src/:\n` +
+                    stale.map((s) => `  ${s}`).join('\n') +
+                    `\n\nDelete the entry in the same diff as the file or directory.`,
+            );
+        }
+        expect(stale).toEqual([]);
+    });
 });
 
 // ─── Dynamic require() Guardrail ────────────────────────────────────
@@ -157,18 +208,30 @@ describe('Dynamic require() usage is minimized', () => {
      * zero successes in one E2E shard on green main. The three call sites are
      * static imports now (a namespace import with a deferred read in
      * prisma.ts, where the cycle is real; plain named imports elsewhere).
+     *
      * Startup-time lazy loading:
      * - mailer.ts → require('@/env') in initMailerFromEnv()
-     * - instrumentation.ts → require('./logger') at bootstrap
+     * - observability/instrumentation.ts → require('./logger') at bootstrap
      *
      * Conditional providers:
      * - storage/index.ts → require('./s3-provider') / require('./local-provider')
      *
-     * Large data lazy loading:
-     * - framework-provider.ts → require('@/data/...')
+     * CJS-only dependency:
+     * - spatial/parse.ts → require('@tmcw/togeojson') on the KML parse path
      *
      * Conditional health check:
-     * - readyz/route.ts → require('@/lib/redis')
+     * - readyz/route.ts, health/route.ts → require('@/lib/redis')
+     *
+     * The map is SHRINK-ONLY, pinned to disk by the no-stale-entries test
+     * below. #1285: four Epic G-3 vendor-questionnaire entries outlived the
+     * modules the GRC teardown (#547) deleted — each still carrying a written
+     * reason for a file nobody could read, and still pre-approving a
+     * `require('@/env')` for whatever might be created at those paths next.
+     * Nothing detected it, because this map had no existence test while every
+     * other baseline in the repo has one. A `framework-provider.ts →
+     * require('@/data/...')` line in this very docblock had rotted the same
+     * way (#570 deleted that subsystem); prose cannot be ratcheted, so keep it
+     * honest by hand.
      */
     const REQUIRE_ALLOWLIST: Record<string, string[]> = {
         'lib/mailer.ts': ['@/env'],
@@ -180,24 +243,39 @@ describe('Dynamic require() usage is minimized', () => {
         'app/api/readyz/route.ts': ['@/lib/redis'],
         // GAP-13 — same conditional Redis check pattern as readyz.
         'app/api/health/route.ts': ['@/lib/redis'],
-        // Epic G-3 — vendor questionnaire usecases.
-        // env.APP_URL is lazy-required at the call site (not statically
-        // imported) because these usecases run from BullMQ workers and
-        // background dispatchers where the env module's eager validation
-        // would otherwise crash on missing optional vars in the worker
-        // image. Same pattern as lib/mailer.ts above.
-        'app-layer/usecases/vendor-assessment-send.ts': ['@/env'],
-        'app-layer/usecases/vendor-assessment-reminder.ts': ['@/env'],
-        'app-layer/usecases/vendor-assessment-response.ts': ['@/env'],
-        // notifyAssessmentReviewed runs as a post-commit notification
-        // helper after the review is committed; it intentionally uses
-        // the global prisma client (not the request-scoped one) because
-        // the notification fires after the request's tenant context has
-        // closed. The `@/lib/prisma` require keeps the module-level
-        // import graph clean of direct prisma (so no-direct-prisma
-        // ratchet stays green for the rest of the file).
-        'app-layer/usecases/vendor-assessment-review.ts': ['@/lib/prisma', '@/env'],
     };
+
+    it('control: the staleness probe can tell present from absent', () => {
+        // `stale` below is a filtered list asserted empty: an empty map and a
+        // probe that answers "present" for everything both pass it. Deliberately
+        // no upper floor on the population — legitimately removing a lazy
+        // require() shrinks this map, and a floor would then be a false alarm.
+        expect(Object.keys(REQUIRE_ALLOWLIST).length).toBeGreaterThan(0);
+        expect(srcEntryKind('lib/mailer.ts')).toBe('file');
+        expect(srcEntryKind('__no-such-file-require-probe__.ts')).toBe('missing');
+        // A directory is not a valid key here — keys name the scanned file.
+        expect(srcEntryKind('lib')).toBe('dir');
+        expect(srcEntryKind('../package.json')).toBe('missing');
+    });
+
+    it('REQUIRE_ALLOWLIST only shrinks — no stale entries', () => {
+        const stale = Object.keys(REQUIRE_ALLOWLIST).filter(
+            (rel) => srcEntryKind(rel) !== 'file',
+        );
+        if (stale.length > 0) {
+            throw new Error(
+                `${stale.length} REQUIRE_ALLOWLIST entr${stale.length === 1 ? 'y names a path' : 'ies name paths'} ` +
+                    `that is not a file under src/:\n` +
+                    stale.map((s) => `  ${s}`).join('\n') +
+                    `\n\nAn entry that outlives its file keeps the PATH pre-approved: whatever ` +
+                    `is created there\nnext inherits the require() exemption, justified by a ` +
+                    `reason written for a module nobody\ncan read. That is #1285 — four Epic G-3 ` +
+                    `entries survived the GRC teardown (#547) that\ndeleted their files, and no ` +
+                    `test noticed.\n\nDelete the entry in the same diff as the file.`,
+            );
+        }
+        expect(stale).toEqual([]);
+    });
 
     it('no unexpected require() in src/ files', async () => {
         const tsFiles = await getFiles('**/*.ts');
