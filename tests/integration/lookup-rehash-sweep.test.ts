@@ -220,7 +220,8 @@ describeFn('the lookup-hash rehash sweep', () => {
         );
         expect(typeof db).toBe('string');
         expect(db.length).toBeGreaterThan(0);
-        // eslint-disable-next-line no-console -- naming the database under test is the point
+        // Naming the database under test is the point: a future reader/app
+        // divergence is then legible in the log rather than inferred.
         console.log(`[lookup-rehash-sweep] sweeping database: ${db}`);
     });
 
