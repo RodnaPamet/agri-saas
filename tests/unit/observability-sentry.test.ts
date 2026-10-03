@@ -259,3 +259,115 @@ describe('beforeSend redaction', () => {
         expect(result).toBeNull();
     });
 });
+
+/**
+ * #1158 — the privacy posture is EXPLICIT, not inherited from an SDK default.
+ *
+ * `@sentry/nextjs` 11 enables data collection by default and restructures
+ * `sendDefaultPii`, and this repo never set it — so "whatever the next major
+ * defaults to" governed what reached a third party. On a product that encrypts
+ * farm free-text at rest and masks cadastre individuals for GDPR, that is not
+ * a posture.
+ *
+ * Two independent gaps, both closed here, and the tests are separate because
+ * either one alone still leaks:
+ *
+ *   - `sendDefaultPii` is now `false` explicitly, so a future default cannot
+ *     quietly start attaching IPs, cookies and bodies.
+ *   - `beforeSend` now strips the IP-bearing request headers and reduces
+ *     `event.user` to its opaque `id`. The SDK fills `user.ip_address` itself
+ *     when PII collection is on, and a proxy-set `x-forwarded-for` reached
+ *     Sentry regardless of that option — it was never redacted.
+ *
+ * The bump's own tests could not have caught this: two of the three Sentry
+ * suites `jest.mock('@sentry/nextjs')`, so they say nothing about v11's
+ * behaviour. This asserts OUR options, which is the half we control.
+ */
+describe('#1158 — Sentry privacy opt-out is explicit', () => {
+    it('sendDefaultPii is explicitly false, not left to the SDK default', () => {
+        process.env.SENTRY_DSN = 'https://abc@sentry.io/123';
+        initSentry();
+
+        const config = mockInit.mock.calls[0][0];
+        // `toBe(false)` rather than `toBeFalsy()`: undefined is falsy and is
+        // exactly the state this fixes.
+        expect(config.sendDefaultPii).toBe(false);
+    });
+
+    it('beforeSend strips every IP-bearing header, and keeps benign ones', () => {
+        process.env.SENTRY_DSN = 'https://abc@sentry.io/123';
+        initSentry();
+        const config = mockInit.mock.calls[0][0];
+
+        const result = config.beforeSend(
+            {
+                request: {
+                    headers: {
+                        'x-forwarded-for': '203.0.113.7, 198.51.100.1',
+                        'x-real-ip': '203.0.113.7',
+                        forwarded: 'for=203.0.113.7',
+                        'cf-connecting-ip': '203.0.113.7',
+                        'true-client-ip': '203.0.113.7',
+                        authorization: 'Bearer t',
+                        'content-type': 'application/json',
+                        'user-agent': 'probe/1.0',
+                    },
+                },
+            },
+            {},
+        );
+
+        for (const gone of [
+            'x-forwarded-for',
+            'x-real-ip',
+            'forwarded',
+            'cf-connecting-ip',
+            'true-client-ip',
+            'authorization',
+        ]) {
+            expect(result.request.headers[gone]).toBeUndefined();
+        }
+        // Control: the scrub is targeted, not "delete all headers" — which
+        // would also satisfy every assertion above while destroying the
+        // diagnostic value of the event.
+        expect(result.request.headers['content-type']).toBe('application/json');
+        expect(result.request.headers['user-agent']).toBe('probe/1.0');
+    });
+
+    it('beforeSend keeps the opaque user id and drops everything else', () => {
+        process.env.SENTRY_DSN = 'https://abc@sentry.io/123';
+        initSentry();
+        const config = mockInit.mock.calls[0][0];
+
+        const result = config.beforeSend(
+            {
+                user: {
+                    id: 'usr_abc',
+                    ip_address: '203.0.113.7',
+                    email: 'farmer@example.com',
+                    username: 'farmer',
+                },
+            },
+            {},
+        );
+
+        // The id is DELIBERATE — it is what makes an error traceable to a
+        // report without naming anybody, and `setUser({ id })` is called on
+        // purpose. Dropping it would be a different defect.
+        expect(result.user).toEqual({ id: 'usr_abc' });
+        expect(result.user.ip_address).toBeUndefined();
+        expect(result.user.email).toBeUndefined();
+        expect(result.user.username).toBeUndefined();
+    });
+
+    it('beforeSend does not invent a user object where there was none', () => {
+        // Otherwise an event with no user would gain `{ id: undefined }`, and a
+        // consumer reading "is there a user?" would start getting yes.
+        process.env.SENTRY_DSN = 'https://abc@sentry.io/123';
+        initSentry();
+        const config = mockInit.mock.calls[0][0];
+
+        const result = config.beforeSend({ request: { headers: {} } }, {});
+        expect(result.user).toBeUndefined();
+    });
+});
