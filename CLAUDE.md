@@ -2818,8 +2818,8 @@ negated. Say what remains instead:
       concurrency tests are also what a harness that never achieved concurrency
       produces. Before the fix: 12/12 stalled barrier-synchronised, 9/12 as an
       unsynchronised burst.
-    - **`appendAuditEntry` still reaches for a second connection, and past `max`
-      it LOSES the audit row — no longer silently.** It opens its own `$transaction` on the
+    - **`appendAuditEntry` reaches for a second connection on the BEST-EFFORT tier only,
+      and past `max` that tier still loses the audit row — no longer silently.** It opens its own `$transaction` on the
       global client for every audited write and is not cached. The failure is
       not the visible one: measured 2026-10-02 at exactly `max`, with every DEK
       warm and disjoint tenants per run — `max - 1` wrote 11 tasks and 11 audit
@@ -2838,7 +2838,33 @@ negated. Say what remains instead:
       error and no trace, which is why the measurement above had to count rows
       to find it. Each reporter is individually try-wrapped — a committed write
       must never fail because the telemetry for its missing audit row broke.
-      The LOSS itself is still unfixed, and "alertable" would overstate what
+      The LOSS is now FIXED for the seventeen compliance-critical entities in
+      `src/lib/audit/fail-closed-entities.ts`, and remains open for everything
+      else — a deliberate split, not a half-finished one. `logEvent` already
+      RECEIVED the caller's transaction on all 222 of its call sites and
+      discarded it (the parameter was spelled `_db`), so for those entities the
+      chain append now runs ON that transaction: no second connection, and the
+      row commits or rolls back with the write it describes. Measured:
+      `PG_POOL_MAX` concurrent fail-closed audited writes all commit AND all
+      get their row, and reverting the routing fails that same assertion.
+      **Why not everywhere.** On the caller's transaction a failed insert
+      ABORTS it, and there are no SAVEPOINTs in `src/` or `prisma/` (stated at
+      `exchange-messaging.ts`, relied on by `farm-profile.ts`, measured by
+      `tests/integration/notify-transaction-abort.test.ts`). A TOLERATED
+      failure there would turn the caller's COMMIT into a silent ROLLBACK and
+      destroy the business write — strictly worse than losing the audit row,
+      and #1102/#1168 verbatim. Best-effort entities therefore keep their own
+      transaction by design rather than by omission. One side effect worth
+      knowing: a best-effort audit row SURVIVES a write that rolled back, so
+      the trail can assert something that did not happen — pre-existing, and
+      now fixed for the seventeen.
+      Membership rule, so the list is not taste: an entity is fail-closed when
+      the audit row IS the compliance artifact rather than a record about one
+      — it GRANTS or REVOKES access, mints or burns a CREDENTIAL, moves KEY
+      material, or creates or destroys a TENANCY. The agronomic surface is
+      deliberately excluded: a field entry must not be blocked by an audit
+      subsystem problem.
+      On observability, "alertable" would overstate what
       shipped: the error log is the signal that reaches a human, because
       agri-saas deploys NO OTel→Prometheus→Alertmanager pipeline (the live
       alerting is one GCP uptime check on `/api/readyz`). The `AuditRowLost`
@@ -2850,9 +2876,10 @@ negated. Say what remains instead:
       `tests/integration/audit-write-failure-is-loud.test.ts` with a negative
       control (a reporter firing unconditionally would satisfy the regression
       test and alert on every healthy write).
-      So the supportable concurrency for an AUDITED write is still
-      `max - 1` — which is why the P0.8 hardening test runs 11 sends and not the
-      20 its roadmap asked for — and past it the hash-chained trail still
+        Supportable concurrency for an audited write is therefore `max` on the
+        FAIL-CLOSED tier and still `max - 1` on the best-effort tier — which is
+        why the P0.8 hardening test runs 11 sends and not the
+        20 its roadmap asked for. Past that the best-effort trail still
       loses entries rather than erroring — now with a log line and a counter
       saying so.
       **The `afterCommit` seam IS reachable from the extension, contrary to what

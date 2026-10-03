@@ -126,7 +126,24 @@ function generateCuid(): string {
  * @param input - Audit entry data
  * @returns The appended entry's id, entryHash, and previousHash
  */
-export async function appendAuditEntry(input: AppendAuditInput, client?: PrismaClient): Promise<AppendAuditResult> {
+/**
+ * The subset of a Prisma client this writer needs.
+ *
+ * Structural on purpose: `PrismaTx` lives in `db-context.ts`, which imports
+ * `@/lib/prisma`, which lazily requires THIS file (see the ARCHITECTURE NOTE
+ * above). Importing the type would add an edge to a cycle that is already
+ * documented as delicate, and the body only ever calls two raw methods.
+ */
+type AuditWriterClient = {
+    $executeRawUnsafe(query: string, ...values: unknown[]): Promise<number>;
+    $queryRawUnsafe<T = unknown>(query: string, ...values: unknown[]): Promise<T>;
+};
+
+export async function appendAuditEntry(
+    input: AppendAuditInput,
+    client?: PrismaClient | AuditWriterClient,
+    opts?: { onCallerTransaction?: boolean },
+): Promise<AppendAuditResult> {
     const id = generateCuid();
     const actorType = input.actorType || 'USER';
     const version = input.version ?? 1;
@@ -147,7 +164,14 @@ export async function appendAuditEntry(input: AppendAuditInput, client?: PrismaC
 
     const db = client || getDefaultPrisma();
 
-    const result = await db.$transaction(async (tx) => {
+    // #1223 — the chain append runs EITHER in its own transaction (the
+    // best-effort default) OR directly on a transaction the caller already
+    // holds. The second form is what removes the second pool connection, and
+    // it is chosen EXPLICITLY by the caller rather than sniffed from the
+    // client: a transaction client omits `$transaction` at the TYPE level, but
+    // inferring the mode from a missing property would silently pick the wrong
+    // branch the day Prisma changes that shape.
+    const appendChainEntry = async (tx: AuditWriterClient) => {
         // 1. Acquire per-tenant advisory lock
         //    hashtext() returns a 32-bit int from a string — perfect for advisory locks
         await tx.$executeRawUnsafe(
@@ -227,10 +251,23 @@ export async function appendAuditEntry(input: AppendAuditInput, client?: PrismaC
         );
 
         return { id, entryHash, previousHash };
-    });
+    };
+
+    const result = opts?.onCallerTransaction
+        ? // On the CALLER's transaction: no second connection, and the advisory
+          // lock is held for the rest of that transaction. A failure here
+          // aborts the caller's write, which is the fail-closed semantics the
+          // compliance-critical entities are routed here for.
+          await appendChainEntry(db as AuditWriterClient)
+        : await (db as PrismaClient).$transaction(appendChainEntry);
 
     // Epic C.4 — best-effort outbound streaming. The audit row is
-    // already committed at this point, so a thrown error in the
+    // committed at this point when we opened our own transaction; on the
+    // CALLER's transaction it is written but NOT yet committed, so a SIEM may
+    // see an event whose transaction later rolls back. That is the accepted
+    // cost of making the audit row atomic with the write it describes — and it
+    // is the honest direction to fail in, since the alternative is a committed
+    // write with no trail. A thrown error in the
     // streamer must not propagate. The streamer enqueues into a
     // per-tenant in-memory buffer and returns synchronously; HTTP
     // POSTs happen out-of-band on a 5s / 100-event flush.
