@@ -41,16 +41,29 @@
  * boundary, so that is where the drain lives and the queue is addressed by
  * async context rather than by argument.
  *
- * ## Why AsyncLocalStorage and not the module-level stack `audit-context.ts` uses
+ * ## Why AsyncLocalStorage, and a note on where this reasoning should have gone
  *
- * `audit-context.ts` documents its own reason for a stack: Prisma's query
- * extensions run in a detached async context that loses ALS. Nothing here runs
- * inside a Prisma extension — `afterCommit` is called by app-layer code in the
- * caller's own async chain — and a module-level stack is actively WRONG for
- * this job: under concurrent requests the top of a shared stack is whichever
- * request pushed last, so effects would drain against another request's
- * transaction. That is not a theoretical concern; the hardening test for this
- * change runs eleven sends at once.
+ * A module-level stack is actively WRONG for this job: under concurrent
+ * requests the top of a shared stack is whichever request pushed last, so
+ * effects would drain against another request's transaction. Not theoretical —
+ * the hardening test for this change runs eleven sends at once.
+ *
+ * This paragraph used to justify the choice by CONTRAST, saying
+ * `audit-context.ts` documented its own reason for a stack: that Prisma's
+ * query extensions run in a detached async context which loses ALS. Two things
+ * about that are worth keeping:
+ *
+ *   - **The premise was false by Prisma 7.** `$use` was removed, the live path
+ *     is an async `$extends({ query })` handler, and such a handler DOES see
+ *     the ALS store — measured by
+ *     `tests/integration/prisma-extension-als-reachability.test.ts`.
+ *   - **The argument above applies verbatim to audit-context, and nobody
+ *     carried it across.** "The top of a shared stack is whichever request
+ *     pushed last" is exactly #1259: that context picks the per-tenant DEK, so
+ *     7 of 8 concurrent writes were encrypted under the wrong tenant's key.
+ *     The correct analysis was sitting in this file the whole time.
+ *
+ * `audit-context.ts` is ALS now too, so there is no contrast left to draw.
  *
  * ## What a rollback does
  *

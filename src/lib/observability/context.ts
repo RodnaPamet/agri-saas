@@ -5,10 +5,25 @@
  * tracing, error reporting). Any code running within a request can access
  * requestId, tenantId, userId, and route without explicit argument passing.
  *
- * DESIGN NOTE: This is SEPARATE from `audit-context.ts` which uses a
- * module-level stack. Prisma's `$use` middleware runs in a detached async
- * context that loses AsyncLocalStorage state, so audit-context intentionally
- * avoids ALS. This module handles everything else: logs, error reports, traces.
+ * DESIGN NOTE: This is SEPARATE from `audit-context.ts`, which carries the
+ * tenant/actor the Prisma audit + encryption extensions read. That module used
+ * a module-level stack and this note used to explain why: "Prisma's `$use`
+ * middleware runs in a detached async context that loses AsyncLocalStorage
+ * state, so audit-context intentionally avoids ALS."
+ *
+ * BOTH halves of that are now false, and #1259 is what the first one cost.
+ * `$use` was removed in Prisma 7 — the live path is an async
+ * `$extends({ query })` handler — and a `$extends` handler DOES see the ALS
+ * store (measured by
+ * `tests/integration/prisma-extension-als-reachability.test.ts`). The shared
+ * stack aliased one request's tenant onto another's across an `await`, and
+ * since that context chooses the per-tenant DEK, 7 of 8 concurrent writes were
+ * encrypted under the wrong tenant's key. `audit-context.ts` is ALS now too.
+ *
+ * The two modules stay separate because they carry different things: this one
+ * is for logs, error reports and traces; that one is read by the extensions.
+ * Do NOT re-derive "the extension cannot see ALS" from any older comment —
+ * run the test.
  *
  * SAFETY: Never store secrets, tokens, or raw payloads in this context.
  */
