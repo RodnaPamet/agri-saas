@@ -63,6 +63,25 @@ function redactUrl(url: string): string {
 }
 
 /**
+ * Request headers never sent to Sentry.
+ *
+ * The first three are credentials. The rest carry the CALLER'S IP ADDRESS,
+ * which `beforeSend` did not touch before #1158 — so an operator's address
+ * reached a third party whenever a proxy set one, independently of
+ * `sendDefaultPii`. Lower-cased because Sentry normalises header names.
+ */
+const REDACTED_HEADERS = [
+    'authorization',
+    'cookie',
+    'x-api-key',
+    'x-forwarded-for',
+    'x-real-ip',
+    'forwarded',
+    'cf-connecting-ip',
+    'true-client-ip',
+] as const;
+
+/**
  * Initialize Sentry SDK. Safe to call multiple times — only initializes once.
  * Noop when SENTRY_DSN is not set.
  */
@@ -79,6 +98,15 @@ export function initSentry(): void {
         dsn,
         environment: process.env.SENTRY_ENVIRONMENT || process.env.NODE_ENV || 'development',
         tracesSampleRate: parseFloat(process.env.SENTRY_TRACES_SAMPLE_RATE || '0'),
+
+        // #1158 — EXPLICIT, not inherited. This was unset, so whatever the SDK
+        // defaulted to governed, and `@sentry/nextjs` 11 enables data
+        // collection by default and restructures this option. On a product
+        // that encrypts farm free-text at rest and masks cadastre individuals
+        // for GDPR, "whatever the next major defaults to" is not a privacy
+        // posture. Setting it false means a future default cannot quietly
+        // start attaching IPs, cookies and request bodies to every event.
+        sendDefaultPii: false,
 
         // Don't send expected / handled errors
         beforeSend(event, hint) {
@@ -97,9 +125,7 @@ export function initSentry(): void {
             if (event.request) {
                 if (event.request.headers) {
                     const headers = { ...event.request.headers };
-                    delete headers['authorization'];
-                    delete headers['cookie'];
-                    delete headers['x-api-key'];
+                    for (const name of REDACTED_HEADERS) delete headers[name];
                     event.request.headers = headers;
                 }
                 // Never send full request body
@@ -113,6 +139,20 @@ export function initSentry(): void {
                 if (event.request.query_string) {
                     event.request.query_string = '[Filtered]';
                 }
+            }
+
+            // #1158 — the USER object, which nothing redacted before.
+            //
+            // `setUser({ id })` is deliberate: an opaque id is what makes an
+            // error traceable to a report without naming anybody, and it is
+            // kept. Everything else on this object is identifying — and
+            // `ip_address` is the one the SDK fills in BY ITSELF when PII
+            // collection is on, which is exactly what v11 changed the default
+            // for. Keeping the id and dropping the rest means the opt-out
+            // above and this scrub have to BOTH fail before an operator's IP
+            // reaches a third party.
+            if (event.user) {
+                event.user = { id: event.user.id };
             }
 
             // Redact breadcrumb URLs

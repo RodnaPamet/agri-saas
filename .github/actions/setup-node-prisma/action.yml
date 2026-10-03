@@ -23,6 +23,17 @@ runs:
         node-version: ${{ inputs.node-version }}
         cache: npm
 
+    # #1159 — BEFORE `npm ci`, deliberately. When the lockfile loses its
+    # optional-dependency flags, `npm ci` dies on onnxruntime-node's network
+    # postinstall and every downstream check goes red with a stated cause
+    # unrelated to the real one (#1159 was an ESLint patch bump). The jest
+    # guard that asserts the same properties CANNOT fire, because the install
+    # fails before any test runs — so this check is zero-dependency and runs
+    # here, needing only the node from the step above. ~50ms.
+    - name: "Gate: the lockfile still tolerates a failed optional download"
+      shell: bash
+      run: node scripts/check-optional-closure.mjs
+
     - name: Install dependencies
       shell: bash
       # CI hardening — `npm ci` runs package postinstall scripts, and a

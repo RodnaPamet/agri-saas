@@ -5,7 +5,7 @@
  * disable directive; a later pass migrates the whole detail surface to
  * useTenantSWR (Epic 69), same as the Policy detail follow-up. */
 
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
@@ -96,6 +96,7 @@ interface ArticleDetail {
 type KnowledgeTab = 'current' | 'versions' | 'editor';
 
 export default function KnowledgeArticleDetailPage() {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('knowledge.detail');
     const tk = useTranslations('knowledge');
     const params = useParams();

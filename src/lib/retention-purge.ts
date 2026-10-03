@@ -14,6 +14,10 @@
 import { prisma } from './prisma';
 import { SOFT_DELETE_MODELS } from './soft-delete';
 import { logger } from '@/lib/observability/logger';
+// Static: the lazy `require()` form returned a module without this export in
+// the webpack production bundle (see the note in src/lib/prisma.ts). This path
+// is acyclic, so a plain named import is enough.
+import { appendAuditEntry } from './audit/audit-writer';
 
 export interface PurgeResult {
     totalPurged: number;
@@ -56,7 +60,6 @@ export async function purgeSoftDeletedOlderThan(days: number): Promise<PurgeResu
                 `SELECT "id" FROM "Tenant" LIMIT 1`
             );
             if (firstTenant.length > 0) {
-                const { appendAuditEntry } = require('./audit/audit-writer');
                 await appendAuditEntry({
                     tenantId: firstTenant[0].id,
                     userId: null,

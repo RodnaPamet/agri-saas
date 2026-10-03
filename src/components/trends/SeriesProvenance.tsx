@@ -28,7 +28,7 @@
 import { useTranslations } from 'next-intl';
 
 import { InfoTooltip } from '@/components/ui/tooltip';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import {
     isDelayedSource,
     isOwnMarketplaceSource,
@@ -52,6 +52,7 @@ export function SeriesProvenance({
     hideSource = false,
     className = '',
 }: SeriesProvenanceProps) {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('trends');
     const sourceKey = sourceLabelKey(series.source);
     const own = isOwnMarketplaceSource(series.source);

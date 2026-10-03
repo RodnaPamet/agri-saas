@@ -1,5 +1,5 @@
 'use client';
-import { formatDateTime } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { useMemo } from 'react';
 import { Activity, CreditCard, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
 import { DataTable, createColumns } from '@/components/ui/table';
@@ -26,6 +26,7 @@ interface BillingEvent {
 }
 
 export function BillingEventLog({ events }: { events: BillingEvent[] }) {
+    const { formatDateTime } = useDateFormat();
     const columns = useMemo(() => createColumns<BillingEvent>([
         {
             id: 'event',
@@ -66,7 +67,7 @@ export function BillingEventLog({ events }: { events: BillingEvent[] }) {
                 </span>
             ),
         },
-    ]), []);
+    ]), [formatDateTime]);
 
     return (
         <DataTable

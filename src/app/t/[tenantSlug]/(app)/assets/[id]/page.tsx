@@ -4,7 +4,7 @@
  * carries an inline disable directive; collectively they should
  * migrate to useTenantSWR (Epic 69 shape) so the rule can lift. */
 
-import { formatDate, formatDateTime } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { SkeletonCard } from '@/components/ui/skeleton';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect, useCallback } from 'react';
@@ -42,6 +42,7 @@ const STATUS_TONE: Record<string, StatusBadgeVariant> = {
 };
 
 export default function AssetDetailPage() {
+    const { formatDate, formatDateTime } = useDateFormat();
     const t = useTranslations('assets');
     const params = useParams();
     const router = useRouter();

@@ -44,7 +44,7 @@ import {
     type ReactElement,
 } from 'react';
 
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 
 import { Popover } from '../popover';
 import { Calendar as CalendarPrimitive } from './calendar';
@@ -137,6 +137,7 @@ export function DatePicker({
     clearable = false,
     ...props
 }: DatePickerProps) {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('ui');
     const resolvedPlaceholder = placeholder ?? t('datePicker.selectDate');
     const [open, setOpen] = useState(false);

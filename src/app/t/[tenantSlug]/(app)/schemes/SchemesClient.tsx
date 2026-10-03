@@ -10,7 +10,7 @@ import { FilterProvider, useFilterContext, useFilters } from '@/components/ui/fi
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { TableTitleCell } from '@/components/ui/table-title-cell';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import {
     SUPPORT_SCHEME_AUTHORITIES,
     SUPPORT_SCHEME_STATUSES,
@@ -55,6 +55,7 @@ export function SchemesClient(props: Props) {
 }
 
 function SupportSchemesInner({ initialSchemes }: Props) {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('supportSchemes');
     const { search, hasActive, clearAll } = useFilters();
 
@@ -166,7 +167,7 @@ function SupportSchemesInner({ initialSchemes }: Props) {
                     },
                 },
             ]),
-        [t],
+        [t, formatDate],
     );
 
     const filterDefs = useMemo(

@@ -45,6 +45,9 @@ jest.mock('next-intl', () => {
             en,
         );
     return {
+        // P2.1c — part of the module; without it `useDateFormat()` threw
+        // "useLocale is not a function" in every suite stubbing this barrel.
+        useLocale: () => 'en',
         useTranslations: (ns?: string) => {
             const t = (key: string, values?: Record<string, unknown>) => {
                 const full = ns ? `${ns}.${key}` : key;

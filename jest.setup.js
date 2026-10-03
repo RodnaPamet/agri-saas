@@ -51,13 +51,22 @@ try {
   const marker = JSON.parse(
     fs.readFileSync(path.join(__dirname, 'node_modules/.cache/inflect-test-perworker.json'), 'utf8'),
   );
+  const u = new URL(marker.baseUrl);
   if (marker.perWorker) {
-    const u = new URL(marker.baseUrl);
     const wid = process.env.JEST_WORKER_ID || '1';
     u.pathname = '/' + marker.baseName + '_w' + wid;
-    process.env.DATABASE_URL = u.toString();
-    process.env.DIRECT_DATABASE_URL = u.toString();
+  } else {
+    // #1265 — serial / single-worker runs land here and used to fall through,
+    // leaving DATABASE_URL at whatever the resolution above produced, which is
+    // NOT the database globalSetup migrated. Measured across two checkouts:
+    // one resolved the app to an unslotted test database (a raw reader then
+    // scores zeros against a database the app never wrote to), the other to
+    // `127.0.0.1:5436/agri_saas` — a real DEV database, which is the hazard
+    // this file's own header warns about.
+    u.pathname = '/' + marker.baseName;
   }
+  process.env.DATABASE_URL = u.toString();
+  process.env.DIRECT_DATABASE_URL = u.toString();
 } catch { /* no marker → shared-DB mode, leave DATABASE_URL as resolved */ }
 process.env.AUTH_SECRET = 'supersecretstringthatis16charplus'; // pragma: allowlist secret -- test fixture
 process.env.JWT_SECRET = 'supersecretstringthatis16charplus'; // pragma: allowlist secret -- test fixture

@@ -33,9 +33,15 @@ import { computeEntryHash, toCanonicalTimestamp } from './canonical-hash';
  * ARCHITECTURE NOTE: audit-writer.ts and prisma.ts form a cyclic
  * graph at runtime:
  *
- *   prisma.ts → require('./audit/audit-writer') (inside the audit
- *               extension's handler — only runs at request time)
+ *   prisma.ts → import * as auditWriterModule from './audit/audit-writer'
  *   audit-writer.ts → import * as prismaModule from '../prisma'
+ *
+ * BOTH edges are static namespace imports with the dereference deferred to
+ * call time, and that symmetry is deliberate. prisma.ts used the
+ * `require()` form this note warns about below until it was found returning a
+ * module with no `appendAuditEntry` under `next build --webpack` — 275 failed
+ * audit writes and zero successes in one E2E shard. The note described the
+ * cure for one edge for months while the other edge had the disease.
  *
  * The cycle is resolved by deferring the dereference of
  * `prismaModule.prisma` to function-call time. The static

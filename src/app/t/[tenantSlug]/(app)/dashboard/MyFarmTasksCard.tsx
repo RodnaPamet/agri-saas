@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { Card } from '@/components/ui/card';
 import { Heading, TextLink } from '@/components/ui/typography';
 import type { AgDashboardTaskItem } from '@/app-layer/usecases/ag-dashboard';
@@ -20,6 +20,7 @@ interface MyFarmTasksCardProps {
  * (Tasks is not module-gated). Mirrors RecentActivityCard's chassis.
  */
 export default function MyFarmTasksCard({ href, items }: MyFarmTasksCardProps) {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('dashboard.myFarmTasks');
     return (
         <Card>

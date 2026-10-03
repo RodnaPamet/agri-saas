@@ -24,7 +24,7 @@ import { Button } from '@/components/ui/button';
 import { MetaStrip } from '@/components/ui/meta-strip';
 import { Textarea } from '@/components/ui/textarea';
 import { useEnterSubmit } from '@/components/ui/hooks';
-import { formatDateTime } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { apiDelete, apiGet, apiPost } from '@/lib/api-client';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
@@ -52,6 +52,7 @@ interface ThreadDetail {
 }
 
 export function ThreadClient({ threadId }: { threadId: string }) {
+    const { formatDateTime } = useDateFormat();
     const t = useTranslations('exchange.messaging');
     const tenantHref = useTenantHref();
     const buildApiUrl = useTenantApiUrl();

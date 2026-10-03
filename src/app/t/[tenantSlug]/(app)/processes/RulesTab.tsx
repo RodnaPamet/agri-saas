@@ -24,7 +24,7 @@ import { EntityListPage } from '@/components/layout/EntityListPage';
 import { createColumns } from '@/components/ui/table';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { EmptyState } from '@/components/ui/empty-state';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import {
     FilterProvider,
     useFilterContext,
@@ -73,6 +73,7 @@ export function RulesTab({ tenantSlug }: { tenantSlug: string }) {
 }
 
 function RulesTabInner({ tenantSlug }: { tenantSlug: string }) {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('processes.rules');
     const { state, search } = useFilters();
     const { data, isLoading, error } = useTenantSWR<AutomationRuleRow[]>(
@@ -176,7 +177,7 @@ function RulesTabInner({ tenantSlug }: { tenantSlug: string }) {
                     ),
                 },
             ]),
-        [t],
+        [t, formatDate],
     );
 
     return (

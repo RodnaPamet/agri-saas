@@ -80,6 +80,9 @@
  *   formatDateShort('2026-04-16T08:00:00Z') // → "16/04/2026"
  */
 
+import { formatDistance } from 'date-fns';
+import type { Locale } from '@/lib/i18n/locales';
+
 const LOCALE = 'en-GB';
 
 /**
@@ -106,6 +109,48 @@ const LOCALE = 'en-GB';
  * which is correct: 23:30Z IS 01:30 the next day in Sofia.
  */
 const DISPLAY_TIME_ZONE = 'Europe/Sofia';
+
+/**
+ * The Intl tag to use for each of the app's locales.
+ *
+ * ── why `en` is not passed through ──
+ *
+ * `Locale` is `'en' | 'bg'` — bare language tags, because that is what the
+ * `NEXT_LOCALE` cookie and `User.uiLanguage` hold. Handing `'en'` to Intl is
+ * NOT a neutral choice: bare `en` resolves to en-US, which renders
+ * "Apr 16, 2026" and — far worse — a short form of `04/16/2026`. Every
+ * English date in the product would silently flip month-first, and
+ * `formatDateShort` would become ambiguous for exactly the readers most
+ * likely to misread it. Measured, not assumed; pinned in
+ * `tests/unit/format-date-locale.test.ts`.
+ *
+ * `bg` and `bg-BG` are byte-identical for every format here, so the mapping
+ * is spelled out anyway rather than special-casing one entry.
+ */
+const INTL_TAG: Record<Locale, string> = {
+    en: 'en-GB',
+    bg: 'bg-BG',
+};
+
+/**
+ * Bulgarian dates carry a trailing «г.» (година) — "16.04.2026 г.".
+ *
+ * Owner's decision: keep it in the FORMAL forms (`formatDateLong`,
+ * `formatDateTimeLong`) which carry PDFs, the БАБХ ДНЕВНИК and audit
+ * receipts, and strip it from the COMPACT forms (`formatDate`,
+ * `formatDateTime`, `formatDateShort`, `formatDateCompact`) which fill table
+ * cells and chart axes. That is how Bulgarian typography actually works, and
+ * it keeps three characters out of every date cell in the product.
+ *
+ * Anchored at the END of the string only, so it cannot eat a «г.» that is
+ * part of something else, and tolerant of the no-break space CLDR may put
+ * before it.
+ */
+const TRAILING_YEAR_MARKER = /[\s\u00A0]*г\.$/;
+
+function stripYearMarker(formatted: string): string {
+    return formatted.replace(TRAILING_YEAR_MARKER, '');
+}
 
 /** Shared Intl.DateTimeFormat instances (created once, reused — fast). */
 const DATE_FMT = new Intl.DateTimeFormat(LOCALE, {
@@ -218,7 +263,6 @@ export function formatDateTimeLong(
 // or `now` is null / invalid; the visible text on a card with a
 // missing date should not flash "less than a minute ago".
 
-import { formatDistance } from 'date-fns';
 
 export interface FormatRelativeTimeOptions {
     /** Show "less than a minute ago" instead of "less than a minute". Defaults to true. */
@@ -306,41 +350,231 @@ export function formatDateCompact(
  * rest of the date helpers. Use everywhere a range is surfaced in chrome
  * — picker triggers, filter pills, audit-cycle detail, reports legends.
  */
-export function formatDateRange(
+export interface DateRangeLabels {
+    /** Prefix for an open-ended start, e.g. "From" / «От». */
+    from: string;
+    /** Prefix for an open-ended end, e.g. "Until" / «До». */
+    until: string;
+}
+
+/** The en-GB defaults, kept so existing callers need no change. */
+const DEFAULT_RANGE_LABELS: DateRangeLabels = { from: 'From', until: 'Until' };
+
+/**
+ * The calendar parts of an instant IN THE DISPLAY ZONE.
+ *
+ * ── why not `getUTCDate()` ──
+ *
+ * This function used `getUTCFullYear/Month/Date` to decide whether two
+ * endpoints share a day, month or year, and then interpolated
+ * `a.getUTCDate()` directly into a string whose other half came from a
+ * Sofia-formatted formatter. Two bugs in one expression once the display zone
+ * stopped being UTC:
+ *
+ *   · the COMPARISON asked the wrong zone. A range from 20:00Z to 22:00Z on
+ *     16 April is 23:00 on the 16th and 01:00 on the 17th in Sofia — two
+ *     different days — but UTC says one, so it rendered the single date
+ *     "16 Apr" while the right endpoint was actually the 17th for the reader.
+ *   · the DAY NUMBER was UTC while the month and year beside it were Sofia,
+ *     so the two halves of one string could disagree.
+ *
+ * Both are invisible while the display zone IS UTC, which is why they
+ * survived until now.
+ */
+const RANGE_PARTS_FMT = new Intl.DateTimeFormat('en-CA', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone: DISPLAY_TIME_ZONE,
+});
+
+function zonedParts(d: Date): { year: string; month: string; day: number } {
+    // en-CA yields YYYY-MM-DD, which splits unambiguously.
+    const [year, month, day] = RANGE_PARTS_FMT.format(d).split('-');
+    return { year, month, day: Number(day) };
+}
+
+export interface FormatDateRangeOptions {
+    fallback?: string;
+    /** Translated prefixes for the open-ended cases. */
+    labels?: DateRangeLabels;
+}
+
+function formatDateRangeIn(
+    locale: Locale,
     from: string | Date | null | undefined,
     to: string | Date | null | undefined,
-    fallback = '—',
+    options: FormatDateRangeOptions = {},
 ): string {
+    const fallback = options.fallback ?? '—';
+    const labels = options.labels ?? DEFAULT_RANGE_LABELS;
+    const f = createDateFormatters(locale);
+    const monthFmt = new Intl.DateTimeFormat(INTL_TAG[locale], {
+        month: 'short',
+        timeZone: DISPLAY_TIME_ZONE,
+    });
+
     const fromD = toDate(from);
     const toD = toDate(to);
 
     if (!fromD && !toD) return fallback;
-    if (fromD && !toD) return `From ${DATE_FMT.format(fromD)}`;
-    if (!fromD && toD) return `Until ${DATE_FMT.format(toD)}`;
+    if (fromD && !toD) return `${labels.from} ${f.formatDate(fromD)}`;
+    if (!fromD && toD) return `${labels.until} ${f.formatDate(toD)}`;
 
-    // TS narrowing — both non-null here.
     const a = fromD as Date;
     const b = toD as Date;
+    const pa = zonedParts(a);
+    const pb = zonedParts(b);
 
-    const sameYear = a.getUTCFullYear() === b.getUTCFullYear();
-    const sameMonth = sameYear && a.getUTCMonth() === b.getUTCMonth();
-    const sameDay = sameMonth && a.getUTCDate() === b.getUTCDate();
+    const sameYear = pa.year === pb.year;
+    const sameMonth = sameYear && pa.month === pb.month;
+    const sameDay = sameMonth && pa.day === pb.day;
 
-    if (sameDay) return DATE_FMT.format(a);
+    if (sameDay) return f.formatDate(a);
+    // "16 – 30 Apr 2026" — the left endpoint keeps only its day number.
+    if (sameMonth) return `${pa.day} – ${f.formatDate(b)}`;
+    // "16 Apr – 30 Jun 2026" — drop the year on the left endpoint only.
+    if (sameYear) return `${pa.day} ${monthFmt.format(a)} – ${f.formatDate(b)}`;
+    return `${f.formatDate(a)} – ${f.formatDate(b)}`;
+}
 
-    if (sameMonth) {
-        // "16 – 30 Apr 2026"
-        return `${a.getUTCDate()} – ${DATE_FMT.format(b)}`;
-    }
+/**
+ * Adaptive range string. Defaults to en-GB labels and the app's display zone.
+ *
+ * Pass `options.labels` with translated prefixes for a localised surface —
+ * the open-ended cases are the only prose here, and «От»/«До» cannot come
+ * from Intl.
+ */
+export function formatDateRange(
+    from: string | Date | null | undefined,
+    to: string | Date | null | undefined,
+    fallbackOrOptions: string | FormatDateRangeOptions = '—',
+): string {
+    const options: FormatDateRangeOptions =
+        typeof fallbackOrOptions === 'string'
+            ? { fallback: fallbackOrOptions }
+            : fallbackOrOptions;
+    return formatDateRangeIn('en', from, to, options);
+}
 
-    if (sameYear) {
-        // "16 Apr – 30 Jun 2026": drop the year on the left endpoint.
-        const leftNoYear = `${a.getUTCDate()} ${MONTH_FMT.format(a)}`;
-        return `${leftNoYear} – ${DATE_FMT.format(b)}`;
-    }
+// ─── Locale-bound formatters (P2.1b) ────────────────────────────────────────
 
-    // Different years — both endpoints carry their year.
-    return `${DATE_FMT.format(a)} – ${DATE_FMT.format(b)}`;
+/** The eight date helpers, bound to one locale. */
+export interface DateFormatters {
+    formatDate: (value: string | Date | null | undefined, fallback?: string) => string;
+    formatDateTime: (value: string | Date | null | undefined, fallback?: string) => string;
+    formatDateTimeLong: (value: string | Date | null | undefined, fallback?: string) => string;
+    formatDateShort: (value: string | Date | null | undefined, fallback?: string) => string;
+    formatDateLong: (value: string | Date | null | undefined, fallback?: string) => string;
+    formatDateCompact: (value: string | Date | null | undefined, fallback?: string) => string;
+    formatDateRange: (
+        from: string | Date | null | undefined,
+        to: string | Date | null | undefined,
+        fallback?: string,
+    ) => string;
+    formatChatTime: (
+        value: string | Date | null | undefined,
+        now: Date | null | undefined,
+        fallback?: string,
+    ) => string;
+    formatQuantity: (
+        value: number | null | undefined,
+        unit?: string,
+        options?: { maximumFractionDigits?: number },
+        fallback?: string,
+    ) => string;
+}
+
+/**
+ * One cache entry per locale.
+ *
+ * Bounded by construction: the key is `Locale`, a two-member union, so this
+ * cannot grow past two entries however many requests arrive. A cache keyed on
+ * an arbitrary string would be an unbounded-growth hazard on a server; this
+ * one is not, and the type is what makes that true rather than a comment.
+ */
+const FORMATTER_CACHE = new Map<Locale, DateFormatters>();
+
+/**
+ * Build the helpers for one locale.
+ *
+ * ── why a factory and not a `locale` argument on each function ──
+ *
+ * There are 142 call sites across 73 files. A trailing parameter would mean
+ * editing every CALL; a factory means editing each FILE's import once and
+ * leaving the call expressions alone — roughly two lines per file instead of
+ * a hundred and forty-two edits, each of which is a chance to change a
+ * fallback or an argument order by accident.
+ *
+ * The module-level exports below keep working untouched, so nothing breaks
+ * while call sites move over.
+ */
+export function createDateFormatters(locale: Locale): DateFormatters {
+    const cached = FORMATTER_CACHE.get(locale);
+    if (cached) return cached;
+
+    const tag = INTL_TAG[locale];
+    const compact = (opts: Intl.DateTimeFormatOptions): Intl.DateTimeFormat =>
+        new Intl.DateTimeFormat(tag, { ...opts, timeZone: DISPLAY_TIME_ZONE });
+
+    const dateFmt = compact({ day: '2-digit', month: 'short', year: 'numeric' });
+    const dateTimeFmt = compact({
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+    const dateTimeLongFmt = compact({
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+    });
+    const dateShortFmt = compact({ day: '2-digit', month: '2-digit', year: 'numeric' });
+    const dateLongFmt = compact({ day: 'numeric', month: 'long', year: 'numeric' });
+    const dateCompactFmt = compact({ day: 'numeric', month: 'short' });
+
+    /** Compact forms drop the Bulgarian «г.»; formal forms keep it. */
+    const short = (f: Intl.DateTimeFormat) => (
+        value: string | Date | null | undefined,
+        fallback = '—',
+    ): string => {
+        const d = toDate(value);
+        return d ? stripYearMarker(f.format(d)) : fallback;
+    };
+    const formal = (f: Intl.DateTimeFormat) => (
+        value: string | Date | null | undefined,
+        fallback = '—',
+    ): string => {
+        const d = toDate(value);
+        return d ? f.format(d) : fallback;
+    };
+
+    const built: DateFormatters = {
+        formatDate: short(dateFmt),
+        formatDateTime: short(dateTimeFmt),
+        formatDateShort: short(dateShortFmt),
+        formatDateCompact: short(dateCompactFmt),
+        formatDateTimeLong: formal(dateTimeLongFmt),
+        formatDateLong: formal(dateLongFmt),
+        formatDateRange: (from, to, fallback = '—') =>
+            formatDateRangeIn(locale, from, to, { fallback }),
+        formatChatTime: (value, now, fallback = '—') =>
+            formatChatTime(value, now, locale, fallback),
+        formatQuantity: (value, unit, options, fallback = '—') =>
+            formatQuantity(value, unit, locale, options, fallback),
+    };
+    FORMATTER_CACHE.set(locale, built);
+    return built;
+}
+
+/** Test seam: drop the per-locale cache. */
+export function _resetFormatterCache(): void {
+    FORMATTER_CACHE.clear();
 }
 
 // ─── Bulgarian chat time + quantities (P2.1) ─────────────────────────────────
@@ -428,7 +662,28 @@ export function formatChatTime(
     const yesterday = DAY_KEY_FMT.format(new Date(now.getTime() - 86_400_000));
     if (then === yesterday) return `${relative(locale, -1, 'day')}, ${TIME_FMT.format(d)}`;
 
-    return `${DATE_SHORT_FMT.format(d)}, ${TIME_FMT.format(d)}`;
+    // 2–6 days: still relative. Intl gives «преди 3 дни» / "3 days ago", and
+    // «онзи ден» for exactly two.
+    const days = Math.round(deltaMs / 86_400_000);
+    if (days > -7 && days < 7) return relative(locale, -days, 'day');
+
+    // Older than a week: a COMPACT date, not a full date plus a time.
+    //
+    // This returned `DATE_SHORT_FMT.format(d) + ', ' + TIME_FMT.format(d)` —
+    // "30/09/2026, 15:43" — and the notifications-bell suite caught it: these
+    // strings land in a 10px chip, and the case it failed exists to keep them
+    // short tokens rather than raw dates. Two bugs in one line, in fact, since
+    // `DATE_SHORT_FMT` is the MODULE-level en-GB formatter and would have
+    // rendered an English date inside a Bulgarian feed.
+    // `locale` here is either one of the app's `Locale` values or a raw Intl
+    // tag — P2.1a's suite passes 'en-GB' directly — so the mapping is a
+    // lookup with passthrough rather than an index that assumes membership.
+    const tag = (INTL_TAG as Record<string, string | undefined>)[locale] ?? locale;
+    return new Intl.DateTimeFormat(tag, {
+        day: 'numeric',
+        month: 'short',
+        timeZone: DISPLAY_TIME_ZONE,
+    }).format(d);
 }
 
 /**

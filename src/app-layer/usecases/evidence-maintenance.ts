@@ -10,6 +10,10 @@
  */
 import { withTenantDb } from '@/lib/db-context';
 import { getProviderByName } from '@/lib/storage';
+// Static: the lazy `require()` form returned a module without this export in
+// the webpack production bundle (see the note in src/lib/prisma.ts). This path
+// is acyclic, so a plain named import is enough.
+import { appendAuditEntry } from '@/lib/audit/audit-writer';
 
 /**
  * `reconcileUnlinkedEvidence` lived here. It swept for FILE evidence with
@@ -87,7 +91,6 @@ export async function detectBrokenEvidence(tenantId: string) {
         }
 
         if (broken.length > 0) {
-            const { appendAuditEntry } = require('@/lib/audit/audit-writer');
             for (const b of broken) {
                 await appendAuditEntry({
                     tenantId,

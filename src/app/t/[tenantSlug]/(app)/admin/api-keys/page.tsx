@@ -23,7 +23,7 @@ import { InfoTooltip, Tooltip } from '@/components/ui/tooltip';
 import { useCopyToClipboard } from '@/components/ui/hooks';
 import { DataTable, createColumns, useBulkDelete } from '@/components/ui/table';
 import { InlineNotice } from '@/components/ui/inline-notice';
-import { formatDateTime } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { useToast } from '@/components/ui/hooks/use-toast';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
@@ -171,6 +171,7 @@ function ScopePicker({
 // ─── Main Page ───
 
 export default function ApiKeysPage() {
+    const { formatDateTime } = useDateFormat();
     const t = useTranslations('admin.apiKeys');
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
@@ -398,7 +399,7 @@ export default function ApiKeysPage() {
         // include it so an eslint-exhaustive-deps warning doesn't slip in
         // if someone refactors it into a useCallback later.
 
-        [],
+        [formatDateTime],
     );
 
     const inactiveKeyColumns = useMemo(
@@ -436,7 +437,7 @@ export default function ApiKeysPage() {
                     ),
                 },
             ]),
-        [],
+        [formatDateTime],
     );
 
     if (loading) {

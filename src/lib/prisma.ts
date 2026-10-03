@@ -14,6 +14,37 @@ import { recordAuditWriteFailure } from '@/lib/observability/metrics';
 // barrel with a partial factory and anything unlisted resolves to `undefined`
 // (#1271). This module is pure and dependency-free.
 import { shouldFailClosed } from './audit/fail-closed-entities';
+/**
+ * The chain writer, as a STATIC namespace import with the dereference deferred
+ * to call time.
+ *
+ * This file and `audit/audit-writer.ts` are a runtime cycle: audit-writer does
+ * `import * as prismaModule from '../prisma'` and reads `prismaModule.prisma`
+ * inside a function, for exactly this reason. Its ARCHITECTURE NOTE records
+ * why, having been bitten by `require('../prisma').prisma` returning
+ * `undefined` in a production bundle.
+ *
+ * The same fix was never applied to THIS edge. `require('./audit/audit-writer')`
+ * here returned a module whose `appendAuditEntry` was `undefined` in the
+ * `next build --webpack` production bundle, so the audit extension threw
+ * `s is not a function` on every audited write and #1269's catch logged and
+ * swallowed it. Measured on green main `e1acca2c5`, one E2E shard: 275 failed
+ * audit writes across 28 models and NOT ONE success. The extension writes the
+ * SYSTEM-actor half of a hash-chained trail, and it was writing nothing.
+ *
+ * `import * as` gives a live namespace binding, and reading the property when
+ * the handler runs happens long after both modules have evaluated — so the
+ * cycle is never dereferenced at module-init time. Do not "simplify" this to a
+ * named import (it would be dereferenced at init, inside the cycle) and do not
+ * put it back to `require()`.
+ */
+import * as auditWriterModule from './audit/audit-writer';
+// Static, exactly like the writer above and for the same reason, but WITHOUT
+// the namespace indirection: `db/before-commit` imports only
+// AsyncLocalStorage, the logger and the metrics recorder, so it reaches nothing
+// that reaches this file and there is no cycle to defer around. After #1287
+// this file resolves NOTHING dynamically -- that is the point.
+import { enqueueAuditEntry } from './db/before-commit';
 
 // ─── Write actions to intercept ───
 const WRITE_ACTIONS = new Set([
@@ -238,17 +269,21 @@ function buildAuditExtension() {
             // not a function`, 274 lost rows in one E2E shard, tenant creation
             // and invite creation both 500ing on the fail-closed tier, and
             // every unit test green. Keep the resolution on this side.
-            const { appendAuditEntry } = require('./audit/audit-writer');
-            const { enqueueAuditEntry } = require('./db/before-commit');
+            // Both bindings are STATIC imports now (see the top of this file).
+            // The writer is handed to the queue rather than re-resolved inside
+            // it, so there is exactly one place that names the module and the
+            // drain cannot disagree with this fallback about which writer it
+            // got. The namespace deref happens HERE, at call time, which is
+            // what keeps the cycle undereferenced at module-init.
             const queued = enqueueAuditEntry({
                 input: payload,
                 failClosed: shouldFailClosed(model),
                 model,
                 operation,
-                write: appendAuditEntry,
+                write: auditWriterModule.appendAuditEntry,
             });
             if (!queued) {
-                await appendAuditEntry(payload);
+                await auditWriterModule.appendAuditEntry(payload);
             }
         } catch (auditError) {
             // #1223 — the business write has ALREADY COMMITTED by the time we

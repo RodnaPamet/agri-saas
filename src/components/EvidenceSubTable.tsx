@@ -31,7 +31,7 @@ import { DataTable, createColumns } from '@/components/ui/table';
 import { InlineEmptyState } from '@/components/ui/inline-empty-state';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { textLinkVariants } from '@/components/ui/typography';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 import type { EvidenceLinkDTO } from '@/lib/dto';
 
 export interface EvidenceTabData {
@@ -77,6 +77,7 @@ export function EvidenceSubTable({
     onUnlinkEvidence?: (evidenceId: string) => void;
     tenantHref: (path: string) => string;
 }) {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('evidence.subTable');
     const rows = useMemo<EvidenceTableRow[]>(() => {
         const links = data?.links ?? [];
@@ -261,7 +262,7 @@ export function EvidenceSubTable({
                       ]
                     : []),
             ]),
-        [canWrite, onUnlink, onUnlinkEvidence, tenantHref, t],
+        [canWrite, onUnlink, onUnlinkEvidence, tenantHref, t, formatDate],
     );
 
     // E2E semantics — preserve the pre-migration contract:

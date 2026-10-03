@@ -32,7 +32,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Heading } from '@/components/ui/typography';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/ui/hooks';
-import { formatDate } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 
 const KINDS = ['SERVICE', 'REPAIR', 'INSPECTION', 'BREAKDOWN'] as const;
 type Kind = (typeof KINDS)[number];
@@ -67,6 +67,7 @@ interface Props {
 }
 
 export function MaintenanceTab({ assetId, canWrite, assetStatus, onStatusChange }: Props) {
+    const { formatDate } = useDateFormat();
     const t = useTranslations('assets');
     const tc = useTranslations('common');
     const apiUrl = useTenantApiUrl();
@@ -139,7 +140,7 @@ export function MaintenanceTab({ assetId, canWrite, assetStatus, onStatusChange 
                         ) : null,
                 },
             ]),
-        [t, canWrite],
+        [t, canWrite, formatDate],
     );
 
     const handleClose = async () => {

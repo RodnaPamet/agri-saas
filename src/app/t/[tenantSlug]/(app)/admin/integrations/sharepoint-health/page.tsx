@@ -9,7 +9,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
-import { formatDateTime } from '@/lib/format-date';
+import { useDateFormat } from '@/lib/i18n/use-date-format';
 
 interface Health {
     connections: Array<{ id: string; name: string; lastTestedAt: string | null; lastTestStatus: string | null }>;
@@ -19,6 +19,7 @@ interface Health {
 }
 
 export default function SharePointHealthPage() {
+    const { formatDateTime } = useDateFormat();
     const t = useTranslations('admin.integrations');
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
