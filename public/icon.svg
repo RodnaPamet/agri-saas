@@ -5,7 +5,7 @@
       <stop offset="1" stop-color="#C79A2E"/>
     </linearGradient>
   </defs>
-  <rect width="512" height="512" rx="112" fill="#0b1220"/>
+  <rect width="512" height="512" rx="112" fill="#05231B"/>
   <!-- stylised furrows / field rows (muted gold on the dark app shell) -->
   <g fill="none" stroke="#9a7b30" stroke-width="22" stroke-linecap="round">
     <path d="M104 360 C 180 300, 332 300, 408 360"/>

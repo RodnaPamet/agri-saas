@@ -252,8 +252,15 @@ const RENDERED_TEST_FLOOR = 242;
 // Tagged `@mobile`, so it runs on both phone projects and not on desktop, where
 // `.tap()` would fail for want of `hasTouch`.
 //
+// 62 → 63: `theme-first-paint.spec.ts` (P2.4, #1304) — the chosen theme is on
+// the page at the FIRST paint, measured at 4x CPU throttle. It records every
+// `data-theme` write against the `first-contentful-paint` entry, which is the
+// only way to see a flash: an assertion that the correct theme ENDS UP applied
+// passes just as well when an effect applied it one frame late. No rendered
+// test can show this — jsdom has no paint.
+//
 // Raised because this PR ADDS a spec. Nothing here lowers a floor to go green.
-const E2E_SPEC_FLOOR = 62;
+const E2E_SPEC_FLOOR = 63;
 const REGISTRY_FLOOR = 5;
 
 /** Max a live count may exceed its floor before the floor must rise. */

@@ -12,6 +12,7 @@
 import { Moon, Sun, SunMedium } from 'lucide-react';
 import { Tooltip } from '@/components/ui/tooltip';
 import { useTheme, type Theme } from './ThemeProvider';
+import { useTranslations } from 'next-intl';
 
 export interface ThemeToggleProps {
     className?: string;
@@ -25,12 +26,6 @@ const NEXT_THEME: Record<Theme, Theme> = {
     sunlight: 'dark',
 };
 
-const THEME_NAME: Record<Theme, string> = {
-    dark: 'dark',
-    light: 'light',
-    sunlight: 'sunlight',
-};
-
 // The icon represents the NEXT theme (what a click switches to).
 const NEXT_ICON: Record<Theme, typeof Sun> = {
     dark: Sun, // dark → light
@@ -40,8 +35,12 @@ const NEXT_ICON: Record<Theme, typeof Sun> = {
 
 export function ThemeToggle({ className, id = 'theme-toggle' }: ThemeToggleProps) {
     const { theme, toggle } = useTheme();
+    const t = useTranslations('theme');
     const next = NEXT_THEME[theme];
-    const label = `${THEME_NAME[theme]} theme — switch to ${THEME_NAME[next]}`;
+    // Was a hardcoded English template — "dark theme — switch to light" —
+    // shown in the tooltip AND the aria-label, so a screen reader in Bulgarian
+    // announced English. The third theme's name is «Слънце» (ADR 0002 OD8).
+    const label = t('switchLabel', { current: t(theme), next: t(next) });
     const Icon = NEXT_ICON[theme];
 
     return (
