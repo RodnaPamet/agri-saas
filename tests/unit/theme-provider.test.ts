@@ -43,7 +43,16 @@ describe('ThemeProvider — source contract', () => {
 
     it('flips the html[data-theme] attribute (not a class) so tokens.css matches', () => {
         expect(src).toMatch(/ATTR\s*=\s*['"]data-theme['"]/);
-        expect(src).toMatch(/setAttribute\(ATTR/);
+        // P2.4 routed every attribute write through `setThemeAttr`, which
+        // compares before writing, so the literal `setAttribute(ATTR` this
+        // used to match no longer appears anywhere. That rename is exactly how
+        // a source-contract test goes quietly wrong, so what is pinned now is
+        // the CLAIM rather than the spelling: ATTR reaches an attribute write,
+        // and the module never reaches for a class.
+        expect(src).toMatch(/setThemeAttr\(el,\s*ATTR/);
+        expect(src).toMatch(/el\.setAttribute\(name,\s*value\)/);
+        // The "(not a class)" half, which this case asserted in its NAME only.
+        expect(src).not.toMatch(/classList/);
     });
 
     it('resolves initial theme in the documented order: storage → media → dark', () => {

@@ -69,9 +69,10 @@ interface Hit {
     text: string;
 }
 
-function scan(): { violations: Hit[]; survivorCount: number } {
+function scan(): { violations: Hit[]; survivorCount: number; scannedCount: number } {
     const violations: Hit[] = [];
     let survivorCount = 0;
+    let scannedCount = 0;
     for (const rel of listFiles()) {
         if (SKIP_FILES.has(rel)) continue;
         if (SKIP_SUBSTRINGS.some((s) => rel.includes(s))) continue;
@@ -79,6 +80,7 @@ function scan(): { violations: Hit[]; survivorCount: number } {
         const abs = path.join(ROOT, rel);
         let content: string;
         try { content = fs.readFileSync(abs, 'utf8'); } catch { continue; }
+        scannedCount++;
         const lines = content.split(/\r?\n/);
         for (let i = 0; i < lines.length; i++) {
             const text = lines[i];
@@ -87,11 +89,11 @@ function scan(): { violations: Hit[]; survivorCount: number } {
             violations.push({ file: rel, line: i + 1, text: text.trim().slice(0, 160) });
         }
     }
-    return { violations, survivorCount };
+    return { violations, survivorCount, scannedCount };
 }
 
 describe('no-legacy-brand ratchet', () => {
-    const { violations } = scan();
+    const { violations, survivorCount, scannedCount } = scan();
 
     it('has no un-reasoned /inflect/i references outside the survivor categories', () => {
         if (violations.length > 0) {
@@ -102,6 +104,37 @@ describe('no-legacy-brand ratchet', () => {
             );
         }
         expect(violations).toHaveLength(0);
+    });
+
+    /**
+     * The scan actually looked at the tree.
+     *
+     * Found by `scripts/selector-teeth.mjs`, which mutates a selector and
+     * checks something fails: `listFiles() -> return []` SURVIVED. With no
+     * files, the loop above never runs, `violations` is empty, and the ratchet
+     * reports a clean tree — a guard that passes hardest precisely when it is
+     * broken. `git ls-files` returning nothing is not hypothetical either: it
+     * is what a wrong `cwd`, a renamed scan root, or a `-z` split against the
+     * wrong separator all produce, and every one of them is silent.
+     *
+     * Two floors rather than one, because they fail for different reasons and
+     * neither implies the other:
+     *
+     *   - `scannedCount` is the POPULATION. It catches an empty or collapsed
+     *     file list.
+     *   - `survivorCount` is the DETECTOR. The survivor categories exist
+     *     because real matching lines exist, so a scan that reads every file
+     *     but whose `/inflect/i` test never fires is also broken — the files
+     *     were read as the wrong encoding, say, or the regex was narrowed.
+     *
+     * The numbers are deliberately far below the live ones (2187 files tracked
+     * in the scan roots, 2109 of them scannable, 124 matching lines at the time
+     * of writing) so ordinary growth and deletion never touch them. They are a
+     * floor against COLLAPSE, not a ratchet on the count.
+     */
+    it('examined the tree — an empty selection must not read as a clean one', () => {
+        expect(scannedCount).toBeGreaterThan(1500);
+        expect(survivorCount).toBeGreaterThan(50);
     });
 
     it('the PWA manifest locks the Agrent home-screen identity', () => {
