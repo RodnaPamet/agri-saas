@@ -12,7 +12,8 @@
  * renders without tenant / permission / next-intl context.
  */
 import { render, screen } from '@testing-library/react';
-import { LayoutDashboard, MapPin, ClipboardList, NotebookPen, AlertTriangle } from 'lucide-react';
+import { LayoutDashboard, MapPin, ClipboardList, NotebookPen, AlertTriangle, CalendarDays } from 'lucide-react';
+import { restoreViewport, setViewport } from './viewport';
 
 // Mutable so a test can swap in the "all gated out" case. The `mock`
 // prefix is what lets the jest.mock factory close over it.
@@ -106,5 +107,127 @@ describe('BottomTabBar', () => {
         const { container } = render(<BottomTabBar />);
         expect(container).toBeEmptyDOMElement();
         expect(screen.queryByTestId('bottom-tab-bar')).not.toBeInTheDocument();
+    });
+});
+
+/**
+ * P2.5 — the bar follows `User.bottomTabOrder`.
+ *
+ * The contract itself is unit-tested in `tests/unit/resolve-bottom-tabs.test.ts`
+ * against the pure resolver. What is proved HERE is that the component is
+ * actually wired to it — a resolver with a perfect test suite and no caller is
+ * the failure mode these cases exist to rule out.
+ */
+describe('BottomTabBar — the saved arrangement', () => {
+    const slugs = () =>
+        Array.from(
+            screen.getByRole('navigation', { name: 'Primary' }).querySelectorAll('a'),
+        ).map((a) => a.getAttribute('data-testid'));
+
+    it('renders the user’s order, not the default one', () => {
+        render(<BottomTabBar savedOrder={['/journal', '/dashboard']} />);
+        expect(slugs()).toEqual(['bottom-tab-journal', 'bottom-tab-dashboard']);
+    });
+
+    it('drops an unreachable choice and lets the next one take the slot', () => {
+        // `/admin` is not in the nav here, so it stands in for a tab gated off
+        // for this member, or an id from a newer iOS build.
+        render(
+            <BottomTabBar
+                savedOrder={[
+                    '/journal',
+                    '/admin',
+                    '/exchange',
+                    '/locations',
+                    '/farm-tasks',
+                    '/dashboard',
+                ]}
+            />,
+        );
+        // Five tabs, every one of them chosen. Clamping before resolving would
+        // have spent a slot on `/admin` and rendered four.
+        expect(slugs()).toEqual([
+            'bottom-tab-journal',
+            'bottom-tab-exchange',
+            'bottom-tab-locations',
+            'bottom-tab-farm-tasks',
+            'bottom-tab-dashboard',
+        ]);
+    });
+
+    it('renders NO bar for a deliberately cleared arrangement', () => {
+        // The one place web and iOS differ on purpose — iOS shows its defaults,
+        // because there the tab bar IS the navigation. Owner-ruled 2026-10-04.
+        const { container } = render(<BottomTabBar savedOrder={[]} />);
+        expect(container).toBeEmptyDOMElement();
+    });
+
+    it('falls back to the defaults when nothing chosen is reachable', () => {
+        // Distinct from `[]`: the user asked for `/admin`, and losing the role
+        // must not silently delete their bar.
+        render(<BottomTabBar savedOrder={['/admin']} />);
+        expect(slugs()).toHaveLength(5);
+        expect(slugs()[0]).toBe('bottom-tab-dashboard');
+    });
+});
+
+describe('BottomTabBar — badges and touch targets', () => {
+    it('surfaces the same badge the sidebar renders', () => {
+        // Same `badge` field, from the same gated nav data, so the rail and the
+        // bar can never disagree about a count.
+        mockSections = [
+            {
+                items: [
+                    { href: '/t/acme/calendar', label: 'Calendar', icon: CalendarDays, badge: 3 },
+                    { href: '/t/acme/journal', label: 'Journal', icon: NotebookPen },
+                ],
+            },
+        ];
+        render(<BottomTabBar savedOrder={['/calendar', '/journal']} />);
+
+        const cal = screen.getByTestId('bottom-tab-calendar');
+        expect(cal).toHaveTextContent('3');
+        // Inside the link, so it joins the accessible name rather than being
+        // announced as a stray number — "Calendar 3".
+        expect(cal.textContent).toContain('Calendar');
+        // A tab with no count renders no pill at all.
+        expect(screen.getByTestId('bottom-tab-journal').textContent).toBe('Journal');
+    });
+
+    it('keeps every tab a >=44px touch target (Apple HIG / WCAG 2.5.5)', () => {
+        render(<BottomTabBar />);
+        for (const link of screen
+            .getByRole('navigation', { name: 'Primary' })
+            .querySelectorAll('a')) {
+            expect(link.className).toContain('min-h-[44px]');
+        }
+    });
+
+    it('is mobile-only chrome, and renders identically at both viewports', () => {
+        // The bar is hidden on desktop by CSS (`md:hidden`), which jsdom does
+        // not apply — so the honest assertions are that the class is present
+        // and that nothing about the markup depends on viewport width. Running
+        // both satisfies the phase rule without pretending jsdom laid anything
+        // out.
+        //
+        // Queried through each render's OWN container rather than `screen`:
+        // RTL's bound queries resolve against `baseElement` (document.body),
+        // so mounting the component twice in one case makes every
+        // `getByTestId` ambiguous instead of returning the newer tree.
+        const bar = (c: HTMLElement) =>
+            c.querySelector('[data-testid="bottom-tab-bar"]') as HTMLElement;
+
+        setViewport('mobile');
+        const mobile = render(<BottomTabBar savedOrder={['/journal', '/dashboard']} />);
+        expect(bar(mobile.container).className).toContain('md:hidden');
+        const mobileMarkup = bar(mobile.container).innerHTML;
+        mobile.unmount();
+        restoreViewport();
+
+        setViewport('desktop');
+        const desktop = render(<BottomTabBar savedOrder={['/journal', '/dashboard']} />);
+        expect(bar(desktop.container).innerHTML).toBe(mobileMarkup);
+        desktop.unmount();
+        restoreViewport();
     });
 });

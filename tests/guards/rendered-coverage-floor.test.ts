@@ -201,7 +201,13 @@ const ROOT = path.resolve(__dirname, '../..');
 // Raised because this PR ADDS verification, which is what this ratchet asks of a
 // PR that adds rendered tests. Nothing here lowers a floor or widens a baseline
 // to go green — #1122's brief forbids that, and the two are opposite moves.
-const RENDERED_TEST_FLOOR = 242;
+// 242 → 243: `swipe-to-close.test.tsx` (P2.5, #1304's sibling) — drag-to-dismiss
+// for the nav drawer. The cases that matter are the ones that must NOT fire: a
+// vertical scroll that wanders sideways, a pull against the hinge, a touch on a
+// closed sheet, an iOS-cancelled touch. All five gesture rules are
+// mutation-proved, each reddening exactly one case.
+//
+const RENDERED_TEST_FLOOR = 243;
 // Lowered 55 → 54 in the risk-quantification uproot (2026-08-08).
 // `ai-risk-assessment.spec.ts` and `new-risk-modal.spec.ts` were both
 // wholly about the deleted register; the specs that merely REFERENCED a
