@@ -27,6 +27,7 @@ import {
     useState,
     type ReactNode,
 } from 'react';
+import { THEME_COOKIE, THEME_COOKIE_MAX_AGE } from '@/lib/theme/theme-cookie';
 
 export type Theme = 'dark' | 'light' | 'sunlight';
 
@@ -50,6 +51,37 @@ export interface ThemeContextValue {
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 const STORAGE_KEY = 'inflect:theme';
+
+/**
+ * P2.4 — the cookie is what the SERVER reads to seed `data-theme`, so it has
+ * to be written on every change. localStorage stays as well: it is the
+ * existing users' stored choice and dropping it would reset everyone.
+ */
+function persistThemeCookie(theme: Theme): void {
+    try {
+        document.cookie =
+            `${THEME_COOKIE}=${encodeURIComponent(theme)};path=/;max-age=${THEME_COOKIE_MAX_AGE};samesite=lax`;
+    } catch {
+        // A cookie write can throw in sandboxed contexts. Losing it costs one
+        // flash on the next load, which is strictly better than throwing here.
+    }
+}
+
+/**
+ * The theme already on the document, as put there by the server's cookie seed
+ * or by the pre-paint script.
+ *
+ * Reading the DOM rather than recomputing is the point: by the time this runs
+ * the correct theme is ALREADY applied, and recomputing risks disagreeing with
+ * it — which is the flash this PR removes, reintroduced one layer up.
+ */
+function themeOnDocument(): Theme | null {
+    if (typeof document === 'undefined') return null;
+    const el = document.documentElement;
+    if (el.getAttribute(CONTRAST_ATTR) === 'high') return 'sunlight';
+    const attr = el.getAttribute(ATTR);
+    return attr === 'light' || attr === 'dark' ? attr : null;
+}
 const ATTR = 'data-theme';
 
 function readInitialTheme(): Theme {
@@ -66,6 +98,33 @@ function readInitialTheme(): Theme {
 
 const CONTRAST_ATTR = 'data-contrast';
 
+/**
+ * `setAttribute` only when the value actually changes.
+ *
+ * P2.4, measured: `setAttribute` queues a mutation and invalidates style even
+ * when the new value equals the old one. Since the server now seeds these
+ * attributes, the common path is re-writing exactly what is already there —
+ * once from the pre-paint script and again from the hydration effect below.
+ * The second of those lands AFTER the first paint (measured at t=8099 against
+ * an FCP of 3728 under 4x CPU throttle in
+ * `tests/e2e/theme-first-paint.spec.ts`), which is precisely the shape of the
+ * flash this work removes. It was invisible only because the value happened to
+ * match.
+ *
+ * Guarding here rather than at the two call sites because this is the one
+ * function every theme change goes through, `setTheme` included — re-picking
+ * the theme you already have should also be a no-op.
+ *
+ * `removeAttribute` needs no guard: it is already a no-op when absent.
+ */
+function setThemeAttr(el: HTMLElement, name: string, value: string | null) {
+    if (value === null) {
+        el.removeAttribute(name);
+    } else if (el.getAttribute(name) !== value) {
+        el.setAttribute(name, value);
+    }
+}
+
 function applyTheme(theme: Theme) {
     if (typeof document === 'undefined') return;
     const el = document.documentElement;
@@ -73,11 +132,11 @@ function applyTheme(theme: Theme) {
         // Sunlight is the light palette plus a high-contrast overlay — set
         // both attributes so it inherits every light token and only the
         // contrast overrides apply on top (see tokens.css [data-contrast]).
-        el.setAttribute(ATTR, 'light');
-        el.setAttribute(CONTRAST_ATTR, 'high');
+        setThemeAttr(el, ATTR, 'light');
+        setThemeAttr(el, CONTRAST_ATTR, 'high');
     } else {
-        el.setAttribute(ATTR, theme);
-        el.removeAttribute(CONTRAST_ATTR);
+        setThemeAttr(el, ATTR, theme);
+        setThemeAttr(el, CONTRAST_ATTR, null);
     }
 }
 
@@ -90,14 +149,22 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         if (hasHydrated.current) return;
         hasHydrated.current = true;
-        const next = readInitialTheme();
+        // Prefer what is already painted. `readInitialTheme()` remains the
+        // fallback for the case where neither the server nor the pre-paint
+        // script managed to set an attribute.
+        const next = themeOnDocument() ?? readInitialTheme();
         setThemeState(next);
         applyTheme(next);
+        // Writing the cookie here too makes an existing user with a
+        // localStorage choice but no cookie server-correct from their next
+        // request, without them having to touch the toggle.
+        persistThemeCookie(next);
     }, []);
 
     const setTheme = useCallback((next: Theme) => {
         setThemeState(next);
         applyTheme(next);
+        persistThemeCookie(next);
         try {
             window.localStorage.setItem(STORAGE_KEY, next);
         } catch {

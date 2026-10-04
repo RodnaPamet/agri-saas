@@ -16,6 +16,7 @@
 import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as zlib from 'node:zlib';
 
 const ROOT = path.resolve(__dirname, '../..');
 const SCAN_ROOTS = ['src', 'deploy', 'messages', 'public'];
@@ -112,9 +113,17 @@ describe('no-legacy-brand ratchet', () => {
         expect(json.name).toBe('Agrent — Field Operations');
         expect(json.short_name).toBe('Agrent');
         expect(manifest).not.toMatch(/inflect/i);
-        // Chrome — dark app shell, not the pre-rebrand green (#15803d).
-        expect(json.theme_color).toBe('#0b1220');
-        expect(json.background_color).toBe('#0b1220');
+        // P2.4 — the app shell is GREEN, matching `--bg-page` in the dark
+        // theme and the dark `theme-color` meta that layout.tsx already
+        // advertises. It was #0b1220, the PwC navy this item removes; the
+        // pre-rebrand green was a different, brighter #15803d and is not what
+        // this is.
+        //
+        // Pinned in the same diff as the manifest change, per the plan: a
+        // guard that trails its subject by a commit is a guard that has to be
+        // re-argued by whoever next reads a red build.
+        expect(json.theme_color).toBe('#05231B');
+        expect(json.background_color).toBe('#05231B');
         // Icons — SVG + the PNG set installed devices need.
         const srcs = (json.icons as Array<{ src: string; sizes: string; purpose: string }>).map((i) => i.src);
         expect(srcs).toContain('/icon.svg');
@@ -129,6 +138,130 @@ describe('no-legacy-brand ratchet', () => {
         for (const f of ['public/icon-192.png', 'public/icon-512.png', 'public/apple-touch-icon.png']) {
             expect(fs.existsSync(path.join(ROOT, f))).toBe(true);
         }
+    });
+
+    /**
+     * The icons are the right COLOUR, not merely present.
+     *
+     * The text scan above cannot answer this: `BINARY_EXT` skips `.png` by
+     * design, because a byte-grep of compressed pixel data is meaningless. So
+     * for the whole of the rebrand this guard asserted the three PNGs EXIST
+     * and was structurally blind to the fact that all three still carried the
+     * `#0b1220` PwC navy ground — it passed 5/5 while shipping the old brand
+     * on every installed home screen. Existence was never the property worth
+     * guarding.
+     *
+     * Decoding one pixel is the smallest honest fix. Note the assertion is
+     * EQUALITY to the new colour rather than inequality to the old one: a
+     * decoder bug that returned zeroes, or a wrong stride, would satisfy
+     * "not navy" trivially, so only the positive form validates the
+     * measurement at the same time as the asset.
+     */
+    describe('app icon pixels carry the Agrent brand, not the PwC navy', () => {
+        /**
+         * Minimal 8-bit RGBA PNG reader.
+         *
+         * Only the subset these three files use, and it REFUSES anything else
+         * rather than mis-decoding it — an Adam7-interlaced or palette PNG run
+         * through this code would produce plausible nonsense, which is exactly
+         * the failure a guard must not have.
+         */
+        function readPng(buf: Buffer) {
+            const w = buf.readUInt32BE(16);
+            const h = buf.readUInt32BE(20);
+            const [bitDepth, colourType] = [buf[24], buf[25]];
+            const interlace = buf[28];
+            if (bitDepth !== 8 || colourType !== 6 || interlace !== 0) {
+                throw new Error(`unsupported PNG: depth=${bitDepth} colour=${colourType} interlace=${interlace}`);
+            }
+
+            const idat: Buffer[] = [];
+            for (let off = 8; off + 8 <= buf.length; ) {
+                const len = buf.readUInt32BE(off);
+                if (buf.toString('ascii', off + 4, off + 8) === 'IDAT') {
+                    idat.push(buf.subarray(off + 8, off + 8 + len));
+                }
+                off += 12 + len;
+            }
+            const raw = zlib.inflateSync(Buffer.concat(idat));
+
+            // Un-filter. Each scanline is prefixed with its filter type and is
+            // decoded against the ALREADY-decoded bytes to its left and above,
+            // so this cannot be done for one pixel in isolation.
+            const bpp = 4;
+            const stride = w * bpp;
+            const out = Buffer.alloc(h * stride);
+            let p = 0;
+            for (let y = 0; y < h; y++) {
+                const filter = raw[p++];
+                for (let x = 0; x < stride; x++) {
+                    const cur = raw[p + x];
+                    const a = x >= bpp ? out[y * stride + x - bpp] : 0;
+                    const b = y > 0 ? out[(y - 1) * stride + x] : 0;
+                    const c = x >= bpp && y > 0 ? out[(y - 1) * stride + x - bpp] : 0;
+                    let v: number;
+                    if (filter === 0) v = cur;
+                    else if (filter === 1) v = cur + a;
+                    else if (filter === 2) v = cur + b;
+                    else if (filter === 3) v = cur + ((a + b) >> 1);
+                    else if (filter === 4) {
+                        const pred = a + b - c;
+                        const [pa, pb, pc] = [Math.abs(pred - a), Math.abs(pred - b), Math.abs(pred - c)];
+                        v = cur + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c);
+                    } else throw new Error(`unknown PNG filter ${filter}`);
+                    out[y * stride + x] = v & 0xff;
+                }
+                p += stride;
+            }
+
+            const px = (x: number, y: number) => [
+                out[y * stride + x * 4],
+                out[y * stride + x * 4 + 1],
+                out[y * stride + x * 4 + 2],
+                out[y * stride + x * 4 + 3],
+            ];
+            const hex = (x: number, y: number) =>
+                '#' + px(x, y).slice(0, 3).map((n) => n.toString(16).padStart(2, '0')).join('');
+            return { w, h, px, hex, bytes: out };
+        }
+
+        const ICONS = ['public/icon-192.png', 'public/icon-512.png', 'public/apple-touch-icon.png'];
+
+        it.each(ICONS)('%s has the forest-green ground', (file) => {
+            const img = readPng(fs.readFileSync(path.join(ROOT, file)));
+            // Sampled low and centre: below the furrows, inside the rounded
+            // rect at every size, and clear of the sprout.
+            const [x, y] = [Math.floor(img.w / 2), Math.floor(img.h * 0.85)];
+            expect(img.hex(x, y)).toBe('#05231b'); // --bg-page, dark theme
+            expect(img.px(x, y)[3]).toBe(255);
+        });
+
+        it.each(ICONS)('%s keeps its transparent corner (the rounded mask)', (file) => {
+            const img = readPng(fs.readFileSync(path.join(ROOT, file)));
+            expect(img.px(1, 1)[3]).toBe(0);
+        });
+
+        it.each(ICONS)('%s still carries the gold mark — not a blank square', (file) => {
+            // Without this, a solid #05231B rectangle would satisfy every
+            // assertion above. The gradient runs #E8C766 -> #C79A2E, so the
+            // test is for pixels that are decisively warm, not an exact value.
+            const img = readPng(fs.readFileSync(path.join(ROOT, file)));
+            let gold = 0;
+            for (let i = 0; i < img.bytes.length; i += 4) {
+                const [r, g, b, a] = [img.bytes[i], img.bytes[i + 1], img.bytes[i + 2], img.bytes[i + 3]];
+                if (a === 255 && r > 150 && g > 110 && b < 110 && r > b + 60) gold++;
+            }
+            expect(gold).toBeGreaterThan(img.w * img.h * 0.01);
+        });
+
+        it('the decoder REFUSES a format it would otherwise mis-read', () => {
+            // The guard's own control: `readPng` returning plausible nonsense
+            // for an unexpected format is the way this check goes quietly
+            // wrong, so the refusal is asserted rather than assumed.
+            const buf = Buffer.from(fs.readFileSync(path.join(ROOT, ICONS[0])));
+            buf[25] = 3; // claim palette colour
+            expect(() => readPng(buf)).toThrow(/unsupported PNG/);
+        });
     });
 
     it('detector self-test: an un-allowlisted "inflect" line IS a violation', () => {
