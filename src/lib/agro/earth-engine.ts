@@ -63,11 +63,82 @@ export interface NdviWindow {
 // once. The in-flight promise is memoised so concurrent requests share a
 // single handshake; a rejection clears it so a transient failure can be
 // retried on the next request rather than poisoning the process.
+/**
+ * Earth Engine budgets, and why an UNBOUNDED call was the defect.
+ *
+ * Every EE round-trip here is a callback API wrapped in a promise. A wrapper
+ * with no deadline never settles if the callback is never invoked — and a hang
+ * is NOT a throw, so neither the `try/catch` in these functions nor the soft
+ * `generation_failed` arm in `index-tiles-handler.ts` can see it. The request
+ * simply never completes: the user's browser gives up and says the server did
+ * not respond, while the five index buttons all fail together because they
+ * share one handshake.
+ *
+ * The init case was the worst of the five. `initPromise` is memoised at module
+ * scope, and its `.catch` clears the memo so a transient failure retries — the
+ * comment above it says exactly that, and it is true of REJECTIONS. A hang
+ * leaves the promise pending for ever, so the memo is never cleared and every
+ * later request in that container awaits a promise that will never settle.
+ * Sticky until the container is replaced, which is why this comes back rather
+ * than flickering. Making the timeout a REJECTION is what re-arms that retry:
+ * it flows through the same `.catch`.
+ *
+ * Budgets are deliberately below a browser's patience, because a timeout the
+ * user never waits for buys nothing: the point is to return the honest
+ * "couldn't load imagery" state while they are still looking at the map.
+ */
+const EE_INIT_TIMEOUT_MS = 10_000;
+const EE_CALL_TIMEOUT_MS = 25_000;
+
+/**
+ * Promisify an EE callback with a DEADLINE.
+ *
+ * This is the only `new Promise` in this module, and
+ * `tests/guards/earth-engine-calls-are-bounded.test.ts` asserts that — a second
+ * one is how an unbounded call gets back in.
+ */
+function withEeDeadline<T>(
+    label: string,
+    timeoutMs: number,
+    build: (resolve: (value: T) => void, reject: (err: unknown) => void) => void,
+): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+        let settled = false;
+        // Cleared on settle: a pending 25s timer holds the event loop open and
+        // would delay a worker's exit for every call that succeeded quickly.
+        const timer = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            reject(new Error(`${label} did not respond within ${timeoutMs}ms`));
+        }, timeoutMs);
+        const ok = (value: T) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(value);
+        };
+        const bad = (err: unknown) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            reject(err instanceof Error ? err : new Error(String(err)));
+        };
+        // A callback arriving AFTER the deadline must not double-settle, and a
+        // synchronous throw inside `build` must reject rather than escape into
+        // the caller's stack where the deadline would not apply.
+        try {
+            build(ok, bad);
+        } catch (err) {
+            bad(err);
+        }
+    });
+}
+
 let initPromise: Promise<void> | null = null;
 
 function initEarthEngine(): Promise<void> {
     if (initPromise) return initPromise;
-    initPromise = new Promise<void>((resolve, reject) => {
+    initPromise = withEeDeadline<void>('EE auth+initialize', EE_INIT_TIMEOUT_MS, (resolve, reject) => {
         if (!isGeeConfigured()) {
             reject(new Error('Earth Engine is not configured'));
             return;
@@ -179,7 +250,10 @@ async function resolveAcquiredDate(collection: EeImage): Promise<string | null> 
             }
         ).aggregate_max('system:time_start');
 
-        const millis = await new Promise<unknown>((resolve, reject) => {
+        const millis = await withEeDeadline<unknown>(
+            'EE aggregate_max',
+            EE_CALL_TIMEOUT_MS,
+            (resolve, reject) => {
             aggregated.evaluate((value: unknown, err?: unknown) => {
                 if (err) {
                     reject(new Error(`EE aggregate_max failed: ${String(err)}`));
@@ -258,7 +332,7 @@ export async function getIndexTileUrl(
     // Both round-trips are issued together — the date label must not add a
     // serial hop to the tile request. `resolveAcquiredDate` never rejects.
     const [urlFormat, acquiredDate] = await Promise.all([
-        new Promise<string>((resolve, reject) => {
+        withEeDeadline<string>('EE getMap', EE_CALL_TIMEOUT_MS, (resolve, reject) => {
             composite.getMap(
                 visParams,
                 (map: { urlFormat?: string } | null, err?: unknown) => {
@@ -350,7 +424,7 @@ export async function getIndexMeansForBounds(
     });
 
     const [info, acquiredDate] = await Promise.all([
-        new Promise<Record<string, unknown>>((resolve, reject) => {
+        withEeDeadline<Record<string, unknown>>('EE reduceRegion', EE_CALL_TIMEOUT_MS, (resolve, reject) => {
             reduced.evaluate((value: unknown, err?: unknown) => {
                 if (err) {
                     reject(new Error(`EE reduceRegion failed: ${String(err)}`));
@@ -414,7 +488,7 @@ export async function getIndexMeansForPolygon(
     });
 
     const [info, acquiredDate] = await Promise.all([
-        new Promise<Record<string, unknown>>((resolve, reject) => {
+        withEeDeadline<Record<string, unknown>>('EE reduceRegion', EE_CALL_TIMEOUT_MS, (resolve, reject) => {
             reduced.evaluate((value: unknown, err?: unknown) => {
                 if (err) {
                     reject(new Error(`EE reduceRegion failed: ${String(err)}`));
