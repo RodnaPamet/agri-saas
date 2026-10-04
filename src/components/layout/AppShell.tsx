@@ -57,6 +57,15 @@ interface AppShellUser {
         role: string;
         organizationId: string;
     }>;
+    /**
+     * P2.5 — the caller's saved bottom-bar arrangement, as stored.
+     *
+     * `null` means "never chosen" and is NOT the same as `[]`, which means
+     * deliberately cleared; `@/lib/nav/resolve-bottom-tabs` is where that
+     * distinction is spent. Read server-side by the tenant layout so the bar
+     * is right in the first frame rather than re-ordering after hydration.
+     */
+    bottomTabOrder?: string[] | null;
 }
 
 export type AppShellVariant = 'tenant' | 'org';
@@ -281,7 +290,9 @@ export function AppShell({
                 five most-used field surfaces (md:hidden). The hamburger
                 MobileDrawer above keeps the long tail. Tenant variant only:
                 the bar resolves its tabs from the tenant nav. */}
-            {variant === 'tenant' && !operator && <BottomTabBar />}
+            {variant === 'tenant' && !operator && (
+                <BottomTabBar savedOrder={user?.bottomTabOrder ?? null} />
+            )}
         </div>
     );
 }

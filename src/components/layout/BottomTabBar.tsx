@@ -8,6 +8,10 @@
  * hamburger drawer. The drawer (`MobileDrawer`) stays as the long
  * tail; this bar is the fast path for the five field surfaces.
  *
+ * The tabs follow the user's own saved arrangement (`User.bottomTabOrder`,
+ * shared with the iOS app) and fall back to a default order — see
+ * `@/lib/nav/resolve-bottom-tabs` for the contract both clients implement.
+ *
  * The tabs are NOT a second hard-coded nav list — they are resolved
  * against the live, permission-/module-gated `useNavSections()` (the
  * same source the sidebar + drawer render from). A surface the tenant
@@ -29,6 +33,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/cn';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { resolveBottomTabs } from '@/lib/nav/resolve-bottom-tabs';
 import { useNavSections } from './SidebarNav';
 
 /**
@@ -40,38 +46,37 @@ import { useNavSections } from './SidebarNav';
  */
 type NavItem = ReturnType<typeof useNavSections>[number]['items'][number];
 
-/**
- * The tenant-relative href suffixes of the primary field surfaces, in
- * display order. Resolved against `useNavSections()` at render time so
- * permission/module gating is inherited (a gated-out surface drops from
- * the bar automatically).
- */
-const BOTTOM_TAB_SUFFIXES = [
-    '/dashboard',
-    '/farm-tasks',
-    '/locations',
-    '/journal',
-    '/exchange',
-] as const;
+export interface BottomTabBarProps {
+    /**
+     * `User.bottomTabOrder` as stored — `null` when never chosen.
+     *
+     * Read server-side by the tenant layout and threaded through `AppShell`,
+     * NOT fetched here. A client fetch would draw the default bar and then
+     * re-order it when the response arrived, which is a visible shuffle after
+     * paint — the same defect P2.4 removed from the theme.
+     */
+    savedOrder?: string[] | null;
+}
 
-export function BottomTabBar() {
+export function BottomTabBar({ savedOrder = null }: BottomTabBarProps) {
     const t = useTranslations('bottomTabBar');
     const pathname = usePathname();
     const sections = useNavSections();
 
-    // Flatten the live gated nav, then pick our target surfaces in
-    // display order. An item missing from `useNavSections()` (permission
-    // /module-gated) is simply skipped — the bar never out-runs the
-    // sidebar's visibility.
+    // The live, already permission- and module-gated nav. Passing it to the
+    // resolver is what makes the saved order a PREFERENCE rather than a grant:
+    // the resolver can only ever return items that are already in this list,
+    // so a stale saved id can reorder and hide, never widen access.
     const items = sections.flatMap((s) => s.items);
-    const tabs: NavItem[] = [];
-    for (const suffix of BOTTOM_TAB_SUFFIXES) {
-        const match = items.find((it) => it.href.endsWith(suffix));
-        if (match) tabs.push(match);
-    }
 
-    // Defensive: a tenant with every target surface gated out renders no
-    // bar at all rather than an empty strip.
+    // The default order, the 5-slot clamp, and the null-vs-[] distinction all
+    // live in `@/lib/nav/resolve-bottom-tabs`, because iOS renders the same
+    // stored value and the two clients have to agree. See its docblock for the
+    // agreed table and the one deliberate platform difference.
+    const tabs: NavItem[] = resolveBottomTabs(savedOrder, items);
+
+    // No bar rather than an empty strip. Reached two ways: every target
+    // surface gated out, or the user deliberately cleared the bar (`[]`).
     if (tabs.length === 0) return null;
 
     return (
@@ -117,6 +122,32 @@ export function BottomTabBar() {
                                 aria-hidden="true"
                                 className="absolute inset-x-3 top-0 h-0.5 rounded-full bg-[var(--brand-default)]"
                             />
+                        )}
+                        {/* P2.5 — the same `badge` the sidebar renders, from the
+                            same gated nav data, so the two can never disagree
+                            about a count. Deliberately NOT aria-hidden: it sits
+                            inside the link, so it joins the accessible name and
+                            a screen reader announces "Календар 3" — matching
+                            what `nav-item.tsx` does on the desktop rail.
+
+                            `badge` is already formatted upstream (`undefined`
+                            when the count is zero or the fetch failed, '99+'
+                            past 99), so there is no empty pill to suppress and
+                            no number to cap here. */}
+                        {tab.badge != null && (
+                            <StatusBadge
+                                variant="info"
+                                size="sm"
+                                // Positioning only. `tests/guards/status-badge-discipline.test.ts`
+                                // bans text-size, padding and radius overrides on
+                                // StatusBadge — the `size` prop owns those, and
+                                // `sm` is already the 10px scale this bar's labels
+                                // use, so the overrides were redundant as well as
+                                // disallowed.
+                                className="absolute right-1/2 top-0.5 translate-x-[0.9rem]"
+                            >
+                                {tab.badge}
+                            </StatusBadge>
                         )}
                         <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
                         <span className="max-w-full truncate">{tab.label}</span>
