@@ -59,6 +59,8 @@ import { isDisposableEmail } from '@/lib/auth/disposable-email';
 import { checkPasswordAgainstHIBP } from '@/lib/security/password-check';
 import { hashForLookup, hashForLookupCandidates } from '@/lib/security/encryption';
 import { SIGNUP_LIMIT } from '@/lib/security/rate-limit';
+import { verifyTurnstile } from '@/lib/security/turnstile';
+import { getClientIp } from '@/lib/rate-limit/edge-bucket';
 import { logger } from '@/lib/observability/logger';
 import { issueEmailVerificationCode, normaliseEmail } from '@/lib/auth/email-verification-code';
 import {
@@ -88,7 +90,12 @@ export const POST = withApiErrorHandling(
             return jsonResponse({ error: 'invalid_request' }, { status: 400 });
         }
 
-        const { email: rawEmail, password, name } = (body ?? {}) as Record<string, unknown>;
+        const {
+            email: rawEmail,
+            password,
+            name,
+            turnstileToken,
+        } = (body ?? {}) as Record<string, unknown>;
         if (
             typeof rawEmail !== 'string' ||
             typeof password !== 'string' ||
@@ -98,6 +105,27 @@ export const POST = withApiErrorHandling(
             !name
         ) {
             return jsonResponse({ error: 'invalid_request' }, { status: 400 });
+        }
+
+        // Bot screening (P3.5c), FIRST — before the password is hashed, before
+        // the address is looked up, before anything is written. A screen that
+        // ran later would still refuse the signup but would already have paid
+        // for it, and bcrypt is most of what a flood costs here.
+        //
+        // DORMANT until `TURNSTILE_SECRET_KEY` is set: with no secret this
+        // returns `skipped` and warns once per process, so the log says
+        // whether the control is live. Note the asymmetry with the uniform
+        // 200s below — a refusal here is distinguishable on purpose. It is a
+        // statement about the REQUEST (its challenge token), not about the
+        // address, so it leaks nothing about who has an account, and the
+        // client has to know to reset the widget: a token is single-use, so a
+        // blind retry always fails.
+        const turnstile = await verifyTurnstile(turnstileToken as string | undefined, getClientIp(req));
+        if (!turnstile.ok) {
+            return jsonResponse(
+                { error: 'turnstile_failed', codes: turnstile.codes },
+                { status: 400 },
+            );
         }
 
         // Shape errors answer differently from account state ON PURPOSE. A 400

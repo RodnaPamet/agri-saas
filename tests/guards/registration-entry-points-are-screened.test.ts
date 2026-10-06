@@ -48,28 +48,8 @@ const ENTRY_POINTS = collectTrackedFiles({
  * reason. A bare allowlist would make this guard decorative.
  */
 const NOT_AN_ENTRY_POINT: Record<string, string> = {
-    // Empty today: `/api/auth/register` is the only route under this tree and
-    // it IS an entry point.
-    //
-    // When #1344 (registration v2) merges it adds two routes and this guard
-    // will redden for both — which is the forcing function, not a defect:
-    //
-    //   * `register/start/route.ts` must CALL `verifyTurnstile`. It is the new
-    //     front door and the one that creates a user.
-    //   * `register/verify/route.ts` must be exempted HERE, with this reason:
-    //     it is reachable only by someone holding a 6-digit code this system
-    //     emailed to an address already screened at step 1, and it creates
-    //     nothing — it sets `emailVerified` on a user that already exists. A
-    //     challenge there would tax a person mid-signup to re-prove what step
-    //     1 established, and its own abuse shape (guessing a 10^6 code) is
-    //     bounded by the per-code attempt cap plus LOGIN_LIMIT.
-    //
-    // The reason is written out now rather than left to whoever hits the red,
-    // because an exemption invented under time pressure is how an allowlist
-    // becomes a place to put things. It is NOT added pre-emptively: the
-    // `every exemption names a route that exists` case below would fail on a
-    // path this branch does not have — and that assertion caught exactly that
-    // when I tried it, which is the whole argument for keeping it strict.
+    'src/app/api/auth/register/verify/route.ts':
+        'Step 2 of registration v2. Reachable only by someone holding a 6-digit code THIS system emailed to an address already screened at step 1, and it creates nothing — it sets emailVerified on a user that already exists. A challenge here would tax a person mid-signup to re-prove what step 1 established, and its own abuse shape (guessing a 10^6 code) is bounded by the per-code attempt cap plus LOGIN_LIMIT.',
 };
 
 describe('registration entry points are screened for bots', () => {
