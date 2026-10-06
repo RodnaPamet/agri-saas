@@ -241,6 +241,7 @@ const NO_RLS_NOT_APP_USER_MODELS: ReadonlyMap<string, string> = new Map([
     ['AuthSession', 'NextAuth adapter session table (@@map "Session"). ZERO src/ references — the adapter owns it.'],
     ['PasswordResetToken', 'Single-purpose reset tokens, claimed by a conditional updateMany on the auth path.'],
     ['VerificationToken', 'Single-purpose verify-email tokens, keyed by identifier rather than by user.'],
+    ['EmailVerificationCode', 'Single-purpose 6-digit registration codes (P3.5b), keyed by emailHash rather than by user — and necessarily so: the row exists BEFORE any account is confirmed and before any farm, which is the whole point of verifying the email first. Read and claimed by the public register routes on the global client, exactly as VerificationToken above is; no code path reaches it under a tenant context, and it has no tenantId to scope by.'],
     ['Tenant', 'The tenant row itself. Written by platform/org flows; read by slug resolution before any tenant context exists.'],
     ['FeatureFlag', 'Platform runtime switches, written only via the X-Platform-Admin-Key console.'],
     ['FeatureFlagCohortMember', 'Cohort membership behind those flags; same platform-admin-only write path.'],
