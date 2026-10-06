@@ -18,8 +18,8 @@
         "yield": "Yield",
         "costs": "Costs",
         "calculator": "Calculator",
-        "sectionExchange": "Exchange",
-        "marketplace": "Marketplace",
+        "sectionMarket": "Market",
+        "exchange": "Exchange",
         "schedule": "Schedule",
         "docs": "Docs",
         "sectionManage": "Manage",
@@ -440,13 +440,13 @@
             "viewGallery": "Gallery",
             "searchPlaceholder": "Search evidence…",
             "archivedNoticeTitle": "Archived evidence",
-            "archivedNoticeBody": "Archived evidence should not be used in active audit packs or compliance assessments. Unarchive if you need to reuse this evidence.",
+            "archivedNoticeBody": "Archived records are kept for reference and should not be attached to new field work. Unarchive a record if you need to use it again.",
             "emptyArchived": "No archived evidence",
             "emptyExpiring": "No evidence expiring soon",
             "emptyNoMatch": "No evidence matches your filters",
             "emptyFilteredDesc": "Try widening your search or clearing one of the active filters.",
             "clearFilters": "Clear filters",
-            "emptyRecordsDesc": "Upload screenshots, exports, and attestations that prove your practices work in practice.",
+            "emptyRecordsDesc": "Upload photos, exports and notes that show how the farm is actually run.",
             "loadMoreResource": "evidence rows",
             "bulkSingular": "evidence item",
             "bulkPlural": "evidence items",
@@ -584,7 +584,7 @@
             "colActions": "Actions",
             "remove": "Remove",
             "emptyTitle": "No evidence linked",
-            "emptyDesc": "Link existing evidence or upload new files to satisfy this practice."
+            "emptyDesc": "Link an existing record or upload a new file to document this work."
         },
         "attached": {
             "chooseFileOrUrl": "Choose a file to upload, or enter an evidence URL.",
@@ -600,7 +600,7 @@
         "markRead": "Mark read",
         "noNotifications": "No notifications",
         "crumbDashboard": "Dashboard",
-        "description": "Recent activity across your compliance program"
+        "description": "Recent activity across your farm"
     },
     "admin": {
         "title": "Administration",
@@ -641,7 +641,7 @@
             },
             "fullAccess": "Full Access (*)",
             "fullAccessAbout": "About the Full Access scope",
-            "fullAccessTooltip": "Gives this key read + write on every resource — evidence, practices, admin settings. Prefer narrow scopes for automation.",
+            "fullAccessTooltip": "Gives this key read + write on every resource — records, field work, admin settings. Prefer narrow scopes for automation.",
             "grantsAllPermissions": "Grants all permissions",
             "keyCopied": "API key copied — paste it into your tool now.",
             "keyCopyFailed": "Copy failed — select the key and copy manually.",
@@ -724,9 +724,9 @@
             "upgrade": "Upgrade",
             "pro": "Pro",
             "recommended": "Recommended",
-            "proFeature1": "Unlimited practices & policies",
+            "proFeature1": "More locations, users and Exchange listings",
             "proFeature2": "Advanced reporting",
-            "proFeature3": "Audit readiness features",
+            "proFeature3": "A larger monthly AI budget",
             "proFeature4": "Priority support",
             "enterprise": "Enterprise",
             "premium": "Premium",
@@ -842,7 +842,7 @@
             "syncHealthLink": "Sync health →",
             "connecting": "Connecting…",
             "connect": "Connect",
-            "spDescription": "Source compliance evidence from SharePoint document libraries and keep policies in sync. Connecting grants IC delegated read access to the sites you choose.",
+            "spDescription": "Pull farm documents from SharePoint document libraries and keep them in sync. Connecting grants Agrent delegated read access to the sites you choose.",
             "spConnected": "SharePoint connected.",
             "spDeclined": "Consent was declined.",
             "spConnectFailed": "SharePoint connection failed — try again.",
@@ -909,7 +909,7 @@
             "neverLower": "never",
             "evidenceSynced": "Evidence synced",
             "stale": "Stale",
-            "policyLinks": "Policy links",
+            "policyLinks": "Document links",
             "recentSyncActivity": "Recent sync activity",
             "noSpActivity": "No SharePoint activity yet.",
             "addIntegrationButton": "Integration"
@@ -1004,8 +1004,8 @@
             "senderNamePlaceholder": "Agrent",
             "senderEmail": "Sender Email",
             "senderEmailPlaceholder": "noreply@agrent.bg",
-            "complianceMailbox": "Compliance Mailbox (BCC)",
-            "complianceMailboxPlaceholder": "compliance@yourcompany.com (optional)",
+            "complianceMailbox": "Archive mailbox (BCC)",
+            "complianceMailboxPlaceholder": "archive@yourfarm.bg (optional)",
             "bccNote": "All outbound emails will be BCC'd to this address.",
             "savingSettings": "Saving...",
             "saveSettings": "Save Settings",
@@ -1074,7 +1074,7 @@
             "granted": "granted",
             "denied": "denied",
             "roleNameLabel": "Role Name *",
-            "roleNamePlaceholder": "e.g. Compliance Lead",
+            "roleNamePlaceholder": "e.g. Agronomist",
             "baseRoleLabel": "Base Role (fallback)",
             "baseRoleHint": "Used for coarse authorization when custom permissions don't apply.",
             "descriptionLabel": "Description",
@@ -1760,7 +1760,7 @@
             "gotIt": "Got it"
         },
         "richTextEditor": {
-            "defaultPlaceholder": "Write your policy here…",
+            "defaultPlaceholder": "Write here…",
             "editorAriaLabel": "Rich text editor",
             "switchToWysiwyg": "Switch to WYSIWYG",
             "switchToMarkdown": "Switch to Markdown",
@@ -1791,13 +1791,13 @@
             "tenantCoverageLabel": "Tenant coverage",
             "tenantCoverageDescription": "Per-tenant coverage list with drill-down rows.",
             "drilldownCtasLabel": "Drill-down CTAs",
-            "drilldownCtasDescription": "Navigation cards into practices / risks / evidence.",
+            "drilldownCtasDescription": "Navigation cards into locations / field work / records.",
             "chartCoverage": "Tenant health list",
             "chartOverdueEvidence": "Overdue evidence",
             "chartTenants": "Tenants",
             "chartRagDistribution": "RAG distribution",
             "chartOpenRisks": "Open risks",
-            "chartDefault": "Default (practices / risks / evidence)",
+            "chartDefault": "Default (locations / field work / records)",
             "addWidget": "Add widget",
             "modalDescription": "Pick a widget type and a data variant. You can rearrange and resize after it lands.",
             "widgetTypeLabel": "Widget type",
@@ -2131,7 +2131,7 @@
                 "contains": "contains"
             },
             "notifyHint": "Send an in-app notification",
-            "createTaskHint": "Open a remediation task",
+            "createTaskHint": "Open a follow-up task",
             "updateStatusHint": "Move an entity to a status",
             "webhookHint": "POST to an external URL",
             "recipients": "Recipients",
@@ -2846,8 +2846,8 @@
     "commandPalette": {
         "title": "Command palette",
         "description": "Search for pages, entities, and actions. Use arrow keys to navigate and Enter to activate.",
-        "placeholderSignedOut": "Sign in to search practices, risks, policies…",
-        "placeholder": "Search practices, risks, policies, evidence, frameworks…",
+        "placeholderSignedOut": "Sign in to search records, assets, tasks and knowledge…",
+        "placeholder": "Search records, assets, tasks and knowledge…",
         "esc": "Esc",
         "filterAria": "Filter results by entity type",
         "searching": "Searching…",
@@ -2962,7 +2962,6 @@
         "portfolio": "Portfolio",
         "portfolioOverview": "Portfolio Overview",
         "allTenants": "All Tenants",
-        "nonPerformingPractices": "Non-Performing Practices",
         "overdueEvidence": "Overdue Evidence",
         "grain": "Grain",
         "manage": "Manage",
@@ -3068,7 +3067,7 @@
     },
     "onboarding": {
         "bannerTitle": "Complete your setup",
-        "bannerDesc": "Finish the onboarding wizard to configure your compliance workspace.",
+        "bannerDesc": "Finish the setup wizard to get your farm ready.",
         "continueSetup": "Continue Setup",
         "stepCompanyProfile": "Company Profile",
         "stepTeam": "Team",
@@ -3082,13 +3081,13 @@
         "onboardingCompleteBang": "Onboarding Complete!",
         "workspaceReady": "Your workspace is ready. Redirecting to dashboard...",
         "welcome": "Welcome! Let's set up your workspace.",
-        "welcomeDesc": "This wizard will guide you through configuring your compliance platform in just a few steps.",
+        "welcomeDesc": "This wizard will guide you through setting up your farm in just a few steps.",
         "startSetup": "Start Setup",
         "onboardingComplete": "Onboarding Complete",
         "onboardingCompleteDesc": "Your workspace has been configured. You can always update settings from the admin panel.",
         "goToDashboard": "Go to Dashboard",
         "setupWizard": "Setup Wizard",
-        "setupWizardDesc": "Complete these steps to configure your compliance workspace.",
+        "setupWizardDesc": "Complete these steps to set up your farm.",
         "saveAndExit": "Save & Exit",
         "progress": "Progress",
         "stepXofY": "Step {current} of {total}",
@@ -3097,7 +3096,7 @@
         "continue": "Continue",
         "completeSetup": "Complete Setup",
         "unknownStep": "Unknown step",
-        "companyProfileIntro": "Tell us about your organization. This information helps tailor your compliance experience.",
+        "companyProfileIntro": "Tell us about your farm. This information helps tailor Agrent to the way you work.",
         "companyName": "Company / Legal Name *",
         "companyNamePlaceholder": "Acme Corporation",
         "industry": "Industry",
@@ -3188,7 +3187,7 @@
         "dashboard": "Dashboard",
         "breadcrumb": "Calendar",
         "title": "Farm Calendar",
-        "description": "Track every date that matters on the farm — field tasks, lease terms, delivery windows, sow and harvest cycles, spray-window alerts — alongside your compliance deadlines, all in one place.",
+        "description": "Track every date that matters on the farm — field tasks, lease terms, delivery windows, sow and harvest cycles, spray-window alerts — alongside your reporting deadlines, all in one place.",
         "prevMonth": "Previous month",
         "nextMonth": "Next month",
         "loadError": "Failed to load calendar events. Try refreshing.",
@@ -3728,7 +3727,7 @@
                 "colCreated": "Created",
                 "colActions": "Actions",
                 "noLinksTitle": "No links yet",
-                "noLinksDescription": "Cross-link this task to related tasks, practices, evidence, or risks via + Link."
+                "noLinksDescription": "Cross-link this task to related tasks, locations, parcels, equipment or records via + Link."
             },
             "statusOffline": "No signal — the status was not changed. Nothing was sent; try again when you're back online.",
             "statusFailed": "Could not change the status.",
@@ -3828,7 +3827,7 @@
         "client": {
             "breadcrumbDashboard": "Dashboard",
             "breadcrumbExchange": "Exchange",
-            "heading": "Борса / Exchange",
+            "heading": "Exchange",
             "legendSelling": "Selling",
             "legendBuying": "Buying",
             "newOffer": "Offer",
@@ -5494,13 +5493,6 @@
             "removeFailed": "Failed to remove tenant ({status})."
         },
         "newTenant": {
-            "frameworkLaterLabel": "Choose later",
-            "frameworkLaterDesc": "Skip framework selection — pick on the new tenant dashboard.",
-            "frameworkIso27001Desc": "Information security management.",
-            "frameworkNis2Desc": "EU cybersecurity directive.",
-            "frameworkIso9001Desc": "Quality management system.",
-            "frameworkIso28000Desc": "Supply chain security.",
-            "frameworkIso39001Desc": "Road traffic safety management.",
             "nameRequired": "Name is required.",
             "nameTooLong": "Name must be 120 characters or fewer.",
             "slugRequired": "Slug is required.",
@@ -5514,8 +5506,6 @@
             "slugLabel": "Slug",
             "slugDesc": "Lowercase URL identifier. Auto-derived from the name; edit if you need something different.",
             "slugPlaceholder": "acme-eu",
-            "startingFramework": "Starting framework",
-            "startingFrameworkDesc": "Pick the compliance framework you want to install first. You can add more (or change this choice) from the new tenant dashboard.",
             "createFailed": "Tenant creation failed ({status}).",
             "cancel": "Cancel",
             "creating": "Creating…",
@@ -6482,5 +6472,27 @@
         "light": "Light",
         "sunlight": "Sunlight",
         "switchLabel": "{current} theme — switch to {next}"
+    },
+    "celebrations": {
+        "evidenceAllCurrent": {
+            "message": "All records are current",
+            "description": "Nothing is overdue or expiring this week."
+        },
+        "firstFieldMapped": {
+            "message": "First field on the map",
+            "description": "Your farm has its first mapped location."
+        },
+        "sprayJobComplete": {
+            "message": "Spray job complete",
+            "description": "Every parcel on the job is done."
+        },
+        "firstHarvest": {
+            "message": "First harvest logged",
+            "description": "The first crop of the season is in the journal."
+        },
+        "seasonClosed": {
+            "message": "Season closed",
+            "description": "A full season, start to finish — well done."
+        }
     }
 }

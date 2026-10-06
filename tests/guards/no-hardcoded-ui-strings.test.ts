@@ -59,12 +59,23 @@ const USER_FACING_PROPS = new Set([
     'heading', 'subtitle', 'description',
 ]);
 
-/** Current floor for JSX copy (measured 2026-08-10 — the planned-yield PR
- *  added zero new hard-coded strings, so this ratchets down to the real
- *  count instead of carrying stale slack). Can only go DOWN as strings
- *  are extracted to the catalog — every extraction PR lowers this in the
- *  same diff. */
-const CURRENT_BASELINE = 17;
+/** Current floor for JSX copy. Can only go DOWN as strings are extracted
+ *  to the catalog — every extraction PR lowers this in the same diff.
+ *
+ *  Lowered 17 -> 13 in P2.6. NOT because that item extracted four strings:
+ *  it extracted none from this class, and the floor had carried four
+ *  slack since the 2026-08-10 measurement (the drift sentinel below
+ *  tolerates +15, so 17 against a live 13 was passing). 13 is what this
+ *  branch MEASURES — read off the failure message with the floor forced
+ *  to 0, not projected.
+ *
+ *  Worth recording for the next extraction PR: the P2.6 strands that DID
+ *  move copy into `messages/` — the celebration registry — moved it out of
+ *  `src/lib/celebrations.ts`, and this scan covers `src/app` +
+ *  `src/components` only. So "moved a string into the catalogue" and
+ *  "lowered this number" are independent, and a lib-level literal is
+ *  invisible here. */
+const CURRENT_BASELINE = 13;
 
 /**
  * Separate floor for the `.ts` CONFIG-PROPERTY class (2026-07-25).

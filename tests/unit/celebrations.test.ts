@@ -7,6 +7,13 @@
  * jsdom render test (`tests/rendered/use-celebration.test.tsx`); this
  * file pins the pure-data registry contract + the SSR-safe storage
  * helpers so they can be relied on outside the React lifecycle.
+ *
+ * P2.6 moved the toast COPY out of the registry into
+ * `messages/{bg,en}.json` (`celebrations.*`), so the assertions here are
+ * about `preset` + `glyph` + the key set. The copy itself is pinned by
+ * `tests/guards/celebrations-coverage.test.ts` (both catalogues carry
+ * every milestone's two strings) and exercised end to end by
+ * `tests/rendered/use-celebration.test.tsx`.
  */
 
 import {
@@ -15,15 +22,15 @@ import {
     clearCelebrated,
     hasCelebrated,
     markCelebrated,
-    scopedMilestone,
     type MilestoneKey,
 } from '@/lib/celebrations';
 
 const ALL_KEYS: MilestoneKey[] = [
-    'framework-100',
     'evidence-all-current',
-    'audit-pack-complete',
-    'first-practice-mapped',
+    'first-field-mapped',
+    'spray-job-complete',
+    'first-harvest',
+    'season-closed',
 ];
 
 describe('MILESTONES registry', () => {
@@ -34,10 +41,21 @@ describe('MILESTONES registry', () => {
         }
     });
 
-    it('every entry has a non-empty message and a valid preset', () => {
+    it('every entry has a glyph and a valid preset', () => {
         for (const def of Object.values(MILESTONES)) {
-            expect(def.message.length).toBeGreaterThan(0);
+            expect(def.glyph.length).toBeGreaterThan(0);
             expect(['burst', 'rain', 'fireworks']).toContain(def.preset);
+        }
+    });
+
+    it('carries NO copy — the catalogue owns it', () => {
+        // The regression this guards is the easy one to reintroduce: a
+        // contributor adding `message:` back to a record, which would then
+        // ship English to a Bulgarian farmer and be invisible to the
+        // hard-coded-string ratchet (it scans src/app + src/components only).
+        for (const def of Object.values(MILESTONES)) {
+            expect(def).not.toHaveProperty('message');
+            expect(def).not.toHaveProperty('description');
         }
     });
 
@@ -46,15 +64,16 @@ describe('MILESTONES registry', () => {
         // visible diff in the test file too — keys ride in
         // sessionStorage and analytics, so renames need ceremony.
         expect(Object.keys(MILESTONES).sort()).toEqual([
-            'audit-pack-complete',
             'evidence-all-current',
             // feat/delight-celebrations — agriculture milestones.
             'first-field-mapped',
             'first-harvest',
-            'first-practice-mapped',
-            'framework-100',
             // GRC teardown phase 2 removed 'inspection-passed' + 'sop-100-ack'
-            // with their AuditPack / Policy data sources (plan §1c).
+            // with their AuditPack / Policy data sources (plan §1c); P2.6
+            // removed 'framework-100', 'audit-pack-complete' and
+            // 'first-practice-mapped' for the same reason — the models were
+            // gone, no caller fired them, and their copy was about to be
+            // translated into Bulgarian.
             'season-closed',
             'spray-job-complete',
         ]);
@@ -63,8 +82,11 @@ describe('MILESTONES registry', () => {
 
 describe('celebrationDedupeKey', () => {
     it('namespaces with the inflect prefix to avoid collisions', () => {
-        expect(celebrationDedupeKey('framework-100')).toBe(
-            'inflect.celebrate:framework-100',
+        // The prefix is an INTENTIONAL legacy-brand survivor — see
+        // tests/guards/no-legacy-brand.test.ts. Renaming it re-fires every
+        // celebration for everyone with a warm tab.
+        expect(celebrationDedupeKey('first-harvest')).toBe(
+            'inflect.celebrate:first-harvest',
         );
     });
 });
@@ -75,76 +97,52 @@ describe('hasCelebrated / markCelebrated / clearCelebrated', () => {
     });
 
     it('hasCelebrated is false before mark, true after', () => {
-        expect(hasCelebrated('framework-100')).toBe(false);
-        markCelebrated('framework-100');
-        expect(hasCelebrated('framework-100')).toBe(true);
+        expect(hasCelebrated('first-harvest')).toBe(false);
+        markCelebrated('first-harvest');
+        expect(hasCelebrated('first-harvest')).toBe(true);
     });
 
     it('mark is idempotent — second call is a no-op', () => {
-        markCelebrated('framework-100');
+        markCelebrated('first-harvest');
         const first = window.sessionStorage.getItem(
-            celebrationDedupeKey('framework-100'),
+            celebrationDedupeKey('first-harvest'),
         );
-        markCelebrated('framework-100');
+        markCelebrated('first-harvest');
         const second = window.sessionStorage.getItem(
-            celebrationDedupeKey('framework-100'),
+            celebrationDedupeKey('first-harvest'),
         );
         // Second mark overwrites with a new ISO timestamp, but
         // hasCelebrated still returns true and the key still exists.
         expect(first).not.toBeNull();
         expect(second).not.toBeNull();
-        expect(hasCelebrated('framework-100')).toBe(true);
+        expect(hasCelebrated('first-harvest')).toBe(true);
     });
 
     it('clearCelebrated lets the milestone fire again', () => {
-        markCelebrated('framework-100');
-        expect(hasCelebrated('framework-100')).toBe(true);
-        clearCelebrated('framework-100');
-        expect(hasCelebrated('framework-100')).toBe(false);
+        markCelebrated('first-harvest');
+        expect(hasCelebrated('first-harvest')).toBe(true);
+        clearCelebrated('first-harvest');
+        expect(hasCelebrated('first-harvest')).toBe(false);
     });
 
     it('different keys do not interfere with each other', () => {
-        markCelebrated('framework-100');
-        expect(hasCelebrated('framework-100')).toBe(true);
-        expect(hasCelebrated('audit-pack-complete')).toBe(false);
+        markCelebrated('first-harvest');
+        expect(hasCelebrated('first-harvest')).toBe(true);
+        expect(hasCelebrated('season-closed')).toBe(false);
     });
 
     it('scoped keys are independent of the bare milestone key', () => {
         // Per-resource celebration must NOT be deduped by an
-        // earlier global mark, and vice-versa.
-        markCelebrated('framework-100');
-        expect(hasCelebrated('framework-100:iso27001')).toBe(false);
-        markCelebrated('framework-100:iso27001');
-        expect(hasCelebrated('framework-100:iso27001')).toBe(true);
-        expect(hasCelebrated('framework-100:soc2')).toBe(false);
-    });
-});
-
-describe('scopedMilestone builder', () => {
-    it('returns the registry preset + message + colon-namespaced key', () => {
-        const out = scopedMilestone('framework-100', 'iso27001');
-        expect(out.preset).toBe(MILESTONES['framework-100'].preset);
-        expect(out.message).toBe(MILESTONES['framework-100'].message);
-        expect(out.description).toBe(
-            MILESTONES['framework-100'].description,
-        );
-        expect(out.key).toBe('framework-100:iso27001');
-    });
-
-    it('descriptionOverride wins over the registry default', () => {
-        const out = scopedMilestone('framework-100', 'iso27001', {
-            descriptionOverride: 'ISO 27001:2022 — done.',
-        });
-        expect(out.description).toBe('ISO 27001:2022 — done.');
-        // Other registry fields untouched.
-        expect(out.preset).toBe(MILESTONES['framework-100'].preset);
-        expect(out.message).toBe(MILESTONES['framework-100'].message);
-    });
-
-    it('different scopes produce different dedupe keys for the same milestone', () => {
-        const a = scopedMilestone('audit-pack-complete', 'pack_abc');
-        const b = scopedMilestone('audit-pack-complete', 'pack_xyz');
-        expect(a.key).not.toBe(b.key);
+        // earlier global mark, and vice-versa. The `scopedMilestone`
+        // helper that built these keys went with the GRC resources it
+        // was written for (P2.6); the colon CONVENTION it established is
+        // still what an ad-hoc per-resource caller must use, so the
+        // storage behaviour stays pinned here.
+        markCelebrated('spray-job-complete');
+        expect(hasCelebrated('spray-job-complete:job_abc')).toBe(false);
+        markCelebrated('spray-job-complete:job_abc');
+        expect(hasCelebrated('spray-job-complete:job_abc')).toBe(true);
+        expect(hasCelebrated('spray-job-complete:job_xyz')).toBe(false);
     });
 
     it('survives sessionStorage throwing (private mode) without crashing', () => {
@@ -168,9 +166,9 @@ describe('scopedMilestone builder', () => {
             });
         try {
             // None of these may throw.
-            expect(() => markCelebrated('framework-100')).not.toThrow();
-            expect(hasCelebrated('framework-100')).toBe(false);
-            expect(() => clearCelebrated('framework-100')).not.toThrow();
+            expect(() => markCelebrated('first-harvest')).not.toThrow();
+            expect(hasCelebrated('first-harvest')).toBe(false);
+            expect(() => clearCelebrated('first-harvest')).not.toThrow();
         } finally {
             setSpy.mockRestore();
             getSpy.mockRestore();

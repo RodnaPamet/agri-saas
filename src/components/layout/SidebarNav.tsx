@@ -210,15 +210,23 @@ export function useNavSections(): NavSectionDef[] {
             ]),
         },
         {
-            // Exchange — market surfaces. The cross-tenant P2P marketplace is
-            // gated behind EXCHANGE, but Trends (global market-price charts +
-            // market news) is market data too and sits here, visible to EVERY
-            // tenant. Because Trends is ungated the section always renders even
-            // for non-Exchange tenants (marketplace hidden, Trends shown).
+            // Пазар — the market surfaces. «Борса» (the cross-tenant P2P
+            // exchange) is gated behind EXCHANGE, but «Тенденции» (global
+            // market-price charts) and Новини are market data too and sit
+            // here, visible to EVERY tenant. Because Тенденции is ungated the
+            // section always renders even for non-Exchange tenants (Борса
+            // hidden, Тенденции shown).
+            //
+            // The SECTION is «Пазар» and the destination inside it is
+            // «Борса» — P2.6. It used to be the other way round (section
+            // «Борса», item «Пазар»), which gave one surface two names and
+            // the other none. docs/nav-vocabulary.md is the source of that
+            // decision; `id` stays 'exchange' because it keys the persisted
+            // per-section collapse state.
             id: 'exchange',
-            title: t('sectionExchange'),
+            title: t('sectionMarket'),
             items: filterVisible([
-                { href: tenantHref('/exchange'), label: t('marketplace'), icon: ArrowLeftRight, visible: exchangeAvailable },
+                { href: tenantHref('/exchange'), label: t('exchange'), icon: ArrowLeftRight, visible: exchangeAvailable },
                 // Trends (#trends) — global market-price charts (EC + reference
                 // benchmark + own-listings index). Visible to every tenant.
                 { href: tenantHref('/trends'), label: t('trends'), icon: TrendingUp },
