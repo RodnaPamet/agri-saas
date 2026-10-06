@@ -67,11 +67,14 @@ describeFn('repairMisplacedV2 moves a tenant-DEK row onto the global KEK', () =>
         );
         threadId = `xt-${randomUUID()}`;
         await raw.$executeRawUnsafe(
-            `INSERT INTO "ExchangeThread"("id","listingId","inquirerTenantId","createdAt","updatedAt")
-             VALUES ($1,$2,$3,NOW(),NOW())`,
+            // #1298 — `inquirerUserId` is NOT NULL: a thread is per PERSON.
+            `INSERT INTO "ExchangeThread"
+               ("id","listingId","inquirerTenantId","inquirerUserId","createdAt","updatedAt")
+             VALUES ($1,$2,$3,$4,NOW(),NOW())`,
             threadId,
             listingId,
             buyerTenant,
+            `u-${randomUUID()}`,
         );
 
         // Reproduce the DEFECT exactly: a body encrypted under the SELLER's

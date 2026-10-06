@@ -131,7 +131,14 @@ async function makeUser(label: string): Promise<string> {
 async function seedThread(buyerTenantId: string): Promise<string> {
     const threadId = `ext-p08-${randomUUID()}`;
     await globalPrisma.exchangeThread.create({
-        data: { id: threadId, listingId, inquirerTenantId: buyerTenantId },
+        // #1298 — `inquirerUserId` is the buyer-side principal and is NOT
+        // NULL: a thread is per PERSON now, not per farm.
+        data: {
+            id: threadId,
+            listingId,
+            inquirerTenantId: buyerTenantId,
+            inquirerUserId: senderUserId,
+        },
     });
     return threadId;
 }

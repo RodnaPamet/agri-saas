@@ -70,7 +70,9 @@ async function seedThread() {
 
     const threadId = `ext-${randomUUID()}`;
     await globalPrisma.exchangeThread.create({
-        data: { id: threadId, listingId, inquirerTenantId: BUYER },
+        // #1298 — the buyer-side principal. NOT NULL since the thread is now
+            // per PERSON rather than per farm.
+            data: { id: threadId, listingId, inquirerTenantId: BUYER, inquirerUserId: USER_ID },
     });
     const buyerMsgId = `exm-${randomUUID()}`;
     await globalPrisma.exchangeMessage.create({

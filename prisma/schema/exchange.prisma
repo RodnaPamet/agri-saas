@@ -281,7 +281,14 @@ model ExchangeMessage {
 
   @@index([threadId, createdAt])
   @@index([senderTenantId])
-  @@unique([senderTenantId, clientMutationId])
+  /// Scoped to the sending PERSON since #1298, not their farm.
+  ///
+  /// It was `[senderTenantId, clientMutationId]`. With conversations private
+  /// to people, two colleagues reusing the same client-side id — which they
+  /// will, since the id is minted on each device — would collide, and one
+  /// send would silently dedupe into the other's message. The scope has to
+  /// follow whoever the key belongs to.
+  @@unique([senderUserId, clientMutationId])
 }
 
 /// A seller refusing further contact from one tenant.

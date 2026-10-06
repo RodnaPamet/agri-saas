@@ -355,7 +355,7 @@ export async function getExchangeThread(
             orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
             take: limit + 1,
             select: {
-                id: true, senderTenantId: true, body: true,
+                id: true, senderTenantId: true, senderUserId: true, body: true,
                 deletedAt: true, createdAt: true,
             },
         });
@@ -893,11 +893,19 @@ export async function deleteExchangeMessage(ctx: RequestContext, messageId: stri
     return runInTenantContext(ctx, async (db) => {
         const message = await db.exchangeMessage.findFirst({
             where: { id: messageId },
-            select: { id: true, senderTenantId: true, threadId: true, deletedAt: true },
+            select: {
+                id: true, senderTenantId: true, senderUserId: true,
+                threadId: true, deletedAt: true,
+            },
         });
         if (!message) throw codedNotFound('MESSAGE_NOT_FOUND', 'That message was not found.');
-        // A party may retract only what they sent.
-        if (message.senderTenantId !== ctx.tenantId) {
+        // Only what YOU sent — the person, not the farm. This comment always
+        // said "they sent" while the check compared `senderTenantId`, which
+        // under #1298's per-person conversations would let a seller ADMIN
+        // retract the listing creator's words (and the reverse). Being in the
+        // audience grants reading and replying, never editing someone else's
+        // message out of a conversation they are part of.
+        if (message.senderUserId !== ctx.userId) {
             throw codedForbidden('MESSAGE_NOT_SENDER', 'You can only remove your own messages.');
         }
         if (message.deletedAt) return { id: message.id };
