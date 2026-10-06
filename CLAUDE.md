@@ -930,265 +930,49 @@ and `docs/rls-tenant-isolation.md` for the RLS deep dive.
 
 ### Field Encryption (Epic B)
 
-Business-content fields (Task.description, Task.resolution,
-TaskComment.body, ParcelLease.lessorName, FarmProfile.egn,
-Contract.terms, …) are encrypted at
-rest by a Prisma `$extends({ query })` client extension (migrated
-from the Prisma 5 `$use` middleware, which Prisma 7 removed — see
-`src/lib/prisma.ts`). The manifest lives in
-`src/lib/security/encrypted-fields.ts`; **never** add or remove
-encrypted columns outside it. Add a model here ⇒ its manifest
-fields encrypt on every write and decrypt on every read
-transparently.
+Business-content fields (`Task.description`, `Task.resolution`,
+`TaskComment.body`, `ParcelLease.lessorName`, `FarmProfile.egn`,
+`Contract.terms`, …) are encrypted at rest by a Prisma `$extends({ query })`
+client extension (`src/lib/prisma.ts`). The manifest is
+`src/lib/security/encrypted-fields.ts`.
 
-**That sentence was ASPIRATIONAL until 2026-10-02 (#1222), and the
-gap is worth knowing about because it will rhyme.** The middleware
-resolved a model absent from the manifest to `'*'`, and the `'*'`
-branch matches field NAMES across the whole manifest without being
-able to tell models apart — so 18 `(model, field)` pairs were
-encrypted by collision rather than by decision.
-`ExchangeListing.description` was encrypted because `Task`,
-`AccessReview` and `CostEntry` each declare a `description`: three
-unrelated models deciding a fourth model's fate. The visible symptom
-was that an Exchange message recipient read `v2:…` instead of the
-message — two tenants, one tenant's DEK — but the cause was generic
-and the blast radius was 18 columns, not one.
+**The rules, each of which has cost something to learn:**
 
-The write and read paths now pass the REAL model, so an undeclared
-field is simply not encrypted; `'*'` survives only for its documented
-purpose, a node whose model is structurally unknowable. **Which means
-the rule above is now enforced rather than hoped for.**
+- **NEVER add or remove encrypted columns outside the manifest.** Until #1222
+  this was aspirational: a model absent from the manifest resolved to `'*'`,
+  which matches field NAMES across the whole manifest without telling models
+  apart, so 18 `(model, field)` pairs were encrypted by collision rather than
+  by decision. Both paths now pass the real model, so the rule is enforced
+  rather than hoped for.
+- **A field carrying a manifest field NAME that should stay plaintext goes in
+  `DELIBERATELY_PLAINTEXT`** (same file), keyed `Model.field` — per FIELD, not
+  per model. Each entry needs a written reason;
+  `tests/guards/deliberately-plaintext-is-honest.test.ts` enforces no stale
+  entries and no contradiction with `ENCRYPTED_FIELDS`.
+- **Narrowing stops DECRYPTION too, so order matters.** Declaring a field must
+  land in the same change as — or before — any narrowing. A field left
+  undeclared with ciphertext in it becomes unreadable to everyone, with no
+  error and no log. Measure first with `npm run preflight:fanout`, which counts
+  `v1:` AND `v2:` per affected pair (both envelopes deliberately: a `v1:`-only
+  row once hid from a "misplaced v2" check).
+- **`Tenant.encryptedDek` is master-KEK ciphertext in NEITHER manifest** — a
+  second encryption the field manifests cannot see.
+- **Do NOT use "zero `v1:` rows" as a rotation stop condition.** The count
+  never reaches zero; see the doc for what to use instead.
+- **The master KEK is REQUIRED in production.** Three independent checks refuse
+  to start a prod process whose `DATA_ENCRYPTION_KEY` is missing, under 32
+  chars, or equal to the dev fallback — the zod schema in `src/env.ts`, and
+  startup hooks in `src/instrumentation.ts`, `scripts/worker.ts` and
+  `scripts/scheduler.ts`.
 
-Two consequences for anyone touching this:
+Key hierarchy: `DATA_ENCRYPTION_KEY` (master KEK) wraps a per-tenant DEK on
+`Tenant.encryptedDek`. Ciphertexts carry a `v1:` (global KEK, legacy) or `v2:`
+(per-tenant DEK) envelope and the extension dispatches per value on read.
 
-- **A field that carries a manifest field NAME but should stay
-  plaintext goes in `DELIBERATELY_PLAINTEXT`** (same file), keyed
-  `Model.field` — per FIELD, not per model, because a model can carry
-  two manifest-named fields wanting different answers. Each entry
-  needs a written reason; `tests/guards/deliberately-plaintext-is-honest.test.ts`
-  enforces no stale entries, no contradiction with `ENCRYPTED_FIELDS`,
-  and that the field is genuinely at risk.
-- **Narrowing stops DECRYPTION too, so order matters.** Declaring a
-  field must land in the same change as (or before) any narrowing —
-  a field left undeclared with ciphertext in it becomes unreadable to
-  everyone, with no error and no log. Measure first:
-  `npm run preflight:fanout` counts `v1:` AND `v2:` per affected pair,
-  derived from the manifest × schema rather than listed. It counts
-  both envelopes deliberately — `FeatureFlag.description` held a `v1:`
-  row, so a "misplaced v2" check would have missed it.
-
-Key hierarchy: `DATA_ENCRYPTION_KEY` (master KEK) wraps a per-tenant
-DEK on `Tenant.encryptedDek`. New tenants get a DEK at creation via
-`createTenantWithDek` (from `src/lib/security/tenant-key-manager.ts`);
-existing tenants get one via `scripts/generate-tenant-deks.ts`.
-Ciphertexts carry `v1:` (global KEK, legacy) or `v2:` (per-tenant
-DEK) envelope — the middleware dispatches per-value on read.
-
-**GAP-03 — production fail-fast.** The master KEK is REQUIRED in
-production. Three independent checks each refuse to start a prod
-process whose `DATA_ENCRYPTION_KEY` is missing, shorter than 32
-chars, or equal to the documented dev fallback:
-
-  1. zod schema in `src/env.ts` — fires at module load, `superRefine`
-     on the field reads `process.env.NODE_ENV` directly.
-  2. startup hook in `src/instrumentation.ts` (web) +
-     `scripts/worker.ts` (BullMQ worker) + `scripts/scheduler.ts`
-     (deploy-time scheduler) — exits 1 with `[startup] FATAL: …`.
-     All three surfaces run BOTH halves — the config check and the
-     encrypt → decrypt sentinel. (The scheduler used to run only the
-     config check while the worker ran both, with nothing saying why;
-     #698 collapsed the two standalone entrypoints onto one shared
-     gate, so there is now one answer instead of two undocumented ones.)
-     **The sentinel cannot fail for the reason its docblock used to
-     give** — measured: every key clearing the 32-char floor
-     round-trips, because `deriveKey` is HMAC-SHA256 over
-     `Buffer.from(raw,'utf8')`, which never throws. It is a
-     forward-looking guard on a future derivation that CAN throw, not
-     live defence. See the docblock in `startup-encryption-check.ts`.
-     The two standalone entrypoints share ONE awaited gate —
-     `assertProductionEncryptionReady` in `@/lib/security/startup-gate`
-     (`scripts/worker.ts`, `scripts/scheduler.ts`) — which is the one
-     place THEIR `NODE_ENV === 'production'` decision and both halves
-     live. `src/instrumentation.ts` was never migrated onto it and never
-     needed to be: `register()` is async and has awaited
-     `checkProductionEncryptionKey` + `runEncryptionSentinel` inline all
-     along, so the web tier never had the #698 bug — it still spells its
-     own `NODE_ENV === 'production'` branch, and the guardrail checks it
-     by those two helper names rather than by the gate. Until
-     #698 the two standalone entrypoints ran the check in a
-     **non-awaited async IIFE**, so the worker was subscribed to its
-     queues and the scheduler mid-registration by the time `FATAL`
-     printed. `scripts/worker.ts` therefore has a real `main()`:
-     nothing constructs a `Worker` (which is what subscribes) until the
-     gate and the runtime bootstrap have both resolved. The structural
-     guardrail asserts `await`, not merely presence — `void`-ing the
-     call is the defect and is invisible to a presence check; the
-     ordering itself is asserted behaviourally by spawning the real
-     processes.
-  3. Compose `:?error` syntax in **every manifest that carries the
-     key** — `docker-compose.prod.yml`, `docker-compose.staging.yml`,
-     `deploy/docker-compose.prod.yml` AND `deploy/docker-compose.vm.yml`
-     (the one the live agrent stack actually runs, absent from this
-     list until 2026-08-21). Aborts container start before the app
-     process is spawned. `docker-compose.yml` and
-     `docker-compose.test.yml` pass no key at all, so the rule does
-     not apply to them — the guard derives that from content rather
-     than from a list of "production" filenames.
-
-Dev gets the in-source fallback key (`encryption-constants.ts`) with
-a WARN log on every server start; test gets the same fallback
-silently. The fallback is well-known + refused in prod, not secret.
-The runtime + structural enforcement is unit-tested in
-`tests/unit/security/startup-encryption-check.test.ts` +
-`tests/unit/env.test.ts`, and the wiring across all five surfaces
-is locked by `tests/guardrails/encryption-key-enforcement.test.ts`.
-Those cover the LOGIC and the SOURCE TEXT. What actually boots a
-process with a bad key and watches it die is
-`tests/unit/security/startup-fail-fast-execution.test.ts` — child
-processes for all three Node surfaces, plus a real `docker compose
-config` for the Compose layer (docker-gated, with a visible skip
-banner and `STARTUP_GUARD_REQUIRE_DOCKER=1` to make absence a
-failure). Until #674 only check 1 had ever executed.
-
-Master-KEK rotation: set `DATA_ENCRYPTION_KEY_PREVIOUS` alongside
-the new primary. `decryptField` falls back transparently. **It takes
-TWO sweeps, and the per-tenant one alone does not finish a rotation.**
-
-`POST /api/t/{slug}/admin/key-rotation` enqueues the background job in
-`src/app-layer/jobs/key-rotation.ts`, which re-wraps that tenant's DEK
-and re-encrypts its `v1:` ciphertexts. It iterates `ENCRYPTED_FIELDS`
-and does `if (!hasTenantId) continue`, so `User`, `Account` and the
-ENTIRE PII manifest (`PII_FIELD_MAP` in `pii-middleware.ts`) are
-invisible to it — a second encryption manifest it has never
-referenced. Measured on production 2026-10-02: it could re-encrypt
-**0** values while **40** `v1:` values sat in the PII manifest,
-including six OAuth access tokens and six refresh tokens.
-
-`POST /api/admin/key-rotation` (platform-key gated) covers the union
-of both manifests, with no tenant filter — a `v1:` envelope IS the
-master-KEK envelope — AND re-wraps every tenant DEK. So one platform
-call finishes a master rotation and the per-tenant route is not needed
-for one (it requires a tenant admin session per tenant, which an
-operator holding a platform key has no reason to have). Call it until
-`remaining` is 0; `only` narrows a pass to named columns and then
-deliberately skips the DEKs.
-
-**`Tenant.encryptedDek` is master-KEK ciphertext in NEITHER manifest.**
-`wrapDek` is `encryptField`, so a wrapped DEK is a `v1:` envelope, but
-it is key material rather than a business field and the manifest union
-does not reach it. An earlier version of the endpoint therefore reported
-`previousKeyRetirable: true` with every DEK still on the old key —
-removing the previous key then makes every DEK unwrappable and every
-`v2:` ciphertext unreadable. `remaining` is now
-`columnsRemaining + unwrappedDeks`.
-
-**Do NOT use "zero `v1:` rows" as the stop condition** — this
-paragraph said to, and it is unreachable. `encryptField` emits a `v1:`
-envelope, so a re-encrypted value is still `v1:` and `LIKE 'v1:%'`
-matches it on every run; the count never falls to zero and
-`key-rotation.ts`'s matching idempotency claim is false for the same
-reason. The measurable condition is
-`GET /api/admin/key-rotation` → `previousKeyRetirable`, derived from
-whether each value decrypts under the PRIMARY key
-(`isV1UnderPrimaryKey`). Only then remove
-`DATA_ENCRYPTION_KEY_PREVIOUS`.
-
-Full runbook: `docs/epic-b-encryption.md`.
-
-> **⚠️ ROTATING `DATA_ENCRYPTION_KEY` IS SAFE ONLY WHILE
-> `LOOKUP_HMAC_KEY` IS PINNED. Check `/api/readyz` first — not this
-> paragraph.** P1.1 shipped the mechanism; whether it is ACTIVE is a
-> per-deployment fact, and the two are easy to confuse.
->
-> `capabilities.lookupKey.pinned` on `/api/readyz` is the answer:
->
-> - **`true`** — the lookup hash derives from `LOOKUP_HMAC_KEY`, which stays
->   put while the KEK moves. Rotate with `DATA_ENCRYPTION_KEY_PREVIOUS` + the
->   sweep as described above; every `User.emailHash` keeps resolving and
->   nothing needs rehashing. Proved end to end by
->   `tests/integration/kek-rotation-login.test.ts`, which also reproduces the
->   damage with the key unpinned so the positive half cannot pass for free.
-> - **`false`** — the key is BOOTSTRAPPED off `DATA_ENCRYPTION_KEY`, which is
->   the pre-P1.1 behaviour, so **the hazard below is live and the master KEK is
->   un-rotatable.** The fix is one environment variable, not a code change: set
->   `LOOKUP_HMAC_KEY` to the material `DATA_ENCRYPTION_KEY` holds **today** —
->   the same bytes, not a new secret — and restart. Setting it is inert until a
->   rotation happens, so it is safe to do at any time.
->
-> **What goes wrong when it is unpinned**, because the failure is silent and
-> worth knowing by heart. `hashForLookup` HMACs with a key derived from the
-> material it is given, and the rotation job re-wraps DEKs and re-encrypts
-> `v1:` ciphertexts — it contains **zero** references to `hashForLookup` or
-> `emailHash` (verified 2026-10-02). A hash has no authentication failure to
-> trigger a previous-key fallback, so a wrong key does not error; the lookup
-> simply MISSES:
->
-> - sign-in reports no such user;
-> - password reset, email verification, invite redemption and SCIM matching
->   all fail to find existing accounts;
-> - **registration SUCCEEDS and creates a DUPLICATE `User`**, because its
->   uniqueness check is the same `emailHash` that now misses — and the
->   `@unique` constraint is on the hash, so the database does not refuse it
->   either. That is silent data corruption, not an outage, and it is the
->   expensive half.
->
-> Sixteen files look a user up by `emailHash` (`src/auth.ts`,
-> `credentials.ts`, `password-management.ts`, `email-verification.ts`,
-> `invite-redemption.ts`, `scim-users.ts`, `tenant-invites.ts`,
-> `org-invites.ts`, `tenant-lifecycle.ts`, `sso.ts`, the register and
-> resend routes, and others) — and they do it THEMSELVES, passing
-> `emailHash: hashForLookup(email)` straight through. That matters:
-> `src/lib/security/pii-middleware.ts` rewrites a plain `where: { email }` to
-> the hash column and is the rotation-safe path, but those sixteen never hand
-> it a plain field, so the middleware never sees them. Both populations are
-> affected by a KEK rotation (they derive from the same material); only the
-> middleware one is covered by the previous-key widening below.
-> `tests/guards/lookup-hash-call-sites-registered.test.ts` classifies all of
-> them and fails on a new one.
->
-> **Rotating the LOOKUP key itself is a different, harder event.** Set
-> `LOOKUP_HMAC_KEY_PREVIOUS` and READS resolve under either key —
-> `hashForLookupCandidates` widens the predicate to `{ in: [...] }`, and
-> `pii-middleware` downgrades `findUnique` to `findFirst` when it does, because
-> Prisma rejects an `in` in a unique where. WRITES addressed by a unique where
-> (`update` / `delete` / `upsert`) use the **primary alone**, so a row not yet
-> rehashed is briefly not addressable BY EMAIL for those.
->
-> **And the sixteen explicit call sites get no widening at all**, because they
-> never pass a plain field — so during a LOOKUP-key rotation a sign-in, a reset
-> and the registration uniqueness check all read the primary hash only and miss
-> any row not yet rehashed. Converting them to `hashForLookupCandidates` is
-> part of **P1.3** alongside the rehash sweep; the registry guard above is the
-> shrinking list. Until both land, treat a lookup-key rotation as unfinished
-> business and a KEK rotation as the supported one. A KEK rotation is
-> unaffected by any of this: the lookup key does not move, so no hash changes
-> and no fallback is wanted.
->
-> **A new identifier kind gets its OWN HKDF info string; an existing one's is
-> frozen.** `LOOKUP_INFO` in `encryption.ts` maps `email` to the original
-> `inflect-data-lookup-hash`, and that inconsistency is load-bearing — every
-> stored `User.emailHash` and `UserIdentityLink.emailAtLinkTimeHash` was
-> computed with it. Renaming it is a REHASH, not an edit.
-
-Per-tenant DEK rotation (generating a fresh DEK for a single
-compromised tenant without touching the global KEK) is implemented
-at `rotateTenantDek` in `src/lib/security/tenant-key-manager.ts`.
-The admin surface is `POST /api/t/:slug/admin/tenant-dek-rotation`,
-gated by `admin.tenant_lifecycle` (OWNER-only). The flow:
-atomic UPDATE moves the old wrapped DEK into
-`Tenant.previousEncryptedDek` and writes a fresh wrapped DEK to
-`Tenant.encryptedDek`; the response is 202 + a job id for the
-`tenant-dek-rotation` BullMQ sweep that re-encrypts every v2
-ciphertext under the new DEK and clears `previousEncryptedDek` on
-completion. Mid-flight reads remain correct via
-`decryptWithKeyOrPrevious` in the encryption layer — primary first,
-fall back to previous on AES-GCM auth failure. The per-tenant DEK
-fallback is locked in by
-`tests/guardrails/tenant-dek-rotation-fallback.test.ts`.
-
-**See `docs/epic-b-encryption.md`** for deployment order,
-rotation runbook, observability signals, rollback procedure, and
-the full test coverage map.
+**See [`docs/epic-b-encryption.md`](docs/epic-b-encryption.md)** for the key
+hierarchy in full, the sentinel's failure modes, the #698 worker/scheduler
+divergence, rotation and fan-out preflight, the lookup-hash population, and
+deployment order. That document is the detail; this is the contract.
 
 ### Defense-in-Depth (Epic C)
 
