@@ -1,47 +1,74 @@
 {
-  "$schema": "./known-flakes.schema-notes.md",
-  "$comment": [
-    "Specs KNOWN to fail an attempt and pass on retry. The point is not to",
-    "excuse them — it is to make a NEW flake distinguishable from a long-known",
-    "one, because on a green shard the two are byte-identical in the log.",
-    "",
-    "ci.yml's 'Name the failing specs' step annotates a known entry as a",
-    "::notice (unchanged) and an UNLEDGERED flake as a ::warning. That split is",
-    "deliberate and narrow: the step's own comment records that annotating every",
-    "green-run flake as an error was measured on run 35427726541 and reverted,",
-    "because a step that cries wolf on every green run is one people learn to",
-    "ignore. A warning only on something genuinely new is the opposite of that.",
-    "",
-    "Matching is on SPEC FILE + TITLE SUBSTRING, never a line number: a comment",
-    "added above a test moves its line (measured — entity-detail-layout went",
-    "from :24 to :51 inside one PR) while the test is unchanged.",
-    "",
-    "Deleting an entry is correct the moment a spec is fixed or removed. The",
-    "guard asserts every entry's spec file still exists, so a deleted spec",
-    "cannot leave its excuse behind. It cannot assert the flake has stopped —",
-    "absence is not observable from one run — so that review is a human one."
-  ],
-  "flakes": [
-    {
-      "spec": "entity-detail-layout.spec.ts",
-      "title": "asset detail page renders the shell",
-      "issue": 1076,
-      "firstSeen": "2026-09-23",
-      "reason": "The App Router transition is DROPPED, not slow: 424 requests with the last at 2.94s then zero network for 29.4s, screencast pixel-static from 2.65s, and the frame URL is /assets/{id} at the start of the expect and /t/{slug}/assets at the end. Cause unidentified — a timeout raise would not help, and the service-worker storm hypothesis measured INCONCLUSIVE (both arms clean) because the flake did not fire in that CI window."
-    },
-    {
-      "spec": "data-table-platform.spec.ts",
-      "title": "Tasks row double-click navigates to detail",
-      "issue": 1076,
-      "firstSeen": "2026-10-01",
-      "reason": "Same dropped-transition shape as the entity-detail case and in the same E2E shard, which is what made it usable as that experiment's in-run control. Shares expectRouteTransition with it, but the helper is where the failure is CAUGHT rather than caused — ciso-portfolio shows the shape without using it."
-    },
-    {
-      "spec": "ciso-portfolio.spec.ts",
-      "title": "CISO creates a 2nd tenant",
-      "issue": 1076,
-      "firstSeen": "2026-10-01",
-      "reason": "The same ~18s shape at its own toBeVisible, and NOT a call site of expectRouteTransition — which is the observation that refuted the shared-helper explanation for this family."
-    }
-  ]
+    "$schema": "./known-flakes.schema-notes.md",
+    "$comment": [
+        "Specs KNOWN to fail an attempt and pass on retry. The point is not to",
+        "excuse them — it is to make a NEW flake distinguishable from a long-known",
+        "one, because on a green shard the two are byte-identical in the log.",
+        "",
+        "ci.yml's 'Name the failing specs' step annotates a known entry as a",
+        "::notice (unchanged) and an UNLEDGERED flake as a ::warning. That split is",
+        "deliberate and narrow: the step's own comment records that annotating every",
+        "green-run flake as an error was measured on run 35427726541 and reverted,",
+        "because a step that cries wolf on every green run is one people learn to",
+        "ignore. A warning only on something genuinely new is the opposite of that.",
+        "",
+        "Matching is on SPEC FILE + TITLE SUBSTRING, never a line number: a comment",
+        "added above a test moves its line (measured — entity-detail-layout went",
+        "from :24 to :51 inside one PR) while the test is unchanged.",
+        "",
+        "Deleting an entry is correct the moment a spec is fixed or removed. The",
+        "guard asserts every entry's spec file still exists, so a deleted spec",
+        "cannot leave its excuse behind. It cannot assert the flake has stopped —",
+        "absence is not observable from one run — so that review is a human one."
+    ],
+    "flakes": [
+        {
+            "spec": "entity-detail-layout.spec.ts",
+            "title": "asset detail page renders the shell",
+            "issue": 1076,
+            "firstSeen": "2026-09-23",
+            "reason": "The App Router transition is DROPPED, not slow: 424 requests with the last at 2.94s then zero network for 29.4s, screencast pixel-static from 2.65s, and the frame URL is /assets/{id} at the start of the expect and /t/{slug}/assets at the end. Cause unidentified — a timeout raise would not help, and the service-worker storm hypothesis measured INCONCLUSIVE (both arms clean) because the flake did not fire in that CI window.",
+            "review": "2027-01-15"
+        },
+        {
+            "spec": "data-table-platform.spec.ts",
+            "title": "Tasks row double-click navigates to detail",
+            "issue": 1076,
+            "firstSeen": "2026-10-01",
+            "reason": "Same dropped-transition shape as the entity-detail case and in the same E2E shard, which is what made it usable as that experiment's in-run control. Shares expectRouteTransition with it, but the helper is where the failure is CAUGHT rather than caused — ciso-portfolio shows the shape without using it.",
+            "review": "2027-01-15"
+        },
+        {
+            "spec": "ciso-portfolio.spec.ts",
+            "title": "CISO creates a 2nd tenant",
+            "issue": 1076,
+            "firstSeen": "2026-10-01",
+            "reason": "The same ~18s shape at its own toBeVisible, and NOT a call site of expectRouteTransition — which is the observation that refuted the shared-helper explanation for this family.",
+            "review": "2027-01-15"
+        },
+        {
+            "spec": "theme-first-paint.spec.ts",
+            "title": "a first visit: the inline script corrects it DURING head parsing",
+            "issue": 1329,
+            "firstSeen": "2026-10-06",
+            "review": "2027-01-15",
+            "reason": "FIRST PAINT never reported: `expect(log.fcp).not.toBeNull()` at :220. Not a navigation timeout like its siblings here — the instrument itself produced no value, which is the same underlying slowness seen from the measurement side rather than the assertion side. Proven a flake on #1323 run 37456682187: attempt 1 red, attempt 2 green on the IDENTICAL commit 6784a0f44."
+        },
+        {
+            "spec": "tooltip-and-copy.spec.ts",
+            "title": "task detail header — task.key is copyable via CopyText",
+            "issue": 1329,
+            "firstSeen": "2026-10-06",
+            "review": "2027-01-15",
+            "reason": "Clicked a task row, `waitForURL(/farm-tasks\\/[a-z0-9]+$/)` timed out at 30s having stayed on the list. The SAME task-detail route as the data-table-platform entry above, reached by a single click instead of a double-click — which is why #1329 reads this set as a detail-page first-render shape rather than a per-spec bug. It EXHAUSTED all three attempts on #1323 attempt 1 and then passed cleanly on attempt 2 of the identical commit, so retry-exhaustion does not distinguish a flake from a real break in either direction."
+        },
+        {
+            "spec": "ciso-portfolio.spec.ts",
+            "title": "F — read-only invariant: AUDITOR cannot create tenant-level records",
+            "issue": 1329,
+            "firstSeen": "2026-10-06",
+            "review": "2027-01-15",
+            "reason": "Observed on #1316. A DIFFERENT test from the `G — CISO creates a 2nd tenant` entry above, in the same file: #1329 listed ciso-portfolio :183 and :214 together, and only :214 was ledgered, so :183 was still reading as a NEW flake on every occurrence. Ledgered separately rather than by widening G's title, because a title that matched both would excuse any future test in this file."
+        }
+    ]
 }

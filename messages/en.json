@@ -810,7 +810,7 @@
                 "producerName": "Agricultural producer (name / company)",
                 "egn": "ЕГН (personal ID)",
                 "eik": "ЕИК (company ID)",
-                "urn": "УРН (producer registration number)",
+                "urn": "УРН in ИСАК (ДФЗ — State Fund Agriculture)",
                 "address": "Registered / management address",
                 "municipality": "Municipality",
                 "settlement": "Settlement",
