@@ -17,9 +17,14 @@
  * ── theme inheritance is load-bearing ──
  *
  * A theme declares only what it OVERRIDES: light carries 118 of dark's 130,
- * highContrast only 20. The CSS cascade handles that for the web. Swift has no
- * cascade, so each theme is emitted FULLY RESOLVED against dark — otherwise an
- * iOS high-contrast build would be missing 110 colours.
+ * highContrast only 25. The CSS cascade handles that for the web. Swift has no
+ * cascade, so each theme is emitted FULLY RESOLVED — otherwise an iOS
+ * high-contrast build would be missing 105 colours.
+ *
+ * Resolved against WHAT is the whole question, and P2.9 found the answer here
+ * was wrong: see `CASCADE` below. highContrast inherits from LIGHT, not from
+ * dark, because «Слънце» sets `data-theme="light"` and `data-contrast="high"`
+ * on the same element.
  *
  * Usage:
  *   node scripts/generate-tokens.mjs           # write both files
@@ -180,11 +185,53 @@ const { css, rewritten: declsRewritten } = rewriteCss();
 
 // ─── Swift ──────────────────────────────────────────────────────────────────
 
-/** Resolve `var(--x)` chains within a theme, falling back to dark. */
+/**
+ * The inheritance chain each theme actually has IN THE BROWSER.
+ *
+ * ── the bug this replaces ──
+ *
+ * This resolved every theme against DARK: `spec.themes[theme][name] ??
+ * spec.themes.dark[name]`. That is right for light (`[data-theme="light"]`
+ * over `:root`) and WRONG for highContrast, because «Слънце» is not a theme
+ * of its own — `attributesFor('sunlight')` in src/lib/theme/theme-cookie.ts
+ * returns `{ theme: 'light', contrast: 'high' }`, so the element carries
+ * `data-theme="light"` AND `data-contrast="high"` together. Both selectors
+ * are single attribute selectors (0,1,0), so source order decides: the
+ * `[data-contrast="high"]` block (tokens.css:1106) wins over
+ * `[data-theme="light"]` (tokens.css:733) for the 25 tokens it declares, and
+ * the remaining 105 come from LIGHT — never from `:root`.
+ *
+ * Measured, that mattered for 82 of 130 tokens: iOS's `AgrentTheme
+ * .highContrast` was being handed the DARK forest greens and golds for every
+ * token «Слънце» does not override, while the web «Слънце» showed the light
+ * palette. The two platforms this file exists to keep in step were diverging
+ * on the one theme nobody had resolved by hand.
+ *
+ * Writing the chain down per theme — rather than a single `?? dark` — is the
+ * fix, because the chain IS the cascade, and a fourth theme would need its
+ * own entry rather than inheriting a default that happens to be wrong.
+ */
+const CASCADE = {
+    dark: ['dark'],
+    light: ['light', 'dark'],
+    highContrast: ['highContrast', 'light', 'dark'],
+};
+
+for (const t of THEME_ORDER) {
+    if (!CASCADE[t]) throw new Error(`no cascade declared for theme "${t}"`);
+    if (CASCADE[t][0] !== t) throw new Error(`theme "${t}" must come first in its own cascade`);
+}
+
+/** Resolve `var(--x)` chains within a theme, following that theme's cascade. */
 function resolve(theme, name, seen = new Set()) {
     if (seen.has(name)) throw new Error(`token cycle at --${name} in ${theme}`);
     seen.add(name);
-    const tok = spec.themes[theme][name] ?? spec.themes.dark[name];
+    const chain = CASCADE[theme];
+    if (!chain) throw new Error(`no cascade declared for theme "${theme}"`);
+    let tok = null;
+    for (const t of chain) {
+        if (spec.themes[t][name]) { tok = spec.themes[t][name]; break; }
+    }
     if (!tok) return null;
     const m = /^var\(--([a-z0-9-]+)\)$/.exec(tok.value.trim());
     return m ? resolve(theme, m[1], seen) : tok.value.trim();
@@ -246,9 +293,19 @@ function swift() {
         else skipped.push(name);
     }
 
+    // A theme with no value of its own for this token takes the first one its
+    // CASCADE offers — the same chain `resolve` walks. `?? perTheme.dark` was
+    // here, which re-introduced the dark fallback for highContrast one level
+    // below `resolve` and would have kept the divergence alive for any token
+    // whose value is non-scalar in light but scalar in dark.
+    const pick = (perTheme, theme) => {
+        for (const t of CASCADE[theme]) if (perTheme[t] !== undefined) return perTheme[t];
+        return undefined;
+    };
+
     const colourCase = (name, perTheme) => {
         const arms = THEME_ORDER.map((t) => {
-            const c = perTheme[t] ?? perTheme.dark;
+            const c = pick(perTheme, t);
             return `        case .${t}: return Color(red: ${f(c.r)}, green: ${f(c.g)}, blue: ${f(c.b)}, opacity: ${f(c.a)})`;
         }).join('\n');
         const note = spec.themes.dark[name]?.note;
@@ -256,7 +313,7 @@ function swift() {
     };
 
     const scalarCase = (name, perTheme, type) => {
-        const arms = THEME_ORDER.map((t) => `        case .${t}: return ${f(perTheme[t] ?? perTheme.dark)}`).join('\n');
+        const arms = THEME_ORDER.map((t) => `        case .${t}: return ${f(pick(perTheme, t))}`).join('\n');
         return `    static func ${camel(name)}(_ theme: AgrentTheme) -> ${type} {\n        switch theme {\n${arms}\n        }\n    }`;
     };
 
@@ -264,10 +321,15 @@ function swift() {
         '// GENERATED by scripts/generate-tokens.mjs from design/tokens.json.',
         '// Do not edit: `npm run tokens:check` fails on any hand edit.',
         '//',
-        '// Every theme is FULLY RESOLVED against dark, because Swift has no CSS',
-        `// cascade: light overrides ${Object.keys(spec.themes.light).length} of dark's ${Object.keys(spec.themes.dark).length} tokens and highContrast only ${Object.keys(spec.themes.highContrast).length},`,
-        '// so emitting each theme\'s own block alone would leave an iOS build',
-        '// missing most of its palette.',
+        '// Every theme is FULLY RESOLVED, because Swift has no CSS cascade:',
+        `// light overrides ${Object.keys(spec.themes.light).length} of dark's ${Object.keys(spec.themes.dark).length} tokens and highContrast only ${Object.keys(spec.themes.highContrast).length}, so emitting`,
+        '// each theme\'s own block alone would leave an iOS build missing most of',
+        '// its palette.',
+        '//',
+        '// Each theme resolves along ITS OWN cascade, which is the one the browser',
+        `// has: ${THEME_ORDER.map((t) => `${t} <- ${CASCADE[t].slice(1).join(' <- ') || '(root)'}`).join(', ')}.`,
+        '// highContrast inherits from LIGHT, not dark — «Слънце» is',
+        '// data-theme="light" PLUS data-contrast="high" on the same element.',
         '//',
         `// ${skipped.length} tokens are NOT emitted: gradients and multi-value shadows have`,
         '// no single Swift value, and iOS composes those natively. They are listed',
