@@ -43,6 +43,7 @@ import {
     _resetForTesting,
 } from '@/lib/observability/sentry';
 import { runWithRequestContext } from '@/lib/observability/context';
+import { SENTRY_DATA_COLLECTION_KEYS } from '@/lib/observability/sentry-data-collection';
 
 beforeEach(() => {
     jest.clearAllMocks();
@@ -284,14 +285,84 @@ describe('beforeSend redaction', () => {
  * behaviour. This asserts OUR options, which is the half we control.
  */
 describe('#1158 — Sentry privacy opt-out is explicit', () => {
-    it('sendDefaultPii is explicitly false, not left to the SDK default', () => {
+    it('every data-collection category is explicitly OFF, not left to the SDK default', () => {
+        // #1311 — Sentry 11 REMOVED `sendDefaultPii` and replaced it with
+        // `dataCollection`, whose every field defaults to TRUE. So the thing
+        // this test guards did not merely get renamed: the default INVERTED.
+        // Deleting the old option to satisfy the compiler would have turned
+        // "collect nothing personal" into "collect user info, cookies, both
+        // header directions, request AND response bodies, query params and
+        // database query data" — silently, with a green typecheck.
         process.env.SENTRY_DSN = 'https://abc@sentry.io/123';
         initSentry();
 
         const config = mockInit.mock.calls[0][0];
-        // `toBe(false)` rather than `toBeFalsy()`: undefined is falsy and is
-        // exactly the state this fixes.
-        expect(config.sendDefaultPii).toBe(false);
+        const dc = config.dataCollection;
+        expect(dc).toBeDefined();
+
+        // Asserted field by field rather than with a snapshot: a snapshot
+        // records whatever is there, so an accidental `true` would simply be
+        // written into the expected value on the next update.
+        expect(dc.userInfo).toBe(false);
+        expect(dc.cookies).toBe(false);
+        expect(dc.httpHeaders).toEqual({ request: false, response: false });
+        // An ARRAY of targets, not a boolean — `[]` is its "none" value.
+        expect(dc.httpBodies).toEqual([]);
+        expect(dc.urlQueryParams).toBe(false);
+        expect(dc.graphQL).toEqual({ document: false, variables: false });
+        expect(dc.genAI).toEqual({ inputs: false, outputs: false });
+        expect(dc.databaseQueryData).toBe(false);
+        expect(dc.queues).toBe(false);
+        expect(dc.stackFrameVariables).toBe(false);
+
+        // The option it replaced must be GONE, not merely overridden: a
+        // leftover `sendDefaultPii` would read as the live control to the next
+        // person while the SDK ignored it entirely.
+        expect(config.sendDefaultPii).toBeUndefined();
+    });
+
+    it('our opt-out still covers every category the INSTALLED SDK offers', () => {
+        // The durable half. A Sentry minor can add a `dataCollection` key, and
+        // it will default to TRUE like the rest — so an opt-out that was
+        // complete when written silently stops being complete. This compares
+        // our keys against the SDK's own type definition rather than a list
+        // copied into this file, which would go stale in exactly the same way.
+        const fs = require('fs') as typeof import('fs');
+        const path = require('path') as typeof import('path');
+
+        const dts = path.resolve(
+            __dirname,
+            '../../node_modules/@sentry/core/build/types/types/datacollection.d.ts',
+        );
+        // Positive control: if the SDK moves this file, FAIL rather than
+        // silently passing on an empty field list.
+        expect(fs.existsSync(dts)).toBe(true);
+
+        const src = fs.readFileSync(dts, 'utf8');
+        const body = src.slice(src.indexOf('export interface DataCollection'));
+        const sdkKeys = Array.from(
+            body.slice(0, body.indexOf('\n}')).matchAll(/^\s{4}([a-zA-Z]+)\?:/gm),
+        ).map((m) => m[1]);
+
+        // Control: the extractor found a real population, not zero.
+        expect(sdkKeys.length).toBeGreaterThan(5);
+
+        // `frameContextLines` is a NUMBER of source lines, not a data
+        // category, so it is deliberately not part of the posture.
+        const governed = sdkKeys.filter((k) => k !== 'frameContextLines');
+        const ours = SENTRY_DATA_COLLECTION_KEYS;
+
+        const unhandled = governed.filter((k) => !ours.includes(k));
+        if (unhandled.length > 0) {
+            throw new Error(
+                `@sentry/core now offers dataCollection categories this repo has not decided about:\n` +
+                    unhandled.map((k) => `  ${k}`).join('\n') +
+                    `\n\nEvery dataCollection field defaults to TRUE, so an unlisted category is ON. ` +
+                    `Add it to SENTRY_DATA_COLLECTION in src/lib/observability/sentry-data-collection.ts ` +
+                    `with a decision, then extend the field-by-field assertion above.`,
+            );
+        }
+        expect(unhandled).toEqual([]);
     });
 
     it('beforeSend strips every IP-bearing header, and keeps benign ones', () => {

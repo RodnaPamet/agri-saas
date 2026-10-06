@@ -14,6 +14,7 @@ jest.mock('@sentry/nextjs', () => ({
 
 import { initClientSentry, __resetClientSentryForTests } from '@/lib/observability/sentry-client';
 import * as Sentry from '@sentry/nextjs';
+import { SENTRY_DATA_COLLECTION } from '@/lib/observability/sentry-data-collection';
 
 beforeEach(() => {
     initMock.mockClear();
@@ -43,7 +44,7 @@ describe('initClientSentry', () => {
         expect(cfg.tracesSampleRate).toBeLessThanOrEqual(0.1); // traces sampled low
     });
 
-    it('#1158 — sendDefaultPii is explicitly false on the BROWSER side', () => {
+    it('#1158/#1311 — data collection is explicitly OFF on the BROWSER side', () => {
         // The client default is what attaches the VISITOR'S IP to every event,
         // so an inherited default is the difference between knowing an error
         // happened and recording who it happened to. `@sentry/nextjs` 11
@@ -52,7 +53,24 @@ describe('initClientSentry', () => {
         // `toBe(false)` rather than `toBeFalsy()`, because `undefined` is
         // falsy and is precisely the state being fixed.
         initClientSentry('https://pub@o1.ingest.sentry.io/1');
-        expect(initMock.mock.calls[0][0].sendDefaultPii).toBe(false);
+        const cfg = initMock.mock.calls[0][0];
+        // #1311 — Sentry 11 removed `sendDefaultPii` for `dataCollection`,
+        // whose fields all default to TRUE. Same shared constant as the
+        // server, so the two sides cannot drift apart.
+        expect(cfg.dataCollection.userInfo).toBe(false);
+        expect(cfg.dataCollection.cookies).toBe(false);
+        expect(cfg.dataCollection.httpBodies).toEqual([]);
+        expect(cfg.dataCollection.urlQueryParams).toBe(false);
+        // Gone, not merely overridden.
+        expect(cfg.sendDefaultPii).toBeUndefined();
+    });
+
+    it('the browser posture IS the server posture — one object, not a copy', () => {
+        // Two literals are two things that drift, and the posture has to hold
+        // on both sides. Asserting identity rather than equality is what makes
+        // a divergent copy impossible: `toBe` fails if someone re-inlines one.
+        initClientSentry('https://pub@o1.ingest.sentry.io/1');
+        expect(initMock.mock.calls[0][0].dataCollection).toBe(SENTRY_DATA_COLLECTION);
     });
 
     it('initialises at most once (the once-guard holds)', () => {

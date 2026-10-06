@@ -17,6 +17,7 @@
 
 import * as Sentry from '@sentry/nextjs';
 import { getRequestContext } from './context';
+import { SENTRY_DATA_COLLECTION } from './sentry-data-collection';
 
 // ── State ──
 
@@ -68,7 +69,7 @@ function redactUrl(url: string): string {
  * The first three are credentials. The rest carry the CALLER'S IP ADDRESS,
  * which `beforeSend` did not touch before #1158 — so an operator's address
  * reached a third party whenever a proxy set one, independently of
- * `sendDefaultPii`. Lower-cased because Sentry normalises header names.
+ * the data-collection posture. Lower-cased because Sentry normalises header names.
  */
 const REDACTED_HEADERS = [
     'authorization',
@@ -106,7 +107,12 @@ export function initSentry(): void {
         // for GDPR, "whatever the next major defaults to" is not a privacy
         // posture. Setting it false means a future default cannot quietly
         // start attaching IPs, cookies and request bodies to every event.
-        sendDefaultPii: false,
+        // #1311 — Sentry 11 REMOVED `sendDefaultPii` and replaced it with
+        // `dataCollection`, in which every field defaults to TRUE. Deleting
+        // the old option to satisfy the compiler would have inverted the
+        // posture this block exists to state. See
+        // `./sentry-data-collection.ts` for the measured field list.
+        dataCollection: SENTRY_DATA_COLLECTION,
 
         // Don't send expected / handled errors
         beforeSend(event, hint) {
