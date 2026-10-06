@@ -721,6 +721,19 @@ export interface ExchangeExpirySweepPayload {
 }
 
 /**
+ * unverified-account-sweep — delete accounts that never verified their email.
+ *
+ * Identity-level and therefore system-wide: an unverified account has no farm,
+ * which is precisely why `data-lifecycle.ts` (explicitly tenant-scoped) is not
+ * its home. DESTRUCTIVE — see the job's docblock for why membership is part of
+ * the predicate rather than a filter applied afterwards.
+ */
+export interface UnverifiedAccountSweepPayload {
+    /** Optional cap on accounts deleted per run. */
+    batchSize?: number;
+}
+
+/**
  * soil-fetch — populate modelled soil (SoilGrids) for a batch of parcels.
  * Enqueued on parcel import / create / geometry edit; runs on the dedicated
  * soil queue with a 5/min Worker limiter (SoilGrids fair-use).
@@ -801,6 +814,7 @@ export interface JobPayloadMap {
     'cadastre-import': CadastreImportJobPayload;
     'farm-record-pdf': FarmRecordPdfPayload;
     'exchange-expiry-sweep': ExchangeExpirySweepPayload;
+    'unverified-account-sweep': UnverifiedAccountSweepPayload;
     'soil-fetch': SoilFetchPayload;
     'market-prices-pull': MarketPricesPullPayload;
     // Intraday Barchart-only pull (delayed MATIF futures). Same payload shape;
@@ -1183,6 +1197,24 @@ export const JOB_DEFAULTS: Record<JobName, {
         backoff: { type: 'exponential', delay: 5000 },
         removeOnComplete: 100,
         removeOnFail: 200,
+    },
+    'unverified-account-sweep': {
+        // Idempotent: the predicate only ever matches accounts that are still
+        // unverified, still past the grace period and still without a farm, so
+        // a re-run deletes nothing a prior run already took.
+        //
+        // ONE attempt, unlike the other sweeps. This job DELETES identities,
+        // and an automatic retry on an ambiguous failure — a timeout after the
+        // statement committed, say — would re-run a destructive batch against
+        // state nobody has looked at. The daily cadence is the retry, and it
+        // arrives with a fresh selection.
+        attempts: 1,
+        // Required by the shared options type and UNREACHABLE at attempts: 1.
+        // Spelled out rather than set to zero so nobody reads a 0 delay as
+        // "retries immediately" and raises attempts to match it.
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: 100,
+        removeOnFail: 500,
     },
     'soil-fetch': {
         // Idempotent per parcel (cache-first; a re-run just refreshes from

@@ -163,7 +163,16 @@ describe('Executor Registry — structural tenant-scope guards', () => {
     // policy-news slice of MarketNewsItem and writes GLOBAL NewsDerivedEvent
     // rows (no tenantId on either model, like market-news-pull above) — a
     // subsidy deadline or regulation date is the same fact for every tenant.
+    // unverified-account-sweep (P3.5e) is IDENTITY-level, not merely
+    // "global": it deletes `User` rows that never verified their email, and
+    // such an account has no farm at all — that absence is the whole
+    // selection criterion. A tenantId on this payload would not just be
+    // meaningless, it would be contradictory, because any account that HAS a
+    // tenant is explicitly excluded from the sweep. This is also why the job
+    // does not live in `data-lifecycle.ts`, which is tenant-scoped by
+    // construction ("never cross-tenant in one pass").
     const EXEMPT_JOBS = ['health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction', 'support-scheme-extraction',
+        'unverified-account-sweep',
         // PromotionLead is CROSS-tenant (inquirerTenantId, not tenantId) and is
         // swept globally in one pass — see job-scope-audit for the full reason.
         'promotion-lead-retention',
@@ -253,7 +262,7 @@ describe('Payload Type Contract — tenantId field audit', () => {
     // Jobs that legitimately don't need tenantId
     // SharePointDeltaSyncDispatchPayload (SP-3) is the global fan-out cron — no
     // single tenantId; it enqueues per-tenant SharePointDeltaSyncPayload jobs.
-    const EXEMPT_PAYLOADS = ['HealthCheckPayload', 'SyncPullPayload', 'ScheduleTriggerSweepPayload', 'SharePointDeltaSyncDispatchPayload', 'SharePointSubscriptionRenewPayload', 'RiskAppetiteMonitorPayload', 'RiskSnapshotPayload', 'ReportDeliveryPayload', 'ExchangeExpirySweepPayload', 'MarketPricesPullPayload', 'MarketNewsPullPayload',
+    const EXEMPT_PAYLOADS = ['UnverifiedAccountSweepPayload', 'HealthCheckPayload', 'SyncPullPayload', 'ScheduleTriggerSweepPayload', 'SharePointDeltaSyncDispatchPayload', 'SharePointSubscriptionRenewPayload', 'RiskAppetiteMonitorPayload', 'RiskSnapshotPayload', 'ReportDeliveryPayload', 'ExchangeExpirySweepPayload', 'MarketPricesPullPayload', 'MarketNewsPullPayload',
         // Global sweep over a cross-tenant table — no payload tenant axis.
         'PromotionLeadRetentionPayload',
         // Drains the whole outbox; each ROW carries the tenantId, so a

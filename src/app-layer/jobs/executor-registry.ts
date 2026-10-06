@@ -492,6 +492,27 @@ executorRegistry.register('access-review-overdue-escalation', async (payload) =>
     );
 });
 
+// ── unverified-account-sweep ────────────────────────────────────────
+
+executorRegistry.register('unverified-account-sweep', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runUnverifiedAccountSweep } = await import('./unverified-account-sweep');
+    const { prisma } = await import('@/lib/prisma');
+    const r = await runUnverifiedAccountSweep(prisma, { batchSize: payload.batchSize });
+    return makeResult(
+        'unverified-account-sweep',
+        startedAt,
+        startMs,
+        r.scanned,
+        r.deleted,
+        // `skipped` is the legacy-route backlog: unverified accounts spared
+        // because they hold a farm. Reported through the standard skipped
+        // channel so it shows up in job telemetry without a bespoke field.
+        r.skippedWithMembership,
+    );
+});
+
 // ── exchange-expiry-sweep ───────────────────────────────────────────
 
 executorRegistry.register('exchange-expiry-sweep', async (payload) => {
