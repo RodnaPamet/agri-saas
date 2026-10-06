@@ -96,7 +96,7 @@ describe('lookup-kind separation: eik vs email (P3.4)', () => {
         // but once claims are stored, changing this info string strands every
         // `eikHash` in the table, with the same silence.
         expect(hashForLookup(EIK, 'eik')).toBe(
-            '4a31fbee9a5b50bb1d5751a4f6975471bf5210ee1f6001f39566c5d52e726424',
+            'c06e941602f59cb70030638b50524fc4e2fc5d9dd591e1948314caa5cddea723',
         );
     });
 });

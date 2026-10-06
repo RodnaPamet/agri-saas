@@ -92,7 +92,16 @@ const LOOKUP_INFO: Record<LookupKind, string> = {
     // of another column. And unlike an email, an ЕИК is PUBLIC: it is in the
     // Търговски регистър. The index is not hiding the identifier, it is
     // keeping this table from being a membership oracle over a public list.
-    eik: 'inflect-eik-lookup-hash',
+    // `agrent-`, not `inflect-` like its sibling above, and the inconsistency
+    // is correct rather than careless. `tests/guards/no-legacy-brand.test.ts`
+    // permits the legacy-brand HKDF info strings under one reasoned survivor
+    // category — "renaming breaks decryption of all existing ciphertext" —
+    // which is exactly why `email` keeps its string and exactly why this one
+    // must not borrow it: nothing is stored under the `eik` kind yet, so there
+    // is no ciphertext to break and no licence to add a legacy reference. The
+    // guard caught the first version of this line, which read
+    // `inflect-eik-lookup-hash`.
+    eik: 'agrent-eik-lookup-hash',
 };
 
 /** Every kind, for tests and sweeps that must cover the whole surface. */

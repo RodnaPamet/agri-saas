@@ -74,6 +74,34 @@ insert is refused for a reason unrelated to attribution. Its paired positive
 control is what carries the meaning, and the test now says so rather than
 reading as self-sufficient.
 
+## A second correction: the HKDF info string carried the legacy brand
+
+The `eik` info string first read `inflect-eik-lookup-hash`, copying the shape of
+its sibling. CI failed it on `tests/guards/no-legacy-brand.test.ts`, a ratchet I
+did not know existed and had therefore not run.
+
+Renaming to `agrent-eik-lookup-hash` is the right fix rather than a waiver, and
+the guard's own survivor list is what settles it. The legacy-brand HKDF strings
+are permitted under one reasoned category:
+
+```
+{ pattern: /inflect-(?:data|mfa|startup-sentinel|dev-encryption)/,
+  reason: 'encryption/MFA key-derivation salts + HKDF info —
+           renaming breaks decryption of all existing ciphertext' }
+```
+
+That reason is exactly why `email` keeps its string, and exactly why this one
+may not borrow it: nothing is stored under the `eik` kind yet, so there is no
+ciphertext to break and no licence to add a legacy reference. Adding a survivor
+entry would have been claiming a constraint that does not exist.
+
+The email pin is byte-identical before and after the rename, which is the
+evidence that only the new kind moved. The eik pin was recomputed.
+
+The process lesson is the one worth keeping: I ran the guards I judged relevant
+(`rls-coverage`) and not the population. The whole set is 676 suites and takes
+one command — run it before pushing, not after CI says no.
+
 ## Mutation proofs
 
 Each mutation applied, suite run, mutation reverted. The point is which
@@ -109,7 +137,7 @@ assertions execute what was broken, not that the suite is red.
 ```
 tests/integration/farm-identity-claim-unique.test.ts   10 passed
 tests/unit/lookup-kind-eik-separation.test.ts           8 passed
-tests/guardrails/rls-coverage.test.ts                  30 passed
+tests/guards + tests/guardrails (676 suites)        8543 passed
 full tsc --noEmit (buildinfo deleted first)            exit 0
 npm run lint                                           exit 0
 ```
