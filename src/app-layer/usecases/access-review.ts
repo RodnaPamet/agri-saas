@@ -33,6 +33,7 @@
  *     unavailable; the audit log captures who).
  */
 import { RequestContext } from '../types';
+import { toSlug } from '@/lib/bg-transliterate';
 import { AccessReviewRepository } from '../repositories/AccessReviewRepository';
 import { assertCanAdmin, assertCanRead } from '../policies/common';
 import { logEvent } from '../events/audit';
@@ -838,7 +839,14 @@ export async function closeAccessReview(
         });
 
         const pdfBuffer = await collectPdfBuffer(pdfDoc);
-        const fileName = `access_review_${phase1.review.name.replace(/[^a-z0-9]+/gi, '_')}_${phase1.closedAt.toISOString().slice(0, 10)}.pdf`;
+        // `toSlug` then hyphen→underscore, to keep this filename's existing
+        // underscore shape. The old `/[^a-z0-9]+/gi` strip deleted Cyrillic
+        // outright, so a review named «Преглед на достъпа» produced
+        // `access_review___2026-10-06.pdf` — three underscores where the name
+        // should be, and identical for every differently-named review closed
+        // the same day.
+        const reviewStem = (toSlug(phase1.review.name, 60) ?? 'review').replace(/-/g, '_');
+        const fileName = `access_review_${reviewStem}_${phase1.closedAt.toISOString().slice(0, 10)}.pdf`;
         const storage = getStorageProvider();
         const pathKey = buildTenantObjectKey(
             ctx.tenantId,

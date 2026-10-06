@@ -1,4 +1,5 @@
 import { RequestContext } from '../types';
+import { toSlug } from '@/lib/bg-transliterate';
 import { KnowledgeRepository, KnowledgeFilters } from '../repositories/KnowledgeRepository';
 import { KnowledgeVersionRepository } from '../repositories/KnowledgeVersionRepository';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
@@ -18,9 +19,20 @@ import { logger } from '@/lib/observability/logger';
  * HTML (TipTap) via the rich-text allowlist, MARKDOWN via plain-text strip.
  */
 
-// ─── Slug helper (mirrors policy.ts) ───
+// ─── Slug helper ───
+//
+// Was a bare `[^a-z0-9]` strip, which deleted every Cyrillic character — so an
+// article titled «Торене на пшеница» slugged to '' and fell through to the
+// `article` fallback at the call site below. Every Bulgarian article was
+// `article`, `article-2`, `article-3`.
+//
+// The old comment here claimed this "mirrors policy.ts". That file does not
+// exist — the citation rotted at some rename or deletion and was quietly
+// pointing nowhere, which is worse than no comment: a reader goes looking for
+// the twin to keep in sync and cannot tell whether they failed to find it or
+// it was never there. `@/lib/bg-transliterate` is now the single definition.
 function slugify(text: string): string {
-    return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').substring(0, 80);
+    return toSlug(text, 80) ?? '';
 }
 
 function sanitizeContent(contentType: 'HTML' | 'MARKDOWN', text: string | null | undefined): string {

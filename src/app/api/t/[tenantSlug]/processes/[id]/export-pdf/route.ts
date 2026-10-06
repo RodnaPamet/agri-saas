@@ -16,6 +16,7 @@
  *   - Avoids a ~200KB client-bundle hit from adding jsPDF.
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { toSlug } from '@/lib/bg-transliterate';
 import { z } from 'zod';
 import { getTenantCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
@@ -46,12 +47,10 @@ function collectPdfBuffer(doc: PDFKit.PDFDocument): Promise<Buffer> {
 }
 
 function safeFilename(mapName: string): string {
-    const stem =
-        mapName
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, '-')
-            .replace(/^-+|-+$/g, '')
-            .slice(0, 60) || 'process-map';
+    // See share-card.ts: the old [a-z0-9] strip deleted Cyrillic entirely, so
+    // every Bulgarian map exported as `process-map.pdf` regardless of which
+    // map it was.
+    const stem = toSlug(mapName, 60) ?? 'process-map';
     return `${stem}.pdf`;
 }
 
