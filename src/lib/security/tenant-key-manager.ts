@@ -5,6 +5,11 @@
  * to generate / wrap / unwrap DEKs, in-memory) and provides the
  * tenant-lifecycle surface the rest of the app talks to:
  *
+ *   - `createFarmTenant(data, db?)` — the ONE implementation (P3.3). Takes an
+ *     optional transaction client and returns `{ tenant, primeDekCache }`; the
+ *     caller primes AFTER commit. Replaces the three sites that used to
+ *     replicate the body against a `tx`.
+ *
  *   - `createTenantWithDek(data)` — atomic "create a tenant with
  *     its wrapped DEK already populated" against the singleton
  *     client. The call every tenant-creation path should use UNLESS
@@ -203,18 +208,82 @@ function getCachedPrevious(tenantId: string): TenantDek | undefined {
  * Direct `prisma.tenant.create` still works (nullable column) but
  * leaves the tenant dependent on backfill to get a DEK.
  */
-export async function createTenantWithDek(
-    data: Omit<Prisma.TenantCreateInput, 'encryptedDek'>,
-): Promise<Prisma.TenantGetPayload<Record<string, never>>> {
+/**
+ * The transaction client or the singleton — same shape as
+ * `org-provisioning.ts`'s `DbClient`, deliberately, so there is one convention
+ * in the codebase rather than two.
+ */
+export type TenantDbClient = Prisma.TransactionClient | typeof prisma;
+
+export interface CreatedTenant {
+    tenant: Prisma.TenantGetPayload<Record<string, never>>;
+    /**
+     * Put the new tenant's DEK in the process cache. **Call this AFTER the
+     * transaction commits**, never inside it.
+     *
+     * This is the whole reason the helper is two-phase, and it is not about the
+     * Prisma client. Priming inside a caller's transaction leaves a side effect
+     * that survives a ROLLBACK: the process then holds a DEK keyed to a tenant
+     * id that was never committed. Nothing decrypts wrongly — ids do not
+     * recycle — but the cache is an insertion-order LRU bounded at
+     * `MAX_CACHE_SIZE`, so every abandoned registration evicts a LIVE tenant's
+     * key and charges that tenant an unwrap on its next request.
+     *
+     * Skipping the call is safe and costs one unwrap on first use. Calling it
+     * after a rollback is the thing to avoid.
+     */
+    primeDekCache: () => void;
+}
+
+/**
+ * Create a tenant with its wrapped DEK — the ONE implementation (P3.3).
+ *
+ * Pass `db` to create the row inside a caller's transaction; omit it for the
+ * singleton. Before this existed, THREE sites replicated the body against a
+ * `tx` client: `api/auth/register`, `createTenantWithOwner` in
+ * `tenant-lifecycle.ts`, and `org-tenants.ts` — the last of which this
+ * module's own docblock did not list, so a reader counting from the comment
+ * would have converged two and left the third diverged, looking deliberate.
+ *
+ * The caller owns the cache prime, for the reason on `primeDekCache` above.
+ */
+export async function createFarmTenant(
+    /**
+     * Both of Prisma's create shapes. `create` takes `XOR<Checked, Unchecked>`
+     * and the unchecked variant is what allows a raw foreign key — `org-tenants`
+     * passes `organizationId` directly. Accepting only the checked input made
+     * that call site stop compiling, which is how this was found.
+     */
+    data:
+        | Omit<Prisma.TenantCreateInput, 'encryptedDek'>
+        | Omit<Prisma.TenantUncheckedCreateInput, 'encryptedDek'>,
+    db: TenantDbClient = prisma,
+): Promise<CreatedTenant> {
     const { dek, wrapped } = generateAndWrapDek();
-    const tenant = await prisma.tenant.create({
-        data: { ...data, encryptedDek: wrapped },
+    const tenant = await db.tenant.create({
+        data: { ...data, encryptedDek: wrapped } as Prisma.TenantCreateInput,
     });
-    setCached(tenant.id, dek);
     logger.info('tenant-key-manager.tenant_created_with_dek', {
         component: 'tenant-key-manager',
         tenantId: tenant.id,
+        inTransaction: db !== prisma,
     });
+    return { tenant, primeDekCache: () => setCached(tenant.id, dek) };
+}
+
+/**
+ * Create a tenant with its DEK against the singleton, priming the cache.
+ *
+ * Kept with its original signature because every existing caller uses the
+ * returned tenant directly. It is now a thin wrapper over `createFarmTenant`
+ * rather than a second implementation — priming immediately is correct here
+ * precisely because there is no caller transaction to roll back.
+ */
+export async function createTenantWithDek(
+    data: Omit<Prisma.TenantCreateInput, 'encryptedDek'>,
+): Promise<Prisma.TenantGetPayload<Record<string, never>>> {
+    const { tenant, primeDekCache } = await createFarmTenant(data);
+    primeDekCache();
     return tenant;
 }
 

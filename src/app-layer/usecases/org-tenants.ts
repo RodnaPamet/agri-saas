@@ -25,7 +25,7 @@
 import { Prisma } from '@prisma/client';
 
 import prisma from '@/lib/prisma';
-import { generateAndWrapDek } from '@/lib/security/tenant-keys';
+import { createFarmTenant } from '@/lib/security/tenant-key-manager';
 import { provisionAllOrgAdminsToTenant } from './org-provisioning';
 import { ConflictError, notFound } from '@/lib/errors/types';
 import type { OrgContext } from '@/app-layer/types';
@@ -60,18 +60,21 @@ export async function createTenantUnderOrg(
     let tenantName = name;
     let tenantSlug = slug;
 
+    // Returned OUT of the transaction rather than assigned to an outer `let`:
+    // TypeScript cannot prove a closure ran, so an outer binding stays narrowed
+    // to `null` and is not callable afterwards.
+    let primeDekCache: () => void;
+
     try {
-        await prisma.$transaction(async (tx) => {
-            const { wrapped } = generateAndWrapDek();
-            const tenant = await tx.tenant.create({
-                data: {
-                    name,
-                    slug,
-                    organizationId: ctx.organizationId,
-                    encryptedDek: wrapped,
-                },
-                select: { id: true, name: true, slug: true },
-            });
+        primeDekCache = await prisma.$transaction(async (tx) => {
+            // P3.3 — one helper, not a fourth replication of its body. The
+            // cache prime is deliberately NOT called here: it would survive a
+            // rollback and evict a live tenant's DEK. It runs after commit.
+            const created = await createFarmTenant(
+                { name, slug, organizationId: ctx.organizationId },
+                tx,
+            );
+            const tenant = created.tenant;
             tenantId = tenant.id;
             tenantName = tenant.name;
             tenantSlug = tenant.slug;
@@ -92,6 +95,8 @@ export async function createTenantUnderOrg(
             await tx.tenantOnboarding.create({
                 data: { tenantId: tenant.id },
             });
+
+            return created.primeDekCache;
         });
     } catch (err) {
         // Translate the Prisma unique-violation on Tenant.slug into a
@@ -107,6 +112,13 @@ export async function createTenantUnderOrg(
         }
         throw err;
     }
+
+    // P3.3 — prime the DEK cache now the transaction has COMMITTED. Doing it
+    // inside would leave a key for a tenant that never existed if the
+    // transaction rolled back, and the cache is an insertion-order LRU, so
+    // each such entry evicts a live tenant's DEK. Skipping it is safe; it
+    // costs one unwrap on first use.
+    primeDekCache();
 
     // Auto-provision OTHER ORG_ADMINs into the new tenant. The creator
     // already has OWNER (higher than AUDITOR) — skipDuplicates skips

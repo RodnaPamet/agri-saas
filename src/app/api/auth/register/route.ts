@@ -10,6 +10,7 @@
  * `/api/auth/callback/credentials`.
  */
 import prisma from '@/lib/prisma';
+import { createFarmTenant } from '@/lib/security/tenant-key-manager';
 import { signToken } from '@/lib/auth';
 import { issueEmailVerification } from '@/lib/auth/email-verification';
 import { hashPassword, validatePasswordPolicy } from '@/lib/auth/passwords';
@@ -116,13 +117,17 @@ async function handleRegister(body: any) {
     // stranded on /no-tenant forever, and unable to retry because the
     // email was now taken (the duplicate check above returns 409).
     //
-    // createTenantWithDek cannot join a transaction (it uses the
-    // singleton client), so we create the tenant row on `tx` with a
-    // freshly wrapped DEK — the same approach createTenantWithOwner
-    // takes in src/app-layer/usecases/tenant-lifecycle.ts. The DEK cache
-    // is not primed; it unwraps on first use.
-    const { generateAndWrapDek } = await import('@/lib/security/tenant-keys');
-    const { wrapped } = generateAndWrapDek();
+    // The tenant row is created through `createFarmTenant` (P3.3), which takes
+    // the transaction client. This used to replicate the helper's body here
+    // because the old one could only use the singleton; three call sites had
+    // the same workaround. The DEK cache IS primed now — after the commit,
+    // below, never inside, since a prime inside survives a rollback.
+    //
+    // Note what did NOT move: `hashPassword` above stays outside the
+    // transaction. bcrypt at cost 12 runs for hundreds of milliseconds and
+    // DATABASE_URL points at PgBouncer in transaction mode, so holding the
+    // transaction open across it pins a pooled connection. DEK generation is
+    // symmetric crypto in microseconds and is safe inside.
 
     let created!: {
         tenantId: string;
@@ -134,6 +139,8 @@ async function handleRegister(body: any) {
         role: Role;
     };
 
+    let primeDekCache: (() => void) | undefined;
+
     await (prisma as PrismaClient).$transaction(async (tx) => {
         // OWNER, not ADMIN. Epic 1 made OWNER strictly superior — it alone
         // carries `admin.tenant_lifecycle` and `admin.owner_management`
@@ -143,10 +150,9 @@ async function handleRegister(body: any) {
         // the workspace. The `tenant_membership_last_owner_guard` trigger
         // cannot catch this: it fires on UPDATE/DELETE that would drop a
         // tenant to zero owners, and is blind to one that starts there.
-        const tenant = await tx.tenant.create({
-            data: { name: orgName, slug, encryptedDek: wrapped },
-            select: { id: true, slug: true, name: true },
-        });
+        const createdTenant = await createFarmTenant({ name: orgName, slug }, tx);
+        primeDekCache = createdTenant.primeDekCache;
+        const tenant = createdTenant.tenant;
 
         const user = await tx.user.create({
             data: {
@@ -180,6 +186,12 @@ async function handleRegister(body: any) {
             role: membership.role,
         };
     });
+
+    // Prime the DEK cache now the transaction has COMMITTED — same reason the
+    // audit append below waits. A prime inside the transaction outlives a
+    // rollback, leaving a key for a tenant that never existed in a bounded LRU
+    // that then evicts a live one.
+    primeDekCache?.();
 
     // Audit AFTER commit so the data is durable before the hash chain
     // extends. actorType is USER, not PLATFORM_ADMIN — this is
