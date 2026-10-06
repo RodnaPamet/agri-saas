@@ -115,6 +115,14 @@ const REGISTERED: Readonly<Record<string, Registration>> = {
         kind: 'write',
         note: 'Writes the hash for the new account. The uniqueness pre-check ahead of it reads candidates.',
     },
+    'src/app/api/auth/register/start/route.ts': {
+        kind: 'write',
+        note: 'Registration v2 step 1 (P3.5b): writes emailHash for the new unverified account. Its existence check ahead of it reads candidates, so a rotation window cannot create a duplicate.',
+    },
+    'src/lib/auth/email-verification-code.ts': {
+        kind: 'write',
+        note: 'Keys a 6-digit code row on emailHash instead of storing the address, so a dump of that table identifies nobody. Both its reads use candidates; the index is deliberately non-unique because a rotation window can hold a row under each key.',
+    },
     'src/app-layer/usecases/tenant-lifecycle.ts': {
         kind: 'write',
         note: 'Owner bootstrap: the candidate read runs first, and this hash keys the upsert that follows it.',

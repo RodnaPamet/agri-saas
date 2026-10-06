@@ -190,6 +190,16 @@
       "documented": false
     },
     {
+      "path": "/api/auth/register/start",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/auth/register/verify",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/auth/reset-password",
       "status": "live",
       "documented": false

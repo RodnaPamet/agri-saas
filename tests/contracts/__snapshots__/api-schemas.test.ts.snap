@@ -9861,6 +9861,48 @@ exports[`API contract — per-schema snapshots schema: RawErrorResponse 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: RegisterStartResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "enum": [
+        true
+      ]
+    }
+  },
+  "required": [
+    "ok"
+  ],
+  "description": "Intentionally carries no information about the address. Adding a field here that varied with account state would re-open the enumeration oracle this shape exists to close."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: RegisterVerifyResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "enum": [
+        true
+      ]
+    },
+    "verified": {
+      "type": "boolean",
+      "enum": [
+        true
+      ]
+    }
+  },
+  "required": [
+    "ok",
+    "verified"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: RentRoll 1`] = `
 "{
   "type": "object",

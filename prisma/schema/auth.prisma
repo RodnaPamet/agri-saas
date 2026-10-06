@@ -891,6 +891,46 @@ model PasswordResetToken {
   @@index([expiresAt])
 }
 
+/// A 6-digit email-verification code, for registration v2 (P3.5).
+///
+/// Separate from `VerificationToken` because a 6-digit code is a different
+/// security object from a 32-byte link token, not a shorter one:
+///
+///   * Its keyspace is 10^6. Unlimited guesses break it in minutes, so the
+///     `attempts` counter is load-bearing — this table cannot be modelled
+///     without it, and `VerificationToken` has no such column.
+///   * Its TTL is minutes, not the link flow's 24h, because a code is typed
+///     from an open inbox during a signup that is still in progress.
+///
+/// Keyed on `emailHash` (deterministic HMAC, the same anchor `User.emailHash`
+/// uses) rather than the plaintext address `VerificationToken.identifier`
+/// stores. That table predates the convention and is NextAuth-shaped; a new
+/// table has no reason to add a second plaintext-email store, and keying on
+/// the hash means a dump of this table identifies nobody.
+///
+/// `codeHash` is SHA-256 of the 6 digits. The raw code exists only in the
+/// email and in memory on the verify path.
+///
+/// Not tenant-scoped — it exists precisely BEFORE any farm does, which is the
+/// whole point of P3.5's inversion. So it carries no `tenantId` and needs no
+/// RLS policy, like `User` and `PasswordResetToken`.
+model EmailVerificationCode {
+  id        String   @id @default(cuid())
+  /// Deterministic HMAC of the normalised email. Not unique: key rotation
+  /// means a lookup tries several candidate hashes, and a rotation window
+  /// can legitimately hold a row under the old key and one under the new.
+  emailHash String
+  codeHash  String
+  expiresAt DateTime
+  /// Failed verify attempts against THIS code. The route refuses at
+  /// MAX_CODE_ATTEMPTS, which is what keeps a 10^6 keyspace out of reach.
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([emailHash])
+  @@index([expiresAt])
+}
+
 /// A native-client refresh token.
 ///
 /// Deliberately a CHILD of `UserSession` rather than a parallel credential. A
