@@ -49,6 +49,10 @@ export interface ExchangeMessageView {
     senderTenantId: string;
     /** True when the CALLER sent it — clients should not compare tenant ids. */
     mine: boolean;
+    /** Opaque id of the sender. Lets a client label a colleague's bubble. */
+    senderUserId: string;
+    /** Sent by someone else at the caller's own farm (#1298). */
+    fromMyFarm: boolean;
     body: string | null;
     /** A tombstone keeps the message's place; `body` is null when deleted. */
     deleted: boolean;
@@ -84,24 +88,90 @@ async function requireParty(db: PrismaTx, ctx: RequestContext, threadId: string)
             id: true,
             listingId: true,
             inquirerTenantId: true,
+            inquirerUserId: true,
             lastMessageAt: true,
             closedAt: true,
-            sellerLastReadAt: true,
-            inquirerLastReadAt: true,
-            listing: { select: { sellerTenantId: true, commodity: true } },
+            listing: {
+                select: { sellerTenantId: true, sellerUserId: true, commodity: true },
+            },
+            // The CALLER's own pointer, not their side's. At most one row, by
+            // the `(threadId, userId)` unique; RLS on `ExchangeThreadRead`
+            // restricts it to the caller anyway, so this filter is defence in
+            // depth rather than the gate.
+            reads: { where: { userId: ctx.userId }, select: { lastReadAt: true }, take: 1 },
         },
     });
     if (!thread) throw codedNotFound('THREAD_NOT_FOUND', 'That conversation was not found.');
 
+    // Which SIDE — still a farm question, because the block check and the
+    // notification fan-out are farm-scoped.
     const isInquirer = thread.inquirerTenantId === ctx.tenantId;
     const isSeller = thread.listing.sellerTenantId === ctx.tenantId;
     if (!isInquirer && !isSeller) {
         // Unreachable while the policy holds — asserted rather than assumed.
         throw codedForbidden('THREAD_NOT_A_PARTY', 'You are not a party to that conversation.');
     }
-    return { thread, role: (isInquirer ? 'inquirer' : 'seller') as 'inquirer' | 'seller' };
+
+    // #1298 — and WHICH PERSON. The principal opened it (buyer side) or
+    // created the listing (seller side); an OWNER/ADMIN of that farm is in the
+    // audience too, so the farm can still answer when the principal is away.
+    // RLS already refuses a non-audience colleague — they get
+    // THREAD_NOT_FOUND from the `findFirst` above, which is the 404 the
+    // contract promises. This only resolves WHICH audience member is asking,
+    // because that decides whose pointer moves and what `mine` means.
+    const principalUserId = isInquirer ? thread.inquirerUserId : thread.listing.sellerUserId;
+
+    return {
+        thread,
+        role: (isInquirer ? 'inquirer' : 'seller') as 'inquirer' | 'seller',
+        isPrincipal: principalUserId === ctx.userId,
+        principalUserId,
+        /** The caller's OWN pointer, or null if they have never read it. */
+        myLastReadAt: thread.reads[0]?.lastReadAt ?? null,
+    };
 }
 
+
+/**
+ * Move the CALLER's read pointer, monotonically.
+ *
+ * One row per (thread, person) — `ExchangeThreadRead` replaces the two columns
+ * on `ExchangeThread`, whose docblock justified them with "the party set is
+ * fixed at two". #1298 falsified that: the audience is the principal plus
+ * either farm's OWNER/ADMIN, so the set is neither fixed nor two.
+ *
+ * MONOTONIC via the `update` arm's guard, for the reason the columns were: a
+ * second tab answering late must not rewind the pointer and resurrect messages
+ * the person has already read. An `upsert` cannot express "only if greater", so
+ * the guard lives in a conditional `updateMany` — which also makes the write
+ * idempotent under the concurrent drains this repo already has.
+ *
+ * Shared because TWO paths move a pointer — an explicit read, and sending a
+ * reply — and two copies of a monotonicity rule is one copy too many.
+ */
+async function markReadFor(
+    db: PrismaTx,
+    ctx: RequestContext,
+    threadId: string,
+    at: Date,
+): Promise<void> {
+    const moved = await db.exchangeThreadRead.updateMany({
+        where: { threadId, userId: ctx.userId, lastReadAt: { lt: at } },
+        data: { lastReadAt: at },
+    });
+    if (moved.count > 0) return;
+
+    // No row yet, or the stored pointer is already at/ahead of `at`. Creating
+    // is the first case; the unique on (threadId, userId) makes the race with
+    // another tab safe to swallow, because the loser's value is not newer.
+    try {
+        await db.exchangeThreadRead.create({
+            data: { threadId, userId: ctx.userId, tenantId: ctx.tenantId, lastReadAt: at },
+        });
+    } catch {
+        /* A row appeared between the update and the create; it is not older. */
+    }
+}
 
 /**
  * Is `inquirerTenantId` blocked by `sellerTenantId`?
@@ -223,14 +293,19 @@ export async function openExchangeThread(ctx: RequestContext, listingId: string)
             throw codedForbidden('THREAD_BLOCKED', 'That seller is not accepting messages from you.');
         }
 
+        // #1298 — one thread per (listing, inquirer PERSON). Two colleagues
+        // who each message a listing hold SEPARATE conversations. Keeping farm
+        // identity and restricting only visibility had a hole: a colleague who
+        // cannot see the existing thread would hit the unique constraint and be
+        // handed back a thread they may not read.
         const existing = await db.exchangeThread.findFirst({
-            where: { listingId, inquirerTenantId: ctx.tenantId },
+            where: { listingId, inquirerUserId: ctx.userId },
             select: { id: true },
         });
         if (existing) return { id: existing.id, created: false };
 
         const row = await db.exchangeThread.create({
-            data: { listingId, inquirerTenantId: ctx.tenantId },
+            data: { listingId, inquirerTenantId: ctx.tenantId, inquirerUserId: ctx.userId },
             select: { id: true },
         });
         await logEvent(db, ctx, {
@@ -267,7 +342,7 @@ export async function getExchangeThread(
     const before = decodeCursor(options.before);
 
     return runInTenantContext(ctx, async (db) => {
-        const { thread, role } = await requireParty(db, ctx, threadId);
+        const { thread, role, myLastReadAt } = await requireParty(db, ctx, threadId);
         const blocked = await isBlocked(db, thread.listing.sellerTenantId, thread.inquirerTenantId);
 
         const rows = await db.exchangeMessage.findMany({
@@ -292,7 +367,10 @@ export async function getExchangeThread(
         // continues from.
         const oldest = page.at(-1);
 
-        const readAt = role === 'seller' ? thread.sellerLastReadAt : thread.inquirerLastReadAt;
+        // #1298 — MY pointer, not my side's. The two columns this replaces
+        // moved for every member of the farm, so one colleague opening a
+        // thread marked it read for all of them.
+        const readAt = myLastReadAt;
         // Counted in the DATABASE, not over the page. Filtering the fetched
         // rows capped the badge at `limit`, so a thread with more unread
         // messages than one page reported the page size and called it a count
@@ -301,7 +379,10 @@ export async function getExchangeThread(
         const unreadCount = await db.exchangeMessage.count({
             where: {
                 threadId,
-                senderTenantId: { not: ctx.tenantId },
+                // Not mine, by PERSON: `{ not: ctx.tenantId }` counted a
+                // colleague's message as unread for them and hid their own
+                // from a count they should see.
+                senderUserId: { not: ctx.userId },
                 deletedAt: null,
                 ...(readAt ? { createdAt: { gt: readAt } } : {}),
             },
@@ -328,7 +409,16 @@ export async function getExchangeThread(
             messages: page.reverse().map((m) => ({
                 id: m.id,
                 senderTenantId: m.senderTenantId,
-                mine: m.senderTenantId === ctx.tenantId,
+                senderUserId: m.senderUserId,
+                // #1298 — "sent by ME", the person. It meant "sent by my
+                // FARM", which is what rendered a colleague's message as the
+                // reader's own.
+                mine: m.senderUserId === ctx.userId,
+                // Someone else at my farm — the seller admin answering for the
+                // listing's creator. Returned rather than derived so every
+                // client does not reimplement the same two-id comparison.
+                fromMyFarm:
+                    m.senderTenantId === ctx.tenantId && m.senderUserId !== ctx.userId,
                 body: m.deletedAt ? null : m.body,
                 deleted: m.deletedAt !== null,
                 createdAt: m.createdAt,
@@ -375,12 +465,26 @@ export async function getExchangeThread(
  */
 async function notifyOtherParty(
     senderTenantId: string,
-    thread: { id: string; inquirerTenantId: string; listing: { sellerTenantId: string; commodity: string } },
+    thread: {
+        id: string;
+        inquirerTenantId: string;
+        inquirerUserId: string;
+        listing: { sellerTenantId: string; sellerUserId: string; commodity: string };
+    },
 ): Promise<void> {
-    const recipientTenantId =
-        senderTenantId === thread.inquirerTenantId
-            ? thread.listing.sellerTenantId
-            : thread.inquirerTenantId;
+    const toSeller = senderTenantId === thread.inquirerTenantId;
+    const recipientTenantId = toSeller
+        ? thread.listing.sellerTenantId
+        : thread.inquirerTenantId;
+    // #1298 — notifications follow VISIBILITY exactly. The audience is the
+    // recipient side's principal plus that farm's OWNER/ADMIN, so the
+    // principal is named here: they may be an EDITOR, and the admin query
+    // below would miss them. Notifying anyone outside the audience would send
+    // a notification whose thread then 404s, and would leak who is talking to
+    // whom — which is the privacy this change exists for.
+    const recipientPrincipalUserId = toSeller
+        ? thread.listing.sellerUserId
+        : thread.inquirerUserId;
 
     // Collected INSIDE the transaction, acted on AFTER it commits.
     const published: Array<{ userId: string; event: NotificationEvent }> = [];
@@ -392,7 +496,18 @@ async function notifyOtherParty(
         // notification silently goes nowhere.
         await withTenantDb(recipientTenantId, async (db) => {
             const admins = await db.tenantMembership.findMany({
-                where: { tenantId: recipientTenantId, status: 'ACTIVE', role: { in: ['OWNER', 'ADMIN'] } },
+                // The audience: the principal (whatever their role) OR an
+                // active OWNER/ADMIN of the recipient farm. An inactive
+                // principal is excluded with everyone else — a membership that
+                // is not ACTIVE is not an audience member.
+                where: {
+                    tenantId: recipientTenantId,
+                    status: 'ACTIVE',
+                    OR: [
+                        { userId: recipientPrincipalUserId },
+                        { role: { in: ['OWNER', 'ADMIN'] } },
+                    ],
+                },
                 // `uiLanguage` because this crosses a tenant boundary: the
                 // reader is a different person from the writer.
                 select: {
@@ -706,14 +821,12 @@ async function sendExchangeMessageImpl(
             // the other party's earlier messages read — defensible, because you
             // cannot reply to a conversation you have not looked at, and the
             // exact count lives on the thread endpoint either way.
-            data: {
-                lastMessageAt: now,
-                closedAt: null,
-                ...(role === 'seller'
-                    ? { sellerLastReadAt: now }
-                    : { inquirerLastReadAt: now }),
-            },
+            data: { lastMessageAt: now, closedAt: null },
         });
+        // #1298 — the sender's OWN pointer, in its own row. Writing a side's
+        // column marked the thread read for every member of that farm, which
+        // is the defect this issue exists to fix.
+        await markReadFor(db, ctx, threadId, now);
         // Persist, THEN notify — and "then" now means AFTER THE COMMIT, not
         // after the INSERT.
         //
@@ -762,15 +875,14 @@ async function sendExchangeMessageImpl(
 export async function markExchangeThreadRead(ctx: RequestContext, threadId: string) {
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
-        const { thread, role } = await requireParty(db, ctx, threadId);
+        // `requireParty` is still the gate: a colleague outside the audience
+        // gets THREAD_NOT_FOUND here rather than silently creating a read row
+        // for a thread they cannot see.
+        const { myLastReadAt } = await requireParty(db, ctx, threadId);
         const now = new Date();
-        const current = role === 'seller' ? thread.sellerLastReadAt : thread.inquirerLastReadAt;
-        if (current && current >= now) return { readAt: current };
+        if (myLastReadAt && myLastReadAt >= now) return { readAt: myLastReadAt };
 
-        await db.exchangeThread.update({
-            where: { id: threadId },
-            data: role === 'seller' ? { sellerLastReadAt: now } : { inquirerLastReadAt: now },
-        });
+        await markReadFor(db, ctx, threadId, now);
         return { readAt: now };
     });
 }
@@ -827,8 +939,11 @@ export async function listExchangeThreads(
             take: limit + 1,
             select: {
                 id: true, listingId: true, inquirerTenantId: true,
+                inquirerUserId: true,
                 lastMessageAt: true, closedAt: true,
-                sellerLastReadAt: true, inquirerLastReadAt: true,
+                // #1298 — the inbox is per PERSON, so the pointer is the
+                // caller's own row rather than their side's column.
+                reads: { where: { userId: ctx.userId }, select: { lastReadAt: true }, take: 1 },
                 listing: {
                     select: {
                         sellerTenantId: true, commodity: true,
@@ -851,7 +966,7 @@ export async function listExchangeThreads(
 
         const threads = page.map((t) => {
             const role = t.inquirerTenantId === ctx.tenantId ? 'inquirer' : 'seller';
-            const readAt = role === 'seller' ? t.sellerLastReadAt : t.inquirerLastReadAt;
+            const readAt = t.reads[0]?.lastReadAt ?? null;
             return {
                 id: t.id,
                 listingId: t.listingId,
