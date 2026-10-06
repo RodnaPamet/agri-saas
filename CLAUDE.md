@@ -2759,6 +2759,25 @@ negated. Say what remains instead:
       (brand, unit, deliberately bilingual) go in `UNTRANSLATED_ALLOWLIST`
       with a reason.
   `i18n-diff.mjs --check` runs in CI (the `Lint` job) and `.husky/pre-commit`.
+- **The product's own nouns live in `docs/nav-vocabulary.md`, and a guard
+  PARSES that file.** Key parity and the untranslated check are blind to a
+  surface with two names: before P2.6 the exchange was «Борса» in the sidebar
+  section header, the breadcrumbs and the map legend, «Пазар» in the sidebar
+  item that navigated to it, and `Борса / Exchange` in the page heading — three
+  spellings of one destination, every locale consistent, every guard green.
+  That doc's table (`Concept | Bulgarian | English | Keys | Never |
+  Namespaces`) IS the expectation `tests/guards/nav-vocabulary.test.ts` checks,
+  so an owner reversal is one edit there and CI then names every catalogue key
+  to follow. Do NOT restate a noun in the guard — and when you add a surface
+  whose name people navigate by, add its row. The canonical three today:
+  «Борса» (the `/exchange` destination), «Тенденции» (`/trends`), «Пазар» (the
+  sidebar SECTION holding them, plus the news category and price copy — the
+  `Never` sweep bans a reserved noun as a key's WHOLE value, never the word).
+  The same file carries the load-bearing spellings that must NOT be renamed
+  (the sidebar section `id`, the `/exchange` + `/trends` path strings shared
+  with the iOS bottom-tab order, `complianceMailbox`), with the reason each
+  one stays — the discipline `no-legacy-brand.test.ts` applies to the previous
+  brand.
 - **An outbound email is written in the RECIPIENT's language, not the
   sender's.** `getTranslations()` resolves from the request cookie, which at
   send time is the *sender's* — on a task assignment the sender is the assigner

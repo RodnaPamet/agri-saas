@@ -53,7 +53,6 @@ import { TimestampTooltip } from '@/components/ui/timestamp-tooltip';
 import { ToggleGroup } from '@/components/ui/toggle-group';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { useCelebration } from '@/components/ui/hooks';
-import { MILESTONES } from '@/lib/celebrations';
 import { isAllEvidenceCurrent } from '@/lib/evidence-freshness';
 import { toApiSearchParams } from '@/lib/filters/url-sync';
 import {
@@ -532,13 +531,11 @@ function EvidencePageInner({ initialEvidence, tenantSlug, permissions, translati
         if (anyFilterActive) return;
         if (evidenceQuery.isLoading) return;
         if (!isAllEvidenceCurrent(evidence, { now: hydratedNow })) return;
-        const def = MILESTONES['evidence-all-current'];
-        celebrate({
-            preset: def.preset,
-            key: def.key,
-            message: def.message,
-            description: def.description,
-        });
+        // The milestone SHAPE, not the ad-hoc one: since P2.6 the hook
+        // owns the copy (it holds the `celebrations.*` translator), so
+        // spreading the registry record here would hand it an undefined
+        // `message` and fire confetti with no toast.
+        celebrate('evidence-all-current');
     }, [
         evidence,
         hydratedNow,

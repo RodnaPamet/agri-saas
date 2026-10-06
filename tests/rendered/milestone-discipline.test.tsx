@@ -1,23 +1,33 @@
 /**
  * Epic 62 — end-to-end milestone-discipline contract.
  *
- * Three integrations exist:
- *   - framework page  → `framework-100` scoped by frameworkKey
- *   - evidence page   → `evidence-all-current` (tenant-wide)
- *   - audit pack page → `audit-pack-complete` scoped by packId
+ * Two SHAPES of celebration exist, and both must obey the same rules:
+ *   - tenant-wide, by milestone key — the records page fires
+ *     `evidence-all-current`, which the hook translates itself.
+ *   - per-resource, ad-hoc — a colon-scoped dedupe key so each resource
+ *     earns its own celebration in one session.
  *
- * Each one must obey the same rules:
+ * The rules:
  *   1. Re-rendering with the same triggering input does NOT re-fire.
- *   2. The dedupe is per-key, so different scopes (different
- *      framework keys / pack ids) each get their own celebration.
- *   3. Each celebration produces exactly one toast.success per
- *      session per dedupe key.
+ *   2. The dedupe is per-key, so different scopes each get their own
+ *      celebration.
+ *   3. Each celebration produces exactly one toast.success per session
+ *      per dedupe key.
  *
- * This file proves all three obey the same discipline by walking
- * each through the same transition pattern in the same test
- * harness. If a future contributor wires a fourth milestone with
- * different semantics, the divergence shows up here as an obvious
- * "everyone else does X but yours doesn't" failure.
+ * This file walks each shape through the same transition pattern in the
+ * same harness. If a future contributor wires a milestone with different
+ * semantics, the divergence shows up here as an obvious "everyone else
+ * does X but yours doesn't" failure.
+ *
+ * ── what P2.6 changed here ──
+ *
+ * It used to drive THREE integrations: a framework page scoped by
+ * frameworkKey, an audit-pack page scoped by packId, and the evidence
+ * page. The first two pages went with the GRC teardown and their
+ * milestones went with P2.6, so the file was asserting discipline for two
+ * surfaces nobody can reach. The per-resource SHAPE is what earned its
+ * keep, so it stays — driven through the ad-hoc input, which is what a
+ * future per-resource caller will use now that `scopedMilestone` is gone.
  */
 /** @jest-environment jsdom */
 
@@ -35,11 +45,7 @@ import {
     useCelebration,
     __setConfettiForTest,
 } from '@/components/ui/hooks/use-celebration';
-import {
-    MILESTONES,
-    scopedMilestone,
-    type CelebrateInput,
-} from '@/lib/celebrations';
+import { MILESTONES, type CelebrateInput } from '@/lib/celebrations';
 import {
     isAllEvidenceCurrent,
     type EvidenceFreshnessRow,
@@ -93,38 +99,30 @@ const days = (n: number) => new Date(NOW.getTime() - n * DAY).toISOString();
 
 // ─── Triggers — one per integration, mirroring the page ───────────
 
-function frameworkTrigger(args: {
-    frameworkKey: string;
-    coveragePercent: number | null;
-}): Trigger {
-    return () => {
-        if (args.coveragePercent !== 100) return null;
-        return scopedMilestone('framework-100', args.frameworkKey);
-    };
-}
-
-function evidenceTrigger(args: {
-    rows: EvidenceFreshnessRow[];
-}): Trigger {
+function evidenceTrigger(args: { rows: EvidenceFreshnessRow[] }): Trigger {
+    // The MILESTONE shape — the hook resolves preset, dedupe key, glyph
+    // and translated copy from the registry + the `celebrations.*`
+    // catalogue. This mirrors EvidenceClient.tsx exactly.
     return () => {
         if (!isAllEvidenceCurrent(args.rows, { now: NOW })) return null;
-        const def = MILESTONES['evidence-all-current'];
-        return {
-            preset: def.preset,
-            key: def.key,
-            message: def.message,
-            description: def.description,
-        };
+        return 'evidence-all-current';
     };
 }
 
-function auditPackTrigger(args: {
-    packId: string;
-    status: string | undefined;
-}): Trigger {
+/**
+ * The per-resource shape: one registered milestone, one colon-scoped
+ * dedupe key, caller-supplied copy. `spray-job-complete` is the live
+ * milestone whose natural scope is a resource id (the spray job).
+ */
+function sprayJobTrigger(args: { jobId: string; done: boolean }): Trigger {
     return () => {
-        if (args.status !== 'FROZEN' && args.status !== 'EXPORTED') return null;
-        return scopedMilestone('audit-pack-complete', args.packId);
+        if (!args.done) return null;
+        const def = MILESTONES['spray-job-complete'];
+        return {
+            preset: def.preset,
+            key: `${def.key}:${args.jobId}`,
+            message: `Spray job complete ${def.glyph}`,
+        };
     };
 }
 
@@ -143,34 +141,10 @@ describe('Milestone discipline — three integrations behave the same', () => {
         triggerOnAlt: Trigger;
     }> = [
         {
-            name: 'framework-100',
-            triggerOff: frameworkTrigger({
-                frameworkKey: 'iso27001',
-                coveragePercent: 50,
-            }),
-            triggerOn: frameworkTrigger({
-                frameworkKey: 'iso27001',
-                coveragePercent: 100,
-            }),
-            triggerOnAlt: frameworkTrigger({
-                frameworkKey: 'soc2',
-                coveragePercent: 100,
-            }),
-        },
-        {
-            name: 'audit-pack-complete',
-            triggerOff: auditPackTrigger({
-                packId: 'pack_1',
-                status: 'DRAFT',
-            }),
-            triggerOn: auditPackTrigger({
-                packId: 'pack_1',
-                status: 'FROZEN',
-            }),
-            triggerOnAlt: auditPackTrigger({
-                packId: 'pack_2',
-                status: 'FROZEN',
-            }),
+            name: 'spray-job-complete (per-resource scope)',
+            triggerOff: sprayJobTrigger({ jobId: 'job_1', done: false }),
+            triggerOn: sprayJobTrigger({ jobId: 'job_1', done: true }),
+            triggerOnAlt: sprayJobTrigger({ jobId: 'job_2', done: true }),
         },
     ];
 
