@@ -68,7 +68,17 @@ beforeEach(() => getToken.mockReset());
  * (next-auth/jwt reads the cookie, then falls back to the Authorization
  * header), which is exactly why one mock faithfully represents both.
  */
-async function bothTransports(pathname: string, tokenClaims: Record<string, unknown>) {
+async function bothTransports(
+    pathname: string,
+    /**
+     * `null` means "no resolvable session", which is what `getToken` returns
+     * for an absent or unreadable credential. Accepted here so a NEGATIVE
+     * control can be driven through this same helper — a refusal has to be
+     * transport-blind too, and a parity harness that can only express the
+     * admitted case cannot show that the admitted case was earned.
+     */
+    tokenClaims: Record<string, unknown> | null,
+) {
     getToken.mockResolvedValue(tokenClaims);
     const viaCookie = await middleware(reqWith(pathname), {} as any);
 
@@ -122,6 +132,64 @@ describe('bearer and cookie receive identical tenant-access decisions', () => {
         const r = await bothTransports('/api/t/acme-corp/tasks', claims({ error: 'SessionRevoked' }));
         expect(r.bearer).toEqual(r.cookie);
         expect(r.bearer.status).toBe(401);
+    });
+});
+
+/**
+ * The NON-TENANT account surface, which the cases above do not reach (#1299).
+ *
+ * Every case in the describe above is an `/api/t/{slug}/…` path, so all of them
+ * exercise `checkTenantAccess`. `/api/account/avatar/{userId}` carries no slug
+ * and is not an `isPersonPath` prefix either (those are `/account/`,
+ * `/onboarding/`, `/api/me/`, `/api/social/`), so it takes the Edge's plain
+ * authenticated-API path — a different route through the middleware, and until
+ * #1299 one with no bearer/cookie assertion over it at all.
+ *
+ * #1299 documented that route in `openapi.json`, where `op()` declares BOTH
+ * `sessionCookie` and `bearerToken` security schemes. iOS fetches avatars with
+ * a bearer, so that half of the declaration is the one a native client depends
+ * on, and it was documentation standing on an unexecuted assumption. The
+ * sibling `native-bearer-auth-parity.test.ts` proves the HANDLER calls `auth()`
+ * rather than the raw cookie-only helper; it matches source text and cannot see
+ * the Edge, which is the seam where `token.error`, the `iflk_` API key and SCIM
+ * were each severed while being complete underneath.
+ */
+describe('a non-tenant account path answers both transports identically (#1299)', () => {
+    const AVATAR = '/api/account/avatar/subject-2';
+
+    it('an authenticated caller is admitted on BOTH transports', async () => {
+        const r = await bothTransports(AVATAR, claims());
+        expect(r.bearer).toEqual(r.cookie);
+        expect(r.bearer.status).not.toBe(401);
+    });
+
+    it('a caller with NO token is refused — the control for the row above', async () => {
+        // Without this, "not 401" is also what a middleware that admits
+        // everything produces, and the parity assertion would be free.
+        const r = await bothTransports(AVATAR, null);
+        expect(r.bearer).toEqual(r.cookie);
+        expect(r.bearer.status).toBe(401);
+    });
+
+    it('a revoked session is refused on BOTH transports here too', async () => {
+        // The other direction: admission is not unconditional on this path.
+        const r = await bothTransports(AVATAR, claims({ error: 'SessionRevoked' }));
+        expect(r.bearer).toEqual(r.cookie);
+        expect(r.bearer.status).toBe(401);
+    });
+
+    it('a member of NO tenant still reaches it — an avatar is not tenant-scoped', async () => {
+        // The property that makes this path different from everything above:
+        // `checkTenantAccess` never runs, so an empty `memberships[]` — which
+        // is a 403 `no_tenant_access` on any `/api/t/` route — must not refuse
+        // a request for a face. Same on both transports.
+        const r = await bothTransports(
+            AVATAR,
+            claims({ memberships: [], tenantId: null, tenantSlug: null }),
+        );
+        expect(r.bearer).toEqual(r.cookie);
+        expect(r.bearer.status).not.toBe(401);
+        expect(r.bearer.status).not.toBe(403);
     });
 });
 

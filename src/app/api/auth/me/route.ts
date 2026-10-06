@@ -17,6 +17,9 @@ export const GET = withApiErrorHandling(async () => {
             id: true,
             email: true,
             name: true,
+            // The effective avatar, on the query this handler ALREADY runs —
+            // see `avatarUrl` below for why one column answers all three cases.
+            image: true,
             bottomTabOrder: true,
             tenantMemberships: {
                 where: { status: 'ACTIVE' },
@@ -43,6 +46,44 @@ export const GET = withApiErrorHandling(async () => {
             id: user?.id,
             email: user?.email,
             name: user?.name,
+            /**
+             * The caller's EFFECTIVE avatar, or `null` for none (#1299).
+             *
+             * A STRAIGHT PROJECTION of `User.image` — no fallback chain, no
+             * existence check, no second query. The issue asked for "the
+             * uploaded avatar route if one exists, else `User.image`, else
+             * null"; those three cases are already collapsed into this one
+             * column by the write path, so walking them here would be a second
+             * implementation of a decision `src/lib/account/avatar.ts` has
+             * already made:
+             *
+             *   uploaded  — `uploadOwnAvatar` writes `avatarServeUrl(userId)`,
+             *               i.e. `/api/account/avatar/<id>`, INTO `User.image`
+             *               (pinned by tests/unit/account-avatar.test.ts);
+             *   OAuth     — the PrismaAdapter stores the provider's photo URL
+             *               there at first sign-in;
+             *   neither   — `removeOwnAvatar` clears it to `null`, and a user
+             *               who never had one never had a value.
+             *
+             * That matters for COST as much as for correctness: `/api/auth/me`
+             * is the launch request every client makes, and `image` rides the
+             * `findUnique` above. A storage `head` probe per launch to decide
+             * between two URLs would buy nothing — the column already says
+             * which one it is.
+             *
+             * RETURNED AS STORED, deliberately: relative for an uploaded
+             * avatar, ABSOLUTE and third-party for a provider photo. The
+             * clients resolve the two shapes differently (and must not send a
+             * bearer to someone else's CDN), so absolutising here would hide
+             * which host is about to be contacted. The `avatarUrl` description
+             * in `account.paths.ts` is where that contract is written down.
+             *
+             * Read from the DATABASE rather than from the session, so it is
+             * current the moment an upload lands — `session.user.image` comes
+             * from the token's `picture` claim, minted at sign-in and stale
+             * until the session refreshes.
+             */
+            avatarUrl: user?.image ?? null,
             // `null` means "no active membership", which is exactly what the
             // adjacent `tenant: null` already says. It must NOT fall back to a
             // real role: READER carries real grants (`view` on evidence/tasks/
