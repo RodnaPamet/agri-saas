@@ -42,7 +42,7 @@ const CACHE_VERSION = 'agrent-v1';
  * `tests/guards/sw-revision-stamp.test.ts` recomputes it and prints the
  * expected value on failure, so updating it is a paste.
  */
-const SW_REVISION = '58fb42436494';
+const SW_REVISION = 'e5c00117205d';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 const DATA_CACHE = `${CACHE_VERSION}-fielddata`;
@@ -328,7 +328,7 @@ function offlineDocument(launch, pathname) {
         ? '<h1 style="color:#86efac">Offline</h1><p>You\u2019re offline. Marked jobs are queued and will sync when you reconnect.</p>'
         : '<h1 style="color:#86efac">Not saved for offline</h1><p>This screen wasn\u2019t opened while you had signal, so there is nothing stored to show.</p><p>Marked jobs are still queued and will sync when you reconnect.</p><p style="margin-top:24px"><a href="/tenants" style="color:#86efac">Back to the app</a></p>';
     return new Response(
-        '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Offline</title><body style="font-family:system-ui;background:#0b1220;color:#e5e7eb;display:grid;place-items:center;height:100vh;margin:0"><div style="text-align:center;padding:0 24px;max-width:32rem">' +
+        '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Offline</title><body style="font-family:system-ui;background:#05231B;color:#DCEBE4;display:grid;place-items:center;height:100vh;margin:0"><div style="text-align:center;padding:0 24px;max-width:32rem">' +
             body +
             where +
             '</div></body>',

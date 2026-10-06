@@ -1,6 +1,6 @@
 {
     "name": "inflect-compliance",
-    "version": "3.78.16",
+    "version": "3.78.18",
     "private": true,
     "engines": {
         "node": ">=22.0.0 <23.0.0",
@@ -59,6 +59,8 @@
         "openapi:generate": "tsx scripts/generate-openapi.ts",
         "preflight:fanout": "tsx scripts/count-fanout-encrypted.ts",
         "routes:inventory": "tsx scripts/generate-route-inventory.ts",
+        "tokens:generate": "node scripts/generate-tokens.mjs",
+        "tokens:check": "node scripts/generate-tokens.mjs --check",
         "load:auth": "k6 run tests/load/auth.js",
         "load:lists": "k6 run tests/load/lists.js",
         "load:ag-parcels": "k6 run tests/load/ag-parcel-list.js",

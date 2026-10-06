@@ -6476,5 +6476,11 @@
                 "blurb": "Pays out for damage from a late spring frost."
             }
         }
+    },
+    "theme": {
+        "dark": "Dark",
+        "light": "Light",
+        "sunlight": "Sunlight",
+        "switchLabel": "{current} theme — switch to {next}"
     }
 }

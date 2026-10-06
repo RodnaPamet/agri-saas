@@ -164,3 +164,10 @@ scripts/ai/eval/report.json
 # selector-teeth writes this while mutating a guard; it must never be
 # committed, and an interrupted run can leave one behind.
 *.teeth-bak
+
+# tests/guards/eslint-config-resolves-every-extension.test.ts writes one
+# fixture per lintable extension here and removes them again. Deliberately
+# NOT in eslint.config.mjs's `ignores` — an ignored path exits 0 without
+# being linted, which is the one way that guard could pass while seeing
+# nothing. An interrupted run can leave the directory behind.
+.eslint-extension-probe/

@@ -1,7 +1,13 @@
 import type { Metadata, Viewport } from 'next';
 import { auth } from '@/auth';
 import { ClientDataRetentionSweep } from '@/components/offline/ClientDataRetentionSweep';
-import { headers } from 'next/headers';
+import { cookies, headers } from 'next/headers';
+import {
+    THEME_COOKIE,
+    attributesFor,
+    isThemeName,
+    prePaintThemeScript,
+} from '@/lib/theme/theme-cookie';
 import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages } from 'next-intl/server';
 import { preloadFaces } from '@/lib/fonts/preload';
@@ -57,6 +63,22 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     const messages = await getMessages();
     const nonce = (await headers()).get(CSP_NONCE_HEADER) ?? undefined;
 
+    /**
+     * P2.4 — seed the theme attributes from a cookie so the FIRST paint is
+     * already right.
+     *
+     * This was hard-coded `data-theme="dark"`, and `ThemeProvider` corrected it
+     * from localStorage in a `useEffect` — which runs after the first paint. So
+     * every `light` or `sunlight` user watched the dark palette render and then
+     * flip. Not a race: a guaranteed flash on every shell render.
+     *
+     * The server cannot read localStorage, which is why this is a cookie. When
+     * it is absent (a first visit) the inline script below settles it before
+     * paint and writes the cookie, so the next request arrives server-correct.
+     */
+    const themeCookie = (await cookies()).get(THEME_COOKIE)?.value;
+    const seeded = attributesFor(isThemeName(themeCookie) ? themeCookie : 'dark');
+
     // Resolve the signed-in user id for the SWR cache namespace.
     //
     // This layout is ALREADY dynamic (it awaits `headers()`), and `auth()`
@@ -73,10 +95,15 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     const sessionUserId = (await auth())?.user?.id ?? null;
 
     return (
-        // `data-theme="dark"` seeds the SSR markup so the first paint matches
-        // the baseline palette. ThemeProvider rehydrates from localStorage /
-        // prefers-color-scheme on the client and flips the attribute if needed.
-        <html lang={locale} data-theme="dark" suppressHydrationWarning>
+        // Seeded from the theme cookie (see above), not pinned to dark. The
+        // pre-paint script in <head> is what covers a first visit, where only
+        // the browser knows `prefers-color-scheme`.
+        <html
+            lang={locale}
+            data-theme={seeded.theme}
+            {...(seeded.contrast ? { 'data-contrast': seeded.contrast } : {})}
+            suppressHydrationWarning
+        >
             <head>
                 {/*
                     Preload the BODY face so first text paint does not wait for
@@ -180,6 +207,27 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                         }}
                     />
                 )}
+                {/*
+                    P2.4 — theme, before the first paint.
+
+                    Placed AFTER the bridge above on purpose. The guard at
+                    `tests/guards/csp-webpack-nonce-bridge-hydration.test.ts`
+                    finds that script by slicing between two literal markers in
+                    this file, and anything carrying the same opening marker
+                    earlier would move its window. This file already records a
+                    case where a COMMENT quoting those markers moved it, so they
+                    are described here rather than written out.
+
+                    Still in <head>, so it runs before the body paints. It
+                    agrees with the server's seed in the common case — same
+                    cookie, same answer, no attribute change, no repaint — and
+                    only does real work on a first visit.
+                */}
+                <script
+                    nonce={nonce}
+                    suppressHydrationWarning
+                    dangerouslySetInnerHTML={{ __html: prePaintThemeScript() }}
+                />
             </head>
             <body suppressHydrationWarning nonce={nonce}>
                 <NextIntlClientProvider messages={messages} locale={locale}>

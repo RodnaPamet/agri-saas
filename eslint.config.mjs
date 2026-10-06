@@ -26,6 +26,43 @@ import tseslint from 'typescript-eslint';
 
 const tsPlugin = tseslint.plugin;
 
+/**
+ * The Next preset's OWN plugin object for `name`, by reference.
+ *
+ * The cross-cutting block below has no `files:` key, so it applies to every
+ * linted file — but the preset registers its plugins in a block whose glob
+ * covers only `.js`, `.jsx`, `.mjs`, `.ts`, `.tsx`, `.mts` and `.cts`.
+ * `.cjs` is NOT in it and ESLint lints `.cjs` by default, so on any `.cjs`
+ * file the block's `react-hooks/*` and `react/*` rules named a plugin that
+ * was not in scope and ESLint aborted the WHOLE run with "could not find
+ * plugin react-hooks" — a message that reads as cache corruption or
+ * lockfile drift long before it reads as config scoping. Re-registering
+ * them here is the follow-through the `tsPlugin` note above already
+ * describes for `@typescript-eslint`. Refs #1284.
+ *
+ * BY REFERENCE, not by a fresh `import 'eslint-plugin-react-hooks'`, for the
+ * same reason `tsPlugin` comes out of the meta-package: a direct import is a
+ * separate copy the moment npm nests one, and two objects under one name is
+ * exactly what makes flat config throw "Cannot redefine plugin". Taking the
+ * preset's own object makes a second copy impossible however the tree hoists.
+ */
+function presetPlugin(name) {
+    const plugin = nextCoreWebVitals.find((c) => c?.plugins?.[name])?.plugins[name];
+    if (!plugin) {
+        // A silent `undefined` would put those rules back out of scope and
+        // abort every run again, so fail loudly at config load instead.
+        throw new Error(
+            `eslint.config.mjs: eslint-config-next no longer registers a '${name}' plugin, ` +
+                `so the cross-cutting ${name}/* rules have nothing to resolve against. ` +
+                'Re-point this at wherever the plugin now comes from. Refs #1284.',
+        );
+    }
+    return plugin;
+}
+
+const reactHooksPlugin = presetPlugin('react-hooks');
+const reactPlugin = presetPlugin('react');
+
 const config = [
     ...nextCoreWebVitals,
     {
@@ -76,6 +113,12 @@ const config = [
             // its TS-specific block, so our cross-cutting rules below
             // need the plugin re-registered in scope.
             '@typescript-eslint': tsPlugin,
+            // `react-hooks` (ten rules below) and `react`
+            // (`no-find-dom-node`) for the same reason — see
+            // `presetPlugin` above. Both were out of scope on a `.cjs`
+            // file; `react-hooks` is only the one ESLint names FIRST.
+            'react-hooks': reactHooksPlugin,
+            react: reactPlugin,
         },
         rules: {
             // React 19's `eslint-plugin-react-hooks@6+` ships a set

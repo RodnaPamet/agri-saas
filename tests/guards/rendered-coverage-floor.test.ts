@@ -201,7 +201,13 @@ const ROOT = path.resolve(__dirname, '../..');
 // Raised because this PR ADDS verification, which is what this ratchet asks of a
 // PR that adds rendered tests. Nothing here lowers a floor or widens a baseline
 // to go green — #1122's brief forbids that, and the two are opposite moves.
-const RENDERED_TEST_FLOOR = 242;
+// 242 → 243: `swipe-to-close.test.tsx` (P2.5, #1304's sibling) — drag-to-dismiss
+// for the nav drawer. The cases that matter are the ones that must NOT fire: a
+// vertical scroll that wanders sideways, a pull against the hinge, a touch on a
+// closed sheet, an iOS-cancelled touch. All five gesture rules are
+// mutation-proved, each reddening exactly one case.
+//
+const RENDERED_TEST_FLOOR = 243;
 // Lowered 55 → 54 in the risk-quantification uproot (2026-08-08).
 // `ai-risk-assessment.spec.ts` and `new-risk-modal.spec.ts` were both
 // wholly about the deleted register; the specs that merely REFERENCED a
@@ -252,8 +258,15 @@ const RENDERED_TEST_FLOOR = 242;
 // Tagged `@mobile`, so it runs on both phone projects and not on desktop, where
 // `.tap()` would fail for want of `hasTouch`.
 //
+// 62 → 63: `theme-first-paint.spec.ts` (P2.4, #1304) — the chosen theme is on
+// the page at the FIRST paint, measured at 4x CPU throttle. It records every
+// `data-theme` write against the `first-contentful-paint` entry, which is the
+// only way to see a flash: an assertion that the correct theme ENDS UP applied
+// passes just as well when an effect applied it one frame late. No rendered
+// test can show this — jsdom has no paint.
+//
 // Raised because this PR ADDS a spec. Nothing here lowers a floor to go green.
-const E2E_SPEC_FLOOR = 62;
+const E2E_SPEC_FLOOR = 63;
 const REGISTRY_FLOOR = 5;
 
 /** Max a live count may exceed its floor before the floor must rise. */

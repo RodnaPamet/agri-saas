@@ -42,6 +42,7 @@ import {
 import { cn } from '@/lib/cn';
 import { useLocalStorage } from '@/components/ui/hooks';
 import { useCalendarBadge } from './use-calendar-badge';
+import { useSwipeToClose } from './use-swipe-to-close';
 import { NavItem } from './nav-item';
 import { NavSection } from './nav-section';
 import { AgrentMark } from './AgrentLogo';
@@ -555,6 +556,17 @@ export function MobileDrawer({ open, onClose, children }: MobileDrawerProps) {
     const pathname = usePathname();
     const t = useTranslations('sidebarNav');
 
+    /**
+     * P2.5 — push the sheet back off the edge it came from.
+     *
+     * Escape, the backdrop and route changes all already closed it, but on a
+     * phone held one-handed the backdrop is the last place a thumb reaches, so
+     * the gesture is the affordance that actually gets used. See the hook for
+     * why the axis is committed once and why the transition has to stand down
+     * mid-drag.
+     */
+    const swipe = useSwipeToClose({ enabled: open, onClose, direction: 'left' });
+
     // Close on route change (always close to avoid stale open state)
     useEffect(() => {
         onClose();
@@ -614,14 +626,22 @@ export function MobileDrawer({ open, onClose, children }: MobileDrawerProps) {
             <div
                 className={`
                     fixed inset-y-0 left-0 z-50 w-64 bg-bg-default border-r border-border-subtle
-                    transform transition-transform duration-300 ease-in-out
+                    transform ease-in-out
+                    ${swipe.dragging ? '' : 'transition-transform duration-300'}
                     ${open ? 'translate-x-0' : '-translate-x-full'}
                 `}
+                // While a finger is down the panel tracks it directly. The
+                // class above still says `translate-x-0`; this inline transform
+                // wins, and reverts to the class the moment the drag ends, so
+                // the snap-back and the close keep their animation.
+                style={swipe.dragging ? { transform: `translateX(${swipe.dragX}px)` } : undefined}
+                {...swipe.handlers}
                 role="dialog"
                 aria-modal="true"
                 aria-label={t('navMenu')}
                 data-testid="nav-drawer"
                 data-open={open ? 'true' : 'false'}
+                data-dragging={swipe.dragging ? 'true' : undefined}
             >
                 {/* Close button — 44px touch target.
                     Elevation PR-3 — adds canonical focus ring + uses
