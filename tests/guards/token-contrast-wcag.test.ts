@@ -240,7 +240,31 @@ function measure(theme: ThemeKey, tone: string, surface: string): Pair[] {
     }));
 }
 
-function gate(label: string, pairs: Pair[], floor: number): void {
+/**
+ * What `gate` hands back to its CALL SITE, and why it hands anything back.
+ *
+ * `scripts/selector-teeth.mjs` gutted both `measure()` and `gate()` and both
+ * mutations SURVIVED. Two different holes, and neither is the empty-selection
+ * defect the floor was written for:
+ *
+ *   · `measure()` returning a truthy NON-ARRAY (`0`, `''`, `{}`) keeps the
+ *     COUNT, because `flatMap` wraps a scalar into the output array. So 170
+ *     pairs are still "measured", the floor passes — and every element is
+ *     meaningless. `(0).r` is `undefined`, and `undefined < 4.5` is FALSE, so
+ *     `failures` is empty and the gate reports clean over 170 nothings.
+ *   · `gate()` itself held every assertion, so replacing its body with a
+ *     `return` removed the check entirely. A helper that owns the only
+ *     `expect` is a helper whose deletion is invisible.
+ *
+ * Both are fixed by moving the teeth OUT of the helper: `gate` returns a
+ * summary and each `it()` asserts on it, and each `it()` validates the SHAPE
+ * of the elements itself rather than trusting a count. A gutted `measure`
+ * now fails the shape assertion; a gutted `gate` returns no summary and fails
+ * the call-site assertions.
+ */
+interface GateSummary { label: string; measured: number; floor: number; failures: Pair[] }
+
+function gate(label: string, pairs: Pair[], floor: number): GateSummary {
     // Printed on the way past, not only on failure: a gate that reports
     // "clean" without saying over what is indistinguishable from one that
     // looked at nothing.
@@ -265,8 +289,17 @@ function gate(label: string, pairs: Pair[], floor: number): void {
         );
     }
     expect(failures).toEqual([]);
+    return { label, measured: pairs.length, floor, failures };
 }
 
+/**
+ * Assert a gate ran, over well-formed pairs, at or above its floor.
+ *
+ * Deliberately NOT a helper — it is written out at each call site below.
+ * Extracting it would put every assertion back inside one function whose
+ * deletion is invisible, which is the `gate()` hole this exists to close.
+ * Copied three times on purpose.
+ */
 describe('WCAG AA contrast, all three themes', () => {
     it('the inputs are real — themes, tones and grounds all resolve', () => {
         // An empty tone list or an unresolvable ground would make every
@@ -429,7 +462,25 @@ describe('WCAG AA contrast, all three themes', () => {
         // P2.3's two grounds gives 60 pairs against a floor of 60. The teeth
         // against a shrinking POPULATION are therefore the explicit
         // membership assertions in the inputs test above, not this number.
-        gate('body tones on the neutral ramp', pairs, THEMES.length * ramp.length * tones.length);
+        const FLOOR = THEMES.length * ramp.length * tones.length;
+        const summary = gate('body tones on the neutral ramp', pairs, FLOOR);
+
+        // Teeth at the CALL SITE, not inside the helpers — both of those were
+        // gutted by scripts/selector-teeth.mjs and both mutations survived.
+        // A collector gutted to a truthy NON-array keeps the count (flatMap
+        // wraps a scalar) while every element is meaningless, and
+        // `undefined < 4.5` is false, so the gate reports clean over nothing.
+        // Validate the ELEMENTS, then assert on what the gate hands back.
+        const malformed = pairs.filter(
+            (p) =>
+                typeof p !== 'object' || p === null ||
+                typeof p.tone !== 'string' || typeof p.surface !== 'string' ||
+                typeof p.detail !== 'string' || !Number.isFinite(p.r),
+        );
+        expect(malformed).toEqual([]);
+        expect(summary.measured).toBe(pairs.length);
+        expect(summary.measured).toBeGreaterThanOrEqual(FLOOR);
+        expect(summary.failures).toEqual([]);
     });
 
     it('every status tone clears AA on its own tint, in every theme', () => {
@@ -437,7 +488,25 @@ describe('WCAG AA contrast, all three themes', () => {
         const pairs = THEMES.flatMap((theme) =>
             STATUS_TONES.flatMap((s) => measure(theme, `content-${s}`, `bg-${s}`)),
         );
-        gate('status tone on its own tint', pairs, THEMES.length * STATUS_TONES.length);
+        const FLOOR = THEMES.length * STATUS_TONES.length;
+        const summary = gate('status tone on its own tint', pairs, FLOOR);
+
+        // Teeth at the CALL SITE, not inside the helpers — both of those were
+        // gutted by scripts/selector-teeth.mjs and both mutations survived.
+        // A collector gutted to a truthy NON-array keeps the count (flatMap
+        // wraps a scalar) while every element is meaningless, and
+        // `undefined < 4.5` is false, so the gate reports clean over nothing.
+        // Validate the ELEMENTS, then assert on what the gate hands back.
+        const malformed = pairs.filter(
+            (p) =>
+                typeof p !== 'object' || p === null ||
+                typeof p.tone !== 'string' || typeof p.surface !== 'string' ||
+                typeof p.detail !== 'string' || !Number.isFinite(p.r),
+        );
+        expect(malformed).toEqual([]);
+        expect(summary.measured).toBe(pairs.length);
+        expect(summary.measured).toBeGreaterThanOrEqual(FLOOR);
+        expect(summary.failures).toEqual([]);
     });
 
     it('content-inverted clears AA on every solid surface, in every theme', () => {
@@ -446,7 +515,25 @@ describe('WCAG AA contrast, all three themes', () => {
         const pairs = THEMES.flatMap((theme) =>
             SOLID_SURFACES.flatMap((surface) => measure(theme, 'content-inverted', surface)),
         );
-        gate('content-inverted on solid surfaces', pairs, THEMES.length * SOLID_SURFACES.length);
+        const FLOOR = THEMES.length * SOLID_SURFACES.length;
+        const summary = gate('content-inverted on solid surfaces', pairs, FLOOR);
+
+        // Teeth at the CALL SITE, not inside the helpers — both of those were
+        // gutted by scripts/selector-teeth.mjs and both mutations survived.
+        // A collector gutted to a truthy NON-array keeps the count (flatMap
+        // wraps a scalar) while every element is meaningless, and
+        // `undefined < 4.5` is false, so the gate reports clean over nothing.
+        // Validate the ELEMENTS, then assert on what the gate hands back.
+        const malformed = pairs.filter(
+            (p) =>
+                typeof p !== 'object' || p === null ||
+                typeof p.tone !== 'string' || typeof p.surface !== 'string' ||
+                typeof p.detail !== 'string' || !Number.isFinite(p.r),
+        );
+        expect(malformed).toEqual([]);
+        expect(summary.measured).toBe(pairs.length);
+        expect(summary.measured).toBeGreaterThanOrEqual(FLOOR);
+        expect(summary.failures).toEqual([]);
     });
 
     it('the social bubble surfaces are still unused — the moment they are not, gate them', () => {
