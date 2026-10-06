@@ -13,6 +13,7 @@ import prisma from '@/lib/prisma';
 import { signToken } from '@/lib/auth';
 import { issueEmailVerification } from '@/lib/auth/email-verification';
 import { hashPassword, validatePasswordPolicy } from '@/lib/auth/passwords';
+import { isDisposableEmail } from '@/lib/auth/disposable-email';
 import { checkPasswordAgainstHIBP } from '@/lib/security/password-check';
 import { hashForLookup, hashForLookupCandidates } from '@/lib/security/encryption';
 import { withValidatedBody } from '@/lib/validation/route';
@@ -82,6 +83,24 @@ async function handleRegister(body: any) {
     }
 
     const email = String(rawEmail).trim().toLowerCase();
+
+    // P3.5 — refuse known throwaway providers.
+    //
+    // Placed BEFORE the duplicate lookup deliberately, for two reasons: it is a
+    // set lookup rather than a query, and answering "already registered" for a
+    // disposable domain would confirm which throwaway addresses exist.
+    //
+    // This is a speed bump, not a wall, and it FAILS OPEN — an unknown domain
+    // is allowed. Email verification is the wall: an address that cannot
+    // receive the code gets no farm. Refusing a real farmer their real address
+    // is a far more expensive mistake than letting a throwaway through.
+    if (isDisposableEmail(email)) {
+        // A stable CODE, not prose. `tests/guards/no-server-authored-user-copy`
+        // exists because server-authored English reaches clients verbatim —
+        // `ApiClientError` preserves `message` and the iOS app renders the raw
+        // envelope. The client maps `disposable_email` to localised copy.
+        return jsonResponse({ error: 'disposable_email' }, { status: 400 });
+    }
 
     // GAP-21: identity is anchored on `emailHash` (deterministic
     // HMAC of the normalised email). Checking by hash is what the
