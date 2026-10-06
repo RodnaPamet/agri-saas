@@ -1,20 +1,40 @@
 /**
  * Epic 62 — milestone celebration registry.
  *
- * The single source of truth for which compliance milestones earn a
- * confetti moment, what preset fires, and what toast accompanies it.
+ * The single source of truth for which farm milestones earn a confetti
+ * moment, what preset fires, and which glyph rides the toast.
+ *
+ * ── the COPY is not here (P2.6) ──
+ *
+ * `message` / `description` used to be English literals on each record.
+ * They are now `celebrations.<camelCaseKey>.{message,description}` in
+ * `messages/{bg,en}.json`, resolved by `useCelebration()` — this module
+ * is imported by a server usecase (`@/app-layer/usecases/achievements`
+ * re-exports `AG_MILESTONE_ORDER`), so it cannot hold a translator, and
+ * a lib-level literal is invisible to the hard-coded-string ratchet,
+ * which only scans `src/app` + `src/components`. The hook owns an
+ * EXHAUSTIVE `Record<MilestoneKey, …>` of those keys, so adding a
+ * milestone without copy is a compile error rather than a toast
+ * rendering a raw key path.
+ *
+ * `glyph` stays here on purpose: `messages/*.json` may contain no
+ * decorative emoji (tests/guards/no-decorative-emoji-in-messages), and
+ * an emoji is not copy — it does not change between locales.
  *
  * Adding a milestone:
  *   1. Add a literal to `MilestoneKey`.
  *   2. Add the matching record to `MILESTONES`.
- *   3. (Optionally) wire a trigger from the page that detects it via
+ *   3. Add `celebrations.<camelCaseKey>.message` + `.description` to
+ *      BOTH message catalogues, and the key to `MILESTONE_COPY` in
+ *      `use-celebration.ts` (the Record makes this mandatory).
+ *   4. (Optionally) wire a trigger from the page that detects it via
  *      `useCelebration()` from `@/components/ui/hooks`.
  *
  * Why a single registry instead of inline configs at each call site:
  *   - Product / docs can audit "what triggers a celebration" in one
  *     place without grepping for confetti calls.
  *   - The `MilestoneKey` literal union prevents typos at the call
- *     site (e.g. `celebrate('framework_100')` won't compile).
+ *     site (e.g. `celebrate('first_harvest')` won't compile).
  *   - The `sessionStorage` dedupe key is derived from the milestone
  *     key, so two pages firing the same milestone in the same tab
  *     share dedupe state without coordinating.
@@ -34,7 +54,7 @@
  *                   milestones (everything current).
  *   - `fireworks` — three offset bursts in succession, evoking a small
  *                   show. Reserve for high-stakes accomplishments
- *                   (audit pack frozen and shared).
+ *                   (a whole season closed).
  */
 export type CelebrationPreset = 'burst' | 'rain' | 'fireworks';
 
@@ -46,11 +66,15 @@ export type CelebrationPreset = 'burst' | 'rain' | 'fireworks';
  * events, so renaming is a breaking change for in-flight sessions
  * and dashboards.
  */
+// P2.6 dropped three GRC milestones — `framework-100`,
+// `audit-pack-complete` and `first-practice-mapped`. Each described a
+// model the GRC teardown deleted (Framework, AuditPack, Practice), no
+// caller had fired one since, and their copy ("Audit pack ready",
+// "Every applicable practice is implemented") was about to be
+// translated into Bulgarian for farmers. `evidence-all-current`
+// survives because the records page still fires it.
 export type MilestoneKey =
-    | 'framework-100'
     | 'evidence-all-current'
-    | 'audit-pack-complete'
-    | 'first-practice-mapped'
     // ─── Agriculture milestones (feat/delight-celebrations) ───
     | 'first-field-mapped'
     | 'spray-job-complete'
@@ -64,64 +88,43 @@ export interface MilestoneDefinition {
     key: MilestoneKey;
     /** Confetti preset chosen to match the milestone's emotional weight. */
     preset: CelebrationPreset;
-    /** Toast title — short, present-tense ("Audit pack ready!"). */
-    message: string;
-    /** Optional toast description shown under `message`. */
-    description?: string;
+    /**
+     * Emoji that trails the toast title. Locale-invariant, so it stays
+     * out of `messages/*.json` (which bans decorative emoji) and the
+     * hook appends it to the translated title.
+     */
+    glyph: string;
 }
 
 // ─── Registry ───────────────────────────────────────────────────────
 
 export const MILESTONES: Record<MilestoneKey, MilestoneDefinition> = {
-    'framework-100': {
-        key: 'framework-100',
-        preset: 'fireworks',
-        message: '100% framework coverage 🎯',
-        description: 'Every applicable practice is implemented.',
-    },
     'evidence-all-current': {
         key: 'evidence-all-current',
         preset: 'rain',
-        message: 'All evidence is current ✨',
-        description: 'No evidence is overdue or expiring this week.',
-    },
-    'audit-pack-complete': {
-        key: 'audit-pack-complete',
-        preset: 'fireworks',
-        message: 'Audit pack ready 📦',
-        description: 'Frozen and shareable with your auditor.',
-    },
-    'first-practice-mapped': {
-        key: 'first-practice-mapped',
-        preset: 'burst',
-        message: 'First practice mapped 🚀',
-        description: "You're on your way — keep going.",
+        glyph: '✨',
     },
 
     // ─── Agriculture milestones — meaningful events only, never routine saves ───
     'first-field-mapped': {
         key: 'first-field-mapped',
         preset: 'burst',
-        message: 'First field on the map 🗺️',
-        description: 'Your operation has its first mapped location.',
+        glyph: '🗺️',
     },
     'spray-job-complete': {
         key: 'spray-job-complete',
         preset: 'burst',
-        message: 'Spray job complete 🚜',
-        description: 'Every parcel on the job is done.',
+        glyph: '🚜',
     },
     'first-harvest': {
         key: 'first-harvest',
         preset: 'burst',
-        message: 'First harvest logged 🌾',
-        description: 'The first crop is in the book.',
+        glyph: '🌾',
     },
     'season-closed': {
         key: 'season-closed',
         preset: 'fireworks',
-        message: 'Season closed 🎉',
-        description: 'A full season, start to finish — well done.',
+        glyph: '🎉',
     },
 };
 
@@ -243,7 +246,8 @@ export interface AchievementsResult {
 /** The ag milestones surfaced on the achievements card, in display order. */
 // GRC teardown phase 2 (plan §1c): `inspection-passed` and `sop-100-ack`
 // were dropped with their data sources (AuditPack; Policy +
-// PolicyAcknowledgement). Four genuinely agri milestones remain.
+// PolicyAcknowledgement). Four genuinely agri milestones remain, and
+// since P2.6 they are four of the FIVE milestones that exist at all.
 export const AG_MILESTONE_ORDER: MilestoneKey[] = [
     'first-field-mapped',
     'spray-job-complete',
@@ -253,9 +257,8 @@ export const AG_MILESTONE_ORDER: MilestoneKey[] = [
 
 // ─── Hook-input types (consumed by `useCelebration`) ───────────────
 //
-// Lifted out of the hook file so the pure-data builder
-// (`scopedMilestone` below) can return them without pulling React
-// imports back into this layer.
+// They live here rather than in the hook file so a React-free caller
+// can build one without pulling React imports back into this layer.
 
 export interface CelebrateAdHocInput {
     preset: CelebrationPreset;
@@ -269,41 +272,17 @@ export interface CelebrateAdHocInput {
 
 export type CelebrateInput = MilestoneKey | CelebrateAdHocInput;
 
-// ─── Per-resource milestone builder ────────────────────────────────
-
-/**
- * Combine a registered milestone with a per-resource scope so each
- * resource (framework, audit pack, …) earns its own celebration in
- * the same session.
- *
- * Example — framework detail page:
- *
- *   celebrate(scopedMilestone('framework-100', frameworkKey, {
- *     descriptionOverride: `${frameworkName} — ${MILESTONES['framework-100'].description}`,
- *   }));
- *
- * Without a scope, all frameworks share the `framework-100` dedupe
- * key and only the first one to reach 100% celebrates per session.
- *
- * The scope is appended to the dedupe key with a colon separator —
- * `framework-100:iso27001`. Pick a stable scope value (DB id, slug,
- * route param) so refreshes keep dedupe state consistent.
- *
- * For milestones that are intrinsically tenant-wide (no scope makes
- * sense — `evidence-all-current`, `first-practice-mapped`), call
- * `celebrate('milestone-key')` directly instead of going through
- * this builder.
- */
-export function scopedMilestone(
-    key: MilestoneKey,
-    scope: string,
-    options: { descriptionOverride?: string } = {},
-): CelebrateAdHocInput {
-    const def = MILESTONES[key];
-    return {
-        preset: def.preset,
-        key: `${key}:${scope}`,
-        message: def.message,
-        description: options.descriptionOverride ?? def.description,
-    };
-}
+// ─── Per-resource scoping ──────────────────────────────────────────
+//
+// `scopedMilestone(key, scope)` used to live here: it combined a
+// registered milestone with a per-resource scope so each framework /
+// audit pack earned its own celebration in one session. Both of those
+// resources went with the GRC teardown and the helper had zero
+// production callers by P2.6, so it is gone rather than carried as a
+// third input shape nobody uses.
+//
+// A future per-resource celebration passes the ad-hoc shape directly —
+// `celebrate({ preset, key: `${milestone}:${resourceId}`, message })` —
+// which is what the helper built. Keep the colon separator and a stable
+// scope value (DB id, slug, route param) so a refresh keeps dedupe
+// state consistent.

@@ -1,9 +1,9 @@
 /**
- * Борса — the listings marketplace and the inquiry flow.
+ * Борса — the listings exchange and the inquiry flow.
  *
  * `exchange-messaging.paths.ts` documented the THREAD side and stopped there,
  * so the exchange tag described how two parties talk without describing what
- * they talk about. These five routes are the marketplace itself, and Борса is
+ * they talk about. These five routes are the exchange itself, and Борса is
  * one of five tabs on the phone.
  *
  * ── this is the mapper's shape, not a new one ──
@@ -150,9 +150,9 @@ export function registerExchangeListingPaths(registry: OpenAPIRegistry): void {
         method: 'get',
         path: '/api/t/{tenantSlug}/exchange/listings',
         operationId: 'listExchangeListings',
-        summary: 'Browse active listings',
+        summary: 'Борса — browse active listings',
         description:
-            'The active marketplace, keyset-paginated. Page size defaults to 50 and is capped at 100; pass `cursor` back VERBATIM from `nextCursor` and stop when it is null. ' +
+            'The active Борса feed, keyset-paginated. Page size defaults to 50 and is capped at 100; pass `cursor` back VERBATIM from `nextCursor` and stop when it is null. ' +
             '\n\n`side`, `kind`, `commodity` and `region` are COMMA-SEPARATED multi-value params in ONE parameter (`?side=SELL&kind=CULTURE,SEEDS`) — a multi-select facet arrives joined, and a bad member is a clean 400 rather than a 500. `commodity` is opaque free text, not an enum: a seller types it on the create form. ' +
             '\n\n`q` also matches Bulgarian oblast NAMES against stored English region names, so «Пловдив» finds a listing whose `regionName` is "Plovdiv". ' +
             '\n\nCarries a weak ETag; send `If-None-Match` and handle **304**.',
@@ -183,7 +183,7 @@ export function registerExchangeListingPaths(registry: OpenAPIRegistry): void {
         method: 'post',
         path: '/api/t/{tenantSlug}/exchange/listings',
         operationId: 'createExchangeListing',
-        summary: 'Publish a listing',
+        summary: 'Борса — publish a listing',
         description:
             'Publishes a listing for the calling tenant. Requires the EXCHANGE module — 403 `module_disabled: EXCHANGE` otherwise. Rate-limited separately from ordinary writes.',
         tags: ['Exchange'],
@@ -196,7 +196,7 @@ export function registerExchangeListingPaths(registry: OpenAPIRegistry): void {
         method: 'get',
         path: '/api/t/{tenantSlug}/exchange/my-listings',
         operationId: 'listMyExchangeListings',
-        summary: 'The calling tenant’s own listings, with their inquiries',
+        summary: 'Борса — the calling tenant’s own listings, with their inquiries',
         description:
             'The seller’s view: every listing this tenant owns, each with its inquiries nested. A BARE ARRAY, not an envelope, and not paginated — it is bounded by what one tenant created. ' +
             '\n\nThe nested inquiries OMIT their `listing` key, because the row carrying them is it.',
@@ -213,7 +213,7 @@ export function registerExchangeListingPaths(registry: OpenAPIRegistry): void {
         method: 'get',
         path: '/api/t/{tenantSlug}/exchange/listings/{listingId}',
         operationId: 'getExchangeListing',
-        summary: 'One listing',
+        summary: 'Борса — one listing',
         tags: ['Exchange'],
         params: ListingParams,
         success: { status: 200, description: 'The listing.', schema: PublicListingSchema },
@@ -223,7 +223,7 @@ export function registerExchangeListingPaths(registry: OpenAPIRegistry): void {
         method: 'patch',
         path: '/api/t/{tenantSlug}/exchange/listings/{listingId}',
         operationId: 'updateExchangeListingStatus',
-        summary: 'Withdraw or fulfil a listing',
+        summary: 'Борса — withdraw or fulfil a listing',
         description:
             'Moves a listing the caller OWNS to WITHDRAWN or FULFILLED. Answers with the id and the new status only — the caller already holds the rest, and the transition is what changed.',
         tags: ['Exchange'],
@@ -236,7 +236,7 @@ export function registerExchangeListingPaths(registry: OpenAPIRegistry): void {
         method: 'get',
         path: '/api/t/{tenantSlug}/exchange/inquiries',
         operationId: 'listMyExchangeInquiries',
-        summary: 'The calling tenant’s outbox',
+        summary: 'Борса — the calling tenant’s outbox',
         description:
             'Inquiries this tenant has SENT, each with the listing it was sent about attached. A BARE ARRAY, not an envelope, and not paginated. ' +
             '\n\nThis is the view where `listing` IS present — the seller’s nest omits it.',
@@ -253,7 +253,7 @@ export function registerExchangeListingPaths(registry: OpenAPIRegistry): void {
         method: 'post',
         path: '/api/t/{tenantSlug}/exchange/inquiries',
         operationId: 'createExchangeInquiry',
-        summary: 'Enquire about a listing',
+        summary: 'Борса — enquire about a listing',
         description:
             'Sends an inquiry to a listing’s seller. Answers with the id and status ONLY — not the inquiry projection — because the buyer’s contact has not been shared yet and the reveal gate lives in that projection. ' +
             '\n\nThe seller is notified; contact details are exchanged only if they ACCEPT.',
@@ -267,7 +267,7 @@ export function registerExchangeListingPaths(registry: OpenAPIRegistry): void {
         method: 'patch',
         path: '/api/t/{tenantSlug}/exchange/inquiries/{inquiryId}',
         operationId: 'respondToExchangeInquiry',
-        summary: 'Accept or decline an inquiry',
+        summary: 'Борса — accept or decline an inquiry',
         description:
             'The SELLER’s decision on an inquiry against their own listing. ACCEPTED completes the two-sided consent and is what populates `counterpartyContact` and `contactSharedAt` on both sides; DECLINED leaves both null permanently. ' +
             '\n\nAnswers with the id and new status only.',

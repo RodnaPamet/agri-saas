@@ -72,17 +72,22 @@ describe('Epic O-4 — org shell structural contract', () => {
 
     // ── Sidebar nav structure ─────────────────────────────────────────
 
-    it('OrgSidebarNav declares all 6 spec nav entries', () => {
+    it('OrgSidebarNav declares all 5 spec nav entries', () => {
         const src = read(NAV_PATH);
         // T04 i18n — labels moved to `t('<key>')`; the English copy lives
         // in messages/en.json under orgSidebar.*. Assert both the source
         // t() reference (order matches the Epic O-4 spec) AND the English
         // value, so the rendered label contract is still locked.
+        //
+        // Was SIX. `nonPerformingPractices` went in P2.6: its href was
+        // `/org/<slug>/practices`, a route GRC teardown phase 2 deleted, so
+        // the row 404'd on every click. The pin is now the ABSENCE — of the
+        // row, of its key, and of the href — because re-adding any of the
+        // three is the regression.
         const messages = JSON.parse(read('messages/en.json'));
         const entries: [string, string][] = [
             ['portfolioOverview', 'Portfolio Overview'],
             ['allTenants', 'All Tenants'],
-            ['nonPerformingPractices', 'Non-Performing Practices'],
             ['overdueEvidence', 'Overdue Evidence'],
             ['members', 'Members'],
             ['settings', 'Settings'],
@@ -91,16 +96,21 @@ describe('Epic O-4 — org shell structural contract', () => {
             expect(src).toMatch(new RegExp(`label:\\s*t\\(['"]${key}['"]\\)`));
             expect(messages.orgSidebar[key]).toBe(english);
         }
+        expect(src).not.toMatch(/label:\s*t\(['"]nonPerformingPractices['"]\)/);
+        expect(messages.orgSidebar).not.toHaveProperty('nonPerformingPractices');
+        expect(src).not.toMatch(/orgHref\(['"]\/practices['"]\)/);
     });
 
     it('drill-down nav entries are gated by canDrillDown', () => {
         const src = read(NAV_PATH);
         // The drill-down items must carry `requiresDrillDown: true`
-        // (labels now `t('<key>')` per the T04 i18n migration). Was three;
-        // `criticalRisks` went with the risk register.
-        expect(src).toMatch(/label:\s*t\(['"]nonPerformingPractices['"]\)[\s\S]+?requiresDrillDown:\s*true/);
+        // (labels now `t('<key>')` per the T04 i18n migration). Was three:
+        // `criticalRisks` went with the risk register and
+        // `nonPerformingPractices` with P2.6, so `overdueEvidence` is the
+        // last one — which is why the `canDrillDown` filter assertion below
+        // still earns its keep rather than being satisfied by an empty set.
         expect(src).toMatch(/label:\s*t\(['"]overdueEvidence['"]\)[\s\S]+?requiresDrillDown:\s*true/);
-        // And the filter must check `perms.canDrillDown` for those rows.
+        // And the filter must check `perms.canDrillDown` for that row.
         expect(src).toMatch(/canDrillDown/);
     });
 

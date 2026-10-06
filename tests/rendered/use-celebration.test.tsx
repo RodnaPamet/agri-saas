@@ -10,6 +10,12 @@
  * call signature can be inspected without running the real library
  * loader. Sonner's `toast.success` is mocked at module level so
  * message assertions stay decoupled from the global Toaster mount.
+ *
+ * Since P2.6 the milestone copy comes from `messages/en.json`
+ * (`celebrations.*`) through the project-wide `next-intl` mock in
+ * `tests/rendered/setup.ts`, which resolves the REAL catalogue — so the
+ * toast assertions below are a genuine end-to-end check that the keys the
+ * hook names exist and read correctly, not a restatement of a literal.
  */
 /** @jest-environment jsdom */
 
@@ -84,7 +90,7 @@ describe('useCelebration — milestone-key path', () => {
         let api!: ReturnType<typeof useCelebration>;
         render(<Harness onReady={(a) => (api = a)} />);
         await act(async () => {
-            api.celebrate('framework-100');
+            api.celebrate('season-closed');
         });
         // Fireworks runs three setTimeout-staggered bursts at 0/250/500ms.
         await flush(700);
@@ -101,7 +107,7 @@ describe('useCelebration — milestone-key path', () => {
         let api!: ReturnType<typeof useCelebration>;
         render(<Harness onReady={(a) => (api = a)} />);
         await act(async () => {
-            api.celebrate('framework-100');
+            api.celebrate('season-closed');
         });
         await flush(0);
         expect(toastSuccessMock).toHaveBeenCalledTimes(1);
@@ -109,8 +115,11 @@ describe('useCelebration — milestone-key path', () => {
             string,
             { description?: string },
         ];
-        expect(title).toContain('100% framework coverage');
-        expect(opts?.description).toContain('Every applicable practice');
+        // Resolved through the real en.json, plus the registry glyph the
+        // catalogue cannot hold (messages/*.json bans decorative emoji).
+        expect(title).toContain('Season closed');
+        expect(title).toContain('\u{1F389}');
+        expect(opts?.description).toContain('A full season, start to finish');
     });
 
     it('dedupe — second call within the same session is a no-op', async () => {
@@ -120,7 +129,7 @@ describe('useCelebration — milestone-key path', () => {
         let api!: ReturnType<typeof useCelebration>;
         render(<Harness onReady={(a) => (api = a)} />);
         await act(async () => {
-            api.celebrate('first-practice-mapped');
+            api.celebrate('first-harvest');
         });
         await flush(0);
         const firstCount = calls.length;
@@ -129,7 +138,7 @@ describe('useCelebration — milestone-key path', () => {
         // Second invocation — dedupe must short-circuit BOTH the
         // toast AND the confetti.
         await act(async () => {
-            api.celebrate('first-practice-mapped');
+            api.celebrate('first-harvest');
         });
         await flush(0);
         expect(calls.length).toBe(firstCount);
@@ -138,7 +147,7 @@ describe('useCelebration — milestone-key path', () => {
         // Sanity: the dedupe entry exists in sessionStorage.
         expect(
             window.sessionStorage.getItem(
-                celebrationDedupeKey('first-practice-mapped'),
+                celebrationDedupeKey('first-harvest'),
             ),
         ).not.toBeNull();
     });
@@ -150,15 +159,15 @@ describe('useCelebration — milestone-key path', () => {
         let api!: ReturnType<typeof useCelebration>;
         render(<Harness onReady={(a) => (api = a)} />);
         await act(async () => {
-            api.celebrate('first-practice-mapped');
+            api.celebrate('first-harvest');
         });
         await flush(0);
         const firstCount = calls.length;
 
-        clearCelebrated('first-practice-mapped');
+        clearCelebrated('first-harvest');
 
         await act(async () => {
-            api.celebrate('first-practice-mapped');
+            api.celebrate('first-harvest');
         });
         await flush(0);
         expect(calls.length).toBeGreaterThan(firstCount);
@@ -170,12 +179,12 @@ describe('useCelebration — milestone-key path', () => {
 
         let api!: ReturnType<typeof useCelebration>;
         render(<Harness onReady={(a) => (api = a)} />);
-        expect(api.hasCelebrated('framework-100')).toBe(false);
+        expect(api.hasCelebrated('season-closed')).toBe(false);
         await act(async () => {
-            api.celebrate('framework-100');
+            api.celebrate('season-closed');
         });
         await flush(0);
-        expect(api.hasCelebrated('framework-100')).toBe(true);
+        expect(api.hasCelebrated('season-closed')).toBe(true);
     });
 });
 
