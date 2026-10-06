@@ -138,6 +138,11 @@ const PUBLIC_PATH_PREFIXES = [
     '/api/stripe/webhook',
     '/api/storage/av-webhook',
     '/api/integrations/webhooks/',
+    // P3.7 — runs while someone types their ЕИК into the registration form,
+    // before any account exists. EXACT, not a `/api/public/` prefix: a prefix
+    // would open every future neighbour under it by accident, and this is the
+    // only route there that has been argued for.
+    '/api/public/eik-check',
     '/privacy',          // Privacy notice — MUST be readable without an account:
                          // the promotions consent box links to it before a
                          // request is submitted, and a prospective user has to
