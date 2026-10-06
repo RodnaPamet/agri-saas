@@ -140,4 +140,30 @@ describe('Form drift ratchet (Elevation PR-8)', () => {
         }
         expect(EXEMPT_FILES.size).toBeLessThanOrEqual(4);
     });
+
+    /**
+     * The walk actually looked at the tree.
+     *
+     * Both assertions above are ABSENCE checks over `walk()`, so a walk that
+     * returns nothing satisfies them perfectly — `offenders` is empty and the
+     * ratchet reports a clean tree. `scripts/selector-teeth.mjs` found exactly
+     * that: `walk() -> return []` SURVIVED every test in this file. An empty
+     * file list is not hypothetical either — a wrong `cwd`, a renamed scan
+     * root, or an exemption pattern widened by one character all produce it,
+     * and every one of them is silent.
+     *
+     * `walk()` already throws on a MISSING root (#875), which covers a rename
+     * of `src/app`; it does not cover a root that exists and yields nothing.
+     * The floor is deliberately far below the live count (~1,900 files across
+     * the two roots at the time of writing) so ordinary growth and deletion
+     * never touch it: it is a guard against COLLAPSE, not a ratchet.
+     */
+    it('examined the tree — an empty file list must not read as a clean one', () => {
+        const scanned = SCAN_DIRS.flatMap((dir) => walk(path.join(ROOT, dir)));
+        expect(scanned.length).toBeGreaterThan(500);
+        // And the exemptions did not swallow a whole root.
+        for (const dir of SCAN_DIRS) {
+            expect(walk(path.join(ROOT, dir)).length).toBeGreaterThan(100);
+        }
+    });
 });

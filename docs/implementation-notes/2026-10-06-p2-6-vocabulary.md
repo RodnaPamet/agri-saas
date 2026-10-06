@@ -122,6 +122,7 @@ changes that mattered most:
 | `tests/rendered/milestone-{discipline,trigger-conditions}.test.tsx`, `tests/unit/celebrations.test.ts`, `tests/guards/celebrations-coverage.test.ts` | Expectations follow the registry + catalogue. |
 | `tests/unit/org-switcher-and-new-tenant-structural.test.ts`, `tests/e2e/ciso-portfolio.spec.ts`, `tests/guards/form-drift.test.ts` | Follow the removed framework field. |
 | `tests/unit/org-shell-structural.test.ts` | Six org nav entries → five; pins the ABSENCE of the row, its key and its href. |
+| `tests/guards/form-drift.test.ts` | A population floor on `walk()` — `selector-teeth` reported it toothless once this PR's comment fix brought the file into the audited delta. |
 
 ## Decisions
 
@@ -203,6 +204,19 @@ changes that mattered most:
   entries by name; removing one means that test is the pin, so it now asserts
   five plus the absence of the row, its key AND its href. Both were found by
   running the suite, not by reading the diff.
+
+- **One pre-existing toothless guard surfaced and was fixed rather than
+  baselined.** `scripts/selector-teeth.mjs` audits the PR's CHANGED guard
+  files, so editing one dangling comment in `tests/guards/form-drift.test.ts`
+  pulled it into the delta — and reported `walk() -> return []` SURVIVED every
+  test in it. Both of its assertions are ABSENCE checks over that walk, so an
+  empty file list is a perfect pass. It already threw on a MISSING root (#875),
+  which covers a rename; it did not cover a root that exists and yields
+  nothing. It has a population floor now (>500 across both roots, >100 each),
+  deliberately far below the live ~1,900 so it guards COLLAPSE rather than
+  ratcheting a count. The alternative the tool offers — an entry in
+  `selector-teeth-baseline.json` — would have recorded the hole instead of
+  closing it, for a guard whose teeth cost eight lines.
 
 - **`/org/<slug>/settings` is a second dead org nav row and was LEFT.** It is
   not a GRC leftover — it is an unbuilt settings surface, adjacent to P2.7's
