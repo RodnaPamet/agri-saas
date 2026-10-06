@@ -1,0 +1,123 @@
+// ═══════════════════════════════════════════════════════════════════
+//  FARM IDENTITY DOMAIN — P3.4: claiming a farm by its ЕИК
+// ═══════════════════════════════════════════════════════════════════
+//
+//  GAP-09 multi-file schema: new domain file. Generator + datasource
+//  remain in base.prisma.
+//
+//  WHY NOT social.prisma. That file's header states its models are
+//  PLATFORM-scoped on purpose and that "there is no `tenantId` here, and
+//  the RLS classification is deliberately not the tenant-scoped one".
+//  `FarmIdentityClaim` is tenant-scoped, so adding it there would make
+//  that paragraph false — and a file-level invariant that silently stops
+//  holding is worse than a second file.
+//
+//  WHAT A CLAIM IS. A tenant asserting "this ЕИК is my farm". It is not
+//  proof: a claim starts PENDING and only a staff verification (P3.9)
+//  moves it to VERIFIED. `FarmProfile.eik` is written ONLY from a
+//  VERIFIED claim, as v2 ciphertext under the tenant DEK, never from the
+//  free-edit PUT — so this table is the sole gate on that field.
+//
+//  WHY THE PLAINTEXT ЕИК IS NOT HERE. The row stores only a blind index.
+//  A claim table is the one place in the product that necessarily holds a
+//  row per farm identity somebody typed, including identities that were
+//  typed wrongly, speculatively, or by someone with no connection to the
+//  farm. Keeping the plaintext would make it the best enumeration target
+//  in the database. The index is an HMAC under `LOOKUP_HMAC_KEY` with its
+//  own HKDF info (`LookupKind = 'eik'`), so it is neither reversible
+//  without the key nor comparable against the `email` index.
+
+/// One tenant's assertion that an ЕИК is its farm.
+///
+/// ## The uniqueness rule, and why the database owns it
+///
+/// At most one VERIFIED claim may exist per ЕИК. That is enforced by a
+/// PARTIAL unique index — `(eikHash) WHERE status = 'VERIFIED'` — created
+/// in this model's migration, because Prisma cannot express a partial
+/// unique index declaratively.
+///
+/// It has to be the database rather than a read-then-insert check in the
+/// usecase, for a reason specific to this table: RLS scopes reads to the
+/// calling tenant, so a pre-insert "does anyone already hold this ЕИК?"
+/// query run as `app_user` sees ZERO rows whenever the incumbent belongs
+/// to someone else — which is always, in the only case that matters. The
+/// check would pass, the insert would succeed, and two farms would hold
+/// one verified identity with nothing having failed. A constraint is
+/// enforced on the heap, below the policies, so it sees the conflict the
+/// query cannot.
+///
+/// This is also why a collision is only observable as a write failure
+/// (Prisma `P2002`) and never as a lookup result, which is what keeps the
+/// enumeration property in P3.4 intact: the caller learns their own claim
+/// did not become verified, not who holds it.
+///
+/// ## The collision resolves against the CLAIMANT, not the incumbent
+///
+/// A colliding claim becomes DISPUTED. The existing VERIFIED claim is left
+/// alone. The reverse — demoting both to DISPUTED — reads as even-handed
+/// and is a griefing primitive: anyone who can type a verified farm's ЕИК
+/// could knock it out of verified status, repeatedly, with no access to
+/// anything belonging to that farm. A claim is not evidence against an
+/// already-verified one.
+///
+/// ## A rotation window this index cannot see
+///
+/// `eikHash` stores the hash under the CURRENT lookup key. During a
+/// `LOOKUP_HMAC_KEY` rotation, `hashForLookupCandidates` reads under both
+/// the current and previous key, but a row written before the rotation
+/// still carries the OLD hash — so two claims on the same ЕИК, one either
+/// side of the rotation, are two different values and the partial unique
+/// index does not relate them. The guarantee is therefore "one VERIFIED
+/// claim per ЕИК per key generation", and closing the gap is the
+/// verification path's job: it must look the ЕИК up with the full
+/// candidate set before promoting anything to VERIFIED, and re-hash the
+/// row it promotes. Do not read the index as the whole guarantee.
+model FarmIdentityClaim {
+  id       String @id @default(cuid())
+  /// The claiming farm. A plain column rather than a relation, matching
+  /// every other tenant-scoped model here, and the column RLS scopes by.
+  tenantId String
+  /// Blind index over the ЕИК: `hashForLookup(eik, 'eik')`. 64 hex chars.
+  /// Never the plaintext — see the file header.
+  eikHash  String
+  status   FarmIdentityClaimStatus @default(PENDING)
+  /// The person who made the claim, for the audit trail and so a staff
+  /// reviewer can see who to contact. Not `app.user_id`-scoped: the claim
+  /// belongs to the farm, and a colleague must be able to see it.
+  claimedByUserId String
+  /// Set when a reviewer promotes the claim. Null in every other state,
+  /// including DISPUTED — a disputed claim was never verified.
+  verifiedAt DateTime?
+  /// Set when a claim collides with an existing VERIFIED one. Kept
+  /// separately from `updatedAt` so a sweep can find disputes by age
+  /// without inferring the reason for the last write.
+  disputedAt DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  /// Reads are "this farm's claims" and "is this ЕИК claimed"; both are
+  /// indexed. The partial UNIQUE index on `eikHash` lives in the
+  /// migration and is a constraint, not a substitute for this one — it
+  /// covers only VERIFIED rows, so it cannot serve a lookup that must
+  /// also see PENDING and DISPUTED.
+  @@index([tenantId])
+  @@index([eikHash])
+}
+
+/// A claim's lifecycle. There is no `UNVERIFIED`: the absence of a claim
+/// and a claim that failed are different facts, and both must produce the
+/// same response to a caller (P3.4), which is a property of the ROUTE, not
+/// of this enum.
+enum FarmIdentityClaimStatus {
+  /// Submitted, awaiting staff verification. The default.
+  PENDING
+  /// Verified by staff. At most one per ЕИК per key generation; the only
+  /// state from which `FarmProfile.eik` may be written.
+  VERIFIED
+  /// Collided with an existing VERIFIED claim. Terminal without staff
+  /// action — see the model docblock on why the incumbent is not demoted.
+  DISPUTED
+  /// Rejected by a reviewer. Distinct from DISPUTED: a rejection is a
+  /// judgement about this claim, a dispute is a fact about another one.
+  REJECTED
+}
