@@ -36,7 +36,8 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
-import { withTenantDb } from '@/lib/db-context';
+import { withTenantDb, runInTenantContext } from '@/lib/db-context';
+import { makeRequestContext } from '../helpers/make-context';
 import { getCiphertextVersion } from '@/lib/security/encryption';
 
 /** Bare client: no extensions, so it sees the RAW column. */
@@ -51,6 +52,33 @@ let listingId = '';
 const BODY_FROM_BUYER = 'Имате ли налична пшеница за октомври?';
 const BODY_FROM_SELLER = 'Да — 40 тона, цена по договаряне.';
 const messageIds: string[] = [];
+// #1298 — stable per-side principals. Threads and messages are per PERSON now
+// and the RLS policies name the actor, so a fresh random id per write would
+// make every write a different person and put none of them in the audience.
+const BUYER_USER = `u-xm-buyer-${randomUUID()}`;
+const SELLER_USER = `u-xm-seller-${randomUUID()}`;
+// A person at neither party farm — the outsider the isolation case needs.
+const THIRD_USER = `u-xm-third-${randomUUID()}`;
+
+/**
+ * Run as a PERSON at a tenant.
+ *
+ * `withTenantDb` sets `app.tenant_id` and no actor, which since #1298 is not
+ * enough: the message policy's WITH CHECK pins `senderUserId` to
+ * `app.actor_user_id`, and the thread audience is keyed on it. A context-less
+ * write is refused and a context-less read returns zero rows — fail-closed,
+ * but SILENTLY, which is the shape worth not debugging twice.
+ */
+function asPerson<T>(
+    tenantId: string,
+    userId: string,
+    fn: (db: never) => Promise<T>,
+): Promise<T> {
+    return runInTenantContext(
+        makeRequestContext('ADMIN', { tenantId, userId, requestId: `req-${userId}` }),
+        fn as never,
+    ) as Promise<T>;
+}
 
 /** Read the raw stored column, past every extension. */
 async function storedBody(id: string): Promise<string> {
@@ -62,9 +90,25 @@ async function storedBody(id: string): Promise<string> {
 }
 
 /** Read a message as a given tenant would — through the real extension chain. */
-async function readAs(tenantId: string, id: string): Promise<string | undefined> {
-    return withTenantDb(tenantId, async (db) => {
-        const row = await db.exchangeMessage.findFirst({ where: { id }, select: { body: true } });
+/**
+ * Read as a given PERSON at a given tenant.
+ *
+ * The person is explicit rather than derived from the tenant, and that is not
+ * fussiness: a first version mapped "not the buyer tenant" to `SELLER_USER`,
+ * so the third-tenant case below was handed the LISTING CREATOR's identity —
+ * who is in the audience — and read the message it was asserting it could not
+ * see. The test caught it. A defaulted identity in a privacy test is a hole
+ * shaped exactly like the bug.
+ */
+async function readAs(
+    tenantId: string,
+    userId: string,
+    id: string,
+): Promise<string | undefined> {
+    return asPerson<string | undefined>(tenantId, userId, async (db: never) => {
+        const row = await (db as unknown as {
+            exchangeMessage: { findFirst(a: unknown): Promise<{ body: string } | null> };
+        }).exchangeMessage.findFirst({ where: { id }, select: { body: true } });
         return row?.body;
     });
 }
@@ -87,31 +131,40 @@ describeFn('an Exchange message is readable by BOTH parties', () => {
              VALUES ($1,$2,$3,'SELL','CULTURE','WHEAT',40,'BGN','BG-23','Sofia',42.70,23.32,'ACTIVE',NOW(),NOW())`,
             listingId,
             sellerTenant,
-            `u-${randomUUID()}`,
+            // The listing's CREATOR is the seller-side principal, so it has to
+            // be the same person the seller-side reads and writes run as.
+            SELLER_USER,
         );
         threadId = `xt-${randomUUID()}`;
-        // `ExchangeThread` has no `inquirerUserId` — the thread records the
-        // inquiring TENANT; the user is on each message instead.
+        // #1298 — `ExchangeThread` DOES carry an `inquirerUserId` now, and it
+        // is NOT NULL: a thread is one per (listing, inquirer PERSON) rather
+        // than per farm. This comment said the opposite until that landed.
         await raw.$executeRawUnsafe(
-            `INSERT INTO "ExchangeThread"("id","listingId","inquirerTenantId","createdAt","updatedAt")
-             VALUES ($1,$2,$3,NOW(),NOW())`,
+            `INSERT INTO "ExchangeThread"
+               ("id","listingId","inquirerTenantId","inquirerUserId","createdAt","updatedAt")
+             VALUES ($1,$2,$3,$4,NOW(),NOW())`,
             threadId,
             listingId,
             buyerTenant,
+            BUYER_USER,
         );
 
         // Written through the REAL extension chain, each in its own author's
         // tenant context — which is the shape that produced the defect.
-        for (const [tenant, body] of [
-            [buyerTenant, BODY_FROM_BUYER],
-            [sellerTenant, BODY_FROM_SELLER],
+        for (const [tenant, user, body] of [
+            [buyerTenant, BUYER_USER, BODY_FROM_BUYER],
+            [sellerTenant, SELLER_USER, BODY_FROM_SELLER],
         ] as const) {
-            const id = await withTenantDb(tenant, async (db) => {
-                const row = await db.exchangeMessage.create({
+            const id = await asPerson<string>(tenant, user, async (db: never) => {
+                const row = await (db as unknown as {
+                    exchangeMessage: { create(a: unknown): Promise<{ id: string }> };
+                }).exchangeMessage.create({
                     data: {
                         threadId,
                         senderTenantId: tenant,
-                        senderUserId: `u-${randomUUID()}`,
+                        // Must equal the actor: the policy's WITH CHECK pins it,
+                        // so a party can only ever write as THEMSELVES.
+                        senderUserId: user,
                         body,
                     },
                     select: { id: true },
@@ -167,14 +220,14 @@ describeFn('an Exchange message is readable by BOTH parties', () => {
         const [buyerMsg, sellerMsg] = messageIds;
         // The cross reads. These are what failed before the fix; the two
         // same-party reads below passed throughout and prove nothing alone.
-        expect(await readAs(sellerTenant, buyerMsg)).toBe(BODY_FROM_BUYER);
-        expect(await readAs(buyerTenant, sellerMsg)).toBe(BODY_FROM_SELLER);
+        expect(await readAs(sellerTenant, SELLER_USER, buyerMsg)).toBe(BODY_FROM_BUYER);
+        expect(await readAs(buyerTenant, BUYER_USER, sellerMsg)).toBe(BODY_FROM_SELLER);
     });
 
     it('and each party still reads its OWN message — no regression', async () => {
         const [buyerMsg, sellerMsg] = messageIds;
-        expect(await readAs(buyerTenant, buyerMsg)).toBe(BODY_FROM_BUYER);
-        expect(await readAs(sellerTenant, sellerMsg)).toBe(BODY_FROM_SELLER);
+        expect(await readAs(buyerTenant, BUYER_USER, buyerMsg)).toBe(BODY_FROM_BUYER);
+        expect(await readAs(sellerTenant, SELLER_USER, sellerMsg)).toBe(BODY_FROM_SELLER);
     });
 
     it('a THIRD tenant sees NOTHING — RLS does the access control, not the key', async () => {
@@ -194,11 +247,11 @@ describeFn('an Exchange message is readable by BOTH parties', () => {
         // by one row, which is exactly what makes the global KEK safe here.
         const third = await raw.tenant.create({ data: { name: `${TAG}-third`, slug: `${TAG}-3` } });
         try {
-            expect(await readAs(third.id, messageIds[0])).toBeUndefined();
+            expect(await readAs(third.id, THIRD_USER, messageIds[0])).toBeUndefined();
             // And the two real parties still can — otherwise "nobody can read
             // it" would satisfy this assertion too.
-            expect(await readAs(buyerTenant, messageIds[0])).toBe(BODY_FROM_BUYER);
-            expect(await readAs(sellerTenant, messageIds[0])).toBe(BODY_FROM_BUYER);
+            expect(await readAs(buyerTenant, BUYER_USER, messageIds[0])).toBe(BODY_FROM_BUYER);
+            expect(await readAs(sellerTenant, SELLER_USER, messageIds[0])).toBe(BODY_FROM_BUYER);
         } finally {
             // Best-effort for the same reason as afterAll: a read may audit,
             // and AuditLog cannot be deleted.

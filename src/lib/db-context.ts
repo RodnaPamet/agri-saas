@@ -198,6 +198,36 @@ export async function runInTenantContext<T>(
                     await tx.$executeRaw`SET LOCAL ROLE app_user`;
                     await tx.$executeRaw`SELECT set_config('app.tenant_id', ${ctx.tenantId}, true)`;
                     await tx.$executeRaw`SELECT set_config('app.request_id', ${ctx.requestId}, true)`;
+                    // #1298 — WHICH PERSON is asking, for policies that a
+                    // tenant id cannot express. Exchange conversations are
+                    // private to people now, and two members of one farm are
+                    // indistinguishable to `app.tenant_id`.
+                    //
+                    // Deliberately a NEW variable rather than the existing
+                    // `app.user_id`. That one is set only by
+                    // `runInUserContext` and is read by the two-armed policy on
+                    // NativeAuthCode, NativeRefreshToken, Organization,
+                    // OrgMembership and UserSession:
+                    //
+                    //   tenantId = app.tenant_id
+                    //   OR (tenantId IS NULL AND userId = app.user_id)
+                    //
+                    // Setting it here would open that second arm on all five
+                    // inside a tenant transaction, blurring a separation whose
+                    // own docblock says the separation is the point. A new name
+                    // changes the evaluation of exactly zero existing policies.
+                    //
+                    // `withTenantDb` deliberately does NOT set this: it takes a
+                    // tenantId and no ctx, so it has no person to name. With the
+                    // variable unset, `current_setting(..., true)` yields NULL
+                    // and the audience policy matches nothing — fail-closed, but
+                    // SILENTLY, so a thread read through that helper would see
+                    // zero rows rather than error. Nothing reads
+                    // `ExchangeThread` / `ExchangeMessage` outside
+                    // `exchange-messaging.ts` (measured), which always comes
+                    // through here; `tests/guards/exchange-threads-need-an-actor.test.ts`
+                    // keeps it that way.
+                    await tx.$executeRaw`SELECT set_config('app.actor_user_id', ${ctx.userId}, true)`;
                     // #1223 — the audit EXTENSION cannot reach `tx` (a query
                 // handler is given no client), so it queues its rows and this
                 // frame drains them onto THIS transaction before COMMIT. A

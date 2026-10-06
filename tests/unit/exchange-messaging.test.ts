@@ -17,6 +17,10 @@
 const mockPrisma = {
     exchangeListing: { findFirst: jest.fn() },
     exchangeThread: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
+    // #1298 — per-person read pointers live in their own table now. `markReadFor`
+    // tries `updateMany` first (monotonic: only if the stored pointer is older)
+    // and falls back to `create`, so both need to exist or every send throws.
+    exchangeThreadRead: { updateMany: jest.fn(), create: jest.fn(), findFirst: jest.fn() },
     exchangeMessage: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), count: jest.fn() },
     exchangeBlock: { findFirst: jest.fn(), create: jest.fn(), deleteMany: jest.fn() },
 };
@@ -76,22 +80,39 @@ import type { RequestContext } from '@/app-layer/types';
 const BUYER = 'tnt_buyer';
 const SELLER = 'tnt_seller';
 
-function ctxFor(tenantId: string) {
+/**
+ * #1298 — the userId is a PARAMETER, and the two sides are two PEOPLE.
+ *
+ * This hardcoded `usr_1` for both, so `buyerCtx` and `sellerCtx` were the same
+ * person at different tenants. Harmless while `mine` compared farms; fatal to
+ * a per-person test, where it made every message the caller's own on BOTH
+ * sides — the `mine` case below failed on exactly that before it was fixed.
+ */
+function ctxFor(tenantId: string, userId: string) {
     return {
-        requestId: 'r', userId: 'usr_1', tenantId, tenantSlug: 'acme', role: 'EDITOR',
+        requestId: 'r', userId, tenantId, tenantSlug: 'acme', role: 'EDITOR',
         permissions: { canRead: true, canWrite: true, canAdmin: false, canAudit: false },
         appPermissions: {},
     } as unknown as RequestContext;
 }
-const buyerCtx = ctxFor(BUYER);
-const sellerCtx = ctxFor(SELLER);
+const buyerCtx = ctxFor(BUYER, 'usr_buyer');
+const sellerCtx = ctxFor(SELLER, 'usr_seller');
 
 function thread(over: Record<string, unknown> = {}) {
     return {
         id: 'th1', listingId: 'lst1', inquirerTenantId: BUYER,
+        // #1298 — the buyer-side principal. `ctx.userId` is `usr_1` in this
+        // file, so the default fixture makes the caller the principal; a case
+        // that wants a NON-principal overrides it.
+        inquirerUserId: 'usr_buyer',
         lastMessageAt: new Date('2026-09-01T10:00:00Z'), closedAt: null,
-        sellerLastReadAt: null, inquirerLastReadAt: null,
-        listing: { sellerTenantId: SELLER, commodity: 'wheat' },
+        // The CALLER's own read pointer, as a relation filtered to them. The
+        // two `*LastReadAt` columns this replaces are gone from the select —
+        // `requireParty` reads `thread.reads[0]`, deliberately without a `?.`:
+        // an absent `reads` means the select lost it, and defaulting to null
+        // would silently mean "never read", i.e. every message unread.
+        reads: [] as Array<{ lastReadAt: Date }>,
+        listing: { sellerTenantId: SELLER, sellerUserId: 'usr_seller', commodity: 'wheat' },
         ...over,
     };
 }
@@ -99,6 +120,11 @@ function thread(over: Record<string, unknown> = {}) {
 beforeEach(() => {
     jest.clearAllMocks();
     mockPrisma.exchangeThread.findFirst.mockResolvedValue(thread());
+    // A pointer that moved: `markReadFor` returns early and never reaches
+    // `create`, which is the common path and keeps these cases about what
+    // they are actually testing.
+    mockPrisma.exchangeThreadRead.updateMany.mockResolvedValue({ count: 1 });
+    mockPrisma.exchangeThreadRead.create.mockResolvedValue({ id: 'etr1' });
     mockPrisma.exchangeMessage.findMany.mockResolvedValue([]);
     mockPrisma.exchangeThread.update.mockResolvedValue({});
     mockPrisma.exchangeMessage.update.mockResolvedValue({});
@@ -132,7 +158,7 @@ beforeEach(() => {
 
 describe('opening a thread', () => {
     it('is idempotent — a second tap returns the SAME thread', async () => {
-        mockPrisma.exchangeThread.findFirst.mockResolvedValue({ id: 'th1' });
+        mockPrisma.exchangeThread.findFirst.mockResolvedValue({ id: 'th1', reads: [] });
         const r = await openExchangeThread(buyerCtx, 'lst1');
         expect(r).toEqual({ id: 'th1', created: false });
         expect(mockPrisma.exchangeThread.create).not.toHaveBeenCalled();
@@ -150,31 +176,50 @@ describe('opening a thread', () => {
     });
 });
 
-describe('the read pointer is monotonic', () => {
+describe('the read pointer is monotonic, and PER PERSON', () => {
     it('does NOT move backwards when a stale request arrives late', async () => {
         // The failure this prevents: two tabs, the older one answering second,
         // the pointer rewinding, and already-read messages going unread again.
+        //
+        // #1298 — the pointer is now the CALLER's own row, so the stale case is
+        // "the stored value is already ahead of `now`" and `markReadFor`'s
+        // conditional `updateMany` matches nothing. It then tries `create`,
+        // which the unique on (threadId, userId) refuses, and the refusal is
+        // swallowed because the loser's value is never newer.
         const future = new Date(Date.now() + 60_000);
         mockPrisma.exchangeThread.findFirst.mockResolvedValue(
-            thread({ inquirerLastReadAt: future }),
+            thread({ reads: [{ lastReadAt: future }] }),
         );
         const r = await markExchangeThreadRead(buyerCtx, 'th1');
         expect(r.readAt).toBe(future);
-        expect(mockPrisma.exchangeThread.update).not.toHaveBeenCalled();
+        // Not a single write attempt: the early return happens before them.
+        expect(mockPrisma.exchangeThreadRead.updateMany).not.toHaveBeenCalled();
+        expect(mockPrisma.exchangeThreadRead.create).not.toHaveBeenCalled();
     });
 
     it('moves the pointer forward on a normal read', async () => {
-        // The positive control — without it, a function that never updated
+        // The positive control — without it, a function that never wrote
         // anything would satisfy the assertion above.
         await markExchangeThreadRead(buyerCtx, 'th1');
-        expect(mockPrisma.exchangeThread.update).toHaveBeenCalled();
+        expect(mockPrisma.exchangeThreadRead.updateMany).toHaveBeenCalled();
     });
 
-    it('moves the SELLER pointer when the seller reads, not the buyer one', async () => {
+    it('moves the CALLER own pointer — not their side, and never the thread row', async () => {
+        // This case used to assert `sellerLastReadAt` was set and
+        // `inquirerLastReadAt` was not. Both columns are gone from the write
+        // path: they were ONE PER SIDE, so any member of a farm reading marked
+        // the thread read for all of them, which is half of what #1298 fixes.
         await markExchangeThreadRead(sellerCtx, 'th1');
-        const { data } = mockPrisma.exchangeThread.update.mock.calls[0][0];
-        expect(data).toHaveProperty('sellerLastReadAt');
-        expect(data).not.toHaveProperty('inquirerLastReadAt');
+
+        const where = mockPrisma.exchangeThreadRead.updateMany.mock.calls[0][0].where;
+        expect(where.threadId).toBe('th1');
+        // The SELLER's own user id, from their context — not a side token.
+        expect(where.userId).toBe(sellerCtx.userId);
+        // And monotonic: only a pointer strictly older than `now` moves.
+        expect(where.lastReadAt).toHaveProperty('lt');
+
+        // The thread row itself is untouched by a read.
+        expect(mockPrisma.exchangeThread.update).not.toHaveBeenCalled();
     });
 });
 
@@ -256,17 +301,40 @@ describe('the scrollback', () => {
     });
 
     it('marks the caller\'s own messages with `mine`, from either side', async () => {
+        // #1298 — `mine` is "sent by ME", the person. It meant "sent by my
+        // FARM", which rendered a colleague's message as the reader's own, so
+        // these rows carry a sender USER and the contexts are two people.
         mockPrisma.exchangeMessage.findMany.mockResolvedValue([
-            { id: 'a', senderTenantId: BUYER, body: 'hi', deletedAt: null, createdAt: new Date() },
-            { id: 'b', senderTenantId: SELLER, body: 'hello', deletedAt: null, createdAt: new Date() },
+            {
+                id: 'a', senderTenantId: BUYER, senderUserId: buyerCtx.userId,
+                body: 'hi', deletedAt: null, createdAt: new Date(),
+            },
+            {
+                id: 'b', senderTenantId: SELLER, senderUserId: sellerCtx.userId,
+                body: 'hello', deletedAt: null, createdAt: new Date(),
+            },
+            // A COLLEAGUE at the buyer farm: same tenant, different person.
+            // Under the old farm-based rule this was indistinguishable from
+            // the buyer's own message, which is the defect in one row.
+            {
+                id: 'c', senderTenantId: BUYER, senderUserId: 'usr_buyer_colleague',
+                body: 'me too', deletedAt: null, createdAt: new Date(),
+            },
         ]);
         const asBuyer = await getExchangeThread(buyerCtx, 'th1');
         expect(asBuyer.messages.find((m) => m.id === 'a')?.mine).toBe(true);
         expect(asBuyer.messages.find((m) => m.id === 'b')?.mine).toBe(false);
+        // THE DISCRIMINATOR: not mine, but from my farm — a third speaker the
+        // client has to label, and the one the old `mine` got wrong.
+        const colleague = asBuyer.messages.find((m) => m.id === 'c');
+        expect(colleague?.mine).toBe(false);
+        expect(colleague?.fromMyFarm).toBe(true);
 
         const asSeller = await getExchangeThread(sellerCtx, 'th1');
         expect(asSeller.messages.find((m) => m.id === 'a')?.mine).toBe(false);
         expect(asSeller.messages.find((m) => m.id === 'b')?.mine).toBe(true);
+        // The buyer's colleague is neither the seller's own nor their farm's.
+        expect(asSeller.messages.find((m) => m.id === 'c')?.fromMyFarm).toBe(false);
     });
 
     it('does not FILTER OUT deleted messages at the query', async () => {
@@ -304,8 +372,11 @@ describe('the scrollback', () => {
         ];
         expect(arg.where).toMatchObject({
             threadId: 'th1',
+            // #1298 — "not mine" by PERSON. `{ not: ctx.tenantId }` counted a
+            // colleague's message as unread for them and hid their own from a
+            // count they should see.
+            senderUserId: { not: sellerCtx.userId },
             // Never your own, and never a tombstone.
-            senderTenantId: { not: SELLER },
             deletedAt: null,
         });
     });
@@ -341,7 +412,12 @@ describe('sending', () => {
     });
 
     it('refuses a tenant that is party to neither side', async () => {
-        await expect(sendExchangeMessage(ctxFor('tnt_stranger'), 'th1', 'hi'))
+        await expect(
+            // A stranger FARM and a stranger PERSON: under #1298 either alone
+            // would do, and naming both keeps the case about being party to
+            // neither side rather than about which half was wrong.
+            sendExchangeMessage(ctxFor('tnt_stranger', 'usr_stranger'), 'th1', 'hi'),
+        )
             .rejects.toThrow(/not a party/i);
     });
 });
@@ -403,7 +479,11 @@ describe('retracting', () => {
 
     it('is a soft delete, not a removal', async () => {
         mockPrisma.exchangeMessage.findFirst.mockResolvedValue({
-            id: 'm1', senderTenantId: BUYER, threadId: 'th1', deletedAt: null,
+            // #1298 — the gate is per PERSON now: the function always said
+            // "only what they sent" while comparing the FARM, which would let
+            // a colleague retract someone else's words.
+            id: 'm1', senderTenantId: BUYER, senderUserId: buyerCtx.userId,
+            threadId: 'th1', deletedAt: null,
         });
         await deleteExchangeMessage(buyerCtx, 'm1');
         const { data } = mockPrisma.exchangeMessage.update.mock.calls[0][0];
@@ -412,7 +492,11 @@ describe('retracting', () => {
 
     it('retracting twice is not an error', async () => {
         mockPrisma.exchangeMessage.findFirst.mockResolvedValue({
-            id: 'm1', senderTenantId: BUYER, threadId: 'th1', deletedAt: new Date(),
+            // #1298 — the gate is per PERSON now: the function always said
+            // "only what they sent" while comparing the FARM, which would let
+            // a colleague retract someone else's words.
+            id: 'm1', senderTenantId: BUYER, senderUserId: buyerCtx.userId,
+            threadId: 'th1', deletedAt: new Date(),
         });
         await expect(deleteExchangeMessage(buyerCtx, 'm1')).resolves.toEqual({ id: 'm1' });
         expect(mockPrisma.exchangeMessage.update).not.toHaveBeenCalled();
@@ -499,7 +583,7 @@ describe('the bell, one row per message', () => {
 describe('closing, and reopening by sending', () => {
     it('either party may close — the buyer', async () => {
         mockPrisma.exchangeThread.findFirst.mockResolvedValue({
-            id: 'th1', listingId: 'lst1', inquirerTenantId: BUYER, closedAt: null,
+            id: 'th1', listingId: 'lst1', inquirerTenantId: BUYER, inquirerUserId: 'usr_buyer', reads: [], closedAt: null,
             listing: { sellerTenantId: SELLER, commodity: 'wheat' },
         });
         const r = await closeExchangeThread(buyerCtx, 'th1');
@@ -511,7 +595,7 @@ describe('closing, and reopening by sending', () => {
 
     it('either party may close — the seller', async () => {
         mockPrisma.exchangeThread.findFirst.mockResolvedValue({
-            id: 'th1', listingId: 'lst1', inquirerTenantId: BUYER, closedAt: null,
+            id: 'th1', listingId: 'lst1', inquirerTenantId: BUYER, inquirerUserId: 'usr_buyer', reads: [], closedAt: null,
             listing: { sellerTenantId: SELLER, commodity: 'wheat' },
         });
         // Symmetric on purpose: a seller-only close would let one side end a
@@ -524,7 +608,7 @@ describe('closing, and reopening by sending', () => {
     it('is idempotent — a second close keeps the ORIGINAL timestamp', async () => {
         const first = new Date('2026-09-20T10:00:00.000Z');
         mockPrisma.exchangeThread.findFirst.mockResolvedValue({
-            id: 'th1', listingId: 'lst1', inquirerTenantId: BUYER, closedAt: first,
+            id: 'th1', listingId: 'lst1', inquirerTenantId: BUYER, inquirerUserId: 'usr_buyer', reads: [], closedAt: first,
             listing: { sellerTenantId: SELLER, commodity: 'wheat' },
         });
         const r = await closeExchangeThread(buyerCtx, 'th1');
@@ -535,7 +619,7 @@ describe('closing, and reopening by sending', () => {
 
     it('sending on a CLOSED thread reopens it rather than refusing', async () => {
         mockPrisma.exchangeThread.findFirst.mockResolvedValue({
-            id: 'th1', listingId: 'lst1', inquirerTenantId: BUYER,
+            id: 'th1', listingId: 'lst1', inquirerTenantId: BUYER, inquirerUserId: 'usr_buyer', reads: [],
             closedAt: new Date('2026-09-20T10:00:00.000Z'),
             listing: { sellerTenantId: SELLER, commodity: 'wheat' },
         });
@@ -627,6 +711,10 @@ describe('pagination', () => {
             id: `th${String(i).padStart(3, '0')}`,
             listingId: 'lst1',
             inquirerTenantId: BUYER,
+            // #1298 — the inbox is per PERSON: the row carries its principal
+            // and the CALLER's own read pointer as a filtered relation.
+            inquirerUserId: 'usr_buyer',
+            reads: [] as Array<{ lastReadAt: Date }>,
             lastMessageAt: sameTimestamp
                 ? iso('2026-09-25T10:00:00.000Z')
                 : iso(`2026-09-25T10:${String(59 - i).padStart(2, '0')}:00.000Z`),
@@ -776,22 +864,53 @@ describe('your own message must not light up your own badge', () => {
         // lastMessageAt past your own pointer and your own thread reports
         // unread — a badge that is wrong, which is worse than no badge,
         // especially on a phone that renders it as a count.
+        //
+        // #1298 — the pointer moved is the SENDER's own row, not their side's
+        // column. The old form marked the thread read for every member of the
+        // sender's farm, so a colleague's badge cleared because you replied.
         await sendExchangeMessage(buyerCtx, 'th1', 'hello');
+
+        const where = mockPrisma.exchangeThreadRead.updateMany.mock.calls.at(-1)![0].where;
+        expect(where.userId).toBe(buyerCtx.userId);
+        expect(where.threadId).toBe('th1');
+
+        // The OTHER party's pointer must not move — that would mark your
+        // message read on their behalf. Now structural rather than asserted:
+        // every write is scoped to ONE userId, so there is no shape in which a
+        // send can touch someone else's. Pinned anyway, because "scoped by
+        // construction" is exactly the kind of claim that stops being true.
+        const writes = mockPrisma.exchangeThreadRead.updateMany.mock.calls
+            .concat(mockPrisma.exchangeThreadRead.create.mock.calls)
+            .map((c: unknown[]) => (c[0] as { where?: { userId?: string }; data?: { userId?: string } }))
+            .map((a) => a.where?.userId ?? a.data?.userId);
+        expect(writes.length).toBeGreaterThan(0);
+        expect(writes.every((u) => u === buyerCtx.userId)).toBe(true);
+
+        // And the thread row carries no read pointer any more.
         const [upd] = mockPrisma.exchangeThread.update.mock.calls.at(-1) as [
             { data: Record<string, unknown> },
         ];
-        expect(upd.data.inquirerLastReadAt).toBeInstanceOf(Date);
-        // The OTHER party's pointer must not move — that would mark your
-        // message read on their behalf.
+        expect(upd.data.inquirerLastReadAt).toBeUndefined();
         expect(upd.data.sellerLastReadAt).toBeUndefined();
     });
 
     it('the seller sending moves the seller pointer, not the buyer\'s', async () => {
+        // Was: assert the thread row's `sellerLastReadAt` moved and
+        // `inquirerLastReadAt` did not. Both columns left the write path with
+        // #1298 — they were ONE PER SIDE, so a send marked the thread read for
+        // every member of the sender's farm. The pointer is the sender's own
+        // row now.
         await sendExchangeMessage(sellerCtx, 'th1', 'yes, 40 tonnes');
+        const where = mockPrisma.exchangeThreadRead.updateMany.mock.calls.at(-1)![0].where;
+        expect(where.userId).toBe(sellerCtx.userId);
+        expect(where.threadId).toBe('th1');
+        // The thread row is still updated — for `lastMessageAt` — but carries
+        // no read pointer any more.
         const [upd] = mockPrisma.exchangeThread.update.mock.calls.at(-1) as [
             { data: Record<string, unknown> },
         ];
-        expect(upd.data.sellerLastReadAt).toBeInstanceOf(Date);
+        expect(upd.data.lastMessageAt).toBeInstanceOf(Date);
+        expect(upd.data.sellerLastReadAt).toBeUndefined();
         expect(upd.data.inquirerLastReadAt).toBeUndefined();
     });
 });
@@ -800,7 +919,7 @@ describe('your own message must not light up your own badge', () => {
 describe('the inbox row identifies its listing', () => {
     function row(over: Record<string, unknown> = {}) {
         return [{
-            id: 'th1', listingId: 'l1', inquirerTenantId: BUYER,
+            id: 'th1', listingId: 'l1', inquirerTenantId: BUYER, inquirerUserId: 'usr_buyer', reads: [],
             lastMessageAt: new Date('2026-09-25T10:00:00.000Z'),
             closedAt: null, sellerLastReadAt: null, inquirerLastReadAt: null,
             listing: {
