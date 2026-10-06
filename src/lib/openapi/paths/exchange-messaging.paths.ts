@@ -1,5 +1,10 @@
 /**
- * Exchange messaging — the conversation between the two parties to a listing.
+ * Борса messaging — the conversation between the two parties to a listing.
+ *
+ * The product noun for this surface is «Борса» everywhere a person reads it —
+ * nav, breadcrumbs, page heading, map legend. The TAG stays `Exchange
+ * messaging` (renaming a tag regroups somebody's generated SDK); the
+ * operation summaries carry the noun. See docs/nav-vocabulary.md.
  *
  * Documented at birth rather than added to the undocumented baseline, which
  * only shrinks. Three things here are not visible from the response shape and
@@ -104,7 +109,7 @@ export function registerExchangeMessagingPaths(registry: OpenAPIRegistry): void 
         method: 'post',
         path: '/api/t/{tenantSlug}/exchange/listings/{listingId}/thread',
         operationId: 'openExchangeThread',
-        summary: 'Open the conversation for a listing',
+        summary: 'Борса — open the conversation for a listing',
         description:
             '**Idempotent.** A second call returns the thread that already exists rather ' +
             'than creating another, so a client may call it on every "message seller" tap ' +
@@ -142,7 +147,7 @@ export function registerExchangeMessagingPaths(registry: OpenAPIRegistry): void 
         method: 'get',
         path: '/api/t/{tenantSlug}/exchange/threads',
         operationId: 'listExchangeThreads',
-        summary: "The caller's conversations",
+        summary: "Борса — the caller's conversations",
         description:
             'Most recently active first. Deliberately NOT ETagged: an inbox whose purpose ' +
             'is unread state should not be served from a cache.',
@@ -176,7 +181,7 @@ export function registerExchangeMessagingPaths(registry: OpenAPIRegistry): void 
         method: 'get',
         path: '/api/t/{tenantSlug}/exchange/threads/{threadId}',
         operationId: 'getExchangeThread',
-        summary: 'A conversation and its messages',
+        summary: 'Борса — a conversation and its messages',
         description:
             'Messages come back OLDEST-FIRST (reading order), but are selected newest-first ' +
             'and reversed — so a long thread returns its END, not its beginning.\n\n' +
@@ -202,7 +207,7 @@ export function registerExchangeMessagingPaths(registry: OpenAPIRegistry): void 
         method: 'post',
         path: '/api/t/{tenantSlug}/exchange/threads/{threadId}/messages',
         operationId: 'sendExchangeMessage',
-        summary: 'Send a message',
+        summary: 'Борса — send a message',
         description:
             'The body is HTML-sanitised on write and then length-checked, in that order — ' +
             'so markup cannot pad a message past the limit.\n\n' +
@@ -274,7 +279,7 @@ export function registerExchangeMessagingPaths(registry: OpenAPIRegistry): void 
         method: 'post',
         path: '/api/t/{tenantSlug}/exchange/threads/{threadId}/read',
         operationId: 'markExchangeThreadRead',
-        summary: "Move the caller's read pointer to now",
+        summary: "Борса — move the caller's read pointer to now",
         description:
             '**Monotonic.** Safe to fire from two tabs, out of order, or repeatedly — the ' +
             'pointer never travels backwards. That matters because an older timestamp ' +
@@ -293,7 +298,7 @@ export function registerExchangeMessagingPaths(registry: OpenAPIRegistry): void 
         method: 'post',
         path: '/api/t/{tenantSlug}/exchange/threads/{threadId}/close',
         operationId: 'closeExchangeThread',
-        summary: 'Close a conversation',
+        summary: 'Борса — close a conversation',
         description:
             '**Either party may close, and closing does not lock the thread.** Sending a ' +
             'message reopens it, which is why there is no reopen endpoint to pair with this ' +
@@ -317,7 +322,7 @@ export function registerExchangeMessagingPaths(registry: OpenAPIRegistry): void 
         method: 'post',
         path: '/api/t/{tenantSlug}/exchange/threads/{threadId}/block',
         operationId: 'blockExchangeParty',
-        summary: 'Refuse further contact from the other party',
+        summary: 'Борса — refuse further contact from the other party',
         description:
             '**Seller only.** The listing owner decides who may keep writing to them. There ' +
             'is no buyer-side mirror: a buyer can simply stop opening threads, and closing ' +
@@ -341,7 +346,7 @@ export function registerExchangeMessagingPaths(registry: OpenAPIRegistry): void 
         method: 'delete',
         path: '/api/t/{tenantSlug}/exchange/threads/{threadId}/block',
         operationId: 'unblockExchangeParty',
-        summary: 'Lift a block',
+        summary: 'Борса — lift a block',
         description:
             'Seller only, and idempotent — lifting a block that is not there is not an ' +
             'error, because the end state is what is asserted rather than the transition.',
@@ -358,7 +363,7 @@ export function registerExchangeMessagingPaths(registry: OpenAPIRegistry): void 
         method: 'delete',
         path: '/api/t/{tenantSlug}/exchange/messages/{messageId}',
         operationId: 'deleteExchangeMessage',
-        summary: 'Retract a message you sent',
+        summary: 'Борса — retract a message you sent',
         description:
             'A TOMBSTONE, not a removal: the message keeps its place in the other party\'s ' +
             'scrollback with a null body. Only the sender may retract; another party gets ' +

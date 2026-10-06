@@ -9,9 +9,17 @@
  *   - Switcher is mounted inside the org sidebar header so first-paint
  *     of every org page surfaces the context-switch affordance.
  *   - New-tenant page exists, gates on canManageTenants, posts to
- *     /api/org/{slug}/tenants, and includes a framework picker.
+ *     /api/org/{slug}/tenants, and lands on the new tenant's dashboard.
  *   - Form validation tightens the slug to the API contract regex
  *     before sending — fast feedback without a round-trip.
+ *
+ * P2.6 removed a third field. The form carried a "Starting framework"
+ * radio group (ISO/IEC 27001, NIS2, ISO 9001, ISO 28000, ISO 39001) whose
+ * non-default options pushed `/t/<slug>/frameworks?install=…` — a route
+ * GRC teardown phase 2 deleted, so five of six options sent a brand-new
+ * tenant to a 404. The assertions below now pin the ABSENCE of that
+ * picker and of that redirect, because re-adding either is the
+ * regression.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -149,29 +157,38 @@ describe('Epic O-4 — new-tenant page structural contract', () => {
         expect(src).toMatch(/from\s+['"]@\/components\/ui\/button['"]/);
     });
 
-    it('renders all three spec fields (name, slug, framework)', () => {
+    it('renders both spec fields (name, slug) and no framework picker', () => {
         const src = read(NEW_TENANT_FORM);
         expect(src).toContain('org-new-tenant-name');
         expect(src).toContain('org-new-tenant-slug');
-        expect(src).toContain('org-new-tenant-framework-group');
+        expect(src).not.toContain('org-new-tenant-framework');
+        expect(src).not.toMatch(/FRAMEWORK_OPTIONS/);
     });
 
     it('POSTs to /api/org/{slug}/tenants with name + slug only (matches API contract)', () => {
         const src = read(NEW_TENANT_FORM);
         expect(src).toMatch(/`\/api\/org\/\$\{orgSlug\}\/tenants`/);
-        // The request body uses the API's two fields. Framework lives
-        // client-side and drives the post-creation redirect target only.
+        // The request body uses the API's two fields — the only two the
+        // form collects.
         expect(src).toMatch(
             /body:\s*JSON\.stringify\(\s*\{\s*name:[^,]+,\s*slug:[^}]+\}\s*\)/,
         );
     });
 
-    it('redirects to the new tenant frameworks page when a framework is picked, otherwise dashboard', () => {
+    it('lands on the new tenant dashboard and nowhere else', () => {
         const src = read(NEW_TENANT_FORM);
-        expect(src).toMatch(/router\.push\(`\/t\/\$\{newSlug\}\/dashboard`\)/);
-        expect(src).toMatch(
-            /router\.push\(`\/t\/\$\{newSlug\}\/frameworks\?install=\$\{framework\}`\)/,
-        );
+        const pushes = [...src.matchAll(/router\.push\(([^)]*)\)/g)].map((m) => m[1]);
+        // Exactly one navigation, and it is the dashboard. A second
+        // `router.push` is how the `/frameworks?install=` 404 got in.
+        expect(pushes).toEqual(['`/t/${newSlug}/dashboard`']);
+        // Belt-and-braces on the route itself — but over CODE, not prose.
+        // The file's docblock names `/frameworks` on purpose, to say why the
+        // picker is gone, so a whole-file `not.toContain` fails on the very
+        // explanation it is meant to protect. (It did: that is this
+        // assertion's own first red.)
+        const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+        expect(code).toMatch(/router\.push/); // the strip did not eat everything
+        expect(code).not.toContain('/frameworks');
     });
 
     it('validates the slug with the API contract regex before sending', () => {

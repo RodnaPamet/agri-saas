@@ -39,10 +39,12 @@ const EXEMPT_FILES = new Set<string>([
     'src/components/ui/radio-group.tsx',
     // TODO(Elevation PR-8 follow-up): migrate the 3 fieldset/legend
     // blocks in MembersTable to <RadioGroup>. The blocks
-    // (org-add-member-role-group, change-role, invite-role) follow
-    // the same shape as the NewTenantForm framework picker that
-    // PR-8 already migrated. Held out of this PR to keep the diff
-    // bounded; a later PR rewires them.
+    // (org-add-member-role-group, change-role, invite-role) all follow
+    // one shape: a card-per-option radio list. PR-8 migrated the
+    // NewTenantForm framework picker as the reference, and P2.6 deleted
+    // that picker (its redirect target was a GRC route the teardown
+    // removed) — so the reference is now <RadioGroup> itself. Held out
+    // of this PR to keep the diff bounded; a later PR rewires them.
     'src/app/org/[orgSlug]/(app)/members/MembersTable.tsx',
 ]);
 

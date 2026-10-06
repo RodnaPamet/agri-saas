@@ -114,7 +114,11 @@ const UNTRANSLATED_ALLOWLIST = new Map<string, string>([
     ['admin.sso.scopesPlaceholder', 'OAuth scope tokens — not translatable'],
     ['org.newTenant.namePlaceholder', 'proper-noun example placeholder'],
     // Deliberately bilingual (BG / EN) headings.
-    ['exchange.client.heading', 'deliberately bilingual: "Борса / Exchange"'],
+    // `exchange.client.heading` left this list in P2.6: the Борса page
+    // heading was "Борса / Exchange" in BOTH locales, which is a third
+    // spelling of a surface the nav, the breadcrumbs and the map all call
+    // «Борса». It is now «Борса» in bg and "Exchange" in en — see
+    // docs/nav-vocabulary.md.
     ['locations.spray.techniqueLabel', 'deliberately bilingual heading (BG / EN)'],
     // Units / example content already locale-neutral or in Bulgarian.
     ['grain.yield.colTPerHa', 'unit "t / ha" — identical across locales'],
