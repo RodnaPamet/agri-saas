@@ -26,6 +26,7 @@ import { registerExchangeListingPaths } from './exchange-listings.paths';
 import { registerCatalogPaths } from './catalog.paths';
 import { registerAuthNativePaths } from './auth-native.paths';
 import { registerAuthPublicPaths } from './auth-public.paths';
+import { registerPublicRegistryPaths } from './public-registry.paths';
 import { registerNotificationPaths } from './notifications.paths';
 import { registerPlanningPaths } from './planning.paths';
 import { registerInventoryPaths } from './inventory.paths';
@@ -58,6 +59,7 @@ export function registerAllPaths(registry: OpenAPIRegistry): void {
     // What a client reads BEFORE it holds a credential, as opposed to the
     // handshake above that obtains one.
     registerAuthPublicPaths(registry);
+    registerPublicRegistryPaths(registry);
     registerNotificationPaths(registry);
     registerPlanningPaths(registry);
     registerInventoryPaths(registry);
