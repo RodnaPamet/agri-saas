@@ -3052,7 +3052,8 @@
         "accountSecurity": "Account security",
         "offlineDiagnostics": "Offline diagnostics",
         "signOut": "Sign out",
-        "accountMenuFor": "Account menu for {name}"
+        "accountMenuFor": "Account menu for {name}",
+        "accountProfile": "Profile"
     },
     "switcher": {
         "switchContext": "Switch context",
@@ -5554,6 +5555,13 @@
             "errMismatch": "The two new passwords do not match.",
             "errTooShort": "Your new password must be at least 8 characters long.",
             "errSameAsCurrent": "Your new password must be different from your current password."
+        },
+        "nav": {
+            "title": "Your account",
+            "label": "Account sections",
+            "back": "Back to workspaces",
+            "profile": "Profile",
+            "security": "Security"
         }
     },
     "auth": {
@@ -5609,7 +5617,8 @@
         "yourAccount": "your account",
         "signedInAs": "You are signed in as <b>{email}</b>.",
         "body": "You do not have access to any workspace yet. Ask your admin to invite you, then sign in again with the same email address — the invitation email is optional.",
-        "signOut": "Sign out"
+        "signOut": "Sign out",
+        "accountLink": "Account settings"
     },
     "notFound": {
         "title": "Page not found",
