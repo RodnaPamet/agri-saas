@@ -14,6 +14,7 @@ import { createFarmTenant } from '@/lib/security/tenant-key-manager';
 import { signToken } from '@/lib/auth';
 import { issueEmailVerification } from '@/lib/auth/email-verification';
 import { hashPassword, validatePasswordPolicy } from '@/lib/auth/passwords';
+import { toSlug, MAX_SLUG_LENGTH } from '@/lib/bg-transliterate';
 import { checkPasswordAgainstHIBP } from '@/lib/security/password-check';
 import { hashForLookup, hashForLookupCandidates } from '@/lib/security/encryption';
 import { withValidatedBody } from '@/lib/validation/route';
@@ -95,15 +96,31 @@ async function handleRegister(body: any) {
         return jsonResponse({ error: 'Email already registered' }, { status: 409 });
     }
 
-    // Slug is derived from the org name plus a base36 timestamp so two
-    // orgs with the same name don't collide.
-    const slug =
-        String(orgName)
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, '-')
-            .replace(/(^-|-$)/g, '') +
-        '-' +
-        Date.now().toString(36);
+    // Slug from the farm name, transliterated, plus a base36 timestamp.
+    //
+    // The previous derivation stripped everything outside [a-z0-9], which for a
+    // Bulgarian product meant it stripped the ENTIRE name: «ЗК Победа» came out
+    // as `-m2x3k9` — a leading hyphen and a timestamp, with no trace of the
+    // farm. Only Latin names survived it, and almost no real name here is
+    // Latin. `toSlug` transliterates first (P3.3), so «ЗК Победа» is
+    // `zk-pobeda-m2x3k9`.
+    //
+    // The timestamp stays. `Tenant.slug` is `@unique`, and a cross-tenant
+    // collision cannot be detected by a tenant-scoped read beforehand — RLS
+    // returns zero rows precisely when the incumbent belongs to another farm —
+    // so the suffix is what keeps two farms of the same name from racing into
+    // the constraint.
+    //
+    // `toSlug` returns null when nothing usable survives (an all-punctuation
+    // name); it deliberately does not invent a fallback, because the caller is
+    // the one that knows what to do. Here that is `farm`, which with the
+    // suffix is still unique and still honest about being generated.
+    const SUFFIX = Date.now().toString(36);
+    const base = (toSlug(String(orgName)) ?? 'farm').slice(
+        0,
+        MAX_SLUG_LENGTH - SUFFIX.length - 1,
+    );
+    const slug = `${base}-${SUFFIX}`;
 
     // Hash BEFORE the transaction. bcrypt at cost 12 costs hundreds of
     // milliseconds; holding a transaction open across it pins a pooled

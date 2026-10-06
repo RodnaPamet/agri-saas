@@ -21,6 +21,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { collectTrackedFiles } from '../helpers/collect-files';
+import { toSlug } from '@/lib/bg-transliterate';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -78,6 +79,35 @@ describe('tenant creation is converged on one helper', () => {
                 ),
             );
         expect(offenders).toEqual([]);
+    });
+});
+
+describe('the registration slug keeps the farm name', () => {
+    const REGISTER = 'src/app/api/auth/register/route.ts';
+
+    it('derives the slug through toSlug, not a bare [a-z0-9] strip', () => {
+        // The defect this pins was LIVE, not hypothetical. The old derivation
+        // was `String(orgName).toLowerCase().replace(/[^a-z0-9]+/g, '-')`,
+        // which for a Bulgarian product strips the ENTIRE name — every
+        // Cyrillic character is outside [a-z0-9]. «ЗК Победа» came out as
+        // `-m2x3k9`: a leading hyphen and a timestamp, with no trace of the
+        // farm. Only Latin names survived, and almost no real name here is
+        // Latin.
+        //
+        // A transliteration library that nothing calls fixes nothing, which is
+        // why this asserts the CALL rather than the library's existence.
+        const src = fs.readFileSync(path.join(ROOT, REGISTER), 'utf8');
+        const stripped = code(src);
+        expect(stripped).toMatch(/toSlug\(/);
+        expect(stripped).not.toMatch(/orgName[\s\S]{0,120}\[\^a-z0-9\]/);
+    });
+
+    it('…and toSlug actually keeps a Cyrillic name', () => {
+        // The control for the assertion above: proving the route CALLS it is
+        // worth nothing if the function itself drops Cyrillic. Both halves, or
+        // neither means anything.
+        expect(toSlug('ЗК Победа')).toBe('zk-pobeda');
+        expect(toSlug('Агро Търговище ЕООД')).toBe('agro-targovishte-eood');
     });
 });
 
