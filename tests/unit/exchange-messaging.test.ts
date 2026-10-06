@@ -412,7 +412,12 @@ describe('sending', () => {
     });
 
     it('refuses a tenant that is party to neither side', async () => {
-        await expect(sendExchangeMessage(ctxFor('tnt_stranger'), 'th1', 'hi'))
+        await expect(
+            // A stranger FARM and a stranger PERSON: under #1298 either alone
+            // would do, and naming both keeps the case about being party to
+            // neither side rather than about which half was wrong.
+            sendExchangeMessage(ctxFor('tnt_stranger', 'usr_stranger'), 'th1', 'hi'),
+        )
             .rejects.toThrow(/not a party/i);
     });
 });
