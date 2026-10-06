@@ -315,6 +315,13 @@ export const ALL_SCHEDULES: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
+        name: 'unverified-account-sweep',
+        pattern: '30 4 * * *',    // daily at 04:30 UTC, before the other sweeps
+        description:
+            'Delete accounts that never verified their email after a 7-day grace period. Skips any account holding a farm or org membership — see the job docblock.',
+        defaultPayload: {},
+    },
+    {
         name: 'exchange-expiry-sweep',
         pattern: '0 5 * * *',     // daily at 05:00 UTC
         description:
