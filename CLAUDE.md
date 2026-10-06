@@ -3184,6 +3184,38 @@ Use semantic token classes (`bg-bg-default`, `text-content-muted`,
 and `<EmptyState>` components instead of legacy `.btn` / `.badge` CSS
 classes. See `docs/token-cheatsheet.md` and `docs/ui-buttons.md`.
 
+**«Слънце» inherits from LIGHT, not from dark, and there is no
+`data-theme="sunlight"`.** `attributesFor('sunlight')`
+(`src/lib/theme/theme-cookie.ts`) returns `{ theme: 'light', contrast:
+'high' }`, so the element carries `data-theme="light"` AND
+`data-contrast="high"` together. Both selectors are single attribute
+selectors, so specificity ties and SOURCE ORDER decides: `[data-contrast="high"]`
+is declared after `[data-theme="light"]` in `tokens.css`, so it wins for the 25
+tokens it declares and LIGHT supplies the remaining 105. Writing
+`data-theme="sunlight"` selects no palette at all.
+
+Both P2.3 artefacts resolved it against dark instead —
+`scripts/generate-tokens.mjs` and
+`tests/guards/token-contrast-wcag.test.ts` — and because the generator has no
+cascade, that shipped **58 wrong colours** into `AgrentTheme.highContrast`
+for iOS (P2.8's consumer): «Слънце» on the web showed the cream light palette
+while Swift returned the dark forest greens. P2.9 fixed both; the chain lives
+in `CASCADE` in each file, and the guard cross-checks its own chain against
+the generator's COMMITTED output rather than against a second copy of the
+constant. A fourth theme adds a `CASCADE` entry — do not reintroduce a
+`?? dark` default, which is wrong for any theme that is not a sibling of light.
+
+**Rollback of a colour IS a revert of `design/tokens.json`**, and that is
+measured rather than asserted: all 178 colour-literal custom-property
+declarations under `src/**/*.css` sit in `src/styles/tokens.css` and are
+generated from the JSON (`npm run tokens:check`, CI `Lint` job); the 21 in
+`globals.css` are `var(--token)` aliases carrying no values, and the only
+hand-authored declarations in `tokens.css` are the three
+`--duration-*` reduced-motion overrides inside the `@media` block, which the
+generator deliberately skips via `themeOfLine()`. A NEW colour declared in
+another stylesheet would escape that rollback silently, so
+`tests/guards/tokens-generated-in-sync.test.ts` fails on one.
+
 ### Epic 52 — DataTable Platform
 
 Every list page must use `<DataTable>` from `@/components/ui/table`.

@@ -64,198 +64,22 @@
  *      idle).
  *   4. Call `runA11yScan(page, label)` — the helper handles the
  *      exclusion list, the assertion, and the actionable report.
+ *
+ * ── P2.9: the scan helper moved, the surfaces did not ──
+ *
+ * `runA11yScan` now lives in `./a11y-scan`, shared with
+ * `tests/e2e/mobile/a11y-mobile.spec.ts`. This spec runs ONLY on the
+ * `chromium` project (1280px), because `playwright.config.ts` gives the two
+ * phone projects `grep: /@mobile/` — so for as long as this file has existed,
+ * ZERO of its surfaces had ever been scanned at a phone viewport. Tagging
+ * THIS file `@mobile` would have been the wrong fix: the desktop project's
+ * `grepInvert: /@mobile/` would then have excluded it, trading one blind
+ * viewport for the other.
  */
-import { test, expect, type Page } from '@playwright/test';
-import AxeBuilder from '@axe-core/playwright';
+import { test, expect } from '@playwright/test';
 import { safeGoto, loginAndGetTenant } from './e2e-utils';
+import { runA11yScan } from './a11y-scan';
 
-// ─── Helpers ─────────────────────────────────────────────────────
-
-interface AxeViolationNode {
-    target: string[];
-    failureSummary?: string;
-    html?: string;
-}
-interface AxeViolation {
-    id: string;
-    impact: 'minor' | 'moderate' | 'serious' | 'critical' | null;
-    description: string;
-    help: string;
-    helpUrl: string;
-    nodes: AxeViolationNode[];
-}
-
-const SEVERITY_GATE: Array<NonNullable<AxeViolation['impact']>> = [
-    'serious',
-    'critical',
-];
-
-/**
- * Run axe against the current page. Logs all violations grouped by
- * impact, then asserts no `serious` or `critical` issues remain.
- */
-async function runA11yScan(page: Page, surfaceLabel: string) {
-    // ThemeProvider mounts after hydration: SSR seeds `data-theme="dark"`,
-    // then a useEffect flips to whichever palette `prefers-color-scheme`
-    // resolves to (Playwright's default is `light`). If axe runs during
-    // that transition window, it samples a mix of dark-theme and
-    // light-theme tokens against the in-flight cream backgrounds and
-    // produces phantom contrast failures (e.g. `#737372` foregrounds
-    // that match neither documented palette). Wait until the theme
-    // attribute matches the emulated colorScheme so the scan runs on a
-    // settled DOM.
-    // Navigation settle, FIRST. Some surfaces arrive via a redirect —
-    // `/no-tenant` is `redirect('/login')` when unauthenticated
-    // (src/app/no-tenant/page.tsx), which is why its axe report is
-    // labelled `no-tenant` but carries a `/login` URL. A scan that
-    // begins while the page is still moving samples one document and
-    // asserts about another, and the theme guarantee established below
-    // is discarded by the navigation that follows it. Settle the
-    // navigation before establishing anything else.
-    await page.waitForLoadState('domcontentloaded').catch(() => {
-        /* already settled, or torn down — the scan will report either way */
-    });
-
-    // Theme settle. Under CI load (multiple workers, dev server
-    // compiling on demand) the post-hydration ThemeProvider effect
-    // can run later than 10 s — the previous timeout caused
-    // intermittent flakes on the coverage-page scan in particular,
-    // which has heavy compute of its own. Bump to 20 s and tolerate
-    // a no-show: if the attribute genuinely never settles, axe
-    // still produces a reproducible report against whatever theme
-    // IS in the DOM, which is more useful than a hard error.
-    await page
-        .waitForFunction(
-            () => {
-                const want = matchMedia('(prefers-color-scheme: dark)').matches
-                    ? 'dark'
-                    : 'light';
-                return (
-                    document.documentElement.getAttribute('data-theme') === want
-                );
-            },
-            undefined,
-            { timeout: 20_000 },
-        )
-        .catch(() => {
-            // Settle window expired — under heavy CI load, or a slow /
-            // failed hydration (a stray ChunkLoadError blocking the
-            // ThemeProvider effect), `data-theme` can stay on the
-            // SSR-seeded value past 20 s.
-            //
-            // Nothing is done about it HERE any more. #266 forced the
-            // resolved theme at this point, which fixed the timeout path
-            // and only the timeout path. The force now runs
-            // unconditionally further down, immediately before the scan,
-            // so this branch exists purely to tolerate the no-show:
-            // a theme that never settles is no longer a distinct case.
-        });
-
-    // Animation settle. Entry animations (R17's dashboard rise-in,
-    // card fade-ins) leave elements mid-transition: axe then samples
-    // a half-faded foreground against the background and reports a
-    // phantom `color-contrast` failure — the `#6f6f6e` / `#777776`
-    // greys that match no documented token, varying run-to-run with
-    // exactly the timing-flake signature. Zero out every animation /
-    // transition so each element snaps to its settled, fully-opaque
-    // colour before the scan; the brief repaint pause lets the
-    // recalculated styles land.
-    await page.addStyleTag({
-        content: `*, *::before, *::after {
-            animation-duration: 0s !important;
-            animation-delay: 0s !important;
-            transition-duration: 0s !important;
-            transition-delay: 0s !important;
-        }`,
-    });
-    await page.waitForTimeout(150);
-
-    // Theme force — UNCONDITIONAL, and deliberately the LAST thing before
-    // the scan.
-    //
-    // #266 introduced this force but placed it inside the settle's
-    // `.catch()`, so it fired only when the 20 s wait TIMED OUT. That
-    // covers "the theme never settles" and leaves "the theme settles, and
-    // then something re-establishes it" wide open — which is the failure
-    // that survived: a wait that SUCCEEDS forces nothing, and any later
-    // client-side navigation or re-render can put `data-theme` back to the
-    // SSR-seeded value with the scan still to come.
-    //
-    // Running it here is idempotent by construction: the value written is
-    // the same one the settle above waits FOR, so on the happy path this
-    // is a no-op assignment. It only does work in the case that used to
-    // slip through. Placing it after the animation/transition zeroing
-    // matters too — with transitions live, re-asserting the attribute
-    // would itself start a colour transition for axe to sample mid-flight.
-    await page
-        .evaluate(() => {
-            const want = matchMedia('(prefers-color-scheme: dark)').matches
-                ? 'dark'
-                : 'light';
-            if (document.documentElement.getAttribute('data-theme') !== want) {
-                document.documentElement.setAttribute('data-theme', want);
-            }
-        })
-        .catch(() => {
-            /* context destroyed by a late navigation — axe reports on what is there */
-        });
-
-    const results = await new AxeBuilder({ page })
-        .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
-        // See the docblock for why these are disabled.
-        .disableRules(['region'])
-        .analyze();
-
-    const violations = results.violations as unknown as AxeViolation[];
-
-    const byImpact = new Map<string, AxeViolation[]>();
-    for (const v of violations) {
-        const k = v.impact ?? 'unknown';
-        const arr = byImpact.get(k) ?? [];
-        arr.push(v);
-        byImpact.set(k, arr);
-    }
-
-    if (violations.length > 0) {
-        const lines: string[] = [
-            '',
-            `── axe report — ${surfaceLabel} (${page.url()}) ──`,
-            `   total violations: ${violations.length}`,
-        ];
-        for (const sev of ['critical', 'serious', 'moderate', 'minor', 'unknown']) {
-            const items = byImpact.get(sev) ?? [];
-            if (items.length === 0) continue;
-            lines.push(`   ${sev.padEnd(9)}: ${items.length}`);
-        }
-        for (const sev of ['critical', 'serious', 'moderate', 'minor', 'unknown']) {
-            const items = byImpact.get(sev) ?? [];
-            for (const v of items) {
-                lines.push('');
-                lines.push(`   [${sev}] ${v.id} — ${v.help}`);
-                lines.push(`       ${v.helpUrl}`);
-                for (const n of v.nodes.slice(0, 3)) {
-                    lines.push(`       node: ${n.target.join(' › ')}`);
-                }
-                if (v.nodes.length > 3) {
-                    lines.push(`       … and ${v.nodes.length - 3} more node(s)`);
-                }
-            }
-        }
-
-        console.log(lines.join('\n'));
-    }
-
-    // Hard fail on the severity gate; everything else is logged.
-    const gating = violations.filter(
-        (v) => v.impact !== null && SEVERITY_GATE.includes(v.impact),
-    );
-
-    expect(
-        gating,
-        `Found ${gating.length} ${SEVERITY_GATE.join('/')} accessibility violation(s) on ${surfaceLabel}. ` +
-            `See console output above for rule IDs, help URLs, and DOM nodes.`,
-    ).toEqual([]);
-}
 
 // ─── Unauthenticated surfaces ────────────────────────────────────
 
