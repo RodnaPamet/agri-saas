@@ -59,6 +59,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { collectTrackedFiles } from '../helpers/collect-files';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -70,21 +71,30 @@ function pkg(): {
     return JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 }
 
-/** Every tracked source file — the population a "nothing imports it" claim ranges over. */
+/**
+ * Every tracked source file — the population the "nothing imports it" claim
+ * ranges over.
+ *
+ * `collectTrackedFiles` rather than a hand-rolled walk: it refuses an empty
+ * result and names a renamed root instead of silently contributing zero, which
+ * is the failure mode this very guard would otherwise have. A hand-rolled
+ * collector can be gutted to `return []` with every assertion built on it still
+ * green — measured at 81% of the guards an automated sweep could audit
+ * (`tests/guards/file-collection-is-not-silently-empty.test.ts`).
+ *
+ * One consequence worth knowing before you trust a local run: it collects
+ * TRACKED files (`git ls-files`), so a brand-new, not-yet-added file importing
+ * `mammoth` passes here and fails in CI, where the checkout is tracked by
+ * construction. Measured, not assumed — the first mutation proof of this guard
+ * used an untracked probe and stayed green, which is the same shape of false
+ * negative the guard itself exists to prevent.
+ */
 function sourceFiles(): string[] {
-    const out: string[] = [];
-    const walk = (rel: string) => {
-        const abs = path.join(ROOT, rel);
-        if (!fs.existsSync(abs)) return;
-        for (const e of fs.readdirSync(abs, { withFileTypes: true })) {
-            if (e.name === 'node_modules' || e.name.startsWith('.')) continue;
-            const r = path.join(rel, e.name);
-            if (e.isDirectory()) walk(r);
-            else if (/\.(ts|tsx|js|mjs|cjs)$/.test(e.name)) out.push(r);
-        }
-    };
-    for (const d of ['src', 'scripts', 'tests', 'prisma']) walk(d);
-    return out;
+    return collectTrackedFiles({
+        roots: ['src', 'scripts', 'tests', 'prisma'],
+        extensions: ['.ts', '.tsx', '.js', '.mjs', '.cjs'],
+        floor: 500,
+    });
 }
 
 describe('#1315 — the two advisories stay fixed', () => {
@@ -97,13 +107,14 @@ describe('#1315 — the two advisories stay fixed', () => {
     it('and nothing imports it — the claim that made removal safe', () => {
         // Asserted over a DERIVED population rather than asserted in prose, and
         // the floor below is what stops an empty walk reading as "clean".
+        // `collectTrackedFiles` carries the floor and throws on an empty
+        // result, so the population cannot silently collapse to nothing.
         const files = sourceFiles();
-        expect(files.length).toBeGreaterThan(500);
-
-        const importers = files.filter((f) =>
-            /\bmammoth\b/.test(fs.readFileSync(path.join(ROOT, f), 'utf8')),
-        );
-        expect(importers.filter((f) => f !== __filename.replace(ROOT + path.sep, ''))).toEqual([]);
+        const importers = files
+            .filter((abs) => /\bmammoth\b/.test(fs.readFileSync(abs, 'utf8')))
+            .filter((abs) => abs !== __filename)
+            .map((abs) => path.relative(ROOT, abs));
+        expect(importers).toEqual([]);
     });
 
     it('source-map-js is pinned at or above the patched 1.2.2', () => {
