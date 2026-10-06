@@ -20,17 +20,14 @@ export default async function AccountProfilePage() {
     const t = await getTranslations('account.profile');
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-bg-page p-4">
-            {/* Background effects — matches /account/security. */}
-            <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                <div className="absolute -top-40 -right-40 w-80 h-80 rounded-full bg-[var(--brand-default)]/10 blur-3xl" />
-                <div className="absolute -bottom-40 -left-40 w-80 h-80 rounded-full bg-[var(--brand-emphasis)]/10 blur-3xl" />
+        <div className="w-full max-w-md">
+            {/* P2.7: the full-screen centred wrapper and its background
+                effects moved out when this page gained a shell. The shell
+                owns the <h1> for the area, so the section heading steps down
+                to level 2 rather than competing with it. */}
+            <div className="mb-6">
+                <Heading level={2}>{t('pageTitle')}</Heading>
             </div>
-
-            <div className="relative w-full max-w-md">
-                <div className="text-center mb-8 animate-fadeIn">
-                    <Heading level={1}>{t('pageTitle')}</Heading>
-                </div>
 
                 <AvatarUploadField
                     name={session.user.name ?? null}
@@ -41,7 +38,6 @@ export default async function AccountProfilePage() {
                 <NameEditField initialName={session.user.name ?? null} />
 
                 <FeedbackPrefsCard />
-            </div>
         </div>
     );
 }

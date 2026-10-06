@@ -207,7 +207,13 @@ const ROOT = path.resolve(__dirname, '../..');
 // closed sheet, an iOS-cancelled touch. All five gesture rules are
 // mutation-proved, each reddening exactly one case.
 //
-const RENDERED_TEST_FLOOR = 243;
+// 243 → 244: `account-nav.test.tsx` (P2.7) — the account shell's section
+// nav. The shell exists because /account/profile and /account/security were
+// two unrelated full-screen pages with no way between them; this nav is that
+// way, so both sections present, aria-current rather than colour alone, and
+// 44px targets are the properties worth holding.
+//
+const RENDERED_TEST_FLOOR = 244;
 // Lowered 55 → 54 in the risk-quantification uproot (2026-08-08).
 // `ai-risk-assessment.spec.ts` and `new-risk-modal.spec.ts` were both
 // wholly about the deleted register; the specs that merely REFERENCED a

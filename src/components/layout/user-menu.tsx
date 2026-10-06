@@ -37,6 +37,7 @@ import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { signOutAndPurge } from '@/lib/auth/sign-out';
 import { LogOut, ShieldCheck } from 'lucide-react';
+import { CircleUser } from '@/components/ui/icons/nucleo/circle-user';
 // Nucleo is the canonical icon family; `no-lucide.test.ts` allowlists this
 // file's EXISTING lucide imports as migration debt, so a NEW icon takes the
 // canonical family rather than growing the residue.
@@ -181,6 +182,20 @@ export function UserMenu({
                     </div>
 
                     <Popover.Separator />
+
+                    {/* Account profile — P2.7. This link did not exist:
+                        the menu offered only security, so `/account/profile`
+                        was reachable by typing the URL and no other way. */}
+                    <Link
+                        href="/account/profile"
+                        role="menuitem"
+                        data-testid="user-menu-account-profile"
+                        onClick={close}
+                        className={MENU_ROW_CLASS}
+                    >
+                        <CircleUser className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+                        <span>{t('accountProfile')}</span>
+                    </Link>
 
                     {/* Account security — navigation to the
                         password-change surface. */}
