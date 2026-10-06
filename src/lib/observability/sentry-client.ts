@@ -20,6 +20,7 @@
  * this adds ONLY the client error channel, not a second copy of those.
  */
 import * as Sentry from '@sentry/nextjs';
+import { SENTRY_DATA_COLLECTION } from './sentry-data-collection';
 
 let _clientInitialized = false;
 
@@ -47,7 +48,12 @@ export function initClientSentry(dsn: string | undefined, opts: ClientSentryOpti
         // On the BROWSER side the default is what attaches the visitor's IP to
         // every event, so an inherited default is the difference between
         // knowing an error happened and recording who it happened to.
-        sendDefaultPii: false,
+        // #1311 — same translation as the server init, from one shared
+        // constant so the two sides cannot drift. Sentry 11 removed
+        // `sendDefaultPii`; `dataCollection`'s fields all default to TRUE,
+        // and on the browser side that default is what attaches the
+        // visitor's identity to every event.
+        dataCollection: SENTRY_DATA_COLLECTION,
         environment: opts.environment || process.env.NODE_ENV || 'production',
         release: opts.release,
         // Errors always on; traces low; NO session replay (see file header).
