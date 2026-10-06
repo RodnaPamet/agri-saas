@@ -4222,7 +4222,13 @@
           "senderTenantId": {
             "type": "string"
           },
+          "senderUserId": {
+            "type": "string"
+          },
           "mine": {
+            "type": "boolean"
+          },
+          "fromMyFarm": {
             "type": "boolean"
           },
           "body": {
@@ -4241,12 +4247,14 @@
         "required": [
           "id",
           "senderTenantId",
+          "senderUserId",
           "mine",
+          "fromMyFarm",
           "body",
           "deleted",
           "createdAt"
         ],
-        "description": "Use `mine` to decide which side of the thread to render a bubble on. Do NOT compare `senderTenantId` to your own tenant — the server already knows which party is asking and answers for it.\n\nA deleted message keeps its PLACE: `deleted: true` with a null `body`. Render it as removed rather than dropping it, or the other party's scrollback develops a hole where something they read used to be."
+        "description": "Use `mine` to decide which side of the thread to render a bubble on. Do NOT compare `senderTenantId` to your own tenant — the server already knows which party is asking and answers for it.\n\n`mine` means SENT BY YOU, the person — not by your farm (#1298). Three speakers are therefore possible on a thread, and a client needs all three: `mine: true` is you; `fromMyFarm: true` is a COLLEAGUE at your own farm (the seller admin answering for the listing's creator) and wants its own speaker label rather than being drawn as either side; both false is the counterparty. `fromMyFarm` is returned rather than derived from the two ids so every client does not reimplement the same comparison.\n\nA deleted message keeps its PLACE: `deleted: true` with a null `body`. Render it as removed rather than dropping it, or the other party's scrollback develops a hole where something they read used to be."
       },
       "ExchangeMyListing": {
         "allOf": [
@@ -4341,7 +4349,8 @@
           "unreadCount",
           "olderCursor",
           "messages"
-        ]
+        ],
+        "description": "Private to PEOPLE since #1298. The audience is the thread's principal — the person who opened it on the buyer side, the listing's creator on the seller side — plus any active OWNER/ADMIN of either party farm, so a farm can still answer when the principal is away or has left.\n\nAnyone else gets **404**, including a colleague at a party farm. Not 403: the row is invisible at the database level, so the API cannot tell \"not yours\" from \"does not exist\" — and must not, because the difference would leak that a colleague is in a conversation.\n\n`unreadCount` is counted for the CALLER. It used to be per farm, so a colleague opening the thread zeroed everyone's count."
       },
       "ExchangeThreadSummary": {
         "type": "object",
@@ -4396,7 +4405,7 @@
           "closed",
           "hasUnread"
         ],
-        "description": "Threads from BOTH sides — ones this tenant opened as a buyer and ones opened against its own listings. `role` says which. `hasUnread` is a cheap staleness flag; the exact count needs the thread itself."
+        "description": "The caller's OWN inbox (#1298) — threads they opened as a buyer, plus threads on listings they created, plus threads on either where they are an OWNER/ADMIN of a party farm. It is no longer the farm's shared inbox, so two colleagues see different lists.\n\n`role` says which side a row is. `hasUnread` is a cheap staleness flag and is now PER PERSON: a colleague reading a thread no longer clears your badge. The exact count needs the thread itself.\n\nA seller may see SEVERAL rows for one buyer farm, because a thread is per (listing, inquirer PERSON). Do not de-duplicate by farm — they are different conversations with different people."
       },
       "FarmProfile": {
         "type": "object",

@@ -106,7 +106,8 @@ const CONCURRENT_BUYERS = Array.from(
     (_, i) => `t-p08-cbuyer-${i}-${suffix}`,
 );
 
-const allTenants = [SELLER_TENANT, MAIN_BUYER, ROLLBACK_BUYER, ...CONCURRENT_BUYERS];
+const BUYER_TENANTS = [MAIN_BUYER, ROLLBACK_BUYER, ...CONCURRENT_BUYERS];
+const allTenants = [SELLER_TENANT, ...BUYER_TENANTS];
 
 /** Seller-side admins — the recipients `notifyOtherParty` fans out to. */
 const sellerUserIds: string[] = [];
@@ -131,7 +132,20 @@ async function makeUser(label: string): Promise<string> {
 async function seedThread(buyerTenantId: string): Promise<string> {
     const threadId = `ext-p08-${randomUUID()}`;
     await globalPrisma.exchangeThread.create({
-        data: { id: threadId, listingId, inquirerTenantId: buyerTenantId },
+        // #1298 — `inquirerUserId` is the buyer-side principal, NOT NULL, and
+        // part of the thread's uniqueness: the key is
+        // `(listingId, inquirerUserId)`. This suite seeds one thread per buyer
+        // TENANT on a SHARED listing, so one shared principal collides on the
+        // second seed — which is the new key working, not a fixture quirk.
+        // One synthetic principal per buyer tenant keeps the notification
+        // audience exactly as it was (no membership ⇒ the farm's OWNER/ADMIN,
+        // which is what this suite counts).
+        data: {
+            id: threadId,
+            listingId,
+            inquirerTenantId: buyerTenantId,
+            inquirerUserId: `u-principal-${buyerTenantId}`,
+        },
     });
     return threadId;
 }
@@ -187,6 +201,27 @@ describeFn('Exchange notify fires only after the sender transaction commits', ()
                 tenantId: SELLER_TENANT,
                 userId,
                 role: 'ADMIN' as const,
+                status: 'ACTIVE' as const,
+            })),
+        });
+
+        // #1298 — `buyerCtx` has always CLAIMED role OWNER; now something has
+        // to make that true. The thread audience is checked against
+        // `TenantMembership`, not against the role in the context, so without
+        // an ACTIVE OWNER row the sender is neither the thread's principal nor
+        // an admin of a party farm and every send is refused with
+        // THREAD_NOT_FOUND.
+        //
+        // An OWNER membership rather than making the sender the principal: the
+        // thread key is `(listingId, inquirerUserId)` and this suite seeds one
+        // thread per buyer TENANT on a SHARED listing, so one shared principal
+        // collides on the second seed. Admin-of-the-farm is the audience
+        // clause that works for all of them at once.
+        await globalPrisma.tenantMembership.createMany({
+            data: BUYER_TENANTS.map((tenantId) => ({
+                tenantId,
+                userId: senderUserId,
+                role: 'OWNER' as const,
                 status: 'ACTIVE' as const,
             })),
         });

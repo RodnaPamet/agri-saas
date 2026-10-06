@@ -355,12 +355,30 @@ describe('MUTATION PROOF at DEPTH — the measured victim from #1214', () => {
     });
 
     it('a DEPTH-1 property becoming required is reported, with its path', () => {
+        // The victim moved from `CurrentUser.user` to `ParcelSplitRequest.line`
+        // when the classifier learned to tell a REQUEST schema from a RESPONSE
+        // one. `CurrentUser` is response-only, and a response gaining a
+        // required property is ADDITIVE — the server promises more and every
+        // existing client keeps working — so it is correctly silent now.
+        //
+        // This case is about DEPTH, not about which schema carries it, so it
+        // needs a victim a client can actually SEND. `ParcelSplitRequest` is
+        // reachable from a `requestBody`, and `line` is a nested object, so the
+        // depth property this proof exists for is unchanged. Controls A-C above
+        // stay on `CurrentUser` deliberately: removal and type-change break a
+        // RESPONSE too, so they keep depth covered on that side as well.
+        const SENDABLE = 'ParcelSplitRequest';
+        const SENDABLE_PARENT = 'line';
+        expect(Object.keys(propsOf(schemas[SENDABLE]))).toContain(SENDABLE_PARENT);
+        // ...and the victim is genuinely nested, not top-level by accident.
+        expect(Object.keys(propsOf(schemas[SENDABLE]))).not.toContain('nickname');
+
         const mutated = clone(spec);
-        const parent = at(mutated, ['components', 'schemas', SCHEMA, 'properties', PARENT]);
+        const parent = at(mutated, ['components', 'schemas', SENDABLE, 'properties', SENDABLE_PARENT]);
         requireProps(parent).nickname = { type: 'string' };
         parent.required = [...(asArray(parent.required) ?? []), 'nickname'];
         expect(findBreakingChanges(spec, mutated).map(signature)).toEqual([
-            `property-now-required:${SCHEMA}.${PARENT}.nickname`,
+            `property-now-required:${SENDABLE}.${SENDABLE_PARENT}.nickname`,
         ]);
     });
 

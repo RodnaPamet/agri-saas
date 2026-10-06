@@ -39,6 +39,87 @@ function schemaSpec(schemas: Record<string, unknown>) {
     return { components: { schemas } };
 }
 
+/**
+ * A spec with real paths, so the classifier can tell a REQUEST schema from a
+ * RESPONSE one. `schemaSpec` above deliberately has no paths — see the
+ * no-information case below for why that still gets the strict rule.
+ */
+function pathSpec(schemas: Record<string, unknown>, opts: { reqRef?: string; resRef?: string }) {
+    const op: Record<string, unknown> = {
+        responses: opts.resRef
+            ? { 200: { content: { 'application/json': { schema: { $ref: `#/components/schemas/${opts.resRef}` } } } } }
+            : {},
+    };
+    if (opts.reqRef) {
+        op.requestBody = {
+            content: { 'application/json': { schema: { $ref: `#/components/schemas/${opts.reqRef}` } } },
+        };
+    }
+    return { paths: { '/thing': { post: op } }, components: { schemas } };
+}
+
+describe('"now required" depends on WHO produces the object', () => {
+    /**
+     * A property becoming required breaks only a client that PRODUCES the
+     * object. On a response the same change is additive — the server promises
+     * more and every existing client keeps working.
+     *
+     * Without this distinction every field added to a response read as
+     * breaking, which pushes authors to publish response fields as OPTIONAL
+     * when the server always sends them. A contract weaker than reality is its
+     * own defect: it makes every client write defensive code for a case that
+     * cannot happen. Found by #1298 adding `senderUserId` / `fromMyFarm` to
+     * `ExchangeMessage`, which is response-only (the send body is a separate
+     * `SendExchangeMessage` schema).
+     */
+    const loose = { type: 'object', properties: { a: { type: 'string' } } };
+    const strictReq = { type: 'object', properties: { a: { type: 'string' } }, required: ['a'] };
+
+    it('is SILENT when the schema is only ever a RESPONSE', () => {
+        const before = pathSpec({ Thing: loose }, { resRef: 'Thing' });
+        const after = pathSpec({ Thing: strictReq }, { resRef: 'Thing' });
+        expect(findBreakingChanges(before, after)).toEqual([]);
+    });
+
+    it('still FLAGS it when a client can send the schema', () => {
+        // The positive control. Without it, the test above would also pass on a
+        // classifier that stopped reporting the rule entirely.
+        const before = pathSpec({ Thing: loose }, { reqRef: 'Thing' });
+        const after = pathSpec({ Thing: strictReq }, { reqRef: 'Thing' });
+        const found = findBreakingChanges(before, after);
+        expect(found).toHaveLength(1);
+        expect(found[0].kind).toBe('property-now-required');
+    });
+
+    it('treats a schema reachable from BOTH as a request schema', () => {
+        // Conservative in the right direction: being readable is no reason to
+        // stop protecting the clients that also write it.
+        const before = pathSpec({ Thing: loose }, { reqRef: 'Thing', resRef: 'Thing' });
+        const after = pathSpec({ Thing: strictReq }, { reqRef: 'Thing', resRef: 'Thing' });
+        expect(findBreakingChanges(before, after)).toHaveLength(1);
+    });
+
+    it('follows a $ref THROUGH a request wrapper', () => {
+        // A request body usually refs a wrapper whose properties ref further
+        // schemas; the inner one is just as sendable.
+        const wrap = { type: 'object', properties: { inner: { $ref: '#/components/schemas/Inner' } } };
+        const before = pathSpec({ Wrap: wrap, Inner: loose }, { reqRef: 'Wrap' });
+        const after = pathSpec({ Wrap: wrap, Inner: strictReq }, { reqRef: 'Wrap' });
+        expect(findBreakingChanges(before, after)).toHaveLength(1);
+    });
+
+    it('ABSENCE OF INFORMATION IS NOT PERMISSION: a bare schema map is STRICT', () => {
+        // The two absences differ. A document WITH paths that no requestBody
+        // reaches is genuinely response-only — that absence is evidence. A bare
+        // `components.schemas` map, which every hand-built fixture here is,
+        // says nothing about who produces what, so the strict rule applies: a
+        // safety gate must fail toward REPORTING.
+        const before = schemaSpec({ Thing: loose });
+        const after = schemaSpec({ Thing: strictReq });
+        expect(findBreakingChanges(before, after)).toHaveLength(1);
+    });
+});
+
 describe('breaking-change classifier — the BREAKING cases', () => {
     it('flags a REMOVED schema', () => {
         const before = schemaSpec({ Thing: { type: 'object', properties: { a: { type: 'string' } } } });

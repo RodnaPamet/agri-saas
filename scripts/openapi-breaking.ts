@@ -216,10 +216,101 @@ function collectFrom(
  * descriptions, examples — returns nothing at all. Since #1214 every class
  * above is scored at EVERY depth, not only on a schema's top-level properties.
  */
+/**
+ * Schema names a CLIENT can SEND, i.e. reachable from any `requestBody`.
+ *
+ * Why this exists: "a property became required" breaks a client only if the
+ * client is the one PRODUCING that object. On a RESPONSE, a newly-required
+ * property is additive — the server promises more, and every existing client
+ * keeps working. Without the distinction, any field added to a response
+ * schema reads as a breaking change, which is a FALSE ALARM that pushes
+ * authors toward publishing response fields as optional when the server always
+ * sends them. A contract weaker than reality is its own defect: it makes every
+ * client write defensive code for a case that cannot happen.
+ *
+ * Transitive, because a request body usually `$ref`s a wrapper whose
+ * properties `$ref` further schemas. Conservative in the right direction: a
+ * schema reachable from BOTH a request and a response counts as a request
+ * schema and keeps the strict rule.
+ */
+function requestReachableSchemas(spec: Json): Set<string> {
+    const schemas = schemasOf(spec);
+    const named = (ref: unknown): string | null =>
+        typeof ref === 'string' && ref.startsWith('#/components/schemas/')
+            ? ref.slice('#/components/schemas/'.length)
+            : null;
+
+    const seeds: string[] = [];
+    const collectRefs = (node: unknown, into: string[]): void => {
+        if (!node || typeof node !== 'object') return;
+        if (Array.isArray(node)) {
+            for (const v of node) collectRefs(v, into);
+            return;
+        }
+        for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+            if (k === '$ref') {
+                const n = named(v);
+                if (n) into.push(n);
+            } else {
+                collectRefs(v, into);
+            }
+        }
+    };
+
+    const paths = (spec as Record<string, unknown>)?.paths;
+    if (paths && typeof paths === 'object') {
+        for (const item of Object.values(paths as Record<string, unknown>)) {
+            if (!item || typeof item !== 'object') continue;
+            for (const op of Object.values(item as Record<string, unknown>)) {
+                if (!op || typeof op !== 'object') continue;
+                const body = (op as Record<string, unknown>).requestBody;
+                if (body) collectRefs(body, seeds);
+            }
+        }
+    }
+
+    // Transitive closure through the schema graph.
+    const reachable = new Set<string>();
+    const queue = [...seeds];
+    while (queue.length > 0) {
+        const name = queue.pop() as string;
+        if (reachable.has(name)) continue;
+        reachable.add(name);
+        const refs: string[] = [];
+        collectRefs(schemas[name], refs);
+        for (const r of refs) if (!reachable.has(r)) queue.push(r);
+    }
+    return reachable;
+}
+
+/** Does this document describe operations at all, or is it a bare schema map? */
+function hasPaths(spec: Json): boolean {
+    const paths = (spec as Record<string, unknown>)?.paths;
+    return !!paths && typeof paths === 'object' && Object.keys(paths).length > 0;
+}
+
 export function findBreakingChanges(previous: Json, next: Json): BreakingChange[] {
     const out: BreakingChange[] = [];
     const prevSchemas = schemasOf(previous);
     const nextSchemas = schemasOf(next);
+    // Union of both sides: a schema that STOPS being a request schema in this
+    // diff still had clients producing it under the previous contract.
+    const sendable = new Set([
+        ...requestReachableSchemas(previous),
+        ...requestReachableSchemas(next),
+    ]);
+    // ABSENCE OF INFORMATION IS NOT PERMISSION, and the two absences differ.
+    //
+    // A document WITH `paths` describes its operations, so a schema that no
+    // `requestBody` reaches is genuinely response-only — that absence is
+    // evidence. A document with NO `paths` — a bare `components.schemas` map,
+    // which is what every hand-built fixture and any schema-only caller passes
+    // — says nothing at all about who produces what, and reading "no request
+    // bodies found" as "nothing is sent" would silently exempt the whole
+    // document from this rule. So the fallback keys on `paths`, not on whether
+    // the search happened to find anything: a safety gate must fail toward
+    // REPORTING.
+    const describesOperations = hasPaths(previous) || hasPaths(next);
 
     for (const [name, prevSchema] of Object.entries(prevSchemas)) {
         const nextSchema = nextSchemas[name];
@@ -234,7 +325,15 @@ export function findBreakingChanges(previous: Json, next: Json): BreakingChange[
         }
 
         if (isSchemaNode(prevSchema) && isSchemaNode(nextSchema)) {
-            compareNode(prevSchema, nextSchema, name, '', out, new Set());
+            compareNode(
+                prevSchema,
+                nextSchema,
+                name,
+                '',
+                out,
+                new Set(),
+                !describesOperations || sendable.has(name),
+            );
         }
     }
 
@@ -257,6 +356,12 @@ function compareNode(
     path: string,
     out: BreakingChange[],
     ancestors: Set<Json>,
+    /**
+     * Can a CLIENT send this schema? Only then does "a property became
+     * required" break one -- on a RESPONSE it is additive. Defaults to true
+     * so the strict behaviour is what a caller gets by omission.
+     */
+    sendable = true,
 ): void {
     // Belt-and-braces. A `$ref` is never followed, so an OpenAPI document is a
     // tree and this cannot fire on real input. It is here because a caller may
@@ -336,8 +441,12 @@ function compareNode(
     }
 
     // ── A property becoming required breaks any client that omits it. ───
+    //
+    // ...which only a client PRODUCING this object can do. On a response-only
+    // schema the same change is additive, so it is not reported — see
+    // `requestReachableSchemas`.
     const prevRequired = new Set(requiredOf(prev));
-    for (const req of requiredOf(next)) {
+    for (const req of sendable ? requiredOf(next) : []) {
         if (!prevRequired.has(req)) {
             const reqPath = join(path, req);
             out.push({
@@ -365,13 +474,13 @@ function compareNode(
             continue;
         }
         if (isSchemaNode(prevChild) && isSchemaNode(nextChild)) {
-            compareNode(prevChild, nextChild, schema, childPath, out, inner);
+            compareNode(prevChild, nextChild, schema, childPath, out, inner, sendable);
         }
     }
 
     // ── Array elements, free-form map values, tuple positions. ──────────
     if (isSchemaNode(prev.items) && isSchemaNode(next.items)) {
-        compareNode(prev.items, next.items, schema, join(path, '[]'), out, inner);
+        compareNode(prev.items, next.items, schema, join(path, '[]'), out, inner, sendable);
     }
     if (isSchemaNode(prev.additionalProperties) && isSchemaNode(next.additionalProperties)) {
         compareNode(
@@ -381,9 +490,18 @@ function compareNode(
             join(path, '{}'),
             out,
             inner,
+            sendable,
         );
     }
-    comparePositional(prev.prefixItems, next.prefixItems, (i) => join(path, `[${i}]`), schema, out, inner);
+    comparePositional(
+            prev.prefixItems,
+            next.prefixItems,
+            (i) => join(path, `[${i}]`),
+            schema,
+            out,
+            inner,
+            sendable,
+        );
 
     // ── Composition members, positionally, and only on an equal count. ──
     // An unequal count means a member was inserted, removed or reordered;
@@ -391,7 +509,15 @@ function compareNode(
     // properties that merely MOVED. Skipping is honest under-reporting, and
     // the alternative is noise — noise is what gets a merge gate turned off.
     for (const key of COMPOSITION_KEYS) {
-        comparePositional(prev[key], next[key], (i) => join(path, `/${key}[${i}]`), schema, out, inner);
+        comparePositional(
+            prev[key],
+            next[key],
+            (i) => join(path, `/${key}[${i}]`),
+            schema,
+            out,
+            inner,
+            sendable,
+        );
     }
 }
 
@@ -402,13 +528,15 @@ function comparePositional(
     schema: string,
     out: BreakingChange[],
     ancestors: Set<Json>,
+    /** Forwarded, not re-derived: a tuple member is as sendable as its parent. */
+    sendable = true,
 ): void {
     if (!Array.isArray(prevList) || !Array.isArray(nextList)) return;
     if (prevList.length !== nextList.length) return;
     prevList.forEach((prevMember, i) => {
         const nextMember = nextList[i];
         if (isSchemaNode(prevMember) && isSchemaNode(nextMember)) {
-            compareNode(prevMember, nextMember, schema, pathAt(i), out, ancestors);
+            compareNode(prevMember, nextMember, schema, pathAt(i), out, ancestors, sendable);
         }
     });
 }
