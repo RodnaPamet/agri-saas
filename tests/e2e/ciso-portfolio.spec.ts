@@ -245,10 +245,10 @@ test.describe('CISO portfolio journey (Epic O-4)', () => {
         // effect tries to overwrite the slug again, this fails
         // deterministically rather than producing a 409 later.
         await expect(slugInput).toHaveValue(attemptSlug, { timeout: 5_000 });
-        // "Choose later" — keeps the post-create redirect to a stable
-        // surface that doesn't depend on the framework catalog.
-        await page.click('[data-testid="org-new-tenant-framework-later"]');
-
+        // The compliance-framework picker this used to click went with
+        // P2.6 — its non-default options redirected to a route the GRC
+        // teardown deleted, so the form now always lands on the new
+        // tenant's dashboard.
         await page.click('[data-testid="org-new-tenant-submit"]');
 
         // The form attempts to redirect to /t/{newSlug}/dashboard. The

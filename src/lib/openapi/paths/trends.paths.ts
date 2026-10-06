@@ -1,5 +1,10 @@
 /**
- * Trends — the market price chart and the news feed.
+ * Тенденции — the market price chart and the news feed.
+ *
+ * «Тенденции» is the product noun, and since P2.6 it is the noun the nav
+ * item and the page title use too (both said «Тренд»). The TAG stays
+ * `Trends` — renaming a tag regroups somebody's generated SDK. See
+ * docs/nav-vocabulary.md.
  *
  * Тенденции is one of five tabs on the phone, and until now neither of its two
  * routes was in the spec at all. The native client modelled `PriceSeries`,
@@ -138,7 +143,7 @@ export function registerTrendsPaths(registry: OpenAPIRegistry): void {
         method: 'get',
         path: '/api/t/{tenantSlug}/trends/prices',
         operationId: 'getTrendPrices',
-        summary: 'Market price series for one commodity',
+        summary: 'Тенденции — market price series for one commodity',
         description:
             'The GLOBAL market-price series for one commodity, grouped by (source, region) so a chart can split lines that differ in unit or currency. The payload is tenant-AGNOSTIC — the tenant in the path authenticates the caller, it does not scope the data. ' +
             '\n\nLabels are localised to the READER’s own language column, not to a request cookie: a native client sends no `NEXT_LOCALE`, so a cookie-derived locale would hand the phone the unauthenticated `en` default. ' +
@@ -157,7 +162,7 @@ export function registerTrendsPaths(registry: OpenAPIRegistry): void {
         method: 'get',
         path: '/api/t/{tenantSlug}/trends/news',
         operationId: 'getTrendNews',
-        summary: 'Aggregated agri-news feed',
+        summary: 'Тенденции — aggregated agri-news feed',
         description:
             'The GLOBAL aggregated news feed, newest first, optionally filtered by category. Tenant-agnostic payload; the tenant in the path authenticates the caller. ' +
             '\n\nCarries a weak ETag; send `If-None-Match` and handle **304**. Cached 1h server-side.',

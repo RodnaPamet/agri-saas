@@ -27002,7 +27002,7 @@
     "/api/t/{tenantSlug}/exchange/listings/{listingId}/thread": {
       "post": {
         "operationId": "openExchangeThread",
-        "summary": "Open the conversation for a listing",
+        "summary": "Борса — open the conversation for a listing",
         "description": "**Idempotent.** A second call returns the thread that already exists rather than creating another, so a client may call it on every \"message seller\" tap without checking first. **201** means one was created, **200** that one was already open — both carry the same body.\n\nA seller cannot open a thread on their OWN listing (there would be no second party); that returns 400 `THREAD_OWN_LISTING`. Sellers reply to threads buyers open.",
         "tags": [
           "Exchange messaging"
@@ -27182,7 +27182,7 @@
     "/api/t/{tenantSlug}/exchange/threads": {
       "get": {
         "operationId": "listExchangeThreads",
-        "summary": "The caller's conversations",
+        "summary": "Борса — the caller's conversations",
         "description": "Most recently active first. Deliberately NOT ETagged: an inbox whose purpose is unread state should not be served from a cache.",
         "tags": [
           "Exchange messaging"
@@ -27361,7 +27361,7 @@
     "/api/t/{tenantSlug}/exchange/threads/{threadId}": {
       "get": {
         "operationId": "getExchangeThread",
-        "summary": "A conversation and its messages",
+        "summary": "Борса — a conversation and its messages",
         "description": "Messages come back OLDEST-FIRST (reading order), but are selected newest-first and reversed — so a long thread returns its END, not its beginning.\n\nScroll back with `before`: pass the response's `olderCursor` to fetch the page immediately older than the one you hold. `olderCursor: null` means you have reached the start of the conversation.\n\n`unreadCount` is counted in the DATABASE, not over the returned page, so it is a true count rather than one capped at `limit`.",
         "tags": [
           "Exchange messaging"
@@ -27529,7 +27529,7 @@
     "/api/t/{tenantSlug}/exchange/threads/{threadId}/messages": {
       "post": {
         "operationId": "sendExchangeMessage",
-        "summary": "Send a message",
+        "summary": "Борса — send a message",
         "description": "The body is HTML-sanitised on write and then length-checked, in that order — so markup cannot pad a message past the limit.\n\nA CLOSED thread is not refused: sending REOPENS it and the response says so with `reopened: true`. (This previously returned 400 `THREAD_CLOSED`; that refusal is gone, because either party can close and a refusal would let one side mute the other permanently.)\n\nSend `Idempotency-Key` ALWAYS, minted BEFORE the first attempt and reused on every retry of the same logical send. The server maps it to `clientMutationId`, unique per SENDER, and a replay returns the ORIGINAL message with `replayed: true` rather than adding a duplicate line to the conversation. **`replayed` is explicit on purpose** — a replay indistinguishable from a create is a shape a client cannot branch on.\n\nThe replay check runs BEFORE the party, block and closed checks, so a retry of a message that was already accepted returns its original result even if the seller has since blocked the sender. Otherwise a flaky link turns \"delivered\" into a 403 for a message that IS in the thread.\n\nWithout a key the send is NOT idempotent — two taps make two messages.\n\n**Rate limit: 60 per minute, SHARED across the whole sending tenant** — not per user, not per device, and not per thread. Every conversation a tenant has draws on ONE budget, because the cost this bounds is the recipient's notification bell, which gets a row per message by design. Per-thread was rejected: a thread is per (listing, inquirer), so a per-thread ceiling would be multiplied by however many listings the RECIPIENT happens to have. Each party has their own budget, so one side can never exhaust the other's ability to reply.\n\nOn 429, HONOUR `Retry-After`. A client that retries on its own schedule spends the next window the moment it opens and stays blocked; the header says when the budget is actually free. A blocked sender consumes quota too — the limit runs before the block check, so the cost of being blocked falls on the blocked party. See #1161.",
         "tags": [
           "Exchange messaging"
@@ -27716,7 +27716,7 @@
     "/api/t/{tenantSlug}/exchange/threads/{threadId}/read": {
       "post": {
         "operationId": "markExchangeThreadRead",
-        "summary": "Move the caller's read pointer to now",
+        "summary": "Борса — move the caller's read pointer to now",
         "description": "**Monotonic.** Safe to fire from two tabs, out of order, or repeatedly — the pointer never travels backwards. That matters because an older timestamp overwriting a newer one resurrects messages the user has already read, and it presents as a bug in the unread badge rather than in the request that caused it.",
         "tags": [
           "Exchange messaging"
@@ -27870,7 +27870,7 @@
     "/api/t/{tenantSlug}/exchange/threads/{threadId}/close": {
       "post": {
         "operationId": "closeExchangeThread",
-        "summary": "Close a conversation",
+        "summary": "Борса — close a conversation",
         "description": "**Either party may close, and closing does not lock the thread.** Sending a message reopens it, which is why there is no reopen endpoint to pair with this one — the way back is the thing you were going to do anyway.\n\nSymmetric on purpose: if only the seller could close, or if a close were final, one side could silence the other mid-negotiation. Treat `closed` as \"tidied out of the active inbox\", not as a permission.\n\n**Idempotent** — closing an already-closed thread keeps the ORIGINAL timestamp and reports `alreadyClosed: true`, so \"when did this end\" does not drift each time someone taps it.",
         "tags": [
           "Exchange messaging"
@@ -28028,7 +28028,7 @@
     "/api/t/{tenantSlug}/exchange/threads/{threadId}/block": {
       "post": {
         "operationId": "blockExchangeParty",
-        "summary": "Refuse further contact from the other party",
+        "summary": "Борса — refuse further contact from the other party",
         "description": "**Seller only.** The listing owner decides who may keep writing to them. There is no buyer-side mirror: a buyer can simply stop opening threads, and closing already tidies one away for either side.\n\nAddressed by THREAD rather than by tenant id, so no client ever sends another tenant's id and the caller provably has standing — you can only block someone who has already written to you.\n\nOnly the blocked side is refused afterwards. The seller who pressed this can still write in the thread: the control is \"stop them reaching me\", not \"freeze the record\". **Idempotent.**",
         "tags": [
           "Exchange messaging"
@@ -28184,7 +28184,7 @@
       },
       "delete": {
         "operationId": "unblockExchangeParty",
-        "summary": "Lift a block",
+        "summary": "Борса — lift a block",
         "description": "Seller only, and idempotent — lifting a block that is not there is not an error, because the end state is what is asserted rather than the transition.",
         "tags": [
           "Exchange messaging"
@@ -28338,7 +28338,7 @@
     "/api/t/{tenantSlug}/exchange/messages/{messageId}": {
       "delete": {
         "operationId": "deleteExchangeMessage",
-        "summary": "Retract a message you sent",
+        "summary": "Борса — retract a message you sent",
         "description": "A TOMBSTONE, not a removal: the message keeps its place in the other party's scrollback with a null body. Only the sender may retract; another party gets 403 `MESSAGE_NOT_SENDER`. Retracting twice is not an error.",
         "tags": [
           "Exchange messaging"
@@ -28492,7 +28492,7 @@
     "/api/t/{tenantSlug}/trends/prices": {
       "get": {
         "operationId": "getTrendPrices",
-        "summary": "Market price series for one commodity",
+        "summary": "Тенденции — market price series for one commodity",
         "description": "The GLOBAL market-price series for one commodity, grouped by (source, region) so a chart can split lines that differ in unit or currency. The payload is tenant-AGNOSTIC — the tenant in the path authenticates the caller, it does not scope the data. \n\nLabels are localised to the READER’s own language column, not to a request cookie: a native client sends no `NEXT_LOCALE`, so a cookie-derived locale would hand the phone the unauthenticated `en` default. \n\nCarries a weak ETag; send `If-None-Match` and handle **304**. The ETag is derived from the payload, which differs by language, so it varies by locale correctly — hashing the query alone would have served a cached 304 in the wrong language. Cached 6h server-side.",
         "tags": [
           "Trends"
@@ -28664,7 +28664,7 @@
     "/api/t/{tenantSlug}/trends/news": {
       "get": {
         "operationId": "getTrendNews",
-        "summary": "Aggregated agri-news feed",
+        "summary": "Тенденции — aggregated agri-news feed",
         "description": "The GLOBAL aggregated news feed, newest first, optionally filtered by category. Tenant-agnostic payload; the tenant in the path authenticates the caller. \n\nCarries a weak ETag; send `If-None-Match` and handle **304**. Cached 1h server-side.",
         "tags": [
           "Trends"
@@ -28837,8 +28837,8 @@
     "/api/t/{tenantSlug}/exchange/listings": {
       "get": {
         "operationId": "listExchangeListings",
-        "summary": "Browse active listings",
-        "description": "The active marketplace, keyset-paginated. Page size defaults to 50 and is capped at 100; pass `cursor` back VERBATIM from `nextCursor` and stop when it is null. \n\n`side`, `kind`, `commodity` and `region` are COMMA-SEPARATED multi-value params in ONE parameter (`?side=SELL&kind=CULTURE,SEEDS`) — a multi-select facet arrives joined, and a bad member is a clean 400 rather than a 500. `commodity` is opaque free text, not an enum: a seller types it on the create form. \n\n`q` also matches Bulgarian oblast NAMES against stored English region names, so «Пловдив» finds a listing whose `regionName` is \"Plovdiv\". \n\nCarries a weak ETag; send `If-None-Match` and handle **304**.",
+        "summary": "Борса — browse active listings",
+        "description": "The active Борса feed, keyset-paginated. Page size defaults to 50 and is capped at 100; pass `cursor` back VERBATIM from `nextCursor` and stop when it is null. \n\n`side`, `kind`, `commodity` and `region` are COMMA-SEPARATED multi-value params in ONE parameter (`?side=SELL&kind=CULTURE,SEEDS`) — a multi-select facet arrives joined, and a bad member is a clean 400 rather than a 500. `commodity` is opaque free text, not an enum: a seller types it on the create form. \n\n`q` also matches Bulgarian oblast NAMES against stored English region names, so «Пловдив» finds a listing whose `regionName` is \"Plovdiv\". \n\nCarries a weak ETag; send `If-None-Match` and handle **304**.",
         "tags": [
           "Exchange"
         ],
@@ -29083,7 +29083,7 @@
       },
       "post": {
         "operationId": "createExchangeListing",
-        "summary": "Publish a listing",
+        "summary": "Борса — publish a listing",
         "description": "Publishes a listing for the calling tenant. Requires the EXCHANGE module — 403 `module_disabled: EXCHANGE` otherwise. Rate-limited separately from ordinary writes.",
         "tags": [
           "Exchange"
@@ -29339,7 +29339,7 @@
     "/api/t/{tenantSlug}/exchange/my-listings": {
       "get": {
         "operationId": "listMyExchangeListings",
-        "summary": "The calling tenant’s own listings, with their inquiries",
+        "summary": "Борса — the calling tenant’s own listings, with their inquiries",
         "description": "The seller’s view: every listing this tenant owns, each with its inquiries nested. A BARE ARRAY, not an envelope, and not paginated — it is bounded by what one tenant created. \n\nThe nested inquiries OMIT their `listing` key, because the row carrying them is it.",
         "tags": [
           "Exchange"
@@ -29480,7 +29480,7 @@
     "/api/t/{tenantSlug}/exchange/listings/{listingId}": {
       "get": {
         "operationId": "getExchangeListing",
-        "summary": "One listing",
+        "summary": "Борса — one listing",
         "tags": [
           "Exchange"
         ],
@@ -29623,7 +29623,7 @@
       },
       "patch": {
         "operationId": "updateExchangeListingStatus",
-        "summary": "Withdraw or fulfil a listing",
+        "summary": "Борса — withdraw or fulfil a listing",
         "description": "Moves a listing the caller OWNS to WITHDRAWN or FULFILLED. Answers with the id and the new status only — the caller already holds the rest, and the transition is what changed.",
         "tags": [
           "Exchange"
@@ -29790,7 +29790,7 @@
     "/api/t/{tenantSlug}/exchange/inquiries": {
       "get": {
         "operationId": "listMyExchangeInquiries",
-        "summary": "The calling tenant’s outbox",
+        "summary": "Борса — the calling tenant’s outbox",
         "description": "Inquiries this tenant has SENT, each with the listing it was sent about attached. A BARE ARRAY, not an envelope, and not paginated. \n\nThis is the view where `listing` IS present — the seller’s nest omits it.",
         "tags": [
           "Exchange"
@@ -29929,7 +29929,7 @@
       },
       "post": {
         "operationId": "createExchangeInquiry",
-        "summary": "Enquire about a listing",
+        "summary": "Борса — enquire about a listing",
         "description": "Sends an inquiry to a listing’s seller. Answers with the id and status ONLY — not the inquiry projection — because the buyer’s contact has not been shared yet and the reveal gate lives in that projection. \n\nThe seller is notified; contact details are exchanged only if they ACCEPT.",
         "tags": [
           "Exchange"
@@ -30115,7 +30115,7 @@
     "/api/t/{tenantSlug}/exchange/inquiries/{inquiryId}": {
       "patch": {
         "operationId": "respondToExchangeInquiry",
-        "summary": "Accept or decline an inquiry",
+        "summary": "Борса — accept or decline an inquiry",
         "description": "The SELLER’s decision on an inquiry against their own listing. ACCEPTED completes the two-sided consent and is what populates `counterpartyContact` and `contactSharedAt` on both sides; DECLINED leaves both null permanently. \n\nAnswers with the id and new status only.",
         "tags": [
           "Exchange"

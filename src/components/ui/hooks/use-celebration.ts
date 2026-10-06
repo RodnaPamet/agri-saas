@@ -1,3 +1,5 @@
+'use client';
+
 /**
  * Epic 62 — `useCelebration` hook.
  *
@@ -29,8 +31,36 @@
  * suppresses the canvas when the user has opted out. The toast
  * still fires, so the user still gets the recognition without the
  * motion noise.
+ *
+ * ── where the milestone COPY lives (P2.6) ──
+ *
+ * `messages/{bg,en}.json` → `celebrations.<camelCaseKey>`, resolved
+ * here. `MILESTONE_COPY` below is an EXHAUSTIVE
+ * `Record<MilestoneKey, …>` of resolvers over that namespace, so a
+ * milestone added to the registry without copy is a COMPILE error
+ * rather than a toast rendering the literal string
+ * `celebrations.whatever.message` (next-intl has no
+ * `getMessageFallback` configured here — see
+ * `tests/guards/i18n-key-exists.test.ts`). The keys are spelled as
+ * static literals inside each resolver — a `t(`${x}.message`)` call is
+ * a DYNAMIC key, which that guard skips by design, so a typo there
+ * would reach a user with nothing failing.
+ *
+ * The emoji is NOT in the catalogue: `messages/*.json` bans decorative
+ * emoji, and an emoji does not differ between locales. It rides
+ * `MilestoneDefinition.glyph` and is appended to the translated title.
+ *
+ * The AD-HOC input shape still takes `message` / `description` as plain
+ * strings — the caller supplies already-translated copy.
  */
+// `'use client'` is load-bearing above: `useTranslations` is the CLIENT
+// binding and next-intl resolves which implementation you get from the
+// module's directive. `use-palette-commands.ts` is the precedent — the
+// other `.ts` hook in this repo that calls it carries the same directive —
+// and `tests/guards/i18n-use-client-directive.test.ts` cannot see either,
+// because it walks `.tsx` only.
 import { useCallback, useRef } from 'react';
+import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 
 import {
@@ -39,9 +69,45 @@ import {
     type CelebrateAdHocInput,
     type CelebrateInput,
     type MilestoneDefinition,
+    type MilestoneKey,
     hasCelebrated,
     markCelebrated,
 } from '@/lib/celebrations';
+
+/** A next-intl translator scoped to the `celebrations` namespace. */
+type CelebrationTranslator = (key: string) => string;
+
+/**
+ * Milestone key → its translated toast copy.
+ *
+ * Exhaustive by type, and every i18n key is a STATIC literal so
+ * `tests/guards/i18n-key-exists.test.ts` resolves all ten of them.
+ */
+export const MILESTONE_COPY: Record<
+    MilestoneKey,
+    (t: CelebrationTranslator) => { message: string; description: string }
+> = {
+    'evidence-all-current': (t) => ({
+        message: t('evidenceAllCurrent.message'),
+        description: t('evidenceAllCurrent.description'),
+    }),
+    'first-field-mapped': (t) => ({
+        message: t('firstFieldMapped.message'),
+        description: t('firstFieldMapped.description'),
+    }),
+    'spray-job-complete': (t) => ({
+        message: t('sprayJobComplete.message'),
+        description: t('sprayJobComplete.description'),
+    }),
+    'first-harvest': (t) => ({
+        message: t('firstHarvest.message'),
+        description: t('firstHarvest.description'),
+    }),
+    'season-closed': (t) => ({
+        message: t('seasonClosed.message'),
+        description: t('seasonClosed.description'),
+    }),
+};
 
 // Re-exported here so the existing barrel keeps these public from
 // the hooks namespace. Source of truth lives in `@/lib/celebrations`.
@@ -157,54 +223,59 @@ export function useCelebration(): UseCelebrationResult {
     // trip a setState-on-unmounted warning. Toast itself is fire-
     // and-forget; we just want a stable identity for the callback.
     const aliveRef = useRef(true);
+    const t = useTranslations('celebrations');
 
-    const celebrate = useCallback((input: CelebrateInput) => {
-        if (typeof window === 'undefined') return;
+    const celebrate = useCallback(
+        (input: CelebrateInput) => {
+            if (typeof window === 'undefined') return;
 
-        // Resolve the call shape into (preset, dedupeKey, message,
-        // description). Milestone-key path looks up the registry;
-        // ad-hoc path uses caller-supplied values.
-        const resolved: {
-            preset: CelebrationPreset;
-            dedupeKey?: string;
-            message?: string;
-            description?: string;
-        } = (() => {
-            if (typeof input === 'string') {
-                const def: MilestoneDefinition = MILESTONES[input];
+            // Resolve the call shape into (preset, dedupeKey, message,
+            // description). Milestone-key path looks up the registry and
+            // translates; ad-hoc path uses caller-supplied values.
+            const resolved: {
+                preset: CelebrationPreset;
+                dedupeKey?: string;
+                message?: string;
+                description?: string;
+            } = (() => {
+                if (typeof input === 'string') {
+                    const def: MilestoneDefinition = MILESTONES[input];
+                    const copy = MILESTONE_COPY[input](t);
+                    return {
+                        preset: def.preset,
+                        dedupeKey: def.key,
+                        message: `${copy.message} ${def.glyph}`,
+                        description: copy.description,
+                    };
+                }
                 return {
-                    preset: def.preset,
-                    dedupeKey: def.key,
-                    message: def.message,
-                    description: def.description,
+                    preset: input.preset,
+                    dedupeKey: input.key,
+                    message: input.message,
+                    description: input.description,
                 };
+            })();
+
+            // Dedupe — only when a key was provided.
+            if (resolved.dedupeKey && hasCelebrated(resolved.dedupeKey)) return;
+            if (resolved.dedupeKey) markCelebrated(resolved.dedupeKey);
+
+            // Fire confetti async (lazy import). Toast can fire
+            // immediately so the message lands without waiting on the
+            // chunk load.
+            if (resolved.message) {
+                toast.success(resolved.message, {
+                    description: resolved.description,
+                });
             }
-            return {
-                preset: input.preset,
-                dedupeKey: input.key,
-                message: input.message,
-                description: input.description,
-            };
-        })();
 
-        // Dedupe — only when a key was provided.
-        if (resolved.dedupeKey && hasCelebrated(resolved.dedupeKey)) return;
-        if (resolved.dedupeKey) markCelebrated(resolved.dedupeKey);
-
-        // Fire confetti async (lazy import). Toast can fire
-        // immediately so the message lands without waiting on the
-        // chunk load.
-        if (resolved.message) {
-            toast.success(resolved.message, {
-                description: resolved.description,
+            void loadConfetti().then((confetti) => {
+                if (!aliveRef.current) return;
+                PRESET_RUNNERS[resolved.preset](confetti);
             });
-        }
-
-        void loadConfetti().then((confetti) => {
-            if (!aliveRef.current) return;
-            PRESET_RUNNERS[resolved.preset](confetti);
-        });
-    }, []);
+        },
+        [t],
+    );
 
     return { celebrate, hasCelebrated };
 }

@@ -1,6 +1,6 @@
 {
     "name": "inflect-compliance",
-    "version": "3.78.18",
+    "version": "3.78.19",
     "private": true,
     "engines": {
         "node": ">=22.0.0 <23.0.0",
@@ -184,7 +184,7 @@
         "sharp": "^0.35.4",
         "shpjs": "6.2.0",
         "sonner": "^2.0.8",
-        "stripe": "^22.6.2",
+        "stripe": "^23.0.0",
         "swr": "^2.5.1",
         "tailwind-merge": "^3.7.0",
         "terra-draw": "^1.35.0",

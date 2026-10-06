@@ -3,12 +3,21 @@
 /**
  * Epic O-4 — Tenant creation form (org context).
  *
- * Three fields: name, slug, framework. Only `name` and `slug` are
- * POSTed to `/api/org/{slug}/tenants` (Epic O-2 contract); the
- * framework selection is captured client-side and threaded through to
- * the new tenant's frameworks page on success so the user lands one
- * click away from installation. When "Choose later" is selected, we
- * just redirect to the new tenant's dashboard.
+ * Two fields: name and slug. Both are POSTed to
+ * `/api/org/{slug}/tenants` (Epic O-2 contract), and on success the
+ * browser lands on the new tenant's dashboard.
+ *
+ * ── it used to have a THIRD field, and it was broken (P2.6) ──
+ *
+ * A "Starting framework" radio group offered ISO/IEC 27001, NIS2,
+ * ISO 9001, ISO 28000 and ISO 39001 — a compliance-framework picker on a
+ * farm product — and on anything but "Choose later" it pushed
+ * `/t/<slug>/frameworks?install=<key>`, a route GRC teardown phase 2
+ * deleted. So five of its six options navigated a brand-new tenant
+ * straight into a 404 on their first screen. Nothing caught it: the
+ * selection never reached the server, so no contract test saw it, and
+ * `tests/guards/nav-routes-exist.test.ts` derives its population from the
+ * nav REGISTRIES, not from `router.push` call sites.
  *
  * The slug is auto-derived from the name on the first keystroke and
  * stops auto-syncing once the user edits it manually — the same
@@ -29,36 +38,12 @@ import { cn } from '@/lib/cn';
 
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Heading } from '@/components/ui/typography';
 
 interface Props {
     orgSlug: string;
 }
-
-interface FrameworkOption {
-    key: string;
-    /** Proper-noun framework label (kept verbatim); omitted for the
-     *  translated "Choose later" option which uses `labelKey`. */
-    label?: string;
-    labelKey?: string;
-    descKey: string;
-}
-
-// The framework catalog lives behind a per-tenant context and isn't
-// reachable from org-scope, so the picker shows a curated short list
-// of the well-known compliance frameworks (matches the catalog used
-// on the per-tenant frameworks page). "later" is the no-redirect
-// fall-through.
-const FRAMEWORK_OPTIONS: FrameworkOption[] = [
-    { key: 'later', labelKey: 'frameworkLaterLabel', descKey: 'frameworkLaterDesc' },
-    { key: 'ISO27001', label: 'ISO/IEC 27001', descKey: 'frameworkIso27001Desc' },
-    { key: 'NIS2', label: 'NIS2', descKey: 'frameworkNis2Desc' },
-    { key: 'ISO9001', label: 'ISO 9001', descKey: 'frameworkIso9001Desc' },
-    { key: 'ISO28000', label: 'ISO 28000', descKey: 'frameworkIso28000Desc' },
-    { key: 'ISO39001', label: 'ISO 39001', descKey: 'frameworkIso39001Desc' },
-];
 
 const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 
@@ -133,7 +118,6 @@ export function NewTenantForm({ orgSlug }: Props) {
     const [name, setName] = useState('');
     const [slug, setSlug] = useState('');
     const [slugTouched, setSlugTouched] = useState(false);
-    const [framework, setFramework] = useState<string>('later');
     const [submitting, setSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
     const [touched, setTouched] = useState<{ name: boolean; slug: boolean }>({
@@ -192,13 +176,7 @@ export function NewTenantForm({ orgSlug }: Props) {
                 // Pick up the just-granted OWNER membership in the JWT
                 // before navigating into the new tenant (see helper above).
                 await refreshSessionClaims();
-                if (framework === 'later') {
-                    router.push(`/t/${newSlug}/dashboard`);
-                } else {
-                    // Land on the frameworks page with a hint so the user
-                    // can install the chosen framework in one step.
-                    router.push(`/t/${newSlug}/frameworks?install=${framework}`);
-                }
+                router.push(`/t/${newSlug}/dashboard`);
             } catch (err) {
                 setSubmitError(
                     err instanceof Error
@@ -208,7 +186,7 @@ export function NewTenantForm({ orgSlug }: Props) {
                 setSubmitting(false);
             }
         },
-        [orgSlug, name, slug, framework, hasErrors, router, t],
+        [orgSlug, name, slug, hasErrors, router, t],
     );
 
     return (
@@ -272,58 +250,6 @@ export function NewTenantForm({ orgSlug }: Props) {
                         data-testid="org-new-tenant-slug"
                     />
                 </FormField>
-
-                {/* Elevation PR-8 — fieldset/legend/native-radio cocktail
-                    replaced with the canonical <RadioGroup> primitive
-                    (Radix-backed). Card-shape labels preserved, but
-                    state + a11y now flow through Radix. data-testid
-                    naming preserved verbatim — no spec changes. */}
-                <div className="space-y-tight" data-testid="org-new-tenant-framework-group">
-                    <p className="text-sm font-medium text-content-emphasis">
-                        {t('startingFramework')}
-                    </p>
-                    <p className="text-xs text-content-muted">
-                        {t('startingFrameworkDesc')}
-                    </p>
-                    <RadioGroup
-                        value={framework}
-                        onValueChange={(v) => setFramework(v as typeof framework)}
-                        aria-label={t('startingFramework')}
-                        className="space-y-1.5 pt-1"
-                    >
-                        {FRAMEWORK_OPTIONS.map((opt) => {
-                            const id = `org-new-tenant-framework-${opt.key}`;
-                            const checked = framework === opt.key;
-                            return (
-                                <label
-                                    key={opt.key}
-                                    htmlFor={id}
-                                    className={`flex items-start gap-compact rounded-lg border p-3 cursor-pointer transition-colors duration-150 ease-out ${
-                                        checked
-                                            ? 'border-border-emphasis bg-bg-subtle'
-                                            : 'border-border-subtle hover:bg-bg-muted'
-                                    }`}
-                                >
-                                    <RadioGroupItem
-                                        id={id}
-                                        value={opt.key}
-                                        size="sm"
-                                        className="mt-0.5"
-                                        data-testid={id}
-                                    />
-                                    <div className="min-w-0">
-                                        <p className="text-sm font-medium text-content-emphasis">
-                                            {opt.labelKey ? t(opt.labelKey) : opt.label}
-                                        </p>
-                                        <p className="text-xs text-content-muted">
-                                            {t(opt.descKey)}
-                                        </p>
-                                    </div>
-                                </label>
-                            );
-                        })}
-                    </RadioGroup>
-                </div>
 
                 {submitError && (
                     <p

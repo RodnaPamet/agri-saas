@@ -2732,6 +2732,25 @@ negated. Say what remains instead:
       (brand, unit, deliberately bilingual) go in `UNTRANSLATED_ALLOWLIST`
       with a reason.
   `i18n-diff.mjs --check` runs in CI (the `Lint` job) and `.husky/pre-commit`.
+- **The product's own nouns live in `docs/nav-vocabulary.md`, and a guard
+  PARSES that file.** Key parity and the untranslated check are blind to a
+  surface with two names: before P2.6 the exchange was «Борса» in the sidebar
+  section header, the breadcrumbs and the map legend, «Пазар» in the sidebar
+  item that navigated to it, and `Борса / Exchange` in the page heading — three
+  spellings of one destination, every locale consistent, every guard green.
+  That doc's table (`Concept | Bulgarian | English | Keys | Never |
+  Namespaces`) IS the expectation `tests/guards/nav-vocabulary.test.ts` checks,
+  so an owner reversal is one edit there and CI then names every catalogue key
+  to follow. Do NOT restate a noun in the guard — and when you add a surface
+  whose name people navigate by, add its row. The canonical three today:
+  «Борса» (the `/exchange` destination), «Тенденции» (`/trends`), «Пазар» (the
+  sidebar SECTION holding them, plus the news category and price copy — the
+  `Never` sweep bans a reserved noun as a key's WHOLE value, never the word).
+  The same file carries the load-bearing spellings that must NOT be renamed
+  (the sidebar section `id`, the `/exchange` + `/trends` path strings shared
+  with the iOS bottom-tab order, `complianceMailbox`), with the reason each
+  one stays — the discipline `no-legacy-brand.test.ts` applies to the previous
+  brand.
 - **An outbound email is written in the RECIPIENT's language, not the
   sender's.** `getTranslations()` resolves from the request cookie, which at
   send time is the *sender's* — on a task assignment the sender is the assigner
@@ -3183,6 +3202,38 @@ Use semantic token classes (`bg-bg-default`, `text-content-muted`,
 (`bg-slate-800`, `text-slate-400`). Use `<Button>`, `<StatusBadge>`,
 and `<EmptyState>` components instead of legacy `.btn` / `.badge` CSS
 classes. See `docs/token-cheatsheet.md` and `docs/ui-buttons.md`.
+
+**«Слънце» inherits from LIGHT, not from dark, and there is no
+`data-theme="sunlight"`.** `attributesFor('sunlight')`
+(`src/lib/theme/theme-cookie.ts`) returns `{ theme: 'light', contrast:
+'high' }`, so the element carries `data-theme="light"` AND
+`data-contrast="high"` together. Both selectors are single attribute
+selectors, so specificity ties and SOURCE ORDER decides: `[data-contrast="high"]`
+is declared after `[data-theme="light"]` in `tokens.css`, so it wins for the 25
+tokens it declares and LIGHT supplies the remaining 105. Writing
+`data-theme="sunlight"` selects no palette at all.
+
+Both P2.3 artefacts resolved it against dark instead —
+`scripts/generate-tokens.mjs` and
+`tests/guards/token-contrast-wcag.test.ts` — and because the generator has no
+cascade, that shipped **58 wrong colours** into `AgrentTheme.highContrast`
+for iOS (P2.8's consumer): «Слънце» on the web showed the cream light palette
+while Swift returned the dark forest greens. P2.9 fixed both; the chain lives
+in `CASCADE` in each file, and the guard cross-checks its own chain against
+the generator's COMMITTED output rather than against a second copy of the
+constant. A fourth theme adds a `CASCADE` entry — do not reintroduce a
+`?? dark` default, which is wrong for any theme that is not a sibling of light.
+
+**Rollback of a colour IS a revert of `design/tokens.json`**, and that is
+measured rather than asserted: all 178 colour-literal custom-property
+declarations under `src/**/*.css` sit in `src/styles/tokens.css` and are
+generated from the JSON (`npm run tokens:check`, CI `Lint` job); the 21 in
+`globals.css` are `var(--token)` aliases carrying no values, and the only
+hand-authored declarations in `tokens.css` are the three
+`--duration-*` reduced-motion overrides inside the `@media` block, which the
+generator deliberately skips via `themeOfLine()`. A NEW colour declared in
+another stylesheet would escape that rollback silently, so
+`tests/guards/tokens-generated-in-sync.test.ts` fails on one.
 
 ### Epic 52 — DataTable Platform
 

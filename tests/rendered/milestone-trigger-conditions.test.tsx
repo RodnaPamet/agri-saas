@@ -1,25 +1,31 @@
 /**
- * Epic 62 — milestone trigger conditions for framework coverage and
- * evidence freshness.
+ * Epic 62 — milestone trigger conditions for evidence freshness.
  *
- * Verifies the *integration logic* — the rule each page applies
- * before invoking `celebrate()`. The hook itself is covered in
- * `tests/rendered/use-celebration.test.tsx`; this file proves the
- * pages call it at the right moment and not on the wrong one.
+ * Verifies the *integration logic* — the rule the page applies before
+ * invoking `celebrate()`. The hook itself is covered in
+ * `tests/rendered/use-celebration.test.tsx`; this file proves the page
+ * calls it at the right moment and not on the wrong one.
  *
- * Strategy: instead of mounting the heavy framework / evidence
- * client trees (each pulls in many providers), we extract the
- * conditional surface as plain effects in a tiny harness that
- * mirrors the call-site shape:
- *
- *   - framework: "fire when coveragePercent === 100, with per-frame
- *     dedupe key"
- *   - evidence:  "fire when isAllEvidenceCurrent + no filter +
- *     loaded + active tab"
+ * Strategy: instead of mounting the heavy evidence client tree (it pulls
+ * in many providers), we extract the conditional surface as plain effects
+ * in a tiny harness that mirrors the call-site shape — "fire when
+ * isAllEvidenceCurrent + no filter + loaded + active tab".
  *
  * The harness uses the real `useCelebration` hook so dedupe behaves
  * end-to-end (including session-storage persistence between
- * re-renders).
+ * re-renders), and since P2.6 that also means the toast copy is resolved
+ * from the real `messages/en.json` through the project-wide `next-intl`
+ * mock in `tests/rendered/setup.ts`.
+ *
+ * ── the framework half is gone (P2.6) ──
+ *
+ * This file also drove a `FrameworkHarness` for the `framework-100`
+ * milestone: fire at 100% coverage, dedupe per frameworkKey. The
+ * framework page went with the GRC teardown and the milestone went with
+ * P2.6, so those six tests were asserting the trigger conditions of a
+ * page nobody can reach. The per-resource dedupe property they covered
+ * moved to `tests/rendered/scoped-celebration.test.tsx`, which drives it
+ * against a live milestone.
  */
 /** @jest-environment jsdom */
 
@@ -37,7 +43,6 @@ import {
     useCelebration,
     __setConfettiForTest,
 } from '@/components/ui/hooks/use-celebration';
-import { MILESTONES } from '@/lib/celebrations';
 import {
     isAllEvidenceCurrent,
     type EvidenceFreshnessRow,
@@ -71,162 +76,6 @@ async function flush(ms = 1300) {
     });
 }
 
-// ─── Framework harness ──────────────────────────────────────────────
-
-function FrameworkHarness({
-    frameworkKey,
-    frameworkName,
-    coveragePercent,
-}: {
-    frameworkKey: string;
-    frameworkName?: string;
-    coveragePercent: number | null;
-}) {
-    const { celebrate } = useCelebration();
-    React.useEffect(() => {
-        if (coveragePercent !== 100) return;
-        const def = MILESTONES['framework-100'];
-        celebrate({
-            preset: def.preset,
-            key: `framework-100:${frameworkKey}`,
-            message: def.message,
-            description: frameworkName
-                ? `${frameworkName} — ${def.description ?? ''}`.trim()
-                : def.description,
-        });
-    }, [coveragePercent, frameworkKey, frameworkName, celebrate]);
-    return null;
-}
-
-describe('Framework page — framework-100 trigger', () => {
-    beforeEach(() => {
-        window.sessionStorage.clear();
-        toastSuccessMock.mockClear();
-    });
-
-    it('does not fire below 100%', async () => {
-        const { stub, calls } = makeConfettiStub();
-        __setConfettiForTest(stub);
-        render(
-            <FrameworkHarness
-                frameworkKey="iso27001"
-                coveragePercent={99}
-            />,
-        );
-        await flush();
-        expect(calls.length).toBe(0);
-        expect(toastSuccessMock).not.toHaveBeenCalled();
-    });
-
-    it('does not fire on null/loading coverage', async () => {
-        const { stub, calls } = makeConfettiStub();
-        __setConfettiForTest(stub);
-        render(
-            <FrameworkHarness
-                frameworkKey="iso27001"
-                coveragePercent={null}
-            />,
-        );
-        await flush();
-        expect(calls.length).toBe(0);
-    });
-
-    it('fires once when coverage reaches 100', async () => {
-        const { stub, calls } = makeConfettiStub();
-        __setConfettiForTest(stub);
-        const { rerender } = render(
-            <FrameworkHarness
-                frameworkKey="iso27001"
-                coveragePercent={99}
-            />,
-        );
-        await flush();
-        expect(calls.length).toBe(0);
-
-        rerender(
-            <FrameworkHarness
-                frameworkKey="iso27001"
-                coveragePercent={100}
-            />,
-        );
-        await flush();
-        // Fireworks preset fires three staggered bursts.
-        expect(calls.length).toBe(3);
-        expect(toastSuccessMock).toHaveBeenCalledTimes(1);
-        expect(toastSuccessMock.mock.calls[0][0]).toContain(
-            '100% framework coverage',
-        );
-    });
-
-    it('does not re-fire when the user re-renders at 100%', async () => {
-        const { stub, calls } = makeConfettiStub();
-        __setConfettiForTest(stub);
-        const { rerender } = render(
-            <FrameworkHarness
-                frameworkKey="iso27001"
-                coveragePercent={100}
-            />,
-        );
-        await flush();
-        const firstCount = calls.length;
-        const firstToast = toastSuccessMock.mock.calls.length;
-
-        // Same framework, same coverage → no second celebration.
-        rerender(
-            <FrameworkHarness
-                frameworkKey="iso27001"
-                coveragePercent={100}
-            />,
-        );
-        await flush();
-        expect(calls.length).toBe(firstCount);
-        expect(toastSuccessMock.mock.calls.length).toBe(firstToast);
-    });
-
-    it('fires separately for two different frameworks (per-key dedupe)', async () => {
-        const { stub, calls } = makeConfettiStub();
-        __setConfettiForTest(stub);
-        const { rerender } = render(
-            <FrameworkHarness
-                frameworkKey="iso27001"
-                coveragePercent={100}
-            />,
-        );
-        await flush();
-        const firstCount = calls.length;
-        expect(firstCount).toBeGreaterThan(0);
-
-        rerender(
-            <FrameworkHarness
-                frameworkKey="soc2"
-                coveragePercent={100}
-            />,
-        );
-        await flush();
-        // Second framework gets its own celebration.
-        expect(calls.length).toBeGreaterThan(firstCount);
-        expect(toastSuccessMock).toHaveBeenCalledTimes(2);
-    });
-
-    it('embeds the framework name in the toast description when provided', async () => {
-        const { stub } = makeConfettiStub();
-        __setConfettiForTest(stub);
-        render(
-            <FrameworkHarness
-                frameworkKey="iso27001"
-                frameworkName="ISO 27001:2022"
-                coveragePercent={100}
-            />,
-        );
-        await flush();
-        const [, opts] = toastSuccessMock.mock.calls[0] as [
-            string,
-            { description?: string },
-        ];
-        expect(opts.description).toContain('ISO 27001:2022');
-    });
-});
-
 // ─── Evidence harness ───────────────────────────────────────────────
 
 function EvidenceHarness({
@@ -249,13 +98,9 @@ function EvidenceHarness({
         if (anyFilterActive) return;
         if (isLoading) return;
         if (!isAllEvidenceCurrent(rows, { now: hydratedNow })) return;
-        const def = MILESTONES['evidence-all-current'];
-        celebrate({
-            preset: def.preset,
-            key: def.key,
-            message: def.message,
-            description: def.description,
-        });
+        // The MILESTONE shape, exactly as EvidenceClient.tsx calls it —
+        // the hook owns the preset, the dedupe key and the translated copy.
+        celebrate('evidence-all-current');
     }, [
         rows,
         hydratedNow,
@@ -285,7 +130,7 @@ describe('Evidence page — evidence-all-current trigger', () => {
         // Rain preset = three staggered top-edge bursts.
         expect(calls.length).toBe(3);
         expect(toastSuccessMock).toHaveBeenCalledTimes(1);
-        expect(toastSuccessMock.mock.calls[0][0]).toContain('All evidence');
+        expect(toastSuccessMock.mock.calls[0][0]).toContain('All records are current');
     });
 
     it('does not fire while the query is loading', async () => {

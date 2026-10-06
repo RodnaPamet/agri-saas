@@ -5,7 +5,6 @@ import { useTranslations } from 'next-intl';
 import {
     LayoutDashboard,
     Building2,
-    ShieldCheck,
     Paperclip,
     Wheat,
     Users,
@@ -74,12 +73,14 @@ export function useOrgNavSections(): OrgNavSectionDef[] {
             items: [
                 { href: orgHref('/'), label: t('portfolioOverview'), icon: LayoutDashboard },
                 { href: orgHref('/tenants'), label: t('allTenants'), icon: Building2 },
-                {
-                    href: orgHref('/practices'),
-                    label: t('nonPerformingPractices'),
-                    icon: ShieldCheck,
-                    requiresDrillDown: true,
-                },
+                // The "Non-Performing Practices" row that used to sit here
+                // pointed at /org/<slug>/practices — a route GRC teardown
+                // phase 2 deleted, so every click was a 404. The portfolio
+                // DASHBOARD's matching card was repointed at the time (see
+                // dashboard-sections.tsx) and the sidebar was missed;
+                // `tests/guards/nav-routes-exist.test.ts` derives its
+                // population from the TENANT app tree only, so nothing saw
+                // it. Removed in P2.6.
                 {
                     href: orgHref('/evidence'),
                     label: t('overdueEvidence'),
