@@ -1465,8 +1465,17 @@ jobs:
         # shards by file, so `--shard` would hand the whole file to one shard
         # and fail the other with "no tests found". Pin the full a11y gate to
         # shard 1 (mirrors how the jest matrix pins its guards to shard 1).
+        #
+        # P2.9 added the mobile half BY PATH. It has to be named here: the
+        # functional suite below runs `--grep-invert "a11y"`, which excludes
+        # it by title, so a new a11y file not listed on this line would be
+        # scanned by nothing at all. The two files cover disjoint projects —
+        # `a11y.spec.ts` carries no `@mobile` tag so it runs on `chromium`
+        # (1280px) only, and `mobile/a11y-mobile.spec.ts` is tagged so it runs
+        # on `mobile-android` + `mobile-iphone` only. Neither duplicates the
+        # other's viewport.
         if: matrix.shard == 1
-        run: npx playwright test tests/e2e/a11y.spec.ts
+        run: npx playwright test tests/e2e/a11y.spec.ts tests/e2e/mobile/a11y-mobile.spec.ts
         env:
           CI: "true"
 
