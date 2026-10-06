@@ -57,6 +57,8 @@ const messageIds: string[] = [];
 // make every write a different person and put none of them in the audience.
 const BUYER_USER = `u-xm-buyer-${randomUUID()}`;
 const SELLER_USER = `u-xm-seller-${randomUUID()}`;
+// A person at neither party farm — the outsider the isolation case needs.
+const THIRD_USER = `u-xm-third-${randomUUID()}`;
 
 /**
  * Run as a PERSON at a tenant.
@@ -88,8 +90,21 @@ async function storedBody(id: string): Promise<string> {
 }
 
 /** Read a message as a given tenant would — through the real extension chain. */
-async function readAs(tenantId: string, id: string): Promise<string | undefined> {
-    const userId = tenantId === buyerTenant ? BUYER_USER : SELLER_USER;
+/**
+ * Read as a given PERSON at a given tenant.
+ *
+ * The person is explicit rather than derived from the tenant, and that is not
+ * fussiness: a first version mapped "not the buyer tenant" to `SELLER_USER`,
+ * so the third-tenant case below was handed the LISTING CREATOR's identity —
+ * who is in the audience — and read the message it was asserting it could not
+ * see. The test caught it. A defaulted identity in a privacy test is a hole
+ * shaped exactly like the bug.
+ */
+async function readAs(
+    tenantId: string,
+    userId: string,
+    id: string,
+): Promise<string | undefined> {
     return asPerson<string | undefined>(tenantId, userId, async (db: never) => {
         const row = await (db as unknown as {
             exchangeMessage: { findFirst(a: unknown): Promise<{ body: string } | null> };
@@ -205,14 +220,14 @@ describeFn('an Exchange message is readable by BOTH parties', () => {
         const [buyerMsg, sellerMsg] = messageIds;
         // The cross reads. These are what failed before the fix; the two
         // same-party reads below passed throughout and prove nothing alone.
-        expect(await readAs(sellerTenant, buyerMsg)).toBe(BODY_FROM_BUYER);
-        expect(await readAs(buyerTenant, sellerMsg)).toBe(BODY_FROM_SELLER);
+        expect(await readAs(sellerTenant, SELLER_USER, buyerMsg)).toBe(BODY_FROM_BUYER);
+        expect(await readAs(buyerTenant, BUYER_USER, sellerMsg)).toBe(BODY_FROM_SELLER);
     });
 
     it('and each party still reads its OWN message — no regression', async () => {
         const [buyerMsg, sellerMsg] = messageIds;
-        expect(await readAs(buyerTenant, buyerMsg)).toBe(BODY_FROM_BUYER);
-        expect(await readAs(sellerTenant, sellerMsg)).toBe(BODY_FROM_SELLER);
+        expect(await readAs(buyerTenant, BUYER_USER, buyerMsg)).toBe(BODY_FROM_BUYER);
+        expect(await readAs(sellerTenant, SELLER_USER, sellerMsg)).toBe(BODY_FROM_SELLER);
     });
 
     it('a THIRD tenant sees NOTHING — RLS does the access control, not the key', async () => {
@@ -232,11 +247,11 @@ describeFn('an Exchange message is readable by BOTH parties', () => {
         // by one row, which is exactly what makes the global KEK safe here.
         const third = await raw.tenant.create({ data: { name: `${TAG}-third`, slug: `${TAG}-3` } });
         try {
-            expect(await readAs(third.id, messageIds[0])).toBeUndefined();
+            expect(await readAs(third.id, THIRD_USER, messageIds[0])).toBeUndefined();
             // And the two real parties still can — otherwise "nobody can read
             // it" would satisfy this assertion too.
-            expect(await readAs(buyerTenant, messageIds[0])).toBe(BODY_FROM_BUYER);
-            expect(await readAs(sellerTenant, messageIds[0])).toBe(BODY_FROM_BUYER);
+            expect(await readAs(buyerTenant, BUYER_USER, messageIds[0])).toBe(BODY_FROM_BUYER);
+            expect(await readAs(sellerTenant, SELLER_USER, messageIds[0])).toBe(BODY_FROM_BUYER);
         } finally {
             // Best-effort for the same reason as afterAll: a read may audit,
             // and AuditLog cannot be deleted.
