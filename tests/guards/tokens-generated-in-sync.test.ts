@@ -26,6 +26,7 @@
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { collectSourceFiles } from '../helpers/collect-files';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -129,5 +130,66 @@ describe('tokens.css and Tokens.swift agree with design/tokens.json', () => {
         expect(swift).toContain('public enum AgrentColor');
         expect((swift.match(/static func \w+\(_ theme: AgrentTheme\)/g) ?? []).length)
             .toBeGreaterThan(80);
+    });
+
+    it('no colour token is declared outside tokens.css — so a revert of tokens.json IS the rollback', () => {
+        // P2.9. The three checks above make tokens.css and Tokens.swift agree
+        // with the JSON. They say nothing about a colour declared in ANOTHER
+        // stylesheet, which the generator never reads and `--check` never
+        // compares — a `--brand-default: #ff0000` in globals.css would
+        // override nothing in tokens.css but a NEW token declared there is
+        // outside the one-file rollback entirely, silently.
+        //
+        // Measured today: 4 stylesheets under src/, 178 colour-literal
+        // custom-property declarations, all 178 in tokens.css. globals.css
+        // declares 21 custom properties and every one is a `var(--token)`
+        // alias carrying no value of its own, so it re-themes correctly and
+        // holds nothing to revert.
+        // Via `collectSourceFiles`, not a hand-rolled walk — it throws on an
+        // empty result, so a gutted collector cannot report a clean absence
+        // (#865). Floor 4: the live stylesheet count, so losing one is a
+        // failure rather than a smaller scan that still passes.
+        const cssFiles = collectSourceFiles({
+            roots: ['src'],
+            extensions: ['.css'],
+            floor: 4,
+        });
+
+        // NOT anchored to the start of a line. The first version of this was,
+        // and its own mutation proof walked straight past
+        // `:root { --p29-probe: #ff0000; }` on one line — the shape a
+        // hand-added override actually takes. Anchor on the preceding
+        // delimiter instead, which also distinguishes a DECLARATION from a
+        // `var(--x)` reference: a reference has no colon after the name.
+        const COLOUR_DECL =
+            /(?:^|[{;])\s*(--[a-z][a-z0-9-]*)\s*:\s*(?:#[0-9a-fA-F]{3,8}|rgba?\(|hsla?\(|oklch\(|lab\(|color-mix\()/g;
+        const offenders: string[] = [];
+        let inTokensCss = 0;
+        for (const file of cssFiles) {
+            const rel = path.relative(ROOT, file);
+            const isCanonical = rel === path.join('src', 'styles', 'tokens.css');
+            // Strip comments first: this file is 757 lines of prose carrying
+            // token names and hex values, and a quoted example is not a
+            // declaration.
+            const text = fs.readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+            for (const m of text.matchAll(COLOUR_DECL)) {
+                if (isCanonical) { inTokensCss++; continue; }
+                offenders.push(`${rel}: ${m[1]}`);
+            }
+        }
+
+        // POSITIVE CONTROL. The regex has to actually match this codebase's
+        // declarations, or an empty offender list means "I could not look".
+        expect(inTokensCss).toBeGreaterThanOrEqual(150);
+
+        if (offenders.length > 0) {
+            throw new Error(
+                `${offenders.length} colour value(s) are declared as custom properties outside ` +
+                    `src/styles/tokens.css, so reverting design/tokens.json would NOT revert ` +
+                    `them. Move them into design/tokens.json and regenerate, or make them ` +
+                    `var() aliases onto a token:\n  ` + offenders.join('\n  '),
+            );
+        }
+        expect(offenders).toEqual([]);
     });
 });
