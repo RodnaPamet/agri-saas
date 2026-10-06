@@ -24,11 +24,41 @@ import { logger } from '@/lib/observability/logger';
 import { jsonResponse } from '@/lib/api-response';
 import { appendAuditEntry } from '@/lib/audit/audit-writer';
 import { SIGNUP_LIMIT } from '@/lib/security/rate-limit';
+import { verifyTurnstile } from '@/lib/security/turnstile';
+import { getClientIp } from '@/lib/rate-limit/edge-bucket';
 import type { PrismaClient, Role } from '@prisma/client';
 
 export const POST = withApiErrorHandling(
-    withValidatedBody(AuthActionSchema, async (_req, _ctx, body) => {
+    withValidatedBody(AuthActionSchema, async (req, _ctx, body) => {
         try {
+            // Bot screening (P3.5c), BEFORE anything is written or any
+            // password is hashed. A screen that ran after the expensive work
+            // would still refuse the signup but would have already paid for
+            // it, which is most of what a flood costs.
+            //
+            // DORMANT until `TURNSTILE_SECRET_KEY` is set: with no secret this
+            // returns `skipped` and warns once per process, so the log says
+            // whether the control is live. That announcement is the whole
+            // difference between this and P0.7's tick on #1191, which claimed
+            // Turnstile and shipped nothing.
+            //
+            // The IP is passed as Cloudflare's optional `remoteip`, which
+            // tightens their own heuristics. `getClientIp` reads
+            // x-forwarded-for (Next 15 removed `req.ip`).
+            const turnstile = await verifyTurnstile(
+                body.turnstileToken,
+                getClientIp(req),
+            );
+            if (!turnstile.ok) {
+                // Distinguishable from every other 400 on purpose: the client
+                // has to know to reset the widget and let the person retry,
+                // and a token is single-use so a blind retry always fails.
+                return jsonResponse(
+                    { error: 'turnstile_failed', codes: turnstile.codes },
+                    { status: 400 },
+                );
+            }
+
             // Zod discriminated-union already rejects anything but `register`
             // — no else branches needed. Keep the try/catch as a final safety
             // net so a DB error during registration returns JSON instead of

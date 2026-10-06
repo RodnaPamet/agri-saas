@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "3.78.18",
+    "version": "4.0.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -760,6 +760,10 @@
           "orgName": {
             "type": "string",
             "minLength": 1
+          },
+          "turnstileToken": {
+            "type": "string",
+            "maxLength": 2048
           }
         },
         "required": [
@@ -768,7 +772,7 @@
           "name",
           "orgName"
         ],
-        "description": "Self-service signup payload (gated by AUTH_TEST_MODE in non-prod). The password is checked against HIBP via k-anonymity before persistence; emailVerification is initiated server-side."
+        "description": "Self-service signup payload (gated by AUTH_TEST_MODE in non-prod). The password is checked against HIBP via k-anonymity before persistence; emailVerification is initiated server-side. `turnstileToken` is required whenever the deployment has a Turnstile secret configured."
       },
       "AuthUiConfig": {
         "type": "object",

@@ -743,6 +743,10 @@ exports[`API contract — per-schema snapshots schema: AuthRegisterRequest 1`] =
     "orgName": {
       "type": "string",
       "minLength": 1
+    },
+    "turnstileToken": {
+      "type": "string",
+      "maxLength": 2048
     }
   },
   "required": [
@@ -751,7 +755,7 @@ exports[`API contract — per-schema snapshots schema: AuthRegisterRequest 1`] =
     "name",
     "orgName"
   ],
-  "description": "Self-service signup payload (gated by AUTH_TEST_MODE in non-prod). The password is checked against HIBP via k-anonymity before persistence; emailVerification is initiated server-side."
+  "description": "Self-service signup payload (gated by AUTH_TEST_MODE in non-prod). The password is checked against HIBP via k-anonymity before persistence; emailVerification is initiated server-side. \`turnstileToken\` is required whenever the deployment has a Turnstile secret configured."
 }"
 `;
 
