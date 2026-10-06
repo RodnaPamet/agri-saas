@@ -83,8 +83,16 @@ export const MAX_SLUG_LENGTH = 80;
  * all-emoji name. `null` rather than a generated fallback on purpose: the
  * caller has to decide what to do, and a silent `farm-1` would put a name in a
  * URL that the owner never chose and cannot recognise.
+ *
+ * `maxLength` is a parameter because the callers genuinely differ: a tenant
+ * slug is capped at 80 to match the admin route's `max(80)`, while a download
+ * filename stem is capped at 60 to leave room for an extension. It lives here
+ * rather than in each caller so nobody re-implements the
+ * slice-then-retrim-the-hyphen step — slicing `agro-targovishte` to 13 gives
+ * `agro-targovish`, but slicing it to 5 gives `agro-`, and only one of those
+ * needs the fix-up.
  */
-export function toSlug(name: string): string | null {
+export function toSlug(name: string, maxLength: number = MAX_SLUG_LENGTH): string | null {
     const slug = transliterate(name)
         .toLowerCase()
         // Strip diacritics that survive from Latin input (é → e) so a slug is
@@ -93,7 +101,7 @@ export function toSlug(name: string): string | null {
         .replace(/[̀-ͯ]/g, '')
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-+|-+$/g, '')
-        .slice(0, MAX_SLUG_LENGTH)
+        .slice(0, maxLength)
         // A trailing hyphen can reappear after the slice.
         .replace(/-+$/g, '');
     return slug.length > 0 ? slug : null;

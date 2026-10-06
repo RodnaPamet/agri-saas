@@ -116,10 +116,7 @@ async function handleRegister(body: any) {
     // the one that knows what to do. Here that is `farm`, which with the
     // suffix is still unique and still honest about being generated.
     const SUFFIX = Date.now().toString(36);
-    const base = (toSlug(String(orgName)) ?? 'farm').slice(
-        0,
-        MAX_SLUG_LENGTH - SUFFIX.length - 1,
-    );
+    const base = toSlug(String(orgName), MAX_SLUG_LENGTH - SUFFIX.length - 1) ?? 'farm';
     const slug = `${base}-${SUFFIX}`;
 
     // Hash BEFORE the transaction. bcrypt at cost 12 costs hundreds of

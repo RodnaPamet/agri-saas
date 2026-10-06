@@ -28,6 +28,7 @@
  * round-trip; the server remains the source of truth.
  */
 import { useCallback, useMemo, useState } from 'react';
+import { toSlug } from '@/lib/bg-transliterate';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { getCsrfToken } from 'next-auth/react';
@@ -48,11 +49,12 @@ interface Props {
 const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 
 function slugify(input: string): string {
-    return input
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '')
-        .slice(0, 64);
+    // `toSlug` transliterates first. The old [a-z0-9] strip returned '' for any
+    // Cyrillic name, and '' fails SLUG_RE above — so a Bulgarian user typing
+    // «Тестово стопанство» got an empty suggestion and a validation error, and
+    // had to invent a Latin slug by hand. '' is still returned for a name with
+    // nothing usable in it, which SLUG_RE correctly rejects.
+    return toSlug(input, 64) ?? '';
 }
 
 interface FieldErrors {
