@@ -107,9 +107,16 @@ describe('#1315 — the two advisories stay fixed', () => {
     it('and nothing imports it — the claim that made removal safe', () => {
         // Asserted over a DERIVED population rather than asserted in prose, and
         // the floor below is what stops an empty walk reading as "clean".
-        // `collectTrackedFiles` carries the floor and throws on an empty
-        // result, so the population cannot silently collapse to nothing.
         const files = sourceFiles();
+
+        // The floor lives HERE, at the call site, not only inside
+        // `collectTrackedFiles`. `Selector teeth` caught the difference: with
+        // the floor delegated to the helper, gutting `sourceFiles()` itself to
+        // `return []` SURVIVED — the helper's refuse-empty never runs because
+        // the wrapper no longer reaches it, and `expect(importers).toEqual([])`
+        // is then vacuously true. A floor inside a helper protects the helper;
+        // the caller needs its own.
+        expect(files.length).toBeGreaterThan(500);
         const importers = files
             .filter((abs) => /\bmammoth\b/.test(fs.readFileSync(abs, 'utf8')))
             .filter((abs) => abs !== __filename)
