@@ -242,8 +242,8 @@
    * different matter — the sidebar, button fills and edges carried blue for
    * no semantic reason and have been swept to white/gold. */
   --bg-info:          rgba(59, 130, 246, 0.15);  /* blue-500 @ 15% — badge tint */
-  --bg-info-emphasis: #2563EB;  /* blue-600 — solid actionable surface */
-  --content-info:     #60a5fa;  /* blue-400 */
+  --bg-info-emphasis: #3B82F6;  /* blue-500 — solid actionable surface. P2.9: was blue-600 #2563EB, which gave --content-inverted only 3.44:1; the other three *-emphasis surfaces already cleared AA, this was the odd one out. 4.83:1 */
+  --content-info:     #7DB6FC;  /* soft blue — P2.9: was blue-400 #60a5fa at 4.48:1 on --bg-elevated (tooltips, dropdowns; 52 uses). 5.41:1 there, 5.48:1 on the --bg-info tint, >=5.5:1 elsewhere */
   --border-info:      rgba(59, 130, 246, 0.30);  /* blue-500 @ 30% */
 
   /* ── Status: Attention (pending / needs-action) ────────────────── */
@@ -770,7 +770,7 @@
   --presence-away:    var(--content-warning);
   --presence-offline: var(--content-subtle);
   --unread:           var(--primary);
-  --content-subtle:   #6B6B6B;  /* warm medium gray — hints, disabled, tertiary (4.9:1 on bg-default) */
+  --content-subtle:   #666666;  /* warm medium gray — hints, disabled, tertiary. P2.9: was #6B6B6B, which cleared 4.94:1 on --bg-default but only 4.44:1 once --bg-subtle (taupe @ 7%) is flattened onto --bg-page. 4.79:1 there, 5.13:1 on --bg-page, 5.32:1 on --bg-default */
   --content-inverted: #FAF9F7;  /* warm off-white — text on inverted/dark surfaces */
 
   /* ── Borders / Dividers ────────────────────────────────────────── */

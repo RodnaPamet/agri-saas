@@ -55,6 +55,27 @@ const E2E_MANIFEST: ReadonlyArray<E2EManifestEntry> = [
         spec: 'tests/e2e/entity-detail-layout.spec.ts',
         anchor: 'entity-detail-header',
     },
+    // P2.9 (#1193) — not a P4 surface, registered here because this manifest
+    // is the repo's mechanism for "a spec cannot be silently deleted or
+    // gutted". The mobile axe gate is worth exactly that: it is the only
+    // real-browser accessibility scan at a phone viewport, and before it
+    // existed the desktop gate's 7 green scans read as full coverage. A
+    // deleted file produces no failing check anywhere else — absence reads as
+    // success.
+    //
+    // The anchor is the DESCRIBE TITLE carrying the tag, not the bare
+    // `@mobile` token. `playwright.config.ts` routes on the tag appearing in
+    // a test's full title, so stripping it from the describe stops the spec
+    // running on both phone projects while every assertion inside it still
+    // passes on nothing. A bare `@mobile` anchor does NOT catch that: that
+    // spec's own docblock says the word several times, so deleting the live
+    // tag left the anchor satisfied and the gate dead — measured, which is
+    // why the anchor is the whole title.
+    {
+        surface: 'Mobile axe sweep — 0 serious findings at a phone viewport',
+        spec: 'tests/e2e/mobile/a11y-mobile.spec.ts',
+        anchor: "test.describe('a11y — mobile viewport @mobile'",
+    },
 ];
 
 describe('E2E coverage manifest (quality roadmap P4 first wave)', () => {
@@ -76,10 +97,15 @@ describe('E2E coverage manifest (quality roadmap P4 first wave)', () => {
         },
     );
 
-    it('the manifest pins every deferred P4 surface', () => {
-        // The 4-surface scope is locked here so a future PR cannot
-        // quietly drop an entry. Adding a 5th surface lifts the
-        // count; the prompt scope is exactly four.
-        expect(E2E_MANIFEST).toHaveLength(4);
+    it('the manifest pins every deferred P4 surface, plus the P2.9 mobile axe gate', () => {
+        // The scope is locked here so a future PR cannot quietly drop an
+        // entry. It was exactly the four P4 surfaces; P2.9 added a fifth for
+        // the reason written beside it. Adding a sixth lifts the count — a
+        // visible line in the diff, which is the point.
+        expect(E2E_MANIFEST).toHaveLength(5);
+        // Every entry must name a DISTINCT spec, or two surfaces could be
+        // riding one file and deleting it would cost one failing assertion
+        // rather than two.
+        expect(new Set(E2E_MANIFEST.map((e) => e.spec)).size).toBe(E2E_MANIFEST.length);
     });
 });
