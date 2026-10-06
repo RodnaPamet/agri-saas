@@ -3573,6 +3573,14 @@ exports[`API contract — per-schema snapshots schema: CurrentUser 1`] = `
         },
         "bottomTabOrder": {
           "$ref": "#/components/schemas/BottomTabOrder"
+        },
+        "avatarUrl": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The caller's EFFECTIVE avatar, or \`null\` for none (draw initials). ONE field for both kinds of avatar: an uploaded photo and an OAuth provider photo both live in \`User.image\`, so there is no second endpoint to consult and no fallback chain to walk. Read from the database, so it is current the moment an upload lands — fresher than the \`picture\` claim in a session token, which is minted at sign-in.\\n\\n**TWO SHAPES, RETURNED AS STORED — the server never absolutises one into the other.** Branch on whether the value starts with \`/\`:\\n\\n- a ROOT-RELATIVE path, \`/api/account/avatar/{userId}\` — an avatar uploaded through this API. Resolve it against the API base and send your session cookie or bearer; it is \`getUserAvatar\`, and it 404s once the avatar is removed.\\n- an ABSOLUTE \`https://\` URL on a THIRD-PARTY host (e.g. \`https://lh3.googleusercontent.com/...\`) — a provider photo from an OAuth sign-in. Fetch it exactly as given and attach NO credentials.\\n\\nBoth halves of that are failure modes somebody will otherwise hit: resolving an absolute provider URL against the API base 404s, and attaching your bearer token to it leaks the token to that host. Confirmed with the native client (agrent-ios#149): it handles both shapes, and leaving the value as stored is the deliberate choice, because an absolutised URL hides which host is about to be contacted.\\n\\nMay be ABSENT (not just null) from a server older than this field — treat absent as \`null\`, never as a third state.",
+          "example": "/api/account/avatar/clx8k2p9a0000qwer"
         }
       },
       "required": [

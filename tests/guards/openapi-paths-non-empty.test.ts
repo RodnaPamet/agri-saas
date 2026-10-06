@@ -55,6 +55,15 @@ const PATH_FLOOR = 26;
  * a large-but-wrong document can already satisfy.
  */
 const REQUIRED_OPERATION_IDS = [
+    // Account — the launch request and the avatar it points at (#1299). Listed
+    // as a PAIR for the reason they were documented as one: `getCurrentUser`
+    // carries `avatarUrl`, and a ROOT-RELATIVE `avatarUrl` resolves to
+    // `getUserAvatar`. The serve route spent the whole avatar roadmap live and
+    // undescribed, with iOS reading its shape out of route code
+    // (agrent-ios#149), so losing either description again should cost a red
+    // test rather than another round of guessing from the client side.
+    'getCurrentUser',
+    'getUserAvatar',
     // Journal
     'listJournalEntries',
     'createJournalEntry',

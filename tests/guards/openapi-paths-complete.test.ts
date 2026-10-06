@@ -99,7 +99,12 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 // with curl, not a client reading the spec.
 // 242 -> 243: the misplaced-v2 repair. Baselined like every other non-tenant
 // /api/admin path — an operator mid-migration with curl, not a spec reader.
-const UNDOCUMENTED_CEILING = 244;
+// 244 -> 243: `/api/account/avatar/{userId}` is DESCRIBED now
+// (`account.paths.ts`, #1299), so it leaves the baseline in the same diff that
+// documents it — the direction this guard's sibling assertion demands. It was
+// the one path on this list a native client was already calling: iOS was
+// reading its shape out of route code (agrent-ios#149).
+const UNDOCUMENTED_CEILING = 243;
 
 interface Baseline {
     _README: string[];

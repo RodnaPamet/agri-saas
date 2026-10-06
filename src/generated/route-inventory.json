@@ -37,7 +37,7 @@
     {
       "path": "/api/account/avatar/{userId}",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/account/bottom-tabs",

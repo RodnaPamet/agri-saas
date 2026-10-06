@@ -30,7 +30,6 @@
     ],
     "undocumented": [
         "/api/account/avatar",
-        "/api/account/avatar/{userId}",
         "/api/account/language",
         "/api/account/profile",
         "/api/admin/agri-events",

@@ -1,22 +1,71 @@
 /**
  * Account — the per-user surfaces, which are NOT tenant-scoped.
  *
- * Every other module here documents `/api/t/{tenantSlug}/…`. These two carry
- * no tenant in the path because what they store is a property of the PERSON:
- * the bottom-row arrangement is a list of route suffixes, and a suffix means
- * the same thing in every tenant the user belongs to.
+ * Every other module here documents `/api/t/{tenantSlug}/…`. These carry no
+ * tenant in the path because what they store is a property of the PERSON: the
+ * bottom-row arrangement is a list of route suffixes, and a suffix means the
+ * same thing in every tenant the user belongs to; an avatar is the same face in
+ * all of them.
  *
- * They are documented as a PAIR, and that is the point of the module. The
- * write endpoint has deliberately no GET — a client reads its arrangement
- * from `/api/auth/me`, the request it already makes at launch — so describing
- * only one half would leave a native client with a setter and no getter and
- * no clue where the value lives. `/api/auth/me` came off the undocumented
- * baseline in the same change.
+ * Operations are documented in PAIRS here, and that is the point of the module
+ * — a value and the way to read it back:
+ *
+ *   - `bottomTabOrder`. The write endpoint has deliberately no GET: a client
+ *     reads its arrangement from `/api/auth/me`, the request it already makes
+ *     at launch. Describing only one half would leave a native client with a
+ *     setter, no getter and no clue where the value lives. `/api/auth/me` came
+ *     off the undocumented baseline in that change.
+ *   - `avatarUrl` + `getUserAvatar` (#1299). Same shape, the other way round:
+ *     the serve route was live and undescribed, so clients were reading it out
+ *     of route code, and `/api/auth/me` did not say whether the caller HAD an
+ *     avatar at all — so an OAuth photo the web rendered showed as initials on
+ *     iOS (agrent-ios#149). The field tells you which URL to use; the operation
+ *     is what one of the two shapes points at.
  */
 import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { MAX_BOTTOM_TABS } from '@/lib/account/bottom-tabs';
+import { ApiErrorResponseSchema } from '@/lib/dto/common';
 import { op } from './helpers';
+
+/**
+ * The caller's effective avatar URL, and the ONE hazard a client has to know
+ * about (#1299).
+ *
+ * `.nullable()` is load-bearing: `null` is the real "no avatar, draw initials"
+ * state, not a placeholder. `.optional()` is load-bearing for a DIFFERENT
+ * reason — this field is new, and a client built against this contract can be
+ * talking to a server that predates it, where the key is simply absent. Absent
+ * and `null` mean the same thing to a reader; they are not a third state.
+ */
+const AvatarUrl = z
+    .string()
+    .nullable()
+    .optional()
+    .openapi({
+        description:
+            "The caller's EFFECTIVE avatar, or `null` for none (draw initials). ONE field for " +
+            'both kinds of avatar: an uploaded photo and an OAuth provider photo both live in ' +
+            '`User.image`, so there is no second endpoint to consult and no fallback chain to ' +
+            'walk. Read from the database, so it is current the moment an upload lands — fresher ' +
+            "than the `picture` claim in a session token, which is minted at sign-in.\n\n" +
+            '**TWO SHAPES, RETURNED AS STORED — the server never absolutises one into the ' +
+            'other.** Branch on whether the value starts with `/`:\n\n' +
+            '- a ROOT-RELATIVE path, `/api/account/avatar/{userId}` — an avatar uploaded through ' +
+            'this API. Resolve it against the API base and send your session cookie or bearer; ' +
+            'it is `getUserAvatar`, and it 404s once the avatar is removed.\n' +
+            '- an ABSOLUTE `https://` URL on a THIRD-PARTY host (e.g. ' +
+            '`https://lh3.googleusercontent.com/...`) — a provider photo from an OAuth sign-in. ' +
+            'Fetch it exactly as given and attach NO credentials.\n\n' +
+            'Both halves of that are failure modes somebody will otherwise hit: resolving an ' +
+            'absolute provider URL against the API base 404s, and attaching your bearer token to ' +
+            "it leaks the token to that host. Confirmed with the native client (agrent-ios#149): " +
+            'it handles both shapes, and leaving the value as stored is the deliberate choice, ' +
+            'because an absolutised URL hides which host is about to be contacted.\n\n' +
+            'May be ABSENT (not just null) from a server older than this field — treat absent as ' +
+            '`null`, never as a third state.',
+        example: '/api/account/avatar/clx8k2p9a0000qwer',
+    });
 
 /**
  * The stored arrangement, in both directions.
@@ -55,7 +104,8 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
             'when there is no active membership, and they always agree: `role` is never ' +
             'a fallback value, so it is also not proof of access on its own. ' +
             'Carries `bottomTabOrder`, which is why a client needs no second round-trip ' +
-            'before drawing its tab bar. Answers a BEARER token as well as a cookie.',
+            'before drawing its tab bar, and `avatarUrl`, which is why it needs no probe to ' +
+            'find out whether the caller has a photo. Answers a BEARER token as well as a cookie.',
         tags: ['Account'],
         success: {
             status: 200,
@@ -78,6 +128,7 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
                         // missing role rather than assume a string is present.
                         role: z.string().nullable(),
                         bottomTabOrder: BottomTabOrder,
+                        avatarUrl: AvatarUrl,
                     }),
                     tenant: z
                         .object({ id: z.string(), name: z.string(), slug: z.string() })
@@ -112,6 +163,57 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
             status: 200,
             description: 'The stored arrangement, as persisted.',
             schema: z.object({ bottomTabOrder: BottomTabOrder }),
+        },
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/account/avatar/{userId}',
+        operationId: 'getUserAvatar',
+        summary: "A user's uploaded avatar, as webp bytes",
+        description:
+            'BINARY, not JSON — `image/webp`, `Cache-Control: private, max-age=300`. This is ' +
+            'where a ROOT-RELATIVE `avatarUrl` from `getCurrentUser` points; an ABSOLUTE ' +
+            '`avatarUrl` is a third-party provider photo and this route knows nothing about it ' +
+            '(see the `avatarUrl` description — the two shapes are fetched differently).\n\n' +
+            'Live since the avatar roadmap P3 and UNDESCRIBED until #1299, so clients were ' +
+            'reading its shape out of route code.\n\n' +
+            'ANY authenticated user may fetch ANY user id, deliberately: avatars are rendered ' +
+            'across tenant member lists and people-pickers, so a per-viewer check here would ' +
+            'break the surfaces the route exists for. Nothing else is exposed — the response is ' +
+            'image bytes, and a non-existent user id is indistinguishable from a user with no ' +
+            'avatar. Answers a BEARER token as well as a cookie.\n\n' +
+            'The 404 is the ORDINARY case, not an error to log: it is what a user with no ' +
+            'uploaded avatar returns, and `<InitialsAvatar>` falls back to initials on it. The ' +
+            'bytes are written only through `POST /api/account/avatar`, which accepts the ' +
+            "caller's OWN avatar only, validates the webp magic number and AV-scans before the " +
+            'write — so what streams here has passed that gate.',
+        tags: ['Account'],
+        params: z.object({
+            userId: z
+                .string()
+                .openapi({
+                    param: { name: 'userId', in: 'path' },
+                    description:
+                        'The user whose avatar to serve. Any user id, not just the caller — see above.',
+                }),
+        }),
+        success: {
+            status: 200,
+            description:
+                'The stored avatar. `Content-Type: image/webp`; `Cache-Control: private, ' +
+                'max-age=300`, so a changed avatar propagates within five minutes.',
+            content: { 'image/webp': z.string().openapi({ format: 'binary' }) },
+        },
+        extraResponses: {
+            404: {
+                description:
+                    'This user has no UPLOADED avatar — the expected answer for most users, ' +
+                    'including every user whose photo came from an OAuth provider. Render ' +
+                    'initials. It is also the answer for a user id that does not exist, and the ' +
+                    'two are deliberately indistinguishable.',
+                content: { 'application/json': { schema: ApiErrorResponseSchema } },
+            },
         },
     });
 }

@@ -3470,6 +3470,14 @@
               },
               "bottomTabOrder": {
                 "$ref": "#/components/schemas/BottomTabOrder"
+              },
+              "avatarUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The caller's EFFECTIVE avatar, or `null` for none (draw initials). ONE field for both kinds of avatar: an uploaded photo and an OAuth provider photo both live in `User.image`, so there is no second endpoint to consult and no fallback chain to walk. Read from the database, so it is current the moment an upload lands — fresher than the `picture` claim in a session token, which is minted at sign-in.\n\n**TWO SHAPES, RETURNED AS STORED — the server never absolutises one into the other.** Branch on whether the value starts with `/`:\n\n- a ROOT-RELATIVE path, `/api/account/avatar/{userId}` — an avatar uploaded through this API. Resolve it against the API base and send your session cookie or bearer; it is `getUserAvatar`, and it 404s once the avatar is removed.\n- an ABSOLUTE `https://` URL on a THIRD-PARTY host (e.g. `https://lh3.googleusercontent.com/...`) — a provider photo from an OAuth sign-in. Fetch it exactly as given and attach NO credentials.\n\nBoth halves of that are failure modes somebody will otherwise hit: resolving an absolute provider URL against the API base 404s, and attaching your bearer token to it leaks the token to that host. Confirmed with the native client (agrent-ios#149): it handles both shapes, and leaving the value as stored is the deliberate choice, because an absolutised URL hides which host is about to be contacted.\n\nMay be ABSENT (not just null) from a server older than this field — treat absent as `null`, never as a third state.",
+                "example": "/api/account/avatar/clx8k2p9a0000qwer"
               }
             },
             "required": [
@@ -24589,7 +24597,7 @@
       "get": {
         "operationId": "getCurrentUser",
         "summary": "The signed-in user, their primary tenant, and their preferences",
-        "description": "The launch request. Returns the caller plus their OLDEST ACTIVE membership as `tenant` — one membership, not the list, so a user who belongs to several tenants cannot pick between them here. `role` and `tenant` are BOTH `null` when there is no active membership, and they always agree: `role` is never a fallback value, so it is also not proof of access on its own. Carries `bottomTabOrder`, which is why a client needs no second round-trip before drawing its tab bar. Answers a BEARER token as well as a cookie.",
+        "description": "The launch request. Returns the caller plus their OLDEST ACTIVE membership as `tenant` — one membership, not the list, so a user who belongs to several tenants cannot pick between them here. `role` and `tenant` are BOTH `null` when there is no active membership, and they always agree: `role` is never a fallback value, so it is also not proof of access on its own. Carries `bottomTabOrder`, which is why a client needs no second round-trip before drawing its tab bar, and `avatarUrl`, which is why it needs no probe to find out whether the caller has a photo. Answers a BEARER token as well as a cookie.",
         "tags": [
           "Account"
         ],
@@ -24788,6 +24796,146 @@
           },
           "404": {
             "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/account/avatar/{userId}": {
+      "get": {
+        "operationId": "getUserAvatar",
+        "summary": "A user's uploaded avatar, as webp bytes",
+        "description": "BINARY, not JSON — `image/webp`, `Cache-Control: private, max-age=300`. This is where a ROOT-RELATIVE `avatarUrl` from `getCurrentUser` points; an ABSOLUTE `avatarUrl` is a third-party provider photo and this route knows nothing about it (see the `avatarUrl` description — the two shapes are fetched differently).\n\nLive since the avatar roadmap P3 and UNDESCRIBED until #1299, so clients were reading its shape out of route code.\n\nANY authenticated user may fetch ANY user id, deliberately: avatars are rendered across tenant member lists and people-pickers, so a per-viewer check here would break the surfaces the route exists for. Nothing else is exposed — the response is image bytes, and a non-existent user id is indistinguishable from a user with no avatar. Answers a BEARER token as well as a cookie.\n\nThe 404 is the ORDINARY case, not an error to log: it is what a user with no uploaded avatar returns, and `<InitialsAvatar>` falls back to initials on it. The bytes are written only through `POST /api/account/avatar`, which accepts the caller's OWN avatar only, validates the webp magic number and AV-scans before the write — so what streams here has passed that gate.",
+        "tags": [
+          "Account"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The user whose avatar to serve. Any user id, not just the caller — see above."
+            },
+            "required": true,
+            "description": "The user whose avatar to serve. Any user id, not just the caller — see above.",
+            "name": "userId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The stored avatar. `Content-Type: image/webp`; `Cache-Control: private, max-age=300`, so a changed avatar propagates within five minutes.",
+            "content": {
+              "image/webp": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "This user has no UPLOADED avatar — the expected answer for most users, including every user whose photo came from an OAuth provider. Render initials. It is also the answer for a user id that does not exist, and the two are deliberately indistinguishable.",
             "content": {
               "application/json": {
                 "schema": {
