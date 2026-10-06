@@ -980,6 +980,17 @@ jobs:
       - name: Verify every shard succeeded
         # `needs.test.result` is the aggregated status across all
         # matrix variants — `success` only when every shard passed.
+        #
+        # Audited for #1301 and deliberately UNCHANGED. The E2E and Docker
+        # gates needed a prerequisite check because their children are gated
+        # on `needs.changes.outputs.*`, so a failed `Detect changes` skipped
+        # them and the skip read as a pass. `test` has no `needs:` and no path
+        # filter at all — nothing upstream can skip it — and this step already
+        # fails on ANY result other than `success`, `skipped` included. There
+        # is no legitimate "nothing to run" here, so there is nothing to tell
+        # apart. If `test` ever gains a prerequisite, this step must read its
+        # result: tests/guards/ci-aggregate-upstream-failure.test.ts is red
+        # until every job in an aggregate's `needs` has its result read.
         run: |
           if [ "${{ needs.test.result }}" != "success" ]; then
             echo "::error::One or more Test shards failed (result=${{ needs.test.result }})"
@@ -1713,21 +1724,54 @@ jobs:
   # `needs.e2e-shard.result` is the matrix aggregate: success only if ALL
   # shards passed, failure if any failed. Passes on success OR skipped
   # (content-only change → the shards' own `if` skips them); fails otherwise.
+  #
+  # It ALSO reads the result of every prerequisite the shards are gated on.
+  # #1301: a GitHub API 503 inside `dorny/paths-filter` failed `Detect
+  # changes`, both shards were skipped because they are gated on its outputs,
+  # and this gate passed on `skipped` — a green required E2E check for a run
+  # in which no E2E test executed. A broken prerequisite and a legitimate
+  # "nothing to run" both arrive here as `skipped`, and `needs.<job>.result`
+  # is the ONLY thing that can separate them.
   e2e:
     name: E2E
-    needs: [e2e-shard]
+    # `changes` and `build` are listed so their RESULTS are readable below.
+    # Both are already transitive prerequisites via e2e-shard, so this adds
+    # no ordering — only the ability to tell a 503 from a docs-only PR.
+    needs: [e2e-shard, changes, build]
     # Mirror the Test (summary) gate: run unless cancelled, skip on schedule.
     # Unlike the Test matrix, the e2e shards ALSO skip on content-only changes
     # (their own `if`), so `skipped` must count as a pass here.
+    # `!cancelled()` is what keeps this job running when a `needs` entry
+    # fails or skips — without it, adding to `needs` above would take the
+    # required check down with its prerequisites (pending forever, which
+    # reads as "nothing wrong yet"). Held by
+    # tests/guards/required-checks-always-report.test.ts.
     if: ${{ !cancelled() && github.event_name != 'schedule' }}
     runs-on: ubuntu-latest
     steps:
       - name: Aggregate E2E shard results
         run: |
           result="${{ needs.e2e-shard.result }}"
-          echo "e2e-shard matrix result: $result"
+          changes="${{ needs.changes.result }}"
+          build="${{ needs.build.result }}"
+          echo "e2e-shard=$result  changes=$changes  build=$build"
+          # failure/cancelled only — NOT `!= success`, which the issue first
+          # reached for. Against the CHILD that test reddens every docs-only
+          # PR, which is the thing this fix must not do. Against a
+          # PREREQUISITE it is inert today (neither `changes` nor `build`
+          # carries a job-level `if:`, so neither can report `skipped`) and
+          # becomes a false red the day one of them gains a condition: a
+          # legitimately skipped prerequisite is a skip CHAIN, not a breakage.
+          for up in "changes:$changes" "build:$build"; do
+            case "${up#*:}" in
+              failure|cancelled)
+                echo "::error::E2E did not run — prerequisite '${up%%:*}' reported '${up#*:}'. The shards were skipped by a BROKEN prerequisite, not by the diff."
+                exit 1 ;;
+            esac
+          done
           case "$result" in
-            success|skipped) echo "E2E OK ($result)"; exit 0 ;;
+            success) echo "E2E OK (every shard passed)"; exit 0 ;;
+            skipped) echo "E2E OK (skipped — content-only change, prerequisites green)"; exit 0 ;;
             *) echo "::error::E2E failed — shards reported '$result'"; exit 1 ;;
           esac
 
@@ -2457,17 +2501,41 @@ jobs:
   #
   #  It does NOT treat `failure` as a pass — a skipped scan and a
   #  failed one are opposite facts, and only one of them is safe.
+  #
+  #  And since #1301 it does not treat a skip caused by a BROKEN
+  #  prerequisite as a pass either. `docker` is gated on
+  #  `needs.changes.outputs.image`, so a `Detect changes` failure (a
+  #  GitHub API 503 inside paths-filter, observed) skips it and the
+  #  skip is indistinguishable from "the image did not change" unless
+  #  the prerequisite's own result is read. It is, below.
   # ═══════════════════════════════════════════════════════════════
   docker-summary:
     name: "Docker Build & Scan"
-    needs: [docker]
+    # `changes` and `build` are listed so their RESULTS are readable below;
+    # both are already transitive prerequisites via `docker`, so this adds
+    # no ordering. `!cancelled()` keeps this job reporting when one of them
+    # fails or skips — see the E2E gate for the full note.
+    needs: [docker, changes, build]
     if: ${{ !cancelled() && github.event_name != 'merge_group' }}
     runs-on: ubuntu-latest
     steps:
       - name: Aggregate image build + scan result
         run: |
           result="${{ needs.docker.result }}"
-          echo "docker job result: $result"
+          changes="${{ needs.changes.result }}"
+          build="${{ needs.build.result }}"
+          echo "docker=$result  changes=$changes  build=$build"
+          # failure/cancelled only, for the reasons spelled out on the E2E
+          # gate. `skipped` stays tolerated for a PREREQUISITE because a
+          # legitimate skip is a chain, not a breakage — inert today, since
+          # neither `changes` nor `build` has a job-level `if:` to skip on.
+          for up in "changes:$changes" "build:$build"; do
+            case "${up#*:}" in
+              failure|cancelled)
+                echo "::error::Docker image was not built or scanned — prerequisite '${up%%:*}' reported '${up#*:}'. The job was skipped by a BROKEN prerequisite, not by the absence of an image change."
+                exit 1 ;;
+            esac
+          done
           case "$result" in
             success) echo "Image built and scanned clean." ; exit 0 ;;
             skipped) echo "No image-affecting change — previous scan stands." ; exit 0 ;;

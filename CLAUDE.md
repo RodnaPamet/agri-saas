@@ -2226,6 +2226,33 @@ committed write survives — add the check that counts its log line in the same
 diff.** `tests/guards/e2e-audit-writes-not-silently-zero.test.ts` holds the
 wiring and EXECUTES the checker, including that it fails on an empty log.
 
+**A required aggregate cannot tell "nothing to run" from "the detector
+broke" — unless it reads the prerequisite's result.** Three of the nine
+required contexts are summary jobs that register AFTER the work: `Test`
+(`test-summary`), `E2E` (`e2e`) and `Docker Build & Scan`
+(`docker-summary`). The heavy job skips on a content-only diff and the
+summary passes on `skipped`, which is correct — a docs-only PR genuinely
+needs no E2E run, and making every skip fail reddens every docs PR.
+#1301 is the other half: a GitHub API 503 inside `dorny/paths-filter`
+failed `Detect changes`, both `e2e-shard` jobs were skipped because they
+are gated on its outputs, and `E2E` passed on `skipped` with no E2E test
+executed and the #1289 gate above skipped along with it. **Both causes
+arrive at the aggregate as `skipped`; only `needs.<job>.result` separates
+them.** So `e2e` and `docker-summary` now list `changes` and `build` in
+`needs:` purely to read their results, and fail when either is `failure`
+or `cancelled` — *not* on `!= success`, which would redden the legitimate
+schedule / merge-queue skip chains. `test-summary` needed no change and
+the reason is worth knowing: `test` has no `needs:` and no path filter, so
+nothing upstream can skip it, and that step already fails on any result
+but `success`. The contract is executed, not asserted about:
+`tests/guards/ci-aggregate-upstream-failure.test.ts` lifts each
+aggregate's `run:` block out of `ci.yml`, substitutes scenario values into
+its `${{ needs.X.result }}` expressions, and runs it under `bash -e` for
+the exit code — plus it fails if any job in an aggregate's `needs:` has no
+result read, since `needs.X.result` for an undeclared `X` is the empty
+string and the check is then inert. Adding a prerequisite to one of these
+jobs means handling its result in the same diff.
+
 **Under jsdom the app is a PHONE, so a whole branch may be unreachable.**
 `tests/rendered/setup.ts` stubs `matchMedia` to answer `matches: false` to
 *every* query. `useMediaQuery` derives the device from two `min-width`
