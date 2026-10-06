@@ -35,6 +35,7 @@
  */
 
 import { toPng, toSvg } from "html-to-image";
+import { toSlug } from "@/lib/bg-transliterate";
 import { getNodesBounds, getViewportForBounds, type Node } from "@xyflow/react";
 
 const EXPORT_PADDING = 24;
@@ -115,11 +116,10 @@ function downloadDataUrl(dataUrl: string, filename: string): void {
 }
 
 function safeFilename(mapName: string, ext: string): string {
-    const stem = mapName
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, "")
-        .slice(0, 60) || "process-map";
+    // See share-card.ts: a bare [a-z0-9] strip deletes Cyrillic entirely, so
+    // every Bulgarian map name fell through to `process-map` and a farmer
+    // exporting three maps got three files with the same name.
+    const stem = toSlug(mapName, 60) ?? "process-map";
     return `${stem}.${ext}`;
 }
 

@@ -7,14 +7,15 @@
  * the caller can surface a toast.
  */
 import { toPng } from 'html-to-image';
+import { toSlug } from '@/lib/bg-transliterate';
 
 function safeFilename(label: string): string {
-    const stem = label
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '')
-        .slice(0, 60);
-    return `${stem || 'card'}.png`;
+    // `toSlug`, not a bare [a-z0-9] strip: the latter deletes every Cyrillic
+    // character, so EVERY Bulgarian label collapsed to the `card` fallback and
+    // three different cards all downloaded as `card.png` — colliding in the
+    // downloads folder rather than failing visibly.
+    const stem = toSlug(label, 60);
+    return `${stem ?? 'card'}.png`;
 }
 
 export type ShareCardResult = 'shared' | 'downloaded' | 'failed';
