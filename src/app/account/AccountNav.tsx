@@ -38,12 +38,16 @@ export function AccountNav() {
                             // 44px minimum, as the phase requires of every
                             // touch target — this nav is the primary control
                             // on a phone, where the shell has no sidebar.
-                            'inline-flex min-h-[44px] items-center gap-2 rounded-md px-3 text-sm font-medium',
+                            'inline-flex min-h-[44px] items-center gap-tight rounded-md px-3 text-sm font-medium',
                             'transition-colors duration-150',
                             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]',
                             active
                                 ? 'bg-bg-subtle text-content-emphasis'
-                                : 'text-content-muted hover:text-content-default hover:bg-bg-subtle/60',
+                                // The click-target hover recipe. `bg-bg-subtle`
+                                // is off-recipe — the product converges on
+                                // bg-bg-muted/50 for rows and cards, bg-bg-muted
+                                // for click targets, and a nav item is the latter.
+                                : 'text-content-muted hover:text-content-default hover:bg-bg-muted',
                         )}
                     >
                         <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />

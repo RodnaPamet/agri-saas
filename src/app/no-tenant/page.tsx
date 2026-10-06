@@ -53,7 +53,7 @@ export default async function NoTenantPage() {
                 <Link
                     href="/account/profile"
                     data-testid="no-tenant-account-link"
-                    className="mb-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-md border border-border-subtle text-sm font-medium text-content-default hover:bg-bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    className="mb-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-md border border-border-subtle text-sm font-medium text-content-default hover:bg-bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                 >
                     {t('accountLink')}
                 </Link>
