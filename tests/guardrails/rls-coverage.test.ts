@@ -159,8 +159,15 @@ const CROSS_TENANT_SCOPED_MODELS: ReadonlyMap<string, string> = new Map([
 // non-existent policy fails loudly here, but only because this file checks
 // them — the analogy was wrong and the check is what caught it.)
 const PARTY_SCOPED_MODELS: ReadonlyMap<string, readonly string[]> = new Map([
-    ['ExchangeThread', ['exchange_thread_party_isolation']],
-    ['ExchangeMessage', ['exchange_message_party_isolation']],
+    // #1298 — renamed when conversations became private to PEOPLE. The
+    // party_isolation names described a TENANT pair; the audience is now the
+    // thread's principal plus either farm's OWNER/ADMIN, keyed on
+    // `app.actor_user_id`. `exchange_thread_insert_names_self` is RESTRICTIVE
+    // and INSERT-only: it carries the half the permissive FOR ALL policy
+    // cannot express once UPDATE is allowed, namely that a new thread must
+    // name its own opener.
+    ['ExchangeThread', ['exchange_thread_audience', 'exchange_thread_insert_names_self']],
+    ['ExchangeMessage', ['exchange_message_audience']],
     [
         'ExchangeBlock',
         ['exchange_block_select', 'exchange_block_insert',

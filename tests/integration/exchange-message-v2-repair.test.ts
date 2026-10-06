@@ -16,7 +16,8 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
-import { withTenantDb } from '@/lib/db-context';
+import { runInTenantContext } from '@/lib/db-context';
+import { makeRequestContext } from '../helpers/make-context';
 import { encryptWithKey, getCiphertextVersion } from '@/lib/security/encryption';
 import { getTenantDek } from '@/lib/security/tenant-key-manager';
 import { repairMisplacedV2, countMisplacedV2 } from '@/app-layer/usecases/global-key-rotation';
@@ -30,6 +31,11 @@ let sellerTenant = '';
 let buyerTenant = '';
 let threadId = '';
 let listingId = '';
+// #1298 — the two sides' principals. Stable, because the thread audience is
+// keyed on the person: a fresh id per read would be a different person and in
+// nobody's audience.
+const SELLER_USER = `u-v2-seller-${randomUUID()}`;
+const BUYER_USER = `u-v2-buyer-${randomUUID()}`;
 let messageId = '';
 
 async function storedBody(id: string): Promise<string> {
@@ -40,11 +46,29 @@ async function storedBody(id: string): Promise<string> {
     return rows[0].body;
 }
 
-async function readAs(tenantId: string, id: string): Promise<string | undefined> {
-    return withTenantDb(tenantId, async (db) => {
-        const row = await db.exchangeMessage.findFirst({ where: { id }, select: { body: true } });
-        return row?.body;
-    });
+/**
+ * Read as a PERSON at a tenant.
+ *
+ * #1298 — `withTenantDb` sets no actor, and the message policy reaches the
+ * thread audience, which is keyed on `app.actor_user_id`. A context-less read
+ * returns zero rows: fail-closed, but silently, so it would present as "the
+ * repair lost the message" rather than "the test lost its identity".
+ */
+async function readAs(
+    tenantId: string,
+    userId: string,
+    id: string,
+): Promise<string | undefined> {
+    return runInTenantContext(
+        makeRequestContext('ADMIN', { tenantId, userId, requestId: `req-${userId}` }),
+        async (db) => {
+            const row = await db.exchangeMessage.findFirst({
+                where: { id },
+                select: { body: true },
+            });
+            return row?.body;
+        },
+    ) as Promise<string | undefined>;
 }
 
 describeFn('repairMisplacedV2 moves a tenant-DEK row onto the global KEK', () => {
@@ -63,15 +87,19 @@ describeFn('repairMisplacedV2 moves a tenant-DEK row onto the global KEK', () =>
              VALUES ($1,$2,$3,'SELL','CULTURE','WHEAT',40,'BGN','BG-23','Sofia',42.70,23.32,'ACTIVE',NOW(),NOW())`,
             listingId,
             sellerTenant,
-            `u-${randomUUID()}`,
+            // The listing's CREATOR is the seller-side principal.
+            SELLER_USER,
         );
         threadId = `xt-${randomUUID()}`;
         await raw.$executeRawUnsafe(
-            `INSERT INTO "ExchangeThread"("id","listingId","inquirerTenantId","createdAt","updatedAt")
-             VALUES ($1,$2,$3,NOW(),NOW())`,
+            // #1298 — `inquirerUserId` is NOT NULL: a thread is per PERSON.
+            `INSERT INTO "ExchangeThread"
+               ("id","listingId","inquirerTenantId","inquirerUserId","createdAt","updatedAt")
+             VALUES ($1,$2,$3,$4,NOW(),NOW())`,
             threadId,
             listingId,
             buyerTenant,
+            BUYER_USER,
         );
 
         // Reproduce the DEFECT exactly: a body encrypted under the SELLER's
@@ -130,7 +158,11 @@ describeFn('repairMisplacedV2 moves a tenant-DEK row onto the global KEK', () =>
         // middleware.
         expect(getCiphertextVersion(await storedBody(messageId))).toBe('v2');
         for (const tenant of [sellerTenant, buyerTenant]) {
-            const seen = await readAs(tenant, messageId);
+            const seen = await readAs(
+                tenant,
+                tenant === buyerTenant ? BUYER_USER : SELLER_USER,
+                messageId,
+            );
             expect(seen).not.toBe(ORIGINAL);
             expect(getCiphertextVersion(seen ?? '')).toBe('v2');
         }
@@ -150,11 +182,11 @@ describeFn('repairMisplacedV2 moves a tenant-DEK row onto the global KEK', () =>
         expect(getCiphertextVersion(after)).toBe('v1');
         // The content survived. A repair that moved the envelope and lost the
         // text would satisfy every other assertion in this file.
-        expect(await readAs(sellerTenant, messageId)).toBe(ORIGINAL);
+        expect(await readAs(sellerTenant, SELLER_USER, messageId)).toBe(ORIGINAL);
     });
 
     it('THE POINT: the buyer can now read the seller\'s message', async () => {
-        expect(await readAs(buyerTenant, messageId)).toBe(ORIGINAL);
+        expect(await readAs(buyerTenant, BUYER_USER, messageId)).toBe(ORIGINAL);
     });
 
     it('a second repair is a no-op — it converges', async () => {

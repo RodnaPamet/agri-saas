@@ -12,7 +12,24 @@
  *
  *   1. opening a thread is IDEMPOTENT, and the status code says which happened;
  *   2. `mine` exists so a client never compares tenant ids to decide sides;
- *   3. a deleted message is a TOMBSTONE — it keeps its place, with a null body.
+ *   3. a deleted message is a TOMBSTONE — it keeps its place, with a null body;
+ *   4. since #1298 a conversation is private to PEOPLE, not shared by the farm.
+ *
+ * Point 4 changed several shapes' meaning without changing their types, which
+ * is the worst kind of change for a client reading only the JSON:
+ *
+ *   - `mine` means "sent by ME". It used to mean "sent by my FARM", which is
+ *     what rendered a colleague's message as the reader's own.
+ *   - `unreadCount` / `hasUnread` are per PERSON. They used to move for every
+ *     member of the farm, so one colleague opening a thread marked it read for
+ *     all of them.
+ *   - A thread is one per (listing, inquirer PERSON), so a seller may now see
+ *     SEVERAL threads from one buyer farm. That is correct, not duplication.
+ *   - A member who is neither the thread's principal nor an OWNER/ADMIN of a
+ *     party farm gets 404 on the thread, not 403: the row is invisible to them
+ *     at the database level, so the API cannot distinguish "not yours" from
+ *     "does not exist" — and should not, since the difference would leak that
+ *     a colleague is talking to someone.
  */
 import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
@@ -41,7 +58,11 @@ const Message = z
     .object({
         id: z.string(),
         senderTenantId: z.string(),
+        /** Opaque id of the PERSON who sent it. Never an email or a name. */
+        senderUserId: z.string(),
         mine: z.boolean(),
+        /** Sent by someone else at the caller's own farm (#1298). */
+        fromMyFarm: z.boolean(),
         body: z.string().nullable(),
         deleted: z.boolean(),
         createdAt: z.string(),
@@ -51,6 +72,13 @@ const Message = z
             'Use `mine` to decide which side of the thread to render a bubble on. Do NOT ' +
             'compare `senderTenantId` to your own tenant — the server already knows which ' +
             'party is asking and answers for it.\n\n' +
+            '`mine` means SENT BY YOU, the person — not by your farm (#1298). Three ' +
+            'speakers are therefore possible on a thread, and a client needs all three: ' +
+            '`mine: true` is you; `fromMyFarm: true` is a COLLEAGUE at your own farm (the ' +
+            'seller admin answering for the listing\'s creator) and wants its own speaker ' +
+            'label rather than being drawn as either side; both false is the counterparty. ' +
+            '`fromMyFarm` is returned rather than derived from the two ids so every client ' +
+            'does not reimplement the same comparison.\n\n' +
             'A deleted message keeps its PLACE: `deleted: true` with a null `body`. Render ' +
             'it as removed rather than dropping it, or the other party\'s scrollback ' +
             'develops a hole where something they read used to be.',
@@ -74,13 +102,21 @@ const ThreadSummary = z
         role: z.enum(['seller', 'inquirer']),
         lastMessageAt: z.string(),
         closed: z.boolean(),
+        /** Per PERSON since #1298, not per farm. */
         hasUnread: z.boolean(),
     })
     .openapi('ExchangeThreadSummary', {
         description:
-            'Threads from BOTH sides — ones this tenant opened as a buyer and ones opened ' +
-            'against its own listings. `role` says which. `hasUnread` is a cheap staleness ' +
-            'flag; the exact count needs the thread itself.',
+            'The caller\'s OWN inbox (#1298) — threads they opened as a buyer, plus threads ' +
+            'on listings they created, plus threads on either where they are an OWNER/ADMIN ' +
+            'of a party farm. It is no longer the farm\'s shared inbox, so two colleagues ' +
+            'see different lists.\n\n' +
+            '`role` says which side a row is. `hasUnread` is a cheap staleness flag and is ' +
+            'now PER PERSON: a colleague reading a thread no longer clears your badge. The ' +
+            'exact count needs the thread itself.\n\n' +
+            'A seller may see SEVERAL rows for one buyer farm, because a thread is per ' +
+            '(listing, inquirer PERSON). Do not de-duplicate by farm — they are different ' +
+            'conversations with different people.',
     });
 
 const Thread = z
@@ -97,12 +133,25 @@ const Thread = z
          * them type into a void and collect a 403.
          */
         blocked: z.boolean(),
+        /** Counted for the CALLER, not their farm (#1298). */
         unreadCount: z.number().int(),
         /** Opaque position of the next OLDER page; null at the start of the thread. */
         olderCursor: z.string().nullable(),
         messages: z.array(Message),
     })
-    .openapi('ExchangeThread');
+    .openapi('ExchangeThread', {
+        description:
+            'Private to PEOPLE since #1298. The audience is the thread\'s principal — the ' +
+            'person who opened it on the buyer side, the listing\'s creator on the seller ' +
+            'side — plus any active OWNER/ADMIN of either party farm, so a farm can still ' +
+            'answer when the principal is away or has left.\n\n' +
+            'Anyone else gets **404**, including a colleague at a party farm. Not 403: the ' +
+            'row is invisible at the database level, so the API cannot tell "not yours" ' +
+            'from "does not exist" — and must not, because the difference would leak that a ' +
+            'colleague is in a conversation.\n\n' +
+            '`unreadCount` is counted for the CALLER. It used to be per farm, so a ' +
+            'colleague opening the thread zeroed everyone\'s count.',
+    });
 
 export function registerExchangeMessagingPaths(registry: OpenAPIRegistry): void {
     op(registry, {

@@ -172,13 +172,33 @@ model ExchangeThread {
   listingId        String
   /// The tenant that opened the thread. The other party is the listing's
   /// `sellerTenantId`, which is why this row needs no tenantId of its own.
+  ///
+  /// Still here, and still load-bearing, after #1298 made conversations
+  /// per-PERSON: it is what the block check and the notification fan-out scope
+  /// by, and what RLS uses to find the party farms' admins.
   inquirerTenantId String
+  /// The PERSON who opened the thread — the buyer-side principal (#1298).
+  ///
+  /// Thread identity moved from (listing, inquirer tenant) to (listing,
+  /// inquirer USER): two colleagues who each message one listing now hold
+  /// SEPARATE conversations. The alternative kept farm identity and restricted
+  /// only visibility, which has a hole — a colleague who cannot see the
+  /// existing thread, messaging that listing, hits the unique constraint and is
+  /// handed a thread they may not read.
+  ///
+  /// The seller-side principal needs no column: it is `listing.sellerUserId`.
+  inquirerUserId   String
   /// Denormalised so the inbox can sort without joining every message.
   lastMessageAt    DateTime  @default(now())
-  /// Read pointers, one per party. Two columns rather than a participant
-  /// table because the party set is fixed at two; MONOTONIC on write, so a
-  /// second tab answering late cannot rewind the pointer and resurrect
-  /// messages the user has already read.
+  /// SUPERSEDED by `ExchangeThreadRead` (#1298), and kept only so a rollback
+  /// to the previous image reads a correct pointer rather than a stale one.
+  ///
+  /// These two columns said "one pointer per party, because the party set is
+  /// fixed at two". #1298 falsified that premise: the audience is now the
+  /// opener, the listing's creator, and either farm's OWNER/ADMIN, so the set
+  /// is neither fixed nor two. They are DUAL-WRITTEN for the principals during
+  /// the expand phase and are dropped in the contract phase — nothing reads
+  /// them. Do not add a reader.
   sellerLastReadAt   DateTime?
   inquirerLastReadAt DateTime?
   closedAt         DateTime?
@@ -187,11 +207,44 @@ model ExchangeThread {
 
   listing  ExchangeListing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
   messages ExchangeMessage[]
+  reads    ExchangeThreadRead[]
 
-  /// One thread per (listing, inquirer). Re-opening returns the existing one.
-  @@unique([listingId, inquirerTenantId])
+  /// One thread per (listing, inquirer PERSON) since #1298. Re-opening returns
+  /// the existing one, per person.
+  @@unique([listingId, inquirerUserId])
   @@index([inquirerTenantId, lastMessageAt])
+  /// The buyer's own inbox sort, now that the inbox is per person.
+  @@index([inquirerUserId, lastMessageAt])
   @@index([listingId])
+}
+
+/// One read pointer per PERSON per thread (#1298).
+///
+/// Replaces the two columns on `ExchangeThread`. A row is created lazily the
+/// first time someone marks the thread read, so the table holds readers rather
+/// than an audience — the audience is derived (opener, listing creator, either
+/// party farm's OWNER/ADMIN) and would otherwise go stale the moment a role
+/// changed.
+///
+/// `lastReadAt` is MONOTONIC on write, for the reason the old columns were: a
+/// second tab answering late must not rewind the pointer and resurrect
+/// messages the person has already read.
+model ExchangeThreadRead {
+  id         String   @id @default(cuid())
+  threadId   String
+  userId     String
+  /// Which farm this reader belongs to. Carried so RLS and the notification
+  /// fan-out can scope without joining the thread and its listing.
+  tenantId   String
+  lastReadAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  thread ExchangeThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@unique([threadId, userId])
+  @@index([userId, threadId])
+  @@index([tenantId])
 }
 
 /// One message in a thread.
@@ -228,7 +281,14 @@ model ExchangeMessage {
 
   @@index([threadId, createdAt])
   @@index([senderTenantId])
-  @@unique([senderTenantId, clientMutationId])
+  /// Scoped to the sending PERSON since #1298, not their farm.
+  ///
+  /// It was `[senderTenantId, clientMutationId]`. With conversations private
+  /// to people, two colleagues reusing the same client-side id — which they
+  /// will, since the id is minted on each device — would collide, and one
+  /// send would silently dedupe into the other's message. The scope has to
+  /// follow whoever the key belongs to.
+  @@unique([senderUserId, clientMutationId])
 }
 
 /// A seller refusing further contact from one tenant.

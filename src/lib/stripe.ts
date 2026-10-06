@@ -11,11 +11,29 @@ type BillingStatus = 'ACTIVE' | 'PAST_DUE' | 'CANCELED' | 'INCOMPLETE' | 'TRIALI
 
 let _stripe: Stripe | null = null;
 
+/**
+ * The Stripe API version this code was written and tested against.
+ *
+ * Pinned DELIBERATELY, and hard-coded rather than taken from the SDK's own
+ * `ApiVersion` export. `new Stripe(key)` with no `apiVersion` adopts whatever
+ * the installed SDK defaults to, so an SDK major silently changes which API
+ * production talks to — a behavioural change to payments that appears in a
+ * diff as a version number and that no typecheck or test can see. stripe@23
+ * moved this pin from the v22 default; the bump landed in #1309 while billing
+ * was dormant, which is the only reason it cost nothing.
+ *
+ * The SDK types `apiVersion` as `typeof ApiVersion` — a single literal — so
+ * this constant stops compiling the moment a future SDK ships a different
+ * version. That is the point: the upgrade becomes a compile error and a
+ * deliberate decision, instead of a silent one.
+ */
+const STRIPE_API_VERSION = '2026-09-30.endive';
+
 export function getStripe(): Stripe {
     if (_stripe) return _stripe;
     const key = process.env.STRIPE_SECRET_KEY;
     if (!key) throw new Error('STRIPE_SECRET_KEY is not configured');
-    _stripe = new Stripe(key);
+    _stripe = new Stripe(key, { apiVersion: STRIPE_API_VERSION });
     return _stripe;
 }
 
@@ -145,13 +163,40 @@ function mapStripeStatus(status: string): BillingStatus {
     }
 }
 
-// ─── Stripe plan metadata → BillingPlan mapping ───
+// ─── Stripe subscription → BillingPlan ───
 
-function mapStripePlan(metadata: Record<string, string> | null): BillingPlan {
-    const plan = metadata?.plan;
-    if (plan === 'PRO') return 'PRO';
-    if (plan === 'ENTERPRISE') return 'ENTERPRISE';
-    return 'PRO'; // default for new subscriptions
+/**
+ * Which plan a subscription is for, or `null` when it cannot be determined.
+ *
+ * This used to `return 'PRO'` for anything it did not recognise, including a
+ * subscription with no metadata at all. `getEffectivePlan()` reads this column
+ * to decide entitlements, so that default silently granted the PRO plan to any
+ * subscription created outside our own checkout — from the Stripe dashboard, a
+ * migration, or the API. Guessing in the customer's favour is the expensive
+ * direction to guess in.
+ *
+ * Two sources, in order of trustworthiness:
+ *   1. `metadata.plan` — what `createCheckoutSession` stamps on every
+ *      subscription it creates, so our own flow always hits this.
+ *   2. the subscription's PRICE id — covers a subscription created outside
+ *      that flow, as long as it uses a price we configured.
+ *
+ * `null` means "do not know", and the caller leaves the stored plan alone
+ * rather than inventing one.
+ */
+function resolvePlan(sub: Record<string, unknown>): BillingPlan | null {
+    const metadata = sub.metadata as Record<string, string> | null | undefined;
+    const declared = metadata?.plan;
+    if (declared === 'PRO' || declared === 'ENTERPRISE') return declared;
+
+    const items = sub.items as
+        | { data?: Array<{ price?: { id?: string } }> }
+        | undefined;
+    const priceId = items?.data?.[0]?.price?.id;
+    if (!priceId) return null;
+    if (priceId === process.env.STRIPE_PRICE_ID_PRO) return 'PRO';
+    if (priceId === process.env.STRIPE_PRICE_ID_ENTERPRISE) return 'ENTERPRISE';
+    return null;
 }
 
 // ─── Subscription period helpers ───
@@ -209,11 +254,18 @@ export async function handleWebhookEvent(event: Stripe.Event): Promise<void> {
             const subResponse = await stripe.subscriptions.retrieve(subscriptionId);
             const sub = subResponse as unknown as Record<string, unknown>;
 
+            const checkoutPlan = resolvePlan(sub);
+            if (!checkoutPlan) {
+                logger.warn('Could not determine plan from subscription; leaving the stored plan unchanged', {
+                    component: 'billing', subscriptionId, stripeCustomerId: customerId,
+                });
+            }
+
             await db.billingAccount.update({
                 where: { stripeCustomerId: customerId },
                 data: {
                     stripeSubscriptionId: subscriptionId,
-                    plan: mapStripePlan(sub.metadata as Record<string, string> | null),
+                    ...(checkoutPlan ? { plan: checkoutPlan } : {}),
                     status: mapStripeStatus(sub.status as string),
                     currentPeriodEnd: getSubscriptionPeriodEnd(sub),
                     trialEndsAt: getSubscriptionTrialEnd(sub),
@@ -241,11 +293,18 @@ export async function handleWebhookEvent(event: Stripe.Event): Promise<void> {
             });
             if (!billingAccount) break;
 
+            const subPlan = resolvePlan(sub);
+            if (!subPlan) {
+                logger.warn('Could not determine plan from subscription; leaving the stored plan unchanged', {
+                    component: 'billing', subscriptionId: sub.id as string, stripeCustomerId: customerId,
+                });
+            }
+
             await db.billingAccount.update({
                 where: { stripeCustomerId: customerId },
                 data: {
                     stripeSubscriptionId: sub.id as string,
-                    plan: mapStripePlan(sub.metadata as Record<string, string> | null),
+                    ...(subPlan ? { plan: subPlan } : {}),
                     status: mapStripeStatus(sub.status as string),
                     currentPeriodEnd: getSubscriptionPeriodEnd(sub),
                     trialEndsAt: getSubscriptionTrialEnd(sub),
@@ -272,11 +331,30 @@ export async function handleWebhookEvent(event: Stripe.Event): Promise<void> {
             });
             if (!billingAccount) break;
 
+            // `plan: 'FREE'` is the fix for the defect this branch used to
+            // carry: it set the STATUS to CANCELED and left `plan` alone, but
+            // `getEffectivePlan()` reads `plan`, not status — and deliberately
+            // so, per its own docblock: "Status is INTENTIONALLY NOT YET
+            // ENFORCED here ... The webhook handler is responsible for
+            // downgrading the row to FREE when the period ends."
+            //
+            // That handler is this one, and it never did. `plan: 'FREE'` was
+            // written in exactly one place in this module — at account
+            // creation — so once a tenant reached PRO no code path returned
+            // them to FREE. Cancelling kept the paid entitlements forever.
+            //
+            // This fires at the right moment by construction: with
+            // `cancel_at_period_end`, Stripe sends `customer.subscription.
+            // updated` immediately and `customer.subscription.deleted` only
+            // when the period actually ends — which is exactly the boundary
+            // the entitlements docblock describes.
             await db.billingAccount.update({
                 where: { stripeCustomerId: customerId },
                 data: {
+                    plan: 'FREE',
                     status: 'CANCELED',
                     stripeSubscriptionId: null,
+                    currentPeriodEnd: null,
                 },
             });
 
