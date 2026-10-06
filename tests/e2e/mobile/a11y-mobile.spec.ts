@@ -114,8 +114,31 @@ test.describe('a11y — mobile viewport @mobile', () => {
 
     test('«Слънце» has no critical/serious WCAG violations on a phone', async ({ page }) => {
         const tenantSlug = await loginAndGetTenant(page);
+
+        // Set the theme the way the PRODUCT does, not only by poking
+        // attributes: `agrent_theme=sunlight` is what P2.4's cookie +
+        // pre-paint script read, so the server seeds `data-theme="light"` +
+        // `data-contrast="high"` into the SSR markup and the first paint is
+        // already «Слънце». That removes the race the attribute force exists
+        // to cover — a ThemeProvider re-render re-asserting from the cookie
+        // would otherwise strip `data-contrast` between the force and the
+        // scan — and it exercises the real mechanism rather than a synthetic
+        // one. The name and value are the constants in
+        // `src/lib/theme/theme-cookie.ts`.
+        await page.context().addCookies([
+            {
+                name: 'agrent_theme',
+                value: 'sunlight',
+                url: page.url(),
+            },
+        ]);
+
         await safeGoto(page, `/t/${tenantSlug}/dashboard`);
         await page.waitForSelector('h1', { timeout: 30_000 });
+
+        // `theme: 'sunlight'` is still passed: the force is now a no-op on the
+        // happy path, and the read-back is what turns a cookie that did not
+        // take into a failure instead of a mislabelled green scan.
         await runA11yScan(page, 'dashboard (mobile, Слънце)', { theme: 'sunlight' });
     });
 });
