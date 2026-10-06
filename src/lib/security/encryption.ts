@@ -78,10 +78,21 @@ const HMAC_INFO = 'inflect-data-lookup-hash';
 //
 // A NEW kind gets its own string and is free to be tidy. A rename of an
 // existing one is a REHASH, not an edit.
-export type LookupKind = 'email';
+export type LookupKind = 'email' | 'eik';
 
 const LOOKUP_INFO: Record<LookupKind, string> = {
     email: HMAC_INFO,
+    // P3.4 — the blind index on `FarmIdentityClaim.eikHash`. A new kind, so
+    // it takes a tidy string of its own per the paragraph above.
+    //
+    // The separation earns its keep twice here. An ЕИК is a 9- or 13-digit
+    // number, so the whole keyspace is enumerable by brute force in minutes
+    // given the key — which means the index is only ever as strong as
+    // `LOOKUP_HMAC_KEY`, and must never be derivable from a hash leaked out
+    // of another column. And unlike an email, an ЕИК is PUBLIC: it is in the
+    // Търговски регистър. The index is not hiding the identifier, it is
+    // keeping this table from being a membership oracle over a public list.
+    eik: 'inflect-eik-lookup-hash',
 };
 
 /** Every kind, for tests and sweeps that must cover the whole surface. */
