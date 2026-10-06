@@ -79,7 +79,19 @@ jest.mock('@/lib/auth/email-verification-code', () => ({
     CODE_LENGTH: 6,
 }));
 
-const mockVerifyTurnstile = jest.fn(async () => ({ ok: true, skipped: true }));
+// Typed with the full outcome UNION, not left to inference. Inferred from the
+// initial implementation alone the type is `{ok: boolean; skipped: boolean}`,
+// so `mockResolvedValue({ok: false, skipped: false, codes: [...]})` fails to
+// typecheck — and it failed in CI while passing locally, because an
+// incremental `tsconfig.tsbuildinfo` had never re-read these files.
+type TurnstileOutcomeShape =
+    | { ok: true; skipped: false }
+    | { ok: true; skipped: true }
+    | { ok: false; skipped: false; codes: string[] }
+    | { ok: true; skipped: false; degraded: true };
+const mockVerifyTurnstile = jest.fn(
+    async (): Promise<TurnstileOutcomeShape> => ({ ok: true, skipped: true }),
+);
 jest.mock('@/lib/security/turnstile', () => ({
     __esModule: true,
     verifyTurnstile: (...a: unknown[]) => mockVerifyTurnstile(...(a as [])),
