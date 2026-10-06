@@ -3722,6 +3722,35 @@ exports[`API contract — per-schema snapshots schema: DataStreamReading 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: EikCheckResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "valid": {
+      "type": "boolean",
+      "description": "True when the input is a structurally valid ЕИК: 9 digits with a correct checksum, or 13 digits whose leading 9 are themselves valid. Structure only — it does NOT mean the company exists, is active, or is in the register."
+    },
+    "looksLikeEgn": {
+      "type": "boolean",
+      "description": "True when the input fails as an ЕИК but passes as an ЕГН — both the checksum and a decodable date of birth. Always false when \`valid\` is true. Use it to change the MESSAGE, not the outcome."
+    },
+    "registryName": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The registered company name, or null.\\n\\n**\`null\` deliberately conflates three different situations** and a client must not distinguish them: no registry provider is configured in this deployment, the provider was asked and had no entry, or the entry carries no name. They are merged because telling an anonymous caller WHICH applies turns this endpoint into a probe for which numbers exist in the register — a distinction worth more to an enumerator than to the form it serves. So render null as \\"we could not confirm the name\\", never as \\"this company does not exist\\"."
+    }
+  },
+  "required": [
+    "valid",
+    "looksLikeEgn",
+    "registryName"
+  ],
+  "description": "The shape is identical for every outcome — valid, invalid, found, not found. That uniformity IS the control: a response whose size or field set varied with what the register holds would leak the register to anyone willing to iterate."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: EmptyBody 1`] = `
 "{
   "type": "object",

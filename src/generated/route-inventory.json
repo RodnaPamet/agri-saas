@@ -410,6 +410,11 @@
       "documented": false
     },
     {
+      "path": "/api/public/eik-check",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/readyz",
       "status": "live",
       "documented": false

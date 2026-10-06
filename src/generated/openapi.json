@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "3.78.18",
+    "version": "4.0.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -3610,6 +3610,32 @@
           "unit"
         ],
         "description": "One sensor reading. `unit` is per-reading and may differ from the stream’s declared unit."
+      },
+      "EikCheckResult": {
+        "type": "object",
+        "properties": {
+          "valid": {
+            "type": "boolean",
+            "description": "True when the input is a structurally valid ЕИК: 9 digits with a correct checksum, or 13 digits whose leading 9 are themselves valid. Structure only — it does NOT mean the company exists, is active, or is in the register."
+          },
+          "looksLikeEgn": {
+            "type": "boolean",
+            "description": "True when the input fails as an ЕИК but passes as an ЕГН — both the checksum and a decodable date of birth. Always false when `valid` is true. Use it to change the MESSAGE, not the outcome."
+          },
+          "registryName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The registered company name, or null.\n\n**`null` deliberately conflates three different situations** and a client must not distinguish them: no registry provider is configured in this deployment, the provider was asked and had no entry, or the entry carries no name. They are merged because telling an anonymous caller WHICH applies turns this endpoint into a probe for which numbers exist in the register — a distinction worth more to an enumerator than to the form it serves. So render null as \"we could not confirm the name\", never as \"this company does not exist\"."
+          }
+        },
+        "required": [
+          "valid",
+          "looksLikeEgn",
+          "registryName"
+        ],
+        "description": "The shape is identical for every outcome — valid, invalid, found, not found. That uniformity IS the control: a response whose size or field set varied with what the register holds would leak the register to anyone willing to iterate."
       },
       "EmptyBody": {
         "type": "object",
@@ -31962,6 +31988,141 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AuthUiConfig"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/eik-check": {
+      "get": {
+        "operationId": "checkEik",
+        "summary": "Validate an ЕИК and, where known, return the registered company name",
+        "description": "Checks a Bulgarian ЕИК (unified identification code) for structural validity and, when a registry provider is configured, returns the name it is registered under. Intended for the registration form, so a farmer learns their number is mistyped before they finish signing up rather than after.\n\n**The checksum runs before any registry lookup.** A number that cannot exist never reaches a provider. This is a deliberate ordering, not an optimisation: it keeps the expensive path off exactly the keyspace an enumerator would walk first.\n\n**`looksLikeEgn` exists because of who gets this wrong.** A sole trader reaching for \"the number I know\" often types their ЕГН — a personal identity number. Telling them \"that is not a valid ЕИК\" is useless; telling them they have typed an ЕГН is actionable. The submitted value is never echoed back, logged, or stored, so a flag is the whole answer. Treat it as a hint for the FORM, never as a statement about a person — and do not place the submitted value in a URL you log, because the query string is recorded in places the body is not.\n\n**This endpoint is enumerable and is rate-limited rather than hidden.** It is unauthenticated, so there is no credential to scope an answer to. Expect 429 under load and back off; do not retry tightly.",
+        "tags": [
+          "Public"
+        ],
+        "security": [],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32,
+              "description": "The number to check, 9 or 13 digits. Accepted with surrounding whitespace. Longer input is rejected as a bad request rather than truncated — truncating would silently validate a DIFFERENT number than the one submitted.",
+              "example": "831641791"
+            },
+            "required": true,
+            "description": "The number to check, 9 or 13 digits. Accepted with surrounding whitespace. Longer input is rejected as a bad request rather than truncated — truncating would silently validate a DIFFERENT number than the one submitted.",
+            "name": "eik",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The verdict. 200 means the check RAN, not that the number is good — read `valid`. A malformed query (missing or over-long `eik`) is a 400.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EikCheckResult"
                 }
               }
             }
