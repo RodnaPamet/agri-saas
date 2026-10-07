@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "5.4.0",
+    "version": "5.4.1",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -51,6 +51,47 @@
       }
     },
     "schemas": {
+      "AcceptTermsRequest": {
+        "type": "object",
+        "properties": {
+          "acceptedTerms": {
+            "type": "boolean",
+            "enum": [
+              true
+            ],
+            "description": "Must be literally true. Absent or false is 400 terms_not_accepted."
+          },
+          "termsVersion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "example": "2026-10-07-draft",
+            "description": "The version the client DISPLAYED. Compared for equality with the one being served, so a page left open across a terms change cannot file a consent to a document nobody read."
+          }
+        },
+        "required": [
+          "acceptedTerms",
+          "termsVersion"
+        ]
+      },
+      "AcceptTermsResult": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "version"
+        ]
+      },
       "AgDashboardAchievements": {
         "type": [
           "object",
@@ -24901,6 +24942,142 @@
                   "required": [
                     "bottomTabOrder"
                   ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/accept-terms": {
+      "post": {
+        "operationId": "acceptTerms",
+        "summary": "Record that the signed-in user accepts the current terms",
+        "description": "The way OUT of the consent gate (P3.1). A signed-in session whose `acceptedTermsAt` is null is held at `/accept-terms` by middleware, and every tenant- and person-scoped surface answers `403 Terms acceptance required` until this succeeds.\n\nIt exists because the two ways into the product do not agree: `POST /api/auth/register/start` captures acceptance inline, while a first-time Google sign-in creates its user row inside NextAuth and records nothing. Stamping consent on that callback would file an agreement nobody gave, so the product asks instead.\n\n`acceptedTerms` must be literally `true` — checked for identity, not truthiness, so a client that renders no consent control cannot satisfy it with any non-empty value. `termsVersion` must equal the version the server is serving; a mismatch is `400 terms_version_stale` carrying `currentVersion`, which exists so a client can say \"reload and read the new terms\" rather than showing a generic failure. Render `/terms` to read the current version.\n\nIDEMPOTENT, and it does not re-stamp: a replay by a user who already accepted returns 200 and leaves the stored timestamp alone. That timestamp is the artifact the column exists for, so moving it on every replay would destroy the only thing it is good for.\n\nThe session must be refreshed before navigating: `termsPending` is a JWT claim, so a client that writes and redirects without re-minting bounces straight back to the gate.",
+        "tags": [
+          "Account"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptTermsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted, or already accepted — both answer this. `version` is what was recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcceptTermsResult"
                 }
               }
             }

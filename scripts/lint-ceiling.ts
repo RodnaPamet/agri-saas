@@ -115,11 +115,24 @@ export const LIMITS: Limits = {
     // visible line in a diff. Lower this toward 82 as warnings are fixed; the
     // sentinel will force the issue once the gap exceeds 25 again.
     warningCeiling: 107,
-    // Lowered 1580 -> 1578 by #1376: the retired `/api/auth/register` carried
-    // two eslint-disable directives. A ceiling left above the live count is
-    // room for two silent re-additions, which is the shape this gate exists
-    // to close.
-    suppressionCeiling: 1578,
+    // Two changes landed on this line and both reasons stand.
+    //
+    // #1376 LOWERED it 1580 -> 1578: the retired `/api/auth/register` carried
+    // two eslint-disable directives, and a ceiling left above the live count
+    // is room for silent re-additions.
+    //
+    // The terms-consent interstitial then RAISED it, for the file-level
+    // `no-explicit-any` disable on tests/unit/terms-consent-gate.test.ts —
+    // this codebase's standard shape for a middleware harness, which
+    // `person-path-parity` and `mfa-gate-enforced` both carry: driving the
+    // REAL middleware needs NextRequest and getToken mocks whose types are
+    // not expressible without casts, and the alternative is not testing the
+    // gate through the real middleware at all.
+    //
+    // The value is the MEASURED count on the merged tree, not 1578 plus a
+    // predicted delta — a shared ratchet raised to a projected total fails for
+    // whoever merges second.
+    suppressionCeiling: 1586,
     unjustifiedCeiling: 461,
     // The 13 error-severity mutes that exist today. `no-explicit-any` is
     // escalated to `error` for the security surface by the override at

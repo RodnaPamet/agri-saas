@@ -108,6 +108,8 @@ declare module 'next-auth' {
             tenantId?: string | null;
             role: Role;
             mfaPending?: boolean;
+            /** P3.1 — no recorded terms acceptance; the Edge holds at /accept-terms. */
+            termsPending?: boolean;
             /** T00 — persisted UI language preference ('en' | 'bg'). */
             uiLanguage: string;
             /** R-1: all active memberships, for the tenant picker and middleware gate. */
@@ -129,6 +131,8 @@ declare module 'next-auth/jwt' {
         /** T00 — persisted UI language preference ('en' | 'bg'). */
         uiLanguage?: string;
         mfaPending?: boolean;
+        /** P3.1 — no recorded terms acceptance; the Edge holds at /accept-terms. */
+        termsPending?: boolean;
         mfaFailClosed?: boolean;
         /** Active tenant memberships, capped at MAX_JWT_MEMBERSHIPS. */
         memberships?: MembershipEntry[];
@@ -688,6 +692,39 @@ export const authOptions: NextAuthOptions = {
                 }
             }
 
+            // ── Terms acceptance (P3.1) ──
+            //
+            // Resolved from the column on EVERY pass rather than carried
+            // forward: somebody who accepts in one tab must stop being held in
+            // another, and a stale `true` on a re-minted token would be a
+            // lockout.
+            //
+            // It FAILS CLOSED, and the asymmetry is what makes that cheap.
+            // Holding at the consent page on a read error asks somebody to
+            // accept again — harmless, they can. Failing open grants access
+            // with no record, which is the thing this exists to prevent. Note
+            // that is the OPPOSITE trade from MFA's `mfaFailClosed` below,
+            // where failing closed locks a user out of their own account.
+            //
+            // Scoped to a real user id: a bearer principal carries none, and
+            // holding one would break a native client on a page it cannot
+            // render.
+            if (token.userId) {
+                try {
+                    const consent = await prisma.user.findUnique({
+                        where: { id: token.userId },
+                        select: { acceptedTermsAt: true },
+                    });
+                    token.termsPending = consent?.acceptedTermsAt == null;
+                } catch (err) {
+                    token.termsPending = true;
+                    edgeLogger.error('terms consent lookup failed — holding', {
+                        component: 'auth',
+                        error: err instanceof Error ? err.message : String(err),
+                    });
+                }
+            }
+
             // MFA challenge completion check.
             if (token.mfaPending === true && token.userId && token.tenantId) {
                 try {
@@ -753,6 +790,7 @@ export const authOptions: NextAuthOptions = {
                 session.user.role = token.role ?? 'READER';
                 session.user.uiLanguage = token.uiLanguage ?? DEFAULT_LOCALE;
                 session.user.mfaPending = token.mfaPending ?? false;
+                session.user.termsPending = token.termsPending ?? false;
                 session.user.memberships = token.memberships ?? [];
                 session.user.orgMemberships = token.orgMemberships ?? [];
             }

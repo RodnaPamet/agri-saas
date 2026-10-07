@@ -1,5 +1,52 @@
 // Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
 
+exports[`API contract — per-schema snapshots schema: AcceptTermsRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "acceptedTerms": {
+      "type": "boolean",
+      "enum": [
+        true
+      ],
+      "description": "Must be literally true. Absent or false is 400 terms_not_accepted."
+    },
+    "termsVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "example": "2026-10-07-draft",
+      "description": "The version the client DISPLAYED. Compared for equality with the one being served, so a page left open across a terms change cannot file a consent to a document nobody read."
+    }
+  },
+  "required": [
+    "acceptedTerms",
+    "termsVersion"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AcceptTermsResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "enum": [
+        true
+      ]
+    },
+    "version": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "version"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: AgDashboardAchievements 1`] = `
 "{
   "type": [

@@ -167,6 +167,60 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
     });
 
     op(registry, {
+        method: 'post',
+        path: '/api/auth/accept-terms',
+        operationId: 'acceptTerms',
+        summary: 'Record that the signed-in user accepts the current terms',
+        description:
+            'The way OUT of the consent gate (P3.1). A signed-in session whose ' +
+            '`acceptedTermsAt` is null is held at `/accept-terms` by middleware, and every ' +
+            'tenant- and person-scoped surface answers `403 Terms acceptance required` until ' +
+            'this succeeds.\n\n' +
+            'It exists because the two ways into the product do not agree: ' +
+            '`POST /api/auth/register/start` captures acceptance inline, while a first-time ' +
+            'Google sign-in creates its user row inside NextAuth and records nothing. ' +
+            'Stamping consent on that callback would file an agreement nobody gave, so the ' +
+            'product asks instead.\n\n' +
+            '`acceptedTerms` must be literally `true` — checked for identity, not truthiness, ' +
+            'so a client that renders no consent control cannot satisfy it with any non-empty ' +
+            'value. `termsVersion` must equal the version the server is serving; a mismatch is ' +
+            '`400 terms_version_stale` carrying `currentVersion`, which exists so a client can ' +
+            'say "reload and read the new terms" rather than showing a generic failure. ' +
+            'Render `/terms` to read the current version.\n\n' +
+            'IDEMPOTENT, and it does not re-stamp: a replay by a user who already accepted ' +
+            'returns 200 and leaves the stored timestamp alone. That timestamp is the artifact ' +
+            'the column exists for, so moving it on every replay would destroy the only thing ' +
+            'it is good for.\n\n' +
+            'The session must be refreshed before navigating: `termsPending` is a JWT claim, ' +
+            'so a client that writes and redirects without re-minting bounces straight back ' +
+            'to the gate.',
+        tags: ['Account'],
+        body: z
+            .object({
+                acceptedTerms: z.literal(true).openapi({
+                    description: 'Must be literally true. Absent or false is 400 terms_not_accepted.',
+                }),
+                termsVersion: z.string().min(1).max(64).openapi({
+                    example: '2026-10-07-draft',
+                    description:
+                        'The version the client DISPLAYED. Compared for equality with the one ' +
+                        'being served, so a page left open across a terms change cannot file a ' +
+                        'consent to a document nobody read.',
+                }),
+            })
+            .openapi('AcceptTermsRequest'),
+        success: {
+            status: 200,
+            description:
+                'Accepted, or already accepted — both answer this. `version` is what was ' +
+                'recorded.',
+            schema: z
+                .object({ ok: z.literal(true), version: z.string() })
+                .openapi('AcceptTermsResult'),
+        },
+    });
+
+    op(registry, {
         method: 'get',
         path: '/api/account/avatar/{userId}',
         operationId: 'getUserAvatar',

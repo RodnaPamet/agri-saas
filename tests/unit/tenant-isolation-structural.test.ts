@@ -129,6 +129,13 @@ describe('Structural Guard: Tenant Isolation Conventions', () => {
             // there is nothing to isolate. Mirrors the 'privacy' entry above.
             'terms',
             'dsa-contact',
+            // P3.1 / #1376 — the consent interstitial. Identity-level, not
+            // tenant-scoped: accepting terms is an act of the PERSON, and a
+            // user may hold several farms, so there is no slug to scope it to.
+            // It reads only `session.user.termsPending` and renders no tenant
+            // data. The Edge gate redirects here, so it has to be a real URL
+            // rather than a modal inside the shell it is gating.
+            'accept-terms',
         ]);
 
         // Get immediate children of app/ that are page directories

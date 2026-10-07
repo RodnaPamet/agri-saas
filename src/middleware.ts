@@ -34,6 +34,7 @@ import {
     isOperatorAllowedPath,
     isPersonPath,
     isOperatorBlockedPersonPath,
+    isTermsAllowedPath,
 } from '@/lib/auth/guard';
 import { generateNonce, buildCspHeader, CSP_NONCE_HEADER, CSP_REPORT_PATH, CSP_REPORT_GROUP, getCspHeaderName, isCspReportOnly } from '@/lib/security/csp';
 import { applySecurityHeaders } from '@/lib/security/headers';
@@ -352,6 +353,43 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
             if (isPersonPath(pathname)) {
                 return NextResponse.redirect(new URL('/no-tenant', req.nextUrl.origin));
             }
+        }
+    }
+
+    // ── 4b. Terms-acceptance gate (P3.1) ──
+    //
+    // A signed-in session with no recorded acceptance is held at
+    // `/accept-terms` before it reaches anything that is not on
+    // `isTermsAllowedPath`. This is the Edge half and the only half that can
+    // protect a PAGE.
+    //
+    // AFTER the MFA gate on purpose: MFA is a security control, consent is a
+    // compliance record, and a session with an outstanding second factor
+    // should clear that before being asked to agree to anything. The
+    // allowlist exempts the MFA paths too, so the two cannot deadlock if this
+    // order is ever changed.
+    //
+    // Scoped to the same path families as MFA — tenant and person paths —
+    // rather than everything. The gate's job is to stop an unconsented
+    // session USING the product; it has no business on a public page, and
+    // `/` is a public landing page now.
+    //
+    // Why this exists at all: consent is captured by
+    // `POST /api/auth/register/start`, and NOTHING captures it on the Google
+    // OAuth path, where `PrismaAdapter` creates the user row inside NextAuth
+    // (#1376). Recording an acceptance there would have been worse than this
+    // — it files an agreement nobody gave. So the product asks, which is also
+    // what the terms themselves promise: "we will ask".
+    if ((isTenantPath(pathname) || isPersonPath(pathname)) && !isTermsAllowedPath(pathname)) {
+        if (token.termsPending === true) {
+            if (isApiRoute(pathname)) {
+                return forbiddenJson('Terms acceptance required');
+            }
+            const acceptUrl = new URL('/accept-terms', req.nextUrl.origin);
+            // `sanitizeRedirectPath` is applied where this is READ, so a
+            // crafted `next` cannot become an open redirect.
+            acceptUrl.searchParams.set('next', pathname);
+            return NextResponse.redirect(acceptUrl);
         }
     }
 
