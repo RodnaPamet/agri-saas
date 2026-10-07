@@ -51,8 +51,7 @@ import { signIn } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { InlineNotice } from '@/components/ui/inline-notice';
-import { Checkbox } from '@/components/ui/checkbox';
-import Link from 'next/link';
+import { TermsConsentCheckbox } from '@/components/auth/TermsConsentCheckbox';
 import { Heading } from '@/components/ui/typography';
 import { TurnstileWidget } from '@/components/auth/TurnstileWidget';
 
@@ -426,42 +425,18 @@ export function FarmWizard({ startAtFarmType, termsVersion }: FarmWizardProps) {
                             <input id="w-password" className="input" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} />
                             <p className="text-xs text-muted mt-1">{t('passwordHelp')}</p>
                         </div>
-                        {/* Consent (P3.1). The links open in a new tab so a
-                            half-filled form is not lost to reading the terms —
-                            the commonest reason somebody abandons a signup at
-                            this step is going to read them and not coming
-                            back. */}
-                        <div className="flex items-start gap-tight">
-                            <Checkbox
-                                id="w-terms"
-                                checked={acceptedTerms}
-                                onCheckedChange={(v) => setAcceptedTerms(v === true)}
-                            />
-                            <label htmlFor="w-terms" className="text-sm text-muted">
-                                {t.rich('consentLabel', {
-                                    terms: (chunks) => (
-                                        <Link
-                                            href="/terms"
-                                            target="_blank"
-                                            rel="noopener"
-                                            className="underline hover:text-content-emphasis"
-                                        >
-                                            {chunks}
-                                        </Link>
-                                    ),
-                                    privacy: (chunks) => (
-                                        <Link
-                                            href="/privacy"
-                                            target="_blank"
-                                            rel="noopener"
-                                            className="underline hover:text-content-emphasis"
-                                        >
-                                            {chunks}
-                                        </Link>
-                                    ),
-                                })}
-                            </label>
-                        </div>
+                        {/* Consent (P3.1), through the ONE shared control —
+                            the same component `/accept-terms` renders, so the
+                            two places a person is asked cannot drift apart in
+                            wording. They used to carry byte-identical copy
+                            under two keys, which is the arrangement where one
+                            gets edited and the other quietly keeps saying
+                            something else. */}
+                        <TermsConsentCheckbox
+                            id="w-terms"
+                            checked={acceptedTerms}
+                            onChange={setAcceptedTerms}
+                        />
                         <TurnstileWidget
                             sitekey={turnstileSitekey}
                             onToken={setTurnstileToken}

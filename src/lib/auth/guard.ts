@@ -433,6 +433,39 @@ export function isMfaAllowedPath(pathname: string): boolean {
 }
 
 /**
+ * Paths an UNCONSENTED session may still reach (P3.1).
+ *
+ * The consent gate holds a signed-in user whose `acceptedTermsAt` is null.
+ * Three classes have to stay open or the hold becomes a trap:
+ *
+ *   1. the consent page and the route that records the acceptance — the way
+ *      OUT of the hold;
+ *   2. `/terms` and `/privacy` — you cannot ask somebody to accept a document
+ *      they are not allowed to read, and these are public anyway, so this is
+ *      belt-and-braces for a signed-in reader;
+ *   3. `/api/auth/` — sign-out above all. A user who declines must be able to
+ *      leave rather than be stuck between a gate and a session they cannot
+ *      drop. This is the same carve-out `isMfaAllowedPath` makes, for the
+ *      same reason.
+ *
+ * The MFA challenge paths are also exempt, which is ORDERING rather than
+ * generosity: MFA is a security control and consent is a compliance record,
+ * so a session with an outstanding second factor must clear that first. The
+ * middleware runs the MFA gate before this one; exempting those paths here
+ * keeps the two from deadlocking if that order is ever changed.
+ */
+export function isTermsAllowedPath(pathname: string): boolean {
+    if (pathname === '/accept-terms') return true;
+    if (pathname === '/api/auth/accept-terms') return true;
+    if (pathname === '/terms' || pathname === '/privacy') return true;
+    if (pathname === '/dsa-contact') return true;
+    if (pathname.startsWith('/api/auth/')) return true;
+    // MFA first — see the ordering note above.
+    if (isMfaAllowedPath(pathname)) return true;
+    return false;
+}
+
+/**
  * Sanitize a redirect path to prevent open-redirect attacks.
  * Only allows relative paths starting with '/'.
  * Strips protocol, host, and any absolute URL to return '/'.

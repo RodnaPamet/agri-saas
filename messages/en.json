@@ -69,7 +69,8 @@
         "export": "Export",
         "actions": "Actions",
         "details": "Details",
-        "language": "Language"
+        "language": "Language",
+        "termsConsentLabel": "I have read and accept the <terms>terms of use</terms> and the <privacy>privacy notice</privacy>."
     },
     "login": {
         "title": "Agrent",
@@ -6552,7 +6553,6 @@
         "doneIdentityDeferred": "The farm was created, but the ЕИК was not recorded. You can add it in settings.",
         "doneIdentityNone": "You can add an ЕИК in settings at any time.",
         "failed": "Something went wrong. Please try again.",
-        "consentLabel": "I have read and accept the <terms>terms of use</terms> and the <privacy>privacy notice</privacy>.",
         "consentStale": "The terms changed while this page was open. Please reload and read the new version before continuing."
     },
     "landing": {
@@ -6630,5 +6630,14 @@
         "addressUnset": "A contact address has not been configured for this deployment. Ask whoever gave you access, or use the address on the privacy notice.",
         "termsLink": "Terms of use",
         "privacyLink": "Privacy notice"
+    },
+    "acceptTerms": {
+        "title": "Before you continue",
+        "why": "Your account was created by signing in with a provider, so we have not yet asked you to accept our terms. We are asking now, because continuing to use the service is not the same as agreeing to anything.",
+        "submit": "Accept and continue",
+        "decline": "Sign out instead",
+        "working": "Saving…",
+        "failed": "That did not save. Please try again.",
+        "stale": "The terms changed while this page was open. Please reload and read the new version before continuing."
     }
 }

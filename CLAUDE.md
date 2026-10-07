@@ -1464,9 +1464,31 @@ The `Credentials()` provider is still registered unconditionally in
 cannot resolve `social.farm-registration` itself — it links to
 `/start` only when the wizard is open, for the reason the landing page
 does (`/start` 404s when the flag is off).
-**Terms acceptance is captured on that path ONLY.** A first-time Google
-sign-in creates its `User` row through `PrismaAdapter` inside NextAuth,
-so it passes no route of ours and records no consent — see #1376.
+**Terms acceptance has TWO capture points, and the second exists because
+the first cannot cover every door.** `register/start` records it inline.
+A first-time Google sign-in creates its `User` row through
+`PrismaAdapter` inside NextAuth, so it passes no route of ours (#1376) —
+and stamping consent on that callback would file an agreement nobody
+gave, which is worse than the null the column honestly holds. So a
+signed-in session whose `acceptedTermsAt` is null is HELD at
+`/accept-terms` by the Edge, and `POST /api/auth/accept-terms` is the
+way out (idempotent, and it does not re-stamp: the timestamp is the
+artifact).
+That gate runs AFTER the MFA gate — MFA is a security control, consent
+is a compliance record — and `isTermsAllowedPath` exempts the MFA paths
+too, so the two cannot deadlock if the order is ever changed. It tests
+`termsPending === true`, so a token minted before this shipped reads as
+not-pending and nobody is locked out mid-session; the claim resolves
+from the column on the next re-mint. The lookup FAILS CLOSED, which is
+the opposite trade from `mfaFailClosed`: being asked twice is harmless,
+granting access with no record is the thing this prevents.
+**The consent control is ONE component** —
+`components/auth/TermsConsentCheckbox` — rendered by both the wizard and
+the interstitial, with its copy under a single `common` key. It was
+duplicated with byte-identical text under two keys, which is the shape
+where one gets edited and the other quietly keeps saying something else
+while the stored version string claims both users agreed to the same
+document.
 Plus five provisioning paths that never involve an invite: SSO
 (`usecases/sso.ts`), SCIM (`usecases/scim-users.ts`), the staging seed
 route (`app/api/staging/seed/route.ts` — 403s outright when

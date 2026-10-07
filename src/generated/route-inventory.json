@@ -3,7 +3,7 @@
     "Every path template this API serves. APPEND-ONLY.",
     "",
     "ORDER: `routes` is sorted by `path` in UTF-16 CODE-UNIT order, never via",
-    "localeCompare \u2014 that resolves through the generating machine's ICU and",
+    "localeCompare — that resolves through the generating machine's ICU and",
     "locale, so two machines could emit different bytes for the same surface.",
     "tests/guards/route-inventory-ledger.test.ts asserts the order.",
     "",
@@ -25,7 +25,7 @@
     "",
     "WHY IT EXISTS: #1087 renamed five tile routes and the iOS client went on",
     "calling the old shape, rendering no satellite overlay until the owner saw",
-    "it on a phone. Both suites stayed green \u2014 a rename is invisible to a repo",
+    "it on a phone. Both suites stayed green — a rename is invisible to a repo",
     "that only checks its own callers."
   ],
   "routes": [
@@ -155,6 +155,11 @@
       "documented": false
     },
     {
+      "path": "/api/auth/accept-terms",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/auth/change-password",
       "status": "live",
       "documented": false
@@ -203,7 +208,7 @@
       "path": "/api/auth/register",
       "status": "retired",
       "documented": false,
-      "reason": "Retired 2026-10-07 (#1376). The legacy credentials signup: it created a User AND a Tenant in one call and recorded no terms acceptance, so it was the second of three self-signup doors and the weaker one. Replaced by the three-step path the wizard uses \u2014 POST /api/auth/register/start (unverified user + emailed code, and the only place consent is captured), POST /api/auth/register/verify (proves the address and signs in), POST /api/me/farms (creates the farm). The login page's in-page register form went with it and now links to /start, conditional on social.farm-registration. Its real-DB rollback proof was PORTED, not deleted: tests/integration/tenant-creation-atomicity.test.ts now proves the same property against createTenantWithOwner, which is where the transaction lives on the new path. No client called it \u2014 iOS confirmed it calls five auth routes and this is not among them (agri-saas#1371)."
+      "reason": "Retired 2026-10-07 (#1376). The legacy credentials signup: it created a User AND a Tenant in one call and recorded no terms acceptance, so it was the second of three self-signup doors and the weaker one. Replaced by the three-step path the wizard uses — POST /api/auth/register/start (unverified user + emailed code, and the only place consent is captured), POST /api/auth/register/verify (proves the address and signs in), POST /api/me/farms (creates the farm). The login page's in-page register form went with it and now links to /start, conditional on social.farm-registration. Its real-DB rollback proof was PORTED, not deleted: tests/integration/tenant-creation-atomicity.test.ts now proves the same property against createTenantWithOwner, which is where the transaction lives on the new path. No client called it — iOS confirmed it calls five auth routes and this is not among them (agri-saas#1371)."
     },
     {
       "path": "/api/auth/register/start",
