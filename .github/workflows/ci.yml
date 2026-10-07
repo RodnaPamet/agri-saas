@@ -1971,6 +1971,23 @@ jobs:
       - name: "Gate: k6 ag inventory-pagination smoke"
         run: k6 run -e VUS=10 -e DURATION=20s -e RAMP_UP=5s -e RAMP_DOWN=5s -e RUN_ID=ci-${{ github.run_id }}-inv tests/load/ag-inventory-pagination.js
 
+      # P3.10 — the registration enumeration oracle, measured against a real
+      # server. The status/body half is asserted in unit tests; the TIMING
+      # half cannot be, because bcrypt is mocked there and every branch
+      # returns in microseconds.
+      #
+      # No VUS/DURATION: the script is `per-vu-iterations` with ONE vu on
+      # purpose. `bcryptjs` is single-threaded on the Node main thread, so
+      # concurrency would put every sample in a queue behind the others and
+      # measure the queue instead of the branch. TRIALS is the knob.
+      #
+      # ~1.2s per iteration (three bcrypt-bound calls), so ~60s at the
+      # default 50 trials. It leaves 50 unverified `enum-probe-*@example.test`
+      # accounts behind, which is free on an ephemeral CI database and is what
+      # P3.5e's sweep collects elsewhere.
+      - name: "Gate: k6 registration enumeration timing (P3.10)"
+        run: k6 run -e RUN_ID=ci-${{ github.run_id }}-enum tests/load/enumeration-timing.js
+
       - name: Stop app
         if: always()
         run: |
