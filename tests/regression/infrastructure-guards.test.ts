@@ -123,7 +123,13 @@ describe('Infrastructure Regression Guards', () => {
             // farm, which is not a nicety — the legacy register route creates
             // an unverified user WITH an OWNER membership, so the naive
             // predicate would have deleted live farms.
-            expect(SCHEDULED_JOBS).toHaveLength(25);
+            // 25 → 26 (P3.10): `mail-canary`. The mailer already warns when NO
+            // transport is configured; nothing caught a transport that WAS
+            // working and stopped — a revoked key, a lapsed domain, an
+            // exhausted quota. Since P3.5b, email verification stands between
+            // a farmer and their farm, so a dead send path is a dead front
+            // door and six-hourly is how we hear about it.
+            expect(SCHEDULED_JOBS).toHaveLength(26);
         });
 
         test('scheduled job names match expected set', () => {
@@ -171,6 +177,12 @@ describe('Infrastructure Regression Guards', () => {
                 // Inventory Phase 1 — daily cross-tenant low-stock sweep
                 // firing LOW_STOCK alerts for items below reorderLevel.
                 'low-stock-monitor',
+                // P3.10 — every 6h, one message to MAIL_CANARY_TO. Proves the
+                // provider ACCEPTED it, NOT that it was delivered: nothing
+                // reads an inbox, so an accepted-then-bounced message looks
+                // like success. Calling it a delivery check would be the
+                // dangerous reading.
+                'mail-canary',
                 // Trends → News — daily aggregation of free agri RSS/Atom feeds
                 // into the global market-news cache.
                 // (Calendar roadmap PR 3's 'news-event-extraction' schedule is
