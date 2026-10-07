@@ -2,9 +2,10 @@
 import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { getProviders, signIn } from 'next-auth/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations, useLocale } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
+import { TurnstileWidget } from '@/components/auth/TurnstileWidget';
 import { Card } from '@/components/ui/card';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Heading } from '@/components/ui/typography';
@@ -66,7 +67,16 @@ function LoginForm() {
     // renders yet). `false` = server is OAuth-only, hide the form + divider
     // + register toggle. `true` = credentials is registered (dev, or prod
     // with AUTH_TEST_MODE=1), show the form.
+    const locale = useLocale();
     const [credentialsEnabled, setCredentialsEnabled] = useState<boolean | null>(null);
+    // Turnstile (P3.5c). `null` sitekey means bot screening is not configured
+    // on this deployment and no widget renders — the live configuration today.
+    const [turnstileSitekey, setTurnstileSitekey] = useState<string | null>(null);
+    const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+    // Bumped after any failed register submit. A Turnstile token is
+    // single-use, so without a reset the person retries with a dead token and
+    // is refused forever by `timeout-or-duplicate`.
+    const [turnstileReset, setTurnstileReset] = useState(0);
 
     useEffect(() => {
         let cancelled = false;
@@ -83,6 +93,12 @@ function LoginForm() {
                 .catch(() => null),
         ]).then(([providers, uiConfig]) => {
             if (cancelled) return;
+            // Set BEFORE the early return below: the credentials-hidden branch
+            // exits, and reading the sitekey after it would leave Turnstile
+            // dormant on exactly the deployments that hide the form.
+            if (typeof uiConfig?.turnstileSitekey === 'string') {
+                setTurnstileSitekey(uiConfig.turnstileSitekey);
+            }
             if (uiConfig?.credentialsFormHidden === true) {
                 setCredentialsEnabled(false);
                 return;
@@ -109,7 +125,18 @@ function LoginForm() {
                 const res = await fetch('/api/auth/register', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'register', email, password, name, orgName }),
+                    body: JSON.stringify({
+                        action: 'register',
+                        email,
+                        password,
+                        name,
+                        orgName,
+                        // Omitted entirely when screening is dormant. The
+                        // server treats a missing token as a refusal only when
+                        // it HAS a secret configured, so sending undefined is
+                        // correct rather than merely tolerated.
+                        ...(turnstileToken ? { turnstileToken } : {}),
+                    }),
                 });
                 const data = await res.json().catch(() => ({}));
                 if (!res.ok) throw new Error(extractErrorMessage(data?.error, t('registrationFailed')));
@@ -146,6 +173,16 @@ function LoginForm() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (err: any) {
             setError(err.message);
+            // A Turnstile token may be redeemed once. Whatever failed — a
+            // refused challenge, a taken email, a weak password — the token is
+            // now spent, so hand the person a fresh challenge. Without this
+            // they retry with a dead token and are refused by
+            // `timeout-or-duplicate` forever, with an error message that
+            // invites exactly that retry.
+            if (turnstileSitekey) {
+                setTurnstileToken(null);
+                setTurnstileReset((n) => n + 1);
+            }
         } finally {
             setLoading(false);
         }
@@ -360,6 +397,22 @@ function LoginForm() {
                                 <div className="text-right -mt-2">
                                     <a href="/forgot-password" className="text-xs text-content-emphasis underline underline-offset-2 hover:text-[var(--brand-default)]">{t('forgotPassword')}</a>
                                 </div>
+                                {/* Turnstile, register mode only. Renders
+                                    nothing when no sitekey is configured,
+                                    which is the live configuration today —
+                                    see TurnstileWidget's docblock. Sign-in is
+                                    not screened: it is already behind
+                                    LOGIN_LIMIT and lockout, and a challenge
+                                    there would tax every returning farmer to
+                                    deter an attack the rate limiter handles. */}
+                                {mode === 'register' && (
+                                    <TurnstileWidget
+                                        sitekey={turnstileSitekey}
+                                        onToken={setTurnstileToken}
+                                        resetSignal={turnstileReset}
+                                        language={locale}
+                                    />
+                                )}
                                 <Button type="submit" variant="primary" size="sm" className="w-full" disabled={loading}>
                                     {loading ? t('pleaseWait') : mode === 'login' ? t('submitLogin') : t('submitRegister')}
                                 </Button>

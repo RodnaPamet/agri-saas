@@ -24,6 +24,7 @@
  * Locks each link so a future refactor that drops one fails CI.
  */
 import * as fs from "node:fs";
+import { toSlug } from '@/lib/bg-transliterate';
 import * as path from "node:path";
 
 const ROOT = path.resolve(__dirname, "../..");
@@ -76,12 +77,43 @@ describe("Epic P3-PR-A — canvas export (PNG / SVG)", () => {
         });
 
         it("sanitises the download filename + caps it at 60 chars", () => {
-            // Anchor the sanitiser shape — strip non-alphanumeric,
-            // collapse repeats, cap length. A regression that lets
-            // through path separators / quotes would surface as a
-            // browser download warning.
-            expect(src).toMatch(/replace\(\/\[\^a-z0-9\]\+\/g/);
-            expect(src).toMatch(/\.slice\(0,\s*60\)/);
+            // Was `expect(src).toMatch(/replace\(\/\[\^a-z0-9\]\+\/g/)` —
+            // an assertion on the MECHANISM, which pinned one regex literal in
+            // one file. It had two problems. It could not notice that the
+            // mechanism it pinned DELETED every Cyrillic name, so a Bulgarian
+            // farmer's three process maps all exported as `process-map.png`
+            // and overwrote each other in the downloads folder; and it broke
+            // the moment the derivation moved to a shared helper, even though
+            // the property it cares about got stronger.
+            //
+            // So assert the PROPERTY instead: the stem routes through `toSlug`
+            // and is capped at 60. The safety concern in the original comment —
+            // no path separators, no quotes reaching a download filename — is
+            // now asserted directly against `toSlug` below, which covers every
+            // caller rather than this one file.
+            expect(src).toMatch(/toSlug\(/);
+            expect(src).toMatch(/\b60\b/);
+        });
+
+        it("no toSlug output can carry a path separator or a quote", () => {
+            // The real safety property, stated against the single
+            // implementation every download filename now goes through. This is
+            // what the source-text assertion above was reaching for, and it
+            // holds for the Cyrillic inputs the old mechanism silently erased.
+            for (const hostile of [
+                '../../etc/passwd',
+                'a/b\\c',
+                'name"with\'quotes',
+                'Карта "Полета" / 2026',
+                'файл\u0000null',
+            ]) {
+                const out = toSlug(hostile, 60);
+                if (out === null) continue;
+                expect(out).not.toMatch(/[/\\"'\u0000]/);
+                expect(out.length).toBeLessThanOrEqual(60);
+            }
+            // …and the Cyrillic case is not merely "safe", it is PRESERVED.
+            expect(toSlug('Карта на полетата', 60)).toBe('karta-na-poletata');
         });
 
         it("resolves the background colour from the active [data-theme]", () => {

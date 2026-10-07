@@ -20,6 +20,7 @@
  */
 
 import prisma from '@/lib/prisma';
+import { createFarmTenant } from '@/lib/security/tenant-key-manager';
 import { hashForLookup, hashForLookupCandidates } from '@/lib/security/encryption';
 import { appendAuditEntry } from '@/lib/audit/audit-writer';
 import { logger } from '@/lib/observability/logger';
@@ -88,25 +89,22 @@ export async function createTenantWithOwner(
     let tenantSlug: string;
     let tenantName: string;
 
-    await (prisma as PrismaClient).$transaction(async (tx) => {
-        // 2a. Create Tenant + DEK.
-        // createTenantWithDek uses the singleton prisma — we replicate
-        // its logic here with the tx client so the row is created inside
-        // the transaction boundary.
-        const { generateAndWrapDek } = await import(
-            '@/lib/security/tenant-keys'
+    // Returned out of the transaction rather than assigned to an outer
+    // binding: a definite-assignment assertion would compile even if the
+    // assignment were later removed, and nothing would then prime.
+    const primeDekCache = await (prisma as PrismaClient).$transaction(async (tx) => {
+        // 2a. Create Tenant + DEK via the one helper (P3.3). This used to
+        // replicate createTenantWithDek's body against `tx`, with
+        // `void _dek; // here we prime nothing` where the cache prime would
+        // have gone — the author working around the real constraint at the
+        // call site. The prime now leaves the transaction properly: it is
+        // returned and called after commit, because priming inside would
+        // outlive a rollback.
+        const created = await createFarmTenant(
+            { name: input.name, slug: input.slug },
+            tx,
         );
-        const { dek: _dek, wrapped } = generateAndWrapDek();
-        void _dek; // DEK bytes cached by createTenantWithDek's path; here we prime nothing
-
-        const tenant = await tx.tenant.create({
-            data: {
-                name: input.name,
-                slug: input.slug,
-                encryptedDek: wrapped,
-            },
-            select: { id: true, slug: true, name: true },
-        });
+        const tenant = created.tenant;
         tenantId = tenant.id;
         tenantSlug = tenant.slug;
         tenantName = tenant.name;
@@ -125,7 +123,14 @@ export async function createTenantWithOwner(
         await tx.tenantOnboarding.create({
             data: { tenantId: tenant.id },
         });
+
+        return created.primeDekCache;
     });
+
+    // 2c. Prime the DEK cache now the transaction has COMMITTED — inside, it
+    //     would survive a rollback and evict a live tenant's key from a bounded
+    //     LRU. Same reason the audit chain below waits for durability.
+    primeDekCache();
 
     // 3. Write hash-chained audit entries AFTER the transaction commits
     //    so the data is durable before the chain is extended.

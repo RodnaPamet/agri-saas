@@ -75,6 +75,24 @@ jest.mock('@/lib/auth/email-verification', () => ({
     issueEmailVerification: jest.fn(async () => undefined),
 }));
 
+// Typed with the full outcome UNION, not left to inference. Inferred from the
+// initial implementation alone the type is `{ok: boolean; skipped: boolean}`,
+// so `mockResolvedValue({ok: false, skipped: false, codes: [...]})` fails to
+// typecheck — and it failed in CI while passing locally, because an
+// incremental `tsconfig.tsbuildinfo` had never re-read these files.
+type TurnstileOutcomeShape =
+    | { ok: true; skipped: false }
+    | { ok: true; skipped: true }
+    | { ok: false; skipped: false; codes: string[] }
+    | { ok: true; skipped: false; degraded: true };
+const mockVerifyTurnstile = jest.fn(
+    async (): Promise<TurnstileOutcomeShape> => ({ ok: true, skipped: true }),
+);
+jest.mock('@/lib/security/turnstile', () => ({
+    __esModule: true,
+    verifyTurnstile: (...a: unknown[]) => mockVerifyTurnstile(...(a as [])),
+}));
+
 jest.mock('@/lib/auth', () => ({
     __esModule: true,
     signToken: jest.fn(() => 'signed-token'),
@@ -166,4 +184,57 @@ it('still screens the password against HIBP', async () => {
 
     expect(res.status).toBe(400);
     expect(mockTransaction).not.toHaveBeenCalled();
+});
+
+// ─── P3.5c — bot screening on the signup path ───
+
+describe('Turnstile screening (P3.5c)', () => {
+    beforeEach(() => {
+        mockVerifyTurnstile.mockResolvedValue({ ok: true, skipped: true });
+    });
+
+    it('refuses the signup when Turnstile rejects the token', async () => {
+        // EXECUTED, not grepped. #1166 records what a structural-only check is
+        // worth: the HIBP reject branch was deleted from two routes by a PR
+        // about Playwright apt stalls, and the readFileSync-plus-regex
+        // guardrail stayed green against the remains for a day.
+        mockVerifyTurnstile.mockResolvedValue({
+            ok: false,
+            skipped: false,
+            codes: ['invalid-input-response'],
+        });
+
+        const res = await POST(registerRequest(VALID) as never, {} as never);
+        expect(res.status).toBe(400);
+        const body = await res.json();
+        expect(body.error).toBe('turnstile_failed');
+        // The codes travel to the client so it can reset the widget — a token
+        // is single-use, so a blind retry always fails.
+        expect(body.codes).toEqual(['invalid-input-response']);
+    });
+
+    it('writes nothing when Turnstile rejects', async () => {
+        mockVerifyTurnstile.mockResolvedValue({ ok: false, skipped: false, codes: ['x'] });
+        await POST(registerRequest(VALID) as never, {} as never);
+        // Screening runs BEFORE the transaction and before bcrypt. A screen
+        // that refused after the expensive work would still refuse the signup
+        // but would have already paid for it, which is most of what a flood
+        // costs.
+        expect(mockTransaction).not.toHaveBeenCalled();
+    });
+
+    it('proceeds when screening is dormant — the live configuration today', async () => {
+        mockVerifyTurnstile.mockResolvedValue({ ok: true, skipped: true });
+        const res = await POST(registerRequest(VALID) as never, {} as never);
+        expect(res.status).toBe(200);
+    });
+
+    it('proceeds when Cloudflare is unreachable, which is deliberate', async () => {
+        // The documented fail-open on TRANSPORT failure. An attacker cannot
+        // reach this branch at will: a forged token gets an explicit
+        // rejection, which refuses. See the module docblock.
+        mockVerifyTurnstile.mockResolvedValue({ ok: true, skipped: false, degraded: true });
+        const res = await POST(registerRequest(VALID) as never, {} as never);
+        expect(res.status).toBe(200);
+    });
 });

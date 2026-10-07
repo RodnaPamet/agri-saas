@@ -64,6 +64,21 @@ jest.mock('@/lib/security/tenant-keys', () => ({
 
 jest.mock('@/lib/security/tenant-key-manager', () => ({
     createTenantWithDek: jest.fn(),
+    // P3.3 — the usecase now creates through `createFarmTenant`. A PARTIAL
+    // barrel mock is why this suite broke on a new export: anything not listed
+    // here is `undefined`, and the call fails with "is not a function" rather
+    // than anything that names the mock.
+    //
+    // It delegates to the caller's client so `tx.tenant.create` is still
+    // exercised — the assertion below is about the row being written inside
+    // the transaction, and a mock that swallowed the call would make that
+    // assertion vacuous.
+    createFarmTenant: jest.fn(async (data: unknown, db: { tenant: { create: (a: unknown) => unknown } }) => ({
+        tenant: await db.tenant.create({
+            data: { ...(data as object), encryptedDek: 'wrapped-dek-bytes' },
+        }),
+        primeDekCache: jest.fn(),
+    })),
 }));
 
 jest.mock('@/lib/audit/audit-writer', () => ({

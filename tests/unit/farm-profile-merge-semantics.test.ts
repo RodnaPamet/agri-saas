@@ -220,8 +220,17 @@ describe('farm-profile merge semantics (#1176)', () => {
         expect(create.producerName).toBeNull();
         expect(create.sizeHa).toBeNull();
         expect(create.grainProduced).toEqual([]);
-        // All thirteen plus tenantId, so Prisma never sees a partial create.
-        expect(Object.keys(create).length).toBe(14);
+        // Twelve editable fields plus tenantId, so Prisma never sees a
+        // partial create.
+        //
+        // 14 → 13 (#1352): `eik` left the create object with the rest of the
+        // write path. A create must not accept it either, or the bypass would
+        // simply move to the first write for a tenant — which is the one write
+        // where "no prior row" means there is nothing to compare against. The
+        // column takes its own default (null) and is set later by staff
+        // verification (P3.9).
+        expect(Object.keys(create).length).toBe(13);
+        expect(create).not.toHaveProperty('eik');
     });
 
     it('an empty body writes nothing and clears nothing', async () => {
@@ -236,5 +245,62 @@ describe('farm-profile merge semantics (#1176)', () => {
         // invalidated every other holder's If-Match token for a no-op.
         const upsert = (mockDb.farmProfile as { upsert: jest.Mock }).upsert;
         expect(upsert).not.toHaveBeenCalled();
+    });
+});
+
+// ─── #1352 — `eik` is not tenant-writable, but an unchanged echo is fine ───
+
+describe('eik is refused only when it would CHANGE (#1352)', () => {
+    /** Point the stored row's `eik` at a value, for the comparison. */
+    function stored(eik: string | null) {
+        (mockDb.farmProfile as { findUnique: jest.Mock }).findUnique = jest
+            .fn()
+            .mockResolvedValue({ id: 'fp-1', tenantId: 'tenant-A', version: 1, eik });
+    }
+
+    it('an UNCHANGED eik echoed back is accepted', async () => {
+        // The case that matters for real clients. The iOS editor PUTs all
+        // thirteen fields on every save — this usecase's own docblock says so
+        // — so refusing the KEY would 400 every farm-profile save from the
+        // owner's phone with the number unchanged. That is what the first
+        // version of this change did.
+        stored('831641791');
+        await expect(
+            upsertFarmProfile(makeCtx(), { eik: '831641791', producerName: 'Иван' }),
+        ).resolves.toBeDefined();
+    });
+
+    it('a CHANGED eik is refused', async () => {
+        stored('831641791');
+        await expect(
+            upsertFarmProfile(makeCtx(), { eik: '175074752' }),
+        ).rejects.toThrow(/FARM_PROFILE_EIK_NOT_EDITABLE/);
+    });
+
+    it('CLEARING a stored eik is refused too', async () => {
+        // `null` is an attempt to write the field, and wiping a verified
+        // identity is no more self-serviceable than setting one.
+        stored('831641791');
+        await expect(upsertFarmProfile(makeCtx(), { eik: null })).rejects.toThrow(
+            /FARM_PROFILE_EIK_NOT_EDITABLE/,
+        );
+    });
+
+    it('SETTING one on a profile that has none is refused', async () => {
+        // The original bypass: a farm self-asserting a company number with no
+        // claim and no review.
+        stored(null);
+        await expect(
+            upsertFarmProfile(makeCtx(), { eik: '831641791' }),
+        ).rejects.toThrow(/FARM_PROFILE_EIK_NOT_EDITABLE/);
+    });
+
+    it('and `eik` never reaches the write object, even when it matched', async () => {
+        stored('831641791');
+        await upsertFarmProfile(makeCtx(), { eik: '831641791', producerName: 'Иван' });
+        // Accepting the echo must not become writing it. The field is absent
+        // from both write lists, so a matching value is a no-op rather than a
+        // permitted write.
+        expect(lastUpdate()).not.toHaveProperty('eik');
     });
 });

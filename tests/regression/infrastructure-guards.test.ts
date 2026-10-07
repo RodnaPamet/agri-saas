@@ -74,7 +74,12 @@ describe('Infrastructure Regression Guards', () => {
             }
         });
 
-        test('exactly 21 scheduled jobs exist', () => {
+        test('the scheduled-job count is pinned', () => {
+            // Renamed from 'exactly 21 scheduled jobs exist': the title had been
+            // stale since the count reached 22 and said 21 while the
+            // assertion below said 24. A title that disagrees with its own
+            // assertion teaches the reader to trust neither, and the number
+            // belongs in one place — the assertion.
             // 29 → 30: `evidence-stale-review-sweep` was written in 2026-05
             // and never registered or scheduled, so `nextReviewDate` was
             // settable, shown in the calendar, counted on the dashboard — and
@@ -111,7 +116,14 @@ describe('Infrastructure Regression Guards', () => {
             // nothing noticed — to the one GCP uptime check on /api/readyz, a
             // route failing 100% of the time and a route nobody calls are the
             // same observation. This job separates them daily.
-            expect(SCHEDULED_JOBS).toHaveLength(24);
+            // 24 → 25 (P3.5e): `unverified-account-sweep`. Registration v2
+            // creates a user BEFORE the email is proven, so an abandoned
+            // signup leaves an unconfirmed address and name behind; this
+            // deletes them after seven days. It spares any account holding a
+            // farm, which is not a nicety — the legacy register route creates
+            // an unverified user WITH an OWNER membership, so the naive
+            // predicate would have deleted live farms.
+            expect(SCHEDULED_JOBS).toHaveLength(25);
         });
 
         test('scheduled job names match expected set', () => {
@@ -202,6 +214,14 @@ describe('Infrastructure Regression Guards', () => {
                 // In-app TASK_DUE notifications fired one week, one
                 // day, and on the day a task's dueAt falls.
                 'task-due-notification',
+                // P3.5e — daily 04:30 UTC deletion of accounts that never
+                // verified their email, after a 7-day grace period. Skips any
+                // account holding a farm or org membership: the legacy
+                // register route creates an unverified user together with an
+                // OWNER membership, and `tenant_membership_last_owner_guard`
+                // could not have saved those farms — it watches membership
+                // statements, not a cascade from the user.
+                'unverified-account-sweep',
                 // Agro-intel — daily Open-Meteo weather pull per Location
                 // → WeatherObservation upsert + spray/disease signal eval.
                 'weather-pull',

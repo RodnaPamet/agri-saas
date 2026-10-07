@@ -152,6 +152,19 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
         // being created or its ownership is changing; RLS doesn't apply
         // (Tenant itself is not in TENANT_SCOPED_MODELS).
         'tenant-lifecycle.ts',
+        // P3.9 — staff review of farm identity claims. Review is inherently
+        // CROSS-tenant: a platform reviewer looks at every farm's queue, and
+        // the collision case is by definition two different tenants holding
+        // one ЕИК. `FarmIdentityClaim` is FORCE ROW LEVEL SECURITY with a
+        // `superuser_bypass` policy — `USING (current_setting('role') !=
+        // 'app_user')` — so the privileged singleton is the only client that
+        // can see the queue at all. An `app_user` read returns the silent zero
+        // that `tests/integration/farm-identity-claim-unique.test.ts` pins.
+        //
+        // It also writes `FarmProfile` for the tenant whose claim it promotes,
+        // in the same transaction — a tenant ctx it has no session for, since
+        // the actor is a platform operator and not a member of that farm.
+        'farm-identity-review.ts',
         // Epic O-2 — org-layer usecases. Organization + OrgMembership are
         // user-scoped (org_isolation policy keyed on app.user_id), NOT
         // tenant-scoped — they're not in TENANT_SCOPED_MODELS. The

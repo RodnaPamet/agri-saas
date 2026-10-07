@@ -131,6 +131,15 @@ describe('credential-verifying routes are reachable, and public routes verify', 
             '/api/metrics': 'anonymous RUM beacon sink, by design',
             '/api/scim/v2/ServiceProviderConfig':
                 'RFC 7644 §4 discovery metadata — static capability flags, no DB, read before a token exists',
+            '/api/public/eik-check':
+                'P3.7 — anonymous by design: it runs while someone types their ЕИК into the ' +
+                'registration form, before an account exists. Returns {valid, looksLikeEgn, ' +
+                'registryName} and nothing else; reads no tenant data. `valid` is a checksum ' +
+                'the caller could compute offline, and `registryName` is null for a natural ' +
+                'person or sole trader (ADR 0002 OD2: a 9-digit БУЛСТАТ can itself be personal ' +
+                'data), so what it discloses is bounded to legal entities. Rate-limited with ' +
+                'PUBLIC_READ_LIMIT, which is the control here because uniformity cannot be — ' +
+                'telling a typo from an unregistered company IS the feature.',
         };
         // NOTE: /api/staging/seed and /api/integrations/webhooks/[provider]
         // are NOT exempt — they authenticate (an x-seed-token comparison

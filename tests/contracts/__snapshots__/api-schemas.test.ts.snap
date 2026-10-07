@@ -743,6 +743,10 @@ exports[`API contract — per-schema snapshots schema: AuthRegisterRequest 1`] =
     "orgName": {
       "type": "string",
       "minLength": 1
+    },
+    "turnstileToken": {
+      "type": "string",
+      "maxLength": 2048
     }
   },
   "required": [
@@ -751,7 +755,7 @@ exports[`API contract — per-schema snapshots schema: AuthRegisterRequest 1`] =
     "name",
     "orgName"
   ],
-  "description": "Self-service signup payload (gated by AUTH_TEST_MODE in non-prod). The password is checked against HIBP via k-anonymity before persistence; emailVerification is initiated server-side."
+  "description": "Self-service signup payload (gated by AUTH_TEST_MODE in non-prod). The password is checked against HIBP via k-anonymity before persistence; emailVerification is initiated server-side. \`turnstileToken\` is required whenever the deployment has a Turnstile secret configured."
 }"
 `;
 
@@ -3722,6 +3726,35 @@ exports[`API contract — per-schema snapshots schema: DataStreamReading 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: EikCheckResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "valid": {
+      "type": "boolean",
+      "description": "True when the input is a structurally valid ЕИК: 9 digits with a correct checksum, or 13 digits whose leading 9 are themselves valid. Structure only — it does NOT mean the company exists, is active, or is in the register."
+    },
+    "looksLikeEgn": {
+      "type": "boolean",
+      "description": "True when the input fails as an ЕИК but passes as an ЕГН — both the checksum and a decodable date of birth. Always false when \`valid\` is true. Use it to change the MESSAGE, not the outcome."
+    },
+    "registryName": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The registered company name, or null.\\n\\n**\`null\` deliberately conflates three different situations** and a client must not distinguish them: no registry provider is configured in this deployment, the provider was asked and had no entry, or the entry carries no name. They are merged because telling an anonymous caller WHICH applies turns this endpoint into a probe for which numbers exist in the register — a distinction worth more to an enumerator than to the form it serves. So render null as \\"we could not confirm the name\\", never as \\"this company does not exist\\"."
+    }
+  },
+  "required": [
+    "valid",
+    "looksLikeEgn",
+    "registryName"
+  ],
+  "description": "The shape is identical for every outcome — valid, invalid, found, not found. That uniformity IS the control: a response whose size or field set varied with what the register holds would leak the register to anyone willing to iterate."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: EmptyBody 1`] = `
 "{
   "type": "object",
@@ -4655,6 +4688,16 @@ exports[`API contract — per-schema snapshots schema: FarmProfile 1`] = `
     },
     "version": {
       "type": "integer"
+    },
+    "eikVerification": {
+      "type": "string",
+      "enum": [
+        "NONE",
+        "PENDING",
+        "VERIFIED",
+        "DISPUTED"
+      ],
+      "description": "What the farmer should be told about their ЕИК:\\n\\n- \`NONE\` — no claim has been made. The number shown, if any, predates verification.\\n- \`PENDING\` — claimed, waiting for a staff reviewer. Nothing is wrong; nothing is confirmed either.\\n- \`VERIFIED\` — a reviewer confirmed the number against the Търговски регистър. This is the only state in which \`eik\` is authoritative.\\n- \`DISPUTED\` — the claim collided with an existing verified claim on the same number.\\n\\n**\`DISPUTED\` is not an accusation and must not be worded as one.** It arises from a mistyped digit as readily as from anything else, so render it neutrally and actionably — \\"does not match an existing record, contact the Agrent team\\" — never as a suggestion that the farmer misrepresented themselves.\\n\\nPrecedence when a farm has several claims: VERIFIED, then PENDING, then DISPUTED. PENDING outranks DISPUTED deliberately — a farm whose first claim collided and who has since submitted another should see the one in flight, not the dead one."
     }
   },
   "required": [
@@ -4671,7 +4714,8 @@ exports[`API contract — per-schema snapshots schema: FarmProfile 1`] = `
     "odbhCity",
     "sizeHa",
     "grainProduced",
-    "version"
+    "version",
+    "eikVerification"
   ],
   "description": "The one-per-tenant farm identity block printed on the БАБХ ДНЕВНИК. Every field is nullable because the paper form tolerates blanks — an all-null body is the normal answer for a tenant that has not filled it in, not an error. egn/eik/urn are encrypted at rest and returned as plaintext: treat them as sensitive on screen and in logs. sizeHa is a number and grainProduced is an array that is [] rather than null."
 }"
@@ -9858,6 +9902,48 @@ exports[`API contract — per-schema snapshots schema: RawErrorResponse 1`] = `
     "error"
   ],
   "description": "Non-canonical error body used by the spatial-import and cadastre-import routes: a bare message string, with no \`code\`, \`requestId\` or \`details\`."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: RegisterStartResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "enum": [
+        true
+      ]
+    }
+  },
+  "required": [
+    "ok"
+  ],
+  "description": "Intentionally carries no information about the address. Adding a field here that varied with account state would re-open the enumeration oracle this shape exists to close."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: RegisterVerifyResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "enum": [
+        true
+      ]
+    },
+    "verified": {
+      "type": "boolean",
+      "enum": [
+        true
+      ]
+    }
+  },
+  "required": [
+    "ok",
+    "verified"
+  ]
 }"
 `;
 

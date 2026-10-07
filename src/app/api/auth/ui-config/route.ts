@@ -31,5 +31,25 @@ export const GET = withApiErrorHandling(async () => {
         // the backend available for API / tests / future admin tooling.
         credentialsFormHidden:
             process.env.AUTH_CREDENTIALS_UI_HIDDEN === '1',
+        /**
+         * Cloudflare Turnstile sitekey, or null when bot screening is not
+         * configured (P3.5c).
+         *
+         * A sitekey is PUBLIC by design — it is rendered into the widget on
+         * every page that uses it, and Cloudflare treats it as such. The
+         * secret is what must never leave the server, and it is read only by
+         * `verifyTurnstile`.
+         *
+         * Exposed here rather than as `NEXT_PUBLIC_TURNSTILE_SITEKEY` for the
+         * reason this whole route exists, stated above: a `NEXT_PUBLIC_*`
+         * value is inlined at build time, so supplying a key would need a
+         * rebuild and a rollout. Read per request, the operator pastes both
+         * values into the env file and recreates the container.
+         *
+         * `null` means render no widget. A client must branch on it rather
+         * than passing it through — an empty sitekey renders a broken widget
+         * that no amount of retrying fixes.
+         */
+        turnstileSitekey: process.env.TURNSTILE_SITEKEY || null,
     });
 });

@@ -167,6 +167,17 @@ describe('Structural Guard: Tenant Isolation Conventions', () => {
             // These routes are intentionally outside /api/t/[tenantSlug] because
             // the caller is not yet a tenant member and has no tenantId in scope.
             'invites',
+            // P3.7 — pre-registration lookups (currently `eik-check`). The
+            // caller is a person filling in the sign-up form: there is no
+            // session, no tenant, and nothing to scope a result TO, so the
+            // tenant-scoping invariant has no subject here rather than being
+            // waived. Every route under this prefix is unauthenticated and
+            // therefore enumerable by construction; the controls are a rate
+            // limit and a response shape that is identical for every outcome,
+            // documented in src/lib/openapi/paths/public-registry.paths.ts.
+            // A route that needs a tenant does NOT belong here — it belongs
+            // under /api/t/[tenantSlug].
+            'public',
             // Epic O-1/O-2 — hub-and-spoke organization layer. Org
             // routes resolve `OrgContext` (NOT `RequestContext`) and
             // operate above the tenant scope. The cross-tenant drill-

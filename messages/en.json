@@ -5567,6 +5567,15 @@
     "auth": {
         "backToSignIn": "Back to sign in",
         "email": {
+            "codeBody": "Enter this code to verify your email address:",
+            "codeExpiry": "The code is valid for {minutes} minutes. Request a new one after that.",
+            "codeIgnore": "If you didn't create this account, you can safely ignore this message. Don't share the code with anyone.",
+            "codeIntro": "Welcome to Agrent.",
+            "codeSubject": "Verify your email",
+            "existingBody": "An account with this email already exists, so we didn't create a new one. Sign in with your password, or request a new one if you've forgotten it.",
+            "existingIgnore": "If you didn't try to register, there's nothing to do — your account is unchanged.",
+            "existingIntro": "Someone — probably you — tried to register with this email address.",
+            "existingSubject": "You already have an Agrent account",
             "resetBody": "Click the link below to choose a new password. The link expires in 1 hour and can only be used once.",
             "resetCta": "Reset password",
             "resetIgnore": "If you didn't request this, you can safely ignore this message — your password will not change until the link is used.",

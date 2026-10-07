@@ -126,7 +126,17 @@ const RICH_TEXT_COVERAGE: Readonly<
     // manifest) AND sanitised at the upsertFarmProfile write seam before the
     // middleware persists them, so every renderer that decrypts them (the
     // ДНЕВНИК PDF) sees safe content.
-    FarmProfile: { usecases: ['src/app-layer/usecases/farm-profile.ts'], sanitizer: 'sanitizePlainText' },
+    // TWO write paths since P3.9. `eik` moved out of the profile usecase
+    // entirely (#1352): it is written only by the staff verification path,
+    // which is the sole legitimate source for a company number nobody at the
+    // farm may self-assert.
+    FarmProfile: {
+        usecases: [
+            'src/app-layer/usecases/farm-profile.ts',
+            'src/app-layer/usecases/farm-identity-review.ts',
+        ],
+        sanitizer: 'sanitizePlainText',
+    },
 
     // ─── #1222: declared because they were ALREADY sanitised ──────────
     //
@@ -242,11 +252,17 @@ const SEAM_COVERED: Readonly<
             'seam covers every field generically — which is stronger than ' +
             'per-field, not weaker.',
     },
-    'FarmProfile.eik': {
-        seam: 'norm',
-        fieldList: 'PROFILE_FIELDS',
-        reason: 'Same PROFILE_FIELDS reduce seam as FarmProfile.egn.',
-    },
+    // `FarmProfile.eik` is NOT seam-covered any more, deliberately. It left
+    // the `norm`/PROFILE_FIELDS reduce when it stopped being tenant-editable
+    // (#1352), and its new write path in `farm-identity-review.ts` names the
+    // field beside a real `sanitizePlainText` call — so the field-level
+    // detector covers it directly and a seam exemption would be weaker.
+    //
+    // Keeping the old entry would have been the worse failure: it asserted
+    // "'eik' is listed in PROFILE_FIELDS, so the seam covers it", and `eik`
+    // IS still in PROFILE_FIELDS — that list is now the READ shape. The
+    // exemption would have stayed green while the write path it described no
+    // longer existed.
     'FarmProfile.urn': {
         seam: 'norm',
         fieldList: 'PROFILE_FIELDS',

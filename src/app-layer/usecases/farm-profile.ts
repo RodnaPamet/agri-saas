@@ -3,6 +3,7 @@ import { assertCanViewAdminSettings } from '../policies/admin.policies';
 import { assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
+import { badRequest } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { staleData } from '@/lib/errors/types';
 import { isUniqueViolation } from '@/lib/errors/prisma';
@@ -51,7 +52,16 @@ export interface FarmProfileFields {
     grainProduced?: string[] | null;
 }
 
-/** Ordered list of the editable string fields (single source of truth). */
+/**
+ * Ordered list of the profile's string fields — the READ shape.
+ *
+ * `eik` is here because a farm must be able to SEE its verified ЕИК; it is
+ * excluded from `EDITABLE_PROFILE_FIELDS` below, which is the WRITE list.
+ * Those were one list until #1352, and conflating them is what created the
+ * bypass: the name said "editable" and the same array also defined what the
+ * read returns, so removing the field to stop writes would have stopped the
+ * farm seeing its own number.
+ */
 const PROFILE_FIELDS = [
     'producerName',
     'egn',
@@ -65,6 +75,32 @@ const PROFILE_FIELDS = [
     'registrationEkatte',
     'odbhCity',
 ] as const;
+
+/**
+ * The subset a tenant may WRITE. `eik` is deliberately absent (#1352).
+ *
+ * P3.4 built a claim mechanism for that field — a blind index, a partial
+ * unique index enforced by the database because an RLS-scoped pre-check is
+ * structurally blind, and a PENDING → VERIFIED transition only platform staff
+ * can make. Its schema header calls that table "the sole gate on that field".
+ * It was not: `eik` sat in the editable list, so any tenant ADMIN could set
+ * their own ЕИК with no claim, no review and no checksum — and that number is
+ * rendered into the ДНЕВНИК PDF and the БАБХ register export, documents filed
+ * with a regulator.
+ *
+ * The only write path is now `POST /api/admin/farm-claims/:claimId/verify`
+ * (P3.9), which takes the ЕИК from the reviewer who found it in the Търговски
+ * регистър. `tests/guards/farm-profile-eik-has-one-write-path.test.ts` keeps
+ * it that way.
+ *
+ * `egn` STAYS editable: it is the farmer's own personal identity number on
+ * their own profile, it has no claim mechanism and needs none, and a
+ * self-declared ЕГН asserts nothing about a third party the way a company
+ * number does.
+ */
+const EDITABLE_PROFILE_FIELDS = PROFILE_FIELDS.filter(
+    (f) => f !== 'eik',
+) as Exclude<(typeof PROFILE_FIELDS)[number], 'eik'>[];
 
 type StringShape = Record<(typeof PROFILE_FIELDS)[number], string | null>;
 
@@ -81,7 +117,31 @@ export type ProfileShape = StringShape & {
      * closes.
      */
     version: number;
+    /**
+     * Whether this farm's ЕИК has been verified by staff (P3.4/P3.9).
+     *
+     * Read-only and derived — there is no column for it; it is the state of
+     * the farm's `FarmIdentityClaim` rows. Surfaced here rather than on
+     * `/api/auth/me` at the iOS client's request: this is the screen that
+     * shows the ЕИК and it already fetches the profile, while `me` is re-read
+     * on every foreground and should stay small.
+     *
+     * Precedence when a farm has several claims: VERIFIED, then PENDING, then
+     * DISPUTED. PENDING outranks DISPUTED deliberately — a farm whose first
+     * claim collided and who has since submitted another should see the one
+     * in flight, not the dead one.
+     */
+    eikVerification: EikVerificationState;
 };
+
+/**
+ * The four states a farm's ЕИК can be in, from the farmer's point of view.
+ *
+ * `DISPUTED` is NOT an accusation and must not be worded as one. It means the
+ * claim collided with an existing VERIFIED claim on the same number, which
+ * happens as often from a mistyped digit as from anything else.
+ */
+export type EikVerificationState = 'NONE' | 'PENDING' | 'VERIFIED' | 'DISPUTED';
 
 const EMPTY_PROFILE: ProfileShape = {
     ...PROFILE_FIELDS.reduce((acc, k) => ({ ...acc, [k]: null }), {} as StringShape),
@@ -93,6 +153,10 @@ const EMPTY_PROFILE: ProfileShape = {
     // The sentinel. No stored row holds 0, so a client that reads an unset
     // profile and sends this back is unambiguously saying "create".
     version: 0,
+    // No profile means no claim either, in every real sequence — but this is
+    // overwritten by the caller from the claim query regardless, so it is a
+    // default rather than an assertion.
+    eikVerification: 'NONE',
 };
 
 /** Decimal → number. See the module note on why this is not a string. */
@@ -103,9 +167,13 @@ function toNum(v: unknown): number | null {
 }
 
 /** Project a row (or the empty default) onto the wire shape. */
-function project(row: Record<string, unknown> | null): ProfileShape {
-    if (!row) return { ...EMPTY_PROFILE };
+function project(
+    row: Record<string, unknown> | null,
+    eikVerification: EikVerificationState = 'NONE',
+): ProfileShape {
+    if (!row) return { ...EMPTY_PROFILE, eikVerification };
     return {
+        eikVerification,
         ...PROFILE_FIELDS.reduce(
             (acc, k) => ({ ...acc, [k]: (row[k] as string | null) ?? null }),
             {} as StringShape,
@@ -119,14 +187,49 @@ function project(row: Record<string, unknown> | null): ProfileShape {
     };
 }
 
+/**
+ * The farm's own ЕИК verification state, from its claims.
+ *
+ * Runs in the SAME tenant context as the profile read, which is both correct
+ * and the point: a farm asks about its OWN claims, which is exactly what RLS
+ * scopes. The hazardous shape is asking whether someone else holds a value —
+ * that returns zero rows precisely when the incumbent is another tenant,
+ * which is why P3.4 put a partial unique index behind that case.
+ *
+ * Reads only `status`. The ЕИК hash is never selected: a farm learning the
+ * blind index of its own number gains nothing and it is a stable
+ * per-identity token.
+ */
+async function deriveEikVerification(
+    db: { farmIdentityClaim: { findMany: (args: unknown) => Promise<{ status: string }[]> } },
+    tenantId: string,
+): Promise<EikVerificationState> {
+    const rows = await db.farmIdentityClaim.findMany({
+        where: { tenantId },
+        select: { status: true },
+    });
+    if (rows.length === 0) return 'NONE';
+    const held = new Set(rows.map((r) => r.status));
+    // VERIFIED > PENDING > DISPUTED. See the field's docblock for why PENDING
+    // outranks DISPUTED.
+    if (held.has('VERIFIED')) return 'VERIFIED';
+    if (held.has('PENDING')) return 'PENDING';
+    if (held.has('DISPUTED')) return 'DISPUTED';
+    return 'NONE';
+}
+
 /** Admin read — the tenant's farm profile (an all-null shape when unset). */
 export async function getFarmProfile(ctx: RequestContext): Promise<ProfileShape> {
     assertCanViewAdminSettings(ctx);
     return runInTenantContext(ctx, async (db) => {
-        const row = await db.farmProfile.findUnique({
-            where: { tenantId: ctx.tenantId },
-        });
-        return project(row as Record<string, unknown> | null);
+        const [row, eikVerification] = await Promise.all([
+            db.farmProfile.findUnique({ where: { tenantId: ctx.tenantId } }),
+            deriveEikVerification(
+                db as unknown as Parameters<typeof deriveEikVerification>[0],
+                ctx.tenantId,
+            ),
+        ]);
+        return project(row as Record<string, unknown> | null, eikVerification);
     });
 }
 
@@ -202,7 +305,7 @@ export async function upsertFarmProfile(
     // UPDATE carries ONLY what the caller mentioned. A field absent from the
     // body is absent from the statement, so the stored value stands.
     const update: Record<string, unknown> = {};
-    for (const k of PROFILE_FIELDS) {
+    for (const k of EDITABLE_PROFILE_FIELDS) {
         if (said(k)) update[k] = norm(input[k]);
     }
     if (said('sizeHa')) update.sizeHa = normSize(input.sizeHa);
@@ -213,9 +316,13 @@ export async function upsertFarmProfile(
     // not mention is genuinely undeclared.
     const create = {
         tenantId: ctx.tenantId,
-        ...PROFILE_FIELDS.reduce(
+        // EDITABLE, not PROFILE_FIELDS: a create must not accept `eik` either,
+        // or the bypass would simply move to the first write for a tenant.
+        // The column is left to its own default (null) and set later by
+        // verification.
+        ...EDITABLE_PROFILE_FIELDS.reduce(
             (acc, k) => ({ ...acc, [k]: said(k) ? norm(input[k]) : null }),
-            {} as StringShape,
+            {} as Omit<StringShape, 'eik'>,
         ),
         sizeHa: said('sizeHa') ? normSize(input.sizeHa) : null,
         grainProduced: said('grainProduced') ? normGrain(input.grainProduced) : [],
@@ -261,6 +368,36 @@ export async function upsertFarmProfile(
              * Suppressing that would need value-by-value comparison and is a
              * different decision.
              */
+            // ── `eik` is refused only when it would CHANGE (#1352) ──
+            //
+            // The field is not writable: P3.4 built a claim mechanism for it
+            // and the only write path is staff verification (P3.9). But
+            // refusing the KEY outright was wrong, and the docblock just above
+            // says why — a client that "sends all thirteen fields on every
+            // save" mentions `eik` even when the operator changed nothing. The
+            // iOS editor does exactly that, so an unconditional refusal would
+            // have 400'd every farm-profile save from the owner's phone,
+            // unchanged number included.
+            //
+            // So the test is whether the submitted value DIFFERS from what is
+            // stored. An identical value is a no-op, not an attempt to write;
+            // a different one — including `null`, which would CLEAR a verified
+            // identity — is refused. This needs no cross-client coordination
+            // and stays correct for any future client that round-trips the
+            // whole object.
+            //
+            // `eik` is still absent from both write lists, so even the
+            // matching case writes nothing.
+            if (said('eik')) {
+                const held = await db.farmProfile.findUnique({
+                    where: { tenantId: ctx.tenantId },
+                    select: { eik: true },
+                });
+                if (norm(input.eik) !== (held?.eik ?? null)) {
+                    throw badRequest('FARM_PROFILE_EIK_NOT_EDITABLE');
+                }
+            }
+
             if (!mentionedAnything) {
                 const current = await db.farmProfile.findUnique({
                     where: { tenantId: ctx.tenantId },

@@ -149,6 +149,10 @@ describe('createTenantUnderOrg — happy path', () => {
         });
         // Name is trimmed; slug is trimmed + lower-cased BEFORE the
         // tenant row is written.
+        // P3.3: the create goes through `createFarmTenant` now, which does not
+        // narrow with `select` — it returns the full row, matching
+        // `createTenantWithDek`'s existing contract. The data shape, which is
+        // what this case is actually about, is unchanged.
         expect(txCalls.tenantCreate).toHaveBeenCalledWith({
             data: expect.objectContaining({
                 name: 'New Tenant',
@@ -156,7 +160,6 @@ describe('createTenantUnderOrg — happy path', () => {
                 organizationId: 'org-1',
                 encryptedDek: 'wrapped-dek-bytes',
             }),
-            select: { id: true, name: true, slug: true },
         });
         // OWNER membership uses the same userId from ctx.
         expect(txCalls.tenantMembershipCreate).toHaveBeenCalledWith({
@@ -181,9 +184,12 @@ describe('createTenantUnderOrg — happy path', () => {
     it('emits a structured info log on success with the operator-visible fields', async () => {
         provisionResult = { created: 2 };
         await createTenantUnderOrg(orgCtx(), { name: 'A', slug: 'a' });
-        expect(infoCalls).toHaveLength(1);
-        expect(infoCalls[0].msg).toBe('org-tenants.created');
-        expect(infoCalls[0].fields).toMatchObject({
+        // `createFarmTenant` logs its own line, so this filters for the one
+        // under test rather than counting every info call — a bare length
+        // assertion here breaks whenever anything downstream adds a log.
+        const created = infoCalls.filter((c) => c.msg === 'org-tenants.created');
+        expect(created).toHaveLength(1);
+        expect(created[0].fields).toMatchObject({
             organizationId: 'org-1',
             tenantId: 't-1',
             slug: 'a',
@@ -249,6 +255,10 @@ describe('createTenantUnderOrg — best-effort provisioning', () => {
     it('successful tx + provisioned=0 still emits the structured info log', async () => {
         provisionResult = { created: 0 };
         await createTenantUnderOrg(orgCtx(), { name: 'X', slug: 'y' });
-        expect(infoCalls[0].fields.provisionedAdmins).toBe(0);
+        // Index 0 is no longer this usecase's log — `createFarmTenant` emits
+        // one first. Selecting by message rather than by position is what
+        // stops the next added log line breaking this again.
+        const zeroProvisioned = infoCalls.find((c) => c.msg === 'org-tenants.created');
+        expect(zeroProvisioned?.fields.provisionedAdmins).toBe(0);
     });
 });

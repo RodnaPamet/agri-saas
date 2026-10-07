@@ -70,6 +70,21 @@
       "documented": false
     },
     {
+      "path": "/api/admin/farm-claims",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/admin/farm-claims/{claimId}/dispute",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/admin/farm-claims/{claimId}/verify",
+      "status": "live",
+      "documented": false
+    },
+    {
       "path": "/api/admin/feature-flags",
       "status": "live",
       "documented": false
@@ -188,6 +203,16 @@
       "path": "/api/auth/register",
       "status": "live",
       "documented": false
+    },
+    {
+      "path": "/api/auth/register/start",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/auth/register/verify",
+      "status": "live",
+      "documented": true
     },
     {
       "path": "/api/auth/reset-password",
@@ -408,6 +433,11 @@
       "path": "/api/promotions/{id}/image",
       "status": "live",
       "documented": false
+    },
+    {
+      "path": "/api/public/eik-check",
+      "status": "live",
+      "documented": true
     },
     {
       "path": "/api/readyz",

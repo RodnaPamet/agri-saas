@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "3.78.18",
+    "version": "4.1.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -760,6 +760,10 @@
           "orgName": {
             "type": "string",
             "minLength": 1
+          },
+          "turnstileToken": {
+            "type": "string",
+            "maxLength": 2048
           }
         },
         "required": [
@@ -768,7 +772,7 @@
           "name",
           "orgName"
         ],
-        "description": "Self-service signup payload (gated by AUTH_TEST_MODE in non-prod). The password is checked against HIBP via k-anonymity before persistence; emailVerification is initiated server-side."
+        "description": "Self-service signup payload (gated by AUTH_TEST_MODE in non-prod). The password is checked against HIBP via k-anonymity before persistence; emailVerification is initiated server-side. `turnstileToken` is required whenever the deployment has a Turnstile secret configured."
       },
       "AuthUiConfig": {
         "type": "object",
@@ -3611,6 +3615,32 @@
         ],
         "description": "One sensor reading. `unit` is per-reading and may differ from the stream’s declared unit."
       },
+      "EikCheckResult": {
+        "type": "object",
+        "properties": {
+          "valid": {
+            "type": "boolean",
+            "description": "True when the input is a structurally valid ЕИК: 9 digits with a correct checksum, or 13 digits whose leading 9 are themselves valid. Structure only — it does NOT mean the company exists, is active, or is in the register."
+          },
+          "looksLikeEgn": {
+            "type": "boolean",
+            "description": "True when the input fails as an ЕИК but passes as an ЕГН — both the checksum and a decodable date of birth. Always false when `valid` is true. Use it to change the MESSAGE, not the outcome."
+          },
+          "registryName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The registered company name, or null.\n\n**`null` deliberately conflates three different situations** and a client must not distinguish them: no registry provider is configured in this deployment, the provider was asked and had no entry, or the entry carries no name. They are merged because telling an anonymous caller WHICH applies turns this endpoint into a probe for which numbers exist in the register — a distinction worth more to an enumerator than to the form it serves. So render null as \"we could not confirm the name\", never as \"this company does not exist\"."
+          }
+        },
+        "required": [
+          "valid",
+          "looksLikeEgn",
+          "registryName"
+        ],
+        "description": "The shape is identical for every outcome — valid, invalid, found, not found. That uniformity IS the control: a response whose size or field set varied with what the register holds would leak the register to anyone willing to iterate."
+      },
       "EmptyBody": {
         "type": "object",
         "properties": {},
@@ -4498,6 +4528,16 @@
           },
           "version": {
             "type": "integer"
+          },
+          "eikVerification": {
+            "type": "string",
+            "enum": [
+              "NONE",
+              "PENDING",
+              "VERIFIED",
+              "DISPUTED"
+            ],
+            "description": "What the farmer should be told about their ЕИК:\n\n- `NONE` — no claim has been made. The number shown, if any, predates verification.\n- `PENDING` — claimed, waiting for a staff reviewer. Nothing is wrong; nothing is confirmed either.\n- `VERIFIED` — a reviewer confirmed the number against the Търговски регистър. This is the only state in which `eik` is authoritative.\n- `DISPUTED` — the claim collided with an existing verified claim on the same number.\n\n**`DISPUTED` is not an accusation and must not be worded as one.** It arises from a mistyped digit as readily as from anything else, so render it neutrally and actionably — \"does not match an existing record, contact the Agrent team\" — never as a suggestion that the farmer misrepresented themselves.\n\nPrecedence when a farm has several claims: VERIFIED, then PENDING, then DISPUTED. PENDING outranks DISPUTED deliberately — a farm whose first claim collided and who has since submitted another should see the one in flight, not the dead one."
           }
         },
         "required": [
@@ -4514,7 +4554,8 @@
           "odbhCity",
           "sizeHa",
           "grainProduced",
-          "version"
+          "version",
+          "eikVerification"
         ],
         "description": "The one-per-tenant farm identity block printed on the БАБХ ДНЕВНИК. Every field is nullable because the paper form tolerates blanks — an all-null body is the normal answer for a tenant that has not filled it in, not an error. egn/eik/urn are encrypted at rest and returned as plaintext: treat them as sensitive on screen and in logs. sizeHa is a number and grainProduced is an array that is [] rather than null."
       },
@@ -9419,6 +9460,42 @@
           "error"
         ],
         "description": "Non-canonical error body used by the spatial-import and cadastre-import routes: a bare message string, with no `code`, `requestId` or `details`."
+      },
+      "RegisterStartResult": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "description": "Intentionally carries no information about the address. Adding a field here that varied with account state would re-open the enumeration oracle this shape exists to close."
+      },
+      "RegisterVerifyResult": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "verified": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "ok",
+          "verified"
+        ]
       },
       "RentRoll": {
         "type": "object",
@@ -31946,6 +32023,310 @@
         }
       }
     },
+    "/api/auth/register/start": {
+      "post": {
+        "operationId": "registerStart",
+        "summary": "Begin registration: create an unverified account and email a 6-digit code",
+        "description": "Step 1 of registration v2. Creates an account whose email is NOT yet verified and emails a 6-digit code. It creates no farm — the email is proven first, and the farm is created afterwards by `POST /api/me/farms`.\n\n**Every outcome returns the same 200 body.** A new address, an address part-way through signing up, and an address that already has a full account are indistinguishable in the response — deliberately, because the route it replaces answered `409 Email already registered` and was therefore a working account-enumeration oracle. The difference lands in the mailbox instead: a code for the first two cases, a \"you already have an account\" notice for the third. So a client must NOT infer anything about the address from a success, and must not tell the user \"account created\" — the honest message is \"check your email\".\n\nThe password is hashed on every path, including the ones that discard it, so the request takes the same time whether or not the address is known. A client that times this endpoint learns nothing.\n\nAn existing password is never overwritten by this call. Calling it again for an address that is already part-way through signing up reissues the CODE only.\n\n400 means the REQUEST was wrong — a malformed body, a password failing policy, a password found in a breach corpus, or a refused Turnstile challenge (`turnstile_failed`, carrying Cloudflare error codes so a client can reset the widget; a token is single-use, so a blind retry always fails). Those say nothing about any address, which is why they are distinguishable from the uniform 200.",
+        "tags": [
+          "Auth"
+        ],
+        "security": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 320,
+                    "example": "ivan@example.bg"
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 8,
+                    "description": "Checked against the password policy and against Have I Been Pwned. The HIBP screen fails OPEN: an outage there must not block signups, so a breached password may occasionally be accepted when the service is unreachable."
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "example": "Иван Иванов"
+                  },
+                  "turnstileToken": {
+                    "type": "string",
+                    "maxLength": 2048,
+                    "description": "Cloudflare Turnstile token (P3.5c). OPTIONAL in the schema and REQUIRED at runtime whenever the deployment has a Turnstile secret configured — the two are not in conflict: a deployment with no secret renders no widget and has no token to send, so a required field would break signup for exactly the configuration that is live today. A missing token is refused once configured, never treated as a skip. Read the sitekey from /api/auth/ui-config to decide whether to render the widget at all; a null sitekey means render nothing."
+                  }
+                },
+                "required": [
+                  "email",
+                  "password",
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Always this, for every address. Means \"we have done whatever was appropriate and sent an email\" — NOT \"an account was created\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegisterStartResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/register/verify": {
+      "post": {
+        "operationId": "registerVerify",
+        "summary": "Finish email verification with the 6-digit code",
+        "description": "Step 2 of registration v2. On success the email is verified; the farm is still to be created via `POST /api/me/farms`, and a verified user with no farm is a normal state.\n\n**All failures return one `400 {error: \"invalid_code\"}`.** Wrong, expired, and too-many-attempts are deliberately indistinguishable: \"expired\" can only be returned when a code exists for that address, so separating them would tell an attacker which addresses recently started signing up. Nothing is lost — the next action for the user is \"request a new code\" in every case.\n\n**The code allows a small number of wrong guesses and is then destroyed**, which forces a fresh email rather than letting a guesser top up their budget. A client should surface \"request a new code\" rather than inviting repeated attempts.\n\nVerifying twice is safe and does not move the recorded verification time.",
+        "tags": [
+          "Auth"
+        ],
+        "security": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 320,
+                    "example": "ivan@example.bg"
+                  },
+                  "code": {
+                    "type": "string",
+                    "description": "Exactly 6 digits, as a STRING. It must stay a string end to end: `012345` is a valid code, and a JSON number silently makes it `12345`, which then fails for one user in ten with nothing to show why.",
+                    "example": "048212"
+                  }
+                },
+                "required": [
+                  "email",
+                  "code"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The email is verified. Proceed to create or join a farm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegisterVerifyResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/auth/ui-config": {
       "get": {
         "operationId": "getAuthUiConfig",
@@ -31962,6 +32343,299 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AuthUiConfig"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/eik-check": {
+      "post": {
+        "operationId": "checkEikPost",
+        "summary": "Validate an ЕИК with the value in the request BODY (preferred)",
+        "description": "Identical to the GET in every respect but one: the number travels in the body rather than the query string. **Prefer this method.**\n\n**Why it exists.** Every request to this endpoint is potentially an ЕГН — a personal identity number — because that is what the endpoint is for: a sole trader reaching for \"the number I know\" types theirs into the ЕИК box, which is exactly what `looksLikeEgn` detects. A query string is logged in places a body is not: iOS CFNetwork records the full request URL unsuppressably, and a GET URL also reaches browser history and can leak through `Referer`. The server side is clean (no access log, and the request logger uses the path only), so this is a CLIENT-side exposure — which makes it no less real for the person whose device is doing the logging.\n\nThe GET form remains for compatibility and is tracked for removal once nothing calls it.\n\nSame rate-limit budget as the GET, deliberately: alternating methods must not double a caller allowance.",
+        "tags": [
+          "Public"
+        ],
+        "security": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "eik": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32,
+                    "description": "The number to check, 9 or 13 digits. Accepted with surrounding whitespace. Longer input is rejected as a bad request rather than truncated — truncating would silently validate a DIFFERENT number than the one submitted.",
+                    "example": "831641791"
+                  }
+                },
+                "required": [
+                  "eik"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The verdict. 200 means the check RAN, not that the number is good — read `valid`. A malformed body is a 400.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "valid": {
+                      "type": "boolean"
+                    },
+                    "looksLikeEgn": {
+                      "type": "boolean"
+                    },
+                    "registryName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "valid",
+                    "looksLikeEgn",
+                    "registryName"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "checkEik",
+        "summary": "Validate an ЕИК and, where known, return the registered company name",
+        "description": "Checks a Bulgarian ЕИК (unified identification code) for structural validity and, when a registry provider is configured, returns the name it is registered under. Intended for the registration form, so a farmer learns their number is mistyped before they finish signing up rather than after.\n\n**The checksum runs before any registry lookup.** A number that cannot exist never reaches a provider. This is a deliberate ordering, not an optimisation: it keeps the expensive path off exactly the keyspace an enumerator would walk first.\n\n**`looksLikeEgn` exists because of who gets this wrong.** A sole trader reaching for \"the number I know\" often types their ЕГН — a personal identity number. Telling them \"that is not a valid ЕИК\" is useless; telling them they have typed an ЕГН is actionable. The submitted value is never echoed back, logged, or stored, so a flag is the whole answer. Treat it as a hint for the FORM, never as a statement about a person — and do not place the submitted value in a URL you log, because the query string is recorded in places the body is not.\n\n**This endpoint is enumerable and is rate-limited rather than hidden.** It is unauthenticated, so there is no credential to scope an answer to. Expect 429 under load and back off; do not retry tightly.",
+        "tags": [
+          "Public"
+        ],
+        "security": [],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32,
+              "description": "The number to check, 9 or 13 digits. Accepted with surrounding whitespace. Longer input is rejected as a bad request rather than truncated — truncating would silently validate a DIFFERENT number than the one submitted.",
+              "example": "831641791"
+            },
+            "required": true,
+            "description": "The number to check, 9 or 13 digits. Accepted with surrounding whitespace. Longer input is rejected as a bad request rather than truncated — truncating would silently validate a DIFFERENT number than the one submitted.",
+            "name": "eik",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The verdict. 200 means the check RAN, not that the number is good — read `valid`. A malformed query (missing or over-long `eik`) is a 400.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EikCheckResult"
                 }
               }
             }

@@ -114,6 +114,19 @@ const PUBLIC_PATH_PREFIXES = [
     // runs. Spelled with the trailing slash for children; the path itself is in
     // PUBLIC_PATH_EXACT below.
     '/api/admin/key-rotation/',
+    // The farm-claim review queue's CHILDREN — `/:claimId/verify` and
+    // `/:claimId/dispute` (P3.9). Same gate and same reachability argument as
+    // the two above: `verifyPlatformApiKey` fails closed in every direction,
+    // and WITHOUT this entry the Edge 401s an `x-platform-admin-key` request
+    // before the handler runs, so staff verification would have been
+    // unreachable while looking perfectly implemented. That is the sixth
+    // instance of this shape in this file, which is why the guard's
+    // reachability half exists.
+    //
+    // Trailing slash for the children only; the queue's own path is in
+    // PUBLIC_PATH_EXACT below, so `startsWith('/api/admin/farm-claims')`
+    // cannot also open a future `/api/admin/farm-claimsomething`.
+    '/api/admin/farm-claims/',
     // ── Signed webhooks ──
     //
     // Each of these verifies its OWN credential — a Stripe signature, an
@@ -138,6 +151,11 @@ const PUBLIC_PATH_PREFIXES = [
     '/api/stripe/webhook',
     '/api/storage/av-webhook',
     '/api/integrations/webhooks/',
+    // P3.7 — runs while someone types their ЕИК into the registration form,
+    // before any account exists. EXACT, not a `/api/public/` prefix: a prefix
+    // would open every future neighbour under it by accident, and this is the
+    // only route there that has been argued for.
+    '/api/public/eik-check',
     '/privacy',          // Privacy notice — MUST be readable without an account:
                          // the promotions consent box links to it before a
                          // request is submitted, and a prospective user has to
@@ -163,6 +181,9 @@ const PUBLIC_PATH_EXACT = new Set([
     // TENANT-scoped `/api/t/{slug}/admin/key-rotation` is unrelated and stays
     // behind the session gate, where it belongs.
     '/api/admin/key-rotation',
+    // `GET /api/admin/farm-claims` — the review queue (P3.9). EXACT, with its
+    // children carried by the trailing-slash prefix above.
+    '/api/admin/farm-claims',
     // The lookup-hash rehash sweep (#1237). EXACT and with NO children prefix,
     // because unlike the two above it has no child paths — adding a prefix
     // "for symmetry" would open paths that do not exist yet, which is how
