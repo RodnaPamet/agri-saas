@@ -16,6 +16,10 @@
  * different question. This file must not override it, or it would be sweeping
  * placeholder strings.
  *
+ * Step 1 also carries the consent checkbox and its two links to `/terms` and
+ * `/privacy` (P3.1), so the account sweep covers the label/control association
+ * that a `htmlFor`/`id` slip would break.
+ *
  * ── what is deliberately NOT asserted ──
  *
  * The 44px coarse-pointer tap target. `pointer: coarse` is a media query and
@@ -53,6 +57,7 @@ jest.mock('@/components/auth/TurnstileWidget', () => ({
 }));
 
 import { FarmWizard } from '@/app/start/FarmWizard';
+import { TERMS_VERSION } from '@/lib/legal/terms';
 
 const W = enMessages.farmWizard;
 
@@ -106,18 +111,23 @@ async function settle() {
 
 describe('every step of the wizard is clean under axe', () => {
     it('1 — account', async () => {
-        const { container } = render(<FarmWizard startAtFarmType={false} />);
+        const { container } = render(<FarmWizard startAtFarmType={false} termsVersion={TERMS_VERSION} />);
         await settle();
         await sweep(container, W.accountTitle);
     });
 
     it('2 — code', async () => {
-        const { container } = render(<FarmWizard startAtFarmType={false} />);
+        const { container } = render(<FarmWizard startAtFarmType={false} termsVersion={TERMS_VERSION} />);
         await settle();
 
         fireEvent.change(screen.getByLabelText(W.name), { target: { value: 'Иван Петров' } });
         fireEvent.change(screen.getByLabelText(W.email), { target: { value: 'ivan@example.bg' } });
         fireEvent.change(screen.getByLabelText(W.password), { target: { value: 'a-long-enough-pw' } });
+        // Consent (P3.1) gates the primary action. Without this the click is a
+        // no-op on a disabled button and the walk to step 2 never happens —
+        // which would leave this test sweeping step 1 twice under step 2's
+        // name, a green result about the wrong screen.
+        fireEvent.click(screen.getByRole('checkbox'));
         fireEvent.click(screen.getByRole('button', { name: W.accountSubmit }));
 
         await waitFor(() =>
@@ -127,13 +137,13 @@ describe('every step of the wizard is clean under axe', () => {
     });
 
     it('3 — farm type', async () => {
-        const { container } = render(<FarmWizard startAtFarmType />);
+        const { container } = render(<FarmWizard startAtFarmType termsVersion={TERMS_VERSION} />);
         await settle();
         await sweep(container, W.typeTitle);
     });
 
     it('4 — ЕИК, with a valid number accepted', async () => {
-        const { container } = render(<FarmWizard startAtFarmType />);
+        const { container } = render(<FarmWizard startAtFarmType termsVersion={TERMS_VERSION} />);
         await settle();
         fireEvent.click(screen.getByRole('button', { name: W.typeCompany }));
         fireEvent.change(screen.getByLabelText(W.eikLabel), { target: { value: '831641791' } });
@@ -144,14 +154,14 @@ describe('every step of the wizard is clean under axe', () => {
     });
 
     it('5 — farm name', async () => {
-        const { container } = render(<FarmWizard startAtFarmType />);
+        const { container } = render(<FarmWizard startAtFarmType termsVersion={TERMS_VERSION} />);
         await settle();
         fireEvent.click(screen.getByRole('button', { name: W.typeIndividual }));
         await sweep(container, W.farmNameTitle);
     });
 
     it('6 — done', async () => {
-        const { container } = render(<FarmWizard startAtFarmType />);
+        const { container } = render(<FarmWizard startAtFarmType termsVersion={TERMS_VERSION} />);
         await settle();
         fireEvent.click(screen.getByRole('button', { name: W.typeIndividual }));
         fireEvent.change(screen.getByLabelText(W.farmNameLabel), { target: { value: 'Ферма Слънце' } });
@@ -173,7 +183,7 @@ describe('the ЕИК refusal states are clean too', () => {
         ['an invalid number', { valid: false, looksLikeEgn: false, registryName: null }],
     ])('%s', async (_label, body) => {
         routes['/api/public/eik-check'] = { ok: true, body };
-        const { container } = render(<FarmWizard startAtFarmType />);
+        const { container } = render(<FarmWizard startAtFarmType termsVersion={TERMS_VERSION} />);
         await settle();
         fireEvent.click(screen.getByRole('button', { name: W.typeCompany }));
         fireEvent.change(screen.getByLabelText(W.eikLabel), { target: { value: '7523169263' } });
