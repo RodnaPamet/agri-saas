@@ -51,6 +51,11 @@ describe('farm-profile usecase', () => {
     beforeEach(() => {
         jest.clearAllMocks();
         for (const k of Object.keys(mockDb)) delete mockDb[k];
+        // `getFarmProfile` now also derives `eikVerification` from the farm's
+        // own claims (P3.9). Default: no claims, so 'NONE'. Set here rather
+        // than per-case so a new case cannot forget it and fail for a reason
+        // unrelated to what it is testing.
+        mockDb.farmIdentityClaim = { findMany: jest.fn().mockResolvedValue([]) };
     });
 
     test('getFarmProfile returns an all-null shape when the row is unset', async () => {
@@ -183,5 +188,69 @@ describe('farm-profile usecase', () => {
         });
         expect(upsert.mock.calls[0][0].update.urn).toBe('1234567890');
         expect(upsert.mock.calls[0][0].update.registrationPlace).toBe('с. Труд');
+    });
+});
+
+// ─── P3.9 — eikVerification, derived from the farm's own claims ───
+
+describe('eikVerification', () => {
+    /** Point the farm's claim rows at a set of statuses. */
+    function claims(...statuses: string[]) {
+        mockDb.farmIdentityClaim = {
+            findMany: jest.fn().mockResolvedValue(statuses.map((status) => ({ status }))),
+        };
+    }
+
+    beforeEach(() => {
+        mockDb.farmProfile = { findUnique: jest.fn().mockResolvedValue(null) };
+    });
+
+    it('is NONE when the farm has made no claim', async () => {
+        claims();
+        expect((await getFarmProfile(makeCtx())).eikVerification).toBe('NONE');
+    });
+
+    it.each([
+        [['PENDING'], 'PENDING'],
+        [['VERIFIED'], 'VERIFIED'],
+        [['DISPUTED'], 'DISPUTED'],
+    ])('a single %s claim reads as %s', async (given, expected) => {
+        claims(...given);
+        expect((await getFarmProfile(makeCtx())).eikVerification).toBe(expected);
+    });
+
+    it('VERIFIED wins over everything', async () => {
+        claims('DISPUTED', 'PENDING', 'VERIFIED');
+        expect((await getFarmProfile(makeCtx())).eikVerification).toBe('VERIFIED');
+    });
+
+    it('PENDING outranks DISPUTED — the in-flight claim is the useful one', async () => {
+        // A farm whose first claim collided and who has since submitted
+        // another should see the one in flight, not the dead one. Showing
+        // DISPUTED there would tell them something is wrong when the thing
+        // that was wrong has already been superseded.
+        claims('DISPUTED', 'PENDING');
+        expect((await getFarmProfile(makeCtx())).eikVerification).toBe('PENDING');
+    });
+
+    it('reads only `status` — never the ЕИК hash', async () => {
+        claims('PENDING');
+        await getFarmProfile(makeCtx());
+        const args = (mockDb.farmIdentityClaim as { findMany: jest.Mock }).findMany.mock.calls[0][0];
+        // A farm learning the blind index of its own number gains nothing, and
+        // the hash is a stable per-identity token.
+        expect(args.select).toEqual({ status: true });
+        expect(args.where).toEqual({ tenantId: makeCtx().tenantId });
+    });
+
+    it('is present even when the profile row is unset', async () => {
+        // The empty-profile path must carry it too, or a farm with a claim and
+        // no profile row would read as NONE — which is the sequence a wizard
+        // produces: claim first, profile later.
+        claims('PENDING');
+        mockDb.farmProfile = { findUnique: jest.fn().mockResolvedValue(null) };
+        const p = await getFarmProfile(makeCtx());
+        expect(p.producerName).toBeNull();
+        expect(p.eikVerification).toBe('PENDING');
     });
 });

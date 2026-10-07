@@ -102,6 +102,11 @@ model FarmIdentityClaim {
   /// also see PENDING and DISPUTED.
   @@index([tenantId])
   @@index([eikHash])
+  /// The P3.9 review queue: `WHERE status = 'PENDING' ORDER BY "createdAt"`,
+  /// CROSS-tenant. Neither index above serves it — the queue does not filter
+  /// by tenant at all, which is the point of a platform review surface, so
+  /// `[tenantId]` leads with a column the query never mentions.
+  @@index([status, createdAt])
 }
 
 /// A claim's lifecycle. There is no `UNVERIFIED`: the absence of a claim

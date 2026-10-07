@@ -104,7 +104,23 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 // documents it — the direction this guard's sibling assertion demands. It was
 // the one path on this list a native client was already calling: iOS was
 // reading its shape out of route code (agrent-ios#149).
-const UNDOCUMENTED_CEILING = 243;
+// 243 → 246 (P3.9): the three `/api/admin/farm-claims` routes — the staff
+// verification queue and its verify/dispute actions.
+//
+// Baselined rather than described, consistent with all 51 other
+// `/api/admin/*` paths already here, and for a reason worth stating rather
+// than inheriting: `src/generated/openapi.json` is the CLIENT-facing contract,
+// and enumerating the platform-admin surface in it would advertise every
+// operator endpoint to every consumer of the spec. These are documented where
+// an operator will actually look — their own docblocks and
+// `farm-identity-review.ts`.
+//
+// The contrast is #1341's `/api/public/eik-check`, which got a real OpenAPI
+// module: that one is unauthenticated and third parties may call it, so
+// leaving it undescribed would have been the wrong trade in the other
+// direction. "Baseline or describe" is a question about the AUDIENCE, not a
+// uniform rule.
+const UNDOCUMENTED_CEILING = 246;
 
 interface Baseline {
     _README: string[];

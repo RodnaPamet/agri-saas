@@ -79,6 +79,24 @@ jest.mock('@/lib/auth/email-verification-code', () => ({
     CODE_LENGTH: 6,
 }));
 
+// Typed with the full outcome UNION, not left to inference. Inferred from the
+// initial implementation alone the type is `{ok: boolean; skipped: boolean}`,
+// so `mockResolvedValue({ok: false, skipped: false, codes: [...]})` fails to
+// typecheck — and it failed in CI while passing locally, because an
+// incremental `tsconfig.tsbuildinfo` had never re-read these files.
+type TurnstileOutcomeShape =
+    | { ok: true; skipped: false }
+    | { ok: true; skipped: true }
+    | { ok: false; skipped: false; codes: string[] }
+    | { ok: true; skipped: false; degraded: true };
+const mockVerifyTurnstile = jest.fn(
+    async (): Promise<TurnstileOutcomeShape> => ({ ok: true, skipped: true }),
+);
+jest.mock('@/lib/security/turnstile', () => ({
+    __esModule: true,
+    verifyTurnstile: (...a: unknown[]) => mockVerifyTurnstile(...(a as [])),
+}));
+
 const mockSendCode = jest.fn(async () => undefined);
 const mockSendExisting = jest.fn(async () => undefined);
 jest.mock('@/lib/auth/registration-emails', () => ({
@@ -119,6 +137,7 @@ beforeEach(() => {
     mockIssueCode.mockResolvedValue('048212');
     mockUserFindFirst.mockResolvedValue(null);
     mockUserCreate.mockResolvedValue({ id: 'u1', uiLanguage: 'bg' });
+    mockVerifyTurnstile.mockResolvedValue({ ok: true, skipped: true });
 });
 
 describe('register/start creates no farm', () => {
@@ -277,5 +296,63 @@ describe('a malformed request is distinguishable, deliberately', () => {
         // consulted, so they cannot vary with account state.
         await post({ email: 42, password: 'x'.repeat(20), name: 'A' });
         expect(mockUserFindFirst).not.toHaveBeenCalled();
+    });
+});
+
+// ─── P3.5c — bot screening on the new front door ───
+
+describe('Turnstile screening (P3.5c)', () => {
+    it('refuses when Turnstile rejects, before anything is written', async () => {
+        mockVerifyTurnstile.mockResolvedValue({
+            ok: false,
+            skipped: false,
+            codes: ['invalid-input-response'],
+        });
+
+        const res = await post(VALID);
+        expect(res.status).toBe(400);
+        await expect(res.json()).resolves.toEqual({
+            error: 'turnstile_failed',
+            codes: ['invalid-input-response'],
+        });
+
+        // Screening is FIRST: no hash, no lookup, no write. bcrypt is most of
+        // what a signup flood costs, so a screen that ran later would refuse
+        // the request having already paid for it.
+        expect(mockHashPassword).not.toHaveBeenCalled();
+        expect(mockUserFindFirst).not.toHaveBeenCalled();
+        expect(mockUserCreate).not.toHaveBeenCalled();
+        expect(mockIssueCode).not.toHaveBeenCalled();
+    });
+
+    it('its 400 is distinguishable from the uniform 200 — deliberately', async () => {
+        // Every account-state outcome returns an identical `{ok:true}`, so a
+        // distinguishable refusal here looks inconsistent. It is not: this is
+        // a statement about the REQUEST's challenge token, not about the
+        // address, so it reveals nothing about who has an account — and the
+        // client must know to reset the widget, since a token is single-use
+        // and a blind retry always fails.
+        mockVerifyTurnstile.mockResolvedValue({ ok: false, skipped: false, codes: ['x'] });
+        const refused = await post(VALID);
+        expect(refused.status).toBe(400);
+
+        mockVerifyTurnstile.mockResolvedValue({ ok: true, skipped: true });
+        const accepted = await post(VALID);
+        expect(accepted.status).toBe(200);
+        await expect(accepted.json()).resolves.toEqual({ ok: true });
+    });
+
+    it('proceeds when screening is dormant — the live configuration today', async () => {
+        mockVerifyTurnstile.mockResolvedValue({ ok: true, skipped: true });
+        expect((await post(VALID)).status).toBe(200);
+        expect(mockUserCreate).toHaveBeenCalledTimes(1);
+    });
+
+    it('proceeds when Cloudflare is unreachable, which is deliberate', async () => {
+        // Documented fail-open on TRANSPORT failure only. An attacker cannot
+        // reach this branch at will: a forged token draws an explicit
+        // rejection, which refuses.
+        mockVerifyTurnstile.mockResolvedValue({ ok: true, skipped: false, degraded: true });
+        expect((await post(VALID)).status).toBe(200);
     });
 });

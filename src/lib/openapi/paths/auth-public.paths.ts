@@ -33,7 +33,7 @@ export function registerAuthPublicPaths(registry: OpenAPIRegistry): void {
             '\n\n**Every outcome returns the same 200 body.** A new address, an address part-way through signing up, and an address that already has a full account are indistinguishable in the response — deliberately, because the route it replaces answered `409 Email already registered` and was therefore a working account-enumeration oracle. The difference lands in the mailbox instead: a code for the first two cases, a "you already have an account" notice for the third. So a client must NOT infer anything about the address from a success, and must not tell the user "account created" — the honest message is "check your email".' +
             '\n\nThe password is hashed on every path, including the ones that discard it, so the request takes the same time whether or not the address is known. A client that times this endpoint learns nothing.' +
             '\n\nAn existing password is never overwritten by this call. Calling it again for an address that is already part-way through signing up reissues the CODE only.' +
-            '\n\n400 means the REQUEST was wrong — a malformed body, a password failing policy, or a password found in a breach corpus. Those say nothing about any address, which is why they are distinguishable from the uniform 200.',
+            '\n\n400 means the REQUEST was wrong — a malformed body, a password failing policy, a password found in a breach corpus, or a refused Turnstile challenge (`turnstile_failed`, carrying Cloudflare error codes so a client can reset the widget; a token is single-use, so a blind retry always fails). Those say nothing about any address, which is why they are distinguishable from the uniform 200.',
         tags: ['Auth'],
         security: NO_AUTH,
         body: z.object({
@@ -43,6 +43,10 @@ export function registerAuthPublicPaths(registry: OpenAPIRegistry): void {
                     'Checked against the password policy and against Have I Been Pwned. The HIBP screen fails OPEN: an outage there must not block signups, so a breached password may occasionally be accepted when the service is unreachable.',
             }),
             name: z.string().min(1).max(200).openapi({ example: 'Иван Иванов' }),
+            turnstileToken: z.string().max(2048).optional().openapi({
+                description:
+                    'Cloudflare Turnstile token (P3.5c). OPTIONAL in the schema and REQUIRED at runtime whenever the deployment has a Turnstile secret configured — the two are not in conflict: a deployment with no secret renders no widget and has no token to send, so a required field would break signup for exactly the configuration that is live today. A missing token is refused once configured, never treated as a skip. Read the sitekey from /api/auth/ui-config to decide whether to render the widget at all; a null sitekey means render nothing.',
+            }),
         }),
         success: {
             status: 200,
