@@ -103,6 +103,11 @@ function lastCreate(): Record<string, unknown> {
 }
 
 beforeEach(() => {
+    // #1358 — both of `upsertFarmProfile`'s return paths now DERIVE
+    // eikVerification, so the usecase reads claims on EVERY call. Empty
+    // means NONE, which is what this suite already assumes; the non-empty
+    // cases live in farm-profile-put-eik-verification.test.ts.
+    mockDb.farmIdentityClaim = { findMany: jest.fn().mockResolvedValue([]) };
     mockDb.farmProfile = {
         upsert: jest.fn().mockResolvedValue({ id: 'fp-1', tenantId: 'tenant-A' }),
         // The optimistic lock's no-op path READS when a body mentions nothing,
@@ -110,6 +115,7 @@ beforeEach(() => {
         findUnique: jest.fn().mockResolvedValue({ id: 'fp-1', tenantId: 'tenant-A', version: 1 }),
     };
 });
+
 
 describe('farm-profile merge semantics (#1176)', () => {
     it('control: the installed Zod OMITS an absent optional key', () => {

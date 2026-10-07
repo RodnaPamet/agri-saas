@@ -166,10 +166,25 @@ function toNum(v: unknown): number | null {
     return Number.isFinite(n) ? n : null;
 }
 
-/** Project a row (or the empty default) onto the wire shape. */
+/**
+ * Project a row (or the empty default) onto the wire shape.
+ *
+ * `eikVerification` is REQUIRED, and used to carry `= 'NONE'` as a default.
+ * That default is what shipped #1358: both of `upsertFarmProfile`'s return
+ * paths omitted the argument, so a PUT answered `NONE` for a VERIFIED farm
+ * while the GET derived it correctly — and because the parameter was optional,
+ * nothing failed to compile and nothing failed a test. iOS found it by keeping
+ * its pre-save value rather than trusting the response.
+ *
+ * The same reasoning as the upload convention's `scanStatus`: a default that
+ * means "unknown" also means "the safe-looking answer", so omitting the
+ * argument is indistinguishable from deciding it. Keep this required — if a
+ * new caller genuinely has no claims to read, it should pass `'NONE'` in so
+ * the decision is visible at the call site.
+ */
 function project(
     row: Record<string, unknown> | null,
-    eikVerification: EikVerificationState = 'NONE',
+    eikVerification: EikVerificationState,
 ): ProfileShape {
     if (!row) return { ...EMPTY_PROFILE, eikVerification };
     return {
@@ -411,9 +426,19 @@ export async function upsertFarmProfile(
                         expectedVersion,
                     });
                 }
+                // Derived, not defaulted: this path returns the CURRENT
+                // state, and the claims are part of that state even though
+                // this branch wrote nothing.
+                const noopVerification = await deriveEikVerification(
+                    db as unknown as Parameters<typeof deriveEikVerification>[0],
+                    ctx.tenantId,
+                );
                 return current
-                    ? project(current as unknown as Record<string, unknown>)
-                    : { ...EMPTY_PROFILE };
+                    ? project(
+                          current as unknown as Record<string, unknown>,
+                          noopVerification,
+                      )
+                    : { ...EMPTY_PROFILE, eikVerification: noopVerification };
             }
 
             if (expectedVersion === undefined) {
@@ -492,7 +517,15 @@ export async function upsertFarmProfile(
                 },
             });
 
-            return project(row);
+            // Derived AFTER the write, inside the same transaction, so the
+            // response describes the state the caller just produced. The
+            // claims are untouched by a profile write — `eik` is refused when
+            // it would CHANGE — so this cannot disagree with a subsequent GET.
+            const eikVerification = await deriveEikVerification(
+                db as unknown as Parameters<typeof deriveEikVerification>[0],
+                ctx.tenantId,
+            );
+            return project(row, eikVerification);
         });
 
     /**
