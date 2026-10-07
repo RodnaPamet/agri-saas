@@ -219,7 +219,12 @@ const ROOT = path.resolve(__dirname, '../..');
 // possible ЕГН in a URL that iOS CFNetwork logs), a valid-looking ЕГН blocks
 // the step rather than warning, and step 6 never implies the ЕИК was
 // ACCEPTED because `pending_review` is returned unconditionally.
-const RENDERED_TEST_FLOOR = 245;
+const RENDERED_TEST_FLOOR = 246;
+// Raised 245 → 246 for `farm-wizard-a11y.test.tsx` (P3.10): the axe sweep
+// of the registration wizard, one pass per step because a wizard renders
+// one step at a time. Raised to this branch's own live count, not a
+// projected total — a shared floor nudged ahead of reality fails for
+// whoever merges second.
 // Lowered 55 → 54 in the risk-quantification uproot (2026-08-08).
 // `ai-risk-assessment.spec.ts` and `new-risk-modal.spec.ts` were both
 // wholly about the deleted register; the specs that merely REFERENCED a
