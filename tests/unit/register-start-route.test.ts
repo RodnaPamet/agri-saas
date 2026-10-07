@@ -107,6 +107,7 @@ jest.mock('@/lib/auth/registration-emails', () => ({
 
 import { NextRequest } from 'next/server';
 import { POST } from '@/app/api/auth/register/start/route';
+import { TERMS_VERSION } from '@/lib/legal/terms';
 
 function startRequest(body: Record<string, unknown>): NextRequest {
     return new NextRequest('http://localhost/api/auth/register/start', {
@@ -128,7 +129,22 @@ async function post(body: Record<string, unknown>): Promise<Response> {
     return POST(startRequest(body) as never, {} as never);
 }
 
-const VALID = { email: 'ivan@example.bg', password: 'correct horse battery', name: 'Иван' };
+/**
+ * A request that should succeed. Consent (P3.1) is part of that now: every
+ * test below posts this, so a missing acceptance would redden the whole file
+ * rather than one case.
+ *
+ * Which is exactly why the consent block near the bottom builds its bodies by
+ * OMITTING fields from this one — if the only bodies in the file carried
+ * consent, nothing here would prove it is actually required.
+ */
+const VALID = {
+    email: 'ivan@example.bg',
+    password: 'correct horse battery',
+    name: 'Иван',
+    acceptedTerms: true,
+    termsVersion: TERMS_VERSION,
+};
 
 beforeEach(() => {
     jest.clearAllMocks();
@@ -354,5 +370,96 @@ describe('Turnstile screening (P3.5c)', () => {
         // rejection, which refuses.
         mockVerifyTurnstile.mockResolvedValue({ ok: true, skipped: false, degraded: true });
         expect((await post(VALID)).status).toBe(200);
+    });
+});
+
+describe('consent is required and the version is checked (P3.1)', () => {
+    /** `VALID` minus the named keys — the omission IS the test. */
+    function without(...keys: string[]) {
+        const body: Record<string, unknown> = { ...VALID };
+        for (const k of keys) delete body[k];
+        return body;
+    }
+
+    it('no acceptance at all is a 400, and writes nothing', async () => {
+        const res = await post(without('acceptedTerms', 'termsVersion'));
+        expect(res.status).toBe(400);
+        expect(await res.json()).toEqual({ error: 'terms_not_accepted' });
+        // The whole point: a registration without a recorded acceptance must
+        // not exist, so the refusal has to come before the insert.
+        expect(mockUserCreate).not.toHaveBeenCalled();
+    });
+
+    it('acceptedTerms: false is refused too, not treated as absent-and-fine', async () => {
+        const res = await post({ ...VALID, acceptedTerms: false });
+        expect(res.status).toBe(400);
+        expect(await res.json()).toEqual({ error: 'terms_not_accepted' });
+        expect(mockUserCreate).not.toHaveBeenCalled();
+    });
+
+    it('a truthy non-true value is refused — it is an identity check', async () => {
+        // `'yes'` and `1` are truthy. A `!acceptedTerms` test would accept
+        // both, which means a client could register by sending any non-empty
+        // value in a field it never rendered a checkbox for.
+        for (const value of ['yes', 1, {}, []]) {
+            jest.clearAllMocks();
+            mockUserFindFirst.mockResolvedValue(null);
+            const res = await post({ ...VALID, acceptedTerms: value });
+            expect(res.status).toBe(400);
+            expect(mockUserCreate).not.toHaveBeenCalled();
+        }
+    });
+
+    it('a stale version is refused, and the answer names the current one', async () => {
+        const res = await post({ ...VALID, termsVersion: 'some-older-version' });
+        expect(res.status).toBe(400);
+        expect(await res.json()).toEqual({
+            error: 'terms_version_stale',
+            // Named so the client can say "reload and read the new terms"
+            // rather than a generic failure, and so the k6 probe can discover
+            // the live version instead of hardcoding it.
+            currentVersion: TERMS_VERSION,
+        });
+        expect(mockUserCreate).not.toHaveBeenCalled();
+    });
+
+    it('a missing version is refused even with acceptedTerms true', async () => {
+        const res = await post(without('termsVersion'));
+        expect(res.status).toBe(400);
+        expect((await res.json()).error).toBe('terms_version_stale');
+        expect(mockUserCreate).not.toHaveBeenCalled();
+    });
+
+    it('an accepted signup records WHEN and WHICH version', async () => {
+        await post(VALID);
+        expect(mockUserCreate).toHaveBeenCalledTimes(1);
+        const data = mockUserCreate.mock.calls[0][0].data;
+        expect(data.acceptedTermsVersion).toBe(TERMS_VERSION);
+        expect(data.acceptedTermsAt).toBeInstanceOf(Date);
+    });
+
+    // REMOVED: a test asserting the write reads the server constant rather
+    // than the request's `termsVersion`. It could not fail, and the mutation
+    // proof said so — replacing `acceptedTermsVersion: TERMS_VERSION` with
+    // `acceptedTermsVersion: termsVersion` left all 28 tests green.
+    //
+    // It cannot fail for a structural reason: the equality check above means
+    // the two values are identical at every point the insert is reachable, so
+    // no request can distinguish them. The concern was real but it is a
+    // concern about the CHECK, and the check is covered by the two refusal
+    // tests above.
+    //
+    // If that equality check is ever loosened — a prefix match, a "version at
+    // least as new as" comparison — the two stop being the same value and this
+    // becomes testable. Re-add it then, and not before: a green test that
+    // cannot redden is worse than no test, because it reads as cover.
+
+    it('consent is checked BEFORE the password is hashed', async () => {
+        // Same ordering argument as the Turnstile screen: a refusal that ran
+        // after bcrypt would still refuse, having already paid the cost a
+        // flood is trying to impose.
+        await post(without('acceptedTerms', 'termsVersion'));
+        expect(mockHashPassword).not.toHaveBeenCalled();
+        expect(mockHibp).not.toHaveBeenCalled();
     });
 });

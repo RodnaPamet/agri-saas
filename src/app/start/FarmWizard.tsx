@@ -51,6 +51,8 @@ import { signIn } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { InlineNotice } from '@/components/ui/inline-notice';
+import { Checkbox } from '@/components/ui/checkbox';
+import Link from 'next/link';
 import { Heading } from '@/components/ui/typography';
 import { TurnstileWidget } from '@/components/auth/TurnstileWidget';
 
@@ -71,9 +73,17 @@ type IdentityResult = 'pending_review' | 'not_requested' | 'deferred';
 export interface FarmWizardProps {
     /** A signed-in visitor is adding a farm; registration is behind them. */
     startAtFarmType: boolean;
+    /**
+     * The terms version the page is serving (P3.1), passed down rather than
+     * imported here so the client cannot disagree with the server about what
+     * it displayed. `register/start` refuses an acceptance naming any other
+     * value, which is what makes the stored consent a record of what this
+     * person actually saw.
+     */
+    termsVersion: string;
 }
 
-export function FarmWizard({ startAtFarmType }: FarmWizardProps) {
+export function FarmWizard({ startAtFarmType, termsVersion }: FarmWizardProps) {
     const t = useTranslations('farmWizard');
     const locale = useLocale();
     const router = useRouter();
@@ -86,6 +96,7 @@ export function FarmWizard({ startAtFarmType }: FarmWizardProps) {
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [acceptedTerms, setAcceptedTerms] = useState(false);
     const [turnstileSitekey, setTurnstileSitekey] = useState<string | null>(null);
     const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
     const [turnstileReset, setTurnstileReset] = useState(0);
@@ -212,6 +223,12 @@ export function FarmWizard({ startAtFarmType }: FarmWizardProps) {
                     email,
                     password,
                     name,
+                    acceptedTerms,
+                    // What this client DISPLAYED. The server compares it with
+                    // its own constant and refuses a mismatch, so a page left
+                    // open across a terms change cannot file a consent to a
+                    // document nobody read.
+                    termsVersion,
                     ...(turnstileToken ? { turnstileToken } : {}),
                 }),
             });
@@ -221,7 +238,19 @@ export function FarmWizard({ startAtFarmType }: FarmWizardProps) {
                 // and an existing address — so a non-200 here is about the
                 // REQUEST (a weak password, a breached one, a refused
                 // challenge), never about whether the address is taken.
-                fail(data?.error ? t('failed') : t('failed'));
+                //
+                // `terms_version_stale` is the one worth naming: the terms
+                // changed while this page was open, and the only useful thing
+                // the person can do is reload and read the new ones. A generic
+                // "something went wrong" would send them round the same loop.
+                // Every other code stays collapsed into one message on
+                // purpose — the distinctions are not actionable and some of
+                // them are about the address.
+                fail(
+                    data?.error === 'terms_version_stale'
+                        ? t('consentStale')
+                        : t('failed'),
+                );
                 return;
             }
             setStep('code');
@@ -326,7 +355,10 @@ export function FarmWizard({ startAtFarmType }: FarmWizardProps) {
             primary: {
                 label: busy ? t('working') : t('accountSubmit'),
                 onClick: submitAccount,
-                disabled: busy || !email || !password || !name,
+                // `acceptedTerms` belongs here and not only on the server:
+                // the server refusal is the control, but a button that submits
+                // and then fails is a worse way to say "tick the box".
+                disabled: busy || !email || !password || !name || !acceptedTerms,
             },
         },
         code: {
@@ -393,6 +425,42 @@ export function FarmWizard({ startAtFarmType }: FarmWizardProps) {
                             <label htmlFor="w-password" className="input-label">{t('password')}</label>
                             <input id="w-password" className="input" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} />
                             <p className="text-xs text-muted mt-1">{t('passwordHelp')}</p>
+                        </div>
+                        {/* Consent (P3.1). The links open in a new tab so a
+                            half-filled form is not lost to reading the terms —
+                            the commonest reason somebody abandons a signup at
+                            this step is going to read them and not coming
+                            back. */}
+                        <div className="flex items-start gap-tight">
+                            <Checkbox
+                                id="w-terms"
+                                checked={acceptedTerms}
+                                onCheckedChange={(v) => setAcceptedTerms(v === true)}
+                            />
+                            <label htmlFor="w-terms" className="text-sm text-muted">
+                                {t.rich('consentLabel', {
+                                    terms: (chunks) => (
+                                        <Link
+                                            href="/terms"
+                                            target="_blank"
+                                            rel="noopener"
+                                            className="underline hover:text-content-emphasis"
+                                        >
+                                            {chunks}
+                                        </Link>
+                                    ),
+                                    privacy: (chunks) => (
+                                        <Link
+                                            href="/privacy"
+                                            target="_blank"
+                                            rel="noopener"
+                                            className="underline hover:text-content-emphasis"
+                                        >
+                                            {chunks}
+                                        </Link>
+                                    ),
+                                })}
+                            </label>
                         </div>
                         <TurnstileWidget
                             sitekey={turnstileSitekey}

@@ -101,7 +101,50 @@ const START = `${cfg.baseUrl}/api/auth/register/start`;
 const HEADERS = { 'Content-Type': 'application/json' };
 
 /** One start request. Returns `{ status, body, ms }`. */
-function probe(email) {
+/**
+ * Discover the terms version this deployment is serving (P3.1).
+ *
+ * `register/start` requires an acceptance that NAMES the version it was given,
+ * and refuses any other with `400 terms_version_stale` carrying
+ * `currentVersion`. So one deliberately-wrong request tells us what to send for
+ * the rest of the run.
+ *
+ * Asked rather than hardcoded on purpose. A literal here would be a second
+ * spelling of `TERMS_VERSION` in a file no build checks and no workflow runs,
+ * and the failure would be silent in the worst way: every probe would 400,
+ * every 400 returns BEFORE bcrypt, and the timing comparison this script
+ * exists to make would look healthy while measuring nothing at all.
+ */
+export function setup() {
+    const res = http.post(
+        START,
+        JSON.stringify({
+            email: 'k6-version-probe@example.invalid',
+            // pragma: allowlist secret
+            password: __ENV.PROBE_PASSWORD || 'k6-enumeration-probe-passphrase',
+            name: 'k6 probe',
+            acceptedTerms: true,
+            termsVersion: 'deliberately-not-the-current-version',
+        }),
+        { headers: HEADERS, tags: { name: 'terms-version-probe' } },
+    );
+    let version = null;
+    try {
+        version = JSON.parse(res.body).currentVersion || null;
+    } catch {
+        version = null;
+    }
+    if (!version) {
+        // Loud, not a default. Without the right version every probe below is
+        // a 400 and the measurement is void.
+        throw new Error(
+            `could not discover the terms version: status=${res.status} body=${String(res.body).slice(0, 200)}`,
+        );
+    }
+    return { termsVersion: version };
+}
+
+function probe(email, termsVersion) {
     const res = http.post(
         START,
         JSON.stringify({
@@ -119,21 +162,36 @@ function probe(email) {
             // pragma: allowlist secret
             password: __ENV.PROBE_PASSWORD || 'k6-enumeration-probe-passphrase',
             name: 'k6 probe',
+            acceptedTerms: true,
+            termsVersion,
         }),
         { headers: HEADERS, tags: { name: 'register-start' } },
     );
     return { status: res.status, body: res.body, ms: res.timings.duration };
 }
 
-export default function () {
+export default function (data) {
     // A fresh address per iteration for branch A. The SAME address is then
     // reused immediately for branch B, which is what makes B the
     // "mid-signup" branch rather than a second new one.
     const fresh = `enum-probe-${__VU}-${__ITER}-${Date.now()}@example.test`;
 
-    const a = probe(fresh); // new address      → creates an unverified user
-    const b = probe(fresh); // same address     → reissues a code
-    const c = probe(cfg.email); // seeded, verified → "you already have one"
+    const v = data.termsVersion;
+    const a = probe(fresh, v); // new address      → creates an unverified user
+    const b = probe(fresh, v); // same address     → reissues a code
+    const c = probe(cfg.email, v); // seeded, verified → "you already have one"
+
+    // A non-200 here means the request SHAPE drifted — a newly required field,
+    // a changed contract — and every one of those returns before bcrypt. The
+    // timings would still be collected and would still pass the p(95)
+    // threshold, because 400s are fast and uniformly so. So the run has to
+    // fail on the status rather than quietly measure the wrong thing.
+    if (a.status !== 200 || b.status !== 200 || c.status !== 200) {
+        throw new Error(
+            `register/start did not answer 200 (a=${a.status} b=${b.status} c=${c.status}); ` +
+                `the request shape has drifted and these timings mean nothing`,
+        );
+    }
 
     durationNew.add(a.ms);
     durationPending.add(b.ms);

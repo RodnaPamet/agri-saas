@@ -663,6 +663,22 @@ model User {
   /// `src/lib/email/inquiry-email.ts`.
   uiLanguage                    String                       @default("bg")
 
+  // P3.1 — which terms this person accepted, and when.
+  //
+  // NULLABLE because every user who registered before this shipped has no
+  // record, and inventing one would be a false statement about consent. A
+  // null means "we do not know", which is the truth; it is not a default
+  // meaning "accepted".
+  //
+  // The version is a plain String, not an enum, so a row stays readable
+  // after `TERMS_VERSION` moves on — the column records what the person
+  // SAW, which is a historical fact, and an enum would force every
+  // superseded value to stay a member of the live type. Compare against
+  // `TERMS_VERSION` from `@/lib/legal/terms` to tell whether somebody is
+  // behind.
+  acceptedTermsAt               DateTime?
+  acceptedTermsVersion          String?
+
   /// Bottom-row tab arrangement, synced across the user's devices.
   ///
   /// Json rather than `String[]` because a Prisma scalar list CANNOT be

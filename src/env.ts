@@ -551,6 +551,16 @@ export const env = createEnv({
         // block at all rather than a placeholder that reads as a real address.
         PRIVACY_CONTACT_EMAIL: z.string().email().optional(),
 
+        // P3.1 — the DSA Article 11/12 single point of contact, shown on
+        // /dsa-contact and on the terms page. Configuration for the same
+        // reason as PRIVACY_CONTACT_EMAIL above: the counterparty is the
+        // organisation operating this deployment, not the software, and this
+        // repository is public so an operator's own mailbox is not ours to
+        // bake in. UNSET renders a line saying it is unset rather than a
+        // placeholder that reads as a real address — an authority writing to
+        // an invented address is worse served than one told to ask.
+        DSA_CONTACT_EMAIL: z.string().email().optional(),
+
         // Local zone for task-due deadline notifications — sets BOTH the
         // cron firing time AND the calendar-day classification ("due
         // today / tomorrow / in a week"). Must be one zone so a task
@@ -763,6 +773,7 @@ export const env = createEnv({
         PLATFORM_ADMIN_API_KEY_PREVIOUS: process.env.PLATFORM_ADMIN_API_KEY_PREVIOUS,
         PLATFORM_TENANT_SLUG: process.env.PLATFORM_TENANT_SLUG,
         PRIVACY_CONTACT_EMAIL: process.env.PRIVACY_CONTACT_EMAIL,
+        DSA_CONTACT_EMAIL: process.env.DSA_CONTACT_EMAIL,
         NOTIFICATIONS_TZ: process.env.NOTIFICATIONS_TZ,
         VAPID_PUBLIC_KEY: process.env.VAPID_PUBLIC_KEY,
         VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY,

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "5.1.0",
+    "version": "5.4.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -32091,7 +32091,7 @@
       "post": {
         "operationId": "registerStart",
         "summary": "Begin registration: create an unverified account and email a 6-digit code",
-        "description": "Step 1 of registration v2. Creates an account whose email is NOT yet verified and emails a 6-digit code. It creates no farm — the email is proven first, and the farm is created afterwards by `POST /api/me/farms`.\n\n**Every outcome returns the same 200 body.** A new address, an address part-way through signing up, and an address that already has a full account are indistinguishable in the response — deliberately, because the route it replaces answered `409 Email already registered` and was therefore a working account-enumeration oracle. The difference lands in the mailbox instead: a code for the first two cases, a \"you already have an account\" notice for the third. So a client must NOT infer anything about the address from a success, and must not tell the user \"account created\" — the honest message is \"check your email\".\n\nThe password is hashed on every path, including the ones that discard it, so the request takes the same time whether or not the address is known. A client that times this endpoint learns nothing.\n\nAn existing password is never overwritten by this call. Calling it again for an address that is already part-way through signing up reissues the CODE only.\n\n400 means the REQUEST was wrong — a malformed body, a password failing policy, a password found in a breach corpus, or a refused Turnstile challenge (`turnstile_failed`, carrying Cloudflare error codes so a client can reset the widget; a token is single-use, so a blind retry always fails). Those say nothing about any address, which is why they are distinguishable from the uniform 200.",
+        "description": "Step 1 of registration v2. Creates an account whose email is NOT yet verified and emails a 6-digit code. It creates no farm — the email is proven first, and the farm is created afterwards by `POST /api/me/farms`.\n\n**Every outcome returns the same 200 body.** A new address, an address part-way through signing up, and an address that already has a full account are indistinguishable in the response — deliberately, because the route it replaces answered `409 Email already registered` and was therefore a working account-enumeration oracle. The difference lands in the mailbox instead: a code for the first two cases, a \"you already have an account\" notice for the third. So a client must NOT infer anything about the address from a success, and must not tell the user \"account created\" — the honest message is \"check your email\".\n\nThe password is hashed on every path, including the ones that discard it, so the request takes the same time whether or not the address is known. A client that times this endpoint learns nothing.\n\nAn existing password is never overwritten by this call. Calling it again for an address that is already part-way through signing up reissues the CODE only.\n\n400 means the REQUEST was wrong — a malformed body, a password failing policy, a password found in a breach corpus, or a refused Turnstile challenge (`turnstile_failed`, carrying Cloudflare error codes so a client can reset the widget; a token is single-use, so a blind retry always fails). Those say nothing about any address, which is why they are distinguishable from the uniform 200.\n\nSince P3.1 two further 400s join that list, and for the same reason — both are statements about the REQUEST, not the address: `terms_not_accepted` when consent is absent or not literally `true`, and `terms_version_stale` when the client names a version other than the one being served, carrying `currentVersion` so the client can reload and show the new terms rather than a generic failure.",
         "tags": [
           "Auth"
         ],
@@ -32119,6 +32119,20 @@
                     "maxLength": 200,
                     "example": "Иван Иванов"
                   },
+                  "acceptedTerms": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ],
+                    "description": "Consent to the terms of use and the privacy notice (P3.1). REQUIRED, and checked for identity with `true` rather than truthiness — a client cannot satisfy it with any non-empty value. Absent or false is `400 terms_not_accepted`, refused before the password is hashed."
+                  },
+                  "termsVersion": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "example": "2026-10-07-draft",
+                    "description": "The terms version the client DISPLAYED. Compared for equality with the version the server is serving; a mismatch is `400 terms_version_stale`, whose body carries `currentVersion`. This exists so a page left open across a terms change cannot file a consent to a document nobody read — the stored record is of what the person actually saw. Read the current value by rendering /terms, or from the `currentVersion` field of a stale refusal."
+                  },
                   "turnstileToken": {
                     "type": "string",
                     "maxLength": 2048,
@@ -32128,7 +32142,9 @@
                 "required": [
                   "email",
                   "password",
-                  "name"
+                  "name",
+                  "acceptedTerms",
+                  "termsVersion"
                 ]
               }
             }

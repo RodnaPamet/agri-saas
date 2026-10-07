@@ -179,6 +179,22 @@ const PUBLIC_PATH_EXACT = new Set([
     // The page itself renders no tenant data and reads no session beyond
     // deciding which call to action to show.
     '/',
+    // The legal surfaces (P3.1). EXACT, like the root: these two pages are
+    // public and nothing underneath them should inherit it.
+    //
+    // `/terms` is linked from the registration wizard's consent checkbox, so a
+    // visitor has to be able to read it BEFORE an account exists — the same
+    // argument that already makes `/privacy` public. A terms page you cannot
+    // reach without accepting it is not a term you agreed to.
+    //
+    // `/dsa-contact` is the Digital Services Act single point of contact, and
+    // the people who need it are by definition not signed in: a user who has
+    // been restricted, an authority, a court. Gating it would defeat the whole
+    // purpose of having one.
+    //
+    // Both render no tenant data and read no session at all.
+    '/terms',
+    '/dsa-contact',
     '/favicon.ico',
     '/robots.txt',
     '/sitemap.xml',
