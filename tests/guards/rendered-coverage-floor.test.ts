@@ -219,7 +219,11 @@ const ROOT = path.resolve(__dirname, '../..');
 // possible ЕГН in a URL that iOS CFNetwork logs), a valid-looking ЕГН blocks
 // the step rather than warning, and step 6 never implies the ЕИК was
 // ACCEPTED because `pending_review` is returned unconditionally.
-const RENDERED_TEST_FLOOR = 246;
+const RENDERED_TEST_FLOOR = 247;
+// Raised 246 -> 247 for `field-operation-panel-if-match.test.tsx` (#1370):
+// the online map panel marked prescription lines with no `If-Match`, a
+// silent last-write-wins on a row that stamps a regulatory date. Raised to
+// this branch's own live count, measured, not a projected total.
 // Raised 245 → 246 for `farm-wizard-a11y.test.tsx` (P3.10): the axe sweep
 // of the registration wizard, one pass per step because a wizard renders
 // one step at a time. Raised to this branch's own live count, not a

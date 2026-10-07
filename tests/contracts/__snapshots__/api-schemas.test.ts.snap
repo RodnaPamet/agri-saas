@@ -8055,6 +8055,9 @@ exports[`API contract — per-schema snapshots schema: OperationParcel 1`] = `
     "status": {
       "type": "string"
     },
+    "version": {
+      "type": "integer"
+    },
     "completedAt": {
       "type": [
         "string",
@@ -8153,6 +8156,7 @@ exports[`API contract — per-schema snapshots schema: OperationParcel 1`] = `
     "doseValue",
     "doseUnitId",
     "status",
+    "version",
     "product",
     "doseUnit",
     "parcel"

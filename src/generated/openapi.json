@@ -7688,6 +7688,9 @@
           "status": {
             "type": "string"
           },
+          "version": {
+            "type": "integer"
+          },
           "completedAt": {
             "type": [
               "string",
@@ -7786,6 +7789,7 @@
           "doseValue",
           "doseUnitId",
           "status",
+          "version",
           "product",
           "doseUnit",
           "parcel"
@@ -13427,6 +13431,17 @@
             "description": "OperationParcel id — one prescription LINE, not a parcel id.",
             "name": "lineId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The `version` you last read from the line, DIGITS ONLY (`5`). Unlike the farm-profile lock, an entity-tag form (`\"5\"`) is NOT parsed here — and an absent or non-integer value SKIPS the version check entirely, a silent last-write-wins rather than an error (#1182). OPTIONAL in the schema and MANDATORY in practice: it is what stops a queued offline mark clobbering a supervisor’s later edit, and the only reason it is not required here is that an installed build may send none.",
+              "example": "5"
+            },
+            "required": false,
+            "description": "The `version` you last read from the line, DIGITS ONLY (`5`). Unlike the farm-profile lock, an entity-tag form (`\"5\"`) is NOT parsed here — and an absent or non-integer value SKIPS the version check entirely, a silent last-write-wins rather than an error (#1182). OPTIONAL in the schema and MANDATORY in practice: it is what stops a queued offline mark clobbering a supervisor’s later edit, and the only reason it is not required here is that an installed build may send none.",
+            "name": "If-Match",
+            "in": "header"
           }
         ],
         "requestBody": {

@@ -30,6 +30,20 @@ const MapCanvas = dynamic(() => import('@/components/ui/map/MapCanvas').then((m)
 interface Line {
     id: string;
     status: 'PENDING' | 'DONE' | 'SKIPPED';
+    /**
+     * Optimistic-lock version, sent back as `If-Match` when marking (#1370).
+     *
+     * This local type is why the bug existed: it did not declare `version`,
+     * so the field arrived on every response and was unreadable here. The
+     * offline panel and iOS both send it; this one marked last-write-wins and
+     * could silently overwrite a colleague's change.
+     *
+     * Optional because a response from before the field was declared — or a
+     * cached SWR payload written by an older build — legitimately lacks it,
+     * and the absent case has to degrade to the previous behaviour rather
+     * than refuse to mark.
+     */
+    version?: number;
     doseValue: string | number;
     waterRateValue?: string | number | null;
     parcel?: { id: string; name: string; areaHa?: number | null } | null;
@@ -89,7 +103,25 @@ export function FieldOperationPanel({ taskId }: FieldOperationPanelProps) {
     const mark = async (lineId: string, status: 'DONE' | 'SKIPPED' | 'PENDING') => {
         setBusyId(lineId);
         try {
-            await apiPatch(buildUrl(`/field-operations/${taskId}/parcels/${lineId}`), { status });
+            // `If-Match` is the whole point of this call having a version
+            // (#1370). Without it the server SKIPS the precondition — a
+            // silent last-write-wins, not an error — so an online web mark
+            // could overwrite a change a colleague made seconds earlier, on a
+            // row that stamps a regulatory date.
+            //
+            // Read from the line we rendered, so it is the version this
+            // operator actually saw. An absent version sends no header and
+            // degrades to the previous behaviour, which is what a cached
+            // payload from an older build will do.
+            const line = data?.lines?.find((l) => l.id === lineId);
+            await apiPatch(
+                buildUrl(`/field-operations/${taskId}/parcels/${lineId}`),
+                { status },
+                undefined,
+                line?.version !== undefined
+                    ? { headers: { 'If-Match': String(line.version) } }
+                    : undefined,
+            );
             // Sensory confirmation — a DONE feels weightier than a skip/reopen.
             const kind = status === 'DONE' ? 'success' : 'tap';
             haptic(kind);
