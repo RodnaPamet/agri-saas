@@ -315,6 +315,13 @@ export const ALL_SCHEDULES: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
+        name: 'mail-canary',
+        pattern: '0 */6 * * *',   // every 6 hours, on the hour
+        description:
+            'Send one message to MAIL_CANARY_TO to prove the mail SEND path works. Proves the provider ACCEPTED it, not that it was delivered — see the job docblock.',
+        defaultPayload: {},
+    },
+    {
         name: 'unverified-account-sweep',
         pattern: '30 4 * * *',    // daily at 04:30 UTC, before the other sweeps
         description:

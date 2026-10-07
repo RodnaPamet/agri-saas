@@ -492,6 +492,24 @@ executorRegistry.register('access-review-overdue-escalation', async (payload) =>
     );
 });
 
+// ── mail-canary ─────────────────────────────────────────────────────
+
+executorRegistry.register('mail-canary', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runMailCanary } = await import('./mail-canary');
+    const r = await runMailCanary({ to: payload.to });
+    // scanned = 1 (one send path checked), actioned = 1 only when a real
+    // transport accepted it. So the job's own telemetry distinguishes "the
+    // canary ran" from "the canary flew", which a single success counter
+    // would not.
+    return makeResult('mail-canary', startedAt, startMs, 1, r.outcome === 'SENT' ? 1 : 0, 0, {
+        outcome: r.outcome,
+        provider: r.provider,
+        ...(r.detail ? { detail: r.detail } : {}),
+    });
+});
+
 // ── unverified-account-sweep ────────────────────────────────────────
 
 executorRegistry.register('unverified-account-sweep', async (payload) => {
