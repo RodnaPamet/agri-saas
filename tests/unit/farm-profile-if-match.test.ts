@@ -70,10 +70,18 @@ const p2002 = () =>
         clientVersion: 'test',
     });
 
+
 describe('farm-profile optimistic lock', () => {
     beforeEach(() => {
         jest.clearAllMocks();
         for (const k of Object.keys(mockDb)) delete mockDb[k];
+        // #1358 — both of `upsertFarmProfile`'s return paths now DERIVE
+        // eikVerification, so the usecase reads claims on EVERY call. This
+        // sits AFTER the delete loop above, which wipes every key: a
+        // file-level hook is reset past by it. Empty means NONE, which is
+        // what this suite already assumes; the non-empty cases live in
+        // farm-profile-put-eik-verification.test.ts.
+        mockDb.farmIdentityClaim = { findMany: jest.fn().mockResolvedValue([]) };
     });
 
     it('UNGUARDED write still increments the version', async () => {
@@ -196,6 +204,13 @@ describe('a body that mentions nothing is a no-op, but still checked', () => {
     beforeEach(() => {
         jest.clearAllMocks();
         for (const k of Object.keys(mockDb)) delete mockDb[k];
+        // #1358 — both of `upsertFarmProfile`'s return paths now DERIVE
+        // eikVerification, so the usecase reads claims on EVERY call. This
+        // sits AFTER the delete loop above, which wipes every key: a
+        // file-level hook is reset past by it. Empty means NONE, which is
+        // what this suite already assumes; the non-empty cases live in
+        // farm-profile-put-eik-verification.test.ts.
+        mockDb.farmIdentityClaim = { findMany: jest.fn().mockResolvedValue([]) };
     });
 
     it('does not write, does not bump, and does not audit', async () => {
