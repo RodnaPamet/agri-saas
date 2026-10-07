@@ -120,3 +120,77 @@ describe('k6 load scripts drive routes that exist', () => {
         expect(fs.existsSync(path.join(API_ROOT, 'practices'))).toBe(false);
     });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+//  …and every script is actually INVOKED by a workflow (P3.10)
+// ═══════════════════════════════════════════════════════════════════
+//
+//  The half this file was missing. The docblock above already records the
+//  precedent: `lists.js` "is not in the smoke job's script list … so it
+//  simply sat broken" — a script pointed at a deleted route, never executed,
+//  never red. Checking that its ROUTES exist does not help if nothing runs it.
+//
+//  So: every `tests/load/*.js` must be named by `ci.yml` (the push-to-main
+//  smoke job) or by `load-test.yml` (the on-demand workflow), or carry a
+//  written exemption. A k6 script nobody runs is a test that cannot fail,
+//  which is the most expensive kind to keep.
+
+describe('every k6 load script is invoked by a workflow', () => {
+    const WORKFLOWS = ['.github/workflows/ci.yml', '.github/workflows/load-test.yml'];
+
+    /** Scripts deliberately not wired to any workflow, each with a reason. */
+    const NOT_INVOKED: Record<string, string> = {
+        // Empty today. An entry here is a claim that a script is worth
+        // keeping while never running, which is a hard case to make.
+    };
+
+    const scripts = fs
+        .readdirSync(LOAD_DIR)
+        .filter((f) => f.endsWith('.js'))
+        .sort();
+
+    const invocations = WORKFLOWS.filter((w) => fs.existsSync(path.join(ROOT, w)))
+        .map((w) => fs.readFileSync(path.join(ROOT, w), 'utf8'))
+        .join('\n');
+
+    it('finds a real population of scripts and a real population of workflows', () => {
+        // An empty selection on either side passes the assertion below.
+        expect(scripts.length).toBeGreaterThanOrEqual(5);
+        expect(invocations.length).toBeGreaterThan(1000);
+    });
+
+    it('each script is named by ci.yml or load-test.yml', () => {
+        const orphans = scripts.filter(
+            (f) => !(f in NOT_INVOKED) && !invocations.includes(`tests/load/${f}`),
+        );
+        if (orphans.length > 0) {
+            throw new Error(
+                `${orphans.length} k6 load script(s) are invoked by no workflow:\n` +
+                    orphans.map((f) => `  tests/load/${f}`).join('\n') +
+                    `\n\nAdd a \`k6 run\` step to .github/workflows/ci.yml (push-to-main\n` +
+                    `smoke) or load-test.yml (on-demand), or add an entry to\n` +
+                    `NOT_INVOKED in this file with a written reason. A script nothing\n` +
+                    `runs cannot fail, and \`lists.js\` sat broken for exactly this\n` +
+                    `reason — see this file's docblock.`,
+            );
+        }
+        expect(orphans).toEqual([]);
+    });
+
+    it('CONTROL: the detector would notice an orphan', () => {
+        // Without this, a bug in the `includes` check would make the
+        // assertion above pass for every script forever.
+        expect(invocations.includes('tests/load/definitely-not-a-real-script.js')).toBe(false);
+        // And it DOES find a known-wired one, so the needle is not inert.
+        expect(invocations.includes('tests/load/auth.js')).toBe(true);
+    });
+
+    it('every exemption names a script that exists', () => {
+        // A stale exemption silently stops exempting — or worse, hides that
+        // the real script is an orphan.
+        for (const f of Object.keys(NOT_INVOKED)) {
+            expect(scripts).toContain(f);
+            expect(NOT_INVOKED[f].length).toBeGreaterThan(40);
+        }
+    });
+});
