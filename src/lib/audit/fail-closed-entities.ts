@@ -80,6 +80,20 @@ const FAIL_CLOSED_ENTITIES: readonly string[] = [
     // Identity federation: who the IdP is allowed to vouch for
     'TenantIdentityProvider',
     'TenantEntraGroupMapping',
+    // Legal identity: who is allowed to claim being a given legal entity.
+    //
+    // A VERIFIED `FarmIdentityClaim` is the sole authority for writing
+    // `FarmProfile.eik` (P3.4) — the free-edit PUT cannot. So the audit row for
+    // a verification decision is not a record ABOUT the grant, it IS the only
+    // record of why ЕИК X was granted to farm Y, which is this list's test.
+    //
+    // Owner ruling 2026-10-06, taken with the consequence stated: the list is
+    // keyed on entityType, so this gates a farmer's self-service claim as well
+    // as a staff verification. An audit-subsystem failure therefore blocks the
+    // registration front door, and `AUDIT_FAIL_CLOSED_ENABLED=0` is the
+    // operator escape hatch for that — it is not a theoretical mitigation, it
+    // is the reason the kill switch exists.
+    'FarmIdentityClaim',
     // Security policy
     'TenantSecuritySettings',
     // Tenancy and key material (`Tenant.encryptedDek` lives here)
