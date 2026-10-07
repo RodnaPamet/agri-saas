@@ -191,6 +191,25 @@ describe('Structural Guard: Tenant Isolation Conventions', () => {
             // A route that needs a tenant does NOT belong here — it belongs
             // under /api/t/[tenantSlug].
             'public',
+            // P3.6 — the signed-in person's own surface, starting with
+            // `farms` (create a farm). AUTHENTICATED, unlike `public`, but with
+            // no tenant: the caller either has no farm yet or is adding
+            // another, so there is no tenantId to scope to. The invariant has
+            // no subject here rather than being waived.
+            //
+            // What stands in for tenant scoping is that the subject is always
+            // the SESSION USER and never an id in the body, so one person can
+            // never act for another. A route here that took a user or tenant
+            // identifier from the request would be the defect this exemption
+            // could hide, and it is the thing to check in review.
+            //
+            // Additionally: `src/app/api/me/**` is classified SOCIAL by
+            // `tests/guards/social-routes-are-flag-gated.test.ts`, so every
+            // route under this prefix must call the feature gate and 404s
+            // while its flag is off.
+            //
+            // A route that needs a tenant does NOT belong here.
+            'me',
             // Epic O-1/O-2 — hub-and-spoke organization layer. Org
             // routes resolve `OrgContext` (NOT `RequestContext`) and
             // operate above the tenant scope. The cross-tenant drill-

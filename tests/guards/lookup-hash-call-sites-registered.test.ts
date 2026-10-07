@@ -127,6 +127,17 @@ const REGISTERED: Readonly<Record<string, Registration>> = {
         kind: 'write',
         note: 'Owner bootstrap: the candidate read runs first, and this hash keys the upsert that follows it.',
     },
+    'src/app-layer/usecases/farm-creation.ts': {
+        kind: 'write',
+        note:
+            "P3.6 farm creation: writes the `eik`-kind blind index onto FarmIdentityClaim. " +
+            'Write-only — this file never reads by eikHash, so there is no primary-only read to ' +
+            'get wrong. The rotation hazard is real but lands elsewhere: a pre-rotation claim ' +
+            'keeps the OLD hash, so the partial unique index cannot relate it to a new one and ' +
+            'the guarantee is one VERIFIED claim per ЕИК PER KEY GENERATION. Closing that is ' +
+            'the verification path (P3.9), which must read with the full candidate set before ' +
+            'promoting and re-hash the row it promotes.',
+    },
     'src/app-layer/usecases/org-members.ts': {
         kind: 'write',
         note: 'Org-member placeholder: same find-on-candidates-then-upsert shape as tenant-lifecycle.',
