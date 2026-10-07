@@ -43,8 +43,8 @@
             "title": "CISO creates a 2nd tenant",
             "issue": 1076,
             "firstSeen": "2026-10-01",
-            "reason": "The same ~18s shape at its own toBeVisible, and NOT a call site of expectRouteTransition — which is the observation that refuted the shared-helper explanation for this family.",
-            "review": "2027-01-15"
+            "reason": "CAUSE FOUND AND FIXED 2026-10-07 — this is no longer a timing flake, and if it recurs the timing explanation is spent. The wait after the submit was waitForURL(/\\/(?:t|org|no-tenant|tenants)\\b/), which matches the page the test is already on (/org/acme-org/tenants/new), so it resolved on the first poll and waited for nothing; the safeGoto that follows then navigated while the create POST was still in flight and the browser aborted it. Measured in the trace of run 37561894805: POST /api/org/acme-org/tenants recorded status -1 (no response at all) and the list rendered '1 tenant linked to this organization'. The ~50% rate on main is the race between the create transaction and the navigation that cancels it, which is what made it look like the ~18s shape this entry used to describe. The spec now waits for the POST response and asserts 201 before navigating. Kept rather than pruned because absence is not observable from one run; prune at review if it has not recurred.",
+            "review": "2026-10-21"
         },
         {
             "spec": "theme-first-paint.spec.ts",
