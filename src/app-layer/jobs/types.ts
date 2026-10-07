@@ -721,6 +721,19 @@ export interface ExchangeExpirySweepPayload {
 }
 
 /**
+ * mail-canary — prove the mail SEND path still works (P3.10).
+ *
+ * Platform-level and tenant-agnostic: it sends one message to an operator
+ * address, so there is no farm it belongs to. See the job docblock for what
+ * it proves (the provider accepted a message) and what it deliberately does
+ * NOT prove (delivery — nothing reads an inbox).
+ */
+export interface MailCanaryPayload {
+    /** Override the recipient. Omitted in the schedule; set for a manual run. */
+    to?: string;
+}
+
+/**
  * unverified-account-sweep — delete accounts that never verified their email.
  *
  * Identity-level and therefore system-wide: an unverified account has no farm,
@@ -815,6 +828,7 @@ export interface JobPayloadMap {
     'farm-record-pdf': FarmRecordPdfPayload;
     'exchange-expiry-sweep': ExchangeExpirySweepPayload;
     'unverified-account-sweep': UnverifiedAccountSweepPayload;
+    'mail-canary': MailCanaryPayload;
     'soil-fetch': SoilFetchPayload;
     'market-prices-pull': MarketPricesPullPayload;
     // Intraday Barchart-only pull (delayed MATIF futures). Same payload shape;
@@ -1197,6 +1211,20 @@ export const JOB_DEFAULTS: Record<JobName, {
         backoff: { type: 'exponential', delay: 5000 },
         removeOnComplete: 100,
         removeOnFail: 200,
+    },
+    'mail-canary': {
+        // ONE attempt. A retry would turn a genuine outage into three
+        // identical alerts, and the whole value of a canary is that its
+        // failure is a signal rather than noise — the six-hourly cadence is
+        // the retry, and it arrives with a fresh verdict.
+        attempts: 1,
+        // Required by the shared options type and unreachable at attempts: 1.
+        backoff: { type: 'exponential', delay: 5000 },
+        // Kept longer than the sweeps': a canary's HISTORY is the useful part.
+        // "when did this last succeed" is the first question during an
+        // incident, and it is unanswerable if completions are pruned at 100.
+        removeOnComplete: 500,
+        removeOnFail: 500,
     },
     'unverified-account-sweep': {
         // Idempotent: the predicate only ever matches accounts that are still

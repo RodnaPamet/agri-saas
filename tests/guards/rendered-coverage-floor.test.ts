@@ -213,7 +213,13 @@ const ROOT = path.resolve(__dirname, '../..');
 // way, so both sections present, aria-current rather than colour alone, and
 // 44px targets are the properties worth holding.
 //
-const RENDERED_TEST_FLOOR = 244;
+// 244 → 245 (P3.8): `tests/rendered/farm-wizard.test.tsx`. Fourteen cases
+// over the six-step registration wizard, pinning the three things the API
+// contracts force — the ЕИК check travels in a BODY (a GET would put a
+// possible ЕГН in a URL that iOS CFNetwork logs), a valid-looking ЕГН blocks
+// the step rather than warning, and step 6 never implies the ЕИК was
+// ACCEPTED because `pending_review` is returned unconditionally.
+const RENDERED_TEST_FLOOR = 245;
 // Lowered 55 → 54 in the risk-quantification uproot (2026-08-08).
 // `ai-risk-assessment.spec.ts` and `new-risk-modal.spec.ts` were both
 // wholly about the deleted register; the specs that merely REFERENCED a

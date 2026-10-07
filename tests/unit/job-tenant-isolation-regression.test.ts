@@ -173,6 +173,11 @@ describe('Executor Registry — structural tenant-scope guards', () => {
     // construction ("never cross-tenant in one pass").
     const EXEMPT_JOBS = ['health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction', 'support-scheme-extraction',
         'unverified-account-sweep',
+        // mail-canary (P3.10) sends ONE message to an operator address to
+        // prove the mail send path works. There is no farm it belongs to — it
+        // is monitoring the platform's own transport, and a tenantId on this
+        // payload would be meaningless in the same way it is for health-check.
+        'mail-canary',
         // PromotionLead is CROSS-tenant (inquirerTenantId, not tenantId) and is
         // swept globally in one pass — see job-scope-audit for the full reason.
         'promotion-lead-retention',
@@ -262,7 +267,7 @@ describe('Payload Type Contract — tenantId field audit', () => {
     // Jobs that legitimately don't need tenantId
     // SharePointDeltaSyncDispatchPayload (SP-3) is the global fan-out cron — no
     // single tenantId; it enqueues per-tenant SharePointDeltaSyncPayload jobs.
-    const EXEMPT_PAYLOADS = ['UnverifiedAccountSweepPayload', 'HealthCheckPayload', 'SyncPullPayload', 'ScheduleTriggerSweepPayload', 'SharePointDeltaSyncDispatchPayload', 'SharePointSubscriptionRenewPayload', 'RiskAppetiteMonitorPayload', 'RiskSnapshotPayload', 'ReportDeliveryPayload', 'ExchangeExpirySweepPayload', 'MarketPricesPullPayload', 'MarketNewsPullPayload',
+    const EXEMPT_PAYLOADS = ['MailCanaryPayload', 'UnverifiedAccountSweepPayload', 'HealthCheckPayload', 'SyncPullPayload', 'ScheduleTriggerSweepPayload', 'SharePointDeltaSyncDispatchPayload', 'SharePointSubscriptionRenewPayload', 'RiskAppetiteMonitorPayload', 'RiskSnapshotPayload', 'ReportDeliveryPayload', 'ExchangeExpirySweepPayload', 'MarketPricesPullPayload', 'MarketNewsPullPayload',
         // Global sweep over a cross-tenant table — no payload tenant axis.
         'PromotionLeadRetentionPayload',
         // Drains the whole outbox; each ROW carries the tenantId, so a
