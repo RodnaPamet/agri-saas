@@ -211,6 +211,26 @@ export function registerFieldOperationPaths(registry: OpenAPIRegistry): void {
             'and no way to add a line to an existing job.',
         tags: ['Field operations'],
         params: LineParams,
+        // Declared as a HEADER rather than left in the prose above (#1370). A
+        // generated client cannot send a precondition it cannot see, and the
+        // description calling it "mandatory" while the contract never named
+        // it is how iOS ended up the only client sending one.
+        headers: z.object({
+            'If-Match': z
+                .string()
+                .optional()
+                .openapi({
+                    description:
+                        'The `version` you last read from the line, DIGITS ONLY (`5`). Unlike ' +
+                        'the farm-profile lock, an entity-tag form (`"5"`) is NOT parsed here — ' +
+                        'and an absent or non-integer value SKIPS the version check entirely, a ' +
+                        'silent last-write-wins rather than an error (#1182). ' +
+                        'OPTIONAL in the schema and MANDATORY in practice: it is what stops a ' +
+                        'queued offline mark clobbering a supervisor’s later edit, and the only ' +
+                        'reason it is not required here is that an installed build may send none.',
+                    example: '5',
+                }),
+        }),
         body: UpdateOperationParcelSchema,
         success: {
             status: 200,

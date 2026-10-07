@@ -236,9 +236,18 @@ export async function apiPost<T>(
 ): Promise<T> {
     const res = await fetchOrThrow(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
         ...withTimeout(init),
+        // MERGED, not replaced, and the order matters: `...withTimeout(init)`
+        // above would otherwise overwrite the `headers` key wholesale, so a
+        // caller passing a single `If-Match` would silently drop
+        // `Content-Type` and the server would fail to parse the body.
+        //
+        // No caller passed headers until #1370 added one, so the trap had
+        // never fired — which is exactly why it was worth removing rather
+        // than working around at the one new call site. A caller's own
+        // Content-Type still wins, since its entries come last.
+        headers: { 'Content-Type': 'application/json', ...(init?.headers as Record<string, string> | undefined) },
     });
 
     if (!res.ok) await handleErrorResponse(res);
@@ -258,9 +267,18 @@ export async function apiPatch<T>(
 ): Promise<T> {
     const res = await fetchOrThrow(url, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
         ...withTimeout(init),
+        // MERGED, not replaced, and the order matters: `...withTimeout(init)`
+        // above would otherwise overwrite the `headers` key wholesale, so a
+        // caller passing a single `If-Match` would silently drop
+        // `Content-Type` and the server would fail to parse the body.
+        //
+        // No caller passed headers until #1370 added one, so the trap had
+        // never fired — which is exactly why it was worth removing rather
+        // than working around at the one new call site. A caller's own
+        // Content-Type still wins, since its entries come last.
+        headers: { 'Content-Type': 'application/json', ...(init?.headers as Record<string, string> | undefined) },
     });
 
     if (!res.ok) await handleErrorResponse(res);

@@ -41,6 +41,23 @@ export const OperationParcelDTOSchema = z
         targetNote: z.string().nullable().optional(),
         /** PENDING | DONE | SKIPPED. */
         status: z.string(),
+        /**
+         * Optimistic-lock version. Send it back as `If-Match` on
+         * `PATCH …/parcels/{lineId}`.
+         *
+         * REQUIRED, and it always was on the wire — the route serialises the
+         * raw Prisma row, and the column is `Int @default(0)`, so every
+         * stored line carries one. It was simply never DECLARED (#1370),
+         * which is worse than absent: a client reading the spec could not
+         * implement the lock the PATCH documents as mandatory, and iOS
+         * decoded it as optional and hid its mark buttons on every line.
+         *
+         * An undeclared field that is always present is the hardest kind to
+         * notice missing — the web client reads it out of route behaviour and
+         * works, so nothing fails until somebody generates a client from the
+         * contract.
+         */
+        version: z.number().int(),
         completedAt: z.string().nullable().optional(),
         completedByUserId: z.string().nullable().optional(),
         createdAt: z.string().optional(),
