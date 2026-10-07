@@ -83,7 +83,11 @@ describe('tenant creation is converged on one helper', () => {
 });
 
 describe('the registration slug keeps the farm name', () => {
-    const REGISTER = 'src/app/api/auth/register/route.ts';
+    // Retargeted when #1376 retired `/api/auth/register`. The derivation moved
+    // to P3.6's farm-creation usecase, which is what turns a typed farm name
+    // into a slug now — so the property follows the code rather than being
+    // deleted with the route that used to hold it.
+    const REGISTER = 'src/app-layer/usecases/farm-creation.ts';
 
     it('derives the slug through toSlug, not a bare [a-z0-9] strip', () => {
         // The defect this pins was LIVE, not hypothetical. The old derivation
@@ -99,7 +103,8 @@ describe('the registration slug keeps the farm name', () => {
         const src = fs.readFileSync(path.join(ROOT, REGISTER), 'utf8');
         const stripped = code(src);
         expect(stripped).toMatch(/toSlug\(/);
-        expect(stripped).not.toMatch(/orgName[\s\S]{0,120}\[\^a-z0-9\]/);
+        // The banned shape, with the field renamed: `orgName` became `name`.
+        expect(stripped).not.toMatch(/name[\s\S]{0,120}\[\^a-z0-9\]/);
     });
 
     it('…and toSlug actually keeps a Cyrillic name', () => {
@@ -111,10 +116,16 @@ describe('the registration slug keeps the farm name', () => {
     });
 });
 
-describe('bcrypt stays outside the transaction boundary', () => {
-    const REGISTER = 'src/app/api/auth/register/route.ts';
+describe('bcrypt stays outside the pooled-connection boundary', () => {
+    // Retargeted when #1376 retired `/api/auth/register`. The property is the
+    // same and the shape changed: `register/start` opens NO transaction — it
+    // hashes, then does a lookup and a single insert — so what has to hold is
+    // that bcrypt runs before the first database call rather than before a
+    // `$transaction(`. Asserting the old anchor here would have passed
+    // vacuously on a route that never opens one.
+    const REGISTER = 'src/app/api/auth/register/start/route.ts';
 
-    it('hashPassword runs BEFORE the transaction opens', () => {
+    it('hashPassword runs BEFORE the first database call', () => {
         // Not style. bcrypt at cost 12 runs for hundreds of milliseconds, and
         // DATABASE_URL points at PgBouncer in transaction mode — holding the
         // transaction open across it pins a pooled connection under exactly the
@@ -124,10 +135,10 @@ describe('bcrypt stays outside the transaction boundary', () => {
         // why a comment is not enough and this is a check.
         const src = code(fs.readFileSync(path.join(ROOT, REGISTER), 'utf8'));
         const hashAt = src.indexOf('hashPassword(');
-        const txAt = src.indexOf('$transaction(');
+        const dbAt = src.indexOf('prisma.user.');
         expect(hashAt).toBeGreaterThan(-1);
-        expect(txAt).toBeGreaterThan(-1);
-        expect(hashAt).toBeLessThan(txAt);
+        expect(dbAt).toBeGreaterThan(-1);
+        expect(hashAt).toBeLessThan(dbAt);
     });
 
     it('the two anchors it depends on still exist', () => {
@@ -135,6 +146,6 @@ describe('bcrypt stays outside the transaction boundary', () => {
         // vacuously on two -1s. Asserting both are found is what stops that.
         const src = code(fs.readFileSync(path.join(ROOT, REGISTER), 'utf8'));
         expect(src).toContain('hashPassword(');
-        expect(src).toContain('$transaction(');
+        expect(src).toContain('prisma.user.');
     });
 });

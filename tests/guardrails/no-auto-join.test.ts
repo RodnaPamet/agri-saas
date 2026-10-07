@@ -60,14 +60,6 @@ const ALLOWLISTED_MEMBERSHIP_SITES: ReadonlyArray<AllowlistedSite> = [
             'TENANT_MEMBERSHIP_GRANTED.',
     },
     {
-        file: 'src/app/api/auth/register/route.ts',
-        reason:
-            'Credentials self-service signup (AUTH_TEST_MODE-gated). The ' +
-            'signing-up user creates their own tenant and becomes its ' +
-            'sole OWNER — this is the "I am my own tenant" path, separate ' +
-            'from platform-admin-mediated tenant creation.',
-    },
-    {
         file: 'src/app/api/staging/seed/route.ts',
         reason:
             'Staging-only seed endpoint. Upserts a deterministic ' +

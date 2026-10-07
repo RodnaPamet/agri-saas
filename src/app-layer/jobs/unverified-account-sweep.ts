@@ -11,7 +11,8 @@
  * The obvious predicate — `emailVerified IS NULL AND createdAt < cutoff` — is
  * WRONG, and would have deleted live farms.
  *
- * The legacy `/api/auth/register` (still serving `login/page.tsx` until P3.8)
+ * The legacy `/api/auth/register` (retired by #1376; `login/page.tsx` now links
+ * to the `/start` wizard instead)
  * creates a tenant, a user whose email is unverified, an OWNER membership and
  * an onboarding row, all in one transaction. So every farm registered through
  * the legacy route whose owner never clicked the verification link is an

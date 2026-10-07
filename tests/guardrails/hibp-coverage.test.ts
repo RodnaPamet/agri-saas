@@ -77,10 +77,6 @@ const HIBP_REQUIRED_ROUTES: ReadonlyArray<{
     field: string;
 }> = [
     {
-        file: 'src/app/api/auth/register/route.ts',
-        field: 'password',
-    },
-    {
         file: 'src/app/api/auth/change-password/route.ts',
         field: 'newPassword',
     },
@@ -316,12 +312,12 @@ describe('HIBP coverage guardrail — structural scan', () => {
             expect(hit.map((h) => h.field)).toEqual([field]);
         }
 
-        // The new shape ACROSS a module boundary, which is the combination
-        // nothing in the tree exercises: `auth/register` reaches its schema
-        // through an import but spells the field `password: z.…`, so the
-        // import-reached matcher could be reverted to the old regex and
-        // every other assertion here would still pass. This is the one that
-        // fails.
+        // The new shape ACROSS a module boundary. Nothing in the tree
+        // exercises it — and since #1376 retired `auth/register`, which was
+        // the one live route reaching its schema through an import, nothing
+        // CAN. That makes this the only assertion standing between the
+        // import-reached matcher and a revert to the old route-file-only
+        // regex, so it is the one that fails.
         const crossModule = detectInSource(
             `
             import { SignupSchema } from './schema';
@@ -396,7 +392,7 @@ describe('HIBP coverage guardrail — structural scan', () => {
         // And the DETECTOR must find a password field in every one of them.
         // This is the assertion #1166 closed. It used to read
         //
-        //     expect(blind).toEqual(['src/app/api/auth/register/route.ts'])
+        //     expect(blind).toEqual(['src/app/api/auth/register/route.ts'])  // pre-#1376
         //
         // pinning `auth/register` as a route the scan could not see: its
         // password field is declared on `AuthRegisterSchema` in
@@ -424,7 +420,6 @@ describe('HIBP coverage guardrail — structural scan', () => {
             ]),
         );
         expect(fieldsByRoute).toEqual({
-            'src/app/api/auth/register/route.ts': ['password'],
             'src/app/api/auth/change-password/route.ts': ['currentPassword', 'newPassword'],
             'src/app/api/auth/reset-password/route.ts': ['newPassword'],
         });
@@ -441,23 +436,17 @@ describe('HIBP coverage guardrail — structural scan', () => {
                 .map((hit) => `${r.file} -> ${hit.declaredIn}`),
         );
         expect(external).toEqual([
-            'src/app/api/auth/register/route.ts -> src/lib/schemas/index.ts',
         ]);
 
-        // The chain that proves it: route → AuthActionSchema →
-        // AuthRegisterSchema. Two symbol hops, well inside MAX_HOPS, so the
-        // cap is a backstop rather than something the real schema layer is
-        // pressed against.
-        const registerHits = findPasswordFields(
-            path.join(REPO_ROOT, 'src/app/api/auth/register/route.ts'),
-        );
-        expect(registerHits.map((h) => h.field)).toEqual(['password']);
-        expect(registerHits[0].via).toEqual([
-            'src/app/api/auth/register/route.ts#AuthActionSchema',
-            'src/lib/schemas/index.ts#AuthActionSchema',
-            'src/lib/schemas/index.ts#AuthRegisterSchema',
-        ]);
-        expect(registerHits[0].via.length).toBeLessThan(MAX_HOPS);
+        // The real-route multi-hop chain this used to assert
+        // (`auth/register` → AuthActionSchema → AuthRegisterSchema) went with
+        // the route in #1376, and no surviving route reaches a password field
+        // through an import: the two password-management routes declare theirs
+        // inline, and `register/start` uses manual type checks. So the
+        // import-following matcher is proved by the synthetic cross-module
+        // case above, which has real teeth — it fails if the matcher is
+        // reverted to reading route files only — rather than by a chain that
+        // no longer exists.
     });
 
     it('the namespace-import detector can see one (positive control)', () => {
@@ -585,9 +574,13 @@ describe('HIBP coverage guardrail — structural scan', () => {
 // ── Test 3 — regression proof ──────────────────────────────────────────────
 
 describe('HIBP coverage guardrail — regression proof', () => {
-    it('guardrail catches a mutated register/route.ts that lacks the HIBP import/call', () => {
+    it('guardrail catches a mutated change-password route that lacks the HIBP import/call', () => {
+        // Retargeted from `auth/register` when #1376 retired it. Any curated
+        // route works — the proof is about the GUARD, not the route — and
+        // change-password is the one whose password field the detector can
+        // also see, so a single file exercises both halves.
         const entry = HIBP_REQUIRED_ROUTES.find(
-            (r) => r.file === 'src/app/api/auth/register/route.ts',
+            (r) => r.file === 'src/app/api/auth/change-password/route.ts',
         );
         expect(entry).toBeDefined();
 
@@ -615,7 +608,7 @@ describe('HIBP coverage guardrail — regression proof', () => {
         // discarded await. Import and call both survive, which is why the
         // pre-existing checks stayed green for a day in production.
         const entry = HIBP_REQUIRED_ROUTES.find(
-            (r) => r.file === 'src/app/api/auth/register/route.ts',
+            (r) => r.file === 'src/app/api/auth/change-password/route.ts',
         );
         expect(entry).toBeDefined();
 

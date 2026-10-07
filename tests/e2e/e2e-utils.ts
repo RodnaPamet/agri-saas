@@ -7,7 +7,11 @@
 import { randomUUID, randomBytes } from 'node:crypto';
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve as resolvePath } from 'node:path';
-import { expect, request as playwrightRequest, type APIRequestContext, type Page, type Locator } from '@playwright/test';
+import { expect, type APIRequestContext, type Page, type Locator } from '@playwright/test';
+
+import prisma from '@/lib/prisma';
+import { createTenantWithOwner } from '@/app-layer/usecases/tenant-lifecycle';
+import { hashPassword } from '@/lib/auth/passwords';
 
 /**
  * Pick an option from one of the shared `<Combobox>` practices (Epic 55
@@ -524,66 +528,66 @@ export async function createIsolatedTenant(
     const ownerName = `${prefix} ${id}`;
     const orgName = `${prefix} ${id}`;
     const ownerPassword = generateOwnerPassword();
+    const tenantSlug = `${prefix}-${id}`;
 
-    // Use the caller's request context if supplied so it shares
-    // cookies / fixtures with the rest of the test; otherwise spin
-    // one up and dispose it inside this call.
-    const request =
-        options.request ?? (await playwrightRequest.newContext({ baseURL }));
-    const ownsRequest = !options.request;
+    // Created through `createTenantWithOwner` IN PROCESS, not over HTTP.
+    //
+    // This used to POST `/api/auth/register`, the one route that made a user
+    // and a tenant in a single call. #1376 retired it, and no surviving HTTP
+    // path replaces it for a fixture's purposes: `register/start` issues an
+    // emailed code this process cannot read, and `POST /api/me/farms` is gated
+    // on `social.farm-registration`, which is OFF in E2E — so driving the real
+    // signup flow would mean either bypassing verification anyway or turning a
+    // product flag on to set up unrelated tests.
+    //
+    // Calling the usecase directly is also the better shape: a fixture's job
+    // is to put the database in a known state, not to exercise the signup UX.
+    // The specs that care about signup test it explicitly. And this is the
+    // same function the platform-admin bootstrap route calls, so the rows it
+    // writes are the rows production writes — tenant, OWNER membership and
+    // onboarding, in one transaction.
+    //
+    // `options.request` is still accepted so no call site changes, and is no
+    // longer used: there is no HTTP request left to share a cookie jar with.
+    const created = await createTenantWithOwner({
+        name: orgName,
+        slug: tenantSlug,
+        ownerEmail,
+        requestId: `e2e-${id}`,
+    });
 
-    try {
-        const res = await request.post('/api/auth/register', {
-            data: {
-                action: 'register',
-                email: ownerEmail,
-                password: ownerPassword,
-                name: ownerName,
-                orgName,
-            },
-            failOnStatusCode: false,
-        });
-        if (!res.ok()) {
-            const body = await res.text();
-            throw new Error(
-                `createIsolatedTenant: /api/auth/register failed ` +
-                    `(status ${res.status()}): ${body.slice(0, 400)}`,
-            );
-        }
-        const json = (await res.json()) as {
-            user: { id: string; email: string; name: string };
-            tenant: { id: string; name: string; slug: string };
-        };
-        if (!json?.tenant?.slug) {
-            throw new Error(
-                'createIsolatedTenant: register response missing tenant.slug — ' +
-                    'check src/app/api/auth/register/route.ts response shape.',
-            );
-        }
-        // Track for global-teardown — appended even on a partially
-        // failing test so the cleanup phase reclaims rows whose owning
-        // test errored mid-flow.
-        appendTenantToTracker({
-            tenantId: json.tenant.id,
-            tenantSlug: json.tenant.slug,
-            ownerUserId: json.user.id,
-            createdAt: new Date().toISOString(),
-        });
+    // The usecase creates the owner with no credential, because its production
+    // callers invite people rather than hand out passwords. `signInAs` drives
+    // the real credentials form, so the fixture supplies what that needs: a
+    // password hash, and a verified address (credentials login refuses an
+    // unverified one, which is the P3.5b behaviour and correct).
+    await prisma.user.update({
+        where: { id: created.ownerUserId },
+        data: {
+            name: ownerName,
+            passwordHash: await hashPassword(ownerPassword),
+            emailVerified: new Date(),
+        },
+    });
 
-        return {
-            tenantSlug: json.tenant.slug,
-            tenantId: json.tenant.id,
-            tenantName: json.tenant.name,
-            ownerEmail: json.user.email,
-            ownerPassword,
-            ownerUserId: json.user.id,
-            ownerName: json.user.name,
-        };
-    } finally {
-        if (ownsRequest) {
-            await request.dispose().catch(() => undefined);
-        }
-    }
+    // Track for global-teardown — appended even when the owning test errors
+    // mid-flow, so cleanup still reclaims the rows.
+    appendTenantToTracker({
+        tenantId: created.tenant.id,
+        tenantSlug: created.tenant.slug,
+        ownerUserId: created.ownerUserId,
+        createdAt: new Date().toISOString(),
+    });
+
+    return {
+        tenantSlug: created.tenant.slug,
+        tenantId: created.tenant.id,
+        tenantName: created.tenant.name,
+        ownerEmail,
+        ownerPassword,
+        ownerUserId: created.ownerUserId,
+        ownerName,
+    };
 }
 
 /**

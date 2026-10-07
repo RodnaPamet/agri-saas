@@ -1,11 +1,11 @@
 'use client';
 import { useEffect, useState, Suspense } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { getProviders, signIn } from 'next-auth/react';
 import { useTranslations, useLocale } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
-import { TurnstileWidget } from '@/components/auth/TurnstileWidget';
 import { Card } from '@/components/ui/card';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Heading } from '@/components/ui/typography';
@@ -22,8 +22,12 @@ import { Heading } from '@/components/ui/typography';
  * skeleton: an earlier shimmer-skeleton version fixed CLS but its extra
  * render + teardown cycle (×4 under Lighthouse's simulated CPU throttle)
  * regressed Total Blocking Time past its budget. `min-h` ≈ the login-
- * mode block (divider + two fields + forgot + submit + register toggle +
- * resend row). aria-hidden: pure layout placeholder.
+ * mode block (divider + two fields + forgot + submit + the registration
+ * link + resend row). The link is now conditional on
+ * `social.farm-registration`, so with the flag off the real block is one
+ * line shorter than this reserves — left as is deliberately: over-reserving
+ * costs nothing visible, while shrinking it would reintroduce CLS the moment
+ * the flag is turned on. aria-hidden: pure layout placeholder.
  */
 function CredentialsFormSkeleton() {
     return <div aria-hidden="true" className="min-h-[22rem]" />;
@@ -53,11 +57,9 @@ function LoginForm() {
             ? verifyStatusParam
             : null;
     const t = useTranslations('login');
-    const [mode, setMode] = useState<'login' | 'register'>('login');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [name, setName] = useState('');
-    const [orgName, setOrgName] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
     const [resendEmail, setResendEmail] = useState('');
@@ -71,12 +73,10 @@ function LoginForm() {
     const [credentialsEnabled, setCredentialsEnabled] = useState<boolean | null>(null);
     // Turnstile (P3.5c). `null` sitekey means bot screening is not configured
     // on this deployment and no widget renders — the live configuration today.
-    const [turnstileSitekey, setTurnstileSitekey] = useState<string | null>(null);
-    const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+    const [registrationOpen, setRegistrationOpen] = useState(false);
     // Bumped after any failed register submit. A Turnstile token is
     // single-use, so without a reset the person retries with a dead token and
     // is refused forever by `timeout-or-duplicate`.
-    const [turnstileReset, setTurnstileReset] = useState(0);
 
     useEffect(() => {
         let cancelled = false;
@@ -93,11 +93,15 @@ function LoginForm() {
                 .catch(() => null),
         ]).then(([providers, uiConfig]) => {
             if (cancelled) return;
-            // Set BEFORE the early return below: the credentials-hidden branch
-            // exits, and reading the sitekey after it would leave Turnstile
-            // dormant on exactly the deployments that hide the form.
-            if (typeof uiConfig?.turnstileSitekey === 'string') {
-                setTurnstileSitekey(uiConfig.turnstileSitekey);
+            // Set BEFORE the early return below. The credentials-hidden
+            // branch exits, and production HAS it set — so reading this after
+            // the return would leave the registration link hidden on exactly
+            // the deployment that needs it most, where sign-in is OAuth-only
+            // and `/start` is the sole way to make an account. This is the
+            // trap the removed Turnstile read used to carry a warning about;
+            // the warning outlived the read.
+            if (typeof uiConfig?.registrationOpen === 'boolean') {
+                setRegistrationOpen(uiConfig.registrationOpen);
             }
             if (uiConfig?.credentialsFormHidden === true) {
                 setCredentialsEnabled(false);
@@ -120,38 +124,6 @@ function LoginForm() {
         const submitPassword = (formData.get('password') as string) || password;
 
         try {
-            if (mode === 'register') {
-                // Registration still uses the legacy API (creates tenant + user)
-                const res = await fetch('/api/auth/register', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        action: 'register',
-                        email,
-                        password,
-                        name,
-                        orgName,
-                        // Omitted entirely when screening is dormant. The
-                        // server treats a missing token as a refusal only when
-                        // it HAS a secret configured, so sending undefined is
-                        // correct rather than merely tolerated.
-                        ...(turnstileToken ? { turnstileToken } : {}),
-                    }),
-                });
-                const data = await res.json().catch(() => ({}));
-                if (!res.ok) throw new Error(extractErrorMessage(data?.error, t('registrationFailed')));
-
-                // When verification is enforced, signing in here would fail
-                // with EmailNotVerified and show a login error to someone
-                // who just registered successfully. Stop and tell them to
-                // check their inbox instead.
-                if (data?.emailVerificationRequired) {
-                    setAwaitingVerification(email);
-                    return;
-                }
-                // Otherwise verification isn't enforced — sign in with credentials
-            }
-
             // Sign in via NextAuth credentials provider
             const result = await signIn('credentials', {
                 email: submitEmail,
@@ -174,15 +146,6 @@ function LoginForm() {
         } catch (err: any) {
             setError(err.message);
             // A Turnstile token may be redeemed once. Whatever failed — a
-            // refused challenge, a taken email, a weak password — the token is
-            // now spent, so hand the person a fresh challenge. Without this
-            // they retry with a dead token and are refused by
-            // `timeout-or-duplicate` forever, with an error message that
-            // invites exactly that retry.
-            if (turnstileSitekey) {
-                setTurnstileToken(null);
-                setTurnstileReset((n) => n + 1);
-            }
         } finally {
             setLoading(false);
         }
@@ -247,7 +210,7 @@ function LoginForm() {
                 <Card className="animate-fadeIn">
                     {awaitingVerification ? null : (
                         <Heading level={2} className="mb-6">
-                            {mode === 'login' ? t('signIn') : t('register')}
+                            {t('signIn')}
                         </Heading>
                     )}
 
@@ -267,10 +230,7 @@ function LoginForm() {
                                 type="button"
                                 variant="secondary"
                                 className="w-full"
-                                onClick={() => {
-                                    setAwaitingVerification(null);
-                                    setMode('login');
-                                }}
+                                onClick={() => setAwaitingVerification(null)}
                             >
                                 {t('signInLink')}
                             </Button>
@@ -374,57 +334,48 @@ function LoginForm() {
                                 lookups. Don't drop this id without updating
                                 tests/e2e/e2e-utils.ts. */}
                             <form id="credentials-form" onSubmit={handleCredentialsSubmit} method="post" action="#" className="space-y-default">
-                                {mode === 'register' && (
-                                    <>
-                                        <div>
-                                            <label htmlFor="login-name" className="input-label">{t('name')}</label>
-                                            <input id="login-name" className="input" name="name" autoComplete="name" enterKeyHint="next" value={name} onChange={(e) => setName(e.target.value)} required placeholder={t('namePlaceholder')} />
-                                        </div>
-                                        <div>
-                                            <label htmlFor="login-org-name" className="input-label">{t('orgName')}</label>
-                                            <input id="login-org-name" className="input" name="orgName" autoComplete="organization" enterKeyHint="next" value={orgName} onChange={(e) => setOrgName(e.target.value)} required placeholder={t('orgPlaceholder')} />
-                                        </div>
-                                    </>
-                                )}
                                 <div>
                                     <label htmlFor="login-email" className="input-label">{t('email')}</label>
                                     <input id="login-email" className="input" type="email" name="email" autoComplete="email" inputMode="email" enterKeyHint="next" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder={t('emailPlaceholder')} />
                                 </div>
                                 <div>
                                     <label htmlFor="login-password" className="input-label">{t('password')}</label>
-                                    <input id="login-password" className="input" type="password" name="password" autoComplete={mode === 'register' ? 'new-password' : 'current-password'} enterKeyHint="done" value={password} onChange={(e) => setPassword(e.target.value)} required placeholder={t('passwordPlaceholder')} minLength={6} />
+                                    <input id="login-password" className="input" type="password" name="password" autoComplete="current-password" enterKeyHint="done" value={password} onChange={(e) => setPassword(e.target.value)} required placeholder={t('passwordPlaceholder')} minLength={6} />
                                 </div>
                                 <div className="text-right -mt-2">
                                     <a href="/forgot-password" className="text-xs text-content-emphasis underline underline-offset-2 hover:text-[var(--brand-default)]">{t('forgotPassword')}</a>
                                 </div>
-                                {/* Turnstile, register mode only. Renders
-                                    nothing when no sitekey is configured,
-                                    which is the live configuration today —
-                                    see TurnstileWidget's docblock. Sign-in is
-                                    not screened: it is already behind
-                                    LOGIN_LIMIT and lockout, and a challenge
-                                    there would tax every returning farmer to
-                                    deter an attack the rate limiter handles. */}
-                                {mode === 'register' && (
-                                    <TurnstileWidget
-                                        sitekey={turnstileSitekey}
-                                        onToken={setTurnstileToken}
-                                        resetSignal={turnstileReset}
-                                        language={locale}
-                                    />
-                                )}
                                 <Button type="submit" variant="primary" size="sm" className="w-full" disabled={loading}>
-                                    {loading ? t('pleaseWait') : mode === 'login' ? t('submitLogin') : t('submitRegister')}
+                                    {loading ? t('pleaseWait') : t('submitLogin')}
                                 </Button>
                             </form>
 
-                            <div className="mt-6 text-center text-sm text-content-muted">
-                                {mode === 'login' ? (
-                                    <span>{t('noAccount')} <button onClick={() => setMode('register')} className="text-content-emphasis underline underline-offset-2 hover:text-[var(--brand-default)]">{t('registerLink')}</button></span>
-                                ) : (
-                                    <span>{t('hasAccount')} <button onClick={() => setMode('login')} className="text-content-emphasis underline underline-offset-2 hover:text-[var(--brand-default)]">{t('signInLink')}</button></span>
-                                )}
-                            </div>
+                            {/* The legacy in-page register form is gone: it
+                                posted to `/api/auth/register`, which created a
+                                user AND a tenant in one call and recorded no
+                                terms acceptance (#1376). Registration is the
+                                `/start` wizard now.
+
+                                Conditional on the flag for the reason the
+                                landing page is: `/start` calls `notFound()`
+                                when `social.farm-registration` is off, so an
+                                offer made while it is off leads to a 404 — a
+                                broken site rather than an unlaunched feature.
+                                With it off, this renders nothing and sign-in is
+                                the only thing on offer, which is honest. */}
+                            {registrationOpen && (
+                                <div className="mt-6 text-center text-sm text-content-muted">
+                                    <span>
+                                        {t('noAccount')}{' '}
+                                        <Link
+                                            href="/start"
+                                            className="text-content-emphasis underline underline-offset-2 hover:text-[var(--brand-default)]"
+                                        >
+                                            {t('registerLink')}
+                                        </Link>
+                                    </span>
+                                </div>
+                            )}
 
                             {/* Resend verification — shown unconditionally because
                                 the endpoint returns a uniform response regardless
