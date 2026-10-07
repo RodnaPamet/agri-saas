@@ -35,6 +35,13 @@ describe('isPublicPath', () => {
         ['/api/invites/abc123/start-signin', true],
         ['/api/org/invite/abc123/start-signin', true],
         ['/api/org/invite/abc123/accept-redirect', true],
+        // P3.8 — the root is the landing page, and the FIRST genuinely
+        // public PAGE in the product. It moved here out of the protected
+        // table below, which is the whole visibility of the change: an
+        // authenticated visitor is still redirected to `/tenants` by the
+        // page itself, and the entry is EXACT so nothing underneath
+        // inherits it.
+        ['/', true],
     ])('"%s" → %s (public)', (path, expected) => {
         expect(isPublicPath(path)).toBe(expected);
     });
@@ -46,7 +53,6 @@ describe('isPublicPath', () => {
         ['/admin', false],
         ['/admin/users', false],
         ['/settings', false],
-        ['/', false],
         ['/t/acme/dashboard', false],
         ['/api/t/acme/risks', false],
         // Org invite *management* (create/list/revoke) is admin-only and
