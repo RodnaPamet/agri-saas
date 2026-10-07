@@ -301,6 +301,93 @@ describeFn('a fail-closed audit row is atomic with its write (#1223)', () => {
         expect(await auditRowsFor(TENANT, 'TenantMembership')).toBe(before + 1);
     });
 
+    // ── P3.4 — FarmIdentityClaim joined the list (owner ruling 2026-10-06) ──
+    //
+    // Driven against the REAL table rather than asserted from the list, because
+    // `isFailClosedAuditEntity('FarmIdentityClaim') === true` only proves the
+    // classification is present. It cannot show that a claim write actually
+    // rides the caller's transaction — which is the property the ruling bought,
+    // and the one that would silently stop holding if the audit extension's
+    // model-to-entityType mapping ever stopped covering this model.
+
+    it('FAIL CLOSED: an audit failure aborts a FarmIdentityClaim write', async () => {
+        const bogus = makeRequestContext('ADMIN', {
+            tenantId: TENANT,
+            userId: `ghost-${randomUUID()}`,
+        });
+        const claimId = `fic-fc-${randomUUID()}`;
+
+        await expect(
+            withTenantDb(TENANT, async (db) => {
+                await db.farmIdentityClaim.create({
+                    data: {
+                        id: claimId,
+                        tenantId: TENANT,
+                        eikHash: hashForLookup(`831650349-${claimId}`, 'eik'),
+                        status: 'PENDING',
+                        claimedByUserId: USER,
+                    },
+                });
+                await logEvent(db, bogus, {
+                    action: 'CREATE',
+                    entityType: 'FarmIdentityClaim',
+                    entityId: claimId,
+                    detailsJson: { category: 'access', granted: true } as never,
+                });
+            }),
+        ).rejects.toThrow();
+
+        // THE POINT: the claim is GONE. A claim that outlived its own audit row
+        // would be a farm identity assertion with no record of who made it.
+        const found = await (verifier as never as PrismaClient).farmIdentityClaim.findUnique({
+            where: { id: claimId },
+        });
+        expect(found).toBeNull();
+    });
+
+    it('FAIL CLOSED: a COMMITTED FarmIdentityClaim keeps both its rows', async () => {
+        // The positive control. Without it, the case above is also satisfied by
+        // a build in which `farmIdentityClaim.create` never works at all.
+        //
+        // Counted PER ACTOR, not in total. The `create` below produces the
+        // extension's own `SYSTEM` row as well as the explicit `logEvent`
+        // `USER` row, so a total count moves by two — which is what the first
+        // version of this case got wrong, asserting +1 against `auditRowsFor`.
+        // Splitting them also makes the assertion say more: the fail-closed
+        // `logEvent` row landed AND the extension's automatic audit of the same
+        // write landed, rather than one covering for the other.
+        const beforeUser = await auditRowsForActor(TENANT, 'FarmIdentityClaim', 'USER');
+        const beforeSystem = await auditRowsForActor(TENANT, 'FarmIdentityClaim', 'SYSTEM');
+        const claimId = `fic-ok-${randomUUID()}`;
+
+        await withTenantDb(TENANT, async (db) => {
+            await db.farmIdentityClaim.create({
+                data: {
+                    id: claimId,
+                    tenantId: TENANT,
+                    eikHash: hashForLookup(`831650349-${claimId}`, 'eik'),
+                    status: 'PENDING',
+                    claimedByUserId: USER,
+                },
+            });
+            await logEvent(db, ctx, {
+                action: 'CREATE',
+                entityType: 'FarmIdentityClaim',
+                entityId: claimId,
+                detailsJson: { category: 'access', granted: true } as never,
+            });
+        });
+
+        const found = await (verifier as never as PrismaClient).farmIdentityClaim.findUnique({
+            where: { id: claimId },
+        });
+        expect(found).not.toBeNull();
+        expect(await auditRowsForActor(TENANT, 'FarmIdentityClaim', 'USER')).toBe(beforeUser + 1);
+        expect(await auditRowsForActor(TENANT, 'FarmIdentityClaim', 'SYSTEM')).toBe(
+            beforeSystem + 1,
+        );
+    });
+
     it(`${PG_POOL_MAX} concurrent fail-closed audited writes all get their row`, async () => {
         // The #1223 property. Before this change each of these needed a second
         // pool connection for its own audit transaction, so at `max` none could

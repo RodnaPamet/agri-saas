@@ -325,6 +325,11 @@
       "documented": false
     },
     {
+      "path": "/api/me/farms",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/metrics",
       "status": "live",
       "documented": false

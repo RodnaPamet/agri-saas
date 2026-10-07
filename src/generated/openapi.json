@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "5.3.0",
+    "version": "5.4.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -2618,6 +2618,70 @@
           "key",
           "name",
           "kind"
+        ]
+      },
+      "CreateFarmRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "description": "The farm name as the farmer writes it, Cyrillic included. The web address is derived from it by transliteration and is NOT this value — read `farm.slug` from the response rather than deriving one.",
+            "example": "ЗК ПОБЕДА"
+          },
+          "eik": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 13,
+            "description": "The farm's ЕИК, 9 or 13 digits. OMIT it for «Земеделски стопанин — физическо лице», who has none. Two refusals are specific and worth handling in the form: `EIK_LOOKS_LIKE_EGN` (a personal identity number was typed — say so, do not say \"invalid\") and `EIK_INVALID` (checksum). Both are decided before the value is hashed or stored, so a number that cannot exist leaves no trace.",
+            "example": "831641791"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "description": "Create a farm owned by the caller. The owner is taken from the session and can never be named in the body."
+      },
+      "CreateFarmResponse": {
+        "type": "object",
+        "properties": {
+          "farm": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "slug": {
+                "type": "string",
+                "description": "Server-generated, transliterated, and carrying a uniqueness suffix. Use it for the redirect; two farms with the same name get different slugs.",
+                "example": "zk-pobeda-9f3a1c20"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "slug",
+              "name"
+            ]
+          },
+          "identityVerification": {
+            "type": "string",
+            "enum": [
+              "not_requested",
+              "pending_review",
+              "deferred"
+            ],
+            "description": "`not_requested` — no ЕИК was supplied. `pending_review` — a claim was recorded and a human will look at it; this is the value for BOTH a free and an already-taken ЕИК, by design. `deferred` — the farm was created but the claim could not be recorded, so the ЕИК is not yet on file and can be added from farm settings. Never treat `pending_review` as acceptance."
+          }
+        },
+        "required": [
+          "farm",
+          "identityVerification"
         ]
       },
       "CreateInsuranceLeadRequest": {
@@ -42146,6 +42210,142 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FarmProfileStaleDataError"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/farms": {
+      "post": {
+        "operationId": "createMyFarm",
+        "summary": "Create a farm owned by the caller",
+        "description": "The final step of the registration wizard, and the \"add another farm\" action afterwards. The caller becomes the farm's OWNER.\n\n**This is not a way to join an existing farm.** Memberships are invite-only: the only route into a farm somebody else owns is an invite its owner or an admin issues. There is no join request, and no endpoint that turns a farm identifier into membership — a typed ЕИК never grants access to anything.\n\n**`identityVerification` deliberately tells you nothing about whether the ЕИК was free.** When an ЕИК is supplied the value is `pending_review` — unconditionally, including when another farm already holds that number as a verified claim. An ЕИК is public (it is in the Търговски регистър), so the secret is not the number but whether that farm is already in Agrent, and a response that varied would be exactly the oracle this avoids. Do NOT render a success state implying the claim was accepted, and do not poll this endpoint for a verdict: the real state is readable only from inside the farm, where row-level security scopes it to the people who belong there.\n\n**A second farm is not a conflict.** One person may hold several; expect no 409 on the second call.\n\nDark-launched behind the `social.farm-registration` feature flag, which 404s while off — so a 404 here means \"not enabled\", not \"wrong URL\".",
+        "tags": [
+          "Account"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFarmRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The farm exists and the caller owns it. 201 is about the FARM — it says nothing about the ЕИК, which is what `identityVerification` is for.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateFarmResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
