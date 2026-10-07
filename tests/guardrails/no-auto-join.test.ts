@@ -118,6 +118,45 @@ const ALLOWLISTED_MEMBERSHIP_SITES: ReadonlyArray<AllowlistedSite> = [
 ];
 
 const MEMBERSHIP_CREATION_PATTERN = /\btenantMembership\.(create|upsert|createMany)\b/;
+
+/**
+ * The NESTED shape, which the delegate pattern above cannot see (P3.10).
+ *
+ * `prisma.user.create({ data: { tenantMemberships: { create: {...} } } })`
+ * creates a TenantMembership without the string `tenantMembership.create`
+ * appearing anywhere — the relation field is PLURAL, so `\btenantMembership\.`
+ * does not match it. A nested write is therefore invisible to the delegate
+ * detector, and "invisible" is the whole problem this guardrail exists to
+ * prevent: a membership nobody reviewed.
+ *
+ * Checked against the live tree when this was added: the three nested uses of
+ * `tenantMemberships` in `src/` are all READS —
+ * `unverified-account-sweep.ts` filters with `{ none: {} }`, and `sso.ts` plus
+ * `auth/me/route.ts` use `include`/`select`/`where`. So this closes a
+ * detector blind spot rather than a live hole, which is the right time to
+ * close one.
+ *
+ * The window is short and the verb list closed, so a read cannot trip it —
+ * the mutation proof below pins all three real read shapes as NON-matches,
+ * because a detector that flagged them would be turned off within a week.
+ */
+const NESTED_MEMBERSHIP_CREATION_PATTERN =
+    /tenantMemberships\s*:\s*\{[^}]{0,120}?\b(create|createMany|connectOrCreate|upsert)\s*:/;
+
+/**
+ * Does this file create a TenantMembership? ONE definition, used by the real
+ * scan AND by the mutation proof.
+ *
+ * Extracted so the proof exercises the decision the guardrail actually makes.
+ * A proof that re-implemented the check would be testing its own copy — the
+ * failure mode where a guard and its evidence drift apart and both look fine.
+ */
+export function createsTenantMembership(content: string): boolean {
+    return (
+        MEMBERSHIP_CREATION_PATTERN.test(content) ||
+        NESTED_MEMBERSHIP_CREATION_PATTERN.test(content)
+    );
+}
 const ORG_MEMBERSHIP_CREATION_PATTERN = /\borgMembership\.(create|upsert|createMany)\b/;
 
 /**
@@ -173,7 +212,7 @@ describe('Guardrail: TenantMembership creation sites are allowlisted', () => {
         for (const rel of files) {
             const full = path.join(SRC, rel);
             const content = fs.readFileSync(full, 'utf8');
-            if (!MEMBERSHIP_CREATION_PATTERN.test(content)) continue;
+            if (!createsTenantMembership(content)) continue;
 
             const srcRelPath = `src/${rel}`;
             if (!allowlistedRelPaths.has(srcRelPath)) {
@@ -299,5 +338,107 @@ describe('Guardrail: OrgMembership creation sites are allowlisted', () => {
         }
 
         expect(matches).toEqual([]);
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  P3.10 — the mutation proof: no ID-to-membership path can hide
+// ═══════════════════════════════════════════════════════════════════
+//
+//  #1194's hardening list asks for "a mutation proof that no
+//  ID-to-membership path exists". The guardrail above enforces that by
+//  allowlisting every TenantMembership creation site — but until now nothing
+//  proved the DETECTOR could see a new one. A scan that matched nothing would
+//  report "no violations" forever and read exactly like a clean repo.
+//
+//  So this exercises `createsTenantMembership`, the same decision the scan
+//  makes, against the shapes a real bypass would take.
+
+describe('P3.10 mutation proof: the membership detector has teeth', () => {
+    describe('it SEES every shape that creates a membership', () => {
+        it.each([
+            ['delegate create', 'await tx.tenantMembership.create({ data: { role: "OWNER" } });'],
+            ['delegate upsert', 'await db.tenantMembership.upsert({ where: w, create: c, update: u });'],
+            ['delegate createMany', 'await prisma.tenantMembership.createMany({ data: rows });'],
+            [
+                'NESTED create through the relation',
+                'await prisma.user.create({ data: { email, tenantMemberships: { create: { tenantId, role: "OWNER" } } } });',
+            ],
+            [
+                'NESTED createMany',
+                'await prisma.user.update({ where: { id }, data: { tenantMemberships: { createMany: { data: rows } } } });',
+            ],
+            [
+                'NESTED connectOrCreate',
+                'await prisma.user.update({ data: { tenantMemberships: { connectOrCreate: { where: w, create: c } } } });',
+            ],
+            [
+                'NESTED upsert',
+                'await prisma.user.update({ data: { tenantMemberships: { upsert: { where: w, create: c, update: u } } } });',
+            ],
+        ])('%s', (_label, source) => {
+            expect(createsTenantMembership(source)).toBe(true);
+        });
+
+        it('the nested shapes were INVISIBLE before P3.10', () => {
+            // The regression this closes, stated as a fact rather than a
+            // comment. The delegate pattern alone cannot match a nested write,
+            // because the relation field is PLURAL — so a membership could
+            // have been created in an unallowlisted file with nothing failing.
+            const nested =
+                'await prisma.user.create({ data: { tenantMemberships: { create: { tenantId, role: "OWNER" } } } });';
+            expect(MEMBERSHIP_CREATION_PATTERN.test(nested)).toBe(false);
+            expect(createsTenantMembership(nested)).toBe(true);
+        });
+    });
+
+    describe('…and it does NOT fire on the reads, which is what keeps it on', () => {
+        // These three are the ACTUAL nested uses in src/ at the time this was
+        // written. A detector that flagged them would be disabled within a
+        // week, so they are pinned as non-matches by their real shapes rather
+        // than by invented ones.
+        it.each([
+            [
+                'unverified-account-sweep filter',
+                'where: { emailVerified: null, tenantMemberships: { none: {} }, orgMemberships: { none: {} } }',
+            ],
+            [
+                'sso.ts include',
+                'select: { id: true, tenantMemberships: { include: { tenant: { select: { id: true } } } } }',
+            ],
+            [
+                'auth/me select+where',
+                'tenantMemberships: { where: { status: "ACTIVE" }, orderBy: { createdAt: "asc" }, take: 1, select: { role: true } }',
+            ],
+        ])('%s is not a creation', (_label, source) => {
+            expect(createsTenantMembership(source)).toBe(false);
+        });
+
+        it.each([
+            ['update', 'await tx.tenantMembership.update({ where: { id }, data: { role } });'],
+            ['delete', 'await tx.tenantMembership.delete({ where: { id } });'],
+            ['findMany', 'await db.tenantMembership.findMany({ where: { tenantId } });'],
+            ['count', 'await db.tenantMembership.count({ where: { tenantId } });'],
+        ])('delegate %s is not a creation', (_label, source) => {
+            expect(createsTenantMembership(source)).toBe(false);
+        });
+    });
+
+    it('a COMMENT mentioning a creation DOES trip it — deliberately', () => {
+        // Unusual, and the opposite of what most guards in this repo want.
+        // Here it is correct: stripping comments is the only way a real call
+        // could hide, because a write can be assembled inside a template
+        // string or a line the stripper would eat. A false positive costs one
+        // allowlist entry with a reason; a false negative costs a membership
+        // nobody reviewed.
+        const comment = '// never call tenantMembership.create here — see no-auto-join';
+        expect(createsTenantMembership(comment)).toBe(true);
+    });
+
+    it('the detector is not a constant — an unrelated file is clean', () => {
+        // The control that makes every `toBe(false)` above mean something. A
+        // predicate hard-wired to `false` would satisfy all of them.
+        expect(createsTenantMembership('export const x = 1;')).toBe(false);
+        expect(createsTenantMembership('')).toBe(false);
     });
 });

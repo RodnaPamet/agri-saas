@@ -24,6 +24,47 @@ import { op } from './helpers';
 const NO_AUTH: Array<Record<string, string[]>> = [];
 
 export function registerPublicRegistryPaths(registry: OpenAPIRegistry): void {
+    // Shared between the two methods so one description cannot drift from the
+    // other. The GET and the POST answer identically — they differ only in
+    // where the value travels.
+    const EikCheckQuery = z.object({
+        eik: z
+            .string()
+            .trim()
+            .min(1)
+            .max(32)
+            .openapi({
+                description:
+                    'The number to check, 9 or 13 digits. Accepted with surrounding whitespace. Longer input is rejected as a bad request rather than truncated — truncating would silently validate a DIFFERENT number than the one submitted.',
+                example: '831641791',
+            }),
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/public/eik-check',
+        operationId: 'checkEikPost',
+        summary: 'Validate an ЕИК with the value in the request BODY (preferred)',
+        description:
+            'Identical to the GET in every respect but one: the number travels in the body rather than the query string. **Prefer this method.**' +
+            '\n\n**Why it exists.** Every request to this endpoint is potentially an ЕГН — a personal identity number — because that is what the endpoint is for: a sole trader reaching for "the number I know" types theirs into the ЕИК box, which is exactly what `looksLikeEgn` detects. A query string is logged in places a body is not: iOS CFNetwork records the full request URL unsuppressably, and a GET URL also reaches browser history and can leak through `Referer`. The server side is clean (no access log, and the request logger uses the path only), so this is a CLIENT-side exposure — which makes it no less real for the person whose device is doing the logging.' +
+            '\n\nThe GET form remains for compatibility and is tracked for removal once nothing calls it.' +
+            '\n\nSame rate-limit budget as the GET, deliberately: alternating methods must not double a caller allowance.',
+        tags: ['Public'],
+        security: NO_AUTH,
+        body: EikCheckQuery,
+        success: {
+            status: 200,
+            description:
+                'The verdict. 200 means the check RAN, not that the number is good — read `valid`. A malformed body is a 400.',
+            schema: z.object({
+                valid: z.boolean(),
+                looksLikeEgn: z.boolean(),
+                registryName: z.string().nullable(),
+            }),
+        },
+    });
+
     op(registry, {
         method: 'get',
         path: '/api/public/eik-check',
