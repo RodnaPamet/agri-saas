@@ -70,6 +70,21 @@
       "documented": false
     },
     {
+      "path": "/api/admin/farm-claims",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/admin/farm-claims/{claimId}/dispute",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/admin/farm-claims/{claimId}/verify",
+      "status": "live",
+      "documented": false
+    },
+    {
       "path": "/api/admin/feature-flags",
       "status": "live",
       "documented": false

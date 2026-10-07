@@ -4528,6 +4528,16 @@
           },
           "version": {
             "type": "integer"
+          },
+          "eikVerification": {
+            "type": "string",
+            "enum": [
+              "NONE",
+              "PENDING",
+              "VERIFIED",
+              "DISPUTED"
+            ],
+            "description": "What the farmer should be told about their ЕИК:\n\n- `NONE` — no claim has been made. The number shown, if any, predates verification.\n- `PENDING` — claimed, waiting for a staff reviewer. Nothing is wrong; nothing is confirmed either.\n- `VERIFIED` — a reviewer confirmed the number against the Търговски регистър. This is the only state in which `eik` is authoritative.\n- `DISPUTED` — the claim collided with an existing verified claim on the same number.\n\n**`DISPUTED` is not an accusation and must not be worded as one.** It arises from a mistyped digit as readily as from anything else, so render it neutrally and actionably — \"does not match an existing record, contact the Agrent team\" — never as a suggestion that the farmer misrepresented themselves.\n\nPrecedence when a farm has several claims: VERIFIED, then PENDING, then DISPUTED. PENDING outranks DISPUTED deliberately — a farm whose first claim collided and who has since submitted another should see the one in flight, not the dead one."
           }
         },
         "required": [
@@ -4544,7 +4554,8 @@
           "odbhCity",
           "sizeHa",
           "grainProduced",
-          "version"
+          "version",
+          "eikVerification"
         ],
         "description": "The one-per-tenant farm identity block printed on the БАБХ ДНЕВНИК. Every field is nullable because the paper form tolerates blanks — an all-null body is the normal answer for a tenant that has not filled it in, not an error. egn/eik/urn are encrypted at rest and returned as plaintext: treat them as sensitive on screen and in logs. sizeHa is a number and grainProduced is an array that is [] rather than null."
       },

@@ -42,6 +42,25 @@ export const UpdateFarmProfileSchema = z
     .object({
         producerName: z.string().max(300).nullable().optional(),
         egn: z.string().max(20).nullable().optional(),
+        /**
+         * Present in the contract and REJECTED at the usecase (#1352).
+         *
+         * It is written only by the staff verification path (P3.9), from the
+         * number a reviewer found in the Търговски регистър — never
+         * self-asserted. But it stays in this schema for two reasons:
+         *
+         * 1. Removing a published property is a breaking change, and
+         *    `tests/contracts/openapi-breaking-change.test.ts` is absolute
+         *    about that with no waiver mechanism. It is right to be: a client
+         *    built against the old contract is a real client.
+         * 2. More importantly, `.strip()` would DROP an `eik` key silently,
+         *    which looks to a client exactly like a successful write. An
+         *    explicit refusal tells them; silence lets them believe they set
+         *    a regulator-facing number that was discarded.
+         *
+         * So the property is accepted syntactically and refused with a coded
+         * 400 in `upsertFarmProfile`.
+         */
         eik: z.string().max(20).nullable().optional(),
         // УРН — the HOLDING's registration number, distinct from eik/egn.
         urn: z.string().max(40).nullable().optional(),

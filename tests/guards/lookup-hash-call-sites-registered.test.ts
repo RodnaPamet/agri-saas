@@ -135,6 +135,10 @@ const REGISTERED: Readonly<Record<string, Registration>> = {
         kind: 'write',
         note: 'Non-production seed (403s in prod); the candidate read precedes the upsert this hash keys.',
     },
+    'src/app-layer/usecases/farm-identity-review.ts': {
+        kind: 'write',
+        note: 'P3.9 staff verification: the candidate read matches a claim hashed under EITHER key, then the promotion REHASHES it under the current one. The rehash is the point — without it the partial unique index on (eikHash) WHERE status = VERIFIED is split across two key generations and stops enforcing one-VERIFIED-claim-per-ЕИК, which is the gap P3.4 left to this path.',
+    },
     'src/app-layer/usecases/lookup-rehash.ts': {
         kind: 'compare-to-current',
         note:

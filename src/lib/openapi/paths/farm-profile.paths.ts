@@ -92,6 +92,27 @@ const FarmProfileSchema = z
          * mean "create". Also returned as a strong `ETag`.
          */
         version: z.number().int(),
+        /**
+         * Whether this farm's ЕИК has been verified by Agrent staff.
+         *
+         * READ-ONLY and derived from the farm's identity claims — there is no
+         * column for it, and it cannot be set through this endpoint. `eik`
+         * itself is also not writable here: a PUT that would CHANGE it is
+         * refused with `FARM_PROFILE_EIK_NOT_EDITABLE` (an unchanged echo is
+         * accepted, so a client may safely round-trip the whole object).
+         */
+        eikVerification: z
+            .enum(['NONE', 'PENDING', 'VERIFIED', 'DISPUTED'])
+            .openapi({
+                description:
+                    'What the farmer should be told about their ЕИК:\n\n' +
+                    '- `NONE` — no claim has been made. The number shown, if any, predates verification.\n' +
+                    '- `PENDING` — claimed, waiting for a staff reviewer. Nothing is wrong; nothing is confirmed either.\n' +
+                    '- `VERIFIED` — a reviewer confirmed the number against the Търговски регистър. This is the only state in which `eik` is authoritative.\n' +
+                    '- `DISPUTED` — the claim collided with an existing verified claim on the same number.\n\n' +
+                    '**`DISPUTED` is not an accusation and must not be worded as one.** It arises from a mistyped digit as readily as from anything else, so render it neutrally and actionably — "does not match an existing record, contact the Agrent team" — never as a suggestion that the farmer misrepresented themselves.\n\n' +
+                    'Precedence when a farm has several claims: VERIFIED, then PENDING, then DISPUTED. PENDING outranks DISPUTED deliberately — a farm whose first claim collided and who has since submitted another should see the one in flight, not the dead one.',
+            }),
     })
     .openapi('FarmProfile', {
         description:
