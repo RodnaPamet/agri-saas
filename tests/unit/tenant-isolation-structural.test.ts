@@ -65,7 +65,11 @@ describe('Structural Guard: Tenant Isolation Conventions', () => {
 
         // These root-level pages are allowed (they're redirectors/public):
         const ALLOWED_ROOT_PAGES = new Set([
-            'page.tsx',          // Root redirector → /t/<slug>/dashboard
+            // P3.8 — the landing page for a signed-out visitor, and a
+            // redirect to /tenants for a member. It was a pure redirector
+            // when this entry was written; it now also renders public
+            // marketing copy, which has nothing to isolate.
+            'page.tsx',
             'login',             // Public login page
             'register',          // Public register page
             'forgot-password',   // Public password-reset request page (credentials flow)
@@ -107,6 +111,15 @@ describe('Structural Guard: Tenant Isolation Conventions', () => {
             // assessment row's tenantId; the page lives outside /t/ by
             // design. Mirrors the audit/shared shape.
             'vendor-assessment',
+            // P3.8 — the farm-registration wizard. It is PRE-TENANT by
+            // definition and cannot live under /t/[tenantSlug]: steps 1-2
+            // run with no session at all, and the slug that would form the
+            // path does not exist until step 6 creates the farm. The page
+            // reads no tenant data — it gates on the
+            // `social.farm-registration` flag and otherwise only collects
+            // what it is about to send to POST /api/me/farms, which does
+            // its own authorization.
+            'start',
         ]);
 
         // Get immediate children of app/ that are page directories

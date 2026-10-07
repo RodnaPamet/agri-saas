@@ -166,19 +166,25 @@ export function FarmWizard({ startAtFarmType }: FarmWizardProps) {
                 if (data.looksLikeEgn) setVerdict({ state: 'egn' });
                 else if (data.valid) {
                     setVerdict({ state: 'valid', registryName: data.registryName ?? null });
-                    // Prefill, but do not overwrite a name the person has
+                    // Prefill, but never overwrite a name the person has
                     // already edited — the register's spelling is a
                     // suggestion, not a correction.
-                    if (data.registryName && !farmName) setFarmName(data.registryName);
+                    //
+                    // The FUNCTIONAL form, not a read of `farmName`: it sees
+                    // the value at apply time rather than the one captured
+                    // when this effect ran, so a name typed while the check
+                    // was in flight is not clobbered by the response. It
+                    // also keeps `farmName` out of the dependency list
+                    // honestly, instead of suppressing the lint rule that
+                    // would have demanded it.
+                    const suggested = data.registryName;
+                    if (suggested) setFarmName((prev) => (prev ? prev : suggested));
                 } else setVerdict({ state: 'invalid' });
             } catch {
                 if (seq === checkSeq.current) setVerdict({ state: 'invalid' });
             }
         }, 400);
         return () => clearTimeout(timer);
-        // `farmName` is deliberately NOT a dependency: including it would
-        // re-run the check on every keystroke in the name field.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [eik, step]);
 
     const fail = useCallback(
