@@ -37,6 +37,13 @@ const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 const PAGES = [
     { name: 'terms', route: '/terms', file: 'src/app/terms/page.tsx' },
     { name: 'dsa-contact', route: '/dsa-contact', file: 'src/app/dsa-contact/page.tsx' },
+    // Added after `/start` shipped broken for exactly this reason: it was in
+    // the structural allowlist and NOT in PUBLIC_PATH_EXACT, so an anonymous
+    // visitor got `307 -> /login?next=%2Fstart` and registration was
+    // unreachable by the people it exists for. The curated list above had the
+    // two pages I happened to be writing at the time, which is why it did not
+    // catch the one I had written three PRs earlier.
+    { name: 'start', route: '/start', file: 'src/app/start/page.tsx' },
 ] as const;
 
 describe('the legal pages are publicly reachable', () => {
@@ -87,6 +94,95 @@ describe('the legal pages are publicly reachable', () => {
         // DSA Art 11/12 wants the contact point FINDABLE. A reader who starts
         // at the terms should not have to know the other URL exists.
         expect(read('src/app/terms/page.tsx')).toMatch(/href="\/dsa-contact"/);
+    });
+});
+
+describe('every page allowed outside /t/ is EITHER public or session-gated on purpose', () => {
+    // The curated list above is the detailed check; this is the one that would
+    // have caught `/start` without anybody remembering to add it.
+    //
+    // `tenant-isolation-structural` allows a set of root-level page
+    // directories to live outside `/t/[tenantSlug]`. Each is there because it
+    // is identity-level or public — and every one of them that renders a page
+    // an UNAUTHENTICATED visitor must reach has to appear in
+    // `PUBLIC_PATH_EXACT` too. Satisfying one list looks exactly like being
+    // finished, which is how this has now gone wrong three times.
+    //
+    // So the population is DERIVED from the structural allowlist, and each
+    // entry must be classified. A new root page cannot be added without a
+    // decision landing in one of these two lists.
+    const structural = read('tests/unit/tenant-isolation-structural.test.ts');
+    const guard = read('src/lib/auth/guard.ts');
+
+    /**
+     * Root page directories the structural guard permits.
+     *
+     * Scoped to the ALLOWED_ROOT_PAGES block specifically. A bare scan of
+     * quoted strings in that file also picks up ALLOWED_API_DIRS and
+     * ALLOWED_LEGACY_ROUTES — `metrics`, `webhooks`, `docs`, `openapi` and the
+     * rest — which are API directories, not pages, and have nothing to do with
+     * PUBLIC_PATH_EXACT. Deriving from the file instead of from the LIST is a
+     * population one level off, and it reported ten phantom offenders the
+     * first time this ran.
+     */
+    const rootPagesBlock = (() => {
+        const start = structural.indexOf('const ALLOWED_ROOT_PAGES = new Set([');
+        expect(start).toBeGreaterThan(-1);
+        const end = structural.indexOf(']);', start);
+        expect(end).toBeGreaterThan(start);
+        return structural.slice(start, end);
+    })();
+    const allowedRoots = Array.from(
+        // Trailing comments allowed: half the entries carry one
+        // (`'login',  // Public login page`), and anchoring at `,$` silently
+        // halved the population the first time — a partial set reported as
+        // complete, which is the failure this whole block exists to stop.
+        // Dotted entries (`page.tsx`, `layout.tsx`) are files, not page
+        // directories, so they are excluded by the character class.
+        rootPagesBlock.matchAll(/^\s*'([a-z0-9-]+)',/gm),
+        (m) => m[1],
+    );
+
+    /**
+     * Roots that are deliberately SESSION-GATED rather than public: reaching
+     * them requires being signed in, so their absence from PUBLIC_PATH_EXACT
+     * is correct. Each needs a reason, because the default must be to think
+     * about it rather than to skip it.
+     */
+    const SESSION_GATED: Record<string, string> = {
+        account: 'identity-level settings; a signed-out visitor has no account to edit',
+        tenants: 'the membership picker — meaningless without a session',
+        'no-tenant': 'shown to an authenticated user with no membership',
+        onboarding: 'post-signup, always authenticated',
+        dashboard: 'legacy redirect shim into a tenant',
+        org: 'org surfaces resolve an OrgContext, which needs a session',
+        'accept-terms': 'the consent interstitial — it holds an authenticated session',
+        invite: 'sign-in gated by design (Epic 1): the invitee authenticates, then redeems',
+        audit: 'token-gated share view under /audit/shared/[token], not a root page',
+        'vendor-assessment': 'token-gated respondent page, same shape as audit/shared',
+    };
+
+    it('reports the population it classified', () => {
+        // eslint-disable-next-line no-console -- the denominator IS the output
+        console.log(`[root-pages] ${allowedRoots.length} roots allowed outside /t/`);
+        expect(allowedRoots.length).toBeGreaterThan(5);
+    });
+
+    it.each(['start', 'terms', 'dsa-contact', 'privacy'])(
+        '%s is in BOTH lists',
+        (root) => {
+            expect(allowedRoots).toContain(root);
+            expect(guard).toMatch(new RegExp(`^\\s*'/${root}',`, 'm'));
+        },
+    );
+
+    it('no allowed root is unclassified — public, session-gated, or a new decision', () => {
+        const unclassified = allowedRoots.filter(
+            (root) =>
+                !SESSION_GATED[root] &&
+                !new RegExp(`^\\s*'/${root}',`, 'm').test(guard),
+        );
+        expect(unclassified).toEqual([]);
     });
 });
 
