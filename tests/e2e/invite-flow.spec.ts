@@ -29,6 +29,7 @@ import { safeGoto, waitForHydration } from './e2e-utils';
 import prisma from '@/lib/prisma';
 import { hashPassword } from '@/lib/auth/passwords';
 import { hashForLookup } from '@/lib/security/encryption';
+import { TERMS_VERSION } from '@/lib/legal/terms';
 
 /**
  * Sign in with email+password via the #credentials-form and return
@@ -105,6 +106,10 @@ test.describe('Invitation journey (Epic 1)', () => {
                     // address, and this test is about the invite, not about
                     // email proof.
                     emailVerified: new Date(),
+                    // Consent (P3.1) — a fixture, so stamping it is fine; the
+                    // alternative is this spec being held at /accept-terms.
+                    acceptedTermsAt: new Date(),
+                    acceptedTermsVersion: TERMS_VERSION,
                 },
                 select: { id: true },
             });

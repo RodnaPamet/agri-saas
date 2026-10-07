@@ -14,6 +14,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { logger } from '@/lib/observability/logger';
 import { jsonResponse } from '@/lib/api-response';
 import { hashForLookup, hashForLookupCandidates } from '@/lib/security/encryption';
+import { TERMS_VERSION } from '@/lib/legal/terms';
 
 export async function POST(req: NextRequest) {
     // ── Gate 1: Environment check ──
@@ -72,7 +73,18 @@ export async function POST(req: NextRequest) {
             (await prisma.user.upsert({
                 where: { emailHash: hashForLookup(adminEmail) },
                 update: {},
-                create: { email: adminEmail, emailHash: hashForLookup(adminEmail), passwordHash: pwd, name: 'Alice Admin' },
+                create: {
+                    email: adminEmail,
+                    emailHash: hashForLookup(adminEmail),
+                    passwordHash: pwd,
+                    name: 'Alice Admin',
+                    // Consent (P3.1 / #1376) — this route 403s in production,
+                    // so the account it makes is a FIXTURE and may be stamped.
+                    // A real user with a null column is held at
+                    // /accept-terms and asked, which is the point of the gate.
+                    acceptedTermsAt: new Date(),
+                    acceptedTermsVersion: TERMS_VERSION,
+                },
             }));
 
         await prisma.tenantMembership.upsert({

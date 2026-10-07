@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto';
 import { createTenantWithOwner } from '@/app-layer/usecases/tenant-lifecycle';
 import { seedDefaultSeason } from '@/app-layer/usecases/planning-defaults';
 import { hashForLookup } from '@/lib/security/encryption';
+import { TERMS_VERSION } from '../src/lib/legal/terms';
 import { seedDefaultOrgDashboard } from '@/app-layer/usecases/org-dashboard-presets';
 import type { RequestContext } from '@/app-layer/types';
 import { Role } from '@prisma/client';
@@ -40,25 +41,50 @@ async function main() {
     const seedPassword = process.env.SEED_PASSWORD || 'password123';
     const pwd = await bcrypt.hash(seedPassword, 10);
 
+    // Seeded users accept the terms (P3.1 / #1376). Without this every seeded
+    // login is held at `/accept-terms` by the Edge gate, which is the gate
+    // working correctly — a user with no recorded acceptance has not accepted.
+    //
+    // Stamping it here is legitimate in a way BACKFILLING REAL USERS IS NOT:
+    // these are fixtures, not people, so there is no agreement being
+    // fabricated on anybody's behalf. Real users with a null column are held
+    // and asked, which is the whole point of the gate.
+    const seedConsent = {
+        acceptedTermsAt: new Date(),
+        acceptedTermsVersion: TERMS_VERSION,
+    };
+
     const admin = await prisma.user.upsert({
         where: { emailHash: hashForLookup('admin@acme.com') },
-        update: {},
-        create: { email: 'admin@acme.com', emailHash: hashForLookup('admin@acme.com'), passwordHash: pwd, uiLanguage: 'en', name: 'Alice Admin' },
+        // Re-seeding REPAIRS an existing dev database: `update: {}` would
+        // leave a previously-seeded user held at /accept-terms forever, and
+        // CI never sees it because CI seeds a fresh database.
+        update: seedConsent,
+        create: { email: 'admin@acme.com', emailHash: hashForLookup('admin@acme.com'), passwordHash: pwd, uiLanguage: 'en', name: 'Alice Admin' , ...seedConsent },
     });
     const editor = await prisma.user.upsert({
         where: { emailHash: hashForLookup('editor@acme.com') },
-        update: {},
-        create: { email: 'editor@acme.com', emailHash: hashForLookup('editor@acme.com'), passwordHash: pwd, uiLanguage: 'en', name: 'Bob Editor' },
+        // Re-seeding REPAIRS an existing dev database: `update: {}` would
+        // leave a previously-seeded user held at /accept-terms forever, and
+        // CI never sees it because CI seeds a fresh database.
+        update: seedConsent,
+        create: { email: 'editor@acme.com', emailHash: hashForLookup('editor@acme.com'), passwordHash: pwd, uiLanguage: 'en', name: 'Bob Editor' , ...seedConsent },
     });
     const reader = await prisma.user.upsert({
         where: { emailHash: hashForLookup('viewer@acme.com') },
-        update: {},
-        create: { email: 'viewer@acme.com', emailHash: hashForLookup('viewer@acme.com'), passwordHash: pwd, uiLanguage: 'en', name: 'Carol Reader' },
+        // Re-seeding REPAIRS an existing dev database: `update: {}` would
+        // leave a previously-seeded user held at /accept-terms forever, and
+        // CI never sees it because CI seeds a fresh database.
+        update: seedConsent,
+        create: { email: 'viewer@acme.com', emailHash: hashForLookup('viewer@acme.com'), passwordHash: pwd, uiLanguage: 'en', name: 'Carol Reader' , ...seedConsent },
     });
     const auditor = await prisma.user.upsert({
         where: { emailHash: hashForLookup('auditor@acme.com') },
-        update: {},
-        create: { email: 'auditor@acme.com', emailHash: hashForLookup('auditor@acme.com'), passwordHash: pwd, uiLanguage: 'en', name: 'Dan Auditor' },
+        // Re-seeding REPAIRS an existing dev database: `update: {}` would
+        // leave a previously-seeded user held at /accept-terms forever, and
+        // CI never sees it because CI seeds a fresh database.
+        update: seedConsent,
+        create: { email: 'auditor@acme.com', emailHash: hashForLookup('auditor@acme.com'), passwordHash: pwd, uiLanguage: 'en', name: 'Dan Auditor' , ...seedConsent },
     });
     console.log('✅ Users created');
 
@@ -180,8 +206,11 @@ async function main() {
     // AUDITOR via the auto-provisioning fan-out below.
     const ciso = await prisma.user.upsert({
         where: { emailHash: hashForLookup('ciso@acme.com') },
-        update: {},
-        create: { email: 'ciso@acme.com', emailHash: hashForLookup('ciso@acme.com'), passwordHash: pwd, uiLanguage: 'en', name: 'Carla CISO' },
+        // Re-seeding REPAIRS an existing dev database: `update: {}` would
+        // leave a previously-seeded user held at /accept-terms forever, and
+        // CI never sees it because CI seeds a fresh database.
+        update: seedConsent,
+        create: { email: 'ciso@acme.com', emailHash: hashForLookup('ciso@acme.com'), passwordHash: pwd, uiLanguage: 'en', name: 'Carla CISO' , ...seedConsent },
     });
 
     await prisma.orgMembership.upsert({

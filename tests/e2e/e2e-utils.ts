@@ -12,6 +12,7 @@ import { expect, type APIRequestContext, type Page, type Locator } from '@playwr
 import prisma from '@/lib/prisma';
 import { createTenantWithOwner } from '@/app-layer/usecases/tenant-lifecycle';
 import { hashPassword } from '@/lib/auth/passwords';
+import { TERMS_VERSION } from '@/lib/legal/terms';
 
 /**
  * Pick an option from one of the shared `<Combobox>` practices (Epic 55
@@ -567,6 +568,12 @@ export async function createIsolatedTenant(
             name: ownerName,
             passwordHash: await hashPassword(ownerPassword),
             emailVerified: new Date(),
+            // Consent (P3.1 / #1376). Without it every isolated-tenant spec
+            // is held at `/accept-terms` by the Edge gate — which is the gate
+            // working, not a bug. A FIXTURE may be stamped; a real user with a
+            // null column is held and asked, which is the point.
+            acceptedTermsAt: new Date(),
+            acceptedTermsVersion: TERMS_VERSION,
         },
     });
 
