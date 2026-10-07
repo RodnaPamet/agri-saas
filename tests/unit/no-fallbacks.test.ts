@@ -75,6 +75,26 @@ describe('Static Analysis: No process.env fallbacks', () => {
             // optional (which is what reading them here already expresses).
             // The secret is never logged; see the module docblock.
             if (file.endsWith('security/turnstile.ts')) continue;
+            // mail-canary (P3.10) reads MAIL_CANARY_TO at CALL time, and the
+            // reason is sharper than for its siblings above: this is a
+            // SCHEDULED job in a long-lived worker. Routing it through
+            // `@/env` would capture the value at module load, so setting the
+            // address would need the worker RESTARTED before monitoring
+            // began — and a monitoring control you cannot switch on without a
+            // restart is one that will not be switched on during the incident
+            // that needs it.
+            //
+            // The absent case is announced rather than silent: the job
+            // returns SKIPPED_NO_RECIPIENT and warns once per process naming
+            // the variable, because a quiet skip is indistinguishable from a
+            // passing canary.
+            //
+            // Fourth entry in this file for env-at-call-time (feature-flags,
+            // ui-config, turnstile, mail-canary). The shared property is that
+            // all four are OPERATOR SWITCHES rather than configuration: the
+            // value is expected to change on a running deployment, which is
+            // exactly what the env.ts snapshot cannot express.
+            if (file.endsWith('jobs/mail-canary.ts')) continue;
             // Rate-limit bypass predicate reads RATE_LIMIT_ENABLED /
             // NODE_ENV at request time so tests can flip the bypass
             // per-test via env mutation (used by the Epic A.2/A.3
