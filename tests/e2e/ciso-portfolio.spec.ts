@@ -249,16 +249,47 @@ test.describe('CISO portfolio journey (Epic O-4)', () => {
         // P2.6 — its non-default options redirected to a route the GRC
         // teardown deleted, so the form now always lands on the new
         // tenant's dashboard.
+        // Wait for the CREATE RESPONSE, not for a URL — and arm the wait
+        // BEFORE the click, or the response can land first.
+        //
+        // The previous wait was
+        //   waitForURL(/\/(?:t|org|no-tenant|tenants)\b/)
+        // and it never waited for anything: that pattern matches the page
+        // this test is already ON (`/org/acme-org/tenants/new` — `/org`
+        // followed by a `/`, which is a word boundary), so it resolved on
+        // the first poll. The `safeGoto` below then navigated while the
+        // POST was still in flight and the browser ABORTED it. No tenant
+        // was created, so the row the final assertion waits 15s for never
+        // existed.
+        //
+        // Measured in the trace of run 37561894805: the POST to
+        // /api/org/acme-org/tenants recorded status -1 (no response at
+        // all) and the list page rendered "1 tenant linked to this
+        // organization" — the seed tenant alone. It presents as a timing
+        // flake (~50% of main runs) because it is a race between the
+        // create transaction and the navigation that cancels it, which is
+        // why it was ledgered as one rather than fixed.
+        //
+        // The URL could not carry this invariant anyway, which is what the
+        // loose pattern was reaching for: the form redirects to
+        // /t/{newSlug}/dashboard, and the user's in-flight JWT does not yet
+        // carry the new OWNER membership, so middleware legitimately
+        // bounces. "The row was created" is a statement about the
+        // RESPONSE, so wait for the response.
+        const created = page.waitForResponse(
+            (r) =>
+                r.url().includes(`/api/org/${ORG_SLUG}/tenants`) &&
+                r.request().method() === 'POST',
+            { timeout: 30_000 },
+        );
         await page.click('[data-testid="org-new-tenant-submit"]');
+        const createRes = await created;
 
-        // The form attempts to redirect to /t/{newSlug}/dashboard. The
-        // user's in-flight JWT doesn't carry the new OWNER membership
-        // yet, so middleware bounces on /t/* — that's a known pre-Epic-
-        // O-4 limitation. We only need to confirm the row was actually
-        // created, which we verify on the org tenants list.
-        await page.waitForURL(/\/(?:t|org|no-tenant|tenants)\b/, { timeout: 30_000 }).catch(() => {
-            /* the URL may settle on an error or picker — fine */
-        });
+        // Assert the create HERE, naming the status, instead of 15s later
+        // as "element(s) not found" — a 409 on a colliding slug and a row
+        // that was created but not listed are different defects, and the
+        // old shape reported both as the latter.
+        expect(createRes.status()).toBe(201);
 
         await safeGoto(page, `/org/${ORG_SLUG}/tenants`);
         await expect(page.locator('#org-tenants-table')).toBeVisible({
