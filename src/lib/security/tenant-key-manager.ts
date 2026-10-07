@@ -199,7 +199,7 @@ function getCachedPrevious(tenantId: string): TenantDek | undefined {
  * This function cannot join a caller's transaction — it always runs
  * against the singleton `prisma` client. Callers that need the tenant
  * row created atomically alongside other writes (the self-service
- * register route at `src/app/api/auth/register/route.ts`, and
+ * register route at `src/app/api/auth/register/route.ts` (retired, #1376), and
  * `createTenantWithOwner` in `src/app-layer/usecases/tenant-lifecycle.ts`)
  * replicate this function's body — `generateAndWrapDek()` + `tx.tenant.create`
  * — directly against the transaction client instead. The DEK cache is
@@ -240,7 +240,7 @@ export interface CreatedTenant {
  *
  * Pass `db` to create the row inside a caller's transaction; omit it for the
  * singleton. Before this existed, THREE sites replicated the body against a
- * `tx` client: `api/auth/register`, `createTenantWithOwner` in
+ * `tx` client: `api/auth/register` (retired, #1376), `createTenantWithOwner` in
  * `tenant-lifecycle.ts`, and `org-tenants.ts` — the last of which this
  * module's own docblock did not list, so a reader counting from the comment
  * would have converged two and left the third diverged, looking deliberate.

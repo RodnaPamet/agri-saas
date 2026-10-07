@@ -26,6 +26,9 @@
 import { test, expect } from './fixtures';
 import { type BrowserContext, type Page } from '@playwright/test';
 import { safeGoto, waitForHydration } from './e2e-utils';
+import prisma from '@/lib/prisma';
+import { hashPassword } from '@/lib/auth/passwords';
+import { hashForLookup } from '@/lib/security/encryption';
 
 /**
  * Sign in with email+password via the #credentials-form and return
@@ -82,28 +85,30 @@ test.describe('Invitation journey (Epic 1)', () => {
 
         // ── 1. OWNER creates the invite + pre-registers the invitee ──
         await test.step('OWNER creates an invite for a new email', async () => {
-            // Pre-register the invitee so their User row exists before
-            // credentials sign-in. /api/auth/register is public.
-            const regResult = await authedPage.evaluate(
-                async ({ email, password }: { email: string; password: string }) => {
-                    const res = await fetch('/api/auth/register', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            action: 'register',
-                            email,
-                            password,
-                            name: 'R5 Invitee',
-                            orgName: 'R5 Invitee Org',
-                        }),
-                    });
-                    const data = await res.json();
-                    return { status: res.status, error: data?.error };
+            // Pre-create the invitee so their User row exists before
+            // credentials sign-in.
+            //
+            // This used to POST `/api/auth/register` from inside the page,
+            // which #1376 retired — and that route also created a TENANT for
+            // the invitee, which this test never wanted: the whole point is
+            // someone with an account and no membership, who then accepts an
+            // invite. Writing the row directly expresses that, and stops the
+            // fixture depending on a signup flow whose rules keep changing
+            // (consent, verification, bot screening).
+            const inviteeUser = await prisma.user.create({
+                data: {
+                    email: inviteeEmail,
+                    emailHash: hashForLookup(inviteeEmail),
+                    name: 'R5 Invitee',
+                    passwordHash: await hashPassword(inviteePassword),
+                    // Verified: credentials sign-in refuses an unverified
+                    // address, and this test is about the invite, not about
+                    // email proof.
+                    emailVerified: new Date(),
                 },
-                { email: inviteeEmail, password: inviteePassword },
-            );
-            // 200 on success; 409 if the email was already registered.
-            expect([200, 409]).toContain(regResult.status);
+                select: { id: true },
+            });
+            expect(inviteeUser.id).toBeTruthy();
 
             // POST to the admin invites API while authed as the OWNER.
             const result = await authedPage.evaluate(

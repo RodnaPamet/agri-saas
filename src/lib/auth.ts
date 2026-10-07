@@ -217,7 +217,7 @@ export async function verifyPassword(
 
 /**
  * @deprecated Legacy pre-NextAuth helper. Today's only caller is
- * `src/app/api/auth/register/route.ts`, which mints the legacy
+ * the retired `src/app/api/auth/register/route.ts` (#1376), which minted the legacy
  * `token` cookie alongside the canonical NextAuth session cookie.
  *
  * The corresponding `verifyToken` has **zero consumers** in the

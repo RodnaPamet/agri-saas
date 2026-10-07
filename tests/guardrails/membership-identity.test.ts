@@ -207,8 +207,12 @@ describe('Auth resolves identity from membership', () => {
         expect(authContent).not.toContain('dbUser.role');
     });
 
-    it('register handler creates membership, not user-level role', () => {
-        const registerContent = readSrcFile('app/api/auth/register/route.ts');
+    it('tenant creation grants a membership, not a user-level role', () => {
+        // Retargeted when #1376 retired `/api/auth/register`. `createTenantWithOwner`
+        // is where the OWNER membership is written now — reached by P3.6's
+        // farm creation and by the platform-admin bootstrap — so the property
+        // follows the write rather than the route that used to perform it.
+        const registerContent = readSrcFile('app-layer/usecases/tenant-lifecycle.ts');
         // Must create membership
         expect(registerContent).toContain('tenantMembership.create');
         // Must NOT set role directly on the User model

@@ -16,6 +16,7 @@
 
 import { NextResponse } from 'next/server';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { isFeatureEnabled } from '@/lib/feature-flags';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,6 +25,11 @@ export const dynamic = 'force-dynamic';
 // runtime fault (env-loader regression, etc.) yields a consistent
 // 5xx shape rather than a Next.js stack-trace HTML page.
 export const GET = withApiErrorHandling(async () => {
+    // Resolved with no user: the login page has nobody signed in, so the
+    // question is whether the CAPABILITY is launched rather than whether this
+    // person is in a cohort. Same call the landing page and `/start` make.
+    const registrationOpen = await isFeatureEnabled('social.farm-registration', null);
+
     return NextResponse.json({
         // When set, the public login page hides the email/password
         // form even if the Credentials provider is registered server-
@@ -51,5 +57,20 @@ export const GET = withApiErrorHandling(async () => {
          * that no amount of retrying fixes.
          */
         turnstileSitekey: process.env.TURNSTILE_SITEKEY || null,
+        /**
+         * Whether `/start` — the registration wizard — is open (P3.8's
+         * `social.farm-registration`).
+         *
+         * The login page needs it for the same reason the landing page does:
+         * `/start` calls `notFound()` when the flag is off, so a "create an
+         * account" link offered while it is off leads to a 404, which reads as
+         * a broken site rather than an unlaunched feature.
+         *
+         * It is here rather than inlined because the login page is a CLIENT
+         * component and cannot resolve a flag itself, and because this route
+         * is the one request it already makes on mount — so the answer costs
+         * no extra round trip.
+         */
+        registrationOpen,
     });
 });

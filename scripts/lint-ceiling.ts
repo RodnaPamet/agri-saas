@@ -115,7 +115,11 @@ export const LIMITS: Limits = {
     // visible line in a diff. Lower this toward 82 as warnings are fixed; the
     // sentinel will force the issue once the gap exceeds 25 again.
     warningCeiling: 107,
-    suppressionCeiling: 1580,
+    // Lowered 1580 -> 1578 by #1376: the retired `/api/auth/register` carried
+    // two eslint-disable directives. A ceiling left above the live count is
+    // room for two silent re-additions, which is the shape this gate exists
+    // to close.
+    suppressionCeiling: 1578,
     unjustifiedCeiling: 461,
     // The 13 error-severity mutes that exist today. `no-explicit-any` is
     // escalated to `error` for the security surface by the override at

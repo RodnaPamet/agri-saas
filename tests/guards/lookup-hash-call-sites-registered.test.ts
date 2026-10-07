@@ -111,10 +111,6 @@ const REGISTERED: Readonly<Record<string, Registration>> = {
         kind: 'write',
         note: 'Writes emailHash and emailAtLinkTimeHash on first identity link. Both reads are on candidates.',
     },
-    'src/app/api/auth/register/route.ts': {
-        kind: 'write',
-        note: 'Writes the hash for the new account. The uniqueness pre-check ahead of it reads candidates.',
-    },
     'src/app/api/auth/register/start/route.ts': {
         kind: 'write',
         note: 'Registration v2 step 1 (P3.5b): writes emailHash for the new unverified account. Its existence check ahead of it reads candidates, so a rotation window cannot create a duplicate.',

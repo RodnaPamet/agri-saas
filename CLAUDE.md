@@ -1424,7 +1424,7 @@ SSO-mappable target — excluded from `ENTRA_MAPPABLE_ROLES` in
 `src/app-layer/schemas/entra-group-mapping.schemas.ts`, so only a tenant
 admin can assign it.
 
-**Membership creation is explicit.** Only EIGHT modules can write a
+**Membership creation is explicit.** Only SEVEN modules can write a
 `TenantMembership` row today — the three detailed below (the first of
 them via two entry points), plus SSO, SCIM, the non-production staging
 seed route, and the two Epic O-2 org paths:
@@ -1444,13 +1444,29 @@ still not auto-join: no invite ⇒ no membership. Both share
 (b) `createTenantWithOwner` in `src/app-layer/usecases/tenant-lifecycle.ts` —
 platform-admin tenant bootstrap, gated by `PLATFORM_ADMIN_API_KEY`
 (constant-time compared via `verifyPlatformApiKey`).
-(c) `/api/auth/register` — credentials self-service signup. The
-`Credentials()` provider is registered unconditionally in `src/auth.ts`
-and the route itself has no test-mode gate; what actually hides the
-signup UI in production is `AUTH_CREDENTIALS_UI_HIDDEN`, a request-time
-flag read by `src/app/api/auth/ui-config/route.ts` that the login page
-uses to hide the email/password form while leaving the backend route
-reachable for API / tests / future admin tooling.
+(c) `/api/auth/register/start` + `/verify` — credentials self-service
+signup, P3.5b's two-step form. Step 1 creates an UNVERIFIED user and
+records terms acceptance; step 2 proves the address and signs in; the
+farm is created afterwards by `POST /api/me/farms` (P3.6), which is the
+site that writes the membership. **`/api/auth/register` — the
+single-call route that created a user AND a tenant together — was
+RETIRED on 2026-10-07 (#1376)**, because it recorded no terms
+acceptance and was the weaker of two signup doors. Do not recreate it;
+`src/generated/route-inventory.json` holds the retirement reason, and
+`tests/integration/tenant-creation-atomicity.test.ts` is where its
+real-DB rollback proof now lives, retargeted onto
+`createTenantWithOwner`.
+The `Credentials()` provider is still registered unconditionally in
+`src/auth.ts`; what hides the sign-in form in production is
+`AUTH_CREDENTIALS_UI_HIDDEN`, a request-time flag served by
+`src/app/api/auth/ui-config/route.ts`. That same route now also serves
+`registrationOpen`, because the login page is a client component and
+cannot resolve `social.farm-registration` itself — it links to
+`/start` only when the wizard is open, for the reason the landing page
+does (`/start` 404s when the flag is off).
+**Terms acceptance is captured on that path ONLY.** A first-time Google
+sign-in creates its `User` row through `PrismaAdapter` inside NextAuth,
+so it passes no route of ours and records no consent — see #1376.
 Plus five provisioning paths that never involve an invite: SSO
 (`usecases/sso.ts`), SCIM (`usecases/scim-users.ts`), the staging seed
 route (`app/api/staging/seed/route.ts` — 403s outright when
@@ -1460,7 +1476,7 @@ creating a tenant under an org; `usecases/org-provisioning.ts` is the
 one CROSS-TENANT writer — it fans `AUDITOR` rows (`createMany`, with
 `provisionedByOrgId` stamped so deprovisioning can tell auto-created
 rows from granted ones) into every tenant under the org, and it is the
-easiest of the eight to forget. Eight files in total; every one is
+easiest of the seven to forget. Seven files in total; every one is
 allowlisted in `tests/guardrails/no-auto-join.test.ts` with a one-line
 reason, and ANY site not on that list fails CI.
 

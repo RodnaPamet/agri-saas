@@ -4,7 +4,7 @@
  * ## Purpose
  * One function ({@link authenticateWithPassword}) owns the entire
  * email+password auth decision, top to bottom. NextAuth's Credentials
- * provider delegates here; the legacy /api/auth/register login handler
+ * provider delegates here; the retired /api/auth/register login handler (#1376)
  * delegates here; any future server action delegates here. Every
  * password-based login attempt flows through this exact path — which
  * is what makes rate-limiting, audit logging, email-verification
