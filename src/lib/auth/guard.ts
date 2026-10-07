@@ -193,6 +193,25 @@ const PUBLIC_PATH_EXACT = new Set([
     // purpose of having one.
     //
     // Both render no tenant data and read no session at all.
+    // The registration wizard (P3.8). EXACT, like the others here.
+    //
+    // THIS WAS MISSING AND THE FEATURE WAS BROKEN BY IT. `/start` was
+    // allowlisted in `tenant-isolation-structural` — so it was allowed to live
+    // outside `/t/[tenantSlug]` — and never added here, so an anonymous
+    // visitor got `307 -> /login?next=%2Fstart`. Registration was unreachable
+    // for exactly the people it exists for: steps 1-2 run with no session at
+    // all, which is the whole design.
+    //
+    // It hid because `social.farm-registration` was off, so nobody was looking
+    // at `/start`; and the 404 the page returns when the flag is off happens
+    // INSIDE the page, which the middleware never reaches. So "it 404s anyway"
+    // was not even true — it redirected.
+    //
+    // Third time this repo has had the two-list bug (`/privacy`, then the
+    // legal pages, now this). The lists are `PUBLIC_PATH_EXACT` here and
+    // `ALLOWED_ROOT_PAGES` in tenant-isolation-structural, and satisfying one
+    // looks identical to being finished.
+    '/start',
     '/terms',
     '/dsa-contact',
     '/favicon.ico',
