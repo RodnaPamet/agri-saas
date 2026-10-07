@@ -249,6 +249,13 @@ interface CompositeIndex {
 }
 
 const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
+    // ── FarmIdentityClaim (the P3.9 staff review queue) ─────────────
+    {
+        model: 'FarmIdentityClaim',
+        fields: ['status', 'createdAt'],
+        justification:
+            "listFarmClaims is the platform review queue: `WHERE status = 'PENDING' ORDER BY createdAt ASC`, and CROSS-tenant — a reviewer looks at every farm, and a collision is by definition two tenants. So `tenantId` does NOT lead here, unlike every other entry in this list: it is a column the query never mentions. `status` is the equality predicate, `createdAt` the sort key.",
+    },
     // ── CostEntry (the /grain/costs entry surface) ──────────────────
     {
         model: 'CostEntry',
