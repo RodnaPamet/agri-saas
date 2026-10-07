@@ -62,6 +62,19 @@ describe('Static Analysis: No process.env fallbacks', () => {
             // without a rebuild/rollout (NEXT_PUBLIC_* inlines at build
             // time). See the docblock in the file.
             if (file.endsWith('ui-config/route.ts')) continue;
+            // Turnstile (P3.5c) reads TURNSTILE_SECRET_KEY and
+            // TURNSTILE_SITEKEY at CALL time, for the same reason
+            // feature-flags.ts and ui-config do, and it is the entire design
+            // rather than a convenience: the control ships DORMANT and the
+            // operator activates it by pasting two values into the env file
+            // and recreating the container — no rebuild, no image push, no
+            // rollout. Routing it through `@/env` would capture both at module
+            // load, so a container started before the keys were set would
+            // ignore them until restarted, and `@/env`'s schema would have to
+            // make them required (breaking every deployment that has none) or
+            // optional (which is what reading them here already expresses).
+            // The secret is never logged; see the module docblock.
+            if (file.endsWith('security/turnstile.ts')) continue;
             // Rate-limit bypass predicate reads RATE_LIMIT_ENABLED /
             // NODE_ENV at request time so tests can flip the bypass
             // per-test via env mutation (used by the Epic A.2/A.3

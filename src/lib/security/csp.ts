@@ -128,6 +128,24 @@ export function isCspReportOnly(envValue?: string): boolean {
 }
 
 /**
+ * Cloudflare Turnstile renders its challenge in an IFRAME, so the widget is
+ * invisible-but-broken without this host in `frame-src` (P3.5c).
+ *
+ * Only `frame-src` needs it. `script-src` carries `'strict-dynamic'`, under
+ * which host allowlists are IGNORED and a nonce-bearing script may load
+ * further scripts — which is how `api.js` gets in. `connect-src` already
+ * allows `https:`, covering the widget's own calls.
+ *
+ * Listed UNCONDITIONALLY rather than only when a secret is configured. A
+ * frame host that nothing frames costs nothing, whereas a CSP that varies
+ * with deployment state is a header that cannot be reasoned about from the
+ * source or asserted by one test — and the failure it would produce (a
+ * silently blank widget on the deployment that just enabled Turnstile) is
+ * exactly the kind nobody connects back to the CSP.
+ */
+export const TURNSTILE_FRAME_SRC = ['https://challenges.cloudflare.com'] as const;
+
+/**
  * Build the full Content-Security-Policy header string.
  *
  * @param nonce  - The per-request nonce (base64)
@@ -176,7 +194,7 @@ export function buildCspHeader(nonce: string, isDev = false): string {
         // (the tenant-configured `meteobotStationUrl`). Shared allowlist with
         // the stored-URL validator so they can't drift; everything else is
         // blocked (it would otherwise fall back to `default-src 'self'`).
-        'frame-src': ["'self'", ...METEOBOT_FRAME_SRC],
+        'frame-src': ["'self'", ...METEOBOT_FRAME_SRC, ...TURNSTILE_FRAME_SRC],
         'form-action': ["'self'"],
         // Workers: restrict to same-origin
         'worker-src': ["'self'", 'blob:'],
