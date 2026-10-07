@@ -6556,5 +6556,19 @@
         "doneIdentityDeferred": "The farm was created, but the ЕИК was not recorded. You can add it in settings.",
         "doneIdentityNone": "You can add an ЕИК in settings at any time.",
         "failed": "Something went wrong. Please try again."
+    },
+    "landing": {
+        "tagline": "Your farm, in order.",
+        "lead": "Agrent brings the БАБХ journal, your parcels, your leases and your grain contracts together in one place — in Bulgarian, for a Bulgarian farm.",
+        "ctaStart": "Create a farm",
+        "ctaLogin": "Sign in to an existing account",
+        "whatTitle": "What it does",
+        "whatJournal": "The БАБХ journal — record sprays and fertiliser, and download the completed form as a PDF.",
+        "whatParcels": "Parcels with cadastral data and modelled soil characteristics.",
+        "whatLeases": "A register of leases and rentals, tracking contracts as they expire.",
+        "whatGrain": "Grain contracts and costs, with delivery tracking.",
+        "whatExchange": "The exchange, and market price trends.",
+        "honestTitle": "Where this is up to",
+        "honestBody": "Agrent is under active development. Some of what is described above is new and will change."
     }
 }

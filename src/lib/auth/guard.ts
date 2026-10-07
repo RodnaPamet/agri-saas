@@ -165,6 +165,20 @@ const PUBLIC_PATH_PREFIXES = [
 ];
 
 const PUBLIC_PATH_EXACT = new Set([
+    // The landing page (P3.8). EXACT, so ONLY the root opens — no prefix, and
+    // nothing under `/` inherits it.
+    //
+    // This is the first genuinely public PAGE in the product: until now an
+    // unauthenticated visitor to `/` was redirected to `/login`, and the only
+    // unauthenticated surfaces were the sign-in flow and `/privacy`. A landing
+    // page is public by definition, so the change is the feature rather than a
+    // side effect — but it is worth saying out loud, because "the app has no
+    // public pages" was true the day before this entry and is a thing people
+    // reason from.
+    //
+    // The page itself renders no tenant data and reads no session beyond
+    // deciding which call to action to show.
+    '/',
     '/favicon.ico',
     '/robots.txt',
     '/sitemap.xml',
