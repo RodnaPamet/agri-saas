@@ -567,6 +567,42 @@ export const authOptions: NextAuthOptions = {
                     }
                 }
 
+                // ── Terms acceptance (P3.1 / #1376) ──
+                //
+                // Resolved ONCE here, at sign-in, and re-read below only
+                // while it is still pending. That shape is not a style
+                // choice: `jwt` runs on EVERY authenticated request, and
+                // `tests/unit/jwt-update-trigger-refresh.test.ts` and
+                // `auth-callbacks.test.ts` both assert this callback does not
+                // touch the database on a normal subsequent pass. An
+                // unconditional lookup here added a round trip to every
+                // request in the product, and those two tests caught it.
+                //
+                // So: one read at sign-in to SET it, reads only while the
+                // answer can still change, and ZERO reads once somebody has
+                // consented — which is the steady state for everyone.
+                //
+                // FAILS CLOSED, and the asymmetry is what makes that cheap.
+                // Holding at the consent page on a read error asks somebody to
+                // accept again, which is harmless — they can. Failing open
+                // grants access with no record, which is the thing this
+                // exists to prevent. Note that is the OPPOSITE trade from
+                // `mfaFailClosed` below, where failing closed locks a user out
+                // of their own account.
+                try {
+                    const consent = await prisma.user.findUnique({
+                        where: { id: token.userId! },
+                        select: { acceptedTermsAt: true },
+                    });
+                    token.termsPending = consent?.acceptedTermsAt == null;
+                } catch (err) {
+                    token.termsPending = true;
+                    edgeLogger.error('terms consent lookup failed — holding', {
+                        component: 'auth',
+                        error: err instanceof Error ? err.message : String(err),
+                    });
+                }
+
                 // ── MFA enforcement ──
                 token.mfaPending = false;
                 const activeTenantId = token.tenantId ?? null;
@@ -692,36 +728,23 @@ export const authOptions: NextAuthOptions = {
                 }
             }
 
-            // ── Terms acceptance (P3.1) ──
-            //
-            // Resolved from the column on EVERY pass rather than carried
-            // forward: somebody who accepts in one tab must stop being held in
-            // another, and a stale `true` on a re-minted token would be a
-            // lockout.
-            //
-            // It FAILS CLOSED, and the asymmetry is what makes that cheap.
-            // Holding at the consent page on a read error asks somebody to
-            // accept again — harmless, they can. Failing open grants access
-            // with no record, which is the thing this exists to prevent. Note
-            // that is the OPPOSITE trade from MFA's `mfaFailClosed` below,
-            // where failing closed locks a user out of their own account.
-            //
-            // Scoped to a real user id: a bearer principal carries none, and
-            // holding one would break a native client on a page it cannot
-            // render.
-            if (token.userId) {
+            // Terms acceptance completion check — gated on it still being
+            // pending, exactly like the MFA check below. A session that has
+            // consented reads nothing here; one that has not needs to notice
+            // when it does, because the accept route writes the column and the
+            // client then asks for a fresh token.
+            if (token.termsPending === true && token.userId) {
                 try {
                     const consent = await prisma.user.findUnique({
                         where: { id: token.userId },
                         select: { acceptedTermsAt: true },
                     });
-                    token.termsPending = consent?.acceptedTermsAt == null;
-                } catch (err) {
-                    token.termsPending = true;
-                    edgeLogger.error('terms consent lookup failed — holding', {
-                        component: 'auth',
-                        error: err instanceof Error ? err.message : String(err),
-                    });
+                    if (consent?.acceptedTermsAt != null) {
+                        token.termsPending = false;
+                    }
+                } catch {
+                    // Keep holding. Same reasoning as the sign-in path: the
+                    // safe failure here is asking again.
                 }
             }
 

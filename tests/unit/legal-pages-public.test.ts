@@ -59,11 +59,28 @@ describe('the legal pages are publicly reachable', () => {
         expect(read(file)).not.toMatch(/useTenantContext|getTenantCtx|tenantSlug/);
     });
 
-    it('the registration consent checkbox links to both /terms and /privacy', () => {
+    it('the shared consent control links to both /terms and /privacy', () => {
         // The link is the whole reason /terms has to be public.
-        const wizard = read('src/app/start/FarmWizard.tsx');
-        expect(wizard).toMatch(/href="\/terms"/);
-        expect(wizard).toMatch(/href="\/privacy"/);
+        //
+        // Retargeted from `FarmWizard.tsx`: the consent checkbox is now ONE
+        // component rendered by both the wizard and the `/accept-terms`
+        // interstitial, so this assertion follows it there. That is strictly
+        // better — there is a single place the links can go missing, instead
+        // of two that can disagree.
+        const control = read('src/components/auth/TermsConsentCheckbox.tsx');
+        expect(control).toMatch(/href="\/terms"/);
+        expect(control).toMatch(/href="\/privacy"/);
+    });
+
+    it('both places that ask for consent render that one control', () => {
+        // The other half: a link check on the shared component proves nothing
+        // if a caller stops using it and hand-rolls its own label again.
+        for (const caller of [
+            'src/app/start/FarmWizard.tsx',
+            'src/app/accept-terms/AcceptTermsForm.tsx',
+        ]) {
+            expect(read(caller)).toMatch(/TermsConsentCheckbox/);
+        }
     });
 
     it('the terms page links onward to the DSA contact point', () => {
