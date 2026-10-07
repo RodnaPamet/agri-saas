@@ -2698,6 +2698,76 @@ exports[`API contract — per-schema snapshots schema: CreateDataStream 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: CreateFarmRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "description": "The farm name as the farmer writes it, Cyrillic included. The web address is derived from it by transliteration and is NOT this value — read \`farm.slug\` from the response rather than deriving one.",
+      "example": "ЗК ПОБЕДА"
+    },
+    "eik": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 13,
+      "description": "The farm's ЕИК, 9 or 13 digits. OMIT it for «Земеделски стопанин — физическо лице», who has none. Two refusals are specific and worth handling in the form: \`EIK_LOOKS_LIKE_EGN\` (a personal identity number was typed — say so, do not say \\"invalid\\") and \`EIK_INVALID\` (checksum). Both are decided before the value is hashed or stored, so a number that cannot exist leaves no trace.",
+      "example": "831641791"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "description": "Create a farm owned by the caller. The owner is taken from the session and can never be named in the body."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: CreateFarmResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "farm": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string",
+          "description": "Server-generated, transliterated, and carrying a uniqueness suffix. Use it for the redirect; two farms with the same name get different slugs.",
+          "example": "zk-pobeda-9f3a1c20"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "slug",
+        "name"
+      ]
+    },
+    "identityVerification": {
+      "type": "string",
+      "enum": [
+        "not_requested",
+        "pending_review",
+        "deferred"
+      ],
+      "description": "\`not_requested\` — no ЕИК was supplied. \`pending_review\` — a claim was recorded and a human will look at it; this is the value for BOTH a free and an already-taken ЕИК, by design. \`deferred\` — the farm was created but the claim could not be recorded, so the ЕИК is not yet on file and can be added from farm settings. Never treat \`pending_review\` as acceptance."
+    }
+  },
+  "required": [
+    "farm",
+    "identityVerification"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: CreateInsuranceLeadRequest 1`] = `
 "{
   "type": "object",
