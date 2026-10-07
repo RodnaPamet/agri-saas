@@ -120,6 +120,15 @@ describe('Structural Guard: Tenant Isolation Conventions', () => {
             // what it is about to send to POST /api/me/farms, which does
             // its own authorization.
             'start',
+            // P3.1 — the legal surfaces. Both are public, tenant-less pages of
+            // prose: the terms of use (linked from the registration consent
+            // checkbox, so readable before an account exists) and the Digital
+            // Services Act single point of contact (whose readers — a
+            // restricted user, an authority, a court — are by definition not
+            // signed in). Neither reads a session or renders tenant data, so
+            // there is nothing to isolate. Mirrors the 'privacy' entry above.
+            'terms',
+            'dsa-contact',
         ]);
 
         // Get immediate children of app/ that are page directories

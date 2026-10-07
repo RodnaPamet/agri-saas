@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 
 import { auth } from '@/auth';
 import { isFeatureEnabled } from '@/lib/feature-flags';
+import { TERMS_VERSION } from '@/lib/legal/terms';
 import { FarmWizard } from './FarmWizard';
 
 /**
@@ -55,6 +56,11 @@ export default async function StartPage() {
             // A signed-in visitor is adding a farm, not registering: the first
             // two steps have nothing left to ask them.
             startAtFarmType={signedIn}
+            // Passed down rather than imported in the client component, so
+            // what the browser sends back as "the version I displayed" is the
+            // version this render actually served. `register/start` refuses
+            // any other value (P3.1).
+            termsVersion={TERMS_VERSION}
         />
     );
 }

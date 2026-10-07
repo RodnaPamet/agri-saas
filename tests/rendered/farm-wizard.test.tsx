@@ -30,8 +30,18 @@ jest.mock('next/navigation', () => ({
  */
 jest.mock('next-intl', () => ({
     useLocale: () => 'bg',
-    useTranslations: () => (key: string, params?: Record<string, unknown>) =>
-        params ? `${key}:${JSON.stringify(params)}` : key,
+    useTranslations: () => {
+        const t = (key: string, params?: Record<string, unknown>) =>
+            params ? `${key}:${JSON.stringify(params)}` : key;
+        // `t.rich` is a PROPERTY of the returned function, and the consent
+        // label (P3.1) calls it. A bare function mock has no `.rich`, so the
+        // account step would die with "t.rich is not a function" — the same
+        // partial-mock hazard as a missing barrel export, one level down.
+        // Returning the key keeps this file's key-echo contract; the rendered
+        // links are the a11y suite's business, which uses real copy.
+        (t as unknown as { rich: (k: string) => string }).rich = (k: string) => k;
+        return t;
+    },
 }));
 
 const mockSignIn = jest.fn(async () => ({ error: undefined }));
@@ -45,6 +55,7 @@ jest.mock('@/components/auth/TurnstileWidget', () => ({
 }));
 
 import { FarmWizard } from '@/app/start/FarmWizard';
+import { TERMS_VERSION } from '@/lib/legal/terms';
 
 /** Queue of responses, matched by URL substring. */
 let routes: Record<string, { ok: boolean; body: unknown }>;
@@ -82,7 +93,7 @@ beforeEach(() => {
 
 describe('the ЕИК check travels in a BODY, never a query string', () => {
     it('calls eik-check with POST and the value in the body', async () => {
-        render(<FarmWizard startAtFarmType />);
+        render(<FarmWizard startAtFarmType termsVersion={TERMS_VERSION} />);
         chooseCompany();
 
         fireEvent.change(screen.getByLabelText('eikLabel'), { target: { value: '831641791' } });
@@ -103,7 +114,7 @@ describe('the ЕИК check travels in a BODY, never a query string', () => {
     });
 
     it('prefills the farm name from the registry', async () => {
-        render(<FarmWizard startAtFarmType />);
+        render(<FarmWizard startAtFarmType termsVersion={TERMS_VERSION} />);
         chooseCompany();
         fireEvent.change(screen.getByLabelText('eikLabel'), { target: { value: '831641791' } });
         await waitFor(() =>
@@ -121,7 +132,7 @@ describe('an ЕГН stops the step dead', () => {
             ok: true,
             body: { valid: false, looksLikeEgn: true, registryName: null },
         };
-        render(<FarmWizard startAtFarmType />);
+        render(<FarmWizard startAtFarmType termsVersion={TERMS_VERSION} />);
         chooseCompany();
 
         fireEvent.change(screen.getByLabelText('eikLabel'), { target: { value: '7523169263' } });
@@ -143,7 +154,7 @@ describe('an ЕГН stops the step dead', () => {
             ok: true,
             body: { valid: false, looksLikeEgn: false, registryName: null },
         };
-        render(<FarmWizard startAtFarmType />);
+        render(<FarmWizard startAtFarmType termsVersion={TERMS_VERSION} />);
         chooseCompany();
         fireEvent.change(screen.getByLabelText('eikLabel'), { target: { value: '123456789' } });
         await waitFor(() => expect(screen.getByText('eikInvalid')).toBeInTheDocument());
@@ -153,7 +164,7 @@ describe('an ЕГН stops the step dead', () => {
     it('…and a VALID one is allowed — the control', async () => {
         // Without this, a step that disabled the button unconditionally would
         // satisfy both assertions above while breaking the feature.
-        render(<FarmWizard startAtFarmType />);
+        render(<FarmWizard startAtFarmType termsVersion={TERMS_VERSION} />);
         chooseCompany();
         fireEvent.change(screen.getByLabelText('eikLabel'), { target: { value: '831641791' } });
         await waitFor(() =>
@@ -171,7 +182,7 @@ describe('step 6 never implies the ЕИК was accepted', () => {
                 identityVerification,
             },
         };
-        render(<FarmWizard startAtFarmType />);
+        render(<FarmWizard startAtFarmType termsVersion={TERMS_VERSION} />);
         fireEvent.click(screen.getByText('typeIndividual'));
         fireEvent.change(screen.getByLabelText('farmNameLabel'), { target: { value: 'Ферма' } });
         fireEvent.click(screen.getByText('finish'));
@@ -211,7 +222,7 @@ describe('the slug comes from the response', () => {
                 identityVerification: 'not_requested',
             },
         };
-        render(<FarmWizard startAtFarmType />);
+        render(<FarmWizard startAtFarmType termsVersion={TERMS_VERSION} />);
         fireEvent.click(screen.getByText('typeIndividual'));
         fireEvent.change(screen.getByLabelText('farmNameLabel'), { target: { value: 'Ферма Слънце' } });
         fireEvent.click(screen.getByText('finish'));
@@ -224,36 +235,106 @@ describe('the slug comes from the response', () => {
 
 describe('the step counter reflects the path actually taken', () => {
     it('the физическо лице path is shorter than the ЕИК path', () => {
-        const { unmount } = render(<FarmWizard startAtFarmType />);
+        const { unmount } = render(<FarmWizard startAtFarmType termsVersion={TERMS_VERSION} />);
         fireEvent.click(screen.getByText('typeIndividual'));
         // type → name → done. A fixed "of 6" would promise a step that never
         // arrives on this branch.
         expect(screen.getByText(/"total":3/)).toBeInTheDocument();
         unmount();
 
-        render(<FarmWizard startAtFarmType />);
+        render(<FarmWizard startAtFarmType termsVersion={TERMS_VERSION} />);
         fireEvent.click(screen.getByText('typeCompany'));
         // type → eik → name → done
         expect(screen.getByText(/"total":4/)).toBeInTheDocument();
     });
 
     it('an unauthenticated visitor walks the registration steps too', () => {
-        render(<FarmWizard startAtFarmType={false} />);
+        render(<FarmWizard startAtFarmType={false} termsVersion={TERMS_VERSION} />);
         expect(screen.getByText('accountTitle')).toBeInTheDocument();
         // account → code → type → (eik) → name → done
         expect(screen.getByText(/"total":6/)).toBeInTheDocument();
     });
 });
 
+describe('consent is required, and the version is the one displayed', () => {
+    /** Walk the account step up to the point of submitting. */
+    function fillAccount() {
+        fireEvent.change(screen.getByLabelText('name'), { target: { value: 'Иван' } });
+        fireEvent.change(screen.getByLabelText('email'), { target: { value: 'i@example.bg' } });
+        fireEvent.change(screen.getByLabelText('password'), { target: { value: 'a-long-enough-pw' } });
+    }
+
+    it('the primary action stays disabled until the box is ticked', () => {
+        render(<FarmWizard startAtFarmType={false} termsVersion={TERMS_VERSION} />);
+        fillAccount();
+        // Everything else is filled, so the box is the only thing holding it.
+        expect(screen.getByRole('button', { name: 'accountSubmit' })).toBeDisabled();
+
+        fireEvent.click(screen.getByRole('checkbox'));
+        expect(screen.getByRole('button', { name: 'accountSubmit' })).not.toBeDisabled();
+    });
+
+    it('sends acceptedTerms and the version it was given', async () => {
+        render(<FarmWizard startAtFarmType={false} termsVersion={TERMS_VERSION} />);
+        fillAccount();
+        fireEvent.click(screen.getByRole('checkbox'));
+        fireEvent.click(screen.getByRole('button', { name: 'accountSubmit' }));
+
+        await waitFor(() =>
+            expect(calls.some((c) => c.url.includes('/api/auth/register/start'))).toBe(true),
+        );
+        const start = calls.find((c) => c.url.includes('/api/auth/register/start'))!;
+        const body = JSON.parse(start.init!.body as string);
+        expect(body.acceptedTerms).toBe(true);
+        // The version the PAGE served, not one the client invented — the
+        // server refuses any other value, so a mismatch here would mean every
+        // registration 400s.
+        expect(body.termsVersion).toBe(TERMS_VERSION);
+    });
+
+    it('a stale-version refusal says to reload, not "something went wrong"', async () => {
+        routes['/api/auth/register/start'] = {
+            ok: false,
+            body: { error: 'terms_version_stale', currentVersion: 'later-version' },
+        };
+        render(<FarmWizard startAtFarmType={false} termsVersion={TERMS_VERSION} />);
+        fillAccount();
+        fireEvent.click(screen.getByRole('checkbox'));
+        fireEvent.click(screen.getByRole('button', { name: 'accountSubmit' }));
+
+        // The one refusal worth naming: the only useful action is to reload and
+        // read the new terms, and the generic message would send the person
+        // round the same loop.
+        await waitFor(() => expect(screen.getByText('consentStale')).toBeInTheDocument());
+        expect(screen.queryByText('failed')).not.toBeInTheDocument();
+    });
+
+    it('…and any other refusal keeps the single generic message — the control', async () => {
+        // Without this, a handler that showed `consentStale` for everything
+        // would satisfy the test above while losing every other distinction.
+        routes['/api/auth/register/start'] = {
+            ok: false,
+            body: { error: 'password_breached' },
+        };
+        render(<FarmWizard startAtFarmType={false} termsVersion={TERMS_VERSION} />);
+        fillAccount();
+        fireEvent.click(screen.getByRole('checkbox'));
+        fireEvent.click(screen.getByRole('button', { name: 'accountSubmit' }));
+
+        await waitFor(() => expect(screen.getByText('failed')).toBeInTheDocument());
+        expect(screen.queryByText('consentStale')).not.toBeInTheDocument();
+    });
+});
+
 describe('a signed-in visitor is adding a farm, not registering', () => {
     it('starts at the farm-type step', () => {
-        render(<FarmWizard startAtFarmType />);
+        render(<FarmWizard startAtFarmType termsVersion={TERMS_VERSION} />);
         expect(screen.getByText('typeTitle')).toBeInTheDocument();
         expect(screen.queryByText('accountTitle')).not.toBeInTheDocument();
     });
 
     it('and does not sign in again', async () => {
-        render(<FarmWizard startAtFarmType />);
+        render(<FarmWizard startAtFarmType termsVersion={TERMS_VERSION} />);
         fireEvent.click(screen.getByText('typeIndividual'));
         fireEvent.change(screen.getByLabelText('farmNameLabel'), { target: { value: 'Ферма' } });
         fireEvent.click(screen.getByText('finish'));

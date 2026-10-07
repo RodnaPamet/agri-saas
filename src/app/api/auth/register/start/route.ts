@@ -68,6 +68,7 @@ import {
     sendAlreadyRegisteredEmail,
 } from '@/lib/auth/registration-emails';
 import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
+import { TERMS_VERSION } from '@/lib/legal/terms';
 
 export const runtime = 'nodejs';
 
@@ -95,6 +96,8 @@ export const POST = withApiErrorHandling(
             password,
             name,
             turnstileToken,
+            acceptedTerms,
+            termsVersion,
         } = (body ?? {}) as Record<string, unknown>;
         if (
             typeof rawEmail !== 'string' ||
@@ -105,6 +108,34 @@ export const POST = withApiErrorHandling(
             !name
         ) {
             return jsonResponse({ error: 'invalid_request' }, { status: 400 });
+        }
+
+        // Consent (P3.1), before any work and before the uniform-200 region.
+        //
+        // A 400 here is deliberate and leaks nothing: both answers are
+        // statements about the REQUEST — whether it carried an acceptance, and
+        // whether that acceptance names the terms we are currently serving —
+        // and neither depends on whether the address has an account. That is
+        // the same reasoning the Turnstile refusal below is written on.
+        //
+        // The VERSION is checked rather than assumed, and that is the point of
+        // sending it. Recording the server's current `TERMS_VERSION` against
+        // an acceptance made on a page loaded before a terms change would file
+        // a consent to a document the person never saw. Requiring the client
+        // to name what it displayed turns that silent mismatch into a refusal
+        // the wizard can act on by reloading.
+        //
+        // It is checked for EQUALITY with the live constant, not merely for
+        // being a string, so the column cannot be filled with an arbitrary
+        // value by a caller constructing its own request.
+        if (acceptedTerms !== true) {
+            return jsonResponse({ error: 'terms_not_accepted' }, { status: 400 });
+        }
+        if (termsVersion !== TERMS_VERSION) {
+            return jsonResponse(
+                { error: 'terms_version_stale', currentVersion: TERMS_VERSION },
+                { status: 400 },
+            );
         }
 
         // Bot screening (P3.5c), FIRST — before the password is hashed, before
@@ -226,6 +257,11 @@ export const POST = withApiErrorHandling(
                 // default would leave the most load-bearing field in this
                 // insert invisible at the call site.
                 emailVerified: null,
+                // Recorded from the SERVER constant, having just checked the
+                // client named the same one — so the row says what the person
+                // actually saw rather than whatever the request asserted.
+                acceptedTermsAt: new Date(),
+                acceptedTermsVersion: TERMS_VERSION,
             },
             select: { id: true, uiLanguage: true },
         });
