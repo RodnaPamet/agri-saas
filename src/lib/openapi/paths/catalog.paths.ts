@@ -45,6 +45,7 @@ import {
 } from '@/app-layer/schemas/catalog.schemas';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { op } from './helpers';
+import { ApiErrorResponseSchema } from '@/lib/dto/common';
 
 const TenantParams = z.object({
     tenantSlug: z.string().openapi({ param: { name: 'tenantSlug', in: 'path' }, example: 'acme' }),
@@ -143,6 +144,36 @@ const ItemWriteAckSchema = z
             'What create and update answer with — the id, name and category ONLY, because both carry a narrow `select`. A client needing the whole item must re-read it.',
     });
 
+/**
+ * The 409 both item writes can answer, which neither declared until now.
+ *
+ * Both descriptions already PROMISED a 409 in prose — "a duplicate is a 409",
+ * "a rename colliding with another item is a 409" — while the operations
+ * declared `201`/`200`, `400`, `401`, `403`, `404`, `426`, `429`, `500` and no
+ * 409 at all. So a generated client had no case for it and a client validating
+ * against the document saw an undeclared status (#1391).
+ */
+const ItemNameConflictError = ApiErrorResponseSchema.openapi(
+    'ItemNameConflictError',
+    {
+        description:
+            'A 409 from the case-insensitive unique index on `lower(name)`. `error.code` is ' +
+            '**`CONFLICT`**, NOT `STALE_DATA` — and that distinction is the point of documenting ' +
+            'it.\n\n' +
+            'The other 409 family on this API is the optimistic lock (`STALE_DATA` on the ' +
+            'farm profile, a field-operation line, a journal entry), where the remedy is to ' +
+            're-read and retry. **This one is not that.** Re-reading changes nothing: the name ' +
+            'is taken and the remedy is a DIFFERENT NAME. A client that treats every 409 as a ' +
+            'stale edit will tell the user to reload, which cannot help them.\n\n' +
+            '`error.details` carries Prisma\'s constraint target — the column list the ' +
+            'collision was on — so a form can point at the offending field rather than ' +
+            'reporting a generic failure.\n\n' +
+            'The index is on `lower(name)`, so the collision is CASE-INSENSITIVE: «Пшеница» ' +
+            'collides with «пшеница», and "Wheat" with "wheat". A client that de-duplicates its ' +
+            'own list case-sensitively will think the name is free.',
+    },
+);
+
 export function registerCatalogPaths(registry: OpenAPIRegistry): void {
     op(registry, {
         method: 'get',
@@ -176,6 +207,13 @@ export function registerCatalogPaths(registry: OpenAPIRegistry): void {
         params: TenantParams,
         body: CreateItemSchema,
         success: { status: 201, description: 'The created item’s id, name and category.', schema: ItemWriteAckSchema },
+        extraResponses: {
+            409: {
+                description:
+                    'That name is already taken, case-insensitively. Not a stale edit — re-reading will not free the name; ask for a different one.',
+                content: { 'application/json': { schema: ItemNameConflictError } },
+            },
+        },
     });
 
     op(registry, {
@@ -201,6 +239,13 @@ export function registerCatalogPaths(registry: OpenAPIRegistry): void {
         params: ItemParams,
         body: UpdateItemSchema,
         success: { status: 200, description: 'The updated item’s id, name and category.', schema: ItemWriteAckSchema },
+        extraResponses: {
+            409: {
+                description:
+                    'The rename collides with another item, case-insensitively. Same index and same remedy as create: a different name, not a re-read.',
+                content: { 'application/json': { schema: ItemNameConflictError } },
+            },
+        },
     });
 
     op(registry, {

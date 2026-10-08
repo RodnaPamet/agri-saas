@@ -30,6 +30,8 @@ import { provisionAllOrgAdminsToTenant } from './org-provisioning';
 import { ConflictError, notFound } from '@/lib/errors/types';
 import type { OrgContext } from '@/app-layer/types';
 import { logger } from '@/lib/observability/logger';
+import { runWithoutRls } from '@/lib/db/rls-middleware';
+import { getAuditContext, runWithAuditContext } from '@/lib/audit-context';
 
 export interface CreateTenantUnderOrgInput {
     name: string;
@@ -49,6 +51,27 @@ export interface CreateTenantUnderOrgResult {
  * have already passed the `canManageTenants` permission check at the
  * route layer.
  */
+/**
+ * Run the tenant-bootstrap writes as a deliberate, context-free operation.
+ *
+ * `source: 'system'` is the marker `rls-middleware` recognises — the same one
+ * `auth-codes` and `refresh-tokens` use for writes that are tenant-context-free
+ * by construction rather than by accident. It is NOT a claim that no human
+ * asked for this: an ORG_ADMIN did, through a permission-gated route. It is a
+ * claim about the WRITE, which genuinely has no tenant to scope to, because the
+ * tenant is the thing it is creating.
+ *
+ * The existing context is spread rather than replaced. `runWithAuditContext`
+ * installs a whole new store, so passing `{ source }` alone would drop an
+ * `actorUserId` or `requestId` set further up — which would quietly cost the
+ * audit trail its actor on a path whose actor is particularly worth keeping.
+ */
+function asOrgBootstrap<T>(fn: () => Promise<T>): Promise<T> {
+    return Promise.resolve(
+        runWithAuditContext({ ...getAuditContext(), source: 'system' }, fn),
+    ) as Promise<T>;
+}
+
 export async function createTenantUnderOrg(
     ctx: OrgContext,
     input: CreateTenantUnderOrgInput,
@@ -66,38 +89,77 @@ export async function createTenantUnderOrg(
     let primeDekCache: () => void;
 
     try {
-        primeDekCache = await prisma.$transaction(async (tx) => {
-            // P3.3 — one helper, not a fourth replication of its body. The
-            // cache prime is deliberately NOT called here: it would survive a
-            // rollback and evict a live tenant's DEK. It runs after commit.
-            const created = await createFarmTenant(
-                { name, slug, organizationId: ctx.organizationId },
-                tx,
-            );
-            const tenant = created.tenant;
-            tenantId = tenant.id;
-            tenantName = tenant.name;
-            tenantSlug = tenant.slug;
+        // #1368 — the bypass is DECLARED, and declared in BOTH vocabularies.
+        //
+        // The three writes below have no tenant context, which is correct: an
+        // ORG_ADMIN is creating a tenant that does not exist yet, so there is
+        // nothing to scope to. But `rls-middleware` escalates a write with no
+        // context to WARN, so every tenant creation under an org emitted three
+        // `missing_tenant_context` warnings on a healthy path. The cost is the
+        // ordinary cost of a warning that fires when nothing is wrong: it
+        // trains readers to skim the one line that would name a real one.
+        //
+        // Two wrappers, because the codebase has two separate mechanisms here
+        // and they do not know about each other (#1431):
+        //
+        //   `runWithoutRls`    is the REVIEWABLE declaration — a typed reason
+        //                      from the `RlsBypassReason` allowlist, logged as
+        //                      `bypass_invoked`. It is what an audit of
+        //                      intentional bypasses reads. It is also, here, a
+        //                      functional no-op: `getPrismaClient()` returns
+        //                      the very client this module already imports, so
+        //                      nothing about the query path changes.
+        //
+        //   `source: 'system'` is what the MIDDLEWARE actually reads to decide
+        //                      a write is deliberate. The typed reason above is
+        //                      invisible to it.
+        //
+        // `source` is read in three places, and the other two — `prisma.ts`'s
+        // audit writer and `encryption-middleware`'s DEK choice — both return
+        // on `!tenantId` BEFORE reaching it. On this path it therefore reaches
+        // exactly the one decision intended, and the encryption posture and
+        // audit rows are byte-for-byte what they were.
+        //
+        // The same org boundary was already NAMED on the way out —
+        // `PortfolioRepository` has five `org-portfolio-read` sites — and
+        // unnamed on the way in. #1261 made the typed bypass the only door so
+        // that an intentional bypass is named and an unnamed one is what warns.
+        primeDekCache = await asOrgBootstrap(() =>
+            runWithoutRls({ reason: 'org-tenant-bootstrap' }, (db) =>
+                db.$transaction(async (tx) => {
+                    // P3.3 — one helper, not a fourth replication of its body. The
+                    // cache prime is deliberately NOT called here: it would survive a
+                    // rollback and evict a live tenant's DEK. It runs after commit.
+                    const created = await createFarmTenant(
+                        { name, slug, organizationId: ctx.organizationId },
+                        tx,
+                    );
+                    const tenant = created.tenant;
+                    tenantId = tenant.id;
+                    tenantName = tenant.name;
+                    tenantSlug = tenant.slug;
 
-            // OWNER membership for the creator. provisionedByOrgId is
-            // intentionally NOT set here — this is a manually-granted
-            // membership that survives the creator's potential later
-            // removal from ORG_ADMIN status.
-            await tx.tenantMembership.create({
-                data: {
-                    tenantId: tenant.id,
-                    userId: ctx.userId,
-                    role: 'OWNER',
-                    status: 'ACTIVE',
-                },
-            });
+                    // OWNER membership for the creator. provisionedByOrgId is
+                    // intentionally NOT set here — this is a manually-granted
+                    // membership that survives the creator's potential later
+                    // removal from ORG_ADMIN status.
+                    await tx.tenantMembership.create({
+                        data: {
+                            tenantId: tenant.id,
+                            userId: ctx.userId,
+                            role: 'OWNER',
+                            status: 'ACTIVE',
+                        },
+                    });
 
-            await tx.tenantOnboarding.create({
-                data: { tenantId: tenant.id },
-            });
+                    await tx.tenantOnboarding.create({
+                        data: { tenantId: tenant.id },
+                    });
 
-            return created.primeDekCache;
-        });
+                    return created.primeDekCache;
+                }),
+            ),
+        );
     } catch (err) {
         // Translate the Prisma unique-violation on Tenant.slug into a
         // friendlier 409. Other Prisma errors bubble as-is for the API
@@ -125,9 +187,19 @@ export async function createTenantUnderOrg(
     // them. Other admins get AUDITOR rows tagged with provisionedByOrgId.
     let provisionedAdmins = 0;
     try {
-        const result = await provisionAllOrgAdminsToTenant(
-            ctx.organizationId,
-            tenantId,
+        // Also context-free, and for a different reason than the transaction
+        // above: this is where the third `missing_tenant_context` warning came
+        // from, and it is NOT in the transaction. The fan-out READS
+        // `OrganizationMembership`, which is org-scoped rather than
+        // tenant-scoped, so a tenant context would be the wrong shape for its
+        // read half even though the tenant now exists.
+        //
+        // Wrapped at the CALL SITE rather than inside `provisionAllOrgAdminsToTenant`:
+        // this is its only production caller today, and putting the marker
+        // inside the shared function would silently extend it to whatever
+        // calls it next.
+        const result = await asOrgBootstrap(() =>
+            provisionAllOrgAdminsToTenant(ctx.organizationId, tenantId),
         );
         provisionedAdmins = result.created;
     } catch (err) {

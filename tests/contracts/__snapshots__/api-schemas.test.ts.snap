@@ -6745,6 +6745,57 @@ exports[`API contract — per-schema snapshots schema: InventoryPageInfo 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: ItemNameConflictError 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "error": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "example": "NOT_FOUND"
+        },
+        "message": {
+          "type": "string",
+          "example": "Practice not found"
+        },
+        "requestId": {
+          "type": "string",
+          "example": "req_01HG7…"
+        },
+        "details": {},
+        "params": {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "description": "Values for the client to interpolate into its own translated message, keyed per \`code\` — e.g. \`{ \\"max\\": 120 }\` for \`FARM_NAME_TOO_LONG\`. Ids and quantities only: strings and numbers, never an object and never personal data. Absent for codes that need no values.",
+          "example": {
+            "max": 120
+          }
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ]
+    }
+  },
+  "required": [
+    "error"
+  ],
+  "description": "A 409 from the case-insensitive unique index on \`lower(name)\`. \`error.code\` is **\`CONFLICT\`**, NOT \`STALE_DATA\` — and that distinction is the point of documenting it.\\n\\nThe other 409 family on this API is the optimistic lock (\`STALE_DATA\` on the farm profile, a field-operation line, a journal entry), where the remedy is to re-read and retry. **This one is not that.** Re-reading changes nothing: the name is taken and the remedy is a DIFFERENT NAME. A client that treats every 409 as a stale edit will tell the user to reload, which cannot help them.\\n\\n\`error.details\` carries Prisma's constraint target — the column list the collision was on — so a form can point at the offending field rather than reporting a generic failure.\\n\\nThe index is on \`lower(name)\`, so the collision is CASE-INSENSITIVE: «Пшеница» collides with «пшеница», and \\"Wheat\\" with \\"wheat\\". A client that de-duplicates its own list case-sensitively will think the name is free."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: JobRunEnvelope 1`] = `
 "{
   "type": [
@@ -10560,7 +10611,9 @@ exports[`API contract — per-schema snapshots schema: SendExchangeMessage 1`] =
     "body": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 8000
+      "maxLength": 4000,
+      "description": "The message text. **4000 is measured AFTER sanitising and trimming**, not on what the user typed: the server strips every tag, decodes the canonical entities, trims, and only then checks the length — so padding with markup cannot smuggle a longer message past the limit.\\n\\n**Capping at 4000 client-side is sufficient and conservative.** Sanitising only ever SHORTENS — tags are removed, and \`&lt;\` becomes \`<\`, four units to one — so the sanitised length never exceeds the input length. A client that caps cannot be surprised by \`MESSAGE_TOO_LONG\`; that refusal is only reachable by a client that does not cap.\\n\\nThe unit is **UTF-16 code units**, not characters and not bytes. For Cyrillic that is 1:1, so a Bulgarian farmer gets 4000 characters. Outside the BMP it is not: an emoji is 2 units, so 2001 emoji is refused at 4002. Counting grapheme clusters over-estimates the allowance; counting bytes under-estimates it.\\n\\n\`minLength: 1\` is NECESSARY BUT NOT SUFFICIENT, which is the surprising part: emptiness is judged after sanitising too. \`<b></b>\` is eight characters, satisfies this constraint, sanitises to the empty string, and is refused with \`MESSAGE_EMPTY\`. A payload can pass the schema and still be rejected as empty.\\n\\n**The server's request validator deliberately permits more (8000).** That is not a contradiction and not a bug: Zod cannot sanitise, so it is a cheap outer bound that rejects absurd payloads, and the real gate is the usecase — which is what keeps \`MESSAGE_TOO_LONG\` reachable as a CODE rather than collapsing it into a generic validation error. 4000 is the limit a client must respect.",
+      "example": "Имате ли още налична пшеница?"
     }
   },
   "required": [
