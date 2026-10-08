@@ -3,6 +3,7 @@
  */
 import { z } from '@/lib/openapi/zod';
 import { UserRefSchema } from './common';
+import { MultiPolygonGeometrySchema } from '@/app-layer/schemas/geo.schemas';
 
 /**
  * A task comment, as both the list and the create return it.
@@ -255,3 +256,36 @@ export type TaskDetailDTO = z.infer<typeof TaskDetailDTOSchema>;
 
 export type TaskDTO = z.infer<typeof TaskDTOSchema>;
 
+/**
+ * A parcel as the task map needs it: who it is and where it is.
+ *
+ * NOT a narrowing of `ParcelGeo`, which carries thirteen fields the location
+ * map renders — soil, ownership, lease state, crop, area. The task map draws
+ * an outline and labels it, so every other field would be a contract nobody
+ * reads and nobody could later remove. Contract agreed with agrent-ios and
+ * recorded on #1391.
+ */
+export const TaskParcelDTOSchema = z
+    .object({
+        id: z.string(),
+        name: z.string().openapi({
+            description:
+                'The parcel name as the farmer wrote it. NOT unique — two parcels on one farm may share a name, which is why the response is ordered by name AND id.',
+            example: 'Дерманци (20688)',
+        }),
+        geometry: MultiPolygonGeometrySchema.nullable().openapi({
+            description:
+                'The outline as GeoJSON **MultiPolygon** in WGS84, simplified for display. ' +
+                'Always MultiPolygon, never Polygon: the column is `geometry(MultiPolygon, 4326)` ' +
+                'and every write path normalises to it, so a client needs no Polygon branch.\n\n' +
+                '**`null` means the parcel has no outline** — a normal state, not an error. Keep ' +
+                'the parcel and say it is not drawn rather than dropping it, or your count will ' +
+                'disagree with the task. A parcel whose geometry COLLAPSES at the display ' +
+                'tolerance falls back to its exact outline rather than arriving as null, so null ' +
+                'means exactly one thing.',
+        }),
+    })
+    .openapi('TaskParcel', {
+        description:
+            'A parcel linked to a task, for a display-only map. Deliberately status-free: per-parcel operation status lives on the field-operation detail route, so this shape means the same thing whatever the task type is.',
+    });

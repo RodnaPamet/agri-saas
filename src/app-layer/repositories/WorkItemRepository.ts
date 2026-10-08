@@ -560,6 +560,33 @@ export class TaskLinkRepository {
         });
     }
 
+    /**
+     * The parcel ids a task links to, via `entityType: PARCEL` links only.
+     *
+     * Filtered in the DATABASE rather than by reading `listByTask` and
+     * filtering in memory, because a task's links are mixed — ASSET, EVIDENCE,
+     * FILE, LOCATION, EQUIPMENT, PLANTING — and a parcel map wants one kind.
+     *
+     * A `LOCATION` link is deliberately NOT expanded into that location's
+     * parcels. It would roughly be what a caller wants, and "roughly" is the
+     * problem: nobody has decided whether linking a location means "all its
+     * parcels, as they are now" or "the parcels it had when linked", and those
+     * differ the moment a parcel is added. Left undone rather than guessed.
+     *
+     * `take` is a real bound, not a formality: the unique constraint is
+     * `(tenantId, taskId, entityType, entityId)`, so this is one row per
+     * distinct parcel and 500 distinct parcels on a single task is already far
+     * past anything a field map can render.
+     */
+    static async listParcelIdsByTask(db: PrismaTx, ctx: RequestContext, taskId: string): Promise<string[]> {
+        const rows = await db.taskLink.findMany({
+            where: { taskId, tenantId: ctx.tenantId, entityType: TaskLinkEntityType.PARCEL },
+            select: { entityId: true },
+            take: 500,
+        });
+        return rows.map((r) => r.entityId);
+    }
+
     static async link(db: PrismaTx, ctx: RequestContext, taskId: string, entityType: string, entityId: string, relation?: string) {
         return db.taskLink.create({
             data: {

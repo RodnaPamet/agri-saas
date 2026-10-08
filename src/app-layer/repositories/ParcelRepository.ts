@@ -8,6 +8,7 @@ import {
     areaHectaresNonNullSql,
     asGeoJsonSql,
     simplifiedGeoJsonSql,
+    displayGeoJsonSql,
     mvtTileSql,
     col,
     soilGridCellSql,
@@ -45,6 +46,27 @@ export const BULGARIA_WGS84_ENVELOPE = {
 } as const;
 
 /** A parcel returned to the client — geometry serialized to GeoJSON. */
+/**
+ * A parcel as a map needs it and nothing more: who it is and where it is.
+ *
+ * Deliberately NOT a `Pick<ParcelGeo, …>`. `ParcelGeo` is what the LOCATION
+ * map reads — soil, ownership, lease state, crop, area — and narrowing it by
+ * `Pick` would tie this shape to that one, so adding a field there would widen
+ * the task-map contract by accident. These two answer different questions and
+ * are allowed to drift.
+ */
+export interface ParcelSummaryGeo {
+    id: string;
+    name: string;
+    /**
+     * GeoJSON in WGS84, SIMPLIFIED for display. **Null when the parcel has no
+     * outline**, which is a normal state and not an error — a client keeps the
+     * parcel and says it is not drawn, rather than dropping it, so its count
+     * still agrees with the task's links.
+     */
+    geometry: Geometry | null;
+}
+
 export interface ParcelGeo {
     id: string;
     name: string;
@@ -465,6 +487,94 @@ export class ParcelRepository {
             };
         });
     }
+
+    /**
+     * Minimal summaries for a SET of parcel ids — `{ id, name, geometry }`.
+     *
+     * Separate from `listForLocation` rather than an option on it, because the
+     * two answer different questions. That one is "what is in this location",
+     * scoped by `locationId` and carrying the soil hydration, ownership join
+     * and lease EXISTS the location map renders. This one is "draw these
+     * specific parcels", reached from a TASK, where the map shows a name and an
+     * outline and nothing else — so folding them together would make every
+     * task map pay for two LATERAL joins and a subquery it never reads.
+     *
+     * Geometry is ALWAYS simplified: every caller of this method is
+     * display-only. For an edit or area path use `listForLocation` with no
+     * tolerance, which is the exact read.
+     *
+     * `ORDER BY "name", "id"` is contractual, not cosmetic (#1391): a client
+     * renders a legend keyed on name, so an unstable order reshuffles it
+     * between loads, and parcel names are not unique — the id breaks ties so
+     * the order is total rather than merely mostly-stable.
+     *
+     * An empty `parcelIds` returns `[]` without touching the database: `IN ()`
+     * is a syntax error in Postgres, so the guard is correctness and not just
+     * a saved round trip.
+     */
+    /**
+     * The parcel ids a FIELD_OPERATION's lines touch.
+     *
+     * Reads `OperationParcel` though it lives in `ParcelRepository`, because
+     * the question is a parcel-set question — "which parcels does this job
+     * cover" — and keeping it beside `listSummariesByIds` means the whole
+     * task-to-parcels resolution is readable in one place.
+     *
+     * **Rows are per (parcel, product), NOT per parcel.** `OperationParcel`'s
+     * own comment records why: a spray job writes a soil-nurturing fertilizer
+     * line AND a treatment product line for the same parcel, with uniqueness
+     * per product. So this returns DUPLICATES by design and the caller must
+     * deduplicate — two products over three parcels is six rows covering three
+     * parcels. `distinct` is deliberately not used here: it would hide the
+     * shape from the caller, and a caller that then stopped deduplicating
+     * would break silently the day a second source of ids was unioned in.
+     *
+     * `take` bounds a real worst case rather than a theoretical one: lines
+     * multiply parcels BY products, so the ceiling is higher than a link list's
+     * and 2000 is comfortably past a plausible job.
+     */
+    static async listOperationParcelIdsForTask(
+        db: PrismaTx,
+        ctx: RequestContext,
+        taskId: string,
+    ): Promise<string[]> {
+        const rows = await db.operationParcel.findMany({
+            where: { taskId, tenantId: ctx.tenantId },
+            select: { parcelId: true },
+            take: 2000,
+        });
+        return rows.map((r) => r.parcelId);
+    }
+
+    static async listSummariesByIds(
+        db: PrismaTx,
+        ctx: RequestContext,
+        parcelIds: readonly string[],
+        opts: { simplifyTolerance?: number } = {},
+    ): Promise<ParcelSummaryGeo[]> {
+        if (parcelIds.length === 0) return [];
+
+        const geojsonSql = displayGeoJsonSql(col('geometry'), opts.simplifyTolerance);
+        const rows = await db.$queryRaw<Array<{
+            id: string;
+            name: string;
+            geojson: string | null;
+        }>>(
+            Prisma.sql`SELECT "id", "name", ${geojsonSql} AS "geojson"
+                FROM "Parcel"
+                WHERE "id" IN (${Prisma.join(parcelIds)})
+                  AND "tenantId" = ${ctx.tenantId}
+                  AND "deletedAt" IS NULL
+                ORDER BY "name" ASC, "id" ASC`,
+        );
+
+        return rows.map((r) => ({
+            id: r.id,
+            name: r.name,
+            geometry: parseGeometry(r.geojson),
+        }));
+    }
+
 
     /**
      * Render a location's parcels as a Mapbox Vector Tile (the binary

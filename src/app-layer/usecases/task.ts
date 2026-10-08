@@ -1,5 +1,6 @@
 import { RequestContext } from '../types';
 import { WorkItemRepository, TaskLinkRepository, TaskCommentRepository, TaskWatcherRepository, TaskFilters, TaskListParams } from '../repositories/WorkItemRepository';
+import { ParcelRepository, type ParcelSummaryGeo } from '../repositories/ParcelRepository';
 import { assertCanReadTasks, assertCanWriteTasks, assertCanCommentOnTasks } from '../policies/task.policies';
 import { logEvent } from '../events/audit';
 import { emitAutomationEvent } from '../automation';
@@ -10,7 +11,7 @@ import { createAssignmentNotification } from '../notifications/assignment';
 import { sendWebPushToUser } from '@/lib/notifications/web-push';
 import { runInTenantContext } from '@/lib/db-context';
 import { env } from '@/env';
-import { badRequest, codedBadRequest, notFound } from '@/lib/errors/types';
+import { badRequest, codedBadRequest, codedNotFound, notFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { validateTaskMetadata } from '../schemas/json-columns.schemas';
 import { logger } from '@/lib/observability/logger';
@@ -677,6 +678,59 @@ async function emitTaskAssignedNotification(
 export async function listTaskLinks(ctx: RequestContext, taskId: string) {
     assertCanReadTasks(ctx);
     return runInTenantContext(ctx, (db) => TaskLinkRepository.listByTask(db, ctx, taskId));
+}
+
+/**
+ * The parcels a task touches, as a map needs them: `{ id, name, geometry }`.
+ *
+ * Contract agreed with agrent-ios and recorded on #1391 — read that before
+ * changing any of the four decisions below, because each was chosen against an
+ * alternative rather than by default.
+ *
+ * **Uniform across task types.** A FIELD_OPERATION's parcels come from its
+ * lines and every other type's come from its PARCEL links, and both arrive in
+ * the same shape. The client draws a field operation from the field-operation
+ * detail route anyway (that one carries per-line status and the location
+ * backdrop); answering here too costs nothing and means one decoder.
+ *
+ * **Status-free.** Per-parcel operation status stays on the field-operation
+ * route. Putting it here would make this endpoint's meaning depend on the task
+ * type, which is the thing "uniform" buys.
+ *
+ * **No `boundsJson`.** It was an untyped `{}` in the spec, which is how a
+ * client ends up decoding a four-number array by observation.
+ */
+export async function listTaskParcels(ctx: RequestContext, taskId: string): Promise<ParcelSummaryGeo[]> {
+    assertCanReadTasks(ctx);
+    return runInTenantContext(ctx, async (db) => {
+        // The 404 belongs to the TASK and never to its parcels: a task that
+        // exists and links none answers `200 []`. Conflating them would make
+        // "no parcels yet" indistinguishable from "wrong id", so a client
+        // could not tell a typo from an empty field map.
+        const task = await WorkItemRepository.findBareById(db, ctx, taskId);
+        if (!task) throw codedNotFound('TASK_NOT_FOUND', 'Task not found');
+
+        const linkedIds = await TaskLinkRepository.listParcelIdsByTask(db, ctx, taskId);
+
+        // Read the operation lines UNCONDITIONALLY rather than gating on
+        // `task.type === FIELD_OPERATION`. Only a field operation has
+        // OperationParcel rows by construction, so for every other type this
+        // is an indexed read returning nothing — and the branch it replaces is
+        // one that would silently exclude a future task type that gains lines.
+        // A cheap empty query beats a type check that can drift from the data
+        // model, and `task` is already loaded for the 404 either way.
+        const lineIds = await ParcelRepository.listOperationParcelIdsForTask(db, ctx, taskId);
+
+        // Deduplicate. `lineIds` is per (parcel, product), not per parcel —
+        // a spray job with two products over three parcels arrives as six ids
+        // covering three. Unioning the two sources makes this load-bearing
+        // rather than defensive: a parcel can be BOTH linked and on a line.
+        const parcelIds = [...new Set([...linkedIds, ...lineIds])];
+
+        // Ordering (name, then id) is the repository's, because it is part of
+        // the response contract rather than this function's preference.
+        return ParcelRepository.listSummariesByIds(db, ctx, parcelIds);
+    });
 }
 
 export async function addTaskLink(ctx: RequestContext, taskId: string, entityType: string, entityId: string, relation?: string) {

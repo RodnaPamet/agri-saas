@@ -11606,6 +11606,92 @@ exports[`API contract — per-schema snapshots schema: TaskListItem 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: TaskParcel 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string",
+      "description": "The parcel name as the farmer wrote it. NOT unique — two parcels on one farm may share a name, which is why the response is ordered by name AND id.",
+      "example": "Дерманци (20688)"
+    },
+    "geometry": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "MultiPolygon"
+          ]
+        },
+        "coordinates": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "prefixItems": [
+                  {
+                    "type": "number",
+                    "minimum": -180,
+                    "maximum": 180
+                  },
+                  {
+                    "type": "number",
+                    "minimum": -90,
+                    "maximum": 90
+                  }
+                ]
+              },
+              "minItems": 4
+            },
+            "minItems": 1
+          },
+          "minItems": 1
+        }
+      },
+      "required": [
+        "type",
+        "coordinates"
+      ],
+      "description": "The outline as GeoJSON **MultiPolygon** in WGS84, simplified for display. Always MultiPolygon, never Polygon: the column is \`geometry(MultiPolygon, 4326)\` and every write path normalises to it, so a client needs no Polygon branch.\\n\\n**\`null\` means the parcel has no outline** — a normal state, not an error. Keep the parcel and say it is not drawn rather than dropping it, or your count will disagree with the task. A parcel whose geometry COLLAPSES at the display tolerance falls back to its exact outline rather than arriving as null, so null means exactly one thing."
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "geometry"
+  ],
+  "description": "A parcel linked to a task, for a display-only map. Deliberately status-free: per-parcel operation status lives on the field-operation detail route, so this shape means the same thing whatever the task type is."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: TaskParcelsResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "parcels": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/TaskParcel"
+      }
+    }
+  },
+  "required": [
+    "parcels"
+  ],
+  "description": "Wrapped in an object rather than returned as a bare array, so a count or a bounds can be added later without a breaking change. The sibling \`/links\` returns a bare array and is the route that now cannot grow."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: TaskSetStatusRequest 1`] = `
 "{
   "type": "object",
