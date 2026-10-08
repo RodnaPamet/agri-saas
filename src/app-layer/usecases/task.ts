@@ -11,7 +11,7 @@ import { createAssignmentNotification } from '../notifications/assignment';
 import { sendWebPushToUser } from '@/lib/notifications/web-push';
 import { runInTenantContext } from '@/lib/db-context';
 import { env } from '@/env';
-import { badRequest, codedBadRequest, notFound } from '@/lib/errors/types';
+import { badRequest, codedBadRequest, codedNotFound, notFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { validateTaskMetadata } from '../schemas/json-columns.schemas';
 import { logger } from '@/lib/observability/logger';
@@ -708,7 +708,7 @@ export async function listTaskParcels(ctx: RequestContext, taskId: string): Prom
         // "no parcels yet" indistinguishable from "wrong id", so a client
         // could not tell a typo from an empty field map.
         const task = await WorkItemRepository.findBareById(db, ctx, taskId);
-        if (!task) throw notFound('Task not found');
+        if (!task) throw codedNotFound('TASK_NOT_FOUND', 'Task not found');
 
         const linkedIds = await TaskLinkRepository.listParcelIdsByTask(db, ctx, taskId);
 
