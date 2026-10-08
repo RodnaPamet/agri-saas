@@ -47,6 +47,7 @@ import { getCachedEmbedding, setCachedEmbedding } from '@/lib/cache/ai-cache';
 import { logger } from '@/lib/observability/logger';
 import { env } from '@/env';
 import type { RequestContext } from '@/app-layer/types';
+import { assertAiSpendAllowed } from '@/app-layer/ai/budget';
 import type { KnowledgeChunkSourceType } from '@prisma/client';
 
 export interface RetrieveOptions {
@@ -126,6 +127,11 @@ export async function retrieve(
     try {
         queryVector = await getCachedEmbedding(embedModel, query);
         if (!queryVector) {
+            // #1345 — every vector-mode retrieval embeds the query, so this
+            // is per-SEARCH spend. Gated here rather than in the caller
+            // because `retrieve` is reached from both `askKnowledgeBase` and
+            // directly.
+            await assertAiSpendAllowed(ctx);
             const [embedding] = await getEmbeddingProvider().embed({ texts: [query] });
             queryVector = embedding.vector;
             await setCachedEmbedding(embedModel, query, queryVector);

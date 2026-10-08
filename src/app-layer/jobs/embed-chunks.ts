@@ -29,6 +29,7 @@
  * several runs rather than one unbounded sweep.
  */
 import { getEmbeddingProvider } from '@/app-layer/ai/provider';
+import { assertAiSpendAllowed } from '@/app-layer/ai/budget';
 import { runInTenantContext } from '@/lib/db-context';
 import { toVectorLiteral } from '@/lib/db/embeddings';
 import { logger } from '@/lib/observability/logger';
@@ -84,6 +85,15 @@ export async function runEmbedChunks(opts: {
         if (candidates.length === 0) {
             return { tenantId: opts.tenantId, scanned: 0, embedded: 0 };
         }
+
+        // #1345 — BEFORE the embed, and inside the tenant context so the
+        // plan and the farm-verification state resolve for this tenant.
+        //
+        // This is the cost that scales with how much a speculative signup
+        // uploads: one embed call per batch of chunks, for every chunk the
+        // tenant ingests. `assertAiBudget` was reachable only through
+        // `ai/routing.ts`, which this job never touches.
+        await assertAiSpendAllowed(ctx);
 
         // One batched embed call for the whole batch.
         const embeddings = await getEmbeddingProvider().embed({

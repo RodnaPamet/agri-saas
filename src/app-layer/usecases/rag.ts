@@ -12,6 +12,7 @@
  * private chunks while still exposing the GLOBAL catalog.
  */
 import { getAiProvider } from '@/app-layer/ai/provider';
+import { assertAiSpendAllowed } from '@/app-layer/ai/budget';
 import { retrieve, type RetrievedChunk } from '@/app-layer/ai/rag/retrieve';
 import { buildContext, NO_SOURCES_ANSWER } from '@/app-layer/ai/rag/build-context';
 import { assertCanRead } from '../policies/common';
@@ -58,6 +59,31 @@ export async function askKnowledgeBase(
     }
 
     const system = buildContext(sources, query);
+
+    // #1345 — and this one is a COMPLETION bypass, not an embedding one.
+    //
+    // The issue's table listed this file under embeddings; it is not. It calls
+    // `getAiProvider().complete()` directly and never reaches
+    // `completeWithRouting`, which is where `assertAiBudget` lives. So this
+    // was the only path in the codebase spending COMPLETION tokens with no
+    // budget check at all — the expensive kind, and closer to an open tap than
+    // the embedding gaps the issue was filed about.
+    //
+    // `retrieve` above has its own gate, so a refusal normally fires there
+    // first; this is not redundant, because `sources.length === 0` returns
+    // early and a caller reaching here has already paid for the retrieval.
+    // More to the point, the two are independently reachable and a gate that
+    // only works because another one ran first is not a gate.
+    //
+    // NOTE for a follow-up: routing this through `completeWithRouting` would
+    // be better than asserting beside it — this path also skips provider
+    // failover and the usage ledger, so its tokens are spent without being
+    // RECORDED, which means the monthly total this very gate reads is
+    // understated by whatever RAG has consumed. Filed separately rather than
+    // widened into here, because routing takes a task tier this caller has no
+    // obvious value for.
+    await assertAiSpendAllowed(ctx);
+
     const completion = await getAiProvider().complete({
         messages: [
             { role: 'system', content: system },
