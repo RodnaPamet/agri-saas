@@ -34,7 +34,12 @@ import { op } from './helpers';
 // validates with it in `use-tasks.ts`. Referencing it here is using the
 // spelling this repo already trusts for the same record — not adding a third
 // one, which is what the note below rightly warns against.
-import { TaskDTOSchema, TaskCommentDTOSchema } from '@/lib/dto/task.dto';
+import {
+    TaskDTOSchema,
+    TaskListItemDTOSchema,
+    TaskDetailDTOSchema,
+    TaskCommentDTOSchema,
+} from '@/lib/dto/task.dto';
 import {
     CreateTaskSchema,
     UpdateTaskSchema,
@@ -108,8 +113,11 @@ export function registerTaskPaths(registry: OpenAPIRegistry): void {
             description:
                 'Tasks. TWO shapes, and the query decides which — see the operation description.',
             schema: z.union([
-                z.object({ rows: z.array(TaskDTOSchema), nextCursor: z.string().nullable() }),
-                z.object({ rows: z.array(TaskDTOSchema), truncated: z.boolean() }),
+                z.object({
+                    rows: z.array(TaskListItemDTOSchema),
+                    nextCursor: z.string().nullable(),
+                }),
+                z.object({ rows: z.array(TaskListItemDTOSchema), truncated: z.boolean() }),
             ]),
         },
     });
@@ -133,7 +141,16 @@ export function registerTaskPaths(registry: OpenAPIRegistry): void {
         summary: 'Get one task',
         tags: ['Tasks'],
         params: TaskParams,
-        success: { status: 200, description: 'The task.', schema: TaskDTOSchema },
+        success: {
+            status: 200,
+            // `TaskDetail`, not `Task`: this route returns the relations
+            // `getById` includes plus the `sla` `getTask` derives. The LIST
+            // above serves `TaskListItem`, a twelve-field projection. Both
+            // were documented as `Task` until this change, so each promised
+            // what only the other sends.
+            description: 'The task, with its relations.',
+            schema: TaskDetailDTOSchema,
+        },
     });
 
     op(registry, {
