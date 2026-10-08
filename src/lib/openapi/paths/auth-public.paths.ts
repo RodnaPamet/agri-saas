@@ -127,4 +127,52 @@ export function registerAuthPublicPaths(registry: OpenAPIRegistry): void {
                 }),
         },
     });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/auth/terms',
+        operationId: 'getTerms',
+        summary: 'The terms version to send back, and where to read them',
+        description:
+            'Read this BEFORE `POST /api/auth/accept-terms`, which requires `termsVersion` to equal ' +
+            'the version the server is serving. Until this route existed, nothing told a non-browser ' +
+            'client what that value was — the web renders `/terms` itself so it has the constant in ' +
+            'hand, and a native client did not (agrent-ios P4.4).' +
+            '\n\n**It is the way out of a trap, not a convenience.** A first Sign in with Apple answers ' +
+            '`termsPending: true`, after which every `/api/t/**` and `/api/me/**` is a 403 until ' +
+            'acceptance is recorded. A client that cannot learn the version is held there permanently, ' +
+            'and for an Apple-only account using Hide My Email there is no web fallback.' +
+            '\n\n**Public and ungated**, like the document itself: an anonymous reader and a signed-in ' +
+            'one see the same version. It is under `/api/auth/` so a `termsPending` session can reach ' +
+            'it — that session is the one which MUST be able to.' +
+            '\n\n**Do not cache across sessions.** The version changes when the terms change, which is ' +
+            'exactly when a stale read is harmful: you would send a version the user did not see.' +
+            '\n\nOn `400 terms_version_stale` from accept-terms, re-read this, show the document again ' +
+            'and ask again. **Never retry with the `currentVersion` the error carries** — that files ' +
+            'consent against a version the user never read, which is worse than the error, because the ' +
+            'stored row is the only legal artifact the product keeps.',
+        tags: ['Auth'],
+        security: NO_AUTH,
+        success: {
+            status: 200,
+            description: 'The current terms version and the page to read.',
+            schema: z
+                .object({
+                    version: z.string().openapi({
+                        description:
+                            'Send this back verbatim as `termsVersion`. It is a DATE plus a `-draft` suffix while these terms are unreviewed, and the suffix is deliberate — a stored row reading `…-draft` can never be mistaken for acceptance of a reviewed document. Treat it as an opaque string: do not parse the date, and do not compare versions for ordering.',
+                        example: '2026-10-07-draft',
+                    }),
+                    url: z.string().openapi({
+                        description:
+                            'The page to show. RELATIVE by design — this product is served on more than one hostname, so an absolute URL would bake in an origin that is right for only one of them. Resolve it against the origin you called.',
+                        example: '/terms',
+                    }),
+                })
+                .openapi('TermsInfo', {
+                    description:
+                        'Carries no body text: open `url` to show the document, so its own draft banner travels with it rather than being restated as a field here.',
+                }),
+        },
+    });
 }
