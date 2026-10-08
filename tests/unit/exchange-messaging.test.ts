@@ -16,7 +16,14 @@
  */
 const mockPrisma = {
     exchangeListing: { findFirst: jest.fn() },
-    exchangeThread: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
+    // `createMany` is here because #1415 made the thread insert
+    // conflict-tolerant: a P2002 inside `runInTenantContext`'s transaction
+    // would poison it, so `create` cannot be used. A partial mock missing it
+    // fails with "not a function", which is the barrel-mock trap one level in.
+    exchangeThread: {
+        findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(),
+        createMany: jest.fn(), update: jest.fn(),
+    },
     // #1298 — per-person read pointers live in their own table now. `markReadFor`
     // tries `updateMany` first (monotonic: only if the stored pointer is older)
     // and falls back to `create`, so both need to exist or every send throws.
@@ -161,6 +168,8 @@ beforeEach(() => {
     mockPrisma.exchangeMessage.update.mockResolvedValue({});
     mockPrisma.exchangeMessage.create.mockResolvedValue({ id: 'm1', createdAt: new Date() });
     mockPrisma.exchangeThread.create.mockResolvedValue({ id: 'th_new' });
+    // count: 1 = THIS call inserted, which is what gates the audit row.
+    mockPrisma.exchangeThread.createMany.mockResolvedValue({ count: 1 });
     mockPrisma.exchangeListing.findFirst.mockResolvedValue({ id: 'lst1', sellerTenantId: SELLER });
     enqueueEmail.mockReset();
     mockRecipientDb.tenantMembership.findMany.mockResolvedValue([
@@ -193,13 +202,37 @@ describe('opening a thread', () => {
         mockPrisma.exchangeThread.findFirst.mockResolvedValue({ id: 'th1', reads: [] });
         const r = await openExchangeThread(buyerCtx, 'lst1');
         expect(r).toEqual({ id: 'th1', created: false });
-        expect(mockPrisma.exchangeThread.create).not.toHaveBeenCalled();
+        // `createMany`, not `create`: #1415 made the insert conflict-tolerant,
+        // so asserting `create` was never called became vacuously true — the
+        // code calls it on no path at all. Pinning the method actually used is
+        // what keeps this able to fail.
+        expect(mockPrisma.exchangeThread.createMany).not.toHaveBeenCalled();
     });
 
     it('creates one when none exists', async () => {
-        mockPrisma.exchangeThread.findFirst.mockResolvedValue(null);
+        // TWO answers: the existence check misses, then the read-back finds the
+        // row. `createMany` returns no ids, so #1415 reads the row back rather
+        // than taking one from the insert — a single `mockResolvedValue(null)`
+        // trips the usecase's "absent after insert" invariant.
+        mockPrisma.exchangeThread.findFirst
+            .mockResolvedValueOnce(null)
+            .mockResolvedValueOnce({ id: 'th_new' });
+        mockPrisma.exchangeThread.createMany.mockResolvedValue({ count: 1 });
         const r = await openExchangeThread(buyerCtx, 'lst1');
         expect(r).toEqual({ id: 'th_new', created: true });
+    });
+
+    it('a concurrent open returns the winner and writes NO audit row', async () => {
+        // count: 0 means the conflict target already existed — somebody inserted
+        // between the read and the insert. The audit row is gated on that count
+        // so this path cannot assert a creation that did not happen, in a trail
+        // that is hash-chained.
+        mockPrisma.exchangeThread.findFirst
+            .mockResolvedValueOnce(null)
+            .mockResolvedValueOnce({ id: 'th_raced' });
+        mockPrisma.exchangeThread.createMany.mockResolvedValue({ count: 0 });
+        const r = await openExchangeThread(buyerCtx, 'lst1');
+        expect(r).toEqual({ id: 'th_raced', created: false });
     });
 
     it('refuses a seller opening a thread on their OWN listing', async () => {
@@ -770,7 +803,11 @@ describe('a seller blocking a buyer', () => {
         await expect(openExchangeThread(buyerCtx, 'lst1')).rejects.toThrow(/not accepting/i);
         // Checked before the idempotent read, so a pre-existing thread is not
         // handed back either.
-        expect(mockPrisma.exchangeThread.create).not.toHaveBeenCalled();
+            // `createMany`, not `create` (#1415). This assertion is the one that
+            // proves a blocked buyer gets NO thread, and it would have gone
+            // vacuous when the insert became conflict-tolerant — the method it
+            // named is no longer called on any path.
+            expect(mockPrisma.exchangeThread.createMany).not.toHaveBeenCalled();
     });
 
     it('refuses a blocked buyer SENDING', async () => {
