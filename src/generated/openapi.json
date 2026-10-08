@@ -7423,6 +7423,45 @@
         "additionalProperties": {},
         "description": "The market observation a benchmark was computed against — carried so a client can attribute and date the claim instead of presenting it as an unsourced fact."
       },
+      "MyFarms": {
+        "type": "object",
+        "properties": {
+          "farms": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "slug": {
+                  "type": "string",
+                  "description": "Use this for navigation. Server-generated and stable.",
+                  "example": "zk-pobeda-9f3a1c20"
+                },
+                "name": {
+                  "type": "string",
+                  "example": "ЗК ПОБЕДА"
+                },
+                "role": {
+                  "type": "string",
+                  "description": "The caller's role IN THAT FARM: `OWNER`, `ADMIN`, `EDITOR`, `READER`, `AUDITOR` or `MECHANISATOR`. A growing union — treat an unrecognised value as the least privilege rather than as an error.",
+                  "example": "OWNER"
+                }
+              },
+              "required": [
+                "id",
+                "slug",
+                "name",
+                "role"
+              ]
+            }
+          }
+        },
+        "required": [
+          "farms"
+        ]
+      },
       "NativeExchangeRequest": {
         "type": "object",
         "properties": {
@@ -42496,6 +42535,131 @@
       }
     },
     "/api/me/farms": {
+      "get": {
+        "operationId": "listMyFarms",
+        "summary": "The farms the caller belongs to",
+        "description": "Every farm the caller is an ACTIVE member of, for a farm switcher. Authenticated, no tenant context.\n\n**Ordered by membership age, oldest first, and that is a contract rather than a convenience.** `farms[0]` is the same farm `GET /api/auth/me` names in its `tenant` field, so a client can reconcile this list against the farm it opens on a fresh install.\n\n**Removed farms are excluded.** Soft-deleting a tenant sets only `deletedAt` and deliberately leaves memberships active, so a removed farm still has live memberships pointing at it — those are filtered here, as they are by the tenant picker, the JWT claims and the tenant resolver. A farm absent from this list is unreachable, not merely unlisted.\n\n**UNGATED, unlike `POST`.** Adding a farm follows the `social.farm-registration` flag; moving between farms you already belong to does not. Being unable to reach a farm you are a member of is a worse failure than being unable to create one.\n\nNot read from the JWT: `session.user.memberships` is capped at `MAX_JWT_MEMBERSHIPS` for cookie-size safety, and a switcher that silently dropped a farm past the cap would be worse than no switcher. This is a database read every time.\n\nAn empty array means the caller belongs to no farm — not an error. That is the state the registration wizard exists for.",
+        "tags": [
+          "Account"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's farms, oldest membership first. Empty when they belong to none.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyFarms"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "operationId": "createMyFarm",
         "summary": "Create a farm owned by the caller",
