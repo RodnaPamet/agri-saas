@@ -139,7 +139,18 @@ function checkMemoryLimit(key: string, tier: EndpointTier): RateLimitResult {
         limit: limitObject.limit,
         remaining,
         reset: record.resetAt,
-        retryAfter: ok ? 0 : Math.ceil((record.resetAt - now) / 1000),
+        // `Math.max(1, …)` — #1398. Without it a refusal can answer
+        // `Retry-After: 0`, and a client that honours the header retries
+        // immediately and burns its next window the moment it opens, which is
+        // the spec's own stated reason for the clamp.
+        //
+        // On THIS path the window is one millisecond wide: the reset check is
+        // a strict `now > record.resetAt`, so a refusal always has
+        // `resetAt >= now` and the value is 0 only when they are equal to the
+        // millisecond while the count is already over. Narrow, and the five
+        // other limiters in this directory all clamp anyway — `edge-bucket.ts`
+        // carries the byte-identical expression WITH the clamp.
+        retryAfter: ok ? 0 : Math.max(1, Math.ceil((record.resetAt - now) / 1000)),
     };
 }
 
@@ -186,7 +197,21 @@ export async function checkAuthRateLimit(req: NextRequest): Promise<{
                 limit: result.limit,
                 remaining: result.remaining,
                 reset: result.reset, // Unix timestamp in ms
-                retryAfter: result.success ? 0 : Math.ceil((result.reset - Date.now()) / 1000)
+                // #1398, and this is the WIDER of the two paths. There is no
+                // reset logic here and `Date.now()` is sampled AFTER the Redis
+                // round-trip, so any window ending during the call yields 0 or
+                // a NEGATIVE — bounded by network latency rather than by clock
+                // granularity. `Retry-After` is defined as non-negative
+                // delta-seconds, so a client is entitled to treat `-3` as
+                // malformed and fall back to its own default, which is worse
+                // than useless on a pre-authentication limiter.
+                //
+                // `upstash` is the DEFAULT in `src/env.ts`; the live stack
+                // pins `memory`, so production is on the narrow path and every
+                // other deployment is on this one.
+                retryAfter: result.success
+                    ? 0
+                    : Math.max(1, Math.ceil((result.reset - Date.now()) / 1000))
             };
         }
 
