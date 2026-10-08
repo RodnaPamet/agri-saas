@@ -22,7 +22,25 @@ export const GET = withApiErrorHandling(async () => {
             image: true,
             bottomTabOrder: true,
             tenantMemberships: {
-                where: { status: 'ACTIVE' },
+                // `tenant: { deletedAt: null }` is #1389. Without it this
+                // handler could name a SOFT-DELETED farm as the caller's
+                // current one: removing a tenant sets only `Tenant.deletedAt`
+                // and deliberately leaves memberships ACTIVE, so a removed
+                // farm still has live memberships pointing at it.
+                //
+                // Every other consumer already filtered it — the JWT claims
+                // (`auth.ts:192`), the tenant picker, the tenant resolver, the
+                // portfolio and the org listing — and `deleteTenantUnderOrg`'s
+                // docblock asserts the tenant "becomes inaccessible
+                // immediately, everywhere". This was the one place that did
+                // not, and it is the payload every client parses.
+                //
+                // The native client reads this for the starting farm on a
+                // first sign-in (agrent-ios#180), so before this a person
+                // whose oldest membership was to a removed farm opened it and
+                // met 404s on every screen. `tenant: null` now, which is what
+                // the comment below already says `null` means.
+                where: { status: 'ACTIVE', tenant: { deletedAt: null } },
                 orderBy: { createdAt: 'asc' },
                 take: 1,
                 select: {

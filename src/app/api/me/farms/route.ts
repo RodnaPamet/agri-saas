@@ -42,6 +42,7 @@ import { unauthorized, badRequest } from '@/lib/errors/types';
 import { getRequestContext } from '@/lib/observability/context';
 import { assertFeatureEnabled } from '@/lib/feature-flags';
 import { createFarmForUser, FARM_NAME_MAX } from '@/app-layer/usecases/farm-creation';
+import { listMyFarms } from '@/app-layer/usecases/my-farms';
 
 const CreateFarmSchema = z.object({
     name: z.string().min(1).max(FARM_NAME_MAX),
@@ -97,4 +98,38 @@ export const POST = withApiErrorHandling(async (req: NextRequest) => {
     );
 
     return jsonResponse(result, { status: 201 });
+});
+
+/**
+ * GET /api/me/farms — the farms the caller belongs to, for a farm switcher.
+ *
+ * ## UNGATED, unlike the POST above, and that asymmetry is deliberate
+ *
+ * Requested by agrent-ios and agreed: if `social.farm-registration` is ever
+ * switched off, a person must still be able to move between farms they already
+ * belong to. Only *adding* a farm follows the flag. Being unable to reach a
+ * farm you are a member of is a worse failure than being unable to create one,
+ * and a dark-launch rail is meant to gate new surface rather than strand
+ * existing access.
+ *
+ * **A weakness in the gate check this exposes**, worth knowing before someone
+ * adds a third handler here: `tests/guards/social-routes-are-flag-gated.test.ts`
+ * reads the FILE and asserts it contains a gate call. It is satisfied by the
+ * POST, so an ungated GET in the same file passes silently. That is correct
+ * here and would be wrong for a handler that should be gated, so the guard
+ * cannot be relied on per-handler. Raised separately.
+ *
+ * ## Ordering is a contract, not a convenience
+ *
+ * `farms[0]` is the oldest active membership, which is the same farm
+ * `/api/auth/me` names — so a client can reconcile this list against the farm
+ * it opens on a fresh install. That only holds because #1389 gave `/me` the
+ * same `deletedAt` predicate.
+ */
+export const GET = withApiErrorHandling(async () => {
+    const session = await auth();
+    if (!session?.user?.id) throw unauthorized();
+
+    const farms = await listMyFarms(session.user.id);
+    return jsonResponse({ farms }, { status: 200 });
 });

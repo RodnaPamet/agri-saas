@@ -17,9 +17,21 @@
  * auditable in one read for a reviewer asking what a signed-in person with no
  * farm can reach.
  *
- * Note for anyone adding here: `src/app/api/me/**` is classified SOCIAL by
- * `tests/guards/social-routes-are-flag-gated.test.ts`, so every route in this
- * prefix must call the feature gate and will 404 until its flag is on.
+ * ── the flag gate is per-FILE, not per-handler ──
+ *
+ * `src/app/api/me/**` is classified SOCIAL by
+ * `tests/guards/social-routes-are-flag-gated.test.ts`, which reads the FILE and
+ * asserts it contains a gate call. So the gate is satisfied once per file, and
+ * the two handlers here differ deliberately:
+ *
+ *   POST  gated on `social.farm-registration` — 404s while off
+ *   GET   UNGATED — switching between farms you already hold must keep working
+ *                   even when adding one is switched off
+ *
+ * That asymmetry is the agreed behaviour, and it means the guard cannot be
+ * relied on to prove a particular handler is gated — only that the file
+ * mentions the gate somewhere. Anyone adding a third handler here has to decide
+ * for it explicitly; a silent omission passes.
  */
 import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
@@ -49,6 +61,46 @@ export function registerMeFarmsPaths(registry: OpenAPIRegistry): void {
             description:
                 'Create a farm owned by the caller. The owner is taken from the session and can never be named in the body.',
         });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/me/farms',
+        operationId: 'listMyFarms',
+        summary: "The farms the caller belongs to",
+        description:
+            'Every farm the caller is an ACTIVE member of, for a farm switcher. Authenticated, no tenant context.' +
+            '\n\n**Ordered by membership age, oldest first, and that is a contract rather than a convenience.** `farms[0]` is the same farm `GET /api/auth/me` names in its `tenant` field, so a client can reconcile this list against the farm it opens on a fresh install.' +
+            '\n\n**Removed farms are excluded.** Soft-deleting a tenant sets only `deletedAt` and deliberately leaves memberships active, so a removed farm still has live memberships pointing at it — those are filtered here, as they are by the tenant picker, the JWT claims and the tenant resolver. A farm absent from this list is unreachable, not merely unlisted.' +
+            '\n\n**UNGATED, unlike `POST`.** Adding a farm follows the `social.farm-registration` flag; moving between farms you already belong to does not. Being unable to reach a farm you are a member of is a worse failure than being unable to create one.' +
+            '\n\nNot read from the JWT: `session.user.memberships` is capped at `MAX_JWT_MEMBERSHIPS` for cookie-size safety, and a switcher that silently dropped a farm past the cap would be worse than no switcher. This is a database read every time.' +
+            '\n\nAn empty array means the caller belongs to no farm — not an error. That is the state the registration wizard exists for.',
+        tags: ['Account'],
+        success: {
+            status: 200,
+            description:
+                'The caller\'s farms, oldest membership first. Empty when they belong to none.',
+            schema: z
+                .object({
+                    farms: z.array(
+                        z.object({
+                            id: z.string(),
+                            slug: z.string().openapi({
+                                description:
+                                    'Use this for navigation. Server-generated and stable.',
+                                example: 'zk-pobeda-9f3a1c20',
+                            }),
+                            name: z.string().openapi({ example: 'ЗК ПОБЕДА' }),
+                            role: z.string().openapi({
+                                description:
+                                    "The caller's role IN THAT FARM: `OWNER`, `ADMIN`, `EDITOR`, `READER`, `AUDITOR` or `MECHANISATOR`. A growing union — treat an unrecognised value as the least privilege rather than as an error.",
+                                example: 'OWNER',
+                            }),
+                        }),
+                    ),
+                })
+                .openapi('MyFarms'),
+        },
+    });
 
     op(registry, {
         method: 'post',
