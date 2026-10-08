@@ -618,15 +618,59 @@ export class TaskCommentRepository {
         });
     }
 
-    static async add(db: PrismaTx, ctx: RequestContext, taskId: string, body: string) {
+    /**
+     * The `createdBy` expansion every read of a comment returns.
+     *
+     * Named once because a REPLAY has to hand back the same shape as the
+     * original write. `add` and `findByClientMutationId` are the two ways a
+     * caller receives a comment, and if their includes diverged a retried post
+     * would return an object missing `createdBy` — a difference the first
+     * attempt's success would hide.
+     */
+    private static readonly WITH_AUTHOR = {
+        createdBy: { select: { id: true, name: true, email: true } },
+    } as const;
+
+    static async add(
+        db: PrismaTx,
+        ctx: RequestContext,
+        taskId: string,
+        body: string,
+        clientMutationId?: string | null,
+    ) {
         return db.taskComment.create({
             data: {
                 tenantId: ctx.tenantId,
                 taskId,
                 body,
                 createdByUserId: ctx.userId,
+                clientMutationId: clientMutationId || null,
             },
-            include: { createdBy: { select: { id: true, name: true, email: true } } },
+            include: TaskCommentRepository.WITH_AUTHOR,
+        });
+    }
+
+    /**
+     * The comment a replayed request already posted, or null.
+     *
+     * Scoped to `taskId` as well as the unique pair, and that is deliberate.
+     * `clientMutationId` is unique per TENANT, not per task, so a client that
+     * reused one key across two tasks would otherwise be handed the comment it
+     * posted on the OTHER task — and would mark its outbox item delivered on
+     * the strength of it. Scoping means that case returns null, the P2002 is
+     * rethrown, and the client learns its key is wrong instead of silently
+     * losing a comment. Same argument `createFarmTask` makes for scoping its
+     * replay read to `type: 'FARM_TASK'`.
+     */
+    static async findByClientMutationId(
+        db: PrismaTx,
+        ctx: RequestContext,
+        taskId: string,
+        clientMutationId: string,
+    ) {
+        return db.taskComment.findFirst({
+            where: { tenantId: ctx.tenantId, taskId, clientMutationId },
+            include: TaskCommentRepository.WITH_AUTHOR,
         });
     }
 }

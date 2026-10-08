@@ -42,6 +42,11 @@ export const POST = withApiErrorHandling(
         ) => {
             const params = await paramsPromise;
             const ctx = await getTenantCtx(params, req);
+            // Offline exactly-once — the closing form is filled in a field and
+            // replayed from the outbox with its item id as the
+            // Idempotency-Key, so a re-send returns the original observation
+            // rather than filing the same weeds twice.
+            const idempotencyKey = req.headers.get('Idempotency-Key') || undefined;
             const row = await createParcelWeedObservation(
                 ctx,
                 {
@@ -51,6 +56,7 @@ export const POST = withApiErrorHandling(
                     notes: body.notes ?? null,
                 },
                 { taskId: params.taskId },
+                idempotencyKey,
             );
             return jsonResponse({ id: row.id }, { status: 201 });
         },

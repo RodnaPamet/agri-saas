@@ -16,6 +16,10 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
 export const POST = withApiErrorHandling(withValidatedBody(AddTaskCommentSchema, async (req, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; taskId: string }> }, body) => {
     const params = await paramsPromise;
     const ctx = await getTenantCtx(params, req);
-    const comment = await addTaskComment(ctx, params.taskId, body.body);
+    // Offline exactly-once — a comment typed in a field is replayed from the
+    // outbox with its item id as the Idempotency-Key, so a re-send over flaky
+    // rural LTE returns the original comment rather than posting it twice.
+    const idempotencyKey = req.headers.get('Idempotency-Key') || undefined;
+    const comment = await addTaskComment(ctx, params.taskId, body.body, idempotencyKey);
     return jsonResponse(comment, { status: 201 });
 }));

@@ -234,13 +234,42 @@ export function registerTaskPaths(registry: OpenAPIRegistry): void {
         operationId: 'addTaskComment',
         summary: 'Add a task comment',
         description:
-            'The body is sanitised server-side at the usecase boundary (`addTaskComment` routes ' +
-            'it through `sanitizeRichTextHtml`), so a literal `<` is ESCAPED rather than dropped ' +
-            'and comes back as `&lt;`. A client that flattens the HTML must decode entities.',
+            '**The body is PLAIN TEXT. Render it as text — never as HTML.**' +
+            '\n\nThis replaces a description that said the opposite. It claimed `addTaskComment` ' +
+            'routes the body through `sanitizeRichTextHtml`, and that a literal `<` comes back as ' +
+            '`&lt;`. Neither is true: the usecase calls `sanitizePlainText`, which strips every tag ' +
+            'and then DECODES entities. Measured:' +
+            '\n\n| sent | stored and returned |\n| --- | --- |\n' +
+            '| `<b>x</b> &amp;amp; y` | `x & y` |\n' +
+            '| `a < b` | `a < b` — unchanged, NOT escaped |\n' +
+            '| `&amp;lt;script&amp;gt;` | `<script>` — entities decoded to literal characters |\n' +
+            '| `<script>alert(1)</script>` | empty — the element is removed |' +
+            '\n\nSo the returned string can contain `<script>` as literal text even though no tag ' +
+            'was sent, because the decode happens after the strip. Interpolating this value into ' +
+            'markup would execute it — and "flatten the HTML and decode entities", which the old ' +
+            'description advised, is exactly that mistake. There is no HTML to flatten and no ' +
+            'entities left to decode. The web client renders it as a JSX child so React escapes it ' +
+            'on output; that is the handling to copy.' +
+            '\n\n**Honours `Idempotency-Key`.** Send one, minted BEFORE the first attempt and ' +
+            'reused on every retry of the same logical write. The server stores it as ' +
+            '`clientMutationId` under a unique `(tenantId, clientMutationId)` index, and a replay ' +
+            'returns the ORIGINAL comment — with no second audit event and no second cache bump, ' +
+            'neither of which a deduped row alone would prevent.' +
+            '\n\nThe read-back is scoped to the TASK as well as the tenant, so reusing one key ' +
+            'across two different tasks is an error rather than a silent mis-delivery: the insert ' +
+            'hits the tenant-wide index, the task-scoped re-read finds nothing, and the conflict ' +
+            'surfaces instead of handing you the comment you posted on the other task. Mint a ' +
+            'fresh key per logical write.',
         tags: ['Tasks'],
         params: TaskParams,
         body: AddTaskCommentSchema,
-        success: { status: 201, description: 'The created comment.', schema: TaskCommentDTOSchema },
+        success: {
+            status: 201,
+            description:
+                'The created comment — or, on a replay of the same `Idempotency-Key`, the original. ' +
+                'Both are 201: the response describes the comment that exists, not which attempt made it.',
+            schema: TaskCommentDTOSchema,
+        },
     });
 
     op(registry, {
@@ -305,9 +334,19 @@ export function registerTaskPaths(registry: OpenAPIRegistry): void {
             '\n\n**One list of weeds, mixed.** The server decides which entries are catalogue keys ' +
             'and which are free text; a client cannot choose the column, which is what keeps the ' +
             'reportable half reportable. An empty resolution is `WEEDS_REQUIRED`.' +
-            '\n\n**No `Idempotency-Key` yet.** This route does NOT de-duplicate a retry, so a ' +
-            'resend after a timeout creates a second observation. Honouring the header needs a column ' +
-            'and a partial unique index on the model; until that ships, do not auto-retry this POST.' +
+            '\n\n**Honours `Idempotency-Key`.** Send one, minted BEFORE the first attempt and ' +
+            'reused on every retry of the same logical write. The server stores it as ' +
+            '`clientMutationId` under a unique `(tenantId, clientMutationId)` index, and a replay ' +
+            'returns the ORIGINAL observation with no second audit entry. A replay is **201**, the ' +
+            'same as the first write: the response describes the observation that exists, not which ' +
+            'attempt filed it, so there is no extra branch to decode.' +
+            '\n\nThe read-back is scoped to the PARCEL as well as the tenant, so reusing one key ' +
+            'across two parcels is an error rather than a silent mis-delivery — mint a fresh key per ' +
+            'logical write. Handing back the row filed against a different parcel would let a client ' +
+            'mark its outbox item delivered having lost an observation, and these feed the ДНЕВНИК ' +
+            'record: a dropped one misstates what was seen in a field on a date.' +
+            '\n\nThe replay read runs AFTER both authorisation gates, so a key alone never returns ' +
+            'a row to a caller who could not have written one.' +
             '\n\nRefusal codes: `TASK_NOT_FOUND` (404, and decided before any permission verdict so ' +
             'a typo\'d id never reads as a permission problem), `PARCEL_NOT_ON_TASK` (400), ' +
             '`PARCEL_NOT_FOUND` (404), `WEEDS_REQUIRED` (400).',

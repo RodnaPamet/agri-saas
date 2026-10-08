@@ -604,25 +604,33 @@ model ParcelCropSeason {
 /// nullable, and an empty list is the honest representation of "looked, found
 /// none" in any case.
 model ParcelWeedObservation {
-  id              String    @id @default(cuid())
-  tenantId        String
-  parcelId        String
-  observedAt      DateTime
+  id               String    @id @default(cuid())
+  tenantId         String
+  parcelId         String
+  observedAt       DateTime
   /// Catalogue keys from `src/lib/agriculture/weed-options.ts`.
-  weedKeys        String[]  @default([])
+  weedKeys         String[]  @default([])
   /// Free-text species the catalogue does not carry.
-  otherWeeds      String[]  @default([])
-  notes           String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  createdByUserId String?
-  deletedAt       DateTime?
-  deletedByUserId String?
-  retentionUntil  DateTime?
+  otherWeeds       String[]  @default([])
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  createdByUserId  String?
+  deletedAt        DateTime?
+  deletedByUserId  String?
+  retentionUntil   DateTime?
+  /// Offline exactly-once handle. When an observation is filed from the
+  /// queued outbox the client's outbox-item id rides in as the
+  /// `Idempotency-Key`; a replayed write dedupes on (tenantId,
+  /// clientMutationId) and returns the original row instead of filing the
+  /// same weeds twice. Nullable + NULLS-DISTINCT: online creates without a
+  /// key are unconstrained (every NULL is unique to Postgres).
+  clientMutationId String?
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  parcel Parcel @relation(fields: [parcelId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  tenant           Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parcel           Parcel @relation(fields: [parcelId, tenantId], references: [id, tenantId], onDelete: Cascade)
 
+  @@unique([tenantId, clientMutationId])
   @@unique([id, tenantId])
   @@index([tenantId, parcelId, observedAt])
 }

@@ -23,12 +23,20 @@ export const POST = withApiErrorHandling(
         ) => {
             const params = await paramsPromise;
             const ctx = await getTenantCtx(params, req);
-            const row = await createParcelWeedObservation(ctx, {
-                parcelId: params.parcelId,
-                observedAt: new Date(body.observedAt),
-                weeds: body.weeds,
-                notes: body.notes ?? null,
-            });
+            // Offline exactly-once — same handle as the task-scoped sibling, so
+            // one outbox item can be replayed against either route.
+            const idempotencyKey = req.headers.get('Idempotency-Key') || undefined;
+            const row = await createParcelWeedObservation(
+                ctx,
+                {
+                    parcelId: params.parcelId,
+                    observedAt: new Date(body.observedAt),
+                    weeds: body.weeds,
+                    notes: body.notes ?? null,
+                },
+                undefined,
+                idempotencyKey,
+            );
             return jsonResponse({ id: row.id }, { status: 201 });
         },
     ),
