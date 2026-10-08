@@ -498,87 +498,37 @@ fails if a tenant table is missing RLS) and
 
 ### API Rate Limiting (Epic A.2 + GAP-17)
 
-Three tiers, each scoped to a different traffic class. Full operator
-runbook in `docs/rate-limiting.md`.
+Three tiers, each scoped to a different traffic class. Operator runbook:
+[`docs/rate-limiting.md`](docs/rate-limiting.md).
 
-**Mutation tier** (Epic A.2). Every route wrapped with
-`withApiErrorHandling` gets `API_MUTATION_LIMIT` (60/min) on
-POST/PUT/DELETE/PATCH by default. Stricter presets (`LOGIN_LIMIT`,
-`API_KEY_CREATE_LIMIT`, `EMAIL_DISPATCH_LIMIT`) are applied via
-`{ rateLimit: { config, scope } }` options on specific routes. Keyed
-`(IP, userId)` — **and that is true BY DEFAULT only since the wrapper started
-resolving the userId itself.** `getUserId` was an opt-in option, and measured
-across main: of **346** route files wrapped in `withApiErrorHandling`, **3**
-passed one, so **343** keyed `<scope>:ip:<ip>:anon` — exactly what
-`buildRateLimitKey`'s own docblock forbids ("every authenticated preset MUST
-keep the userId"), on a product whose users share carrier-grade NAT egress
-IPs, where one busy caller throttled every other subscriber behind the same
-address. The mechanism was never broken; it was opt-in, and an invariant that
-holds only when 346 route authors each remember it is not an invariant.
-`resolveRateLimitScope` now calls `resolveRequestUserId`
-(`src/lib/security/rate-limit-identity.ts`) when no resolver is passed — a
-`getToken` JWE decode, no database, the same call middleware already makes —
-and `getUserId` became an OVERRIDE for the rare route whose budget should be
-bounded by a TARGET user rather than the caller. It fails SOFT to `anon`,
-which is the tighter bucket, never a 500 on a write path. A header passed down
-from middleware was rejected: it is forgeable, and a client setting a fresh
-value per request would escape the limit entirely. `getBucket` is resolved
-FIRST and short-circuits the decode, since a bucketed route replaces the
-ip+userId portion anyway (#1161). Held by
-`tests/unit/rate-limit-keyed-by-user.test.ts`, which drives the real wrapper
-and asserts on the key the store is handed — the sibling
-`mutation-rate-limit.test.ts` calls `buildRateLimitKey` directly and proves
-the FORMAT, which is precisely why it could not see that 343 routes passed a
-null.
-**A route may instead cap a SHARED RESOURCE via `getBucket`** (#1161), which
-replaces the `(IP, userId)` portion of the key entirely — appending it would
-keep the per-caller split and change nothing. Reach for it when the cost being
-bounded lands on somebody ELSE: `EXCHANGE_MESSAGE_LIMIT` is 60/min per SENDING
-TENANT because a notification row is written per message by design, so a
-ten-user tenant otherwise held ten budgets aimed at one recipient. The number
-is unchanged from the generic tier on purpose — the cut is in the KEY, not the
-number. **Per-thread was rejected**: a thread is per (listing, inquirer), so a
-per-thread ceiling is multiplied by however many listings the RECIPIENT has,
-and a ceiling the victim chooses is not a ceiling. Derive
-the bucket from the URL — the resolver runs BEFORE the handler, so a database
-read there is work an abusive caller can compel inside the check meant to stop
-them. It fails closed onto the per-caller key when the resolver throws or does
-not recognise the path. Storage: an Upstash sliding window — ONE Redis round-trip
-on the hot path — via `checkRateLimitDistributed` in
-`src/lib/rate-limit/mutationRateLimit.ts`, which is the only check
-`enforceRateLimit` performs. With no Upstash env, or
-`RATE_LIMIT_MODE=memory` (`upstash` is the default in `src/env.ts`), it
-delegates to the in-process Map in `src/lib/security/rate-limit.ts`; a
-Redis error at call time degrades the same way — fail-to-local, NOT
-fail-open. **The Map is only correct on a single node**: behind a load
-balancer each replica counts its own fraction, so the real limit is
-`N × preset`. The live agrent stack pins `RATE_LIMIT_MODE: memory` on
-both `app` and `worker` (`deploy/docker-compose.vm.yml`) — sound while it
-is one VM, and the first thing to change when a second replica appears.
+- **Mutation tier** — `API_MUTATION_LIMIT` (60/min) on POST/PUT/DELETE/PATCH
+  for every route wrapped in `withApiErrorHandling`, keyed `(IP, userId)` BY
+  DEFAULT. The wrapper resolves the userId itself; `getUserId` is an OVERRIDE
+  for the rare route whose budget should be bounded by a TARGET user. Stricter
+  presets (`LOGIN_LIMIT`, `SIGNUP_LIMIT`, `API_KEY_CREATE_LIMIT`,
+  `EMAIL_DISPATCH_LIMIT`) are applied per route.
+- **`getBucket` caps a SHARED resource** and REPLACES the `(IP, userId)` portion
+  of the key — appending it keeps the per-caller split and changes nothing.
+  Reach for it when the cost lands on somebody ELSE. **Derive the bucket from
+  the URL**: the resolver runs BEFORE the handler, so a database read there is
+  work an abusive caller can compel inside the check meant to stop them. It
+  fails CLOSED onto the per-caller key.
+- **Read tier** — `API_READ_LIMIT` (120/min) at the Edge for tenant-scoped
+  GETs, keyed `(IP, userId, tenantSlug)`. Health probes and `/api/docs` are
+  excluded: operators must keep monitoring access during an attack.
+- **Auth tier** — tiered per-endpoint at the Edge, keyed `(IP, ua-hash)`
+  because it runs pre-authentication.
+- **Storage is Upstash with an in-process Map fallback**, degrading
+  fail-to-local on a Redis error, never fail-open. **The Map is only correct on
+  a single node** — behind a load balancer the real limit is `N × preset`, and
+  the live stack pins `RATE_LIMIT_MODE: memory`. That is the first thing to
+  change when a second replica appears.
+- 429s carry `Retry-After` + `X-RateLimit-*` + `x-request-id`.
+  **Body never contains IP/userId/tenantSlug.** Presets live in
+  `src/lib/security/rate-limit.ts`.
 
-**Read tier** (GAP-17). Tenant-scoped GETs on `/api/t/<slug>/...` go
-through `API_READ_LIMIT` (120/min) at the Edge middleware via
-`src/lib/rate-limit/apiReadRateLimit.ts`. Keyed `(IP, userId,
-tenantSlug)` for per-tenant + per-user isolation. Health probes
-(`/api/health`, `/api/livez`, `/api/readyz`) and `/api/docs` are
-explicitly excluded — operators must keep monitoring access during
-attacks. Storage: Upstash + memory fallback (mirrors `authRateLimit.ts`).
-The wire-up sits AFTER the JWT verify + tenant-access gate so
-unauthorized requests get the cheaper 401/403 first; structural
-ratchet at `tests/guardrails/api-read-rate-limit.test.ts` enforces
-the ordering + exclusion list.
-
-**Auth tier** (covered separately by `src/lib/rate-limit/authRateLimit.ts`).
-Tiered per-endpoint policy at the Edge: 10/min for sign-in callbacks,
-30/min for session probes, 60/min for csrf/providers. Keyed `(IP,
-ua-hash)` because it runs pre-authentication.
-
-429 responses carry `Retry-After` + `X-RateLimit-*` + `x-request-id`.
-Body never contains IP/userId/tenantSlug. Bypass via
-`RATE_LIMIT_ENABLED=0` env or inside tests (automatic). All presets
-live in `src/lib/security/rate-limit.ts`; the Node wrapper is
-`src/lib/security/rate-limit-middleware.ts`; the edge enforcement
-modules live under `src/lib/rate-limit/`.
+**See [`docs/epic-a-security.md`](docs/epic-a-security.md)** for the reasoning,
+including why 343 of 346 wrapped routes once keyed `anon`.
 
 ### Cold-start data cost (Roadmap-6 P3)
 
@@ -631,237 +581,49 @@ Three seams keep a PWA relaunch cheap on rural LTE — see
 
 ### Offline outbox durability
 
-The outbox holds unsynced field work in IndexedDB, which the phone is free
-to evict. Three rules, all load-bearing — see
-`docs/implementation-notes/2026-08-19-outbox-durability.md`.
+The outbox holds unsynced field work in IndexedDB, which the phone is free to
+evict. The rules, each of which has cost something to learn:
 
-**Not every write belongs here.** The insurance quote request (#1120) is
-deliberately NOT an outbox surface: the calculator works offline, but SENDING
-needs a connection and a failed send is not queued. A queued lead would email
-the operator hours later carrying figures the farmer may have corrected since —
-and an insurance enquiry priced against a stale area is worse than one the
-farmer knows did not go. The wizard disables Send while offline and says so.
-
-- **One queue truth: `src/lib/offline/outbox-state.ts`.** Module-scoped, so
-  it survives client-side navigation, and it owns the counts, the loss
-  record and the SHARED flush lock. `useOfflineSync` is a thin subscriber.
-  Never reintroduce a per-instance `flushing` ref — five surfaces mount the
-  hook, and a per-instance lock lets two of them drain the same items at
-  once.
-- **Never claim "synced" without evidence.** An evicted IndexedDB does not
-  error: it rebuilds empty, `all()` resolves `[]`, and that is
-  indistinguishable from a clean drain. So the UI carries three BASE states —
-  `pending > 0` ("saved on this phone"), `pending === 0` ("everything is on
-  the server"), and `lost !== null` ("work was queued and is gone"). The
-  lost record is sticky and clears ONLY on an explicit operator
-  acknowledgement; a successful later sync must never wipe it.
-- **`pending` alone reassures falsely too, so `blocked` splits it.** Since
-  #763 `OutboxSnapshot` also carries `blocked` and `blockedAuth`, and
-  `blocked` is deliberately a strict SUBSET of `pending` rather than a
-  sibling: `pending` is computed over `live`, which filters conflicts and
-  foreign items and nothing else, so a stalled item was always counted
-  INSIDE it. That is not a false zero — it is a TRUE number meaning two
-  different things, "3 waiting" reading as "will go when I get signal" when
-  for some of them it never will. The UI reads "N waiting, of which M cannot
-  move" instead of two numbers an operator reconciles in their head in a
-  field. `blockedAuth` is split out because only it has an action attached;
-  the other kind resolves itself when the server recovers.
-- **A poison item is PARKED, never deleted, and since #923 that includes a
-  REFUSAL.** Past `MAX_ATTEMPTS` a transient failure writes
-  `blocked: 'exhausted'` (`sync.ts`); a terminal 4xx about the payload writes
-  `blocked: 'refused'` + `refusedStatus`. That arm used to call
-  `noteDelivered()` then `store.remove()` — byte for byte the SUCCESS arm — so
-  a destroyed compliance write and a delivered one left an identical trace,
-  and the receipt is precisely what suppressed the loss detector for it. Only
-  a `dropped` counter differed, and nothing in `src/` reads it. `flushOutbox`
-  now has ONE removal (success); every other outcome parks. Two things ride
-  with that: a park is written through `parkIfStillQueued`, because
-  `store.update` is an upsert and the page and service worker drain the same
-  queue, so an unguarded park RESURRECTS a row the other drain already
-  delivered; and a refusal is surfaced by `UnsyncedWorkBanner` with a per-item
-  discard, because parking an invisible row only trades a silent loss for a
-  silent stall. A terminal 4xx is only honest as "not on the server" because
-  `setTaskStatus` gained an already-applied arm in the same change — its
-  commonest 400 was a replay whose write had ALREADY landed.
-
-  The escape from a poison item is that it stops being RETRIED, not that the
-  work is destroyed. Nothing in the codebase clears a `blocked` flag on its
-  own, so every kind of park is permanent until something explicitly unblocks
-  it — signing in again for `auth`, and for `refused` an operator tapping
-  discard, the one path that removes it. That is a deliberate trade of a stuck
-  row against a silently deleted one, and it is the same principle as the
-  sticky lost record above. The cost is real and worth stating: a parked photo
-  holds up to `MAX_QUEUED_PHOTO_BYTES` (8 MiB) of Blob until someone acts, so
-  on a device without granted persistence a hoard of refusals raises the
-  eviction risk for writes that are still deliverable.
-- **`navigator.storage.persist()` is requested at the FIRST ENQUEUE**, not
-  on first paint (Firefox prompts; Chromium grants on engagement). The
-  verdict is recorded under `agri.offline.durability.v1`, and that CACHED
-  verdict — never a fresh measurement — is how the answer gets read back off
-  a real device. The instrument is `/t/<slug>/diagnostics/offline`
-  (`src/app/t/[tenantSlug]/(app)/diagnostics/offline/page.tsx`, #760): a
-  URL-addressable route, reachable from ONE affordance — the user menu's
-  "Offline diagnostics" row, whose href `TopChrome` supplies and passes as
-  `null` only on org chrome, where the route does not exist. It IS shown to
-  the MECHANISATOR since #812: `isOperatorAllowedPath` allows
-  `/diagnostics/offline` by EXACT match (not a `/diagnostics/` prefix — that
-  namespace's future siblings inherit nothing from the decision), because the
-  operator's phone is the one the page measures. Its breadcrumb root is
-  persona-aware for the same reason — the dashboard is denied to them, and
-  this page has no nav entry, so a bouncing trail would strand them. That
-  route renders
-  the stored verdict in EVERY state INCLUDING ABSENT — the pre-existing
-  signals are negative-only (`OfflineSyncBar` renders only when `pending > 0
-  && storagePersisted === false`), so on screen "granted", "never measured"
-  and "nothing queued yet" were indistinguishable — alongside display mode,
-  the four `public/sw.js` caches BY NAME, service-worker control state and
-  the outbox snapshot, with a Copy-as-text button for pasting into an issue.
-  It does NOT call `persist()` itself: measuring there would produce a
-  second, different answer and muddy the one the app stored. Operator steps:
-  `docs/runbooks/offline-device-probes.md`. **Measured on a
-  physical iPhone (2026-08-23/24), and the two contexts DISAGREE: mobile
-  Safari REFUSES (`persisted: false`), the installed Home Screen PWA GRANTS
-  (`persisted: true`).** So installing the app is a real durability
-  mitigation on iOS, not a packaging preference — in Safari the behavioural
-  mitigations above are the ONLY defence and eviction is live; installed,
-  the origin is one the UA has agreed to keep. `InstallPrompt` already
-  carries the iOS Add-to-Home-Screen hint (Safari fires no
-  `beforeinstallprompt`), so the path exists; whether it is prominent enough
-  for a field operator is an open question. Note the request is armed once
-  per PAGE LOAD (a module-scoped flag), so a reload re-measures; an app
-  opened with work already queued and nothing new enqueued shows the CACHED
-  verdict.
-- **The detector assumes eviction is SELECTIVE, and iOS's is not.** The queue
-  is in IndexedDB while the manifest and lost record are in localStorage, and
-  reconciling one against the other is what makes loss visible. A cap that
-  clears script-writable storage as a CLASS takes both, and then neither
-  detector fires: `wasRecreated` needs a prior open in the same session, which
-  an eviction-while-closed never has, and `reconcileManifest` returns `[]` the
-  moment the manifest is empty. Reachable in SAFARI, where persistence is
-  refused; the installed PWA's grant is what keeps it off the table there.
-  See the durability note and #744 — known and UNFIXED, but not unfixable.
-  This paragraph used to say work is only ever enqueued while OFFLINE, so no
-  durable signal could ever be written. That is wrong: `submit` tries the
-  network FIRST when online and enqueues after a COMPLETED server round-trip
-  on a 409 (`use-offline-sync.ts:224`) or a transient 5xx/408/429 (`:238`),
-  and `sync.ts:125-144` parks conflicted, auth-blocked, exhausted and
-  foreign-owner items in IndexedDB for days while the device is online. Those
-  are networked moments with a non-empty queue — write points for a
-  server-side high-water marker, which is the signal that would separate a
-  clean drain from a class-wide sweep.
-  `refreshOutboxState`'s complete cold-launch read set is three localStorage
-  keys (`agri.offline.durability.v1`, `.lostwork.v1`,
-  `.outbox.manifest.v1`) plus three outbox-store methods (`all`,
-  `takeDelivered`, `wasRecreated`) — all inside that class, and PINNED as an
-  enumerable fact by `tests/unit/offline/outbox-eviction.test.ts`. The two
-  signals that would survive (an HttpOnly cookie; a server row) both need a
-  network at the exact moment there is none. So the lever is PREVENTION, not
-  detection: `UnsyncedWorkBanner`'s pending pill carries the Add-to-Home-Screen
-  remedy app-wide, because installing is the measured mitigation on iOS and the
-  five-surface `OfflineSyncBar` loses the advice the moment the operator
-  navigates. If that read-set test ever fails because a NEW input appeared,
-  read it as news — check whether the new input survives a class-wide sweep.
-- **A deliberate removal leaves a RECEIPT, and that is what tells a drain
-  from an eviction.** The manifest alone cannot: an id the manifest lists but
-  the queue no longer holds is either delivered or destroyed, and a removal
-  looks identical either way. Re-mirroring the manifest in the same pass
-  covers only removals the PAGE made and then refreshed; the SERVICE WORKER
-  drains the same queue and cannot write localStorage, so its drains read as
-  eviction on the next cross-session reconcile — a sticky, FALSE "your work
-  was deleted" for work already on the server. So the removal in
-  `flushOutbox` writes a receipt FIRST (`noteDelivered` from
-  `src/lib/offline/delivery-receipts.ts`, then `store.remove`), into a SECOND
-  IndexedDB object store beside the queue — `RECEIPT_STORE_NAME =
-  'delivered'`, added at `OUTBOX_DB_VERSION = 2` in `idb-outbox.ts` and
-  mirrored in `public/sw.js`, which writes its own on every worker drain.
-  `refreshOutboxState` consumes them (`takeDeliveryReceipts` →
-  `forgetManifestEntries`) BEFORE either detector runs; that is what let
-  `noteOutboxDrainedElsewhere` drop its `!reconciled` early return. Receipts
-  live in IndexedDB rather than localStorage for two reasons: the worker can
-  reach them, and they share the QUEUE's fate — a class-wide eviction takes
-  both, so a stale receipt can never excuse a genuine loss. They age out
-  after `RECEIPT_TTL_MS` (7 days), and `noteDelivered` never throws: a
-  missing receipt costs a false loss report, a receipt write that breaks the
-  flush costs the delivery itself. **A removal path not immediately followed
-  by a page-side refresh MUST write a receipt** — `resolveConflict` is the
-  exception that proves the rule, removing and `refresh()`ing in the same
-  call so it re-mirrors the manifest itself. Two version rules ride along:
-  `onCreated` fires only when the QUEUE store was absent, which is what made
-  adding a store at v2 safe instead of an eviction report on every existing
-  device; and `OUTBOX_DB_VERSION` is a ONE-WAY DOOR — IndexedDB refuses to
-  open at a LOWER version, so reverting it deletes nothing but freezes sync
-  on every upgraded device. Roll the client forward, not back.
-
-- **Queued work is bound to the operator who queued it — mutations and
-  photos alike.** A replay uses `fetch`, which sends whatever session
-  cookie is CURRENT — not the one that queued the item. On a shared device
-  that means A's work lands attributed to B in a hash-chained audit trail,
-  or (different tenant) earns a 403. So `enqueue` stamps `queuedByUserId`
-  from `current-user.ts`, and `flushOutbox` skips a foreign item: never
-  sent, never dropped, and SURFACED (`snapshot.foreign`) so held work is not
-  invisible. Since #761 a 403 no longer destroys anything either — the
-  401/403 arm in `sync.ts` (mirrored in `public/sw.js`) RETAINS the item,
-  marks `blocked: 'auth'` and BREAKS the pass, because the server refused the
-  SESSION, not the work. That is also why the skip still earns its keep: an
-  unskipped foreign item would park as auth-blocked and stop the drain for
-  the operator who IS signed in, and nothing in the codebase ever clears a
-  `blocked` flag, so the park is permanent rather than a deferral.
-  **BOTH enqueue paths stamp it, from the ONE `attribution()` helper in
-  `outbox.ts`** — and that helper exists because #786 was precisely those two
-  paths drifting. `enqueue` and `enqueuePhoto` build two item literals over
-  the same `OutboxItemBase`, and only the first ever stamped; both read sites
-  gate on the field being PRESENT, so every photo queued since the kind
-  shipped was neither skipped nor counted as foreign and replayed under
-  whoever was signed in at flush time. The carve-out below read as a
-  shrinking set of legacy rows and was in fact every photo, permanently. **A
-  third enqueue path uses `attribution()` or it is the same bug again** — and
-  a test that exercises one path cannot catch it, which is why
-  `tests/unit/offline/outbox-user-binding.test.ts` drives the enqueue cases
-  from one table. Legacy items with no attribution still flush, and a drain
-  with no known user still drains everything. **The service worker is a
-  separate case and `public/sw.js` cannot import from `src/`**, so its
-  Background Sync drain is a parallel REIMPLEMENTATION of the flush
-  (`public/sw.js`'s own `flushOutbox`, not the one in `sync.ts`). Two
-  implementations drifting is the same shape as #786, one level up, which is
-  why `attribution()` lives in `src/` and why the worker's copy has to be
-  checked against it rather than assumed.
-  **It DOES enforce the binding now** (#956): `public/sw.js` resolves identity
-  from the SERVER via its own `swResolveWhoami`, skips an item whose
-  `queuedByUserId` is not the signed-in operator's, and posts `foreignHeld` so
-  held work is visible rather than silent. Its three-way outcome — `user` /
-  `signed-out` / `unknown` — never collapses unknown into signed-out, so a
-  captive portal's 200-with-HTML reschedules instead of sending. This
-  paragraph said the opposite until #1005; if you are here to "add" worker
-  attribution, read `public/sw.js:919` and `:1009` first.
-  **The PAGE is now the weaker half**, which is the inversion #1005 fixes:
-  `getCurrentUserId()` is fed from the server-rendered layout — the document
-  the worker replays from cache — and it still feeds the drain owner
-  (`use-offline-sync.ts`), the enqueue stamp and the snapshot. `enqueue`
-  CANNOT use a network probe (queueing happens precisely when offline), so
-  those are not one fix; what #1005 closed is the deletion guard in
-  `supersedeQueuedWrites`, which failed OPEN on an unknown owner.
-
-- **The idempotency handle is minted BEFORE the first attempt, and every
-  outbox-bound request builds its headers through `outboxHeaders()`.** Until
-  #924 `fetchSender` sent `Idempotency-Key` on every REPLAY while `submit`'s
-  first attempt sent none and `submitPhoto`'s sent no headers at all — so the
-  one request that actually reaches the server FIRST was the one the server
-  could not dedupe. A response lost after the server committed then re-queued
-  under an id minted at enqueue time, which the server had never seen, and the
-  write landed TWICE (traced: two rows, every time, on all three CREATE routes
-  — `createLogEntryImpl` has no natural-key fallback and its only pre-check is
-  gated on `if (idempotencyKey)`). `submit`/`submitPhoto` now mint an
-  `OutboxId` up front and pass it to `enqueue`, so the attempt and its replays
-  share one key. **A new sender uses `outboxHeaders()` or it is the same bug
-  again** — the same shape as the `attribution()` rule above, and the reason
-  the guard failed to see it is that every existing check pointed at the replay
-  path. The id parameter is BRANDED (`OutboxId`) because `store.add` is an
-  upsert: a caller passing `task.id` would silently overwrite queued work.
-  Note this binds the SENDERS, not the routes — `PlantingBoard.tsx` still
-  creates journal entries through a keyless `apiPost` (#924 names it).
+- **One queue truth: `src/lib/offline/outbox-state.ts`** — counts, loss record
+  and the SHARED flush lock. `useOfflineSync` is a thin subscriber. **Never
+  reintroduce a per-instance `flushing` ref**: five surfaces mount the hook.
+- **Never claim "synced" without evidence.** An evicted IndexedDB rebuilds
+  empty and is indistinguishable from a clean drain, so the UI carries three
+  base states — `pending > 0`, `pending === 0`, and `lost !== null`. The lost
+  record is STICKY: a later success must never wipe it.
+- **`blocked` is a strict SUBSET of `pending`, not a sibling.** Surface "N
+  waiting, of which M cannot move" — never two numbers an operator has to
+  reconcile in a field.
+- **A poison item is PARKED, never deleted** — `flushOutbox` has exactly ONE
+  removal (success). Park through `parkIfStillQueued`, because `store.update`
+  is an upsert and the page and service worker drain the same queue. A
+  `refused` park MUST be surfaced with a per-item discard.
+- **Request `navigator.storage.persist()` at the FIRST ENQUEUE**, not on first
+  paint, and read the CACHED verdict (`agri.offline.durability.v1`) rather than
+  re-measuring. Installed PWA grants on iOS; Safari refuses — so Add-to-Home-
+  Screen is a real durability mitigation, not packaging taste.
+- **A removal writes a RECEIPT first** (`noteDelivered`, then `store.remove`).
+  Any removal path not immediately followed by a page-side refresh MUST write
+  one, or a service-worker drain reads as eviction and reports false loss.
+- **`OUTBOX_DB_VERSION` is a ONE-WAY DOOR.** IndexedDB refuses to open at a
+  lower version: roll clients forward, never back.
+- **Every enqueue path stamps `attribution()` from `outbox.ts`**, and every
+  outbox-bound sender builds headers through `outboxHeaders()` so the FIRST
+  attempt carries the same `Idempotency-Key` as its replays. A new path that
+  skips either is #786 or #924 again.
+- **Not every write belongs here.** The insurance quote (#1120) is deliberately
+  NOT an outbox surface — a queued lead would email figures the farmer may have
+  since corrected.
 
 New offline surfaces subscribe to the shared state; they do not add another
-`useState` count or another flush loop.
+count or another flush loop.
+
+**See [`docs/offline-outbox-durability.md`](docs/offline-outbox-durability.md)**
+before changing any of it — the eviction-detector's blind spot on iOS (where
+eviction is class-wide, not selective), the #923 silent-destruction incident,
+the service worker's parallel reimplementation and why it cannot import from
+`src/`, and the receipt/manifest reconciliation in full. That document is the
+reasoning; this is the contract.
 
 ### Client data retention
 
@@ -976,368 +738,84 @@ deployment order. That document is the detail; this is the contract.
 
 ### Defense-in-Depth (Epic C)
 
-Five complementary controls. Treat them as one system — each
-sub-epic has the others as backstops.
+Five complementary controls. Treat them as one system — each sub-epic has the
+others as backstops.
 
-**C.1 — API permission middleware.** Wrap every privileged API
-handler with `requirePermission(<key>, …)` from
-`@/lib/security/permission-middleware`. The key is a typed dotted
-literal (`'admin.scim'`, `'tasks.create'`, …) derived from
-`PermissionSet`. Denials emit a hash-chained `AUTHZ_DENIED` audit
-entry (`category: 'access'`) and surface as a generic 403 — the
-key itself is never echoed to the client. The route ↔ map sync is
-guarded by `tests/guardrails/api-permission-coverage.test.ts`;
-new admin/privileged routes MUST add a rule in
-`src/lib/security/route-permissions.ts` and use
-`requirePermission(...)`. The legacy `requireAdminCtx` /
-`requireWriteCtx` / `requireRoleCtx` helpers no longer exist —
-`src/lib/auth/require-admin.ts` was deleted (2026-05-21) once every
-route had migrated (see D.3), and the ratchet
-`tests/guardrails/no-legacy-admin-guard.test.ts` fails CI if the module
-or any of the three identifiers reappears under `src/`.
+- **C.1 — Wrap every privileged API handler in `requirePermission('<key>', …)`**
+  from `@/lib/security/permission-middleware`, and add the rule to
+  `src/lib/security/route-permissions.ts`. The legacy `requireAdminCtx` /
+  `requireWriteCtx` / `requireRoleCtx` helpers no longer exist and must not
+  return — `tests/guardrails/no-legacy-admin-guard.test.ts` fails CI if they do.
+- **C.1a/b/c — A surface the Edge cannot authenticate must be in
+  `PUBLIC_PATH_PREFIXES` *and* authenticate itself in the handler.** That covers
+  SCIM (opaque bearer), signed webhooks (Stripe, AV, integrations) and
+  uncredentialed browser beacons (the CSP sink, `/api/metrics`, the manifest).
+  **Spell a beacon path as the CONSTANT that goes into the header**, never a
+  literal. **Opening a prefix opens EVERY method on it** — gate the privileged
+  ones in the handler in the same diff. Write the trailing slash on a prefix
+  entry.
+- **C.2 — Secrets: patterns live in `.secret-patterns`, one source of truth**
+  for the pre-commit hook and the CI guardrail. Carve out with
+  `// pragma: allowlist secret`, or put fixtures under `tests/fixtures/secrets/`.
+- **C.3 — Sessions are rows.** `UserSession` is minted per sign-in and verified
+  on every JWT pass; per-tenant policy caps concurrency and max age.
+- **C.4 — Audit events stream out HMAC-signed**, fail-safe: the audit row is
+  already committed, so a broken SIEM never undoes the write. Free-text
+  `details` is dropped; actor is an opaque id, never an email.
+- **C.5 — Sanitise user-supplied rich text at the USECASE layer**, with
+  `sanitizeRichTextHtml` / `sanitizePlainText` from `@/lib/security/sanitize` —
+  never at render time only, because the row is also read by PDF export, share
+  links and SDK consumers. Do not widen the allowlist without a security review.
 
-**C.1a — SCIM authenticates in the HANDLER, not at the Edge.**
-`/api/scim/` is in `PUBLIC_PATH_PREFIXES` on purpose. A SCIM bearer is an
-opaque token compared against a hash in `TenantScimToken`, the Edge runtime
-has no database, and `getToken()` understands only a NextAuth JWE — so the
-Edge cannot verify one. It used to do the only thing it could: return `null`
-and 401 every request, which meant **SCIM provisioning had never worked for
-anyone** while its integration tests stayed green (they import
-`authenticateScimRequest` directly and never cross the middleware). Every
-data-bearing handler under `/api/scim` therefore calls
-`authenticateScimRequest` itself, held FAIL-CLOSED by
-`tests/guards/scim-routes-self-authenticate.test.ts`, which derives the route
-list from the filesystem so a new route is covered the moment it exists. The
-one exemption is `ServiceProviderConfig` (RFC 7644 §4 discovery metadata), and
-the guard fails if that file ever touches the database. The trailing slash on
-the prefix was LOAD-BEARING — `'/api/scim'` would also have opened
-`/api/scimulator` — and since 2026-10-02 it is belt-and-braces instead:
-`matchesPublicPrefix` requires a public-prefix match to end at `/`, `?`, `#` or
-the end of the string, so a sibling sharing a spelling is refused whether or
-not the entry carries a slash. **Keep writing the slash** on a prefix entry; it
-states the intent, and `'/api/scim/'` still correctly declines to open the bare
-`/api/scim`. What changed is that the OTHER 20 bare entries — `/api/metrics`,
-`/api/readyz`, `/api/admin/tenants` and the rest — are no longer one forgotten
-character away from publishing `/api/metrics-internal`. A convention that holds
-only where each of 27 authors remembered it was not a convention; measured
-across all 464 route paths under `src/app`, the narrowing costs zero real
-routes. See `tests/guards/public-prefix-segment-boundary.test.ts`.
-SCIM has its own rate tier (`SCIM_LIMIT` + `SCIM_IP_LIMIT`) because it is the
-one API surface an anonymous caller can use to reach a token comparison; the
-per-IP ceiling is the half that actually stops a brute force, since a caller
-rotating a fresh guess per request gets a fresh per-bearer bucket every time.
 **When you add an auth scheme that is not the session cookie, add an HTTP-level
-test that crosses the middleware** — `token.error`, the `iflk_` API key and
-SCIM were all complete, unit-tested mechanisms severed at that seam.
-See `docs/epic-c-security.md`.
+test that crosses the middleware.** `token.error`, the `iflk_` API key and SCIM
+were all complete, unit-tested mechanisms severed at that seam.
 
-**C.1c — Uncredentialed browser beacons are the OTHER half of the reachable
-class, and the C.1a/C.1b guard is blind to it.** A browser posts a CSP
-violation report, a web-vitals beacon and a manifest fetch with **no
-credentials** — so `getToken()` returns null and the Edge 401s them, exactly as
-it did to SCIM and the webhooks. `tests/guards/public-routes-self-authenticate.test.ts`
-does not catch these: its direction A derives from routes that READ and VERIFY
-a credential, and a beacon sink verifies nothing. That blind spot cost five
-months — `/api/security/csp-report` was never in `PUBLIC_PATH_PREFIXES`, so
-**no CSP violation report ever reached the store** while `middleware.ts` itself
-advertised the path in `Report-To` and `Reporting-Endpoints` a few hundred
-lines below the gate that refused it. The class is small and closed — the CSP
-sink, `/api/metrics`, the PWA manifest — and is enumerated in
-`tests/unit/csp-edge-reachability.test.ts`. **Spell such an entry as the
-CONSTANT that goes into the header** (`CSP_REPORT_PATH`), never a literal: the
-same value feeds three response headers, and the duplicated-literal shape is
-what produced the bug. Opening a beacon prefix opens EVERY method on it —
-`isPublicPath` matches on prefix — so gate the privileged methods in the
-handler FIRST, in the same diff. Here that was the summary `GET`, which returns
-whole `CspViolation` objects (`clientIp`, `userAgent`) from a global un-tenanted
-ring; it now requires `PLATFORM_ADMIN_API_KEY`, held by
-`tests/unit/csp-summary-gate.test.ts` because direction B could not — its
-`VERIFIES` check matches file TEXT, so a commented-out gate stays green.
-
-**C.1b — Signed webhooks are public at the Edge, and verify themselves.**
-`/api/stripe/webhook`, `/api/storage/av-webhook` and
-`/api/integrations/webhooks/` are in `PUBLIC_PATH_PREFIXES` for the same
-reason SCIM is: their senders cannot carry a session cookie, so `getToken()`
-returns null and the Edge refused them — all three had NEVER been delivered.
-Each verifies its own signature and fails CLOSED with no secret configured.
-The rule is enforced in BOTH directions by
-`tests/guards/public-routes-self-authenticate.test.ts`: a route that verifies
-a credential must be REACHABLE, and a route behind a public prefix must
-VERIFY. Either half alone is worse than neither — the first without the second
-turns dead endpoints into anonymous ones. Both are derived from the
-filesystem, so a new route is covered the moment it exists. See
-`docs/epic-c-security.md`.
-
-**C.2 — Secret detection.** Local pre-commit hook
-(`.husky/pre-commit` → `scripts/detect-secrets.sh`) scans staged
-files; CI guardrail (`tests/guardrails/no-secrets.test.ts`) walks
-the whole tree. Both load patterns from `.secret-patterns` (one
-source of truth). Carve-outs: inline
-`// pragma: allowlist secret` for one-off lines, or move fixtures
-under `tests/fixtures/secrets/` (auto-skipped). Pre-existing
-placeholder fixtures live in `REPO_BASELINE` in the guardrail; add
-to that array only with a written `reason`.
-
-**C.3 — Session hardening.** A `UserSession` row is minted on every
-sign-in (NextAuth `jwt` callback → `recordNewSession`) carrying
-`ipAddress`, `userAgent`, `expiresAt`, `lastActiveAt`. Every JWT
-pass calls `verifyAndTouchSession` — revoked or expired rows
-short-circuit as `SessionRevoked`. Per-tenant policy lives on
-`TenantSecuritySettings.maxConcurrentSessions` (overflow → revoke
-oldest by `lastActiveAt` ASC) and `sessionMaxAgeMinutes` (caps
-`expiresAt` at insert time). The admin UI lives at
-`/admin/members` — Sessions column + modal + per-row revoke,
-backed by `GET/DELETE /api/t/:slug/admin/sessions`. The pre-Epic-C
-endpoints (`security/sessions/revoke-current` etc.) and the
-`User.sessionVersion` bump still work as the coarse-grained
-backstop.
-
-**C.4 — Audit event streaming.** Every committed audit row is
-fired through `streamAuditEvent` into a per-tenant in-memory
-buffer (lazy-imported by `appendAuditEntry` so cold-start cost is
-zero for tenants without streaming configured). Flush happens on
-100 events OR 5 seconds, HMAC-SHA256-signed
-(`X-Agrent-Signature: sha256=<hex>` — the legacy `X-Inflect-Signature`
-is dual-emitted at an identical value by default and dropped by
-`AUDIT_STREAM_LEGACY_HEADERS=0`), POSTed to
-`TenantSecuritySettings.auditStreamUrl`. The HMAC secret is on
-the same row (`auditStreamSecretEncrypted`), encrypted at rest via
-the Epic B field-encryption manifest. Fail-safe — the audit row is
-already committed, so a broken SIEM never undoes the write.
-Privacy-aware payload — free-text `details` is dropped, only
-structured `detailsJson` ships; actor is opaque `userId` +
-`actorType`, never email. Each batch delivery gets up to 3 attempts
-(original + 2 retries) with linear backoff (1 s, 2 s). Kill-switch
-via `AUDIT_STREAM_RETRY_ENABLED=0`.
-
-**C.5 — Server-side rich-text sanitisation.** Use
-`sanitizeRichTextHtml` / `sanitizePlainText` /
-`sanitizePolicyContent` from `@/lib/security/sanitize` BEFORE
-persisting any user-supplied rich-text. Already wired into
-`task.addTaskComment`, `issue.addIssueComment`, and
-`knowledge.createArticle` / `knowledge.createArticleVersion` (via the
-local `sanitizeContent` helper in `src/app-layer/usecases/knowledge.ts`,
-which picks `sanitizeRichTextHtml` for `HTML` and `sanitizePlainText`
-for `MARKDOWN`). The `policy.*` write paths this list used to name went
-with the GRC teardown, and `sanitizePolicyContent` now has no production
-caller at all — reach for the other two. New write paths
-that accept HTML or comment text MUST sanitise at the usecase
-layer (not just at render time) — render-time sanitisation alone
-would leave the row dangerous to PDF export, audit-pack share
-links, and future SDK consumers reading the row verbatim. The
-allowlist (tags, attributes, link schemes) is in
-`src/lib/security/sanitize.ts`; do not widen it without a security
-review.
-
-**See `docs/epic-c-security.md`** for the unified operator
-runbook (env vars, verification commands, rollback procedures,
-failure modes) and `SECURITY.md` for the responsible-disclosure
-policy.
+**See [`docs/epic-c-security.md`](docs/epic-c-security.md)** for the operator
+runbook and the reasoning — including three occasions when a working mechanism
+was Edge-severed and nobody noticed for months.
 
 ### Isolation & Sanitisation Completeness (Epic D)
 
-Epic D closed three concrete gaps left after Epic C. Each is now
-guarded by a CI ratchet so the regression surface is small.
+Three gaps Epic C left, each now held by a CI ratchet.
 
-**D.1 — `UserSession` RLS.** The Epic C.3 `UserSession` table
-shipped without RLS policies. It now carries a single asymmetric
-`tenant_isolation` policy (`USING (tenantId IS NULL OR own) WITH
-CHECK (own)`) plus the canonical `superuser_bypass`, with `FORCE
-ROW LEVEL SECURITY` enabled. The single-policy form is mandatory
-because `tenantId` is nullable: a split `tenant_isolation_insert`
-policy would be a permissive sibling that lets `app_user` UPDATE a
-NULL row to any tenantId. `UserSession` is listed in
-`SINGLE_POLICY_EXCEPTIONS` in `tests/guardrails/rls-coverage.test.ts`,
-where the post-loop sanity check verifies the asymmetric `qual` +
-`with_check` shape is real — a future "simplify" PR that strips
-either clause fails CI. See migration
-`prisma/migrations/20260423150000_epic_d1_user_session_rls/` and
-`tests/integration/user-session-rls.test.ts` for the seven
-behavioural assertions (own-INSERT accepts; foreign-INSERT rejects;
-NULL-INSERT-under-app_user rejects; NULL-row-claim-to-other-tenant
-rejects; etc.).
+- **D.1 — `UserSession` RLS uses a SINGLE asymmetric policy**
+  (`USING (tenantId IS NULL OR own) WITH CHECK (own)`), not a split pair. The
+  column is nullable, so a separate insert policy would be a permissive sibling
+  letting `app_user` claim a NULL row for any tenant. It is listed in
+  `SINGLE_POLICY_EXCEPTIONS` and a "simplify" PR that strips either clause fails
+  CI.
+- **D.2 — Encryption is not sanitisation.** A field being encrypted at rest says
+  nothing about the renderer that decrypts it, so every encrypted free-text
+  write path sanitises too.
+- **D.3 — `requirePermission(...)` is the only admin-authorization guard.** The
+  legacy role-tier helpers threw 403 without writing an `AUTHZ_DENIED` audit row
+  and were invisible to the C.1 guardrail.
 
-**D.2 — Encrypted-field write paths sanitised.** Five usecase
-files (`finding`, `risk`, `vendor`, `audit`, `control-test`) wrote
-to encrypted free-text columns without server-side sanitisation.
-(All five have since been deleted — `risk` and `control-test` by the
-2026-08 risk + control-exoskeleton uproot (#501), `finding` / `vendor` /
-`audit` by GRC teardown phase 2 (#547) — so the paragraph below is
-history; the RULE it states is unchanged for the encrypted surfaces
-that remain.)
-Encryption protects confidentiality at rest; sanitisation protects
-every downstream renderer (UI, PDF export, audit-pack share link,
-SDK consumer reading the row verbatim) that decrypts and reads the
-field. All five now route user-supplied free text through
-`sanitizePlainText` (or, for surfaces that share the call shape,
-the per-file `sanitizeOptional` helper that preserves the
-undefined/null/string three-state contract). The
-`tests/guardrails/sanitize-rich-text-coverage.test.ts` ratchet no
-longer keeps a numeric floor — it derives the rich-text inventory
-from `ENCRYPTED_FIELDS` and requires every encrypted
-business-content model to be CLASSIFIED (sanitised / not-rich-text /
-a named gap), so a NEW unsanitised write path fails rather than
-sliding under an "at least N". The companion
-`tests/unit/security/sanitize-write-paths.test.ts` carried 20 write-path
-assertions when Epic D landed; the GRC teardown deleted the policy /
-finding / risk / vendor / audit / control-test blocks along with their
-usecases, so it now drives the two surviving comment call sites —
-`addTaskComment` and `addIssueComment` — with a script-strip plus an
-entity-decode assertion each. `Task.description` / `Task.resolution` are
-covered by the sibling `tests/unit/security/sanitize-task-fields.test.ts`,
-split out because those paths need the full `WorkItemRepository` mocked
-rather than just `TaskCommentRepository.add`.
-
-**D.3 — Legacy `requireAdminCtx` migrated to `requirePermission`.**
-Seven tenant API routes (billing × 3, security/sessions × 2,
-security/mfa/policy PUT, sso) used the legacy role-tier guard,
-which threw a 403 but **did not write an `AUTHZ_DENIED` audit
-row** and was invisible to the Epic C.1 permission guardrail. All
-seven now use `requirePermission(...)` — denials audit cleanly,
-and `tests/guardrails/api-permission-coverage.test.ts` now treats
-`billing/`, `sso/`, and `security/` as privileged roots with five
-self-service routes (own MFA enrolment, own session revocation)
-explicitly listed in `EXCLUDED_ROUTES` with written reasons. The
-canonical pattern for new admin routes is
-`requirePermission('<key>', handler)` — now the *only*
-admin-authorization guard: the legacy `requireAdminCtx` /
-`requireWriteCtx` / `requireRoleCtx` helpers were removed
-(2026-05-21) once every route had migrated, and the ratchet
-`tests/guardrails/no-legacy-admin-guard.test.ts` keeps them from
-returning.
-
-**See `docs/epic-d-completeness.md`** for the Epic D operator
-runbook (verification commands, rollback procedures, the five
-self-service security carve-outs, the asymmetric-RLS rationale).
+**See [`docs/epic-d-completeness.md`](docs/epic-d-completeness.md)** for the
+runbook and [`docs/epic-c-security.md`](docs/epic-c-security.md) for the
+reasoning behind the asymmetric RLS shape.
 
 ### Observability & Operational Hardening (Epic E)
 
-Three remediations that close the operational gaps left after Epic D.
-Treat them as one subsystem — each protects a different blast-radius
-class for the same deploy event.
+- **E.2 — Outbound webhook headers come from `buildOutboundHeaders(...)` and
+  dedupe keys from `computeBatchId(...)`** in
+  `src/app-layer/events/webhook-headers.ts`. Never spell an outbound header name
+  inline and never hand-roll a dedupe key. `X-Agrent-*` is canonical;
+  `X-Inflect-*` is dual-emitted at an identical value until every consumer SIEM
+  has migrated.
+- **E.3 — `installShutdownHandlers()` drains audit buffers, then OTel, then
+  Sentry**, each `Promise.race`d against a per-stage budget so a slow exporter
+  never outlives the container grace period. It never calls `process.exit` —
+  `next start` owns the lifecycle. A paired shutdown helper lives beside each
+  `init*`, and must stay bounded, idempotent and non-throwing.
+- **E.4 — Every route ingesting a user-chosen password MUST import AND call
+  `checkPasswordAgainstHIBP`.** Declare the request schema in `@/lib/schemas`
+  and import it BY NAME — resolution is per-symbol, so a namespace import has
+  no symbol to follow and the scan goes blind.
 
-**E.2 — Audit-stream retry + idempotency key.** `deliverBatch` in
-`src/app-layer/events/audit-stream.ts` now attempts each batch up
-to 3 times (original + 2 retries) on `408 / 429 / 5xx / network
-throw`. Linear backoff (1 s, 2 s). Every attempt carries the SAME
-`X-Agrent-Batch-Id` header — deterministic from
-`(tenantId, schemaVersion, eventIds)` via `computeBatchId` in
-`src/app-layer/events/webhook-headers.ts`. The legacy `X-Inflect-*`
-names are still dual-emitted alongside the canonical set with identical
-values, so the 2026-07 rename did not break existing SIEM integrations;
-`AUDIT_STREAM_LEGACY_HEADERS=0` drops them once every consumer has
-migrated. The same id doubles as
-`X-Agrent-Idempotency-Key`, so consumer SIEMs dedupe retries with
-zero retry-aware code on our side. Kill-switch via
-`AUDIT_STREAM_RETRY_ENABLED=0` (force single-POST for debugging a
-misbehaving SIEM without redeploy). Delivery is fully instrumented
-with OTel metrics — `deliverBatch` calls `recordAuditStreamDelivery`
-once per batch (success/failure counter + an attempts histogram for
-retry pressure + a duration histogram), `streamAuditEvent` calls
-`recordAuditStreamBufferOverflow` when a per-tenant buffer sheds an
-event at the hard cap, and an `audit_stream.buffer.depth` observable
-gauge reports backlog. Audit-stream failures deliberately do NOT
-gate `/api/readyz` — the path is out-of-band + fail-safe (the audit
-row is already committed); escalation is alert-based on the metrics.
-See `docs/implementation-notes/2026-05-21-audit-stream-observability.md`.
-
-`webhook-headers.ts` is the canonical module for any future outbound
-webhook in the repo (SCIM push, billing fanout, per-tenant SIEM
-pluralisation). Every caller uses `buildOutboundHeaders(...)` and
-`computeBatchId(...)` — never spell an outbound header name inline
-(`X-Agrent-*` is canonical; `X-Inflect-*` is the legacy alias, still
-dual-emitted with identical values by default), never hand-roll dedupe
-keys. The dual-emit is `buildOutboundHeaders`'s business, not a
-caller's: it drops to the canonical set alone under
-`AUDIT_STREAM_LEGACY_HEADERS=0`, read from `process.env` directly so an
-operator can flip it without a redeploy once every consumer SIEM has
-migrated.
-
-**E.3 — Graceful shutdown.** On a rolling deploy the process receives
-SIGTERM. Without a drain handler, three observability surfaces lose
-data: per-tenant audit-stream buffers (irreversible — events never
-reach the SIEM), OTel span batches still in the `BatchSpanProcessor`,
-and Sentry errors still in the transport queue.
-`installShutdownHandlers()` in `src/lib/observability/shutdown.ts`
-drains all three in the order most-to-least critical for audit
-correctness: audit buffers first, then OTel, then Sentry. Each stage
-is `Promise.race`'d against its per-stage budget from
-`src/lib/observability/shutdown-budget.ts` so a slow exporter never
-blocks past the container's grace period (k8s default 30 s). The
-three stage budgets (3 s + 2 s + 2 s = 7 s) fit under the 20 s
-ceiling — leaving 10+ s for Next.js's own HTTP-drain handler
-running in parallel. The handler never calls `process.exit` —
-`next start` owns the process lifecycle. Registration happens in
-`src/instrumentation.ts::register()`, after all `init*` calls, and
-is idempotent under HMR via a module-level flag. SIGINT gets the
-same treatment. A second SIGTERM falls through to Node's default
-(via `process.once`) so an escalating runtime can always terminate.
-
-Paired shutdown helpers live beside their init counterparts:
-`shutdownTelemetry` in `src/lib/observability/instrumentation.ts`,
-`shutdownSentry` in `src/lib/observability/sentry.ts`. Both are
-bounded, idempotent, never throw — the handler composes them as
-stable contracts.
-
-**E.4 — HIBP guardrail.** `tests/guardrails/hibp-coverage.test.ts`
-locks in the invariant that every API route ingesting a
-user-chosen password MUST import AND call
-`checkPasswordAgainstHIBP`. Mirrors the
-`sanitize-rich-text-coverage.test.ts` template: a curated
-`HIBP_REQUIRED_ROUTES` list (`auth/register`, `auth/change-password`,
-`auth/reset-password`) paired with a structural scan of
-`src/app/api/**/route.ts` for password-shaped Zod fields. An
-in-memory mutation regression proof confirms the detector catches
-removals. The structural scan auto-fails any new route that parses
-a `password` / `newPassword` / `currentPassword` /
-`confirmPassword` Zod field without registering.
-
-**The scan FOLLOWS IMPORTS** (`tests/helpers/password-schema-graph.ts`,
-#1166), and the sentence that used to end this paragraph — *"define
-password schemas inline in the route file so the scan sees them"* — is
-gone because following it cost you the API contract. The scan was a
-regex over route FILES, so a field declared in a shared schema module
-was invisible: `auth/change-password` and `auth/reset-password` scored
-2 and 1 matches, and **`auth/register` — the primary signup route —
-scored 0**, because it imports `AuthActionSchema` from `@/lib/schemas`.
-Nothing was exposed (the curated list names it and asserts the call),
-but the half of the guard that catches a route nobody registered was
-blind to the shape the most important password route already had. The
-inline convention could not be followed either:
-`scripts/openapi-build.ts` registers components by walking the
-`@/lib/schemas` module namespace, so moving `AuthRegisterSchema` into
-the route file drops `AuthRegisterRequest` from
-`src/generated/openapi.json` — measured, it reddens the full-spec
-drift check in `tests/contracts/api-schemas.test.ts` and orphans that
-schema's contract snapshot. The two inline password schemas are
-absent from the spec for exactly that reason. **So declare a request
-schema in `@/lib/schemas` as GAP-10 says, and import it by NAME** —
-resolution is per-symbol, and a namespace import
-(`import * as s from '@/lib/schemas'`) has no symbol to follow, which
-the guard asserts no route file uses.
-
-**It matches the field NAME, not the field's spelling.** The regex
-required a literal `z.` after the colon, so it read
-`password: z.string().min(8)` and was blind to
-`password: PwFieldSchema` — which is this repo's normal idiom for a
-reusable Zod field (23 uses across 12 files in `src/lib/schemas` and
-`src/app-layer/schemas`: `category: CostCategorySchema`,
-`geometry: PolygonGeometrySchema`, …). No password route happened to
-use it, so the flagged set is **3 of 374 route files before and
-after** and no measurement of the live tree could have shown the gap;
-a probe did — an unregistered route parsing
-`z.object({ password: PasswordFieldSchema })` left the guard green at
-13/13 while the inline-shaped probe beside it was reported by name.
-So there is no longer a shape this guard requires you to use. Name
-matching is gated on the declaration being Zod-shaped, and that gate
-is CORRECTNESS here rather than cost (it is cost on the composition
-walk): ungated it also flags `api/staging/seed`, which returns
-`login: { password: 'password123' }` — a hardcoded seed credential on
-a handler that 403s in production.
-
-**See `docs/epic-e-observability.md`** for the Epic E operator
-runbook (verification commands, rollback procedures, how to add a
-new password-handling route, how to add a new outbound webhook).
+**See [`docs/epic-e-observability.md`](docs/epic-e-observability.md)** for the
+runbook and the reasoning.
 
 ### Finishing Touches (Epic F)
 
@@ -1392,176 +870,45 @@ new DEK-lifecycle verb to `tenant-key-manager`).
 
 ### Access Control & Tenant Onboarding (Epic 1)
 
-Closes the audit's GAP-01 (Critical): OAuth sign-in no longer
-silently grants ADMIN on the oldest tenant. Authentication and
-tenant membership are now orthogonal — sign-in alone authenticates
-the user; tenant access requires an explicit grant via one of the
-allowlisted paths.
+Authentication and tenant membership are orthogonal: signing in authenticates a
+person, tenant access needs an explicit grant.
 
-**Role model.** The `Role` enum has SIX values:
-`OWNER | ADMIN | EDITOR | READER | AUDITOR | MECHANISATOR`. OWNER is
-strictly superior to ADMIN — it gains `admin.tenant_lifecycle` (delete
-tenant, rotate DEK, transfer ownership) and `admin.owner_management`
-(invite/remove OWNERs, assign OWNER role). ADMIN has every other
-admin flag but explicitly denies those two. The `PermissionSet`
-resolution in `src/lib/permissions.ts` enforces the distinction at
-compile time; `getPermissionsForRole('ADMIN').admin.tenant_lifecycle`
-is `false` by type.
+- **Six roles: `OWNER | ADMIN | EDITOR | READER | AUDITOR | MECHANISATOR`.**
+  OWNER is strictly superior to ADMIN (`admin.tenant_lifecycle`,
+  `admin.owner_management`). **Any `switch` on `Role` MUST give MECHANISATOR an
+  explicit arm** — the switch in `getPermissionsForRole` ends
+  `case 'READER': default:`, so a missing arm silently grants the restricted
+  machine-operator persona a view of every screen. Its real confinement is the
+  middleware lockdown in `src/middleware.ts` + `isOperatorAllowedPath`, and it
+  is never an SSO-mappable target.
+- **Membership creation is EXPLICIT and allowlisted.** Only the modules listed
+  in `tests/guardrails/no-auto-join.test.ts` may write a `TenantMembership`
+  row, each with a written reason; any site not on that list fails CI. There is
+  no auto-join path: no invite ⇒ no membership.
+- **The tenant-access gate reads `memberships[]`, never the single
+  `tenantSlug` claim** — that claim is the oldest membership, kept for
+  backward compatibility, and gating on it denies a legitimate member of a
+  second tenant. A slug-miss on a TRUNCATED list defers to the DB-backed server
+  check rather than denying.
+- **Last-OWNER protection is two layers**: the usecase counts ACTIVE OWNERs,
+  and a DB trigger raises P0001 on any UPDATE or DELETE that would leave a
+  tenant with none. Transfer promotes before demoting, so the trigger is
+  satisfied throughout.
+- **Invite redemption runs in the `jwt` callback, NOT `signIn`.** A first-time
+  OAuth user's `user.id` in `signIn` is the IdP subject, not our `User.id` — the
+  adapter creates that row only after `signIn` returns — so redeeming there
+  wrote a membership against a non-existent FK and stranded the invitee.
+- **The emailed link is OPTIONAL**: an OAuth sign-in whose IdP-VERIFIED email
+  matches a pending invite provisions the membership. OAuth only — the
+  credentials provider's email is self-asserted, and honouring an invite there
+  would hand a tenant to whoever guessed an invited address.
+- **Terms acceptance is captured on `register/start` and at `/accept-terms`.**
+  A first-time Google sign-in creates its row inside NextAuth's
+  `PrismaAdapter`, recording none — so an unconsented session is HELD by the
+  Edge rather than stamped, which would file an agreement nobody gave.
 
-MECHANISATOR (#277) is the restricted machine-operator / sprayer
-persona, and it is the odd one out in three places, each load-bearing.
-**Its explicit arm in `getPermissionsForRole` is what keeps it
-restricted**: that switch ends `case 'READER': default:`, so a
-MECHANISATOR without its own arm does not fail — it silently inherits
-the READER "view everything" default. The arm returns every domain
-`false` except `tasks.view` + `tasks.edit`, on only so the completion
-affordances render. Those permissions are defence-in-depth; the
-LOAD-BEARING confinement is the middleware lockdown in
-`src/middleware.ts`, which redirects any tenant path outside
-`isOperatorAllowedPath` (`src/lib/auth/guard.ts`) to `/t/{slug}/my-work`
-and returns 403 `operator_scope` on API routes. And it is never an
-SSO-mappable target — excluded from `ENTRA_MAPPABLE_ROLES` in
-`src/app-layer/schemas/entra-group-mapping.schemas.ts`, so only a tenant
-admin can assign it.
-
-**Membership creation is explicit.** Only SEVEN modules can write a
-`TenantMembership` row today — the three detailed below (the first of
-them via two entry points), plus SSO, SCIM, the non-production staging
-seed route, and the two Epic O-2 org paths:
-(a) `src/app-layer/usecases/tenant-invites.ts`, which has TWO entry
-points, both requiring an admin-created `TenantInvite`:
-`redeemInvite` is token-bound and email-bound, atomically consumed
-via an `updateMany` with `acceptedAt IS NULL AND expiresAt > now()`
-predicate (a leaked token is burnt on email mismatch); and
-`redeemPendingInvitesByEmail` matches a pending invite against an
-**IdP-verified** sign-in email, which is what makes the emailed link
-optional. The second is **OAuth-only** — `src/auth.ts` passes
-`emailVerifiedByIdp: account.provider !== 'credentials'`, because the
-credentials provider's email is self-asserted and honouring an invite
-there would hand a tenant to whoever guessed an invited address. It is
-still not auto-join: no invite ⇒ no membership. Both share
-`finalizeInviteRedemption`.
-(b) `createTenantWithOwner` in `src/app-layer/usecases/tenant-lifecycle.ts` —
-platform-admin tenant bootstrap, gated by `PLATFORM_ADMIN_API_KEY`
-(constant-time compared via `verifyPlatformApiKey`).
-(c) `/api/auth/register/start` + `/verify` — credentials self-service
-signup, P3.5b's two-step form. Step 1 creates an UNVERIFIED user and
-records terms acceptance; step 2 proves the address and signs in; the
-farm is created afterwards by `POST /api/me/farms` (P3.6), which is the
-site that writes the membership. **`/api/auth/register` — the
-single-call route that created a user AND a tenant together — was
-RETIRED on 2026-10-07 (#1376)**, because it recorded no terms
-acceptance and was the weaker of two signup doors. Do not recreate it;
-`src/generated/route-inventory.json` holds the retirement reason, and
-`tests/integration/tenant-creation-atomicity.test.ts` is where its
-real-DB rollback proof now lives, retargeted onto
-`createTenantWithOwner`.
-The `Credentials()` provider is still registered unconditionally in
-`src/auth.ts`; what hides the sign-in form in production is
-`AUTH_CREDENTIALS_UI_HIDDEN`, a request-time flag served by
-`src/app/api/auth/ui-config/route.ts`. That same route now also serves
-`registrationOpen`, because the login page is a client component and
-cannot resolve `social.farm-registration` itself — it links to
-`/start` only when the wizard is open, for the reason the landing page
-does (`/start` 404s when the flag is off).
-**Terms acceptance has TWO capture points, and the second exists because
-the first cannot cover every door.** `register/start` records it inline.
-A first-time Google sign-in creates its `User` row through
-`PrismaAdapter` inside NextAuth, so it passes no route of ours (#1376) —
-and stamping consent on that callback would file an agreement nobody
-gave, which is worse than the null the column honestly holds. So a
-signed-in session whose `acceptedTermsAt` is null is HELD at
-`/accept-terms` by the Edge, and `POST /api/auth/accept-terms` is the
-way out (idempotent, and it does not re-stamp: the timestamp is the
-artifact).
-That gate runs AFTER the MFA gate — MFA is a security control, consent
-is a compliance record — and `isTermsAllowedPath` exempts the MFA paths
-too, so the two cannot deadlock if the order is ever changed. It tests
-`termsPending === true`, so a token minted before this shipped reads as
-not-pending and nobody is locked out mid-session; the claim resolves
-from the column on the next re-mint. The lookup FAILS CLOSED, which is
-the opposite trade from `mfaFailClosed`: being asked twice is harmless,
-granting access with no record is the thing this prevents.
-**The consent control is ONE component** —
-`components/auth/TermsConsentCheckbox` — rendered by both the wizard and
-the interstitial, with its copy under a single `common` key. It was
-duplicated with byte-identical text under two keys, which is the shape
-where one gets edited and the other quietly keeps saying something else
-while the stored version string claims both users agreed to the same
-document.
-Plus five provisioning paths that never involve an invite: SSO
-(`usecases/sso.ts`), SCIM (`usecases/scim-users.ts`), the staging seed
-route (`app/api/staging/seed/route.ts` — 403s outright when
-`NODE_ENV === 'production'`), and the two Epic O-2 org paths.
-`usecases/org-tenants.ts` writes the OWNER row for the ORG_ADMIN
-creating a tenant under an org; `usecases/org-provisioning.ts` is the
-one CROSS-TENANT writer — it fans `AUDITOR` rows (`createMany`, with
-`provisionedByOrgId` stamped so deprovisioning can tell auto-created
-rows from granted ones) into every tenant under the org, and it is the
-easiest of the seven to forget. Seven files in total; every one is
-allowlisted in `tests/guardrails/no-auto-join.test.ts` with a one-line
-reason, and ANY site not on that list fails CI.
-
-**Middleware tenant-access gate.** `/t/:slug/**` and
-`/api/t/:slug/**` require the URL's slug to appear in the JWT's
-`memberships[]` list — NOT the single `tenantSlug` claim, which
-`src/auth.ts` keeps only as the "primary" (oldest) membership for
-backward compatibility and which would deny a legitimate member of a
-second tenant. An empty list → `no_tenant_access`; a slug absent from a
-COMPLETE list → `cross_tenant`. Both redirect to `/no-tenant` on web; on
-the API they return 403 `{ error: 'no_tenant_access' }` and 403
-`{ error: 'cross_tenant_access_denied' }` respectively. If the list was
-capped at sign-in (`membershipsTruncated`) a slug-miss is not
-definitive — the slug may be a membership that did not fit — so the gate
-allows and lets the authoritative DB-backed server check (`TenantLayout`
-/ `getTenantCtx`) decide. Uses the JWT claim only — no per-request DB
-hit. Carve-outs
-for `/invite/<token>`, `/api/invites/**`, and `/no-tenant` itself.
-Logic lives in `src/lib/auth/guard.ts::checkTenantAccess`.
-
-**Last-OWNER protection — two layers.** Usecase layer
-(`updateTenantMemberRole`, `deactivateTenantMember`) counts ACTIVE
-OWNERs and throws `forbidden('Cannot demote/deactivate the last
-OWNER...')`. DB trigger `tenant_membership_last_owner_guard` is the
-backstop — raises SQLSTATE P0001 on any UPDATE or DELETE that would
-leave a tenant with zero ACTIVE OWNERs, catching bypass attempts
-(raw `deleteMany`, code paths that forget the check). The two-step
-`transferTenantOwnership` flow uses this: promote the new OWNER
-first (count=2), then demote the old (count=1, trigger satisfied).
-
-**Invitation flow — the link is OPTIONAL.** Admin POSTs to
-`/api/t/:slug/admin/invites` → `createInviteToken` creates a 256-bit
-base64url token with 7-day expiry. There are then two ways in, and
-neither is privileged over the other:
-
-  1. **Just sign in.** An OAuth sign-in whose IdP-verified email
-     matches a pending invite provisions the membership on the spot
-     (`redeemPendingInvitesByEmail`). This is the path most invitees
-     actually take — email delivery is unreliable, and a user who
-     clicks "Sign in with Microsoft" should not be stranded on
-     `/no-tenant` because an SMTP relay dropped a message.
-  2. **Follow the link.** User clicks `/invite/<token>` → preview page
-     → "Sign in to accept" sets a 10-min HttpOnly cookie and redirects
-     to `/login`.
-
-Both are claimed atomically against the same row, so a link-click
-racing a login cannot double-redeem; the loser skips.
-After OAuth, redemption runs in the **`jwt` callback** (NOT `signIn`)
-via `redeemPendingInvites` in `src/lib/auth/invite-redemption.ts`,
-which reads the cookie and resolves the persisted `User.id` **by
-email** before calling `redeemInvite`. This is load-bearing: in the
-`signIn` callback a first-time OAuth user's `user.id` is the
-identity-provider subject, not our `User.id` (the Prisma adapter
-creates the row only after `signIn` returns), so redeeming there wrote
-a membership against a non-existent `User` FK and stranded the invitee
-on `/no-tenant`. The `jwt` callback fires after the row exists.
-Step 1 (atomic claim) commits standalone so Step 2 (email binding) can
-burn the invite on mismatch without rolling back the claim — leaked
-tokens are unusable on first failed attempt.
-
-**See `docs/epic-1-access-control.md`** for the Epic 1 operator
-runbook (verification commands, rollback procedures, how to add a
-new tenant-membership creation path).
+**See [`docs/epic-1-access-control.md`](docs/epic-1-access-control.md)** for the
+runbook and the reasoning.
 
 ### RBAC & Permissions
 

@@ -460,3 +460,249 @@ retry — and a separate budget would be a number nobody could justify
 differently. The point is the same as SCIM's: an anonymous caller reaching a
 signature comparison is unbounded database and log load, since every handler
 logs a warn on a bad signature.
+
+
+---
+
+## Defense-in-Depth (Epic C) — the reasoning behind the five controls
+
+Relocated from CLAUDE.md (#1334), which keeps the rules as imperatives. **Read this before touching `requirePermission`, `PUBLIC_PATH_PREFIXES`, the secret-detection patterns, session revocation, the audit stream or `sanitizeRichTextHtml`.** It records why each control is shaped the way it is — including three separate occasions when a complete, unit-tested mechanism was severed at the Edge and nobody noticed: SCIM provisioning had NEVER worked for anyone, no CSP violation report ever reached the store, and all three signed-webhook senders had never been delivered.
+
+Five complementary controls. Treat them as one system — each
+sub-epic has the others as backstops.
+
+**C.1 — API permission middleware.** Wrap every privileged API
+handler with `requirePermission(<key>, …)` from
+`@/lib/security/permission-middleware`. The key is a typed dotted
+literal (`'admin.scim'`, `'tasks.create'`, …) derived from
+`PermissionSet`. Denials emit a hash-chained `AUTHZ_DENIED` audit
+entry (`category: 'access'`) and surface as a generic 403 — the
+key itself is never echoed to the client. The route ↔ map sync is
+guarded by `tests/guardrails/api-permission-coverage.test.ts`;
+new admin/privileged routes MUST add a rule in
+`src/lib/security/route-permissions.ts` and use
+`requirePermission(...)`. The legacy `requireAdminCtx` /
+`requireWriteCtx` / `requireRoleCtx` helpers no longer exist —
+`src/lib/auth/require-admin.ts` was deleted (2026-05-21) once every
+route had migrated (see D.3), and the ratchet
+`tests/guardrails/no-legacy-admin-guard.test.ts` fails CI if the module
+or any of the three identifiers reappears under `src/`.
+
+**C.1a — SCIM authenticates in the HANDLER, not at the Edge.**
+`/api/scim/` is in `PUBLIC_PATH_PREFIXES` on purpose. A SCIM bearer is an
+opaque token compared against a hash in `TenantScimToken`, the Edge runtime
+has no database, and `getToken()` understands only a NextAuth JWE — so the
+Edge cannot verify one. It used to do the only thing it could: return `null`
+and 401 every request, which meant **SCIM provisioning had never worked for
+anyone** while its integration tests stayed green (they import
+`authenticateScimRequest` directly and never cross the middleware). Every
+data-bearing handler under `/api/scim` therefore calls
+`authenticateScimRequest` itself, held FAIL-CLOSED by
+`tests/guards/scim-routes-self-authenticate.test.ts`, which derives the route
+list from the filesystem so a new route is covered the moment it exists. The
+one exemption is `ServiceProviderConfig` (RFC 7644 §4 discovery metadata), and
+the guard fails if that file ever touches the database. The trailing slash on
+the prefix was LOAD-BEARING — `'/api/scim'` would also have opened
+`/api/scimulator` — and since 2026-10-02 it is belt-and-braces instead:
+`matchesPublicPrefix` requires a public-prefix match to end at `/`, `?`, `#` or
+the end of the string, so a sibling sharing a spelling is refused whether or
+not the entry carries a slash. **Keep writing the slash** on a prefix entry; it
+states the intent, and `'/api/scim/'` still correctly declines to open the bare
+`/api/scim`. What changed is that the OTHER 20 bare entries — `/api/metrics`,
+`/api/readyz`, `/api/admin/tenants` and the rest — are no longer one forgotten
+character away from publishing `/api/metrics-internal`. A convention that holds
+only where each of 27 authors remembered it was not a convention; measured
+across all 464 route paths under `src/app`, the narrowing costs zero real
+routes. See `tests/guards/public-prefix-segment-boundary.test.ts`.
+SCIM has its own rate tier (`SCIM_LIMIT` + `SCIM_IP_LIMIT`) because it is the
+one API surface an anonymous caller can use to reach a token comparison; the
+per-IP ceiling is the half that actually stops a brute force, since a caller
+rotating a fresh guess per request gets a fresh per-bearer bucket every time.
+**When you add an auth scheme that is not the session cookie, add an HTTP-level
+test that crosses the middleware** — `token.error`, the `iflk_` API key and
+SCIM were all complete, unit-tested mechanisms severed at that seam.
+See `docs/epic-c-security.md`.
+
+**C.1c — Uncredentialed browser beacons are the OTHER half of the reachable
+class, and the C.1a/C.1b guard is blind to it.** A browser posts a CSP
+violation report, a web-vitals beacon and a manifest fetch with **no
+credentials** — so `getToken()` returns null and the Edge 401s them, exactly as
+it did to SCIM and the webhooks. `tests/guards/public-routes-self-authenticate.test.ts`
+does not catch these: its direction A derives from routes that READ and VERIFY
+a credential, and a beacon sink verifies nothing. That blind spot cost five
+months — `/api/security/csp-report` was never in `PUBLIC_PATH_PREFIXES`, so
+**no CSP violation report ever reached the store** while `middleware.ts` itself
+advertised the path in `Report-To` and `Reporting-Endpoints` a few hundred
+lines below the gate that refused it. The class is small and closed — the CSP
+sink, `/api/metrics`, the PWA manifest — and is enumerated in
+`tests/unit/csp-edge-reachability.test.ts`. **Spell such an entry as the
+CONSTANT that goes into the header** (`CSP_REPORT_PATH`), never a literal: the
+same value feeds three response headers, and the duplicated-literal shape is
+what produced the bug. Opening a beacon prefix opens EVERY method on it —
+`isPublicPath` matches on prefix — so gate the privileged methods in the
+handler FIRST, in the same diff. Here that was the summary `GET`, which returns
+whole `CspViolation` objects (`clientIp`, `userAgent`) from a global un-tenanted
+ring; it now requires `PLATFORM_ADMIN_API_KEY`, held by
+`tests/unit/csp-summary-gate.test.ts` because direction B could not — its
+`VERIFIES` check matches file TEXT, so a commented-out gate stays green.
+
+**C.1b — Signed webhooks are public at the Edge, and verify themselves.**
+`/api/stripe/webhook`, `/api/storage/av-webhook` and
+`/api/integrations/webhooks/` are in `PUBLIC_PATH_PREFIXES` for the same
+reason SCIM is: their senders cannot carry a session cookie, so `getToken()`
+returns null and the Edge refused them — all three had NEVER been delivered.
+Each verifies its own signature and fails CLOSED with no secret configured.
+The rule is enforced in BOTH directions by
+`tests/guards/public-routes-self-authenticate.test.ts`: a route that verifies
+a credential must be REACHABLE, and a route behind a public prefix must
+VERIFY. Either half alone is worse than neither — the first without the second
+turns dead endpoints into anonymous ones. Both are derived from the
+filesystem, so a new route is covered the moment it exists. See
+`docs/epic-c-security.md`.
+
+**C.2 — Secret detection.** Local pre-commit hook
+(`.husky/pre-commit` → `scripts/detect-secrets.sh`) scans staged
+files; CI guardrail (`tests/guardrails/no-secrets.test.ts`) walks
+the whole tree. Both load patterns from `.secret-patterns` (one
+source of truth). Carve-outs: inline
+`// pragma: allowlist secret` for one-off lines, or move fixtures
+under `tests/fixtures/secrets/` (auto-skipped). Pre-existing
+placeholder fixtures live in `REPO_BASELINE` in the guardrail; add
+to that array only with a written `reason`.
+
+**C.3 — Session hardening.** A `UserSession` row is minted on every
+sign-in (NextAuth `jwt` callback → `recordNewSession`) carrying
+`ipAddress`, `userAgent`, `expiresAt`, `lastActiveAt`. Every JWT
+pass calls `verifyAndTouchSession` — revoked or expired rows
+short-circuit as `SessionRevoked`. Per-tenant policy lives on
+`TenantSecuritySettings.maxConcurrentSessions` (overflow → revoke
+oldest by `lastActiveAt` ASC) and `sessionMaxAgeMinutes` (caps
+`expiresAt` at insert time). The admin UI lives at
+`/admin/members` — Sessions column + modal + per-row revoke,
+backed by `GET/DELETE /api/t/:slug/admin/sessions`. The pre-Epic-C
+endpoints (`security/sessions/revoke-current` etc.) and the
+`User.sessionVersion` bump still work as the coarse-grained
+backstop.
+
+**C.4 — Audit event streaming.** Every committed audit row is
+fired through `streamAuditEvent` into a per-tenant in-memory
+buffer (lazy-imported by `appendAuditEntry` so cold-start cost is
+zero for tenants without streaming configured). Flush happens on
+100 events OR 5 seconds, HMAC-SHA256-signed
+(`X-Agrent-Signature: sha256=<hex>` — the legacy `X-Inflect-Signature`
+is dual-emitted at an identical value by default and dropped by
+`AUDIT_STREAM_LEGACY_HEADERS=0`), POSTed to
+`TenantSecuritySettings.auditStreamUrl`. The HMAC secret is on
+the same row (`auditStreamSecretEncrypted`), encrypted at rest via
+the Epic B field-encryption manifest. Fail-safe — the audit row is
+already committed, so a broken SIEM never undoes the write.
+Privacy-aware payload — free-text `details` is dropped, only
+structured `detailsJson` ships; actor is opaque `userId` +
+`actorType`, never email. Each batch delivery gets up to 3 attempts
+(original + 2 retries) with linear backoff (1 s, 2 s). Kill-switch
+via `AUDIT_STREAM_RETRY_ENABLED=0`.
+
+**C.5 — Server-side rich-text sanitisation.** Use
+`sanitizeRichTextHtml` / `sanitizePlainText` /
+`sanitizePolicyContent` from `@/lib/security/sanitize` BEFORE
+persisting any user-supplied rich-text. Already wired into
+`task.addTaskComment`, `issue.addIssueComment`, and
+`knowledge.createArticle` / `knowledge.createArticleVersion` (via the
+local `sanitizeContent` helper in `src/app-layer/usecases/knowledge.ts`,
+which picks `sanitizeRichTextHtml` for `HTML` and `sanitizePlainText`
+for `MARKDOWN`). The `policy.*` write paths this list used to name went
+with the GRC teardown, and `sanitizePolicyContent` now has no production
+caller at all — reach for the other two. New write paths
+that accept HTML or comment text MUST sanitise at the usecase
+layer (not just at render time) — render-time sanitisation alone
+would leave the row dangerous to PDF export, audit-pack share
+links, and future SDK consumers reading the row verbatim. The
+allowlist (tags, attributes, link schemes) is in
+`src/lib/security/sanitize.ts`; do not widen it without a security
+review.
+
+**See `docs/epic-c-security.md`** for the unified operator
+runbook (env vars, verification commands, rollback procedures,
+failure modes) and `SECURITY.md` for the responsible-disclosure
+policy.
+
+
+---
+
+## Isolation & Sanitisation Completeness (Epic D) — the reasoning
+
+Relocated from CLAUDE.md (#1334). **Read this before changing `UserSession` RLS, an encrypted-field write path, or any admin authorization guard.** The asymmetric single-policy RLS form on `UserSession` in particular is mandatory rather than stylistic, and the reason is written out here.
+
+Epic D closed three concrete gaps left after Epic C. Each is now
+guarded by a CI ratchet so the regression surface is small.
+
+**D.1 — `UserSession` RLS.** The Epic C.3 `UserSession` table
+shipped without RLS policies. It now carries a single asymmetric
+`tenant_isolation` policy (`USING (tenantId IS NULL OR own) WITH
+CHECK (own)`) plus the canonical `superuser_bypass`, with `FORCE
+ROW LEVEL SECURITY` enabled. The single-policy form is mandatory
+because `tenantId` is nullable: a split `tenant_isolation_insert`
+policy would be a permissive sibling that lets `app_user` UPDATE a
+NULL row to any tenantId. `UserSession` is listed in
+`SINGLE_POLICY_EXCEPTIONS` in `tests/guardrails/rls-coverage.test.ts`,
+where the post-loop sanity check verifies the asymmetric `qual` +
+`with_check` shape is real — a future "simplify" PR that strips
+either clause fails CI. See migration
+`prisma/migrations/20260423150000_epic_d1_user_session_rls/` and
+`tests/integration/user-session-rls.test.ts` for the seven
+behavioural assertions (own-INSERT accepts; foreign-INSERT rejects;
+NULL-INSERT-under-app_user rejects; NULL-row-claim-to-other-tenant
+rejects; etc.).
+
+**D.2 — Encrypted-field write paths sanitised.** Five usecase
+files (`finding`, `risk`, `vendor`, `audit`, `control-test`) wrote
+to encrypted free-text columns without server-side sanitisation.
+(All five have since been deleted — `risk` and `control-test` by the
+2026-08 risk + control-exoskeleton uproot (#501), `finding` / `vendor` /
+`audit` by GRC teardown phase 2 (#547) — so the paragraph below is
+history; the RULE it states is unchanged for the encrypted surfaces
+that remain.)
+Encryption protects confidentiality at rest; sanitisation protects
+every downstream renderer (UI, PDF export, audit-pack share link,
+SDK consumer reading the row verbatim) that decrypts and reads the
+field. All five now route user-supplied free text through
+`sanitizePlainText` (or, for surfaces that share the call shape,
+the per-file `sanitizeOptional` helper that preserves the
+undefined/null/string three-state contract). The
+`tests/guardrails/sanitize-rich-text-coverage.test.ts` ratchet no
+longer keeps a numeric floor — it derives the rich-text inventory
+from `ENCRYPTED_FIELDS` and requires every encrypted
+business-content model to be CLASSIFIED (sanitised / not-rich-text /
+a named gap), so a NEW unsanitised write path fails rather than
+sliding under an "at least N". The companion
+`tests/unit/security/sanitize-write-paths.test.ts` carried 20 write-path
+assertions when Epic D landed; the GRC teardown deleted the policy /
+finding / risk / vendor / audit / control-test blocks along with their
+usecases, so it now drives the two surviving comment call sites —
+`addTaskComment` and `addIssueComment` — with a script-strip plus an
+entity-decode assertion each. `Task.description` / `Task.resolution` are
+covered by the sibling `tests/unit/security/sanitize-task-fields.test.ts`,
+split out because those paths need the full `WorkItemRepository` mocked
+rather than just `TaskCommentRepository.add`.
+
+**D.3 — Legacy `requireAdminCtx` migrated to `requirePermission`.**
+Seven tenant API routes (billing × 3, security/sessions × 2,
+security/mfa/policy PUT, sso) used the legacy role-tier guard,
+which threw a 403 but **did not write an `AUTHZ_DENIED` audit
+row** and was invisible to the Epic C.1 permission guardrail. All
+seven now use `requirePermission(...)` — denials audit cleanly,
+and `tests/guardrails/api-permission-coverage.test.ts` now treats
+`billing/`, `sso/`, and `security/` as privileged roots with five
+self-service routes (own MFA enrolment, own session revocation)
+explicitly listed in `EXCLUDED_ROUTES` with written reasons. The
+canonical pattern for new admin routes is
+`requirePermission('<key>', handler)` — now the *only*
+admin-authorization guard: the legacy `requireAdminCtx` /
+`requireWriteCtx` / `requireRoleCtx` helpers were removed
+(2026-05-21) once every route had migrated, and the ratchet
+`tests/guardrails/no-legacy-admin-guard.test.ts` keeps them from
+returning.
+
+**See `docs/epic-d-completeness.md`** for the Epic D operator
+runbook (verification commands, rollback procedures, the five
+self-service security carve-outs, the asymmetric-RLS rationale).
