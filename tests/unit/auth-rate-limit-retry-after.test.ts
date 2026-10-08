@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- NextRequest harness, the
- * codebase's standard pattern for these. */
-
 /**
  * `authRateLimit` never answers a refusal with `Retry-After: 0` (#1398).
  *
@@ -75,7 +72,7 @@ async function drive(n: number, path?: string) {
         const r = await checkAuthRateLimit(
             new NextRequest(`http://localhost:3000${path ?? '/api/auth/signin/google'}`, {
                 headers: { 'x-forwarded-for': ip, 'user-agent': ua },
-            }) as any,
+            }) as never,
         );
         const hdr = r.response?.headers.get('Retry-After') ?? r.headers?.get('Retry-After') ?? null;
         out.push({
@@ -136,7 +133,7 @@ describe('§2 the window boundary — where the defect actually lives', () => {
             await checkAuthRateLimit(
                 new NextRequest('http://localhost:3000/api/auth/signin/google', {
                     headers: { 'x-forwarded-for': ip, 'user-agent': ua },
-                }) as any,
+                }) as never,
             );
         }
 
@@ -146,7 +143,7 @@ describe('§2 the window boundary — where the defect actually lives', () => {
         const r = await checkAuthRateLimit(
             new NextRequest('http://localhost:3000/api/auth/signin/google', {
                 headers: { 'x-forwarded-for': ip, 'user-agent': ua },
-            }) as any,
+            }) as never,
         );
 
         expect(r.ok).toBe(false);
@@ -169,14 +166,14 @@ describe('§2 the window boundary — where the defect actually lives', () => {
             await checkAuthRateLimit(
                 new NextRequest('http://localhost:3000/api/auth/signin/google', {
                     headers: { 'x-forwarded-for': ip, 'user-agent': ua },
-                }) as any,
+                }) as never,
             );
         }
         Date.now = () => T + 60_001;
         const r = await checkAuthRateLimit(
             new NextRequest('http://localhost:3000/api/auth/signin/google', {
                 headers: { 'x-forwarded-for': ip, 'user-agent': ua },
-            }) as any,
+            }) as never,
         );
         expect(r.ok).toBe(true);
     });
