@@ -43,6 +43,7 @@ import { ParcelLeaseSchema } from '@/app-layer/schemas/lease.schemas';
 import { LocationListItemDTOSchema } from '@/lib/dto/location.dto';
 import { UserRefSchema } from '@/lib/dto/common';
 import { op } from './helpers';
+import { BoundingBoxSchema, MultiPolygonGeometrySchema } from '@/lib/dto/common';
 
 // ─── Path parameters ────────────────────────────────────────────────
 //
@@ -128,11 +129,7 @@ export const ParcelGeo = z
         areaHa: z.number().nullable().openapi({
             description: 'On-ellipsoid hectares, computed in PostGIS. A NUMBER here, unlike the STRING on an OperationParcel line.',
         }),
-        geometry: z.unknown().nullable().openapi({
-            description:
-                'GeoJSON (WGS84). Simplified when the read passed `?simplify=` — never for ' +
-                'sketch/edit, which needs exact geometry.',
-        }),
+        geometry: MultiPolygonGeometrySchema.nullable(),
         properties: z.unknown().nullable(),
         cadastralId: z.string().nullable().openapi({
             description: 'КАИС identifier `ЕКАТТЕ.масив.парцел`; null when not linked.',
@@ -240,8 +237,8 @@ const LocationBulkDeleteResult = z
 const LocationParcels = z
     .object({
         locationId: z.string(),
-        bounds: z.unknown().nullable().openapi({
-            description: '`[west, south, east, north]`, or null when no parcel has geometry.',
+        bounds: BoundingBoxSchema.nullable().openapi({
+            description: 'Null when no parcel in this location has geometry.',
         }),
         parcels: z.array(ParcelGeo),
     })
@@ -405,7 +402,9 @@ const ParcelClusterOverview = z
                 'Every POSITIONED parcel, so the view can switch from clusters to parcels once ' +
                 'zoomed in — the cluster grid bottoms out at 200 m and cannot separate them.',
         }),
-        bbox: z.unknown().nullable().openapi({ description: '[minLon, minLat, maxLon, maxLat] of the positioned parcels.' }),
+        bbox: BoundingBoxSchema.nullable().openapi({
+            description: 'Covers the POSITIONED parcels only — a location whose parcels all lack geometry contributes nothing to it.',
+        }),
         positionedCount: z.number().int(),
         unpositionedCount: z.number().int().openapi({
             description:
@@ -579,7 +578,7 @@ const SpatialImportDetails = z
          * an import. Reporting "imported N parcels" must not include these.
          */
         flagged: z.number(),
-        bounds: z.unknown().nullable(),
+        bounds: BoundingBoxSchema.nullable(),
         jobRunId: z.string(),
     })
     .openapi('SpatialImportDetails', {

@@ -7,6 +7,82 @@ import { z } from '@/lib/openapi/zod';
 // ─── Shared Refs ───
 
 /** Minimal user reference returned in most includes */
+/**
+ * A geographic bounding box, as every map-bearing response sends it (#1391).
+ *
+ * Raised by agrent-ios, which decodes a four-number array and had to infer the
+ * arity and the axis order from the values: the property was published as an
+ * untyped `{}`, so one unexpected value failed the whole Локации list rather
+ * than one row.
+ *
+ * ## The axis order is the contract, and it is the easy half to get wrong
+ *
+ * `[west, south, east, north]` — equivalently `[minLon, minLat, maxLon,
+ * maxLat]`. LONGITUDE FIRST, which is GeoJSON's order and the opposite of the
+ * `lat, lon` a human quotes. A client that swaps them gets a box that is
+ * plausible in Bulgaria (roughly 22–28°E, 41–44°N, so the numbers do not look
+ * obviously wrong) and silently positioned over Africa. Stated here because a
+ * description is the only place it CAN be stated — the types are identical
+ * either way round.
+ *
+ * `minItems`/`maxItems` are declared explicitly: Zod's `.length(4)` does not
+ * reach the OpenAPI output, so a bare `.length(4)` publishes an unbounded
+ * number array and the arity a client needs is lost. Measured.
+ */
+export const BoundingBoxSchema = z
+    .array(z.number())
+    .openapi('BoundingBox', {
+        minItems: 4,
+        maxItems: 4,
+        description:
+            'A bounding box as `[west, south, east, north]` — equivalently `[minLon, minLat, maxLon, maxLat]`. **Longitude first**, per GeoJSON, which is the reverse of the `lat, lon` order a human quotes: swapping them yields a box that looks plausible for Bulgaria and is positioned wrongly. Exactly four numbers, in WGS84 degrees.',
+        example: [22.35, 41.24, 28.61, 44.22],
+    });
+
+/**
+ * Parcel geometry, as the read paths send it (#1391).
+ *
+ * ## It is ALWAYS a MultiPolygon, and that is enforced twice
+ *
+ * agrent-ios asked whether a bare `Polygon` can arrive, because it decodes
+ * MultiPolygon only and one `Polygon` would fail the whole parcel array.
+ * Measured, and the answer is no:
+ *
+ *   * the column is `geometry(MultiPolygon, 4326)` — PostGIS refuses anything
+ *     else at write time (migration `20260613090735_ag_feature1_spray_map`);
+ *   * every write path in `src/lib/db/geo.ts` ends in `ST_Multi(…)`, which
+ *     normalises a Polygon — and a GEOMETRYCOLLECTION out of a bowtie repair —
+ *     into a MultiPolygon before it is stored.
+ *
+ * So a MultiPolygon-only decoder is correct, and this schema says so rather
+ * than leaving the client to infer it from the rows it happens to have seen.
+ *
+ * The PUBLISHED description deliberately does not name `ST_AsGeoJSON`,
+ * `ST_Multi` or the column's PostGIS type. Two reasons, and the second is the
+ * better one: `tests/guardrails/geo-raw-sql-containment.test.ts` flags those
+ * tokens anywhere outside `src/lib/db/geo.ts` — it strips COMMENTS, so this
+ * docblock is fine, but a `description` is a string and was flagged — and more
+ * to the point, a client has no use for the name of our serialisation
+ * function. What it needs is the guarantee; how the guarantee is produced is
+ * ours. The mechanism stays here, where it is checkable against the code.
+ * The `type` is a single-value enum deliberately: it is a guarantee, not a
+ * default.
+ *
+ * Coordinates are left untyped below the ring level. A GeoJSON position array
+ * is four levels of nesting and spelling it out buys a client nothing it does
+ * not already get from `type` plus the GeoJSON spec, while making every future
+ * change to this schema a large diff.
+ */
+export const MultiPolygonGeometrySchema = z
+    .object({
+        type: z.literal('MultiPolygon'),
+        coordinates: z.array(z.unknown()),
+    })
+    .openapi('MultiPolygonGeometry', {
+        description:
+            'GeoJSON MultiPolygon in WGS84 (EPSG:4326). **Always a MultiPolygon, never a bare `Polygon`** — the storage column admits only MultiPolygon and every write normalises to it, so a single-ring parcel arrives as a MultiPolygon containing one polygon. A MultiPolygon-only decoder is therefore correct. Simplified when a read passed `?simplify=`; never for sketch/edit, which needs exact geometry.',
+    });
+
 export const UserRefSchema = z
     .object({
         id: z.string().openapi({ example: 'usr_01HG7…' }),

@@ -5,7 +5,7 @@
  * hectare value computed by ST_Area at import time.
  */
 import { z } from '@/lib/openapi/zod';
-import { UserRefSchema } from './common';
+import { UserRefSchema, BoundingBoxSchema, MultiPolygonGeometrySchema } from './common';
 
 // ─── Location List Item ───
 
@@ -28,7 +28,7 @@ export const LocationListItemDTOSchema = z.object({
     ownerUserId: z.string().nullable().optional(),
     spatialFileId: z.string().nullable().optional(),
     spatialFormat: z.string().nullable().optional(),
-    boundsJson: z.unknown().nullable().optional(),
+    boundsJson: BoundingBoxSchema.nullable().optional(),
     createdAt: z.string().datetime().optional(),
     updatedAt: z.string().datetime().optional(),
     owner: UserRefSchema.nullable().optional(),
@@ -98,7 +98,7 @@ export const ParcelDTOSchema = z.object({
     cropType: z.string().nullable().optional(),
     areaHa: z.number().nullable().optional(),
     /** GeoJSON MultiPolygon (WGS84), serialized via ST_AsGeoJSON. */
-    geometry: z.unknown().nullable().optional(),
+    geometry: MultiPolygonGeometrySchema.nullable().optional(),
     properties: z.unknown().nullable().optional(),
 }).passthrough().openapi('Parcel', {
     description: 'One imported parcel polygon. geometry is GeoJSON MultiPolygon in WGS84; areaHa is the on-ellipsoid area in hectares.',

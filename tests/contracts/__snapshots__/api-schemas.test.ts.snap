@@ -1150,6 +1150,24 @@ exports[`API contract — per-schema snapshots schema: BottomTabOrder 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: BoundingBox 1`] = `
+"{
+  "type": "array",
+  "items": {
+    "type": "number"
+  },
+  "minItems": 4,
+  "maxItems": 4,
+  "description": "A bounding box as \`[west, south, east, north]\` — equivalently \`[minLon, minLat, maxLon, maxLat]\`. **Longitude first**, per GeoJSON, which is the reverse of the \`lat, lon\` order a human quotes: swapping them yields a box that looks plausible for Bulgaria and is positioned wrongly. Exactly four numbers, in WGS84 degrees.",
+  "example": [
+    22.35,
+    41.24,
+    28.61,
+    44.22
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: BriefingAction 1`] = `
 "{
   "type": "object",
@@ -5903,7 +5921,19 @@ exports[`API contract — per-schema snapshots schema: FieldOperationDetail 1`] 
         "name": {
           "type": "string"
         },
-        "boundsJson": {}
+        "boundsJson": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/BoundingBox"
+            },
+            {
+              "type": [
+                "array",
+                "null"
+              ]
+            }
+          ]
+        }
       },
       "required": [
         "id",
@@ -7517,7 +7547,19 @@ exports[`API contract — per-schema snapshots schema: LocationListItem 1`] = `
         "null"
       ]
     },
-    "boundsJson": {},
+    "boundsJson": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/BoundingBox"
+        },
+        {
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      ]
+    },
     "createdAt": {
       "type": "string",
       "format": "date-time"
@@ -7669,7 +7711,18 @@ exports[`API contract — per-schema snapshots schema: LocationParcels 1`] = `
       "type": "string"
     },
     "bounds": {
-      "description": "\`[west, south, east, north]\`, or null when no parcel has geometry."
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/BoundingBox"
+        },
+        {
+          "type": [
+            "array",
+            "null"
+          ],
+          "description": "Null when no parcel in this location has geometry."
+        }
+      ]
     },
     "parcels": {
       "type": "array",
@@ -7680,6 +7733,7 @@ exports[`API contract — per-schema snapshots schema: LocationParcels 1`] = `
   },
   "required": [
     "locationId",
+    "bounds",
     "parcels"
   ],
   "description": "A location’s parcels as GeoJSON, with the location’s bounding box."
@@ -8357,6 +8411,29 @@ exports[`API contract — per-schema snapshots schema: MarketReference 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: MultiPolygonGeometry 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "MultiPolygon"
+      ]
+    },
+    "coordinates": {
+      "type": "array",
+      "items": {}
+    }
+  },
+  "required": [
+    "type",
+    "coordinates"
+  ],
+  "description": "GeoJSON MultiPolygon in WGS84 (EPSG:4326). **Always a MultiPolygon, never a bare \`Polygon\`** — the storage column admits only MultiPolygon and every write normalises to it, so a single-ring parcel arrives as a MultiPolygon containing one polygon. A MultiPolygon-only decoder is therefore correct. Simplified when a read passed \`?simplify=\`; never for sketch/edit, which needs exact geometry."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: MyFarms 1`] = `
 "{
   "type": "object",
@@ -9010,7 +9087,19 @@ exports[`API contract — per-schema snapshots schema: Parcel 1`] = `
         "null"
       ]
     },
-    "geometry": {},
+    "geometry": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/MultiPolygonGeometry"
+        },
+        {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      ]
+    },
     "properties": {}
   },
   "required": [
@@ -9096,7 +9185,18 @@ exports[`API contract — per-schema snapshots schema: ParcelClusterOverview 1`]
       "description": "Every POSITIONED parcel, so the view can switch from clusters to parcels once zoomed in — the cluster grid bottoms out at 200 m and cannot separate them."
     },
     "bbox": {
-      "description": "[minLon, minLat, maxLon, maxLat] of the positioned parcels."
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/BoundingBox"
+        },
+        {
+          "type": [
+            "array",
+            "null"
+          ],
+          "description": "Covers the POSITIONED parcels only — a location whose parcels all lack geometry contributes nothing to it."
+        }
+      ]
     },
     "positionedCount": {
       "type": "integer"
@@ -9119,6 +9219,7 @@ exports[`API contract — per-schema snapshots schema: ParcelClusterOverview 1`]
   "required": [
     "clusters",
     "parcels",
+    "bbox",
     "positionedCount",
     "unpositionedCount",
     "unpositionedParcelIds",
@@ -9330,7 +9431,17 @@ exports[`API contract — per-schema snapshots schema: ParcelGeo 1`] = `
       "description": "On-ellipsoid hectares, computed in PostGIS. A NUMBER here, unlike the STRING on an OperationParcel line."
     },
     "geometry": {
-      "description": "GeoJSON (WGS84). Simplified when the read passed \`?simplify=\` — never for sketch/edit, which needs exact geometry."
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/MultiPolygonGeometry"
+        },
+        {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      ]
     },
     "properties": {},
     "cadastralId": {
@@ -9406,6 +9517,7 @@ exports[`API contract — per-schema snapshots schema: ParcelGeo 1`] = `
     "name",
     "cropType",
     "areaHa",
+    "geometry",
     "cadastralId",
     "ekatte",
     "soilType",
@@ -11298,7 +11410,19 @@ exports[`API contract — per-schema snapshots schema: SpatialImportDetails 1`] 
     "flagged": {
       "type": "number"
     },
-    "bounds": {},
+    "bounds": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/BoundingBox"
+        },
+        {
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      ]
+    },
     "jobRunId": {
       "type": "string"
     }
@@ -11312,6 +11436,7 @@ exports[`API contract — per-schema snapshots schema: SpatialImportDetails 1`] 
     "matched",
     "created",
     "flagged",
+    "bounds",
     "jobRunId"
   ],
   "description": "The \`details\` payload of a completed \`spatial-import\` job. parcelCount is matched + created — what the file contained. flagged counts existing parcels the file omitted, which were kept rather than deleted, so it is deliberately NOT part of parcelCount."

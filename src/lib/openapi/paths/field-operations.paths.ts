@@ -22,6 +22,7 @@ import { UpdateOperationParcelSchema } from '@/lib/schemas';
 import { ParcelGeo } from './locations.paths';
 import { OperationParcelDTOSchema } from '@/lib/dto/operation-parcel.dto';
 import { TaskDTOSchema } from '@/lib/dto/task.dto';
+import { BoundingBoxSchema } from '@/lib/dto/common';
 import { ApiErrorResponseSchema } from '@/lib/dto/common';
 import { op } from './helpers';
 
@@ -63,7 +64,7 @@ const FieldOperationDetail = z
             .object({
                 id: z.string(),
                 name: z.string(),
-                boundsJson: z.unknown().nullable().optional(),
+                boundsJson: BoundingBoxSchema.nullable().optional(),
             })
             .passthrough()
             .nullable()

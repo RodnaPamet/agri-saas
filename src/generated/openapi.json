@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "7.0.0",
+    "version": "7.2.1",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -1136,6 +1136,21 @@
           "/locations",
           "/journal",
           "/exchange"
+        ]
+      },
+      "BoundingBox": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        },
+        "minItems": 4,
+        "maxItems": 4,
+        "description": "A bounding box as `[west, south, east, north]` — equivalently `[minLon, minLat, maxLon, maxLat]`. **Longitude first**, per GeoJSON, which is the reverse of the `lat, lon` order a human quotes: swapping them yields a box that looks plausible for Bulgaria and is positioned wrongly. Exactly four numbers, in WGS84 degrees.",
+        "example": [
+          22.35,
+          41.24,
+          28.61,
+          44.22
         ]
       },
       "BriefingAction": {
@@ -5656,7 +5671,19 @@
               "name": {
                 "type": "string"
               },
-              "boundsJson": {}
+              "boundsJson": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/BoundingBox"
+                  },
+                  {
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  }
+                ]
+              }
             },
             "required": [
               "id",
@@ -7165,7 +7192,19 @@
               "null"
             ]
           },
-          "boundsJson": {},
+          "boundsJson": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BoundingBox"
+              },
+              {
+                "type": [
+                  "array",
+                  "null"
+                ]
+              }
+            ]
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -7308,7 +7347,18 @@
             "type": "string"
           },
           "bounds": {
-            "description": "`[west, south, east, north]`, or null when no parcel has geometry."
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BoundingBox"
+              },
+              {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "description": "Null when no parcel in this location has geometry."
+              }
+            ]
           },
           "parcels": {
             "type": "array",
@@ -7319,6 +7369,7 @@
         },
         "required": [
           "locationId",
+          "bounds",
           "parcels"
         ],
         "description": "A location’s parcels as GeoJSON, with the location’s bounding box."
@@ -7970,6 +8021,26 @@
         "additionalProperties": {},
         "description": "The market observation a benchmark was computed against — carried so a client can attribute and date the claim instead of presenting it as an unsourced fact."
       },
+      "MultiPolygonGeometry": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "MultiPolygon"
+            ]
+          },
+          "coordinates": {
+            "type": "array",
+            "items": {}
+          }
+        },
+        "required": [
+          "type",
+          "coordinates"
+        ],
+        "description": "GeoJSON MultiPolygon in WGS84 (EPSG:4326). **Always a MultiPolygon, never a bare `Polygon`** — the storage column admits only MultiPolygon and every write normalises to it, so a single-ring parcel arrives as a MultiPolygon containing one polygon. A MultiPolygon-only decoder is therefore correct. Simplified when a read passed `?simplify=`; never for sketch/edit, which needs exact geometry."
+      },
       "MyFarms": {
         "type": "object",
         "properties": {
@@ -8580,7 +8651,19 @@
               "null"
             ]
           },
-          "geometry": {},
+          "geometry": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MultiPolygonGeometry"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
+          },
           "properties": {}
         },
         "required": [
@@ -8663,7 +8746,18 @@
             "description": "Every POSITIONED parcel, so the view can switch from clusters to parcels once zoomed in — the cluster grid bottoms out at 200 m and cannot separate them."
           },
           "bbox": {
-            "description": "[minLon, minLat, maxLon, maxLat] of the positioned parcels."
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BoundingBox"
+              },
+              {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "description": "Covers the POSITIONED parcels only — a location whose parcels all lack geometry contributes nothing to it."
+              }
+            ]
           },
           "positionedCount": {
             "type": "integer"
@@ -8686,6 +8780,7 @@
         "required": [
           "clusters",
           "parcels",
+          "bbox",
           "positionedCount",
           "unpositionedCount",
           "unpositionedParcelIds",
@@ -8885,7 +8980,17 @@
             "description": "On-ellipsoid hectares, computed in PostGIS. A NUMBER here, unlike the STRING on an OperationParcel line."
           },
           "geometry": {
-            "description": "GeoJSON (WGS84). Simplified when the read passed `?simplify=` — never for sketch/edit, which needs exact geometry."
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MultiPolygonGeometry"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
           },
           "properties": {},
           "cadastralId": {
@@ -8961,6 +9066,7 @@
           "name",
           "cropType",
           "areaHa",
+          "geometry",
           "cadastralId",
           "ekatte",
           "soilType",
@@ -10748,7 +10854,19 @@
           "flagged": {
             "type": "number"
           },
-          "bounds": {},
+          "bounds": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BoundingBox"
+              },
+              {
+                "type": [
+                  "array",
+                  "null"
+                ]
+              }
+            ]
+          },
           "jobRunId": {
             "type": "string"
           }
@@ -10762,6 +10880,7 @@
           "matched",
           "created",
           "flagged",
+          "bounds",
           "jobRunId"
         ],
         "description": "The `details` payload of a completed `spatial-import` job. parcelCount is matched + created — what the file contained. flagged counts existing parcels the file omitted, which were kept rather than deleted, so it is deliberately NOT part of parcelCount."
