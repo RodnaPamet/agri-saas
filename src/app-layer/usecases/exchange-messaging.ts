@@ -343,10 +343,57 @@ export async function openExchangeThread(ctx: RequestContext, listingId: string)
         });
         if (existing) return { id: existing.id, created: false };
 
-        const row = await db.exchangeThread.create({
-            data: { listingId, inquirerTenantId: ctx.tenantId, inquirerUserId: ctx.userId },
+        // `createMany` with `skipDuplicates`, NOT `create` — and this is a
+        // CORRECTNESS choice, not a style one.
+        //
+        // The read above is a fast path, so the only way to reach here with a
+        // row already present is a genuine race: two opens for the same
+        // (listing, person) that both miss the read. `create` would then raise
+        // P2002 on `@@unique([listingId, inquirerUserId])`, and **a P2002
+        // inside an interactive transaction poisons the whole PostgreSQL
+        // transaction** — a caught JS error does not un-poison an aborted PG
+        // transaction. This function runs inside `runInTenantContext`, which IS
+        // a `$transaction`, so catch-and-reread is not available: the reread
+        // would itself fail and the caller would get a 500 instead of a thread.
+        // `notifications/task-due.ts` and `notifications/agro.ts` both carry
+        // that lesson and both reach for `createMany` for the same reason.
+        //
+        // `skipDuplicates` compiles to `INSERT … ON CONFLICT DO NOTHING`, so
+        // nothing is ever thrown and the transaction is never at risk. There is
+        // also no `catch` to over-swallow: a real failure — a bad FK, a dead
+        // connection — still propagates untouched, which is strictly better
+        // than a narrow catch, because a narrow catch is still a judgement
+        // about which errors are benign.
+        //
+        // The cost is that `createMany` returns no ids, so the row is read back
+        // below. `result.count` is the exact discriminator: 1 means THIS call
+        // inserted, 0 means the conflict target already existed.
+        const result = await db.exchangeThread.createMany({
+            data: [{ listingId, inquirerTenantId: ctx.tenantId, inquirerUserId: ctx.userId }],
+            skipDuplicates: true,
+        });
+
+        const row = await db.exchangeThread.findFirst({
+            where: { listingId, inquirerUserId: ctx.userId },
             select: { id: true },
         });
+        if (!row) {
+            // Unreachable: the insert either created the row or found it
+            // present. A missing row here means the unique constraint is not
+            // the one assumed, so fail loudly rather than inventing an id.
+            throw new Error(
+                'exchangeThread absent after a conflict-tolerant insert — check @@unique([listingId, inquirerUserId])',
+            );
+        }
+
+        if (result.count === 0) {
+            // A concurrent open won. Return ITS thread and write NO audit row:
+            // `created: false` means this call created nothing, and a CREATE
+            // entry here would assert a creation that did not happen, in a
+            // hash-chained trail. Gated on the count rather than on a flag
+            // somebody has to remember to set.
+            return { id: row.id, created: false };
+        }
         await logEvent(db, ctx, {
             action: 'CREATE',
             entityType: 'ExchangeThread',
