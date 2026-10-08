@@ -85,7 +85,7 @@ Tags remove the forcing. An article about subsidies for wheat gets **both** `sub
 
 ### `category` stays. `tags` is additive.
 
-`category` is not removed in this change, for three reasons: the web UI filters on it today, the Redis cache key is built from it, and agrent-ios already decodes it. Removing a field a shipped client reads is a breaking change, and there is no need to take one here. Once both clients filter on tags, `category` can go in a later change that only has to delete things.
+`category` is not removed in this change, for four reasons: the web UI filters on it today, the Redis cache key is built from it, agrent-ios already decodes the item field — and the response **envelope** carries it too, as a required String in the installed iOS build (§4). Removing a field a shipped client reads is a breaking change, and there is no need to take one here. Once both clients filter on tags, `category` can go in a later change that only has to delete things.
 
 ---
 
@@ -103,13 +103,15 @@ Treat an unrecognised slug as unknown and ignore it, rather than as an error —
 
 ```
 GET /api/t/{tenantSlug}/trends/news/tags
-  → 200 { groups: [ { key: 'crops'|'topics', label: string,
-                      tags: [ { key: string, label: string } ] } ] }
+  → 200 { groups: [ { key: 'crops'|'topics', label: string, labelEn: string,
+                      tags: [ { key: string, label: string, labelEn: string } ] } ] }
 ```
+
+`labelEn` is there at agrent-ios' request, for iOS Voice Control — a spoken English label needs to exist somewhere, and the slug is a poor one to say out loud. It is a second label, not a localisation mechanism: `label` stays Bulgarian and authoritative.
 
 A separate GET rather than inlined in the feed response, for one reason: the feed is paged and searched, and a catalogue repeated on every page is repeated for nothing. It is static enough to cache hard (24h) and small enough that a client can hold it.
 
-`label` is Bulgarian, because the product's primary language is Bulgarian and the labels are the farmer's words. A client wanting English can key off the slug.
+`label` is Bulgarian, because the product's primary language is Bulgarian and the labels are the farmer's words.
 
 ### The feed
 
@@ -120,10 +122,21 @@ GET /api/t/{tenantSlug}/trends/news
     &tags=            NEW: comma-separated keys, ANY-OF
     &q=               NEW: case-insensitive, over title + summary
     &cursor=          NEW: opaque; pass back verbatim
-  → 200 { items: NewsItem[], nextCursor: string | null }
+  → 200 { category, tags, q, items: NewsItem[], nextCursor: string | null }
 ```
 
+**The envelope keeps `category` and gains an echo of every other filter.** The first draft of this document wrote the response as `{ items, nextCursor }`, which was wrong twice over, and agrent-ios blocked on it:
+
+- the installed iOS build decodes `category` as a **required** String, so dropping it breaks Новини on the step-3 deploy — a live client, not a hypothetical one;
+- and it would have discarded the field's *purpose*. `TrendNewsResponseSchema` says what that is: "`category` echoes the filter that produced it, **so a client can tell a stale response from the one it asked for**."
+
+Adding filters makes that echo more valuable, not less. A client holding a page now has three things to reconcile rather than one, so `tags` and `q` echo back what was actually applied — including the effect of the rule below, where a tag the server does not recognise is dropped. The echo is how a client discovers that happened.
+
 **`tags` is ANY-OF, not all-of.** Opting into Пшеница and Субсидии means "show me either", which is what a feed filter means to a reader. All-of would make two choices narrower than one, which is the opposite of what a preferences screen implies.
+
+**An unrecognised key in `tags` is IGNORED here, not a 400.** agrent-ios asked for this and the reason is sound: a client passes its stored preferences straight into this parameter, so a tag that has since been renamed would otherwise turn a saved preference into a broken feed. That mirrors §7's ignore-on-read exactly — and note the asymmetry it creates with `PUT /api/me/news-preferences`, which **does** 400 on an unknown tag. The two are consistent once you ask what the caller is doing: a `PUT` is a person choosing, where a typo is a client bug worth surfacing; this parameter is a pass-through of state the server itself issued.
+
+If every key in `tags` is unrecognised the filter is empty, which means **unfiltered** rather than empty-result. The `tags` echo in the response is what tells a client that happened, instead of leaving it to infer a server fault from a suspiciously full feed.
 
 **`q` matches `title` and `summary`, case-insensitively, over every stored row** — subject to §6.
 
