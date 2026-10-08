@@ -306,12 +306,23 @@ model ExchangeBlock {
   /// named for the role rather than "ownerTenantId" so a future buyer-side
   /// block cannot quietly reuse it and invert the policy's meaning.
   sellerTenantId  String
-  blockedTenantId String
+  /// The PERSON refused, not their farm (#1314, owner ruling).
+  ///
+  /// It was `blockedTenantId` until then, and the cost of the change is real
+  /// and worth stating where somebody will meet it: **a person-level block is
+  /// evaded by asking a colleague to send instead.** It stops a person, not a
+  /// farm. If a farm-level escalation is wanted later it must be an ADDITIONAL
+  /// control, not a replacement — reinstating the tenant column and dropping
+  /// this one would silently un-block every person already blocked.
+  ///
+  /// Pairs with `ExchangeThread.inquirerUserId`: threads became per-person in
+  /// #1323, so the thread already names exactly who to refuse.
+  blockedUserId   String
   /// Who pressed it, for the audit trail. Nullable because a membership can be
   /// removed without the block losing its meaning.
   createdByUserId String?
   createdAt       DateTime @default(now())
 
-  @@unique([sellerTenantId, blockedTenantId])
-  @@index([blockedTenantId])
+  @@unique([sellerTenantId, blockedUserId])
+  @@index([blockedUserId])
 }
