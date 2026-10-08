@@ -5400,9 +5400,7 @@ exports[`API contract — per-schema snapshots schema: FieldOperationDetail 1`] 
     "parcels": {
       "type": "array",
       "items": {
-        "type": "object",
-        "properties": {},
-        "additionalProperties": {}
+        "$ref": "#/components/schemas/ParcelGeo"
       },
       "description": "Every parcel of the linked location (for the map backdrop) — NOT only the parcels this job prescribes. The prescribed set is \`lines\`. Empty when \`location\` is null."
     },

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "5.4.1",
+    "version": "5.5.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -5192,9 +5192,7 @@
           "parcels": {
             "type": "array",
             "items": {
-              "type": "object",
-              "properties": {},
-              "additionalProperties": {}
+              "$ref": "#/components/schemas/ParcelGeo"
             },
             "description": "Every parcel of the linked location (for the map backdrop) — NOT only the parcels this job prescribes. The prescribed set is `lines`. Empty when `location` is null."
           },

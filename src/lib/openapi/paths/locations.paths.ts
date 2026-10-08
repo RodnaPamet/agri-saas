@@ -111,7 +111,16 @@ const RawErrorResponse = z
             'bare message string, with no `code`, `requestId` or `details`.',
     });
 
-const ParcelGeo = z
+/**
+ * Exported so `field-operations.paths.ts` can reference THIS object rather than
+ * describing the shape a second time. Both routes are served by the same
+ * `ParcelRepository.listForLocation` call, so two descriptions could only ever
+ * drift apart — which is the reasoning the field-operations module already had,
+ * it just reached for `z.object({}).passthrough()` instead of an import. A
+ * shared reference achieves "cannot contradict itself" without the cost of
+ * documenting nothing.
+ */
+export const ParcelGeo = z
     .object({
         id: z.string(),
         name: z.string(),
