@@ -330,6 +330,80 @@ export function normalizeCommodity(raw: string | null | undefined): CanonicalCom
     return slug !== null && isCanonicalCommodity(slug) ? slug : null;
 }
 
+/**
+ * Minimum folded length a prefix query must reach before it resolves anything.
+ *
+ * Two, not one. A single letter is a keystroke on the way to a word rather
+ * than a query: «с» alone starts слънчоглед AND соя, and "s" starts
+ * sunflower, softwheat, soybean, soya — so a one-character floor would make
+ * the first keystroke of almost any Bulgarian or English crop name select a
+ * third of the vocabulary. Two characters disambiguate every current crop in
+ * both languages except the genuinely ambiguous ones, and those SHOULD return
+ * several.
+ *
+ * Exported so a caller can raise it, and so the number is quotable in the
+ * OpenAPI description rather than restated there by hand.
+ */
+export const COMMODITY_PREFIX_MIN_LENGTH = 2;
+
+/**
+ * Every CROP slug with a spelling that starts with `raw`, in either language.
+ *
+ * ## Why this exists
+ *
+ * `normalizeCommodity` is an exact lookup, so «пшеница» resolves and «пше»
+ * does not. That asymmetry was invisible in English and glaring in Bulgarian,
+ * and the reason is where the vocabulary lives rather than anything about the
+ * resolver: `ExchangeListing.commodity` stores the ENGLISH slug, so the
+ * exchange's `commodity contains q` branch makes "whea" match 'wheat' for
+ * free. There is no Bulgarian text in the column for «пше» to be a prefix OF.
+ * Owner report, 2026-10-08: «пшеница» finds the wheat offer and «пше» does
+ * not.
+ *
+ * So the prefix has to be resolved against the ALIAS TABLE — the only place
+ * Bulgarian spellings exist — and the resulting slugs handed to the exact
+ * `commodity in (…)` branch. That keeps the matching in one place instead of
+ * putting Bulgarian text in the database or a translation table in SQL.
+ *
+ * ## Crop-only, like `normalizeCommodity`
+ *
+ * An input never resolves here: «диз» returns `[]` rather than `diesel`. This
+ * mirrors the module's safe default, stated above — a caller that genuinely
+ * wants inputs reaches for a differently-named function. For the exchange it
+ * would be harmless either way (no listing carries an input), but "harmless
+ * today" is how the two resolvers would drift into one.
+ *
+ * ## Properties worth relying on
+ *
+ * - It SUBSUMES the exact match for any query of at least
+ *   {@link COMMODITY_PREFIX_MIN_LENGTH} characters, since a string is a prefix
+ *   of itself. Callers still union it with `normalizeCommodity` so that
+ *   raising the floor cannot silently drop exact matching.
+ * - Several hits are a correct answer, not a failure: «so» starts both
+ *   `soybean` and `softwheat`, and «ц» would start nothing under the floor.
+ * - The result is DEDUPLICATED and sorted. Deduplication is load-bearing —
+ *   `wheat` has six aliases and a two-letter prefix can hit several of them.
+ */
+export function commoditiesMatchingPrefix(
+    raw: string | null | undefined,
+    minLength: number = COMMODITY_PREFIX_MIN_LENGTH,
+): CanonicalCommodity[] {
+    if (!raw) return [];
+    const folded = foldForLookup(raw);
+    if (folded.length < minLength) return [];
+
+    const hits = new Set<CanonicalCommodity>();
+    // The canonical slugs are not all present as alias keys, so they are
+    // matched in their own right rather than assumed to be in the table.
+    for (const slug of CANONICAL_COMMODITIES) {
+        if (slug.startsWith(folded)) hits.add(slug);
+    }
+    for (const [alias, slug] of ALIAS_LOOKUP) {
+        if (alias.startsWith(folded) && isCanonicalCommodity(slug)) hits.add(slug);
+    }
+    return [...hits].sort();
+}
+
 /** True when `value` is already a canonical (crop) slug. */
 export function isCanonicalCommodity(value: string): value is CanonicalCommodity {
     return CANONICAL_SET.has(value);

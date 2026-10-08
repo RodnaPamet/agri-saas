@@ -14,7 +14,7 @@ import { jsonWithETag } from '@/lib/http/etag';
 import { badRequest } from '@/lib/errors/types';
 import { parseCsvEnumParam, parseCsvIdParam } from '@/lib/validation/query-params';
 import { regionCodesMatchingName } from '@/lib/geo/bulgaria-regions';
-import { normalizeCommodity } from '@/lib/market/commodity-vocabulary';
+import { commoditiesMatchingPrefix, normalizeCommodity } from '@/lib/market/commodity-vocabulary';
 import { EXCHANGE_LISTING_CREATE_LIMIT } from '@/lib/security/rate-limit-middleware';
 
 /**
@@ -93,14 +93,28 @@ export const GET = withApiErrorHandling(
                 // non-crop or a prefix, and `{ in: [null] }` would match nothing
                 // while LOOKING like a filter. An empty array is omitted from the
                 // OR entirely by the repository.
+                // The PREFIX resolver is unioned with the exact one rather than
+                // replacing it. `commoditiesMatchingPrefix` subsumes the exact
+                // match for any query of at least two folded characters — a
+                // string is a prefix of itself — so this looks redundant and is
+                // not: it means changing `COMMODITY_PREFIX_MIN_LENGTH` cannot
+                // silently drop the whole-word Bulgarian matching #1426
+                // shipped. A floor is a tuning knob; whole-word matching is a
+                // promise made to a client.
+                //
+                // `NonNullable<typeof c>`, not `string`: `normalizeCommodity`
+                // returns a literal union (`'wheat' | 'maize' | … | null`), and a
+                // type predicate's type must be assignable to its PARAMETER's
+                // type — `string` is wider than the union, so it is not.
                 searchCommodities: search
-                    // `NonNullable<typeof c>`, not `string`: `normalizeCommodity`
-                    // returns a literal union (`'wheat' | 'maize' | … | null`), and a
-                    // type predicate's type must be assignable to its PARAMETER's
-                    // type — `string` is wider than the union, so it is not.
-                    ? [normalizeCommodity(search)].filter(
-                        (c): c is NonNullable<typeof c> => c !== null,
-                      )
+                    ? [
+                          ...new Set([
+                              ...[normalizeCommodity(search)].filter(
+                                  (c): c is NonNullable<typeof c> => c !== null,
+                              ),
+                              ...commoditiesMatchingPrefix(search),
+                          ]),
+                      ]
                     : undefined,
             },
             {

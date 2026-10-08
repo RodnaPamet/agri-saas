@@ -95,12 +95,57 @@ describe('exchange search resolves a Bulgarian crop name to its canonical slug',
 
     it('the raw `contains` is STILL passed — English prefixes must keep working', async () => {
         // `normalizeCommodity` is exact-match only and returns null for 'whe',
-        // so the fix is ADDITIVE. Dropping `search` would fix whole Bulgarian
-        // words and break English partial ones.
+        // so #1426's fix was ADDITIVE. Dropping `search` would fix whole
+        // Bulgarian words and break English partial ones.
+        //
+        // `searchCommodities` asserted `[]` here until the prefix resolver
+        // landed. It is `['wheat']` now, and that is the CHANGE rather than a
+        // regression: 'whe' is three folded characters, so it resolves through
+        // the alias vocabulary as well as matching the stored slug by
+        // substring. Both paths reaching wheat is the point — the OR means
+        // either one suffices, and the `contains` branch is what covers an
+        // English prefix shorter than the floor.
         await get('whe');
         const f = filters();
         expect(f.search).toBe('whe');
+        expect(f.searchCommodities).toEqual(['wheat']);
+    });
+
+    it('a BULGARIAN prefix now resolves, which is the whole point', async () => {
+        // The owner's case, asserted at the ROUTE rather than only at the
+        // resolver: deleting the route's call to `commoditiesMatchingPrefix`
+        // is well-typed and would otherwise go unnoticed, exactly as a dropped
+        // `Idempotency-Key` forwarding would.
+        await get('пше');
+        expect(filters().searchCommodities).toEqual(['wheat']);
+    });
+
+    it.each([
+        ['рап', ['rapeseed']],
+        ['слън', ['sunflower']],
+        ['цар', ['maize']],
+        ['ече', ['barley']],
+    ])('«%s» resolves to %s at the route', async (query, slugs) => {
+        await get(query as string);
+        expect(filters().searchCommodities).toEqual(slugs);
+    });
+
+    it('a ONE-character query resolves no commodity but still searches', async () => {
+        // Under the two-character floor. `search` must still be forwarded, or
+        // the first keystroke would return an unfiltered page rather than a
+        // substring match.
+        await get('ц');
+        const f = filters();
+        expect(f.search).toBe('ц');
         expect(f.searchCommodities).toEqual([]);
+    });
+
+    it('an ambiguous prefix forwards BOTH slugs', async () => {
+        // 'so' starts soybean, soybeans, soya AND softwheat. The route must not
+        // collapse that to one — the OR over `commodity in (…)` is what shows
+        // the farmer both.
+        await get('so');
+        expect(filters().searchCommodities).toEqual(['soybean', 'wheat']);
     });
 
     it('control: a non-crop yields an EMPTY list, never [null]', async () => {
