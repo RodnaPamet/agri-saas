@@ -3,8 +3,17 @@
  *
  * Apple is the one OAuth provider that issues no static secret. The
  * `client_secret` is a short-lived ES256 JWT you sign yourself with a
- * downloaded `.p8` key, so "configure Apple sign-in" means four values, not
+ * downloaded `.p8` key, so configuring the WEB flow means four values, not
  * two: the Services ID, the Team ID, the Key ID and the key itself.
+ *
+ * **The NATIVE flow needs none of them.** It needs `APPLE_BUNDLE_ID` alone,
+ * because an identity token from `ASAuthorizationController` is verified
+ * against Apple's PUBLIC JWKS with that bundle id as the audience — there is
+ * no token exchange, so there is no client to authenticate and no secret to
+ * sign. The two flows are configurable independently and the native one is a
+ * single environment variable with no key material. Do not describe them as
+ * one set of credentials; an operator who reads it that way will believe
+ * in-app sign-in needs a `.p8` it does not need.
  *
  * ## Why this is synchronous
  *
