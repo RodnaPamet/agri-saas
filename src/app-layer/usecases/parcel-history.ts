@@ -32,6 +32,7 @@ import {
     encodeNumericCursor, decodeNumericCursor, keysetBeforeNumeric,
 } from '@/lib/exchange/cursor';
 import { codedBadRequest, codedNotFound } from '@/lib/errors/types';
+import { isUniqueViolation } from '@/lib/errors/prisma';
 import { WorkItemRepository } from '../repositories/WorkItemRepository';
 import { taskParcelIds } from './task';
 import { sanitizePlainText } from '@/lib/security/sanitize';
@@ -459,6 +460,7 @@ export async function createParcelWeedObservation(
     ctx: RequestContext,
     input: WeedObservationInput,
     scope?: { taskId: string },
+    idempotencyKey?: string | null,
 ) {
     // Unscoped keeps its cheap pre-flight check. The scoped branch cannot:
     // deciding it requires reading the task, so it happens inside the
@@ -471,35 +473,90 @@ export async function createParcelWeedObservation(
     }
     const notes = cleanNotes(input.notes);
 
-    return runInTenantContext(ctx, async (db) => {
-        if (scope) await assertMayObserveForTask(db, ctx, scope.taskId, input.parcelId);
-        await requireParcel(db, ctx, input.parcelId);
-        const row = await db.parcelWeedObservation.create({
-            data: {
-                tenantId: ctx.tenantId,
-                parcelId: input.parcelId,
-                observedAt: input.observedAt,
-                weedKeys,
-                otherWeeds,
-                notes,
-                createdByUserId: ctx.userId,
-            },
+    try {
+        return await runInTenantContext(ctx, async (db) => {
+            if (scope) await assertMayObserveForTask(db, ctx, scope.taskId, input.parcelId);
+            await requireParcel(db, ctx, input.parcelId);
+
+            // The replay read sits AFTER both gates, and that placement is the
+            // whole of its security. An earlier draft of this checked the key
+            // before entering the transaction, which was fine while the only
+            // caller was the parcel route — `assertCanWrite` had already run.
+            // The task-scoped route made it wrong: its authorisation needs a
+            // database read, so it lives in here, and a pre-check outside
+            // would have let ANY authenticated tenant member hand over a key
+            // and receive the row it names. A UUID is impractical to guess,
+            // but impracticality is not an authorisation check.
+            if (idempotencyKey) {
+                const existing = await db.parcelWeedObservation.findFirst({
+                    where: {
+                        tenantId: ctx.tenantId,
+                        parcelId: input.parcelId,
+                        clientMutationId: idempotencyKey,
+                        deletedAt: null,
+                    },
+                });
+                // Returns before `logEvent`, which is the point: a deduped row
+                // alone would still have written a second audit entry.
+                if (existing) return existing;
+            }
+
+            const row = await db.parcelWeedObservation.create({
+                data: {
+                    tenantId: ctx.tenantId,
+                    parcelId: input.parcelId,
+                    observedAt: input.observedAt,
+                    weedKeys,
+                    otherWeeds,
+                    notes,
+                    createdByUserId: ctx.userId,
+                    clientMutationId: idempotencyKey || null,
+                },
+            });
+            await logEvent(db, ctx, {
+                action: 'CREATE',
+                entityType: 'ParcelWeedObservation',
+                entityId: row.id,
+                details: `Weed observation recorded for parcel ${input.parcelId}`,
+                detailsJson: {
+                    category: 'entity_lifecycle',
+                    entityName: 'ParcelWeedObservation',
+                    operation: 'created',
+                    after: {
+                        parcelId: input.parcelId,
+                        weedCount: weedKeys.length + otherWeeds.length,
+                    },
+                    summary: 'Parcel weed observation',
+                },
+            });
+            return row;
         });
-        await logEvent(db, ctx, {
-            action: 'CREATE',
-            entityType: 'ParcelWeedObservation',
-            entityId: row.id,
-            details: `Weed observation recorded for parcel ${input.parcelId}`,
-            detailsJson: {
-                category: 'entity_lifecycle',
-                entityName: 'ParcelWeedObservation',
-                operation: 'created',
-                after: { parcelId: input.parcelId, weedCount: weedKeys.length + otherWeeds.length },
-                summary: 'Parcel weed observation',
-            },
-        });
-        return row;
-    });
+    } catch (err) {
+        // Race backstop: two replays reach the unique
+        // (tenantId, clientMutationId) index together. The loser's INSERT
+        // fails, so the transaction above is ALREADY rolled back by the time
+        // this runs — which is why the re-read opens a FRESH tenant context.
+        // A caught JS error does not un-poison an aborted Postgres
+        // transaction; catching outside it is what makes the recovery legal.
+        //
+        // Re-reading without re-running the gates is safe HERE and only here:
+        // both of them evaluated true inside the transaction that just failed,
+        // microseconds ago, in this same request.
+        if (idempotencyKey && isUniqueViolation(err)) {
+            const winner = await runInTenantContext(ctx, (db) =>
+                db.parcelWeedObservation.findFirst({
+                    where: {
+                        tenantId: ctx.tenantId,
+                        parcelId: input.parcelId,
+                        clientMutationId: idempotencyKey,
+                        deletedAt: null,
+                    },
+                }),
+            );
+            if (winner) return winner;
+        }
+        throw err;
+    }
 }
 
 /** Soft-delete a weed observation. */

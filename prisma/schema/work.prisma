@@ -118,17 +118,24 @@ model TaskLink {
 }
 
 model TaskComment {
-  id              String   @id @default(cuid())
-  tenantId        String
-  taskId          String
-  body            String
-  createdByUserId String
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  createdBy       User     @relation("TaskCommentCreator", fields: [createdByUserId], references: [id])
-  task            Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+  id               String   @id @default(cuid())
+  tenantId         String
+  taskId           String
+  body             String
+  createdByUserId  String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  /// Offline exactly-once handle. A comment queued in a field and replayed
+  /// over a flaky link carries the same outbox-item id as its
+  /// `Idempotency-Key`; a replay dedupes on (tenantId, clientMutationId) and
+  /// returns the original comment rather than posting it twice. Nullable +
+  /// NULLS-DISTINCT: online creates without a key are unconstrained.
+  clientMutationId String?
+  createdBy        User     @relation("TaskCommentCreator", fields: [createdByUserId], references: [id])
+  task             Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  tenant           Tenant   @relation(fields: [tenantId], references: [id])
 
+  @@unique([tenantId, clientMutationId])
   @@index([tenantId, taskId])
 }
 

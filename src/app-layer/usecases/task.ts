@@ -10,6 +10,7 @@ import { createTaskDueNotification } from '../notifications/task-due';
 import { createAssignmentNotification } from '../notifications/assignment';
 import { sendWebPushToUser } from '@/lib/notifications/web-push';
 import { runInTenantContext } from '@/lib/db-context';
+import { isUniqueViolation } from '@/lib/errors/prisma';
 import { env } from '@/env';
 import { badRequest, codedBadRequest, codedNotFound, notFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
@@ -902,25 +903,83 @@ export async function listTaskComments(ctx: RequestContext, taskId: string) {
     return runInTenantContext(ctx, (db) => TaskCommentRepository.listByTask(db, ctx, taskId));
 }
 
-export async function addTaskComment(ctx: RequestContext, taskId: string, body: string) {
+/**
+ * Post a comment on a task.
+ *
+ * Honours `Idempotency-Key`. A comment typed in a field and replayed over a
+ * flaky link must land once: the key rides in as `clientMutationId`, and a
+ * replay returns the ORIGINAL comment.
+ *
+ * The replay returns early and does NO further work, which matters more than
+ * the row — the write below also logs an audit event and bumps the task cache
+ * version, and a second pass would duplicate both even if the row itself were
+ * deduped. Same reasoning as `createFarmTask`.
+ *
+ * The permission check stays FIRST, ahead of the replay read, and that is the
+ * opposite of `createFarmTask`, which checks its replay before
+ * `assertNotPastDueRestricted`. The difference is the kind of gate: a
+ * time-based gate can expire between the first attempt and the retry, so
+ * checking it first would tell a client its write failed when the comment is
+ * already posted. A permission gate does not change under a retry, and
+ * someone who may not comment on a task should not be able to read a comment
+ * back out of it either.
+ */
+export async function addTaskComment(
+    ctx: RequestContext,
+    taskId: string,
+    body: string,
+    idempotencyKey?: string | null,
+) {
     assertCanCommentOnTasks(ctx);
+
+    if (idempotencyKey) {
+        const existing = await runInTenantContext(ctx, (db) =>
+            TaskCommentRepository.findByClientMutationId(db, ctx, taskId, idempotencyKey),
+        );
+        if (existing) return existing;
+    }
+
     // Epic C.5 — comments today are plain text. Strip any HTML the
     // client tries to inject before persistence so a future renderer
     // change (Markdown, HTML preview) can never accidentally re-enable
     // a stored XSS vector.
     const safeBody = sanitizePlainText(body);
-    const result = await runInTenantContext(ctx, async (db) => {
-        const comment = await TaskCommentRepository.add(db, ctx, taskId, safeBody);
-        await logEvent(db, ctx, {
-            action: 'TASK_COMMENT_ADDED',
-            entityType: 'Task',
-            entityId: taskId,
-            details: 'Comment added',
-            detailsJson: { category: 'custom', event: 'task_comment_added' },
-            metadata: { commentId: comment.id },
+    let result;
+    try {
+        result = await runInTenantContext(ctx, async (db) => {
+            const comment = await TaskCommentRepository.add(
+                db,
+                ctx,
+                taskId,
+                safeBody,
+                idempotencyKey,
+            );
+            await logEvent(db, ctx, {
+                action: 'TASK_COMMENT_ADDED',
+                entityType: 'Task',
+                entityId: taskId,
+                details: 'Comment added',
+                detailsJson: { category: 'custom', event: 'task_comment_added' },
+                metadata: { commentId: comment.id },
+            });
+            return comment;
         });
-        return comment;
-    });
+    } catch (err) {
+        // Race backstop: two replays of the same queued comment reach the
+        // unique (tenantId, clientMutationId) index together. The loser's
+        // INSERT fails, so its transaction is ALREADY rolled back by the time
+        // this runs — which is why the re-read opens a FRESH
+        // `runInTenantContext` rather than reusing the one above. A caught JS
+        // error does not un-poison an aborted Postgres transaction; catching
+        // outside the transaction is what makes the recovery legal.
+        if (idempotencyKey && isUniqueViolation(err)) {
+            const winner = await runInTenantContext(ctx, (db) =>
+                TaskCommentRepository.findByClientMutationId(db, ctx, taskId, idempotencyKey),
+            );
+            if (winner) return winner;
+        }
+        throw err;
+    }
     await bumpEntityCacheVersion(ctx, 'task');
     return result;
 }
