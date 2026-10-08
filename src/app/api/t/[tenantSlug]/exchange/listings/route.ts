@@ -14,6 +14,7 @@ import { jsonWithETag } from '@/lib/http/etag';
 import { badRequest } from '@/lib/errors/types';
 import { parseCsvEnumParam, parseCsvIdParam } from '@/lib/validation/query-params';
 import { regionCodesMatchingName } from '@/lib/geo/bulgaria-regions';
+import { normalizeCommodity } from '@/lib/market/commodity-vocabulary';
 import { EXCHANGE_LISTING_CREATE_LIMIT } from '@/lib/security/rate-limit-middleware';
 
 /**
@@ -82,6 +83,19 @@ export const GET = withApiErrorHandling(
                 // Resolved from the oblast catalogue so "Пловдив" matches a row
                 // whose stored `regionName` is the English "Plovdiv".
                 searchRegionCodes: search ? regionCodesMatchingName(search) : undefined,
+                // The crop-name twin of the line above, and needed for the same
+                // reason: `commodity` is stored CANONICAL, so a raw `contains` of
+                // «пшеница» cannot match a row holding 'wheat'. `normalizeCommodity`
+                // is the same function the WRITE path uses, so the two cannot
+                // disagree about what «пшеница» means.
+                //
+                // `filter(Boolean)` matters: the normaliser returns null for a
+                // non-crop or a prefix, and `{ in: [null] }` would match nothing
+                // while LOOKING like a filter. An empty array is omitted from the
+                // OR entirely by the repository.
+                searchCommodities: search
+                    ? [normalizeCommodity(search)].filter((c): c is string => Boolean(c))
+                    : undefined,
             },
             {
                 limit: parseNumberParam(sp.get('limit'), 'limit', LISTING_PAGE_MAX) ?? LISTING_PAGE_SIZE,
