@@ -81,7 +81,7 @@ const LeasePaymentRowSchema = z
         amountPaid: z.string(),
         /** Defaults to the LEASE's canonical unit when omitted on write. */
         unit: z.string().nullable(),
-        paidAt: z.string().nullable(),
+        paidAt: z.string().datetime().nullable(),
         note: z.string().nullable(),
         createdAt: z.string().datetime(),
     })

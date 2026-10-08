@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "6.4.2",
+    "version": "7.0.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -123,7 +123,8 @@
                   "type": [
                     "string",
                     "null"
-                  ]
+                  ],
+                  "format": "date-time"
                 }
               },
               "required": [
@@ -171,7 +172,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           }
         },
         "required": [
@@ -270,7 +272,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           }
         },
         "required": [
@@ -625,10 +628,12 @@
             ]
           },
           "createdAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "updatedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "ownerUser": {
             "allOf": [
@@ -795,6 +800,7 @@
           },
           "createdAt": {
             "type": "string",
+            "format": "date-time",
             "example": "2026-04-28T07:42:11.000Z"
           },
           "user": {
@@ -4056,10 +4062,12 @@
             "type": "string"
           },
           "createdAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "updatedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "practice": {
             "type": [
@@ -4173,10 +4181,12 @@
             "type": "string"
           },
           "createdAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "updatedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "practice": {
             "type": [
@@ -4236,7 +4246,8 @@
             ]
           },
           "createdAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "reviewer": {
             "allOf": [
@@ -4520,7 +4531,8 @@
             "type": "boolean"
           },
           "createdAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -4594,7 +4606,8 @@
             ]
           },
           "lastMessageAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "closed": {
             "type": "boolean"
@@ -4664,7 +4677,8 @@
             ]
           },
           "lastMessageAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "closed": {
             "type": "boolean"
@@ -4893,7 +4907,8 @@
                   "type": "string"
                 },
                 "generatedAt": {
-                  "type": "string"
+                  "type": "string",
+                  "format": "date-time"
                 },
                 "auto": {
                   "type": "boolean",
@@ -4992,7 +5007,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "assigneeUserId": {
             "type": [
@@ -5064,13 +5080,16 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "createdAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "updatedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "assigneeUserId": {
             "type": [
@@ -5157,7 +5176,8 @@
             "type": "boolean"
           },
           "generatedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "date": {
             "type": "string"
@@ -6239,13 +6259,15 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "receivedAt": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "lowStock": {
             "type": "boolean"
@@ -6633,7 +6655,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "note": {
             "type": [
@@ -6797,10 +6820,12 @@
           },
           "boundsJson": {},
           "createdAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "updatedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "owner": {
             "allOf": [
@@ -6887,10 +6912,12 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "createdAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "assignee": {
             "allOf": [
@@ -6974,7 +7001,8 @@
                 "type": "string"
               },
               "occurredAt": {
-                "type": "string"
+                "type": "string",
+                "format": "date-time"
               }
             },
             "required": [
@@ -7167,7 +7195,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "version": {
             "type": "integer"
@@ -7934,7 +7963,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "completedByUserId": {
             "type": [
@@ -7943,10 +7973,12 @@
             ]
           },
           "createdAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "updatedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "product": {
             "type": "object",
@@ -8806,10 +8838,12 @@
             ]
           },
           "createdAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "updatedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -9004,7 +9038,8 @@
             ]
           },
           "generatedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -9586,7 +9621,8 @@
             "type": "string"
           },
           "generatedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "totals": {
             "type": "object",
@@ -10448,7 +10484,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "resolvedAt": {
             "type": [
@@ -10463,6 +10500,7 @@
               "string",
               "null"
             ],
+            "format": "date-time",
             "description": "When the task was completed. THIS is the field the server sends — `resolvedAt` above is documented in error and never arrives. Detail only: the list projection omits it."
           },
           "key": {
@@ -10525,10 +10563,12 @@
           },
           "metadataJson": {},
           "createdAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "updatedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "assignee": {
             "allOf": [
@@ -10783,7 +10823,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "resolvedAt": {
             "type": [
@@ -10798,6 +10839,7 @@
               "string",
               "null"
             ],
+            "format": "date-time",
             "description": "When the task was completed. THIS is the field the server sends — `resolvedAt` above is documented in error and never arrives. Detail only: the list projection omits it."
           },
           "key": {
@@ -10860,10 +10902,12 @@
           },
           "metadataJson": {},
           "createdAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "updatedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "assignee": {
             "allOf": [
@@ -11027,7 +11071,8 @@
             "description": "`RELATES_TO` (the default), `EVIDENCE_FOR`, `BLOCKED_BY`, `CAUSED_BY` or `MITIGATED_BY`."
           },
           "createdAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -11115,13 +11160,16 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "createdAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "updatedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "assigneeUserId": {
             "type": [
@@ -29354,7 +29402,8 @@
                       "type": "string"
                     },
                     "createdAt": {
-                      "type": "string"
+                      "type": "string",
+                      "format": "date-time"
                     },
                     "reopened": {
                       "type": "boolean"
@@ -29518,7 +29567,8 @@
                   "type": "object",
                   "properties": {
                     "readAt": {
-                      "type": "string"
+                      "type": "string",
+                      "format": "date-time"
                     }
                   },
                   "required": [
@@ -29672,7 +29722,8 @@
                   "type": "object",
                   "properties": {
                     "closedAt": {
-                      "type": "string"
+                      "type": "string",
+                      "format": "date-time"
                     },
                     "alreadyClosed": {
                       "type": "boolean"

@@ -29,8 +29,8 @@ export const LocationListItemDTOSchema = z.object({
     spatialFileId: z.string().nullable().optional(),
     spatialFormat: z.string().nullable().optional(),
     boundsJson: z.unknown().nullable().optional(),
-    createdAt: z.string().optional(),
-    updatedAt: z.string().optional(),
+    createdAt: z.string().datetime().optional(),
+    updatedAt: z.string().datetime().optional(),
     owner: UserRefSchema.nullable().optional(),
     _count: z.object({
         parcels: z.number().optional(),

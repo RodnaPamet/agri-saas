@@ -38,7 +38,7 @@ const LogEntryLike = z
         type: z.string(),
         status: z.string(),
         title: z.string().nullable().optional(),
-        occurredAt: z.string().nullable().optional(),
+        occurredAt: z.string().datetime().nullable().optional(),
         version: z.number().int().optional(),
     })
     .passthrough()

@@ -32,8 +32,8 @@ export const InventoryLotDTOSchema = z
         location: LotLocationRefSchema.nullable().optional(),
         /** Decimal → number (denormalised cache, ledger-derived). */
         quantityOnHand: z.number(),
-        expiresAt: z.string().nullable().optional(),
-        receivedAt: z.string().nullable().optional(),
+        expiresAt: z.string().datetime().nullable().optional(),
+        receivedAt: z.string().datetime().nullable().optional(),
         /** True when on-hand has dropped below the item's reorderLevel. */
         lowStock: z.boolean(),
     })

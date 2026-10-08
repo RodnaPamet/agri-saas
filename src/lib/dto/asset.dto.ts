@@ -24,8 +24,8 @@ export const AssetListItemDTOSchema = z.object({
     status: z.string().optional(),
     externalRef: z.string().nullable().optional(),
     tags: z.string().nullable().optional(),
-    createdAt: z.string().optional(),
-    updatedAt: z.string().optional(),
+    createdAt: z.string().datetime().optional(),
+    updatedAt: z.string().datetime().optional(),
     ownerUser: UserRefSchema.nullable().optional(),
     _count: z.object({
         practices: z.number().optional(),

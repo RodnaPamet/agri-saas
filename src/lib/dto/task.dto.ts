@@ -62,7 +62,7 @@ export const TaskLinkDTOSchema = z
             description:
                 '`RELATES_TO` (the default), `EVIDENCE_FOR`, `BLOCKED_BY`, `CAUSED_BY` or `MITIGATED_BY`.',
         }),
-        createdAt: z.string().optional(),
+        createdAt: z.string().datetime().optional(),
     })
     .passthrough()
     .openapi('TaskLink', {
@@ -101,7 +101,7 @@ export const TaskDTOSchema = z.object({
     severity: z.string().nullable().optional(),
     priority: z.string().nullable().optional(),
     source: z.string().nullable().optional(),
-    dueAt: z.string().nullable().optional(),
+    dueAt: z.string().datetime().nullable().optional(),
     /**
      * NEVER SENT. There is no `resolvedAt` column on `Task`.
      *
@@ -121,7 +121,7 @@ export const TaskDTOSchema = z.object({
             '**NEVER SENT — there is no such column.** Use `completedAt`. Documented in error; kept only because removing it is a breaking change requiring an API_VERSION bump, which a field that has never been produced does not warrant.',
     }),
     /** The real completion timestamp, and what both clients read. */
-    completedAt: z.string().nullable().optional().openapi({
+    completedAt: z.string().datetime().nullable().optional().openapi({
         description:
             'When the task was completed. THIS is the field the server sends — `resolvedAt` above is documented in error and never arrives. Detail only: the list projection omits it.',
     }),
@@ -147,8 +147,8 @@ export const TaskDTOSchema = z.object({
     reviewerUserId: z.string().nullable().optional(),
     createdByUserId: z.string().nullable().optional(),
     metadataJson: z.unknown().optional(),
-    createdAt: z.string().optional(),
-    updatedAt: z.string().optional(),
+    createdAt: z.string().datetime().optional(),
+    updatedAt: z.string().datetime().optional(),
     assignee: UserRefSchema.nullable().optional(),
     reviewer: UserRefSchema.nullable().optional(),
     createdBy: UserRefSchema.nullable().optional(),

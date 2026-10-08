@@ -58,10 +58,10 @@ export const OperationParcelDTOSchema = z
          * contract.
          */
         version: z.number().int(),
-        completedAt: z.string().nullable().optional(),
+        completedAt: z.string().datetime().nullable().optional(),
         completedByUserId: z.string().nullable().optional(),
-        createdAt: z.string().optional(),
-        updatedAt: z.string().optional(),
+        createdAt: z.string().datetime().optional(),
+        updatedAt: z.string().datetime().optional(),
         product: OpProductRefSchema,
         doseUnit: OpDoseUnitRefSchema,
         parcel: OpParcelRefSchema,

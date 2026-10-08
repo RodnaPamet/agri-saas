@@ -99,9 +99,9 @@ const FarmTaskListItem = z
         type: z.string().openapi({ description: 'FARM_TASK or FIELD_OPERATION — the queue merges both.' }),
         severity: z.string().nullable().optional(),
         status: z.string(),
-        dueAt: z.string().nullable().optional(),
-        createdAt: z.string(),
-        updatedAt: z.string(),
+        dueAt: z.string().datetime().nullable().optional(),
+        createdAt: z.string().datetime(),
+        updatedAt: z.string().datetime(),
         assigneeUserId: z.string().nullable().optional(),
         assignee: UserRefSchema.nullable().optional(),
     })
@@ -124,7 +124,7 @@ const FarmTaskCreateRequest = z
         }),
         description: z.string().max(5000).nullable().optional(),
         priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional(),
-        dueAt: z.string().nullable().optional(),
+        dueAt: z.string().datetime().nullable().optional(),
         assigneeUserId: z.string().nullable().optional().openapi({
             description: 'Assigning fires the existing TASK_ASSIGNED notification.',
         }),
