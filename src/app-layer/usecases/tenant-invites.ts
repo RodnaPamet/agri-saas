@@ -269,7 +269,30 @@ export async function listPendingInvites(ctx: RequestContext) {
                 revokedAt: null,
                 expiresAt: { gt: new Date() },
             },
-            include: {
+            // An explicit SELECT, not an `include`. A bare `findMany` returns
+            // every scalar, and one of this model's scalars is `token` — the
+            // bearer credential `/invite/[token]` accepts, live until
+            // `expiresAt`. So the list shipped every pending invite's
+            // acceptance credential to any caller who could read it (#1450).
+            //
+            // Not an escalation: `admin.members` is OWNER/ADMIN only, and such
+            // a caller can already mint an invite at any role and read its
+            // `url`. The cost was blast radius — an XSS on the admin page, a
+            // HAR on a support ticket or a screenshot of a network tab carried
+            // N live credentials for seven days instead of zero.
+            //
+            // Nothing read it: the web admin page never touched the field and
+            // agrent-ios confirmed the app neither reads it nor requests this
+            // list. The token is still returned exactly once, in the `url` of
+            // the create response, which is the only place it is needed.
+            select: {
+                id: true,
+                tenantId: true,
+                email: true,
+                role: true,
+                expiresAt: true,
+                createdAt: true,
+                updatedAt: true,
                 invitedBy: { select: { id: true, name: true } },
             },
             orderBy: { createdAt: 'desc' },
