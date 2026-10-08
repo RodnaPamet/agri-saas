@@ -547,11 +547,55 @@ export function unauthorizedJson(): NextResponse {
 }
 
 /**
- * Return a 403 Forbidden JSON response.
+ * The reason a 403 was returned, as a code a client can switch on.
+ *
+ * Closed union rather than `string`, because the value is the half of the
+ * response a client is meant to BRANCH on: a typo in a free-form reason is a
+ * 403 nobody can handle, and it fails at the call site rather than on a phone.
+ * `FORBIDDEN` is the unparameterised default and carries no meaning beyond
+ * "refused" — reach for it only when none of the others fits, and add a member
+ * instead if the case recurs.
  */
-export function forbiddenJson(reason?: string): NextResponse {
+export type ForbiddenCode =
+    | 'ADMIN_REQUIRED'
+    | 'CSRF_BLOCKED'
+    | 'MFA_REQUIRED'
+    | 'TERMS_ACCEPTANCE_REQUIRED'
+    | 'FORBIDDEN';
+
+/**
+ * Return a 403 Forbidden JSON response in the canonical error envelope.
+ *
+ * ## Why the shape changed
+ *
+ * This used to answer `{ error: '<English sentence>' }`. Every other 4xx in
+ * this API answers `{ error: { code, message } }` via `toApiErrorResponse`, so
+ * the middleware's 403s were the one family a client could not switch on — and
+ * agrent-ios reported accepting BOTH shapes to cope, which is a client paying
+ * for a server inconsistency (#1391).
+ *
+ * The sentence was also the only thing distinguishing the four refusals, so
+ * telling "you are not an admin" from "your session needs MFA" meant matching
+ * English prose. A client that did so would break on a copy edit; a client
+ * that did not could only say "forbidden".
+ *
+ * ## The contract
+ *
+ * `code` is for the client. `message` stays an English developer-facing
+ * fallback and is NOT translated — these four are reached by a client that
+ * should render its own localised copy keyed on `code`, and a half-localised
+ * sentence from the server is worse than an obviously-English one. The status
+ * stays **403** for all four: nothing here is a 401, because the caller IS
+ * authenticated and is being refused.
+ *
+ * Note the sibling `unauthorizedJson` still answers a bare string. That is
+ * deliberate scope, not an oversight — it is a 401 with exactly one cause, so
+ * there is nothing to switch on. If a second cause ever appears it wants this
+ * treatment too.
+ */
+export function forbiddenJson(code: ForbiddenCode, message: string): NextResponse {
     return NextResponse.json(
-        { error: reason || 'Forbidden' },
+        { error: { code, message } },
         { status: 403 }
     );
 }

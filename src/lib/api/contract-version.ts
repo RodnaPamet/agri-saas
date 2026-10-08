@@ -29,7 +29,23 @@
  * bump, the number would stop meaning "clients must update" and start meaning
  * "time passed".
  */
-export const API_CONTRACT_VERSION = 1;
+export const API_CONTRACT_VERSION = 2;
+
+/*
+ * 1 -> 2 (2026-10-08): `Task` split into `TaskListItem` and `TaskDetail`.
+ *
+ * Breaking by the classes above — `GET /tasks` has its `$ref` REPOINTED and
+ * loses ten documented properties — and NOT breaking in behaviour: the server
+ * sends the same bytes it always did. What changed is that the contract stopped
+ * promising a list row carries `description`, `tenantId`, `source`,
+ * `resolution`, `metadataJson`, `reviewer` and `createdBy`, which it has never
+ * sent. The bump is bought by the classifier's definition, not by any client
+ * being broken.
+ *
+ * `MINIMUM_SUPPORTED_CLIENT_VERSION` therefore stays at 1, deliberately:
+ * nothing is cut off, because nothing that worked stops working. Raising it is
+ * a separate act, as the note below says.
+ */
 
 /**
  * The oldest contract version this server still answers.

@@ -84,7 +84,24 @@ export function commonErrorResponses(): RouteConfig['responses'] {
     return {
         400: { description: 'Invalid request body or query parameters.', content: json },
         401: { description: 'Not signed in, or the session was refused.', content: json },
-        403: { description: 'Signed in, but not permitted.', content: json },
+        403: {
+            description:
+                'Signed in, but not permitted.\n\n' +
+                'Four of these come from `src/middleware.ts` rather than from any handler, ' +
+                'so they are reachable on EVERY route and are the ones worth switching on:\n\n' +
+                '- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n' +
+                '- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; ' +
+                'the request must originate from the app.\n' +
+                '- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete ' +
+                'it and retry; the credential is valid.\n' +
+                '- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. ' +
+                '`POST /api/auth/accept-terms` is the way out, and the session must be ' +
+                're-minted afterwards because `termsPending` is a JWT claim.\n\n' +
+                'Each carries an English `message` as a developer-facing fallback; it is NOT ' +
+                'translated, so render your own copy keyed on `code`. Route-level 403s carry ' +
+                'their own codes and are described on the operation that returns them.',
+            content: json,
+        },
         404: { description: 'Not found, or not visible to this tenant.', content: json },
         426: {
             description:

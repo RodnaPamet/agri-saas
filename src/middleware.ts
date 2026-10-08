@@ -283,7 +283,7 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
         const ADMIN_ROLES = new Set(['ADMIN', 'OWNER']);
         if (!role || !ADMIN_ROLES.has(role)) {
             if (isApiRoute(pathname)) {
-                return forbiddenJson('Admin access required');
+                return forbiddenJson('ADMIN_REQUIRED', 'Admin access required');
             }
 
             // Allow the request to proceed to the App Router.
@@ -302,7 +302,7 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
             const secFetchSite = req.headers.get('sec-fetch-site');
             const method = req.method || 'GET';
             if (shouldBlockAdminRequest(secFetchSite, method)) {
-                return forbiddenJson('Cross-site admin requests are not allowed');
+                return forbiddenJson('CSRF_BLOCKED', 'Cross-site admin requests are not allowed');
             }
         }
     }
@@ -332,7 +332,7 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
                 ?? null;
 
             if (isApiRoute(pathname)) {
-                return forbiddenJson('MFA verification required');
+                return forbiddenJson('MFA_REQUIRED', 'MFA verification required');
             }
 
             if (tenantSlug) {
@@ -383,7 +383,7 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
     if ((isTenantPath(pathname) || isPersonPath(pathname)) && !isTermsAllowedPath(pathname)) {
         if (token.termsPending === true) {
             if (isApiRoute(pathname)) {
-                return forbiddenJson('Terms acceptance required');
+                return forbiddenJson('TERMS_ACCEPTANCE_REQUIRED', 'Terms acceptance required');
             }
             const acceptUrl = new URL('/accept-terms', req.nextUrl.origin);
             // `sanitizeRedirectPath` is applied where this is READ, so a
