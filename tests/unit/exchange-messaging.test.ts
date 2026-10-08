@@ -102,6 +102,32 @@ function ctxFor(tenantId: string, userId: string) {
 const buyerCtx = ctxFor(BUYER, 'usr_buyer');
 const sellerCtx = ctxFor(SELLER, 'usr_seller');
 
+/**
+ * Stub `exchangeBlock.findFirst` so it answers "blocked" ONLY for the person
+ * named, and null for anything else.
+ *
+ * This replaces `mockResolvedValue({ id: 'blk1' })`, which is why #1403 was
+ * invisible. That stub returns a row whatever `where` it is handed — a user
+ * id, a tenant id, or a random string — so every block test passed identically
+ * while all three production call sites queried the person column with a
+ * TENANT id and could never match. The assertions were right; the double was
+ * structurally incapable of failing.
+ *
+ * So the double has to be able to express the failure. A caller that passes a
+ * tenant id now gets null and the refusal does not fire, which is exactly the
+ * live defect.
+ */
+function stubBlockedPerson(userId: string): void {
+    mockPrisma.exchangeBlock.findFirst.mockImplementation(
+        (args: { where?: { blockedUserId?: unknown; sellerTenantId?: unknown } }) =>
+            Promise.resolve(
+                args?.where?.blockedUserId === userId && args?.where?.sellerTenantId === SELLER
+                    ? { id: 'blk1' }
+                    : null,
+            ),
+    );
+}
+
 function thread(over: Record<string, unknown> = {}) {
     return {
         id: 'th1', listingId: 'lst1', inquirerTenantId: BUYER,
@@ -154,6 +180,7 @@ beforeEach(() => {
         id: 'msg_new', createdAt: new Date('2026-09-25T09:30:00.000Z'),
     });
     mockPrisma.exchangeMessage.count.mockResolvedValue(0);
+    mockPrisma.exchangeBlock.findFirst.mockReset();
     mockPrisma.exchangeBlock.findFirst.mockResolvedValue(null);
     mockPrisma.exchangeBlock.create.mockResolvedValue({ id: 'blk1' });
     mockPrisma.exchangeBlock.deleteMany.mockResolvedValue({ count: 1 });
@@ -731,7 +758,7 @@ describe('a seller blocking a buyer', () => {
     });
 
     it('is idempotent — blocking twice is one row, not an error', async () => {
-        mockPrisma.exchangeBlock.findFirst.mockResolvedValue({ id: 'blk1' });
+        stubBlockedPerson('usr_buyer');
         await expect(blockExchangeParty(sellerCtx, 'th1')).resolves.toMatchObject({
             alreadyBlocked: true,
         });
@@ -739,7 +766,7 @@ describe('a seller blocking a buyer', () => {
     });
 
     it('refuses a blocked buyer OPENING a thread — including one they already had', async () => {
-        mockPrisma.exchangeBlock.findFirst.mockResolvedValue({ id: 'blk1' });
+        stubBlockedPerson('usr_buyer');
         await expect(openExchangeThread(buyerCtx, 'lst1')).rejects.toThrow(/not accepting/i);
         // Checked before the idempotent read, so a pre-existing thread is not
         // handed back either.
@@ -747,13 +774,58 @@ describe('a seller blocking a buyer', () => {
     });
 
     it('refuses a blocked buyer SENDING', async () => {
-        mockPrisma.exchangeBlock.findFirst.mockResolvedValue({ id: 'blk1' });
+        stubBlockedPerson('usr_buyer');
         await expect(sendExchangeMessage(buyerCtx, 'th1', 'hello')).rejects.toThrow(/not accepting/i);
         expect(mockPrisma.exchangeMessage.create).not.toHaveBeenCalled();
     });
 
+    it.each([
+        ['opening', () => openExchangeThread(buyerCtx, 'lst1')],
+        ['sending', () => sendExchangeMessage(buyerCtx, 'th1', 'hello')],
+        ['reading', () => getExchangeThread(buyerCtx, "th1", {})],
+    ])('%s queries the PERSON column with a USER id, never a tenant id (#1403)', async (_l, call) => {
+        // The assertion the outcome tests cannot make. All three sites passed
+        // `ctx.tenantId` / `thread.inquirerTenantId` into the person parameter
+        // after #1397 renamed the column, so the query was well-formed,
+        // type-correct and could never match — a block that stored a row and
+        // enforced nothing. Pinning the VALUE PASSED is what notices that,
+        // because the outcome is identical to "there is no block".
+        await call().catch(() => undefined);
+        const calls = mockPrisma.exchangeBlock.findFirst.mock.calls as Array<
+            [{ where: { sellerTenantId: string; blockedUserId: string } }]
+        >;
+        expect(calls.length).toBeGreaterThan(0);
+        for (const [args] of calls) {
+            expect(args.where.blockedUserId).toBe('usr_buyer');
+            // The tell, stated as its own assertion: a tenant id here is the
+            // defect, and it reads as a pass everywhere else.
+            expect(args.where.blockedUserId).not.toBe(BUYER);
+            expect(args.where.sellerTenantId).toBe(SELLER);
+        }
+    });
+
+    it('the seller reading a thread sees the block they SET (#1403)', async () => {
+        // The half nobody would notice from the buyer's side: `blocked` is what
+        // gives the seller their unblock control, and it was computed from
+        // `thread.inquirerTenantId`, so it answered false on every thread. The
+        // seller saw no sign of the block they had just created.
+        stubBlockedPerson('usr_buyer');
+        await expect(getExchangeThread(sellerCtx, "th1", {})).resolves.toMatchObject({
+            blocked: true,
+        });
+    });
+
+    it('…and a seller who blocked NOBODY sees false — the control', async () => {
+        // Without this, computing `blocked` as a constant true would satisfy
+        // the test above and show every seller an unblock button.
+        stubBlockedPerson('usr_somebody_else');
+        await expect(getExchangeThread(sellerCtx, "th1", {})).resolves.toMatchObject({
+            blocked: false,
+        });
+    });
+
     it('the SELLER can still write in a thread they blocked', async () => {
-        mockPrisma.exchangeBlock.findFirst.mockResolvedValue({ id: 'blk1' });
+        stubBlockedPerson('usr_buyer');
         // "Stop them reaching me", not "freeze the record" — a symmetric
         // refusal would lock the seller out of their own conversation.
         await expect(sendExchangeMessage(sellerCtx, 'th1', 'final word')).resolves.toBeDefined();
@@ -900,7 +972,7 @@ describe('Idempotency-Key on send', () => {
         // The ordering that matters. If the block check ran first, a retry of a
         // message that was already delivered would 403 — telling the client its
         // message failed when it is sitting in the thread.
-        mockPrisma.exchangeBlock.findFirst.mockResolvedValue({ id: 'blk1' });
+        stubBlockedPerson('usr_buyer');
         mockPrisma.exchangeMessage.findFirst.mockResolvedValue({
             id: 'msg_original', createdAt: new Date('2026-09-25T09:00:00.000Z'),
         });
