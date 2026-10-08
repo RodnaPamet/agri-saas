@@ -1047,7 +1047,38 @@ describe('TaskCommentRepository', () => {
             taskId: 't-1',
             body: 'looks dry',
             createdByUserId: 'user-1',
+            // NULL rather than absent when no `Idempotency-Key` was sent.
+            // Postgres treats every NULL as distinct, so a keyless comment is
+            // unconstrained by the unique (tenantId, clientMutationId) index —
+            // which is what lets ordinary online comments coexist.
+            clientMutationId: null,
         });
+    });
+
+    it('stores the offline handle when one is supplied', async () => {
+        // Break: dropping the argument here makes the replay read find nothing
+        // and the retry post a duplicate. The failure is invisible at the call
+        // site because the parameter is trailing and optional.
+        await TaskCommentRepository.add(asTx(db), ctx, 't-1', 'looks dry', 'outbox-7');
+
+        expect(dataOf(db.taskComment.create)).toEqual({
+            tenantId: 'tenant-1',
+            taskId: 't-1',
+            body: 'looks dry',
+            createdByUserId: 'user-1',
+            clientMutationId: 'outbox-7',
+        });
+    });
+
+    it('coerces an EMPTY key to null rather than storing it', async () => {
+        // `clientMutationId || null`, not `?? null`. An empty header value is
+        // the absence of a key, and storing `''` would make the first such
+        // comment claim the one empty-string slot the unique index allows —
+        // so the SECOND keyless-but-present caller would collide with an
+        // unrelated comment.
+        await TaskCommentRepository.add(asTx(db), ctx, 't-1', 'looks dry', '');
+
+        expect(dataOf(db.taskComment.create).clientMutationId).toBeNull();
     });
 
     it('reads a thread oldest-first', async () => {
