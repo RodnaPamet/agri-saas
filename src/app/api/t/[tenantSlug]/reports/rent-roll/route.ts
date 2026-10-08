@@ -15,6 +15,7 @@ import { requireFeature } from '@/lib/entitlements-server';
 import { FEATURES } from '@/lib/entitlements';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
+import { contentDisposition } from '@/lib/http/content-disposition';
 
 // PDFKit needs the Node runtime (stream/zlib/Buffer).
 export const runtime = 'nodejs';
@@ -53,7 +54,7 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
         return new NextResponse(new Uint8Array(buf), {
             headers: {
                 'Content-Type': 'application/pdf',
-                'Content-Disposition': 'attachment; filename="rent-roll.pdf"',
+                'Content-Disposition': contentDisposition('rent-roll.pdf'),
             },
         });
     }
@@ -80,7 +81,7 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
         return new NextResponse(csv, {
             headers: {
                 'Content-Type': 'text/csv; charset=utf-8',
-                'Content-Disposition': 'attachment; filename="rent-roll.csv"',
+                'Content-Disposition': contentDisposition('rent-roll.csv'),
             },
         });
     }

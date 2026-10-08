@@ -19,6 +19,7 @@ import {
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { z } from 'zod';
+import { contentDisposition } from '@/lib/http/content-disposition';
 
 const BodySchema = z
     .object({
@@ -75,7 +76,7 @@ export const POST = withApiErrorHandling(
             status: 200,
             headers: {
                 'Content-Type': 'application/pdf',
-                'Content-Disposition': `attachment; filename="${fileName}"`,
+                'Content-Disposition': contentDisposition(fileName),
                 'Cache-Control': 'no-store',
                 'Content-Length': String(pdfBuffer.length),
             },
