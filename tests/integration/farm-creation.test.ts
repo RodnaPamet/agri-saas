@@ -257,7 +257,12 @@ describeFn('P3.6 createFarmForUser', () => {
         const before = await verifier.farmIdentityClaim.count();
         await expect(
             createFarmForUser(creator(), { name: `ЕГН ${RUN}`, eik: anEgn() }),
-        ).rejects.toThrow(/EIK_LOOKS_LIKE_EGN/);
+            // The CODE, not the message. `toThrow(regex)` matches the
+            // MESSAGE, which #1388 deliberately changed to English prose when
+            // it moved the code into `code` — so the old assertion passed only
+            // while the code was (wrongly) the message. Asserting `code` is
+            // both correct now and the thing a client actually switches on.
+        ).rejects.toMatchObject({ code: 'EIK_LOOKS_LIKE_EGN' });
         expect(await verifier.farmIdentityClaim.count()).toBe(before);
     });
 
@@ -268,7 +273,7 @@ describeFn('P3.6 createFarmForUser', () => {
         const before = await verifier.tenant.count();
         await expect(
             createFarmForUser(creator(), { name: `Невалиден ${RUN}`, eik: '123456789' }),
-        ).rejects.toThrow(/EIK_INVALID/);
+        ).rejects.toMatchObject({ code: 'EIK_INVALID' });
         expect(await verifier.tenant.count()).toBe(before);
     });
 

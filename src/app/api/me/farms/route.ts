@@ -38,7 +38,7 @@ import { z } from 'zod';
 import { auth } from '@/auth';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
-import { unauthorized, badRequest } from '@/lib/errors/types';
+import { unauthorized, codedBadRequest } from '@/lib/errors/types';
 import { getRequestContext } from '@/lib/observability/context';
 import { assertFeatureEnabled } from '@/lib/feature-flags';
 import { createFarmForUser, FARM_NAME_MAX } from '@/app-layer/usecases/farm-creation';
@@ -83,10 +83,10 @@ export const POST = withApiErrorHandling(async (req: NextRequest) => {
     // `createTenantWithOwner` resolves the OWNER by email, so a session with no
     // email cannot create a farm. Refused rather than defaulted: a placeholder
     // would mint a User row nobody can ever sign in as, and make it the owner.
-    if (!session.user.email) throw badRequest('ACCOUNT_HAS_NO_EMAIL');
+    if (!session.user.email) throw codedBadRequest('ACCOUNT_HAS_NO_EMAIL', 'Your account has no email address.');
 
     const parsed = CreateFarmSchema.safeParse(await req.json().catch(() => null));
-    if (!parsed.success) throw badRequest('INVALID_FARM_PAYLOAD');
+    if (!parsed.success) throw codedBadRequest('INVALID_FARM_PAYLOAD', 'Invalid farm payload.');
 
     const result = await createFarmForUser(
         {
