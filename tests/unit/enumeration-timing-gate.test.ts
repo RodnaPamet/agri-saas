@@ -43,11 +43,17 @@ afterAll(() => {
 /** Write a k6-shaped results file and return its path. */
 function results(
     medians: { new?: number | null; pending?: number | null; taken?: number | null },
-    opts: { mismatches?: number; name?: string } = {},
+    opts: {
+        mismatches?: number;
+        name?: string;
+        /** The paired-spread dispersion, for the old-vs-new comparison in §6. */
+        spread?: { med?: number; 'p(95)'?: number; max?: number };
+    } = {},
 ): string {
     const m: Record<string, unknown> = {
         enum_shape_mismatch: { values: { count: opts.mismatches ?? 0 } },
     };
+    if (opts.spread) m.enum_paired_spread_ms = { values: opts.spread };
     const put = (key: string, v: number | null | undefined) => {
         if (v !== undefined) m[key] = { values: { med: v } };
     };
@@ -162,3 +168,77 @@ describe('§5 the band is configurable and honoured', () => {
         expect(run(file, '100').out).toMatch(/\(band 100 ms\)/);
     });
 });
+
+describe('§6 the change does what it CLAIMS — the old statistic must fail where the new one passes', () => {
+    /**
+     * The assertion the rest of this file does not make, and the one that
+     * justifies #1411 rather than merely passing after it.
+     *
+     * Every test above shows the NEW statistic behaving correctly. None of
+     * them shows that the OLD statistic was wrong — and a change that only
+     * demonstrates "the new thing is green" is the same shape as a check that
+     * passes while verifying nothing, one level up. What makes this a fix
+     * rather than a preference is that on the real data from main
+     * `66688b0a1`, the two statistics DISAGREE: the property held, the new
+     * gate says so, the old gate did not.
+     *
+     * Raised by backend-1, who pointed out that running k6 on this PR would
+     * have told us the new statistic passes and could never have told us it
+     * can still fail.
+     */
+    const BAND = 50;
+
+    /** The real figures from the run that reddened main. */
+    const PRODUCTION_SHAPE = {
+        medians: { new: 330.2, pending: 326.1, taken: 326.0 },
+        spread: { med: 21.4, 'p(95)': 78.4, max: 267.5 },
+    };
+
+    it('on the real red-run data, the NEW gate passes', () => {
+        const r = run(results(PRODUCTION_SHAPE.medians, { spread: PRODUCTION_SHAPE.spread }));
+        expect(r.status).toBe(0);
+        expect(r.out).toMatch(/median separation\s+: 4\.2 ms/);
+    });
+
+    it('…and the OLD gate, p(95) of the per-trial |Δ|, would have FAILED on it', () => {
+        // Not run through the script — the old statistic is gone from it. This
+        // is the arithmetic the old k6 threshold did, stated against the same
+        // fixture, so the disagreement is in the test rather than only in a
+        // commit message.
+        const oldStatistic = PRODUCTION_SHAPE.spread['p(95)'];
+        expect(oldStatistic).toBeGreaterThanOrEqual(BAND); // 78.4 >= 50 → red
+
+        const newStatistic =
+            Math.max(...Object.values(PRODUCTION_SHAPE.medians)) -
+            Math.min(...Object.values(PRODUCTION_SHAPE.medians));
+        expect(newStatistic).toBeLessThan(BAND); // 4.2 < 50 → green
+
+        // The point: one dataset, two verdicts. That is what makes this a fix.
+        expect(oldStatistic > BAND && newStatistic < BAND).toBe(true);
+    });
+
+    it('a genuine leak with LOW jitter fails the new gate — so it is not `return true`', () => {
+        // The complement of the case above, and the one that stops the new
+        // statistic being satisfied by anything. Medians 80ms apart with a
+        // tight spread: no noise to hide behind, a real timing oracle.
+        const r = run(
+            results(
+                { new: 410.0, pending: 330.0, taken: 328.0 },
+                { spread: { med: 2.1, 'p(95)': 4.0, max: 6.2 } },
+            ),
+        );
+        expect(r.status).toBe(1);
+        expect(r.out).toMatch(/82\.0 ms is outside the 50 ms band/);
+    });
+
+    it('…which the OLD gate would have MISSED, because the jitter was low', () => {
+        // The inverse failure, and the reason the old statistic was not merely
+        // noisy but aimed wrong: p(95) of 4.0ms sails under a 50ms band while
+        // the branches are 82ms apart. The old gate was simultaneously too
+        // loud on healthy data AND blind to a low-jitter leak.
+        const leakSpread = { med: 2.1, 'p(95)': 4.0, max: 6.2 };
+        expect(leakSpread['p(95)']).toBeLessThan(BAND); // the old gate: green
+        expect(410.0 - 328.0).toBeGreaterThanOrEqual(BAND); // the new gate: red
+    });
+});
+
