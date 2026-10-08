@@ -128,7 +128,7 @@
   /* ── Borders / Dividers ────────────────────────────────────────── */
   --border-default:  #17553F;  /* green border — standard borders */
   --border-subtle:   rgba(23, 85, 63, 0.55);  /* green @ 55% — soft dividers, card edges */
-  --border-emphasis: #2A7F5E;  /* brighter green — focused inputs, emphasized outlines */
+  --border-emphasis: #2F8463;  /* State border — selected card, active panel, focused field. #2F8463, nudged from #2A7F5E: the old value measured 2.83:1 on --bg-default, under WCAG 1.4.11’s 3:1 for anything identifying a component state (#1318). The shift is imperceptible by design — it is the smallest step that clears the threshold, not a new colour. */
 
   /* ── Process canvas (Roadmap-27) ───────────────────────────────────
    * A dedicated surface ramp for the node-based Processes editor. The
@@ -776,7 +776,7 @@
   /* ── Borders / Dividers ────────────────────────────────────────── */
   --border-default:  #E5E2DE;  /* warm gray — standard borders */
   --border-subtle:   rgba(229, 226, 222, 0.60);  /* warm gray @ 60% — soft dividers */
-  --border-emphasis: #C9C5BE;  /* medium warm gray — focused inputs */
+  --border-emphasis: #8D8982;  /* State border — selected card, active panel, focused field. #8D8982, DARKENED from #C9C5BE, which measured 1.54:1 on the page and 1.59:1 on cards against WCAG 1.4.11’s 3:1 (#1318). The value clears BOTH grounds with margin — 3.11:1 on the page, 3.23:1 on a card — rather than the bare threshold on one of them: a token sitting exactly on 3.00 fails the gate the next time a surface colour moves, on a change that looks unrelated. This one IS visible, and that is the fix rather than a side effect: at 1.54:1 a selected card was nearly indistinguishable from an unselected one, so the token reserved for state was not communicating state. Do NOT lighten it back toward --border-default — that token is for decorative separators, which 1.4.11 exempts, and the two are different jobs. */
 
   /* ── Process canvas (Roadmap-27) — light mirror ──────────────────
    *   depth ramp (light → dark): node < frame < page < surface;
@@ -792,8 +792,8 @@
   --canvas-recess:     inset 0 11px 20px -16px rgba(60, 50, 40, 0.22);
 
   /* ── Brand / Primary (PwC-inspired orange) ──────────────────────── */
-  --brand-default:  #8A6200;  /* Agrent gold — deep goldenrod; ≥4.5:1 (WCAG AA) as link/accent text on the cream page AND on --brand-subtle gold tiles */
-  --brand-emphasis: #7A5800;  /* deep bronze-gold — active brand + text on --brand-subtle tiles; ≥4.5:1 (WCAG AA), one rung darker than default */
+  --brand-default:  #8A6200;  /* Agrent gold. ≥4.5:1 on --bg-default cards (4.60:1) and on --brand-subtle tiles over them (4.60:1). NOTE: on --bg-page directly it measures 4.45:1, marginally under 4.5 — place a brand tile on a card, not on the bare page (#1331). */
+  --brand-emphasis: #7A5800;  /* Deeper gold for emphasis. Text on --brand-subtle tiles in LIGHT and «Слънце» only (5.47 / 5.82) — it does NOT hold in dark, where it measures 3.17:1. Use --brand-default when one token must serve all three themes (#1331). */
   --brand-muted:    #D4AF37;  /* metallic gold — hover accent */
   --brand-subtle:   rgba(212, 175, 55, 0.16);  /* gold @ 16% — brand tint backgrounds */
   /* Deep-gold gradient tuned for the cream ground (AA-legible bronze→gold). */
@@ -856,8 +856,8 @@
 
   /* ── Interactive / Focus ───────────────────────────────────────── */
   --ring-default: rgba(184, 134, 11, 0.45);  /* Agrent gold focus ring (light) */
-  --focus-ring:   rgba(208, 74, 2, 0.40);
-  --ring:                   rgba(208, 74, 2, 0.40);
+  --focus-ring:   rgba(208, 74, 2, 0.80);  /* Agrent orange focus ring. Alpha 0.80, NOT the original 0.40: at 40% it composited to 1.72:1 on the page and 1.78:1 in «Слънце», against WCAG 1.4.11’s 3:1 for a focus indicator (#1318). The HUE is unchanged — only the opacity moved, so this is the same orange rather than a new colour. «Слънце» inherits this value through the cascade, which is why one change fixes the theme that was worst: it exists for direct sunlight and had the least visible ring of the three. */
+  --ring:                   rgba(208, 74, 2, 0.80);  /* Agrent orange focus ring. Alpha 0.80, NOT the original 0.40: at 40% it composited to 1.72:1 on the page and 1.78:1 in «Слънце», against WCAG 1.4.11’s 3:1 for a focus indicator (#1318). The HUE is unchanged — only the opacity moved, so this is the same orange rather than a new colour. «Слънце» inherits this value through the cascade, which is why one change fixes the theme that was worst: it exists for direct sunlight and had the least visible ring of the three. */
   --ring-offset-background: #F8F6F3;
   --primary:                #8A6200;
 
