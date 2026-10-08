@@ -2,13 +2,13 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "5.5.4",
+    "version": "5.8.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
     }
   },
-  "x-api-version": 1,
+  "x-api-version": 2,
   "x-minimum-client-version": 1,
   "x-client-version-header": "x-agrent-client-version",
   "servers": [
@@ -10254,7 +10254,44 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "deprecated": true,
+            "description": "**NEVER SENT — there is no such column.** Use `completedAt`. Documented in error; kept only because removing it is a breaking change requiring an API_VERSION bump, which a field that has never been produced does not warrant."
+          },
+          "completedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When the task was completed. THIS is the field the server sends — `resolvedAt` above is documented in error and never arrives. Detail only: the list projection omits it."
+          },
+          "key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Human-readable handle, e.g. `FT-102`. Present on BOTH the list and the detail — one of the few non-list-projection fields that is."
+          },
+          "operationType": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "FIELD_OPERATION only: `SPRAY`, `FERTILIZE`, `SEED` or `OTHER`. Persisted so the БАБХ ДНЕВНИК generator can split химични обработки from торове without re-deriving from the title; legacy rows are null and fall back to a derive-from-title reader. Detail only."
+          },
+          "applicationTechnique": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "FIELD_OPERATION only — «Техника за приложение», one rig per job. Detail only."
+          },
+          "clientMutationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Offline exactly-once handle. When a FIELD_OPERATION is created from a queued outbox the client's outbox-item id rides in as `Idempotency-Key`; a replayed write dedupes on (tenantId, clientMutationId) and returns the original task. Null for online creates. Detail only."
           },
           "resolution": {
             "type": [
@@ -10341,7 +10378,7 @@
           "status"
         ],
         "additionalProperties": {},
-        "description": "Unified work-item record covering audit findings, practice gaps, incidents, improvements, and ad-hoc tasks. The type field discriminates which UI surfaces this row appears in."
+        "description": "Unified work-item record covering audit findings, practice gaps, incidents, improvements, and ad-hoc tasks. The type field discriminates which UI surfaces this row appears in.\n\nThe full row. `GET /tasks` serves the narrower `TaskListItem`; `GET /tasks/{taskId}` serves `TaskDetail`, which is this plus its relations."
       },
       "TaskAssignRequest": {
         "type": "object",
@@ -10500,6 +10537,250 @@
         ],
         "description": "Create a task (unified work-item type covering improvements and ad-hoc tasks). The type discriminator gates which UI surfaces this work item appears in."
       },
+      "TaskDetail": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "severity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "priority": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dueAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resolvedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "deprecated": true,
+            "description": "**NEVER SENT — there is no such column.** Use `completedAt`. Documented in error; kept only because removing it is a breaking change requiring an API_VERSION bump, which a field that has never been produced does not warrant."
+          },
+          "completedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When the task was completed. THIS is the field the server sends — `resolvedAt` above is documented in error and never arrives. Detail only: the list projection omits it."
+          },
+          "key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Human-readable handle, e.g. `FT-102`. Present on BOTH the list and the detail — one of the few non-list-projection fields that is."
+          },
+          "operationType": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "FIELD_OPERATION only: `SPRAY`, `FERTILIZE`, `SEED` or `OTHER`. Persisted so the БАБХ ДНЕВНИК generator can split химични обработки from торове without re-deriving from the title; legacy rows are null and fall back to a derive-from-title reader. Detail only."
+          },
+          "applicationTechnique": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "FIELD_OPERATION only — «Техника за приложение», one rig per job. Detail only."
+          },
+          "clientMutationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Offline exactly-once handle. When a FIELD_OPERATION is created from a queued outbox the client's outbox-item id rides in as `Idempotency-Key`; a replayed write dedupes on (tenantId, clientMutationId) and returns the original task. Null for online creates. Detail only."
+          },
+          "resolution": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "practiceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "assigneeUserId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reviewerUserId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdByUserId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "metadataJson": {},
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "assignee": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "reviewer": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "createdBy": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskLink"
+            },
+            "description": "Edges to other records, newest first. DETAIL ONLY. Also available on its own at `GET /tasks/{taskId}/links`."
+          },
+          "comments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskComment"
+            },
+            "description": "Oldest first. DETAIL ONLY."
+          },
+          "watchers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskWatcher"
+            },
+            "description": "DETAIL ONLY. Nothing renders a watcher on either client today — the native app shows `_count.watchers` alone."
+          },
+          "_count": {
+            "type": "object",
+            "properties": {
+              "links": {
+                "type": "integer"
+              },
+              "comments": {
+                "type": "integer"
+              },
+              "watchers": {
+                "type": "integer"
+              },
+              "evidence": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "links",
+              "comments",
+              "watchers",
+              "evidence"
+            ],
+            "description": "Relation counts, so a client can badge without fetching the collections. DETAIL ONLY."
+          },
+          "sla": {
+            "type": "object",
+            "properties": {
+              "triageBreach": {
+                "type": "boolean"
+              },
+              "resolveBreach": {
+                "type": "boolean"
+              },
+              "label": {
+                "type": "string",
+                "description": "`SLA Breached`, `Triage SLA Breached`, or EMPTY when neither — including for every terminal status. An empty string is the normal case, not a missing value."
+              }
+            },
+            "required": [
+              "triageBreach",
+              "resolveBreach",
+              "label"
+            ],
+            "description": "DERIVED per request from severity + createdAt + status, not a stored column, which is why it is on no model. Added by `getTask`, so DETAIL ONLY."
+          }
+        },
+        "required": [
+          "id",
+          "tenantId",
+          "title",
+          "type",
+          "status"
+        ],
+        "additionalProperties": {},
+        "description": "The task detail. `Task` plus the relations `getById` includes and the `sla` `getTask` derives. `GET /tasks` serves `TaskListItem` instead."
+      },
       "TaskEvidenceLinkRequest": {
         "type": "object",
         "properties": {
@@ -10520,6 +10801,45 @@
           "url"
         ],
         "description": "Attach a URL as evidence on a task. File uploads use the multipart /evidence/uploads endpoint with a taskId."
+      },
+      "TaskLink": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "entityType": {
+            "type": "string",
+            "description": "What the task is linked TO: `ASSET`, `EVIDENCE`, `FILE`, `LOCATION`, `PARCEL`, `EQUIPMENT` or `PLANTING`. A growing union — treat an unrecognised value as an opaque link rather than an error."
+          },
+          "entityId": {
+            "type": "string",
+            "description": "The linked row's id. An id ONLY — nothing about the entity is resolved here."
+          },
+          "relation": {
+            "type": "string",
+            "description": "`RELATES_TO` (the default), `EVIDENCE_FOR`, `BLOCKED_BY`, `CAUSED_BY` or `MITIGATED_BY`."
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tenantId",
+          "taskId",
+          "entityType",
+          "entityId",
+          "relation"
+        ],
+        "additionalProperties": {},
+        "description": "One edge from a task to another record. Ordered newest first."
       },
       "TaskLinkAddRequest": {
         "type": "object",
@@ -10556,6 +10876,81 @@
           "entityId"
         ],
         "description": "Link a task to another domain entity. The relation field captures semantic intent for downstream traceability views."
+      },
+      "TaskListItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Human-readable handle, e.g. `FT-102`. Present on BOTH the list and the detail — one of the few non-list-projection fields that is."
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "severity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "priority": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "dueAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "assigneeUserId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "assignee": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "type",
+          "status"
+        ],
+        "additionalProperties": {},
+        "description": "One row of `GET /tasks`. A PROJECTION of `Task`, not the whole record — twelve fields, matching `taskListSelect`. Do not decode a list row as a detail row: `description`, `resolution`, `metadataJson`, `reviewer`, `createdBy` and the relations are absent here and present on `TaskDetail`."
       },
       "TaskSetStatusRequest": {
         "type": "object",
@@ -10641,6 +11036,51 @@
           "metadataJson": {}
         },
         "description": "Partial update for a task. Status changes and assignment go through their own focused endpoints."
+      },
+      "TaskWatcher": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "user": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "description": "Deliberately NO email — see the DTO docblock."
+          }
+        },
+        "required": [
+          "id",
+          "tenantId",
+          "taskId",
+          "userId"
+        ],
+        "additionalProperties": {}
       },
       "TraceLotNode": {
         "type": "object",
@@ -23523,7 +23963,7 @@
                         "rows": {
                           "type": "array",
                           "items": {
-                            "$ref": "#/components/schemas/Task"
+                            "$ref": "#/components/schemas/TaskListItem"
                           }
                         },
                         "nextCursor": {
@@ -23544,7 +23984,7 @@
                         "rows": {
                           "type": "array",
                           "items": {
-                            "$ref": "#/components/schemas/Task"
+                            "$ref": "#/components/schemas/TaskListItem"
                           }
                         },
                         "truncated": {
@@ -23842,11 +24282,11 @@
         ],
         "responses": {
           "200": {
-            "description": "The task.",
+            "description": "The task, with its relations.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Task"
+                  "$ref": "#/components/schemas/TaskDetail"
                 }
               }
             }
