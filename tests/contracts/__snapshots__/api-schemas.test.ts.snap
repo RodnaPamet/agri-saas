@@ -3899,7 +3899,24 @@ exports[`API contract — per-schema snapshots schema: ErrorResponse 1`] = `
           "type": "string",
           "example": "req_01HG7…"
         },
-        "details": {}
+        "details": {},
+        "params": {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "description": "Values for the client to interpolate into its own translated message, keyed per \`code\` — e.g. \`{ \\"max\\": 120 }\` for \`FARM_NAME_TOO_LONG\`. Ids and quantities only: strings and numbers, never an object and never personal data. Absent for codes that need no values.",
+          "example": {
+            "max": 120
+          }
+        }
       },
       "required": [
         "code",
@@ -3910,7 +3927,7 @@ exports[`API contract — per-schema snapshots schema: ErrorResponse 1`] = `
   "required": [
     "error"
   ],
-  "description": "Canonical error envelope returned by every error path. \`code\` is a stable string clients can branch on; \`message\` is human-readable; \`requestId\` correlates with server logs; \`details\` is optional structured context (validation issues, rate-limit info, etc.)."
+  "description": "Canonical error envelope returned by every error path. \`code\` is a stable string clients can branch on; \`message\` is human-readable ENGLISH and is a fallback, not UI copy; \`params\` carries the values a client interpolates into its own translated sentence; \`requestId\` correlates with server logs; \`details\` is optional structured context (validation issues, rate-limit info, etc.)."
 }"
 `;
 
@@ -4857,7 +4874,24 @@ exports[`API contract — per-schema snapshots schema: FarmProfileStaleDataError
           "type": "string",
           "example": "req_01HG7…"
         },
-        "details": {}
+        "details": {},
+        "params": {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "description": "Values for the client to interpolate into its own translated message, keyed per \`code\` — e.g. \`{ \\"max\\": 120 }\` for \`FARM_NAME_TOO_LONG\`. Ids and quantities only: strings and numbers, never an object and never personal data. Absent for codes that need no values.",
+          "example": {
+            "max": 120
+          }
+        }
       },
       "required": [
         "code",
@@ -8258,7 +8292,24 @@ exports[`API contract — per-schema snapshots schema: OperationParcelStaleDataE
           "type": "string",
           "example": "req_01HG7…"
         },
-        "details": {}
+        "details": {},
+        "params": {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "description": "Values for the client to interpolate into its own translated message, keyed per \`code\` — e.g. \`{ \\"max\\": 120 }\` for \`FARM_NAME_TOO_LONG\`. Ids and quantities only: strings and numbers, never an object and never personal data. Absent for codes that need no values.",
+          "example": {
+            "max": 120
+          }
+        }
       },
       "required": [
         "code",
@@ -10598,7 +10649,24 @@ exports[`API contract — per-schema snapshots schema: StaleDataError 1`] = `
           "type": "string",
           "example": "req_01HG7…"
         },
-        "details": {}
+        "details": {},
+        "params": {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "description": "Values for the client to interpolate into its own translated message, keyed per \`code\` — e.g. \`{ \\"max\\": 120 }\` for \`FARM_NAME_TOO_LONG\`. Ids and quantities only: strings and numbers, never an object and never personal data. Absent for codes that need no values.",
+          "example": {
+            "max": 120
+          }
+        }
       },
       "required": [
         "code",
