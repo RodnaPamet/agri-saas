@@ -893,6 +893,35 @@ model VerificationToken {
 /// a conditional `updateMany` so concurrent submits race to one winner.
 /// Not tenant-scoped (identity-level, like User / VerificationToken) so
 /// it carries no `tenantId` and needs no RLS policy.
+/// A Sign in with Apple nonce, claimed exactly once (P4.2).
+///
+/// Apple echoes a client-generated nonce into the identity token as its
+/// SHA-256. Checking that the hash matches proves the token was minted for
+/// THIS request; it does not stop the same token being presented twice. This
+/// table is the second half.
+///
+/// THE INSERT IS THE CLAIM. `nonceHash` is unique, so a replay is a constraint
+/// violation rather than something a read has to notice — which is what makes
+/// it safe under concurrency, where a read-then-write races itself and lets
+/// two simultaneous presentations of one token both pass.
+///
+/// No `userId`: the nonce is claimed BEFORE any user is resolved, and a failed
+/// verification must still burn it. Tying it to a user would mean either
+/// claiming late (leaving the race open) or recording a user for a token that
+/// turned out to be invalid.
+model AppleSignInNonce {
+  id        String   @id @default(cuid())
+  /// SHA-256 of the raw nonce, hex — the form Apple puts in the token, so no
+  /// transform is needed at comparison time and the raw value is never stored.
+  nonceHash String   @unique
+  createdAt DateTime @default(now())
+  /// Swept by `sweepExpiredAppleNonces`. Expiry is housekeeping, not
+  /// correctness: a stale row refuses a replay exactly as well as a fresh one.
+  expiresAt DateTime
+
+  @@index([expiresAt])
+}
+
 model PasswordResetToken {
   id        String    @id @default(cuid())
   userId    String
@@ -1046,6 +1075,21 @@ model BillingAccount {
   status               BillingStatus @default(ACTIVE)
   currentPeriodEnd     DateTime?
   trialEndsAt          DateTime?
+  /// When `status` first became PAST_DUE, and the anchor for the 14-day
+  /// grace in #1325. Written only through `pastDueStatusPatch`
+  /// (`src/lib/billing/past-due.ts`), which keeps the ORIGINAL value across a
+  /// retry — Stripe fires `invoice.payment_failed` on every smart retry, so a
+  /// site that stamped `now()` each time would push the deadline out for ever.
+  ///
+  /// NULL means not past due, OR past due since before this column existed.
+  /// `resolvePastDueState` reads that null as IN-GRACE, never as expired:
+  /// treating it as expired would restrict every already-failing tenant the
+  /// moment this deployed, with no warning and no fourteen days.
+  ///
+  /// NOT derived from `currentPeriodEnd`. That needs no column and for a
+  /// past_due subscription is the moment payment was due — but it is Stripe's
+  /// field, nullable, and advanced by events this codebase does not model.
+  pastDueSince         DateTime?
   createdAt            DateTime      @default(now())
   updatedAt            DateTime      @updatedAt
   tenant               Tenant        @relation(fields: [tenantId], references: [id])

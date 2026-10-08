@@ -561,6 +561,40 @@ export const env = createEnv({
         // an invented address is worse served than one told to ask.
         DSA_CONTACT_EMAIL: z.string().email().optional(),
 
+        // ── Sign in with Apple (P4.2) ──
+        //
+        // All four are OPTIONAL and the feature is DORMANT without them, the
+        // way P3.5c shipped Turnstile. Apple REQUIRES Sign in with Apple for
+        // any app offering Google or Microsoft sign-in, so this is an App
+        // Store review gate rather than a preference — but the credentials
+        // need a paid Apple Developer account that does not exist yet.
+        //
+        // Dormancy is checked EXPLICITLY by `appleSignInConfigured()`, never
+        // left to the framework: `next-auth` will register a provider with
+        // `undefined` credentials and fail at the token exchange with an
+        // opaque error, which reads as a broken button rather than an
+        // unconfigured feature. The same mistake is why `verifyTurnstile`
+        // tests for its secret and says so in the log.
+        APPLE_TEAM_ID: z.string().optional(),
+        /** The Services ID (web) — this is the OAuth `client_id`, not the App ID. */
+        APPLE_SERVICES_ID: z.string().optional(),
+        APPLE_KEY_ID: z.string().optional(),
+        /**
+         * The .p8 signing key, PEM. Newlines may arrive escaped from a .env
+         * file, so readers must normalise `\n` before use — a PEM with
+         * literal backslash-n is not a PEM, and the failure is a signature
+         * error that names nothing.
+         */
+        APPLE_PRIVATE_KEY: z.string().optional(),
+        /**
+         * The iOS app's bundle id. The NATIVE audience differs from the web
+         * one: an identity token minted for the app carries the bundle id in
+         * `aud`, while the web flow carries the Services ID. Accepting either
+         * without knowing which flow is asking would let a token minted for
+         * one be replayed at the other.
+         */
+        APPLE_BUNDLE_ID: z.string().optional(),
+
         // Local zone for task-due deadline notifications — sets BOTH the
         // cron firing time AND the calendar-day classification ("due
         // today / tomorrow / in a week"). Must be one zone so a task
@@ -774,6 +808,11 @@ export const env = createEnv({
         PLATFORM_TENANT_SLUG: process.env.PLATFORM_TENANT_SLUG,
         PRIVACY_CONTACT_EMAIL: process.env.PRIVACY_CONTACT_EMAIL,
         DSA_CONTACT_EMAIL: process.env.DSA_CONTACT_EMAIL,
+        APPLE_TEAM_ID: process.env.APPLE_TEAM_ID,
+        APPLE_SERVICES_ID: process.env.APPLE_SERVICES_ID,
+        APPLE_KEY_ID: process.env.APPLE_KEY_ID,
+        APPLE_PRIVATE_KEY: process.env.APPLE_PRIVATE_KEY,
+        APPLE_BUNDLE_ID: process.env.APPLE_BUNDLE_ID,
         NOTIFICATIONS_TZ: process.env.NOTIFICATIONS_TZ,
         VAPID_PUBLIC_KEY: process.env.VAPID_PUBLIC_KEY,
         VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY,

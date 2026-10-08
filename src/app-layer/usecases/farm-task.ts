@@ -2,6 +2,7 @@ import type { WorkItemStatus } from '@prisma/client';
 import { RequestContext } from '../types';
 import { badRequest, codedBadRequest } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
+import { assertNotPastDueRestricted } from '@/lib/billing/entitlements';
 import { JournalRepository } from '../repositories/JournalRepository';
 import { WorkItemRepository } from '../repositories/WorkItemRepository';
 import { createTask, addTaskLink, listTasks } from './task';
@@ -80,6 +81,13 @@ export async function createFarmTask(
         const existing = await findFarmTaskByMutationKey(ctx, idempotencyKey);
         if (existing) return existing;
     }
+
+    // AFTER the replay check, and that order is deliberate: a task created
+    // before the grace expired and replayed afterwards must return the
+    // ORIGINAL, not 403. Gating first would tell a client its write failed
+    // when the task is already in the list — the same ordering argument the
+    // exchange block check makes.
+    await assertNotPastDueRestricted(ctx, 'task.create');
 
     const typeDef = getFarmTaskType(input.farmTaskType);
     if (!typeDef) throw codedBadRequest('INVALID_FARM_TASK_TYPE', `Unknown farm task type: ${input.farmTaskType}`);

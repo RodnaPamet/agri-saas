@@ -9,6 +9,7 @@ import {
     type LogQuantityInput,
 } from '../repositories/JournalRepository';
 import { FileRepository } from '../repositories/FileRepository';
+import { assertNotPastDueRestricted } from '@/lib/billing/entitlements';
 import { recordHarvestLot } from './inventory';
 import { recordYieldFromHarvest, type HarvestYieldResult } from './yield-record';
 import { advancePlantingStatusForLinks } from './crop-planning';
@@ -245,6 +246,11 @@ async function createLogEntryImpl(
         );
         if (existing) return existing;
     }
+
+    // AFTER the replay check — an entry written in a field before the grace
+    // expired and replayed afterwards must return the ORIGINAL, not 403. The
+    // journal stays fully READABLE either way; only new entries stop (#1325).
+    await assertNotPastDueRestricted(ctx, 'journal.create');
 
     // Sanitize at the boundary (Epic D.2): title is single-line plain
     // text; notes is TipTap rich-text HTML.

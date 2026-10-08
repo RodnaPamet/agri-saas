@@ -185,6 +185,11 @@
       "documented": true
     },
     {
+      "path": "/api/auth/native/apple",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/auth/native/complete",
       "status": "live",
       "documented": true
@@ -244,6 +249,11 @@
       "path": "/api/auth/sso/saml/start",
       "status": "live",
       "documented": false
+    },
+    {
+      "path": "/api/auth/terms",
+      "status": "live",
+      "documented": true
     },
     {
       "path": "/api/auth/token",

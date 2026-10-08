@@ -103,6 +103,10 @@ const UNSAFE_KINDS = ['read-primary-only', 'local-then-used'] as const;
  * reading the file.
  */
 const REGISTERED: Readonly<Record<string, Registration>> = {
+    'src/app/api/auth/native/apple/route.ts': {
+        kind: 'write',
+        note: 'Writes the hash when Sign in with Apple creates a user on first authorisation. Its link READ is on candidates, which matters more here than elsewhere: Apple only sends the email on that first authorisation, so a missed match does not merely create a duplicate row — it creates one the user can never be linked out of, because no later token carries the address again.',
+    },
     'src/app-layer/usecases/scim-users.ts': {
         kind: 'write',
         note: 'Writes the hash when SCIM provisions an account. Its MATCH read is on candidates.',

@@ -191,25 +191,40 @@ async function markReadFor(
 }
 
 /**
- * Is `inquirerTenantId` blocked by `sellerTenantId`?
+ * Has the seller FARM blocked this PERSON?
  *
  * Readable from EITHER side. The SELECT policy on `ExchangeBlock` is
- * deliberately wide enough for the blocked tenant to see the row naming them,
+ * deliberately wide enough for the blocked person to see the row naming them,
  * because this predicate runs inside THEIR request — a row they cannot see
  * cannot refuse them, and the refusal would silently never fire. Everything
  * that CHANGES a block is the seller's alone, enforced by separate per-command
  * policies rather than one USING clause.
+ *
+ * ## The argument is an OBJECT, and that is the fix for #1403
+ *
+ * #1397 moved the column from `blockedTenantId` to `blockedUserId` and the
+ * rename stopped at this function body. The signature was
+ * `(db, sellerTenantId: string, inquirerUserId: string)` — two positional
+ * strings, ids of DIFFERENT KINDS — so all three callers went on passing a
+ * TENANT id into the person parameter and kept compiling. A tenant id matched
+ * against a column holding only user ids never hits, so every block written
+ * after that migration did nothing: a seller got a correctly-stored row, no
+ * enforcement, and `blocked: false` on every thread, which reads exactly like
+ * the block was never saved.
+ *
+ * Naming the fields at each call site is what makes the next such rename
+ * visible where it has to be read, without the ceremony of branded id types.
+ * Do not collapse this back to positional parameters.
  */
 async function isBlocked(
     db: PrismaTx,
-    sellerTenantId: string,
-    inquirerUserId: string,
+    where: { sellerTenantId: string; blockedUserId: string },
 ): Promise<boolean> {
     // Keyed on the PERSON since #1314. A colleague of a blocked buyer is NOT
     // blocked — that is the ruling, and the evasion it allows (ask a colleague
     // to send) is a known, accepted cost rather than an oversight.
     const row = await db.exchangeBlock.findFirst({
-        where: { sellerTenantId, blockedUserId: inquirerUserId },
+        where: { sellerTenantId: where.sellerTenantId, blockedUserId: where.blockedUserId },
         select: { id: true },
     });
     return row !== null;
@@ -308,9 +323,12 @@ export async function openExchangeThread(ctx: RequestContext, listingId: string)
             );
         }
 
-        // Checked BEFORE the idempotent read below: a blocked tenant must not
+        // Checked BEFORE the idempotent read below: a blocked person must not
         // be handed back a thread they opened before the block either.
-        if (await isBlocked(db, listing.sellerTenantId, ctx.tenantId)) {
+        if (await isBlocked(db, {
+            sellerTenantId: listing.sellerTenantId,
+            blockedUserId: ctx.userId,
+        })) {
             throw codedForbidden('THREAD_BLOCKED', 'That seller is not accepting messages from you.');
         }
 
@@ -364,7 +382,13 @@ export async function getExchangeThread(
 
     return runInTenantContext(ctx, async (db) => {
         const { thread, role, myLastReadAt } = await requireParty(db, ctx, threadId);
-        const blocked = await isBlocked(db, thread.listing.sellerTenantId, thread.inquirerTenantId);
+        const blocked = await isBlocked(db, {
+            sellerTenantId: thread.listing.sellerTenantId,
+            // The thread's own inquirer, not `ctx.userId`: this flag is what
+            // gives the SELLER their unblock control, and the seller reading
+            // the thread is not the person who was blocked.
+            blockedUserId: thread.inquirerUserId,
+        });
 
         const rows = await db.exchangeMessage.findMany({
             where: { threadId, ...(before ? keysetBefore(before, 'createdAt') : {}) },
@@ -815,7 +839,15 @@ async function sendExchangeMessageImpl(
         // not "freeze the record" — and a symmetric refusal would let a seller
         // lock themselves out of their own conversation.
         if (role === 'inquirer'
-            && await isBlocked(db, thread.listing.sellerTenantId, ctx.tenantId)) {
+            && await isBlocked(db, {
+                sellerTenantId: thread.listing.sellerTenantId,
+                // `thread.inquirerUserId` rather than `ctx.userId`: identical
+                // here, because a thread is per-PERSON since #1298 and
+                // `requireParty` has already established this caller IS that
+                // person. Taking it from the thread keeps the three sites
+                // reading from one source.
+                blockedUserId: thread.inquirerUserId,
+            })) {
             throw codedForbidden('THREAD_BLOCKED', 'That seller is not accepting messages from you.');
         }
         // A closed thread does NOT refuse the message — sending REOPENS it.
