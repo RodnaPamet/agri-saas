@@ -10562,7 +10562,9 @@ exports[`API contract — per-schema snapshots schema: SendExchangeMessage 1`] =
     "body": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 8000
+      "maxLength": 4000,
+      "description": "The message text. **4000 is measured AFTER sanitising and trimming**, not on what the user typed: the server strips every tag, decodes the canonical entities, trims, and only then checks the length — so padding with markup cannot smuggle a longer message past the limit.\\n\\n**Capping at 4000 client-side is sufficient and conservative.** Sanitising only ever SHORTENS — tags are removed, and \`&lt;\` becomes \`<\`, four units to one — so the sanitised length never exceeds the input length. A client that caps cannot be surprised by \`MESSAGE_TOO_LONG\`; that refusal is only reachable by a client that does not cap.\\n\\nThe unit is **UTF-16 code units**, not characters and not bytes. For Cyrillic that is 1:1, so a Bulgarian farmer gets 4000 characters. Outside the BMP it is not: an emoji is 2 units, so 2001 emoji is refused at 4002. Counting grapheme clusters over-estimates the allowance; counting bytes under-estimates it.\\n\\n\`minLength: 1\` is NECESSARY BUT NOT SUFFICIENT, which is the surprising part: emptiness is judged after sanitising too. \`<b></b>\` is eight characters, satisfies this constraint, sanitises to the empty string, and is refused with \`MESSAGE_EMPTY\`. A payload can pass the schema and still be rejected as empty.\\n\\n**The server's request validator deliberately permits more (8000).** That is not a contradiction and not a bug: Zod cannot sanitise, so it is a cheap outer bound that rejects absurd payloads, and the real gate is the usecase — which is what keeps \`MESSAGE_TOO_LONG\` reachable as a CODE rather than collapsing it into a generic validation error. 4000 is the limit a client must respect.",
+      "example": "Имате ли още налична пшеница?"
     }
   },
   "required": [
