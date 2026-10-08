@@ -8,6 +8,8 @@ import { z } from 'zod';
 import { jsonResponse } from '@/lib/api-response';
 import { resolvePublicOrigin } from '@/lib/http/request-origin';
 import { sendInviteEmail } from '@/lib/email/invite-email';
+import { enforceRateLimit, getClientIp, isRateLimitBypassed } from '@/lib/security/rate-limit-middleware';
+import { TENANT_INVITE_CREATE_LIMIT } from '@/lib/security/rate-limit';
 
 const InviteMemberSchema = z.object({
     email: z.string().email('Valid email required'),
@@ -40,6 +42,31 @@ export const GET = withApiErrorHandling(
 
 export const POST = withApiErrorHandling(
     requirePermission('admin.members', async (req: NextRequest, _routeArgs, ctx) => {
+        // Rate-limit: 20/hr per (tenantId, IP), the SAME scope string the
+        // sibling `/admin/invites` POST uses — so the two share one budget
+        // rather than getting 20 each.
+        //
+        // This route had no limit at all until #1448, which made the control
+        // bypassable by changing the path: both handlers parse the same body,
+        // call the same `createInviteToken`, and send the same invite email.
+        // The limit's own definition says it exists to create "a tight audit
+        // trail for abuse" and is keyed so "a multi-browser attacker with one
+        // session still burns the same budget" — a guard on one of two
+        // identical doors delivers neither.
+        //
+        // And this is the door that matters: the comment below records that the
+        // admin UI calls THIS route, so the unguarded path was the one in
+        // everyday use and the guarded one was the sibling.
+        if (!isRateLimitBypassed()) {
+            const enforcement = await enforceRateLimit(req, {
+                scope: `invite-create:${ctx.tenantId}`,
+                config: TENANT_INVITE_CREATE_LIMIT,
+                ip: getClientIp(req),
+                userId: ctx.userId,
+            });
+            if (enforcement.response) return enforcement.response;
+        }
+
         const body = await req.json();
         const input = InviteMemberSchema.parse(body);
         const result = await createInviteToken(ctx, input);
