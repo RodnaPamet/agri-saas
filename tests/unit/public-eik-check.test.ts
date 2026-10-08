@@ -1,8 +1,16 @@
 /**
- * `GET /api/public/eik-check` (P3.7).
+ * `POST /api/public/eik-check` (P3.7).
  *
  * The endpoint is anonymous and enumerable by construction, so the cases worth
  * writing are about what it REFUSES to disclose, not what it returns.
+ *
+ * Retargeted from GET to POST in #1356, which removed the query-string form:
+ * every value reaching this endpoint may be an ЕГН, and iOS CFNetwork records
+ * a full request URL unsuppressably. The assertions are unchanged — the two
+ * methods always shared one handler body and one response shape — except that
+ * the single "missing parameter" case became two, because a POST can fail
+ * EITHER by carrying no parseable JSON or by carrying JSON without an `eik`,
+ * and the GET had only one way to be wrong.
  */
 import { NextRequest } from 'next/server';
 
@@ -11,7 +19,7 @@ jest.mock('@/lib/security/rate-limit', () => {
     return { ...actual };
 });
 
-import { GET } from '@/app/api/public/eik-check/route';
+import { POST } from '@/app/api/public/eik-check/route';
 import { setRegistryProvider } from '@/lib/bg-company-registry';
 
 /** A valid 9-digit ЕИК, built from the checksum rather than invented. */
@@ -37,11 +45,17 @@ function egn(first9: string): string {
     return first9 + String(r === 10 ? 0 : r);
 }
 
+const post = (body: string): NextRequest =>
+    new NextRequest('https://app.agrent.bg/api/public/eik-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+    });
+
 const call = async (eik: string) => {
-    const res = await GET(
-        new NextRequest(`https://app.agrent.bg/api/public/eik-check?eik=${encodeURIComponent(eik)}`) as never,
-        { params: Promise.resolve({}) } as never,
-    );
+    const res = await POST(post(JSON.stringify({ eik })) as never, {
+        params: Promise.resolve({}),
+    } as never);
     return { status: res.status, body: await res.json() };
 };
 
@@ -142,11 +156,19 @@ describe('the registry is never asked about an impossible number', () => {
 });
 
 describe('input handling', () => {
-    it('400s on a missing parameter', async () => {
-        const res = await GET(
-            new NextRequest('https://app.agrent.bg/api/public/eik-check') as never,
-            { params: Promise.resolve({}) } as never,
-        );
+    it('400s on a body with no eik', async () => {
+        const res = await POST(post('{}') as never, { params: Promise.resolve({}) } as never);
+        expect(res.status).toBe(400);
+    });
+
+    it('400s on a body that is not JSON at all', async () => {
+        // The handler's other 400 path: `req.json()` throws before any schema
+        // runs. Worth its own case because a thrown parse is the one failure a
+        // `safeParse`-shaped test cannot reach, and an unhandled throw here
+        // would surface as a 500 on an unauthenticated endpoint.
+        const res = await POST(post('not json') as never, {
+            params: Promise.resolve({}),
+        } as never);
         expect(res.status).toBe(400);
     });
 

@@ -64,16 +64,12 @@ jest.mock('@/lib/prisma', () => ({
 }));
 
 import { NextRequest } from 'next/server';
-import { GET, POST } from '@/app/api/public/eik-check/route';
+import { POST } from '@/app/api/public/eik-check/route';
 
 /** Checksum-valid and date-decodable, so `classifyEikInput` says LOOKS_LIKE_EGN. */
 const EGN = '7523169263';
 /** A real ЕИК, for the control. */
 const EIK = '831641791';
-
-function getReq(eik: string): NextRequest {
-    return new NextRequest(`http://localhost/api/public/eik-check?eik=${encodeURIComponent(eik)}`);
-}
 
 function postReq(eik: string): NextRequest {
     return new NextRequest('http://localhost/api/public/eik-check', {
@@ -88,27 +84,30 @@ beforeEach(() => {
 });
 
 describe('an ЕГН reaches no store', () => {
-    it.each([
-        ['POST (the recommended path)', () => POST(postReq(EGN) as never, {} as never)],
-        ['GET (the legacy path)', () => GET(getReq(EGN) as never, {} as never)],
-    ])('%s: no database, no log, no echo', async (_label, call) => {
-        const res = await call();
+    // Was an it.each over both methods until #1356 removed the GET. Kept as
+    // an it.each of one rather than inlined: the next method added to this
+    // endpoint must prove the same property, and a table makes that a row.
+    it.each([['POST', () => POST(postReq(EGN) as never, {} as never)]])(
+        '%s: no database, no log, no echo',
+        async (_label, call) => {
+            const res = await call();
 
-        // 200 rather than a 500 from the throwing prisma proxy IS the
-        // no-database assertion.
-        expect(res.status).toBe(200);
+            // 200 rather than a 500 from the throwing prisma proxy IS the
+            // no-database assertion.
+            expect(res.status).toBe(200);
 
-        const body = await res.json();
-        // The verdict the form needs, and nothing more.
-        expect(body).toEqual({ valid: false, looksLikeEgn: true, registryName: null });
+            const body = await res.json();
+            // The verdict the form needs, and nothing more.
+            expect(body).toEqual({ valid: false, looksLikeEgn: true, registryName: null });
 
-        // Not echoed. An echo would land in whatever the client logs, which is
-        // the store this endpoint cannot control.
-        expect(JSON.stringify(body)).not.toContain(EGN);
+            // Not echoed. An echo would land in whatever the client logs, which is
+            // the store this endpoint cannot control.
+            expect(JSON.stringify(body)).not.toContain(EGN);
 
-        // Not logged, at any level.
-        expect(JSON.stringify(mockLogs)).not.toContain(EGN);
-    });
+            // Not logged, at any level.
+            expect(JSON.stringify(mockLogs)).not.toContain(EGN);
+        },
+    );
 
     it('…and not even a FRAGMENT of it is logged', async () => {
         // A partial — first six digits are the date of birth — is still
