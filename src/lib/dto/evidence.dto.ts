@@ -12,7 +12,7 @@ export const EvidenceReviewDTOSchema = z.object({
     reviewerId: z.string(),
     action: z.string(),
     comment: z.string().nullable().optional(),
-    createdAt: z.string(),
+    createdAt: z.string().datetime(),
     reviewer: UserRefShortSchema.nullable().optional(),
 }).passthrough().openapi('EvidenceReview', {
     description: 'A single evidence-review event (submission/approval/rejection) — append-only audit row attached to the evidence record.',
@@ -37,8 +37,8 @@ export const EvidenceListItemDTOSchema = z.object({
     reviewCycle: z.string().nullable().optional(),
     nextReviewDate: z.string().nullable().optional(),
     status: z.string(),
-    createdAt: z.string().optional(),
-    updatedAt: z.string().optional(),
+    createdAt: z.string().datetime().optional(),
+    updatedAt: z.string().datetime().optional(),
     practice: z.object({
         id: z.string(),
         name: z.string(),
@@ -72,7 +72,7 @@ export const EvidenceLinkDTOSchema = z.object({
     fileId: z.string().nullable().optional(),
     url: z.string().nullable().optional(),
     note: z.string().nullable().optional(),
-    createdAt: z.string().optional(),
+    createdAt: z.string().datetime().optional(),
     createdBy: UserRefShortSchema.nullable().optional(),
 }).passthrough();
 export type EvidenceLinkDTO = z.infer<typeof EvidenceLinkDTOSchema>;

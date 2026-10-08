@@ -48,7 +48,7 @@ const ParcelRisk = z
         moisture: RiskLevel,
         overall: RiskLevel,
         acquiredDate: z.string().nullable(),
-        generatedAt: z.string(),
+        generatedAt: z.string().datetime(),
     })
     .openapi('ParcelRisk');
 

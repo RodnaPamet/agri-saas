@@ -79,7 +79,7 @@ const Message = z
         fromMyFarm: z.boolean(),
         body: z.string().nullable(),
         deleted: z.boolean(),
-        createdAt: z.string(),
+        createdAt: z.string().datetime(),
     })
     .openapi('ExchangeMessage', {
         description:
@@ -114,7 +114,7 @@ const ThreadSummary = z
          */
         sellerDisplayName: z.string().nullable(),
         role: z.enum(['seller', 'inquirer']),
-        lastMessageAt: z.string(),
+        lastMessageAt: z.string().datetime(),
         closed: z.boolean(),
         /** Per PERSON since #1298, not per farm. */
         hasUnread: z.boolean(),
@@ -139,7 +139,7 @@ const Thread = z
         listingId: z.string(),
         listingCommodity: z.string(),
         role: z.enum(['seller', 'inquirer']),
-        lastMessageAt: z.string(),
+        lastMessageAt: z.string().datetime(),
         closed: z.boolean(),
         /**
          * Seller-relevant, returned to BOTH sides: the blocked buyer's screen
@@ -369,7 +369,7 @@ export function registerExchangeMessagingPaths(registry: OpenAPIRegistry): void 
             description: 'Sent.',
             schema: z.object({
                 id: z.string(),
-                createdAt: z.string(),
+                createdAt: z.string().datetime(),
                 // True when this message REOPENED a closed thread. A client
                 // caching `closed` locally must clear it on this, or the
                 // composer keeps showing a closed banner for a live thread.
@@ -399,7 +399,7 @@ export function registerExchangeMessagingPaths(registry: OpenAPIRegistry): void 
         success: {
             status: 200,
             description: 'The pointer, after the move.',
-            schema: z.object({ readAt: z.string() }),
+            schema: z.object({ readAt: z.string().datetime() }),
         },
     });
 
@@ -423,7 +423,7 @@ export function registerExchangeMessagingPaths(registry: OpenAPIRegistry): void 
         success: {
             status: 200,
             description: 'The close timestamp, and whether this call is what closed it.',
-            schema: z.object({ closedAt: z.string(), alreadyClosed: z.boolean() }),
+            schema: z.object({ closedAt: z.string().datetime(), alreadyClosed: z.boolean() }),
         },
     });
 

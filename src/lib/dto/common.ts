@@ -103,7 +103,7 @@ export const AuditLogEntrySchema = z
         entity: z.string().optional().openapi({ example: 'Practice' }),
         entityId: z.string().optional(),
         details: z.string().nullable(),
-        createdAt: z.string().openapi({ example: '2026-04-28T07:42:11.000Z' }),
+        createdAt: z.string().datetime().openapi({ example: '2026-04-28T07:42:11.000Z' }),
         user: UserRefShortSchema.nullable().optional(),
     })
     .passthrough()

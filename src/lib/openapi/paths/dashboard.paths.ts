@@ -52,7 +52,7 @@ const JournalItem = z
         id: z.string(),
         type: z.string(),
         title: z.string(),
-        occurredAt: z.string().nullable(),
+        occurredAt: z.string().datetime().nullable(),
     })
     .openapi('AgDashboardJournalItem');
 
@@ -70,7 +70,7 @@ const DashboardTaskItem = z
         id: z.string(),
         title: z.string(),
         status: z.string(),
-        dueAt: z.string().nullable(),
+        dueAt: z.string().datetime().nullable(),
     })
     .openapi('AgDashboardTaskItem');
 
@@ -91,7 +91,7 @@ const Achievements = z
             z.object({
                 key: z.enum(MILESTONE_KEYS),
                 earned: z.boolean(),
-                earnedAt: z.string().nullable(),
+                earnedAt: z.string().datetime().nullable(),
             }),
         ),
         streak: z.object({ current: z.number().int(), best: z.number().int() }),
@@ -200,7 +200,7 @@ const FieldBriefingPayload = z
         aiConfigured: z.boolean(),
         satelliteConfigured: z.boolean(),
         satelliteAvailable: z.boolean(),
-        generatedAt: z.string(),
+        generatedAt: z.string().datetime(),
         date: z.string(),
         fieldCount: z.number().int(),
         /**

@@ -395,7 +395,7 @@ export const PortfolioGrainSummaryDTOSchema = z
     .object({
         organizationId: z.string(),
         organizationSlug: z.string(),
-        generatedAt: z.string(),
+        generatedAt: z.string().datetime(),
         totals: PortfolioGrainTotalsSchema,
         perTenant: z.array(PortfolioGrainTenantRowSchema),
     })

@@ -38,7 +38,7 @@ export const PortfolioSummarySchema = z
         organizationId: z.string().min(1),
         organizationSlug: z.string().min(1),
         /** ISO 8601 timestamp at which this summary was computed. */
-        generatedAt: z.string().min(1),
+        generatedAt: z.string().datetime().min(1),
 
         tenants: z
             .object({
