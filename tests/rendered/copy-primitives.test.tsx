@@ -207,7 +207,11 @@ describe('Badge', () => {
         ['error', 'bg-bg-error', 'text-content-error'],
         ['info', 'bg-bg-info', 'text-content-info'],
         ['attention', 'bg-bg-attention', 'text-content-attention'],
-        ['brand', 'bg-brand-subtle', 'text-brand-muted'],
+        // `text-brand-default`, not `text-brand-muted` (#1331): muted on
+        // brand-subtle measured 1.76:1 in light and 1.88:1 in «Слънце»,
+        // against 4.5:1. brand-default is the one brand token clearing it
+        // in all three themes.
+        ['brand', 'bg-brand-subtle', 'text-brand-default'],
     ] as const)(
         'applies the %s variant token classes',
         (variant, bgClass, textClass) => {
