@@ -204,6 +204,30 @@ export function asGeoJsonSql(column: Prisma.Sql): Prisma.Sql {
  * area (`ST_Area`). `preserveCollapsed` is left default (collapsed slivers
  * drop out) — acceptable for display, never used for persisted area.
  */
+/**
+ * Like `simplifiedGeoJsonSql`, but a geometry that COLLAPSES at the display
+ * tolerance falls back to its exact serialization instead of becoming null.
+ *
+ * `ST_Simplify` is called without `preserveCollapsed`, so a polygon whose every
+ * vertex is removed comes back **NULL** — and null on a geometry field already
+ * means something else entirely: "this parcel has no outline". A client that
+ * renders null as «няма очертания» would then tell a farmer their field is
+ * undrawn when the truth is that it is smaller than ~11 m across, which is a
+ * wrong statement about their own land rather than a missing feature.
+ *
+ * `COALESCE` to the exact geometry is the cheap resolution: the only rows that
+ * take the fallback are the ones that collapsed, i.e. the smallest geometries
+ * in the table, so exactness costs almost nothing precisely where it is needed.
+ * A NULL column still yields NULL through both arms, which preserves the real
+ * meaning of null.
+ *
+ * Use this on any read whose null a client interprets. Use
+ * `simplifiedGeoJsonSql` where null and collapsed are equivalent to the caller.
+ */
+export function displayGeoJsonSql(column: Prisma.Sql, toleranceDegrees = 0.0001): Prisma.Sql {
+    return Prisma.sql`COALESCE(ST_AsGeoJSON(ST_Simplify(${column}, ${toleranceDegrees})), ST_AsGeoJSON(${column}))`;
+}
+
 export function simplifiedGeoJsonSql(column: Prisma.Sql, toleranceDegrees = 0.0001): Prisma.Sql {
     return Prisma.sql`ST_AsGeoJSON(ST_Simplify(${column}, ${toleranceDegrees}))`;
 }

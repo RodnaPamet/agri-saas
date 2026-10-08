@@ -39,6 +39,8 @@ import {
     TaskListItemDTOSchema,
     TaskDetailDTOSchema,
     TaskCommentDTOSchema,
+    TaskLinkDTOSchema,
+    TaskParcelDTOSchema,
 } from '@/lib/dto/task.dto';
 import {
     CreateTaskSchema,
@@ -46,6 +48,7 @@ import {
     SetTaskStatusSchema,
     AssignTaskSchema,
     AddTaskCommentSchema,
+    AddTaskLinkSchema,
 } from '@/lib/schemas';
 
 const TenantParams = z.object({
@@ -237,5 +240,82 @@ export function registerTaskPaths(registry: OpenAPIRegistry): void {
         params: TaskParams,
         body: AddTaskCommentSchema,
         success: { status: 201, description: 'The created comment.', schema: TaskCommentDTOSchema },
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/tasks/{taskId}/parcels',
+        operationId: 'getTaskParcels',
+        summary: "The parcels a task touches, for a map",
+        description:
+            'Built for agrent-ios#177. The shape is **uniform across task types**: a FIELD_OPERATION\'s ' +
+            'parcels come from its operation lines and every other type\'s come from its `PARCEL` links, ' +
+            'and both answer identically. That is the point — one decoder, and the meaning does not ' +
+            'depend on the type.' +
+            '\n\n**Deduplicated by parcel id, and that is load-bearing rather than tidy.** Operation ' +
+            'lines are per (parcel, product), not per parcel: a spray job records a fertilizer line AND ' +
+            'a treatment line for the same parcel. Two products over three parcels is six rows covering ' +
+            'three parcels, and this returns three.' +
+            '\n\n**Ordered by `name`, then `id`.** The order is part of the contract: a client rendering ' +
+            'a legend keyed on name would otherwise see it reshuffle between loads, and parcel names are ' +
+            'not unique so the id is what makes the order total.' +
+            '\n\n**A task with no parcels is `200 { "parcels": [] }`, never a 404.** The 404 belongs to ' +
+            'the task alone, so "no parcels yet" stays distinguishable from "wrong id".' +
+            '\n\nDeliberately **status-free** and carrying **no `boundsJson`** — per-parcel operation ' +
+            'status is on `GET /field-operations/{taskId}`, which is where a client should draw a field ' +
+            'operation from anyway since it also carries the location backdrop. A `LOCATION` link is ' +
+            'NOT expanded into that location\'s parcels: whether that should mean "its parcels now" or ' +
+            '"the parcels it had when linked" has not been decided, so it is left undone rather than guessed.',
+        tags: ['Tasks'],
+        params: TaskParams,
+        success: {
+            status: 200,
+            description:
+                'The task\'s parcels, deduplicated and ordered by name then id. Empty when the task links none.',
+            schema: z.object({ parcels: z.array(TaskParcelDTOSchema) }).openapi('TaskParcelsResponse', {
+                description:
+                    'Wrapped in an object rather than returned as a bare array, so a count or a bounds can be added later without a breaking change. The sibling `/links` returns a bare array and is the route that now cannot grow.',
+            }),
+        },
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/tasks/{taskId}/links',
+        operationId: 'listTaskLinks',
+        summary: 'List a task\'s links to other entities',
+        description:
+            'The route has existed since Feature 1 and was absent from this spec until now, so a client ' +
+            'had to learn the shape by calling it (reported in #1391).' +
+            '\n\n`entityType` is a MIXED set on one task — `ASSET`, `EVIDENCE`, `FILE`, `LOCATION`, ' +
+            '`PARCEL`, `EQUIPMENT`, `PLANTING` — so a client wanting one kind must filter. For parcels ' +
+            'specifically, prefer `GET …/parcels`, which filters in the database and also resolves the ' +
+            'geometry.' +
+            '\n\nReturns a **bare array**, NEWEST first. The bare array is a shape this route is stuck ' +
+            'with rather than one to copy.',
+        tags: ['Tasks'],
+        params: TaskParams,
+        success: {
+            status: 200,
+            description: 'The task\'s links, newest first.',
+            schema: z.array(TaskLinkDTOSchema),
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/tasks/{taskId}/links',
+        operationId: 'createTaskLink',
+        summary: 'Link a task to another entity',
+        description:
+            'The pair `(entityType, entityId)` is UNIQUE per task — the constraint is ' +
+            '`(tenantId, taskId, entityType, entityId)` — so re-linking the same entity is a conflict ' +
+            'rather than a second row. Linking is not validated against the target existing: the link ' +
+            'is a loose reference, so an `entityId` that names nothing is accepted and simply resolves ' +
+            'to nothing on read.',
+        tags: ['Tasks'],
+        params: TaskParams,
+        body: AddTaskLinkSchema,
+        success: { status: 201, description: 'The created link.', schema: TaskLinkDTOSchema },
     });
 }

@@ -24,6 +24,21 @@ const multiPolygon = z.object({
     coordinates: z.array(z.array(linearRing).min(1)).min(1),
 });
 
+/**
+ * MultiPolygon alone — the shape a READ always returns.
+ *
+ * `Parcel.geometry` is `geometry(MultiPolygon, 4326)`, and every write path
+ * normalises to it (`ST_Multi` in `geometrySql` and friends), so a parcel read
+ * back from the database is a MultiPolygon even when the user drew a single
+ * ring. `PolygonGeometrySchema` is the right shape for INPUT, where a client
+ * may legitimately send either; using it for output would document a Polygon
+ * that cannot occur and leave a client writing a branch it can never exercise.
+ *
+ * agrent-ios decodes MultiPolygon only and asked whether a Polygon can arrive.
+ * It cannot, and this is where that answer is enforced rather than asserted.
+ */
+export const MultiPolygonGeometrySchema = multiPolygon;
+
 export const PolygonGeometrySchema = z.discriminatedUnion('type', [polygon, multiPolygon]);
 
 /**

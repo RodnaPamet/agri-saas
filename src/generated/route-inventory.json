@@ -1908,12 +1908,17 @@
     {
       "path": "/api/t/{tenantSlug}/tasks/{taskId}/links",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/tasks/{taskId}/links/{linkId}",
       "status": "live",
       "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks/{taskId}/parcels",
+      "status": "live",
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/tasks/{taskId}/status",
