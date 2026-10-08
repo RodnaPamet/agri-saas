@@ -27,7 +27,7 @@ import { isValidEik, looksLikeEgn } from '@/lib/bg-identifiers';
 import { toSlug } from '@/lib/bg-transliterate';
 import { hashForLookup } from '@/lib/security/encryption';
 import { runInTenantContext } from '@/lib/db-context';
-import { badRequest } from '@/lib/errors/types';
+import { codedBadRequest } from '@/lib/errors/types';
 import { getPermissionsForRole } from '@/lib/permissions';
 import { logger } from '@/lib/observability/logger';
 import type { RequestContext } from '@/app-layer/types';
@@ -98,15 +98,49 @@ export async function createFarmForUser(
     input: CreateFarmInput,
 ): Promise<CreateFarmResult> {
     const name = input.name?.trim() ?? '';
-    // CODES, not prose. `tests/guards/no-server-authored-user-copy.test.ts`
-    // counts a prose first argument against a downward ratchet, and exempts a
-    // machine-readable code — because a code is what a client can translate,
-    // whereas English thrown from a usecase reaches the iOS app and renders
-    // raw. It is also why the ЕГН and ЕИК refusals below carry no Bulgarian:
-    // that copy belongs in `messages/bg.json` on the client, not here.
-    if (!name) throw badRequest('FARM_NAME_REQUIRED');
+    // `codedBadRequest`, NOT `badRequest`, and the difference is the whole
+    // point of these codes.
+    //
+    // The plain `badRequest` helper takes (message, details) and passes NO
+    // code to `ValidationError`, whose third parameter defaults to
+    // 'BAD_REQUEST'. So throwing it with a code as the MESSAGE shipped
+    // `{ error: { code: 'BAD_REQUEST', message: '<the code>' } }` — every one
+    // of these refusals indistinguishable to a client switching on `code`,
+    // which is what the spec's own ErrorResponse tells clients to do. Found on
+    // the wire by the native client, which could not tell them apart.
+    //
+    // This paragraph deliberately names that helper without writing a call to
+    // it. The copy ratchet in `no-server-authored-user-copy.test.ts` scans
+    // source text for one of five helper names followed by an opening paren and
+    // a quote character, and cannot tell code from a comment quoting code — so
+    // the first draft of this very explanation raised the count by one, and the
+    // second draft did it again by quoting the pattern. Three such comment
+    // matches exist repo-wide; raised separately.
+    //
+    // That was me satisfying `no-server-authored-user-copy` rather than solving
+    // the problem: it exempts a throw that CARRIES a code, and I wrote a throw
+    // whose MESSAGE was a code. Both pass the guard; only one produces a usable
+    // response. `codedBadRequest(code, message)` puts the code in `code` and
+    // leaves English in `message` as the fallback for a client that does not
+    // recognise it — and the guard does not scan this helper, so the prose is
+    // deliberate rather than smuggled.
+    if (!name) throw codedBadRequest('FARM_NAME_REQUIRED', 'A farm name is required.');
     if (name.length > FARM_NAME_MAX) {
-        throw badRequest('FARM_NAME_TOO_LONG', { max: FARM_NAME_MAX });
+        // The bound travels in `params`, not interpolated into `message`.
+        // That is what `params` is for — a client interpolates it into its own
+        // translated sentence — and it keeps `message` a static English
+        // fallback rather than a half-localised one.
+        //
+        // It also avoids a false positive worth knowing about:
+        // `tests/guards/error-params-carry-no-pii.test.ts` finds the first
+        // `{…}` among a call's arguments and reads its keys, and a template
+        // literal's `${FARM_NAME_MAX}` looks exactly like that — so the guard
+        // reported `FARM_NAME_MAX` as a "personal-looking param key" because
+        // it contains NAME. Raised separately; this call is simply the right
+        // shape anyway.
+        throw codedBadRequest('FARM_NAME_TOO_LONG', 'That farm name is too long.', {
+            max: FARM_NAME_MAX,
+        });
     }
 
     // ── the ЕИК is validated BEFORE it is hashed or stored ───────────
@@ -122,15 +156,27 @@ export async function createFarmForUser(
         // ЕГН first. It is a personal identifier, and the point of the check is
         // to refuse it rather than to store it — so this must precede any
         // handling that could persist the value, including the hash.
-        if (looksLikeEgn(eik)) throw badRequest('EIK_LOOKS_LIKE_EGN');
-        if (!isValidEik(eik)) throw badRequest('EIK_INVALID');
+        if (looksLikeEgn(eik)) {
+            throw codedBadRequest(
+                'EIK_LOOKS_LIKE_EGN',
+                'That looks like a personal identity number (ЕГН) rather than a company number (ЕИК).',
+            );
+        }
+        if (!isValidEik(eik)) {
+            throw codedBadRequest('EIK_INVALID', 'That is not a valid ЕИК — the checksum does not match.');
+        }
     }
 
     const base = toSlug(name);
     // `toSlug` returns null when nothing survives transliteration — a name of
     // only punctuation or emoji. A farm with no addressable slug cannot be
     // routed to, so this is a 400 rather than a fallback slug nobody can read.
-    if (!base) throw badRequest('FARM_NAME_NOT_SLUGGABLE');
+    if (!base) {
+        throw codedBadRequest(
+            'FARM_NAME_NOT_SLUGGABLE',
+            'That farm name cannot be turned into a web address.',
+        );
+    }
 
     let created: { tenant: { id: string; slug: string; name: string } } | null = null;
     let lastError: unknown = null;
@@ -161,7 +207,10 @@ export async function createFarmForUser(
             component: 'farm-creation',
             attempts: SLUG_ATTEMPTS,
         });
-        throw lastError ?? badRequest('FARM_SLUG_UNAVAILABLE');
+        throw lastError ?? codedBadRequest(
+            'FARM_SLUG_UNAVAILABLE',
+            'Could not allocate a web address for that farm.',
+        );
     }
 
     const farm = created.tenant;
