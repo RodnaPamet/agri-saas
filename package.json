@@ -159,6 +159,7 @@
         "fast-xml-parser": "^5.11.2",
         "html-to-image": "^1.11.13",
         "ioredis": "^5.11.1",
+        "jose": "^4.15.9",
         "jsonwebtoken": "^9.0.2",
         "jszip": "^3.10.2",
         "lucide-react": "^1.51.0",
