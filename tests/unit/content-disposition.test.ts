@@ -160,6 +160,21 @@ describe('§4 the dependency on toSlug is explicit, because it is another module
         expect(out!).not.toContain('..');
     });
 
+    it('a CYRILLIC EXTENSION is transliterated, not deleted', () => {
+        // «файл.документ» is a legal filename. The first version stripped the
+        // extension with `[^A-Za-z0-9]`, which deleted `документ` outright and
+        // produced a fallback with no extension — caught by
+        // `slug-derivation-is-converged`, which bans that shape for exactly
+        // this reason. It was right about a module written to stop losing
+        // Bulgarian names.
+        const header = headerOf(contentDisposition('файл.документ'));
+        // `fayl`, not `fail` — `й` transliterates to `y`. Measured rather
+        // than guessed: my first assertion here invented the transliteration
+        // and the test failed on my arithmetic while the code was correct.
+        expect(asciiName(header)).toBe('fayl.dokument');
+        expect(extendedName(header)).toBe('файл.документ');
+    });
+
     it('…and it transliterates rather than masking, which is why the fallback is readable', () => {
         // The other half of why toSlug is the right source for the ASCII
         // fallback: `_______.pdf` tells a user nothing, `faktura.pdf` does.
@@ -167,7 +182,28 @@ describe('§4 the dependency on toSlug is explicit, because it is another module
     });
 });
 
-describe('§5 an all-ASCII name stays simple', () => {
+describe('§5 an already-safe name is used VERBATIM, not normalised', () => {
+    it('an ASCII name with underscores is left exactly as given', () => {
+        // `acme-org_portfolio_2026-10-08.csv` is the portfolio export's real
+        // filename. The first version ran everything through `toSlug`, which
+        // normalises as well as transliterates, so the underscores became
+        // hyphens and a redundant `filename*` was attached — a gratuitous
+        // change to a filename that was never a problem.
+        // `portfolio-routes.test.ts` caught it.
+        const name = 'acme-org_portfolio_2026-10-08.csv';
+        const header = headerOf(contentDisposition(name));
+        expect(header).toBe(`attachment; filename="${name}"`);
+        expect(extendedName(header)).toBeNull();
+    });
+
+    it('a name with é takes the extended form rather than a Latin-1 byte', () => {
+        // `é` is valid in a ByteString, so it would not throw — but a raw
+        // Latin-1 byte in a header is interpreted differently by different
+        // clients, so the extended form is the better answer.
+        const header = headerOf(contentDisposition('résumé.pdf'));
+        expect(extendedName(header)).toBe('résumé.pdf');
+    });
+
     it('emits one filename, not the same value twice', () => {
         const header = headerOf(contentDisposition('rent-roll.pdf'));
         expect(header).toBe('attachment; filename="rent-roll.pdf"');
