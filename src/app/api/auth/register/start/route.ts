@@ -69,6 +69,7 @@ import {
 } from '@/lib/auth/registration-emails';
 import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
 import { TERMS_VERSION } from '@/lib/legal/terms';
+import { AuthRegisterStartSchema } from '@/lib/schemas';
 
 export const runtime = 'nodejs';
 
@@ -91,6 +92,22 @@ export const POST = withApiErrorHandling(
             return jsonResponse({ error: 'invalid_request' }, { status: 400 });
         }
 
+        // Parsed through a schema imported BY NAME from `@/lib/schemas`, which
+        // is what GAP-10 prescribes and what makes this route visible to the
+        // HIBP guardrail's structural scan (#1378). It parsed its body with six
+        // hand-rolled `typeof` checks before, which worked and meant the
+        // product's only signup route sat in NEITHER half of that guard — a
+        // future edit dropping `checkPasswordAgainstHIBP` would have failed
+        // nothing.
+        //
+        // The schema is shape-only on purpose. Every semantic rule stays below,
+        // because each answers with its own error code and a Zod failure
+        // collapses them all into `invalid_request` — see the schema's docblock
+        // for which, and why tightening a field here is a response-code change.
+        const parsed = AuthRegisterStartSchema.safeParse(body ?? {});
+        if (!parsed.success) {
+            return jsonResponse({ error: 'invalid_request' }, { status: 400 });
+        }
         const {
             email: rawEmail,
             password,
@@ -98,17 +115,7 @@ export const POST = withApiErrorHandling(
             turnstileToken,
             acceptedTerms,
             termsVersion,
-        } = (body ?? {}) as Record<string, unknown>;
-        if (
-            typeof rawEmail !== 'string' ||
-            typeof password !== 'string' ||
-            typeof name !== 'string' ||
-            !rawEmail ||
-            !password ||
-            !name
-        ) {
-            return jsonResponse({ error: 'invalid_request' }, { status: 400 });
-        }
+        } = parsed.data;
 
         // Consent (P3.1), before any work and before the uniform-200 region.
         //
@@ -151,7 +158,7 @@ export const POST = withApiErrorHandling(
         // address, so it leaks nothing about who has an account, and the
         // client has to know to reset the widget: a token is single-use, so a
         // blind retry always fails.
-        const turnstile = await verifyTurnstile(turnstileToken as string | undefined, getClientIp(req));
+        const turnstile = await verifyTurnstile(turnstileToken, getClientIp(req));
         if (!turnstile.ok) {
             return jsonResponse(
                 { error: 'turnstile_failed', codes: turnstile.codes },

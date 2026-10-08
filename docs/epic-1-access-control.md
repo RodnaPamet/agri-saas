@@ -298,3 +298,181 @@ intentionally rejected (e.g. custom-role baseRole, SCIM), add it to
 - `prisma/migrations/<ts>_epic1_add_owner_role/migration.sql` — enum value
 - `prisma/migrations/<ts>_epic1_last_owner_trigger/migration.sql` — DB trigger
 - `scripts/bootstrap-tenant-owners.ts` — one-time OWNER bootstrap for existing tenants
+
+
+---
+
+## Access Control & Tenant Onboarding (Epic 1) — the reasoning
+
+Relocated from CLAUDE.md (#1334). **Read this before adding a membership-creation path, touching the tenant-access gate, or changing invite redemption.** It carries why redemption runs in the `jwt` callback and not `signIn` (the adapter has not created the User row yet, so redeeming there wrote a membership against a non-existent FK), why the gate reads `memberships[]` rather than the single `tenantSlug` claim, and why MECHANISATOR needs an explicit arm in every `switch` on `Role`.
+
+Closes the audit's GAP-01 (Critical): OAuth sign-in no longer
+silently grants ADMIN on the oldest tenant. Authentication and
+tenant membership are now orthogonal — sign-in alone authenticates
+the user; tenant access requires an explicit grant via one of the
+allowlisted paths.
+
+**Role model.** The `Role` enum has SIX values:
+`OWNER | ADMIN | EDITOR | READER | AUDITOR | MECHANISATOR`. OWNER is
+strictly superior to ADMIN — it gains `admin.tenant_lifecycle` (delete
+tenant, rotate DEK, transfer ownership) and `admin.owner_management`
+(invite/remove OWNERs, assign OWNER role). ADMIN has every other
+admin flag but explicitly denies those two. The `PermissionSet`
+resolution in `src/lib/permissions.ts` enforces the distinction at
+compile time; `getPermissionsForRole('ADMIN').admin.tenant_lifecycle`
+is `false` by type.
+
+MECHANISATOR (#277) is the restricted machine-operator / sprayer
+persona, and it is the odd one out in three places, each load-bearing.
+**Its explicit arm in `getPermissionsForRole` is what keeps it
+restricted**: that switch ends `case 'READER': default:`, so a
+MECHANISATOR without its own arm does not fail — it silently inherits
+the READER "view everything" default. The arm returns every domain
+`false` except `tasks.view` + `tasks.edit`, on only so the completion
+affordances render. Those permissions are defence-in-depth; the
+LOAD-BEARING confinement is the middleware lockdown in
+`src/middleware.ts`, which redirects any tenant path outside
+`isOperatorAllowedPath` (`src/lib/auth/guard.ts`) to `/t/{slug}/my-work`
+and returns 403 `operator_scope` on API routes. And it is never an
+SSO-mappable target — excluded from `ENTRA_MAPPABLE_ROLES` in
+`src/app-layer/schemas/entra-group-mapping.schemas.ts`, so only a tenant
+admin can assign it.
+
+**Membership creation is explicit.** Only SEVEN modules can write a
+`TenantMembership` row today — the three detailed below (the first of
+them via two entry points), plus SSO, SCIM, the non-production staging
+seed route, and the two Epic O-2 org paths:
+(a) `src/app-layer/usecases/tenant-invites.ts`, which has TWO entry
+points, both requiring an admin-created `TenantInvite`:
+`redeemInvite` is token-bound and email-bound, atomically consumed
+via an `updateMany` with `acceptedAt IS NULL AND expiresAt > now()`
+predicate (a leaked token is burnt on email mismatch); and
+`redeemPendingInvitesByEmail` matches a pending invite against an
+**IdP-verified** sign-in email, which is what makes the emailed link
+optional. The second is **OAuth-only** — `src/auth.ts` passes
+`emailVerifiedByIdp: account.provider !== 'credentials'`, because the
+credentials provider's email is self-asserted and honouring an invite
+there would hand a tenant to whoever guessed an invited address. It is
+still not auto-join: no invite ⇒ no membership. Both share
+`finalizeInviteRedemption`.
+(b) `createTenantWithOwner` in `src/app-layer/usecases/tenant-lifecycle.ts` —
+platform-admin tenant bootstrap, gated by `PLATFORM_ADMIN_API_KEY`
+(constant-time compared via `verifyPlatformApiKey`).
+(c) `/api/auth/register/start` + `/verify` — credentials self-service
+signup, P3.5b's two-step form. Step 1 creates an UNVERIFIED user and
+records terms acceptance; step 2 proves the address and signs in; the
+farm is created afterwards by `POST /api/me/farms` (P3.6), which is the
+site that writes the membership. **`/api/auth/register` — the
+single-call route that created a user AND a tenant together — was
+RETIRED on 2026-10-07 (#1376)**, because it recorded no terms
+acceptance and was the weaker of two signup doors. Do not recreate it;
+`src/generated/route-inventory.json` holds the retirement reason, and
+`tests/integration/tenant-creation-atomicity.test.ts` is where its
+real-DB rollback proof now lives, retargeted onto
+`createTenantWithOwner`.
+The `Credentials()` provider is still registered unconditionally in
+`src/auth.ts`; what hides the sign-in form in production is
+`AUTH_CREDENTIALS_UI_HIDDEN`, a request-time flag served by
+`src/app/api/auth/ui-config/route.ts`. That same route now also serves
+`registrationOpen`, because the login page is a client component and
+cannot resolve `social.farm-registration` itself — it links to
+`/start` only when the wizard is open, for the reason the landing page
+does (`/start` 404s when the flag is off).
+**Terms acceptance has TWO capture points, and the second exists because
+the first cannot cover every door.** `register/start` records it inline.
+A first-time Google sign-in creates its `User` row through
+`PrismaAdapter` inside NextAuth, so it passes no route of ours (#1376) —
+and stamping consent on that callback would file an agreement nobody
+gave, which is worse than the null the column honestly holds. So a
+signed-in session whose `acceptedTermsAt` is null is HELD at
+`/accept-terms` by the Edge, and `POST /api/auth/accept-terms` is the
+way out (idempotent, and it does not re-stamp: the timestamp is the
+artifact).
+That gate runs AFTER the MFA gate — MFA is a security control, consent
+is a compliance record — and `isTermsAllowedPath` exempts the MFA paths
+too, so the two cannot deadlock if the order is ever changed. It tests
+`termsPending === true`, so a token minted before this shipped reads as
+not-pending and nobody is locked out mid-session; the claim resolves
+from the column on the next re-mint. The lookup FAILS CLOSED, which is
+the opposite trade from `mfaFailClosed`: being asked twice is harmless,
+granting access with no record is the thing this prevents.
+**The consent control is ONE component** —
+`components/auth/TermsConsentCheckbox` — rendered by both the wizard and
+the interstitial, with its copy under a single `common` key. It was
+duplicated with byte-identical text under two keys, which is the shape
+where one gets edited and the other quietly keeps saying something else
+while the stored version string claims both users agreed to the same
+document.
+Plus five provisioning paths that never involve an invite: SSO
+(`usecases/sso.ts`), SCIM (`usecases/scim-users.ts`), the staging seed
+route (`app/api/staging/seed/route.ts` — 403s outright when
+`NODE_ENV === 'production'`), and the two Epic O-2 org paths.
+`usecases/org-tenants.ts` writes the OWNER row for the ORG_ADMIN
+creating a tenant under an org; `usecases/org-provisioning.ts` is the
+one CROSS-TENANT writer — it fans `AUDITOR` rows (`createMany`, with
+`provisionedByOrgId` stamped so deprovisioning can tell auto-created
+rows from granted ones) into every tenant under the org, and it is the
+easiest of the seven to forget. Seven files in total; every one is
+allowlisted in `tests/guardrails/no-auto-join.test.ts` with a one-line
+reason, and ANY site not on that list fails CI.
+
+**Middleware tenant-access gate.** `/t/:slug/**` and
+`/api/t/:slug/**` require the URL's slug to appear in the JWT's
+`memberships[]` list — NOT the single `tenantSlug` claim, which
+`src/auth.ts` keeps only as the "primary" (oldest) membership for
+backward compatibility and which would deny a legitimate member of a
+second tenant. An empty list → `no_tenant_access`; a slug absent from a
+COMPLETE list → `cross_tenant`. Both redirect to `/no-tenant` on web; on
+the API they return 403 `{ error: 'no_tenant_access' }` and 403
+`{ error: 'cross_tenant_access_denied' }` respectively. If the list was
+capped at sign-in (`membershipsTruncated`) a slug-miss is not
+definitive — the slug may be a membership that did not fit — so the gate
+allows and lets the authoritative DB-backed server check (`TenantLayout`
+/ `getTenantCtx`) decide. Uses the JWT claim only — no per-request DB
+hit. Carve-outs
+for `/invite/<token>`, `/api/invites/**`, and `/no-tenant` itself.
+Logic lives in `src/lib/auth/guard.ts::checkTenantAccess`.
+
+**Last-OWNER protection — two layers.** Usecase layer
+(`updateTenantMemberRole`, `deactivateTenantMember`) counts ACTIVE
+OWNERs and throws `forbidden('Cannot demote/deactivate the last
+OWNER...')`. DB trigger `tenant_membership_last_owner_guard` is the
+backstop — raises SQLSTATE P0001 on any UPDATE or DELETE that would
+leave a tenant with zero ACTIVE OWNERs, catching bypass attempts
+(raw `deleteMany`, code paths that forget the check). The two-step
+`transferTenantOwnership` flow uses this: promote the new OWNER
+first (count=2), then demote the old (count=1, trigger satisfied).
+
+**Invitation flow — the link is OPTIONAL.** Admin POSTs to
+`/api/t/:slug/admin/invites` → `createInviteToken` creates a 256-bit
+base64url token with 7-day expiry. There are then two ways in, and
+neither is privileged over the other:
+
+  1. **Just sign in.** An OAuth sign-in whose IdP-verified email
+     matches a pending invite provisions the membership on the spot
+     (`redeemPendingInvitesByEmail`). This is the path most invitees
+     actually take — email delivery is unreliable, and a user who
+     clicks "Sign in with Microsoft" should not be stranded on
+     `/no-tenant` because an SMTP relay dropped a message.
+  2. **Follow the link.** User clicks `/invite/<token>` → preview page
+     → "Sign in to accept" sets a 10-min HttpOnly cookie and redirects
+     to `/login`.
+
+Both are claimed atomically against the same row, so a link-click
+racing a login cannot double-redeem; the loser skips.
+After OAuth, redemption runs in the **`jwt` callback** (NOT `signIn`)
+via `redeemPendingInvites` in `src/lib/auth/invite-redemption.ts`,
+which reads the cookie and resolves the persisted `User.id` **by
+email** before calling `redeemInvite`. This is load-bearing: in the
+`signIn` callback a first-time OAuth user's `user.id` is the
+identity-provider subject, not our `User.id` (the Prisma adapter
+creates the row only after `signIn` returns), so redeeming there wrote
+a membership against a non-existent `User` FK and stranded the invitee
+on `/no-tenant`. The `jwt` callback fires after the row exists.
+Step 1 (atomic claim) commits standalone so Step 2 (email binding) can
+burn the invite on mismatch without rolling back the claim — leaked
+tokens are unusable on first failed attempt.
+
+**See `docs/epic-1-access-control.md`** for the Epic 1 operator
+runbook (verification commands, rollback procedures, how to add a
+new tenant-membership creation path).
