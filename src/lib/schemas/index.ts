@@ -292,6 +292,80 @@ export const BulkTaskDueDateSchema = z.object({
 
 // ─── Auth ───
 
+/**
+ * `POST /api/auth/register/start` — registration v2 step 1 (P3.5b).
+ *
+ * ## Why this schema exists at all
+ *
+ * The route parsed its body with six hand-rolled `typeof` checks, which worked
+ * and was invisible to the HIBP guardrail (#1378): the structural scan looks
+ * for a password-shaped ZOD field, so the product's only signup route scored
+ * zero matches and sat in neither half of the guard. A future edit removing
+ * `checkPasswordAgainstHIBP` from it would have failed nothing.
+ *
+ * ## Every field the handler reads MUST be declared here
+ *
+ * The object is `.strip()`ed, so an undeclared field is silently dropped before
+ * the handler sees it — which for `acceptedTerms` would mean every signup
+ * refused as `terms_not_accepted`, a total outage that looks like a client bug.
+ * That trap is already recorded on `turnstileToken` below; it applies to all
+ * six.
+ *
+ * ## The constraints are deliberately LOOSE, and that is the whole design
+ *
+ * Each field below is validated only for SHAPE. Every semantic rule stays in
+ * the handler, because each one answers with its own error code and a Zod
+ * failure collapses them all into `invalid_request`:
+ *
+ *   - `password` is `min(1)`, NOT `min(8)` — `validatePasswordPolicy` returns a
+ *     distinct `too_short`, and a client needs to tell "too short" from
+ *     "malformed request";
+ *   - `email` is not `.email()` — the route answers an identical 200 for every
+ *     address to stay enumeration-safe, and a format refusal is a different
+ *     statement from that uniform answer;
+ *   - `acceptedTerms` and `termsVersion` are `unknown` — they carry
+ *     `terms_not_accepted` and `terms_version_stale` (the latter with
+ *     `currentVersion`, which is how a client knows to reload rather than
+ *     retry). Declaring `acceptedTerms: z.literal(true)` would turn a missing
+ *     acceptance into `invalid_request` and lose the distinction the consent
+ *     gate exists to make.
+ *
+ * So this schema buys guard VISIBILITY and one parse in place of six casts. It
+ * deliberately does not buy stricter validation, and tightening any field here
+ * silently changes a response code a client routes on.
+ */
+export const AuthRegisterStartSchema = z
+    .object({
+        email: z.string().min(1).max(320),
+        password: z.string().min(1),
+        name: z.string().min(1).max(200),
+        /**
+         * Cloudflare Turnstile token (P3.5c).
+         *
+         * OPTIONAL in the schema and REQUIRED at runtime whenever
+         * `TURNSTILE_SECRET_KEY` is set — the two are not in conflict. A
+         * deployment with no secret renders no widget and has no token to
+         * send, so a required field would break signup for that configuration.
+         * Enforcement belongs where the secret is visible: `verifyTurnstile`
+         * refuses a missing token once configured rather than treating absence
+         * as a skip.
+         *
+         * It must be declared at all because the object is `.strip()`ed — an
+         * undeclared field is dropped before the handler sees it, which would
+         * look exactly like a client bug.
+         */
+        turnstileToken: z.string().max(2048).optional(),
+        /** Checked for IDENTITY with `true` in the handler — see the docblock. */
+        acceptedTerms: z.unknown().optional(),
+        /** Compared for equality with the served version in the handler. */
+        termsVersion: z.unknown().optional(),
+    })
+    .strip()
+    .openapi('AuthRegisterStartRequest', {
+        description:
+            'Registration step 1: creates an UNVERIFIED user and emails a 6-digit code. Every address gets an identical 200, so nothing here reveals whether an account exists. Field constraints are shape-only — the password policy, the HIBP breach check, the Turnstile screen and the consent/version checks all run in the handler and answer with their own error codes.',
+    });
+
 export const AuthRegisterSchema = z.object({
     email: z.string().email(),
     password: z.string().min(8),
