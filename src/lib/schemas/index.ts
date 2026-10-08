@@ -81,12 +81,27 @@ export const CreatePracticeSchema = z.object({
     mitigationType: z.enum(['PREVENTIVE', 'DETECTIVE', 'DETERRENT', 'CORRECTIVE', 'COMPENSATING']).optional().nullable(),
     isCustom: z.boolean().optional().default(true),
 }).strip().openapi('PracticeCreateRequest', {
+    /**
+     * DEPRECATED, pending removal (#1386).
+     *
+     * There is no practice route — `find src/app/api -ipath '*practice*'`
+     * returns nothing — and no path `$ref`s this component. It is published
+     * only because `openapi-build` registers components by walking the
+     * `@/lib/schemas` namespace, so the export IS the registration.
+     *
+     * Deprecated rather than deleted because `docs/api-compatibility.md`
+     * classes a removed schema as breaking: a generated client emits a type
+     * per component whether a path references it or not, so deletion can fail
+     * a client's BUILD even though no endpoint changes and the server sends
+     * exactly what it sent before. `deprecated` is not one of the six classes
+     * `scripts/openapi-breaking.ts` scores, so marking it is additive.
+     *
+     * Delete this schema, and the `deprecated` flag with it, once a client
+     * build has shipped against a spec carrying this marker.
+     */
+    deprecated: true,
     description: 'Payload for creating a practice. Status defaults to NOT_STARTED. `code` carries the framework reference where one applies (e.g. ISO 27001:2022 A.5.1) and is minted as `CTL-N` for custom practices. Custom practices (isCustom=true) are tenant-specific.',
 });
-
-
-
-
 
 
 
@@ -158,7 +173,6 @@ export const EvidenceReviewSchema = z.object({
 // ─── Findings ───
 
 
-
 // ─── Audits ───
 
 const ChecklistUpdateSchema = z.object({
@@ -166,7 +180,6 @@ const ChecklistUpdateSchema = z.object({
     result: z.string().optional().nullable(),
     notes: z.string().optional().nullable(),
 }).strip();
-
 
 
 // ─── Tasks (Unified Work Items) ───
@@ -389,17 +402,20 @@ export const AuthRegisterSchema = z.object({
      */
     turnstileToken: z.string().max(2048).optional(),
 }).strip().openapi('AuthRegisterRequest', {
+    /**
+     * DEPRECATED, pending removal (#1386).
+     *
+     * `POST /api/auth/register` was retired in #1379; this schema outlived the
+     * route it described. The live two-step flow is `AuthRegisterStartSchema`
+     * → `AuthRegisterStartRequest`.
+     *
+     * Same reasoning as `PracticeCreateRequest` above for deprecating rather
+     * than deleting, and the same removal condition.
+     */
+    deprecated: true,
     description: 'Self-service signup payload (gated by AUTH_TEST_MODE in non-prod). The password is checked against HIBP via k-anonymity before persistence; emailVerification is initiated server-side. `turnstileToken` is required whenever the deployment has a Turnstile secret configured.',
 });
 
-// `action: 'login'` was removed 2026-04-22 — the old bespoke /api/auth/
-// register login endpoint was a parallel path to NextAuth's Credentials
-// provider. All production login now flows through NextAuth. The legacy
-// union is kept as a single-variant union for Zod-discriminated-union
-// compatibility; the variant check still catches other malformed bodies.
-export const AuthActionSchema = z.discriminatedUnion('action', [
-    AuthRegisterSchema.extend({ action: z.literal('register') }),
-]);
 
 // ─── Evidence Bundles ───
 
@@ -421,8 +437,6 @@ export const AddBundleItemSchema = z.object({
 
 
 
-
-
 // ─── Practice Test Schemas ───
 
 // ─── Epic G-3 — Vendor Assessment Template Authoring ──────────────
@@ -431,8 +445,6 @@ export const AddBundleItemSchema = z.object({
 // scaleConfigJson, SINGLE_SELECT requires optionsJson) is enforced
 // at the usecase boundary so the error message can name the
 // answer type rather than report a generic "missing field".
-
-
 
 
 
