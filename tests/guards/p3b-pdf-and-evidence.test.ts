@@ -88,10 +88,24 @@ describe("Epic P3-PR-B — PDF export + Evidence attachment", () => {
             );
         });
 
-        it("returns application/pdf with Content-Disposition: attachment", () => {
+        it("returns application/pdf with an attachment disposition", () => {
             expect(src).toMatch(/['"]Content-Type['"]:\s*['"]application\/pdf['"]/);
+            // #1343 — this used to pin the LITERAL header shape,
+            // `attachment;\s*filename=`, and that is the defect #1343's own
+            // text names in this guard's sibling: pinning the mechanism rather
+            // than the property means the guard cannot notice when the
+            // mechanism is wrong, and DOES fail when it is improved. It broke
+            // the moment the header moved behind `contentDisposition`, which
+            // was a strict improvement — the literal form it required is the
+            // ASCII-only one that destroyed Cyrillic filenames.
+            //
+            // So it now pins the property: the route sets a disposition, via
+            // the one helper allowed to build one. The header's SHAPE is
+            // tested behaviourally in `tests/unit/content-disposition.test.ts`,
+            // through a real Response, which is where a shape assertion
+            // belongs.
             expect(src).toMatch(
-                /['"]Content-Disposition['"]:[\s\S]{0,200}attachment;\s*filename=/,
+                /['"]Content-Disposition['"]:\s*contentDisposition\(/,
             );
         });
     });

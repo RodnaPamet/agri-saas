@@ -25,6 +25,7 @@ import type {
     UploadUrlOptions,
     SignedUploadTarget,
 } from './types';
+import { contentDisposition } from '@/lib/http/content-disposition';
 
 const DEFAULT_MAX_SIZE = 50 * 1024 * 1024; // 50MB
 
@@ -142,7 +143,17 @@ export class S3StorageProvider implements StorageProvider {
             Bucket: this.bucket,
             Key: pathKey,
             ...(opts?.downloadFilename && {
-                ResponseContentDisposition: `attachment; filename="${opts.downloadFilename}"`,
+                // #1343 — the SAME bug as the eight route handlers, and the one a
+                // `Content-Disposition` grep structurally cannot find: the S3
+                // parameter is spelled `ResponseContentDisposition`, with no
+                // hyphen. Found by the convergence guard rather than by search,
+                // which is the argument for the guard over a one-off sweep.
+                //
+                // It matters because this is what the presigned URL carries in S3
+                // redirect mode, so in that mode it is the only disposition the
+                // user ever sees — the route's own header is on the 302, not the
+                // download.
+                ResponseContentDisposition: contentDisposition(opts.downloadFilename),
             }),
         });
         return getSignedUrl(this.client, command, {

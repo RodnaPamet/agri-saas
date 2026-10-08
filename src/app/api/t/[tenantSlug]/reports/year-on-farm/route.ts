@@ -15,6 +15,7 @@ import { generateYearOnFarmPdf } from '@/app-layer/reports/pdf/year-on-farm';
 import { getSeasonRecap } from '@/app-layer/usecases/season-recap';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { z } from 'zod';
+import { contentDisposition } from '@/lib/http/content-disposition';
 
 const BodySchema = z.object({
     seasonId: z.string().optional(),
@@ -62,7 +63,7 @@ export const POST = withApiErrorHandling(async (req: NextRequest, { params: para
         status: 200,
         headers: {
             'Content-Type': 'application/pdf',
-            'Content-Disposition': `attachment; filename="${fileName}"`,
+            'Content-Disposition': contentDisposition(fileName),
             'Cache-Control': 'no-store',
             'Content-Length': String(pdfBuffer.length),
         },
