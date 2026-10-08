@@ -13,6 +13,7 @@ import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { cardVariants } from '@/components/ui/card-variants';
 import { cn } from '@/lib/cn';
+import { PAST_DUE_GRACE_DAYS, resolvePastDueState } from '@/lib/billing/past-due';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,6 +28,7 @@ export default async function BillingPage({
 }) {
     const { tenantSlug } = await params;
     const t = await getTranslations('admin.billing');
+    const tPastDue = await getTranslations('billing.pastDue');
 
     const session = await auth();
     if (!session?.user?.id) notFound();
@@ -49,6 +51,11 @@ export default async function BillingPage({
     const plan = billingAccount?.plan ?? 'FREE';
     const status = billingAccount?.status ?? 'ACTIVE';
     const periodEnd = billingAccount?.currentPeriodEnd;
+    // #1325 — resolved through the single producer so this banner and the
+    // gates cannot disagree about whether the grace has run out. A second
+    // piece of date arithmetic here is how a page tells somebody they have
+    // four days left while the API is already refusing them.
+    const pastDue = resolvePastDueState(billingAccount);
     const trialEnd = billingAccount?.trialEndsAt;
     const hasSubscription = !!billingAccount?.stripeSubscriptionId;
     const isTrialing = status === 'TRIALING' && trialEnd;
@@ -164,14 +171,24 @@ export default async function BillingPage({
                     </div>
                 </div>
 
-                {/* Past due warning */}
+                {/* Past due warning. Two different messages, because
+                    "we could not take payment" and "your access is now
+                    reduced" are different facts and a tenant inside the
+                    grace has not lost anything yet (#1325). */}
                 {status === 'PAST_DUE' && (
                     <InlineNotice
                         variant="error"
                         className="mt-4"
-                        title={t('paymentIssue')}
+                        title={pastDue.restricted ? tPastDue('restrictedTitle') : tPastDue('graceTitle')}
                     >
-                        {t('paymentIssueBody')}
+                        {pastDue.restricted
+                            ? tPastDue('restrictedBody', {
+                                  days: PAST_DUE_GRACE_DAYS,
+                                  surface: tPastDue('surface.exchange'),
+                              })
+                            : pastDue.graceEndsAt
+                              ? tPastDue('graceBody', { date: formatDate(pastDue.graceEndsAt) })
+                              : t('paymentIssueBody')}
                     </InlineNotice>
                 )}
             </section>
