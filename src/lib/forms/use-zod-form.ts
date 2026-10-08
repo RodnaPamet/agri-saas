@@ -14,10 +14,16 @@
  * small — no react-hook-form style registry, no resolver ecosystem
  * coupling. The house pattern is:
  *
+ *     const EditFields = SomeBarrelSchema.pick({ name: true, description: true });
  *     const form = useZodForm({
- *         schema: CreatePracticeSchema.pick({ name: true, description: true, category: true }),
- *         defaults: { name: '', description: '', category: '' },
+ *         schema: EditFields,
+ *         defaults: { name: '', description: '' },
  *     });
+ *
+ * (The example names no particular schema on purpose. It used to cite
+ * `CreatePracticeSchema`, which #1386 measured to have no consumer — there is
+ * no practice route at all — and marked deprecated pending removal. Naming a
+ * live schema here would just move the problem to the next retirement.)
  *
  *     <Input
  *         id="name"

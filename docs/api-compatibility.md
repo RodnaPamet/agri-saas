@@ -160,6 +160,37 @@ and old ones keep working — which is what "compatible" means.
 This ordering costs a release cycle. That is the price of shipping a binary you
 cannot recall.
 
+## Removing an orphaned schema
+
+A schema can outlive the route it described. `scripts/openapi-build.ts`
+registers components by walking the `@/lib/schemas` namespace, so **the export
+is the registration** — nothing distinguishes "exported for a live route" from
+"exported and forgotten". `AuthRegisterRequest` survived the retirement of
+`POST /api/auth/register` (#1379) that way, and #1386 found two more.
+
+Deleting one is still a removal by the table above, and the table is right to
+say so: a client that generates types from the spec emits one per component
+whether or not a path `$ref`s it, so the deletion can fail that client's BUILD
+even though no endpoint changes. Do not reach for "but nothing references it" —
+measured on the committed spec, 23 of 222 schemas are referenced by no `$ref`,
+including live ones like `AssetCreateRequest`.
+
+So there are two routes, and the cheap one is often available:
+
+1. **It publishes no component.** Delete it. `AuthActionSchema` carried no
+   `.openapi()` call, and the regenerated spec was byte-identical without it —
+   so the contract could not change and no sign-off is owed.
+2. **It publishes a component.** Add `deprecated: true` to its `.openapi()`
+   metadata and regenerate. `deprecated` is not one of the six classes the
+   classifier scores, so this is **additive** and the gate stays green. Delete
+   the schema once a client build has shipped against a spec carrying the
+   marker — which is the ship-the-app-first sequence below, applied to a type
+   rather than to behaviour.
+
+`tests/guards/schemas-barrel-has-no-orphans.test.ts` enforces that every orphan
+takes one of those two routes, and pins the pending ones as a removal queue so
+the list is cleared rather than accumulated.
+
 ## Adding a breaking change, mechanically
 
 1. Make the change. `npm run openapi:generate`.

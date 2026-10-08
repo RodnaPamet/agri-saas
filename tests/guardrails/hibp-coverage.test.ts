@@ -1,6 +1,13 @@
 /**
  * Guardrail: HIBP coverage — password-handling routes.
  *
+ * Note: the `auth/register` / `AuthActionSchema` / `AuthRegisterSchema` names
+ * in the comments below are HISTORICAL. That route was retired in #1379;
+ * #1386 then deleted `AuthActionSchema` (which published no OpenAPI component,
+ * so its removal could not change the contract) and marked `AuthRegisterSchema`
+ * deprecated pending removal. The comments are kept because they record what
+ * the detector was measured against, not because the chain still exists.
+ *
  * Invariant: every API route that ingests a user-chosen password MUST
  * import AND call `checkPasswordAgainstHIBP` from
  * `@/lib/security/password-check`. Skipping the call would allow a

@@ -1,6 +1,22 @@
 /**
  * Which password-shaped Zod fields a route can reach — FOLLOWING ITS IMPORTS (#1166).
  *
+ * ## The `auth/register` examples below are HISTORICAL (#1386)
+ *
+ * The route `POST /api/auth/register` was retired in #1379. #1386 then measured
+ * both its schemas to have no importer and resolved them differently, because
+ * the two cost different things to remove: `AuthActionSchema` published no
+ * OpenAPI component, so deleting it left the spec byte-identical and it is
+ * gone; `AuthRegisterSchema` published `AuthRegisterRequest`, so it is marked
+ * `deprecated` and deleted once a client build has shipped against that marker.
+ * The reasoning they illustrate is unchanged —
+ * a route whose password field lives behind a barrel import still scores zero
+ * on a route-file-only scan, which is the whole reason this helper follows the
+ * symbol graph — but the two names no longer resolve to anything. Kept as
+ * written rather than re-pointed at a live example, because the retired chain
+ * is what the design was measured against; grepping for them will find only
+ * this prose, and that is expected, not rot.
+ *
  * ## The measurement this exists for
  *
  * `tests/guardrails/hibp-coverage.test.ts` pairs a curated list of

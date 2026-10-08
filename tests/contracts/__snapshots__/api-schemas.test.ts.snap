@@ -845,6 +845,7 @@ exports[`API contract — per-schema snapshots schema: AuthRegisterRequest 1`] =
     "name",
     "orgName"
   ],
+  "deprecated": true,
   "description": "Self-service signup payload (gated by AUTH_TEST_MODE in non-prod). The password is checked against HIBP via k-anonymity before persistence; emailVerification is initiated server-side. \`turnstileToken\` is required whenever the deployment has a Turnstile secret configured."
 }"
 `;
@@ -10234,6 +10235,7 @@ exports[`API contract — per-schema snapshots schema: PracticeCreateRequest 1`]
   "required": [
     "name"
   ],
+  "deprecated": true,
   "description": "Payload for creating a practice. Status defaults to NOT_STARTED. \`code\` carries the framework reference where one applies (e.g. ISO 27001:2022 A.5.1) and is minted as \`CTL-N\` for custom practices. Custom practices (isCustom=true) are tenant-specific."
 }"
 `;
