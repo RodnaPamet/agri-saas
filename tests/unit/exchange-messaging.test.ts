@@ -653,7 +653,11 @@ describe('a seller blocking a buyer', () => {
             { data: Record<string, unknown> },
         ];
         expect(arg.data.sellerTenantId).toBe(SELLER);
-        expect(arg.data.blockedTenantId).toBe(BUYER);
+        // The PERSON, not their farm (#1314). Asserting the user id rather
+        // than the tenant is the whole content of that change: blocking a
+        // buyer must not silence colleagues who never wrote to this seller.
+        expect(arg.data.blockedUserId).toBe('usr_buyer');
+        expect(arg.data).not.toHaveProperty('blockedTenantId');
     });
 
     it('the BUYER may not — there is no mirror control', async () => {

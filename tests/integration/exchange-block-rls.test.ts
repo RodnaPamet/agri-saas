@@ -51,15 +51,17 @@ const created: string[] = [];
  */
 async function seedBlock(): Promise<{ id: string; blocked: string }> {
     const id = `exb-${randomUUID()}`;
-    const blocked = `t-exb-blocked-${randomUUID()}`;
+    // A USER id since #1314, not a tenant id. The read arm of the policy now
+    // matches `app.actor_user_id`.
+    const blocked = `u-exb-blocked-${randomUUID()}`;
     await globalPrisma.exchangeBlock.create({
-        data: { id, sellerTenantId: SELLER, blockedTenantId: blocked },
+        data: { id, sellerTenantId: SELLER, blockedUserId: blocked },
     });
     created.push(id);
     return { id, blocked };
 }
 
-/** Rows of `ExchangeBlock` visible to `tenant`, by id. */
+/** Rows visible to a TENANT (seller side) — no actor set, as in production. */
 const visibleTo = (tenant: string, id: string) =>
     withTenantDb(tenant, async (tx) =>
         tx.$queryRawUnsafe<Array<{ id: string }>>(
@@ -67,6 +69,30 @@ const visibleTo = (tenant: string, id: string) =>
             id,
         ),
     );
+
+/**
+ * Rows visible to a PERSON, with `app.actor_user_id` set the way
+ * `runInTenantContext` sets it (#1314).
+ *
+ * `withTenantDb` deliberately sets NO actor — it takes a tenantId and has no
+ * person to name — so reading the blocked arm through it yields zero rows. That
+ * is correct production behaviour and the reason this helper exists: every
+ * block read in `exchange-messaging.ts` runs inside `runInTenantContext`, where
+ * the actor IS set, so the test must reproduce that rather than the weaker
+ * context. A test using `withTenantDb` here would report the blocked person
+ * cannot see their own block, and the "fix" would be to widen the policy.
+ */
+const visibleToPerson = (tenantId: string, userId: string, id: string) =>
+    withTenantDb(tenantId, async (tx) => {
+        await tx.$executeRawUnsafe(
+            `SELECT set_config('app.actor_user_id', $1, true)`,
+            userId,
+        );
+        return tx.$queryRawUnsafe<Array<{ id: string }>>(
+            `SELECT id FROM "ExchangeBlock" WHERE id = $1`,
+            id,
+        );
+    });
 
 describeFn('ExchangeBlock RLS', () => {
     afterAll(async () => {
@@ -81,11 +107,22 @@ describeFn('ExchangeBlock RLS', () => {
         expect(await visibleTo(SELLER, id)).toHaveLength(1);
     });
 
-    it('the BLOCKED tenant reads the row naming them — enforcement depends on it', async () => {
+    it('the BLOCKED PERSON reads the row naming them — enforcement depends on it', async () => {
         const { id, blocked } = await seedBlock();
         // Not a leak: this is what lets their own open/send be refused. They
         // learn they are blocked the moment they try anything anyway.
-        expect(await visibleTo(blocked, id)).toHaveLength(1);
+        expect(await visibleToPerson(OUTSIDER, blocked, id)).toHaveLength(1);
+    });
+
+    it('a COLLEAGUE of the blocked person reads NOTHING — the point of #1314', async () => {
+        // Same farm, different person. Under the old tenant-level block this
+        // row would have been visible and would have refused them; the owner's
+        // ruling is that it must not. This is the assertion that would fail if
+        // someone "simplified" the policy back to a tenant comparison.
+        const { id } = await seedBlock();
+        expect(
+            await visibleToPerson(OUTSIDER, `u-colleague-${randomUUID()}`, id),
+        ).toHaveLength(0);
     });
 
     it('an unrelated tenant reads NOTHING', async () => {
@@ -93,11 +130,15 @@ describeFn('ExchangeBlock RLS', () => {
         expect(await visibleTo(OUTSIDER, id)).toHaveLength(0);
     });
 
-    it('the blocked tenant CANNOT delete the row — the split that matters', async () => {
+    it('the blocked PERSON cannot delete the row — the split that matters', async () => {
         const { id, blocked } = await seedBlock();
         // No throw: a DELETE filtered by RLS removes zero rows and succeeds.
-        await withTenantDb(blocked, async (tx) =>
-            tx.$executeRawUnsafe(`DELETE FROM "ExchangeBlock" WHERE id = $1`, id),
+        await withTenantDb(OUTSIDER, async (tx) =>
+            tx.$executeRawUnsafe(
+                `SELECT set_config('app.actor_user_id', '${blocked}', true)`,
+            ).then(() =>
+                tx.$executeRawUnsafe(`DELETE FROM "ExchangeBlock" WHERE id = $1`, id),
+            ),
         );
         // The row is what the assertion is about, not the statement's outcome.
         const survivors = await globalPrisma.exchangeBlock.findMany({ where: { id } });
@@ -118,7 +159,7 @@ describeFn('ExchangeBlock RLS', () => {
         await expect(
             withTenantDb(BUYER, async (tx) =>
                 tx.$executeRawUnsafe(
-                    `INSERT INTO "ExchangeBlock" (id, "sellerTenantId", "blockedTenantId", "createdAt")
+                    `INSERT INTO "ExchangeBlock" (id, "sellerTenantId", "blockedUserId", "createdAt")
                      VALUES ($1, $2, $3, now())`,
                     `exb-${randomUUID()}`, SELLER, OUTSIDER,
                 ),
@@ -132,7 +173,7 @@ describeFn('ExchangeBlock RLS', () => {
         await expect(
             withTenantDb(SELLER, async (tx) =>
                 tx.$executeRawUnsafe(
-                    `INSERT INTO "ExchangeBlock" (id, "sellerTenantId", "blockedTenantId", "createdAt")
+                    `INSERT INTO "ExchangeBlock" (id, "sellerTenantId", "blockedUserId", "createdAt")
                      VALUES ($1, $2, $3, now())`,
                     id, SELLER, OUTSIDER,
                 ),
