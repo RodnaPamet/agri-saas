@@ -105,9 +105,9 @@ const ADMIN_PAGE = '/t/acme-corp/admin/members';
 const NON_ADMIN_API = '/api/t/acme-corp/tasks';
 
 /** The one body string that names THIS gate (`src/middleware.ts:246`). */
-const CROSS_SITE_REFUSAL = 'Cross-site admin requests are not allowed';
+const CROSS_SITE_REFUSAL = { code: 'CSRF_BLOCKED', message: 'Cross-site admin requests are not allowed' };
 /** The 403 from the role floor immediately above it (`src/middleware.ts:227`). */
-const ROLE_REFUSAL = 'Admin access required';
+const ROLE_REFUSAL = { code: 'ADMIN_REQUIRED', message: 'Admin access required' };
 
 /**
  * A token that is valid in every respect — the ONLY variable in this file is
@@ -153,6 +153,26 @@ async function reason(res: Response): Promise<string> {
     return ((await res.json()) as { error?: string }).error ?? '';
 }
 
+/**
+ * The `{ code, message }` carried by a `forbiddenJson` body.
+ *
+ * Deliberately NOT tolerant of the old bare-string shape. This API still
+ * answers some refusals as a bare string (`no_tenant_access`,
+ * `operator_scope`, `not_found`), and `reason()` above is for those — a single
+ * helper that accepted either shape would stop this file from catching a
+ * regression of the CODED 403s back to a sentence, which is the whole point of
+ * the change that introduced it.
+ */
+async function forbidden(res: Response): Promise<{ code: string; message: string }> {
+    const body = (await res.json()) as { error?: unknown };
+    if (typeof body.error !== 'object' || body.error === null) {
+        throw new Error(
+            `expected error to be a { code, message } object, got ${JSON.stringify(body.error)}`,
+        );
+    }
+    return body.error as { code: string; message: string };
+}
+
 beforeEach(() => {
     // `mockReset` clears implementations as well as calls (CLAUDE.md testing
     // conventions), so the token must be re-primed here or every request 401s.
@@ -178,7 +198,7 @@ describe('a cross-site admin API request is refused', () => {
         const res = await middleware(req(ADMIN_API, 'GET', 'cross-site'), {} as any);
 
         expect(res.status).toBe(403);
-        expect(await reason(res)).toBe(CROSS_SITE_REFUSAL);
+        expect(await forbidden(res)).toEqual(CROSS_SITE_REFUSAL);
         // A refusal is a real response, never a pass-through. `x-middleware-next`
         // is set only on the `NextResponse.next()` at L385/L494.
         expect(res.headers.get('x-middleware-next')).toBeNull();
@@ -189,7 +209,7 @@ describe('a cross-site admin API request is refused', () => {
         async (method) => {
             const res = await middleware(req(ADMIN_API, method, 'cross-site'), {} as any);
             expect(res.status).toBe(403);
-            expect(await reason(res)).toBe(CROSS_SITE_REFUSAL);
+            expect(await forbidden(res)).toEqual(CROSS_SITE_REFUSAL);
         },
     );
 
@@ -200,7 +220,7 @@ describe('a cross-site admin API request is refused', () => {
         const res = await middleware(req(FLAT_ADMIN_API, 'GET', 'cross-site'), {} as any);
 
         expect(res.status).toBe(403);
-        expect(await reason(res)).toBe(CROSS_SITE_REFUSAL);
+        expect(await forbidden(res)).toEqual(CROSS_SITE_REFUSAL);
     });
 
     it.each([...MUTATION_METHODS])(
@@ -212,7 +232,7 @@ describe('a cross-site admin API request is refused', () => {
             // only breaks the 'cross-site' branch still fails here.
             const res = await middleware(req(ADMIN_API, method, 'none'), {} as any);
             expect(res.status).toBe(403);
-            expect(await reason(res)).toBe(CROSS_SITE_REFUSAL);
+            expect(await forbidden(res)).toEqual(CROSS_SITE_REFUSAL);
         },
     );
 
@@ -222,7 +242,7 @@ describe('a cross-site admin API request is refused', () => {
         const res = await middleware(req(ADMIN_API, 'GET', 'evil-origin'), {} as any);
 
         expect(res.status).toBe(403);
-        expect(await reason(res)).toBe(CROSS_SITE_REFUSAL);
+        expect(await forbidden(res)).toEqual(CROSS_SITE_REFUSAL);
     });
 });
 
@@ -310,10 +330,10 @@ describe('403 on an admin path is ambiguous — this is the disambiguation', () 
 
         // `res.json()` is single-read, so take the body once and assert both
         // directions off it.
-        const body = await reason(res);
+        const body = await forbidden(res);
         expect(res.status).toBe(403);
-        expect(body).toBe(ROLE_REFUSAL);
-        expect(body).not.toBe(CROSS_SITE_REFUSAL);
+        expect(body).toEqual(ROLE_REFUSAL);
+        expect(body).not.toEqual(CROSS_SITE_REFUSAL);
     });
 });
 
@@ -331,6 +351,6 @@ describe('regression proof — the gate is load-bearing', () => {
         expect(allowed.headers.get('x-middleware-next')).toBe('1');
 
         expect(refused.status).toBe(403);
-        expect(await reason(refused)).toBe(CROSS_SITE_REFUSAL);
+        expect(await forbidden(refused)).toEqual(CROSS_SITE_REFUSAL);
     });
 });

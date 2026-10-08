@@ -97,6 +97,26 @@ async function reason(res: Response): Promise<string> {
     return ((await res.json()) as { error?: string }).error ?? '';
 }
 
+/**
+ * The `{ code, message }` carried by a `forbiddenJson` body.
+ *
+ * Deliberately NOT tolerant of the old bare-string shape. This API still
+ * answers some refusals as a bare string (`no_tenant_access`,
+ * `operator_scope`, `not_found`), and `reason()` above is for those — a single
+ * helper that accepted either shape would stop this file from catching a
+ * regression of the CODED 403s back to a sentence, which is the whole point of
+ * the change that introduced it.
+ */
+async function forbidden(res: Response): Promise<{ code: string; message: string }> {
+    const body = (await res.json()) as { error?: unknown };
+    if (typeof body.error !== 'object' || body.error === null) {
+        throw new Error(
+            `expected error to be a { code, message } object, got ${JSON.stringify(body.error)}`,
+        );
+    }
+    return body.error as { code: string; message: string };
+}
+
 beforeEach(() => getToken.mockReset());
 
 describe('a pending MFA challenge is refused', () => {
@@ -111,7 +131,10 @@ describe('a pending MFA challenge is refused', () => {
         const res = await middleware(req('/api/t/acme-corp/tasks'), {} as any);
 
         expect(res.status).toBe(403);
-        expect(await reason(res)).toBe('MFA verification required');
+        expect(await forbidden(res)).toEqual({
+            code: 'MFA_REQUIRED',
+            message: 'MFA verification required',
+        });
     });
 
     it('tenant page route => 307 to the challenge, carrying `next`', async () => {
@@ -208,6 +231,9 @@ describe('regression proof — the gate is load-bearing', () => {
 
         expect(allowed.status).not.toBe(403);
         expect(refused.status).toBe(403);
-        expect(await reason(refused)).toBe('MFA verification required');
+        expect(await forbidden(refused)).toEqual({
+            code: 'MFA_REQUIRED',
+            message: 'MFA verification required',
+        });
     });
 });
