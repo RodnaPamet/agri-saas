@@ -80,7 +80,10 @@ const TrendSeriesSchema = z
     .object({
         source: z.string(),
         region: z.string(),
-        stage: z.string().nullable(),
+        stage: z.string().nullable().openapi({
+            description:
+                'The delivery point or market stage WITHIN the region — `region` is a country code (production carries BG, EL, RO, EU and, for Alpha Vantage, GLOBAL), and `stage` distinguishes quotes inside it. Null when the source does not report one. **Part of the series key**: BG wheat has nine delivery points whose prices differ by tens of euros per tonne, so two series sharing a source and region are routinely different lines.',
+        }),
         unit: z.string(),
         currency: z.string(),
         label: z.string().nullable(),
@@ -93,7 +96,7 @@ const TrendSeriesSchema = z
     })
     .openapi('TrendSeries', {
         description:
-            'One price line, grouped by (source, region) so a chart can split lines that differ in unit or currency — series are NOT comparable across those without conversion. lastObservedAt is the newest observation anywhere, which is what distinguishes a series reporting this week from one that stopped months ago; both otherwise present a points array whose last entry looks equally current.',
+            'One price line, grouped by (source, region, **stage**) so a chart can split lines that differ in unit, currency or delivery point — series are NOT comparable across those without conversion. lastObservedAt is the newest observation anywhere, which is what distinguishes a series reporting this week from one that stopped months ago; both otherwise present a points array whose last entry looks equally current.',
     });
 
 const TrendPricesResponseSchema = z

@@ -12746,7 +12746,8 @@ exports[`API contract — per-schema snapshots schema: TrendSeries 1`] = `
       "type": [
         "string",
         "null"
-      ]
+      ],
+      "description": "The delivery point or market stage WITHIN the region — \`region\` is a country code (production carries BG, EL, RO, EU and, for Alpha Vantage, GLOBAL), and \`stage\` distinguishes quotes inside it. Null when the source does not report one. **Part of the series key**: BG wheat has nine delivery points whose prices differ by tens of euros per tonne, so two series sharing a source and region are routinely different lines."
     },
     "unit": {
       "type": "string"
@@ -12784,7 +12785,7 @@ exports[`API contract — per-schema snapshots schema: TrendSeries 1`] = `
     "lastObservedAt",
     "points"
   ],
-  "description": "One price line, grouped by (source, region) so a chart can split lines that differ in unit or currency — series are NOT comparable across those without conversion. lastObservedAt is the newest observation anywhere, which is what distinguishes a series reporting this week from one that stopped months ago; both otherwise present a points array whose last entry looks equally current."
+  "description": "One price line, grouped by (source, region, **stage**) so a chart can split lines that differ in unit, currency or delivery point — series are NOT comparable across those without conversion. lastObservedAt is the newest observation anywhere, which is what distinguishes a series reporting this week from one that stopped months ago; both otherwise present a points array whose last entry looks equally current."
 }"
 `;
 
