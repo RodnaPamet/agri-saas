@@ -250,3 +250,92 @@ Never run `ALTER TABLE … NO FORCE ROW LEVEL SECURITY` in production.
 4. **`runWithoutRls` caller fingerprint uses `Error.stack`.** Stack trace format is Node-implementation-dependent; a future V8 change could subtly change the `module/file.ts:line` format. Tests cover the happy-path extraction; if the format changes, the log field silently becomes `'unknown'` (documented behaviour). Not a security regression — just a telemetry regression.
 
 5. **The `allow_all` policy tripwire** in the guardrail test covers the residue of `prisma/rls-fix.sql` stopgaps. If a future migration adds its own `allow_all` for a new reason, the guardrail will fail — at which point either legitimise the pattern with a comment + allowlist, or adopt the EXISTS-based pattern from `PolicyControlLink`.
+
+
+---
+
+## API Rate Limiting (Epic A.2 + GAP-17) — the reasoning
+
+Relocated from CLAUDE.md (#1334). **Read this before adding a rate-limit preset, changing a key, or reaching for `getBucket`.** It carries the three tiers in full, the #1161 measurement where 343 of 346 wrapped routes keyed `anon` on a product whose users share carrier-grade NAT, and why per-thread bucketing was rejected (a ceiling the victim chooses is not a ceiling).
+
+Three tiers, each scoped to a different traffic class. Full operator
+runbook in `docs/rate-limiting.md`.
+
+**Mutation tier** (Epic A.2). Every route wrapped with
+`withApiErrorHandling` gets `API_MUTATION_LIMIT` (60/min) on
+POST/PUT/DELETE/PATCH by default. Stricter presets (`LOGIN_LIMIT`,
+`API_KEY_CREATE_LIMIT`, `EMAIL_DISPATCH_LIMIT`) are applied via
+`{ rateLimit: { config, scope } }` options on specific routes. Keyed
+`(IP, userId)` — **and that is true BY DEFAULT only since the wrapper started
+resolving the userId itself.** `getUserId` was an opt-in option, and measured
+across main: of **346** route files wrapped in `withApiErrorHandling`, **3**
+passed one, so **343** keyed `<scope>:ip:<ip>:anon` — exactly what
+`buildRateLimitKey`'s own docblock forbids ("every authenticated preset MUST
+keep the userId"), on a product whose users share carrier-grade NAT egress
+IPs, where one busy caller throttled every other subscriber behind the same
+address. The mechanism was never broken; it was opt-in, and an invariant that
+holds only when 346 route authors each remember it is not an invariant.
+`resolveRateLimitScope` now calls `resolveRequestUserId`
+(`src/lib/security/rate-limit-identity.ts`) when no resolver is passed — a
+`getToken` JWE decode, no database, the same call middleware already makes —
+and `getUserId` became an OVERRIDE for the rare route whose budget should be
+bounded by a TARGET user rather than the caller. It fails SOFT to `anon`,
+which is the tighter bucket, never a 500 on a write path. A header passed down
+from middleware was rejected: it is forgeable, and a client setting a fresh
+value per request would escape the limit entirely. `getBucket` is resolved
+FIRST and short-circuits the decode, since a bucketed route replaces the
+ip+userId portion anyway (#1161). Held by
+`tests/unit/rate-limit-keyed-by-user.test.ts`, which drives the real wrapper
+and asserts on the key the store is handed — the sibling
+`mutation-rate-limit.test.ts` calls `buildRateLimitKey` directly and proves
+the FORMAT, which is precisely why it could not see that 343 routes passed a
+null.
+**A route may instead cap a SHARED RESOURCE via `getBucket`** (#1161), which
+replaces the `(IP, userId)` portion of the key entirely — appending it would
+keep the per-caller split and change nothing. Reach for it when the cost being
+bounded lands on somebody ELSE: `EXCHANGE_MESSAGE_LIMIT` is 60/min per SENDING
+TENANT because a notification row is written per message by design, so a
+ten-user tenant otherwise held ten budgets aimed at one recipient. The number
+is unchanged from the generic tier on purpose — the cut is in the KEY, not the
+number. **Per-thread was rejected**: a thread is per (listing, inquirer), so a
+per-thread ceiling is multiplied by however many listings the RECIPIENT has,
+and a ceiling the victim chooses is not a ceiling. Derive
+the bucket from the URL — the resolver runs BEFORE the handler, so a database
+read there is work an abusive caller can compel inside the check meant to stop
+them. It fails closed onto the per-caller key when the resolver throws or does
+not recognise the path. Storage: an Upstash sliding window — ONE Redis round-trip
+on the hot path — via `checkRateLimitDistributed` in
+`src/lib/rate-limit/mutationRateLimit.ts`, which is the only check
+`enforceRateLimit` performs. With no Upstash env, or
+`RATE_LIMIT_MODE=memory` (`upstash` is the default in `src/env.ts`), it
+delegates to the in-process Map in `src/lib/security/rate-limit.ts`; a
+Redis error at call time degrades the same way — fail-to-local, NOT
+fail-open. **The Map is only correct on a single node**: behind a load
+balancer each replica counts its own fraction, so the real limit is
+`N × preset`. The live agrent stack pins `RATE_LIMIT_MODE: memory` on
+both `app` and `worker` (`deploy/docker-compose.vm.yml`) — sound while it
+is one VM, and the first thing to change when a second replica appears.
+
+**Read tier** (GAP-17). Tenant-scoped GETs on `/api/t/<slug>/...` go
+through `API_READ_LIMIT` (120/min) at the Edge middleware via
+`src/lib/rate-limit/apiReadRateLimit.ts`. Keyed `(IP, userId,
+tenantSlug)` for per-tenant + per-user isolation. Health probes
+(`/api/health`, `/api/livez`, `/api/readyz`) and `/api/docs` are
+explicitly excluded — operators must keep monitoring access during
+attacks. Storage: Upstash + memory fallback (mirrors `authRateLimit.ts`).
+The wire-up sits AFTER the JWT verify + tenant-access gate so
+unauthorized requests get the cheaper 401/403 first; structural
+ratchet at `tests/guardrails/api-read-rate-limit.test.ts` enforces
+the ordering + exclusion list.
+
+**Auth tier** (covered separately by `src/lib/rate-limit/authRateLimit.ts`).
+Tiered per-endpoint policy at the Edge: 10/min for sign-in callbacks,
+30/min for session probes, 60/min for csrf/providers. Keyed `(IP,
+ua-hash)` because it runs pre-authentication.
+
+429 responses carry `Retry-After` + `X-RateLimit-*` + `x-request-id`.
+Body never contains IP/userId/tenantSlug. Bypass via
+`RATE_LIMIT_ENABLED=0` env or inside tests (automatic). All presets
+live in `src/lib/security/rate-limit.ts`; the Node wrapper is
+`src/lib/security/rate-limit-middleware.ts`; the edge enforcement
+modules live under `src/lib/rate-limit/`.

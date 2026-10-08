@@ -806,6 +806,40 @@ exports[`API contract — per-schema snapshots schema: AuthRegisterRequest 1`] =
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: AuthRegisterStartRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "email": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 320
+    },
+    "password": {
+      "type": "string",
+      "minLength": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "turnstileToken": {
+      "type": "string",
+      "maxLength": 2048
+    },
+    "acceptedTerms": {},
+    "termsVersion": {}
+  },
+  "required": [
+    "email",
+    "password",
+    "name"
+  ],
+  "description": "Registration step 1: creates an UNVERIFIED user and emails a 6-digit code. Every address gets an identical 200, so nothing here reveals whether an account exists. Field constraints are shape-only — the password policy, the HIBP breach check, the Turnstile screen and the consent/version checks all run in the handler and answer with their own error codes."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: AuthUiConfig 1`] = `
 "{
   "type": "object",

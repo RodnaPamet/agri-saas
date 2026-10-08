@@ -76,6 +76,20 @@ const GATED = {
     tenantApi: `/api/t/${SLUG}/journal`,
     personPage: '/account/security',
     personApi: '/api/me/profile',
+    // The farm-creation write specifically. Added after a peer measured zero
+    // references to terms in `POST /api/me/farms` and in
+    // `usecases/farm-creation.ts` — both true — and concluded a native client
+    // could create a farm for somebody who never accepted. The measurement is
+    // right and the conclusion does not follow: neither the route nor the
+    // usecase needs to mention terms, because `/api/me/` is an
+    // `isPersonPath` and the Edge gate refuses it with 403 before the handler
+    // runs. The middleware matcher covers everything but static assets, so
+    // this holds for a bare `fetch` exactly as it does for a navigation.
+    //
+    // Pinned as its own case rather than left implied by the `/api/me/profile`
+    // row: it is the write a client is most likely to reach for, and "the
+    // prefix covers it" is an argument, whereas this is a test.
+    farmCreate: '/api/me/farms',
 } as const;
 
 /** Paths that must stay reachable while a session is held. */
