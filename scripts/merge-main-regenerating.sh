@@ -6,22 +6,63 @@
 #
 # It would be natural to regenerate only what conflicted. That is the wrong
 # trigger, because a conflict is a signal that git could NOT decide — it is
-# not the set of cases where git decided WRONGLY.
+# not the set of cases where git decided WRONGLY. Two PRs editing adjacent
+# hunks of one schema can merge cleanly into something neither intended, and
+# nothing local says so: the `lint-staged` glob that runs
+# `check-openapi-sync.sh` matches SOURCE files, so a merge that touches only
+# the artifact never triggers it.
 #
-# Measured by backend-1 on two branches (#1401): git auto-merged
-# `src/generated/openapi.json` with no conflict at all, and the result was
-# wrong in exactly one field —
+# ## WHY THIS IS A SCRIPT AND NOT A GIT MERGE DRIVER
 #
-#     schemas           217 vs 217        differing schemas  0
-#     paths             136 vs 136
-#     info.version      5.5.4 vs 5.6.0    <-- stale
+# #1401 proposed replacing this with `.gitattributes` plus a
+# `merge=openapi-regen` driver, so regeneration happened automatically instead
+# of being remembered. I built it and measured it, and it is WORSE THAN DOING
+# NOTHING. Two branches, each changing a different route summary and
+# regenerating:
 #
-# Identical schema and path sets, and a stale release version, because the
-# generator reads it from package.json and git took "ours" for a hunk nothing
-# conflicted in. A conflict is loud and gets resolved; a clean-but-wrong
-# auto-merge has NO local signal, and the contributor reading "no conflict" as
-# "correctly merged" finds out when `check-openapi-sync.sh` reddens after the
-# push — or does not find out.
+#                              spec has A   spec has B   == regeneration
+#     plain git text merge          1            1            YES
+#     with the regenerating driver  0            1            NO
+#
+# A merge driver is invoked DURING the merge, and git has not yet written the
+# merged sources to the working tree when it runs. Traced from inside the
+# driver at the moment of invocation:
+#
+#     INVOKED path=src/generated/openapi.json
+#       working-tree source has BRANCH-A: 0     <-- not merged yet
+#
+# So the driver regenerated from the PRE-MERGE sources and silently dropped
+# branch A's change, while plain git's three-way text merge produced exactly
+# the right file. The driver turns a correct clean merge into a quiet
+# contradiction between the artifact and its own sources — the very failure
+# #1401 set out to prevent.
+#
+# This script is correct for the one reason the driver cannot be: it merges
+# FIRST and regenerates AFTERWARDS, when the sources are final. The ordering
+# is the whole design, not an implementation detail.
+#
+# ## CORRECTION: the `info.version` evidence this used to cite was wrong
+#
+# This docblock previously justified unconditional regeneration with a
+# measurement from #1401 — a clean auto-merge that produced `info.version`
+# 5.5.4 where regeneration said 5.6.0 — and called it a silently wrong merge.
+# It is not:
+#
+#   * `tests/contracts/api-schemas.test.ts` STRIPS `info.version` before
+#     comparing, deliberately and with a comment saying why.
+#   * semantic-release bumps `package.json::version` AFTER the spec is
+#     committed, and the `chore(release)` commit never regenerates. On main
+#     today: spec 7.0.0, package.json 7.2.0 — a two-release lag with no merge
+#     anywhere near it.
+#
+# The committed spec is therefore ALWAYS at least one release behind, on every
+# branch, and git taking "ours" for that hunk returned the correct value.
+#
+# The behaviour here is unchanged — the first paragraph is reason enough and a
+# generator pass is cheap. Only the evidence was wrong, and a comment that
+# gives a false reason is worse than no comment: somebody would eventually
+# "fix" the code to match it, which is exactly how the driver came to be
+# proposed.
 #
 # So the generators run on every invocation, conflict or not. On a clean merge
 # that costs one generator pass and a no-op diff.
