@@ -307,7 +307,20 @@ exports[`API contract — per-schema snapshots schema: AgDashboardJournalItem 1`
       "type": "string"
     },
     "type": {
-      "type": "string"
+      "type": "string",
+      "enum": [
+        "ACTIVITY",
+        "OBSERVATION",
+        "INPUT_APPLICATION",
+        "SEEDING",
+        "TRANSPLANTING",
+        "HARVEST",
+        "IRRIGATION",
+        "MAINTENANCE",
+        "LAB_TEST",
+        "GRAZING"
+      ],
+      "description": "The journal entry kind, \`LogEntryType\`. A GROWING union — treat an unrecognised member as a generic entry rather than as an error, or a new kind breaks this widget on a server deploy."
     },
     "title": {
       "type": "string"
@@ -419,7 +432,18 @@ exports[`API contract — per-schema snapshots schema: AgDashboardTaskItem 1`] =
       "type": "string"
     },
     "status": {
-      "type": "string"
+      "type": "string",
+      "enum": [
+        "OPEN",
+        "TRIAGED",
+        "IN_PROGRESS",
+        "BLOCKED",
+        "PENDING_REVIEW",
+        "RESOLVED",
+        "CLOSED",
+        "CANCELED"
+      ],
+      "description": "The task status, \`WorkItemStatus\`. Note \`CANCELED\` has one L — \`CANCELLED\` is a different enum (\`CropPlan\`). A GROWING union: treat an unrecognised member as active rather than as an error."
     },
     "dueAt": {
       "type": [
@@ -7517,7 +7541,22 @@ exports[`API contract — per-schema snapshots schema: LocationListItem 1`] = `
         "null"
       ]
     },
-    "boundsJson": {},
+    "boundsJson": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "number"
+      },
+      "description": "Bounding box as \`[west, south, east, north]\`, WGS84 degrees. Null when the location has no imported parcels to bound. Exactly four numbers — the weather job rejects anything else rather than guessing an order.",
+      "example": [
+        23.1,
+        42.4,
+        23.6,
+        42.9
+      ]
+    },
     "createdAt": {
       "type": "string",
       "format": "date-time"
@@ -9330,7 +9369,30 @@ exports[`API contract — per-schema snapshots schema: ParcelGeo 1`] = `
       "description": "On-ellipsoid hectares, computed in PostGIS. A NUMBER here, unlike the STRING on an OperationParcel line."
     },
     "geometry": {
-      "description": "GeoJSON (WGS84). Simplified when the read passed \`?simplify=\` — never for sketch/edit, which needs exact geometry."
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "Polygon",
+            "MultiPolygon"
+          ]
+        },
+        "coordinates": {
+          "type": "array",
+          "items": {},
+          "description": "Nested coordinate arrays, as GeoJSON nests them — \`[[[lon, lat], …]]\` for a Polygon, one level deeper for a MultiPolygon. Left unconstrained here rather than modelled to four levels, which no generator handles usefully."
+        }
+      },
+      "required": [
+        "type",
+        "coordinates"
+      ],
+      "additionalProperties": {},
+      "description": "GeoJSON geometry, WGS84. Simplified when the read passed \`?simplify=\` — never for sketch/edit, which needs exact geometry.\\n\\n**Null is reachable and is not an error.** A simplify tolerance large enough to collapse a small parcel returns null rather than a degenerate shape, so a client must handle a parcel it cannot draw. Re-read without \`?simplify=\` to get the exact geometry."
     },
     "properties": {},
     "cadastralId": {
@@ -9406,6 +9468,7 @@ exports[`API contract — per-schema snapshots schema: ParcelGeo 1`] = `
     "name",
     "cropType",
     "areaHa",
+    "geometry",
     "cadastralId",
     "ekatte",
     "soilType",
@@ -12737,16 +12800,22 @@ exports[`API contract — per-schema snapshots schema: TrendSeries 1`] = `
   "type": "object",
   "properties": {
     "source": {
-      "type": "string"
+      "type": "string",
+      "description": "Which feed the quotes came from, e.g. \`ec\` or \`alpha-vantage\`. Series from different sources are NOT interchangeable: they quote different stages in different currencies, which is why they arrive as separate series rather than merged.",
+      "example": "ec"
     },
     "region": {
-      "type": "string"
+      "type": "string",
+      "description": "A COUNTRY code, not a Bulgarian oblast. Production carries \`BG\`, \`EL\`, \`RO\`, \`EU\` and — for Alpha Vantage — \`GLOBAL\`. The oblast codes used by Борса and the parcel registry do not appear here.",
+      "example": "BG"
     },
     "stage": {
       "type": [
         "string",
         "null"
-      ]
+      ],
+      "description": "The delivery point or market stage WITHIN the region — a feed's own vocabulary rather than ours, so treat it as an opaque label and do not parse it.\\n\\nIt is what distinguishes two series that otherwise look identical: for wheat, the nine Bulgarian delivery points disagree by tens of euros, so a chart that merged them on \`(source, region)\` alone would average unrelated markets. \`region\` + \`stage\` together identify a series.\\n\\n\`National average\` is the figure the dashboard prefers, because a farm is not tied to one depot — but not every commodity has one. Wheat, maize and barley do; sunflower's only Bulgarian series is \`FGATE\`. **Null is normal**, not missing data.",
+      "example": "National average"
     },
     "unit": {
       "type": "string"

@@ -50,7 +50,26 @@ const DaysQuery = (dflt: number) =>
 const JournalItem = z
     .object({
         id: z.string(),
-        type: z.string(),
+        // Was a bare `z.string()`, so a client had to collect the values by
+        // observation and could not know when it had seen them all (#1391).
+        // These are `LogEntryType` verbatim.
+        type: z
+            .enum([
+                'ACTIVITY',
+                'OBSERVATION',
+                'INPUT_APPLICATION',
+                'SEEDING',
+                'TRANSPLANTING',
+                'HARVEST',
+                'IRRIGATION',
+                'MAINTENANCE',
+                'LAB_TEST',
+                'GRAZING',
+            ])
+            .openapi({
+                description:
+                    'The journal entry kind, `LogEntryType`. A GROWING union — treat an unrecognised member as a generic entry rather than as an error, or a new kind breaks this widget on a server deploy.',
+            }),
         title: z.string(),
         occurredAt: z.string().datetime().nullable(),
     })
@@ -69,7 +88,24 @@ const DashboardTaskItem = z
     .object({
         id: z.string(),
         title: z.string(),
-        status: z.string(),
+        // `WorkItemStatus` verbatim, and that includes PENDING_REVIEW — which
+        // `SetTaskStatusSchema` deliberately does NOT accept. A client can
+        // RECEIVE it here and cannot SET it; see that schema for why.
+        status: z
+            .enum([
+                'OPEN',
+                'TRIAGED',
+                'IN_PROGRESS',
+                'BLOCKED',
+                'PENDING_REVIEW',
+                'RESOLVED',
+                'CLOSED',
+                'CANCELED',
+            ])
+            .openapi({
+                description:
+                    'The task status, `WorkItemStatus`. Note `CANCELED` has one L — `CANCELLED` is a different enum (`CropPlan`). A GROWING union: treat an unrecognised member as active rather than as an error.',
+            }),
         dueAt: z.string().datetime().nullable(),
     })
     .openapi('AgDashboardTaskItem');

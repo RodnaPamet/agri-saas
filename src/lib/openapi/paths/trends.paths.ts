@@ -78,9 +78,26 @@ const TrendPointSchema = z
 
 const TrendSeriesSchema = z
     .object({
-        source: z.string(),
-        region: z.string(),
-        stage: z.string().nullable(),
+        source: z.string().openapi({
+            description:
+                'Which feed the quotes came from, e.g. `ec` or `alpha-vantage`. Series from different sources are NOT interchangeable: they quote different stages in different currencies, which is why they arrive as separate series rather than merged.',
+            example: 'ec',
+        }),
+        region: z.string().openapi({
+            description:
+                'A COUNTRY code, not a Bulgarian oblast. Production carries `BG`, `EL`, `RO`, `EU` and — for Alpha Vantage — `GLOBAL`. The oblast codes used by Борса and the parcel registry do not appear here.',
+            example: 'BG',
+        }),
+        // `stage` was the one field on this schema that the operation
+        // description never mentioned (#1391), and it is the one a client is
+        // least able to guess: the values are a feed's own vocabulary.
+        stage: z.string().nullable().openapi({
+            description:
+                'The delivery point or market stage WITHIN the region — a feed\'s own vocabulary rather than ours, so treat it as an opaque label and do not parse it.' +
+                '\n\nIt is what distinguishes two series that otherwise look identical: for wheat, the nine Bulgarian delivery points disagree by tens of euros, so a chart that merged them on `(source, region)` alone would average unrelated markets. `region` + `stage` together identify a series.' +
+                '\n\n`National average` is the figure the dashboard prefers, because a farm is not tied to one depot — but not every commodity has one. Wheat, maize and barley do; sunflower\'s only Bulgarian series is `FGATE`. **Null is normal**, not missing data.',
+            example: 'National average',
+        }),
         unit: z.string(),
         currency: z.string(),
         label: z.string().nullable(),
