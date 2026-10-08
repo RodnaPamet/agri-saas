@@ -213,11 +213,11 @@ public enum AgrentColor {
         }
     }
 
-    /// brighter green — focused inputs, emphasized outlines
+    /// State border — selected card, active panel, focused field. #2F8463, nudged from #2A7F5E: the old value measured 2.83:1 on --bg-default, under WCAG 1.4.11’s 3:1 for anything identifying a component state (#1318). The shift is imperceptible by design — it is the smallest step that clears the threshold, not a new colour.
     static func borderEmphasis(_ theme: AgrentTheme) -> Color {
         switch theme {
-        case .dark: return Color(red: 0.1647, green: 0.498, blue: 0.3686, opacity: 1.0)
-        case .light: return Color(red: 0.7882, green: 0.7725, blue: 0.7451, opacity: 1.0)
+        case .dark: return Color(red: 0.1843, green: 0.5176, blue: 0.3882, opacity: 1.0)
+        case .light: return Color(red: 0.5529, green: 0.5373, blue: 0.5098, opacity: 1.0)
         case .highContrast: return Color(red: 0.0, green: 0.0, blue: 0.0, opacity: 1.0)
         }
     }
@@ -541,8 +541,8 @@ public enum AgrentColor {
     static func focusRing(_ theme: AgrentTheme) -> Color {
         switch theme {
         case .dark: return Color(red: 1.0, green: 0.8039, blue: 0.0667, opacity: 0.55)
-        case .light: return Color(red: 0.8157, green: 0.2902, blue: 0.0078, opacity: 0.4)
-        case .highContrast: return Color(red: 0.8157, green: 0.2902, blue: 0.0078, opacity: 0.4)
+        case .light: return Color(red: 0.8157, green: 0.2902, blue: 0.0078, opacity: 0.8)
+        case .highContrast: return Color(red: 0.8157, green: 0.2902, blue: 0.0078, opacity: 0.8)
         }
     }
 
@@ -550,8 +550,8 @@ public enum AgrentColor {
     static func ring(_ theme: AgrentTheme) -> Color {
         switch theme {
         case .dark: return Color(red: 1.0, green: 0.8039, blue: 0.0667, opacity: 0.55)
-        case .light: return Color(red: 0.8157, green: 0.2902, blue: 0.0078, opacity: 0.4)
-        case .highContrast: return Color(red: 0.8157, green: 0.2902, blue: 0.0078, opacity: 0.4)
+        case .light: return Color(red: 0.8157, green: 0.2902, blue: 0.0078, opacity: 0.8)
+        case .highContrast: return Color(red: 0.8157, green: 0.2902, blue: 0.0078, opacity: 0.8)
         }
     }
 

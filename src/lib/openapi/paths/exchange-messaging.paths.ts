@@ -58,8 +58,22 @@ const Message = z
     .object({
         id: z.string(),
         senderTenantId: z.string(),
-        /** Opaque id of the PERSON who sent it. Never an email or a name. */
+        /** Opaque id of the PERSON who sent it. Never an email. */
         senderUserId: z.string(),
+        senderName: z.string().nullable().openapi({
+            description:
+                "The sender's display name (#1348), for every sender in the thread — a " +
+                'colleague at your own farm AND the other party. Null when that user has ' +
+                'no name set, so render a fallback rather than an empty bubble label.\n\n' +
+                'It exists because threads are per-PERSON since #1323: a seller can see ' +
+                'several threads from one farm and could not tell them apart, and a ' +
+                'colleague bubble (`fromMyFarm && !mine`) had no speaker. Owner decision, ' +
+                'recorded on #1348.\n\n' +
+                'This does NOT weaken the contact-reveal gate, which gates PHONE and ' +
+                'EMAIL — the means of reaching someone off-platform. A name identifies who ' +
+                'you are already talking to in a conversation you opened, which is the same ' +
+                'disclosure the privacy notice already describes for offer requests.',
+        }),
         mine: z.boolean(),
         /** Sent by someone else at the caller's own farm (#1298). */
         fromMyFarm: z.boolean(),

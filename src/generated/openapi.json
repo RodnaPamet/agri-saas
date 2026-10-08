@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "5.6.0",
+    "version": "5.8.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -4399,6 +4399,13 @@
           "senderUserId": {
             "type": "string"
           },
+          "senderName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The sender's display name (#1348), for every sender in the thread — a colleague at your own farm AND the other party. Null when that user has no name set, so render a fallback rather than an empty bubble label.\n\nIt exists because threads are per-PERSON since #1323: a seller can see several threads from one farm and could not tell them apart, and a colleague bubble (`fromMyFarm && !mine`) had no speaker. Owner decision, recorded on #1348.\n\nThis does NOT weaken the contact-reveal gate, which gates PHONE and EMAIL — the means of reaching someone off-platform. A name identifies who you are already talking to in a conversation you opened, which is the same disclosure the privacy notice already describes for offer requests."
+          },
           "mine": {
             "type": "boolean"
           },
@@ -4422,6 +4429,7 @@
           "id",
           "senderTenantId",
           "senderUserId",
+          "senderName",
           "mine",
           "fromMyFarm",
           "body",

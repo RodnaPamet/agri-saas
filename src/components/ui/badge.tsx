@@ -30,7 +30,14 @@ const badgeVariants = cva(
                 error: "bg-bg-error text-content-error",
                 info: "bg-bg-info text-content-info",
                 attention: "bg-bg-attention text-content-attention",
-                brand: "bg-brand-subtle text-brand-muted",
+                // `text-brand-default`, NOT `text-brand-muted` (#1331).
+                // brand-muted on brand-subtle measures 1.76:1 in light and
+                // 1.88:1 in «Слънце» — unreadable, and WCAG wants 4.5:1.
+                // brand-default is the ONE brand token that clears it in all
+                // three themes (4.91 / 4.60 / 4.90), so this invents no colour.
+                // Latent rather than live when found: the variant had no call
+                // site, so the first caller would have inherited the defect.
+                brand: "bg-brand-subtle text-brand-default",
                 outline:
                     "border border-border-default bg-transparent text-content-muted",
             },

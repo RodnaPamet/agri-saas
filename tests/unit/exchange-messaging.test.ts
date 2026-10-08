@@ -23,6 +23,10 @@ const mockPrisma = {
     exchangeThreadRead: { updateMany: jest.fn(), create: jest.fn(), findFirst: jest.fn() },
     exchangeMessage: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), count: jest.fn() },
     exchangeBlock: { findFirst: jest.fn(), create: jest.fn(), deleteMany: jest.fn() },
+    // #1348 — `getExchangeThread` resolves a display name for every sender in
+    // the page. Without this the whole suite throws on `user.findMany` of
+    // undefined, which is a mock gap rather than a behaviour change.
+    user: { findMany: jest.fn() },
 };
 jest.mock('@/lib/prisma', () => ({ __esModule: true, prisma: mockPrisma, default: mockPrisma }));
 jest.mock('@/app-layer/events/audit', () => ({ logEvent: jest.fn() }));
@@ -125,6 +129,7 @@ beforeEach(() => {
     // they are actually testing.
     mockPrisma.exchangeThreadRead.updateMany.mockResolvedValue({ count: 1 });
     mockPrisma.exchangeThreadRead.create.mockResolvedValue({ id: 'etr1' });
+    mockPrisma.user.findMany.mockResolvedValue([]);
     mockPrisma.exchangeMessage.findMany.mockResolvedValue([]);
     mockPrisma.exchangeThread.update.mockResolvedValue({});
     mockPrisma.exchangeMessage.update.mockResolvedValue({});
@@ -576,6 +581,66 @@ describe('the bell, one row per message', () => {
     it('a failed bell write does not roll back the message', async () => {
         mockRecipientDb.notification.create.mockRejectedValue(new Error('db gone'));
         await expect(sendExchangeMessage(buyerCtx, 'th1', 'hello')).resolves.toBeDefined();
+    });
+});
+
+
+describe('every sender in a thread is named (#1348)', () => {
+    /**
+     * Threads went per-person in #1323, which created two gaps a client could
+     * not close: a seller sees several threads from one farm and cannot tell
+     * them apart, and a colleague bubble (`fromMyFarm && !mine`) has no
+     * speaker. The owner ruled that the NAME is shown rather than an anonymous
+     * per-thread label — recorded on #1348, with the trade.
+     */
+    beforeEach(() => {
+        mockPrisma.exchangeMessage.findMany.mockResolvedValue([
+            { id: 'm1', senderTenantId: BUYER, senderUserId: 'usr_buyer', body: 'hi', deletedAt: null, createdAt: new Date('2026-01-01') },
+            { id: 'm2', senderTenantId: SELLER, senderUserId: 'usr_seller', body: 'hello', deletedAt: null, createdAt: new Date('2026-01-02') },
+            { id: 'm3', senderTenantId: SELLER, senderUserId: 'usr_colleague', body: 'me too', deletedAt: null, createdAt: new Date('2026-01-03') },
+        ]);
+        mockPrisma.user.findMany.mockResolvedValue([
+            { id: 'usr_buyer', name: 'Иван Петров' },
+            { id: 'usr_seller', name: 'Мария Георгиева' },
+            { id: 'usr_colleague', name: null },
+        ]);
+    });
+
+    it('names the OTHER party and a COLLEAGUE, from one lookup', async () => {
+        const r = await getExchangeThread(sellerCtx, 'th1');
+        const by = Object.fromEntries(r.messages.map((m) => [m.id, m.senderName]));
+        // The buyer: the other farm's person, which is the disclosure the
+        // owner approved and the whole reason sibling threads can be told
+        // apart at all.
+        expect(by.m1).toBe('Иван Петров');
+        // A colleague at the caller's own farm — item 1 of #1348.
+        expect(by.m2).toBe('Мария Георгиева');
+    });
+
+    it('a user with no name is NULL, not an empty string', async () => {
+        // A client must be able to tell "no name set" from "named with
+        // nothing" so it can render a fallback rather than a blank speaker.
+        const r = await getExchangeThread(sellerCtx, 'th1');
+        expect(r.messages.find((m) => m.id === 'm3')!.senderName).toBeNull();
+    });
+
+    it('the lookup is scoped to THIS thread\'s senders — not a directory read', async () => {
+        // `User` has no tenantId and no RLS policy, so an unbounded query here
+        // would read strangers. The id set must come from the page the caller
+        // is already entitled to see.
+        await getExchangeThread(sellerCtx, 'th1');
+        const args = mockPrisma.user.findMany.mock.calls.at(-1)![0];
+        expect(args.where.id.in.sort()).toEqual(['usr_buyer', 'usr_colleague', 'usr_seller']);
+        // And it selects only what it needs — never the whole user row.
+        expect(args.select).toEqual({ id: true, name: true });
+    });
+
+    it('asks for each sender ONCE, however many messages they sent', async () => {
+        // Three messages, three senders. A page where one person sent fifty
+        // must not produce fifty ids.
+        await getExchangeThread(sellerCtx, 'th1');
+        const ids = mockPrisma.user.findMany.mock.calls.at(-1)![0].where.id.in;
+        expect(ids).toHaveLength(new Set(ids).size);
     });
 });
 
