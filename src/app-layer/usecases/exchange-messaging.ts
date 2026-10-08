@@ -36,7 +36,7 @@ import { publishNotificationEvent, type NotificationEvent } from '@/lib/notifica
 import { isLocale } from '@/lib/i18n/locales';
 import { RECIPIENT_FALLBACK_LOCALE } from '@/lib/email/recipient-locale';
 import { logger } from '@/lib/observability/logger';
-import { codedBadRequest, codedForbidden, codedNotFound } from '@/lib/errors/types';
+import { codedBadRequest, codedForbidden, codedNotFound, internal } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 
 /** A message body longer than this is a document, not a message. */
@@ -381,7 +381,7 @@ export async function openExchangeThread(ctx: RequestContext, listingId: string)
             // Unreachable: the insert either created the row or found it
             // present. A missing row here means the unique constraint is not
             // the one assumed, so fail loudly rather than inventing an id.
-            throw new Error(
+            throw internal(
                 'exchangeThread absent after a conflict-tolerant insert — check @@unique([listingId, inquirerUserId])',
             );
         }
