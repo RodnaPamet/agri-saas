@@ -41,6 +41,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { collectSourceFiles } from '../helpers/collect-files';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const ROOTS = ['src/app-layer', 'src/lib'];
@@ -70,6 +71,7 @@ const THROWERS =
 const CARRIES_CODE = /(['"`])[A-Z][A-Z0-9_]{3,}\1/;
 /** Hard stop, so a malformed file cannot make this scan run away. */
 const MAX_ARG_SCAN = 400;
+
 
 /**
  * The remainder of a call's argument list, from `start` to its matching
@@ -143,7 +145,10 @@ export function collectServerAuthoredCopy(root: string, dirs: string[] = ROOTS):
 
     const hits: CopyHit[] = [];
     for (const full of files) {
-        const src = fs.readFileSync(full, 'utf8');
+        // Comments blanked, positions intact (#1387). STRINGS ARE KEPT:
+        // the message text is this guard's entire subject, so blanking
+        // string literals would blind it rather than sharpen it.
+        const src = blankNonCode(fs.readFileSync(full, 'utf8'));
         for (const call of src.matchAll(THROWERS)) {
             const message = call[3];
             if (!looksLikeUserCopy(message)) continue;
@@ -173,8 +178,15 @@ export function collectServerAuthoredCopy(root: string, dirs: string[] = ROOTS):
  * `THROWERS` never matched, so it was drained without ever being counted.
  * That gap is worth knowing: the ratchet measures literal-message throws,
  * so a computed message is user-facing English it cannot see.
+ *
+ * 502 → 497: no message was drained. #1387 taught the scan to skip COMMENTS,
+ * and five of the 502 were prose quoting a throw rather than a throw —
+ * `permission-middleware` twice, `stock-ledger` once, and `ai/budget` twice.
+ * Lowered here rather than left as slack precisely because it is not
+ * progress: leaving it would buy five real messages' worth of headroom for
+ * nothing, which is what the drift sentinel below exists to prevent.
  */
-const CURRENT_BASELINE = 502;
+const CURRENT_BASELINE = 497;
 
 /** Slack tolerated before the sentinel demands the baseline be lowered. */
 const DRIFT_ALLOWANCE = 15;
@@ -223,6 +235,59 @@ describe('the counting rule itself', () => {
         expect(looksLikeUserCopy('BAD_REQUEST')).toBe(false);
         expect(looksLikeUserCopy('NOT_FOUND')).toBe(false);
         expect(looksLikeUserCopy('')).toBe(false);
+    });
+
+    it('prose ABOUT a throw is not a throw (#1387)', () => {
+        const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'i18n-cmt-'));
+        try {
+            fs.mkdirSync(path.join(dir, 'src/lib'), { recursive: true });
+            fs.writeFileSync(
+                path.join(dir, 'src/lib/sample.ts'),
+                [
+                    `// Denials throw badRequest('A fertilizer dose is required.') so the`,
+                    `// caller can translate it. Quoted here, not called.`,
+                    `/**`,
+                    ` * Also throws notFound('The parcel has no soil sample.') in prose.`,
+                    ` */`,
+                    `throw conflict('The lot is already closed.');`,
+                ].join('\n'),
+                'utf8',
+            );
+            const found = collectServerAuthoredCopy(dir, ['src/lib']);
+            // Exactly the one real throw. Before #1387 this was three.
+            expect(found.map((h) => h.message)).toEqual(['The lot is already closed.']);
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('a message CONTAINING `//` survives, and a `//` line holding `/*` eats nothing', () => {
+        // Two traps the stripper has to miss, and both are cheap to get
+        // wrong. Truncating at a `//` inside a string would blank real
+        // arguments and UNDER-count — the direction that hides work. And a
+        // line comment that happens to contain `/*` must not open a block
+        // comment: blanking blocks before lines made exactly that mistake
+        // elsewhere in this repo and silently swallowed ten declarations.
+        const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'i18n-str-'));
+        try {
+            fs.mkdirSync(path.join(dir, 'src/lib'), { recursive: true });
+            fs.writeFileSync(
+                path.join(dir, 'src/lib/sample.ts'),
+                [
+                    `throw badRequest('See https://agrent.bg/help for guidance.');`,
+                    `// a path like deploy/rollback/*.down.sql must not open a comment`,
+                    `throw forbidden('This farm is not yours to edit.');`,
+                ].join('\n'),
+                'utf8',
+            );
+            const found = collectServerAuthoredCopy(dir, ['src/lib']);
+            expect(found.map((h) => h.message)).toEqual([
+                'See https://agrent.bg/help for guidance.',
+                'This farm is not yours to edit.',
+            ]);
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
     });
 
     it('a CODED throw is exempt, an uncoded one is not', () => {
