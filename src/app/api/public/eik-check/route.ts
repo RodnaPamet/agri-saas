@@ -41,7 +41,7 @@ export const runtime = 'nodejs';
  * response is kept thin so that what a determined caller can harvest is only
  * what the checksum already tells them for free.
  */
-const Query = z.object({
+const Body = z.object({
     eik: z.string().trim().min(1).max(32),
 });
 
@@ -78,32 +78,6 @@ async function answerEikCheck(eik: string) {
     return jsonResponse({ valid: true, looksLikeEgn: false, registryName });
 }
 
-/**
- * `GET …?eik=…` — kept, but see the POST below.
- *
- * A query string is the wrong place for a value that may be an ЕГН: iOS
- * CFNetwork logs the full request URL unsuppressably, and a GET URL also
- * reaches browser history. The server side is clean (no Caddy access log, and
- * the request logger uses `pathname`), so this is a client-side exposure
- * rather than ours — which makes it no less real for the farmer whose phone
- * is doing the logging.
- */
-export const GET = withApiErrorHandling(
-    async (req: NextRequest) => {
-        const parsed = Query.safeParse({
-            eik: req.nextUrl.searchParams.get('eik') ?? '',
-        });
-        if (!parsed.success) {
-            return jsonResponse({ error: 'invalid_request' }, { status: 400 });
-        }
-        return answerEikCheck(parsed.data.eik);
-    },
-    {
-        // Unauthenticated and enumerable by construction — the rate limit is
-        // the control, since uniformity cannot be (see the docblock).
-        rateLimit: { config: PUBLIC_READ_LIMIT, scope: 'public-eik-check' },
-    },
-);
 
 /**
  * `POST /api/public/eik-check` — the same check, with the value in the BODY.
@@ -129,8 +103,21 @@ export const GET = withApiErrorHandling(
  * but it is the lesser option, and removing it once nothing calls it is
  * tracked in #1356.
  *
- * Both handlers share the same logic and the same uniform response, so there
- * is one answer to maintain rather than two that can drift.
+ * #1356 — THE GET IS GONE, and the quoted reasoning above turned out to be
+ * wrong about the obstacle. Removing a method is not a class
+ * `scripts/openapi-breaking.ts` scores at all; what the gate actually caught
+ * was a `schema-removed`, because `EikCheckResult` was `$ref`-ed exactly once
+ * — by the GET's own response — so deleting the method took the component with
+ * it. Pointing the POST at the same component (it had been describing the
+ * identical three fields as an anonymous inline object) anchors the component
+ * to the surviving method, and the removal then scores clean. No contract bump
+ * and no sign-off were needed. The paragraph is left standing because the
+ * mistaken inference is the interesting part: the gate named a symptom, and
+ * reading it as a verdict on "methods cannot be removed" deferred the fix.
+ *
+ * Both callers were measured first, not assumed: the web wizard POSTs
+ * (`FarmWizard.tsx`), and agrent-ios POSTs only — it has never shipped a build
+ * that sent the GET form, so no installed phone can send one either.
  */
 export const POST = withApiErrorHandling(
     async (req: NextRequest) => {
@@ -140,15 +127,15 @@ export const POST = withApiErrorHandling(
         } catch {
             return jsonResponse({ error: 'invalid_request' }, { status: 400 });
         }
-        const parsed = Query.safeParse(raw);
+        const parsed = Body.safeParse(raw);
         if (!parsed.success) {
             return jsonResponse({ error: 'invalid_request' }, { status: 400 });
         }
         return answerEikCheck(parsed.data.eik);
     },
     {
-        // Same scope as the GET, deliberately: the two share one budget so a
-        // caller cannot double its allowance by alternating methods.
+        // Scope kept as `public-eik-check` across the GET's removal: changing
+        // it would hand every caller a fresh budget at deploy.
         rateLimit: { config: PUBLIC_READ_LIMIT, scope: 'public-eik-check' },
     },
 );
