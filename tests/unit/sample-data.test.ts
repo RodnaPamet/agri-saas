@@ -96,7 +96,10 @@ describe('loadSampleData', () => {
         db.location.findFirst.mockResolvedValue({ id: 'loc1' });
         await expect(loadSampleData(ctx)).resolves.toEqual({ created: false });
         expect(db.location.create).not.toHaveBeenCalled();
-        expect(db.parcel.createMany).not.toHaveBeenCalled();
+        // `create`, not `createMany`: `loadSampleData` inserts parcels one at a
+        // time (`sample-data.ts:187`), so asserting `createMany` named a method
+        // this path never calls and could not fail (#1419).
+        expect(db.parcel.create).not.toHaveBeenCalled();
     });
 
     it('creates a tagged, tenant-scoped dataset when empty', async () => {
