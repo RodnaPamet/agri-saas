@@ -77,6 +77,22 @@ const HIBP_REQUIRED_ROUTES: ReadonlyArray<{
     field: string;
 }> = [
     {
+        // The product's ONLY signup route, and it was in neither half of this
+        // guard until #1378: it parsed its body with hand-rolled `typeof`
+        // checks, so the structural scan below — which looks for a
+        // password-shaped ZOD field — scored it zero and the curated list did
+        // not name it either. It CALLED checkPasswordAgainstHIBP throughout;
+        // what was missing was anything that would notice if it stopped.
+        //
+        // It could not simply be added here: the positive control requires
+        // every curated route to be one the DETECTOR can see, which is the
+        // assertion #1166 closed. So the route got a Zod schema in
+        // `@/lib/schemas` first — the shape GAP-10 already prescribed — and
+        // this entry became addable rather than an exception.
+        file: 'src/app/api/auth/register/start/route.ts',
+        field: 'password',
+    },
+    {
         file: 'src/app/api/auth/change-password/route.ts',
         field: 'newPassword',
     },
@@ -420,6 +436,10 @@ describe('HIBP coverage guardrail — structural scan', () => {
             ]),
         );
         expect(fieldsByRoute).toEqual({
+            // #1378 — newly VISIBLE, not newly screened. The route always
+            // called HIBP; it now declares its password field in Zod, so the
+            // detector can see it and the curated entry above has teeth.
+            'src/app/api/auth/register/start/route.ts': ['password'],
             'src/app/api/auth/change-password/route.ts': ['currentPassword', 'newPassword'],
             'src/app/api/auth/reset-password/route.ts': ['newPassword'],
         });
@@ -436,6 +456,19 @@ describe('HIBP coverage guardrail — structural scan', () => {
                 .map((hit) => `${r.file} -> ${hit.declaredIn}`),
         );
         expect(external).toEqual([
+            // #1378 restores what #1379's retirement removed. `auth/register`
+            // was the one live route reaching its password field through an
+            // import; retiring it emptied this list and left the synthetic
+            // cross-module case as the ONLY thing standing between the
+            // import-following matcher and a silent revert to the old
+            // route-file-only regex.
+            //
+            // `register/start` now reaches `AuthRegisterStartSchema` in
+            // `@/lib/schemas` the same way, so a real route proves the
+            // capability again — which is strictly better than a fixture
+            // proving it, because this one cannot be deleted without somebody
+            // noticing the signup route changed.
+            'src/app/api/auth/register/start/route.ts -> src/lib/schemas/index.ts',
         ]);
 
         // The real-route multi-hop chain this used to assert
