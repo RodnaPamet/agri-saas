@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "5.8.0",
+    "version": "6.2.1",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -279,6 +279,43 @@
           "status",
           "dueAt"
         ]
+      },
+      "AppleSignInRequest": {
+        "type": "object",
+        "properties": {
+          "identityToken": {
+            "type": "string",
+            "description": "The JWT from `ASAuthorizationAppleIDCredential.identityToken`. `identity_token` is also accepted."
+          },
+          "nonce": {
+            "type": "string",
+            "description": "The RAW nonce this attempt used — the server hashes it. `rawNonce` / `raw_nonce` are also accepted. Single-use."
+          }
+        },
+        "required": [
+          "identityToken",
+          "nonce"
+        ]
+      },
+      "AppleSignInResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NativeTokenPair"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "termsPending": {
+                "type": "boolean",
+                "description": "True when this account has no recorded terms acceptance. Every tenant and person route answers 403 until `POST /api/auth/accept-terms` succeeds."
+              }
+            },
+            "required": [
+              "termsPending"
+            ]
+          }
+        ],
+        "description": "expiresIn is a DURATION in seconds for the access token; refreshExpiresAt is an ISO INSTANT for the refresh token. The two are deliberately different kinds — do not treat expiresIn as a timestamp."
       },
       "AssetCreateRequest": {
         "type": "object",
@@ -11149,6 +11186,26 @@
           "userId"
         ],
         "additionalProperties": {}
+      },
+      "TermsInfo": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "description": "Send this back verbatim as `termsVersion`. It is a DATE plus a `-draft` suffix while these terms are unreviewed, and the suffix is deliberate — a stored row reading `…-draft` can never be mistaken for acceptance of a reviewed document. Treat it as an opaque string: do not parse the date, and do not compare versions for ordering.",
+            "example": "2026-10-07-draft"
+          },
+          "url": {
+            "type": "string",
+            "description": "The page to show. RELATIVE by design — this product is served on more than one hostname, so an absolute URL would bake in an origin that is right for only one of them. Resolve it against the origin you called.",
+            "example": "/terms"
+          }
+        },
+        "required": [
+          "version",
+          "url"
+        ],
+        "description": "Carries no body text: open `url` to show the document, so its own draft banner travels with it rather than being restated as a field here."
       },
       "TraceLotNode": {
         "type": "object",
@@ -32473,6 +32530,135 @@
         }
       }
     },
+    "/api/auth/native/apple": {
+      "post": {
+        "operationId": "signInWithApple",
+        "summary": "Sign in with Apple — identity token to token pair",
+        "description": "The one native sign-in that does NOT go through the system browser. `ASAuthorizationController` hands the app an identity token directly, so there is no `/start`, no code and no PKCE verifier: this single call IS the sign-in. Unauthenticated by construction — the identity token is the credential — and rate-limited at the pre-auth tier. \n\n**The nonce is single-use.** Generate a fresh random `nonce` per attempt, pass its SHA-256 to Apple as the request nonce, and send the RAW value here. The server checks the hash matches the token AND claims the nonce exactly once, so a replayed token is refused even though its signature is still valid. Never reuse a nonce across attempts. \n\n**Every verification failure is `400 { \"error\": \"invalid_grant\" }`** — bad signature, wrong audience, expired token, mismatched nonce and replayed nonce are indistinguishable ON PURPOSE. Do not branch on the reason; start a fresh authorisation. \n\nTwo answers are deliberately distinguishable, because both are actionable and neither describes the token: `503 apple_sign_in_disabled` means the server has no Apple audience configured (an operator task, not a client bug), and `400 email_required` means Apple sent no email on what is a FIRST authorisation — request the email scope. \n\n**A first sign-in returns `termsPending: true`.** There is no browser here, so nothing showed the terms before the account existed. Present them and call `POST /api/auth/accept-terms` with the bearer; until then every tenant and person route answers 403. That route is reachable while pending, as is this one. \n\nApple sends `email` only on the FIRST authorisation — the account is keyed on Apple’s stable `sub`, so later sign-ins need no email and must not be treated as new users.",
+        "tags": [
+          "Auth"
+        ],
+        "security": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppleSignInRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The token pair, plus `termsPending` so the client knows whether to present the terms before doing anything else.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppleSignInResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries an English `message` as a developer-facing fallback; it is NOT translated, so render your own copy keyed on `code`. Route-level 403s carry their own codes and are described on the operation that returns them.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/auth/native/adopt": {
       "get": {
         "operationId": "adoptNativeSessionIntoWebview",
@@ -33199,6 +33385,126 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AuthUiConfig"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries an English `message` as a developer-facing fallback; it is NOT translated, so render your own copy keyed on `code`. Route-level 403s carry their own codes and are described on the operation that returns them.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/terms": {
+      "get": {
+        "operationId": "getTerms",
+        "summary": "The terms version to send back, and where to read them",
+        "description": "Read this BEFORE `POST /api/auth/accept-terms`, which requires `termsVersion` to equal the version the server is serving. Until this route existed, nothing told a non-browser client what that value was — the web renders `/terms` itself so it has the constant in hand, and a native client did not (agrent-ios P4.4).\n\n**It is the way out of a trap, not a convenience.** A first Sign in with Apple answers `termsPending: true`, after which every `/api/t/**` and `/api/me/**` is a 403 until acceptance is recorded. A client that cannot learn the version is held there permanently, and for an Apple-only account using Hide My Email there is no web fallback.\n\n**Public and ungated**, like the document itself: an anonymous reader and a signed-in one see the same version. It is under `/api/auth/` so a `termsPending` session can reach it — that session is the one which MUST be able to.\n\n**Do not cache across sessions.** The version changes when the terms change, which is exactly when a stale read is harmful: you would send a version the user did not see.\n\nOn `400 terms_version_stale` from accept-terms, re-read this, show the document again and ask again. **Never retry with the `currentVersion` the error carries** — that files consent against a version the user never read, which is worse than the error, because the stored row is the only legal artifact the product keeps.",
+        "tags": [
+          "Auth"
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The current terms version and the page to read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TermsInfo"
                 }
               }
             }

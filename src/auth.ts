@@ -38,6 +38,7 @@ import Google from 'next-auth/providers/google';
 // Microsoft's product rename. v4 still ships under the original name.
 // Same provider, same OAuth endpoints, same scopes.
 import AzureAD from 'next-auth/providers/azure-ad';
+import Apple from 'next-auth/providers/apple';
 import { PrismaAdapter } from '@next-auth/prisma-adapter';
 import prisma from '@/lib/prisma';
 import { env } from '@/env';
@@ -51,6 +52,7 @@ import { isTokenExpired, refreshAccessToken } from '@/lib/auth/refresh';
 import type { Role } from '@prisma/client';
 import { edgeLogger } from '@/lib/observability/edge-logger';
 import { hashForLookup, hashForLookupCandidates } from '@/lib/security/encryption';
+import { mintAppleClientSecret } from '@/lib/auth/apple-client-secret';
 import { redeemPendingInvites } from '@/lib/auth/invite-redemption';
 
 // ─── Type augmentation ──────────────────────────────────────────────
@@ -354,6 +356,51 @@ const providers: NextAuthOptions['providers'] = [
         },
     }),
 ];
+
+// ─── Sign in with Apple — web flow (P4.2) ───────────────────────────
+//
+// Pushed CONDITIONALLY, which is the one way this provider differs from its
+// two neighbours above. Google and Microsoft are registered unconditionally
+// and carry possibly-undefined credentials; that is survivable for them
+// because both are configured in every environment this runs in.
+//
+// Apple is not configured yet. A registered provider with no secret does NOT
+// fail closed — `next-auth` registers it, `getProviders()` returns it, the
+// login page renders the button, and the failure arrives at the token
+// exchange as an opaque `OAuthCallback` error. The user experiences a button
+// that bounces them back to the login page; the operator gets a log line
+// naming nothing. So the button exists only when it can work.
+//
+// `mintAppleClientSecret()` also returns null for a key that will not load,
+// which collapses into the same "no button" state rather than a broken one.
+const appleClientSecret = mintAppleClientSecret();
+if (appleClientSecret && env.APPLE_SERVICES_ID) {
+    providers.push(
+        Apple({
+            clientId: env.APPLE_SERVICES_ID,
+            clientSecret: appleClientSecret,
+            // Apple returns the user's name and email in a FORM POST body on
+            // first authorisation, not in the ID token's query callback, so the
+            // callback must accept a POST. `next-auth`'s Apple provider sets
+            // `checks: ['pkce', 'state']` and the `form_post` response mode
+            // itself; this is here to say the behaviour is deliberate, because
+            // a `response_mode` added "for consistency" with Google breaks it.
+            //
+            // Scopes are deliberately absent: requesting `name email` forces
+            // the form_post flow, and Apple then omits the email on every
+            // subsequent sign-in. The account is keyed on `sub` for exactly
+            // that reason — see `src/app/api/auth/native/apple/route.ts`.
+        }),
+    );
+} else if (env.APPLE_BUNDLE_ID) {
+    // The native flow is on and the web flow is not. Legitimate — the bundle
+    // id alone configures the app — but worth saying once, because "Apple
+    // sign-in works in the app and not on the website" otherwise looks like a
+    // bug rather than a missing Services ID.
+    edgeLogger.info('Sign in with Apple: native flow only, no web button', {
+        component: 'auth',
+    });
+}
 
 // ─── Invite-redemption helpers ──────────────────────────────────────
 //
@@ -868,7 +915,7 @@ export async function buildSessionClaims(input: {
 }): Promise<JWT | null> {
     const dbUser = await prisma.user.findUnique({
         where: { id: input.userId },
-        select: { email: true },
+        select: { email: true, acceptedTermsAt: true },
     });
     if (!dbUser?.email) return null;
 
@@ -877,6 +924,25 @@ export async function buildSessionClaims(input: {
         sub: input.userId,
         userId: input.userId,
         userSessionId: input.userSessionId,
+        // The consent gate (P3.1 / #1376) reads `termsPending === true`, and an
+        // ABSENT claim reads as not-pending — deliberately, so sessions minted
+        // before that shipped are not locked out mid-session. That default is
+        // right for an old cookie and WRONG for a token minted now: every
+        // hand-minted session came through here without the claim, so SSO, the
+        // native exchange, the webview adopt and every token refresh produced a
+        // credential the gate could not hold. A session that refreshes while
+        // pending lost the hold 15 minutes after sign-in.
+        //
+        // Set here rather than at each of those call sites because this is the
+        // single producer — the same argument that keeps `memberships` out of
+        // `POST /api/auth/token`. It costs no extra query: the row is already
+        // being read for the email.
+        //
+        // No try/catch, unlike the `jwt` callback: a read failure propagates
+        // and the caller refuses to mint. That is stricter than holding at the
+        // consent page, and strictness is affordable on a path with no session
+        // yet — there is nobody to lock out of their own account.
+        termsPending: dbUser.acceptedTermsAt == null,
     };
 
     // The single producer. Sets userId, sessionVersion, uiLanguage,
