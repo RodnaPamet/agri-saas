@@ -127,7 +127,28 @@ export type RlsBypassReason =
      * exclusion would silently do nothing and withdrawn sellers' listings
      * would stay on the map fielding inquiries they cannot answer.
      */
-    | 'module-availability';
+    | 'module-availability'
+    /**
+     * Creating a tenant under an organization, before that tenant exists
+     * (#1368).
+     *
+     * There is genuinely no tenant context to set: an ORG_ADMIN is creating a
+     * tenant that does not exist yet, so there is nothing to scope to. The
+     * three writes in `createTenantUnderOrg` — the tenant row, the creator's
+     * OWNER membership and the onboarding row — are correct, and they were
+     * tripping `missing_tenant_context` at WARN three times per create because
+     * the bypass was undeclared rather than because anything was wrong.
+     *
+     * Declared because the same org boundary was already NAMED on the way out
+     * and unnamed on the way in: `PortfolioRepository` had five
+     * `org-portfolio-read` call sites and the create path had zero. #1261 made
+     * the typed bypass the only door precisely so an intentional one is named
+     * with a reason and an unnamed one is what warns.
+     *
+     * Distinct from `seed` and `admin-script`: this runs on a user's request,
+     * through a permission-gated route, and creates exactly one tenant.
+     */
+    | 'org-tenant-bootstrap';
 
 /**
  * Execute a callback with the raw `prisma` client — no tenant context,
@@ -208,6 +229,7 @@ const REASON_REGISTRY: Record<RlsBypassReason, true> = {
     'test': true,
     'org-portfolio-read': true,
     'module-availability': true,
+    'org-tenant-bootstrap': true,
 };
 
 const KNOWN_REASONS: ReadonlySet<string> = new Set(Object.keys(REASON_REGISTRY));

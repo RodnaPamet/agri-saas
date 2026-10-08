@@ -95,11 +95,23 @@ class FakePrismaKnown extends Error {
         this.code = code;
     }
 }
-jest.mock('@prisma/client', () => ({
-    Prisma: {
-        PrismaClientKnownRequestError: FakePrismaKnown,
-    },
-}));
+// Derive from the REAL module rather than replacing it. The only thing this
+// mock needs to change is the error class (above); replacing the whole module
+// also removed `Prisma.dmmf`, and `rls-middleware` enumerates tenant-scoped
+// models from the dmmf AT IMPORT TIME. That made the suite fail to run the
+// moment `org-tenants` imported anything from `rls-middleware` (#1368) — a
+// partial barrel mock that works right up until the module graph grows an edge.
+//
+// `Object.create` rather than a spread, and the distinction is load-bearing:
+// `Prisma.dmmf` is a NON-ENUMERABLE GETTER, so `{ ...actual.Prisma }` silently
+// drops it and the failure is identical to having no mock fix at all. Deriving
+// leaves it reachable through the prototype chain.
+jest.mock('@prisma/client', () => {
+    const actual = jest.requireActual('@prisma/client');
+    const Prisma = Object.create(actual.Prisma) as typeof actual.Prisma;
+    Prisma.PrismaClientKnownRequestError = FakePrismaKnown;
+    return { ...actual, Prisma };
+});
 
 import { createTenantUnderOrg } from '@/app-layer/usecases/org-tenants';
 import { provisionAllOrgAdminsToTenant } from '@/app-layer/usecases/org-provisioning';
