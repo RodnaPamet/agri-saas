@@ -31,6 +31,7 @@ import {
 import { createTenantUnderOrg } from '@/app-layer/usecases/org-tenants';
 import { provisionOrgAdminToTenants } from '@/app-layer/usecases/org-provisioning';
 import type { OrgContext } from '@/app-layer/types';
+import { logger } from '@/lib/observability/logger';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
@@ -317,6 +318,86 @@ describeFn('Epic O-2 — full organization lifecycle (DB-backed)', () => {
                 },
             });
             expect(row!.role).toBe('OWNER');
+        }
+    });
+
+    // ── LAST, deliberately ───────────────────────────────────────────
+    //
+    // This test creates a FOURTH tenant, and the assertions above range
+    // over `createdTenantIds` — `toHaveLength(3)`, `provision.created ===
+    // 3`, and the teardown fan-out all count it. Placed anywhere earlier,
+    // it fails three tests that have nothing wrong with them.
+    //
+    // It cannot clean up after itself instead: `LAST_OWNER_GUARD` (a BEFORE
+    // DELETE trigger, migration 20260424220000) refuses to remove a
+    // tenant's last active OWNER, and the Tenant FK is not ON DELETE
+    // CASCADE, so a tenant that has an OWNER cannot be hard-deleted at all
+    // — tenants are SOFT-deleted. This suite's `afterAll` attempts exactly
+    // that hard delete behind `.catch(() => {})` and has therefore never
+    // worked: 18 leaked tenants over 6 runs when measured (#1432).
+    it('creating a tenant declares its RLS bypass instead of tripping the warning (#1368)', async () => {
+        /**
+         * The property is the ABSENCE of a log line, which is why this lives
+         * in the integration suite rather than the unit one.
+         *
+         * `tests/unit/usecases/org-tenants.test.ts` mocks both `@/lib/prisma`
+         * and the logger, so the RLS middleware is never in the path and the
+         * warning can neither fire nor be observed — a mocked test cannot see
+         * a defect in the thing it replaced, which is the lesson
+         * `rls-middleware`'s own docblock records about this exact module.
+         *
+         * Before the fix: three `rls-middleware.missing_tenant_context` WARNs
+         * per create, because the middleware escalates a write with no tenant
+         * context and no DECLARED bypass. The writes were always correct —
+         * there is no tenant to scope to while creating one — so the warning
+         * fired on a healthy path, three times for every tenant created under
+         * an org.
+         *
+         * After: one `rls-middleware.bypass_invoked` at INFO naming
+         * `org-tenant-bootstrap`, and no warning.
+         */
+        const ctx = ctxFor('ORG_ADMIN', creatorUserId);
+        type Line = { msg: string; meta: Record<string, unknown> };
+        const warns: Line[] = [];
+        const infos: Line[] = [];
+        // `jest.spyOn` rather than assignment: the logger's methods are
+        // readonly, and a spy restores itself even if the create throws.
+        const tap = (into: Line[]) =>
+            ((msg: string, meta?: unknown) => {
+                into.push({ msg: String(msg), meta: (meta ?? {}) as Record<string, unknown> });
+            }) as never;
+        const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(tap(warns));
+        const infoSpy = jest.spyOn(logger, 'info').mockImplementation(tap(infos));
+
+        try {
+            const result = await createTenantUnderOrg(ctx, {
+                name: `${uniq} bypass-probe`,
+                slug: `${uniq}-bypass`,
+            });
+            createdTenantIds.push(result.tenant.id);
+
+            // The control FIRST: if the bypass were not invoked at all, the
+            // absence of warnings below would prove nothing — it would be
+            // satisfied by a create that never reached the middleware, or by
+            // a logger tap that captured nothing.
+            const bypasses = infos.filter((l) => l.msg === 'rls-middleware.bypass_invoked');
+            expect(bypasses.length).toBeGreaterThan(0);
+
+            // Pinned to the REASON, not just to "a bypass happened". Without
+            // this the test would still pass if the declaration were changed
+            // to any other reason in the allowlist, which is the one thing a
+            // reviewer auditing bypasses reads.
+            expect(bypasses.map((l) => l.meta.reason)).toContain('org-tenant-bootstrap');
+
+            // And the property: no missing-context warning on a healthy path.
+            expect(
+                warns
+                    .filter((l) => l.msg === 'rls-middleware.missing_tenant_context')
+                    .map((l) => `${l.meta.model}.${l.meta.action}`),
+            ).toEqual([]);
+        } finally {
+            warnSpy.mockRestore();
+            infoSpy.mockRestore();
         }
     });
 });
