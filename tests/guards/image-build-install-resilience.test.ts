@@ -42,6 +42,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { collectSourceFiles } from '../helpers/collect-files';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -161,29 +162,60 @@ describe('image build survives a failed optional native download', () => {
         // A STATIC import would pull the native addon into the module graph at
         // build time, which is what makes the optional classification safe to
         // begin with.
-        const provider = read('src/app-layer/ai/vision/onnx-provider.ts');
-        // `import type` is erased; a value import is not.
-        expect(provider).toMatch(/import type \{[^}]*\} from 'onnxruntime-node'/);
-        expect(provider).not.toMatch(/^import \{[^}]*\} from 'onnxruntime-node'/m);
+        //
+        // #1392 CHANGED THE MECHANISM, so this test changed with it. It used to
+        // REQUIRE `import type { … } from 'onnxruntime-node'`, on the reasoning
+        // that `import type` is erased while a value import is not. True, and
+        // beside the point: a type-only import still needs the package ON DISK
+        // at compile time, so it made `Typecheck` fail at random whenever npm
+        // skipped the optional install. The property worth asserting was never
+        // "an `import type` exists" — it was "nothing forces the compiler to
+        // resolve this package", and the old assertion pinned a means as if it
+        // were the end. Improving the means broke it.
+        const raw = read('src/app-layer/ai/vision/onnx-provider.ts');
+        // Comments blanked, because the provider's docblock now QUOTES all
+        // three banned forms to explain them. The previous version of the
+        // dynamic-import count read raw source and would have scored that
+        // prose as a call — the same mistake its own comment records making
+        // once already, in the other direction (`typeof` in type position).
+        const provider = blankNonCode(raw);
 
-        // EXACTLY ONE dynamic import, the one inside `loadOnnxRuntime`. This
-        // counts the CALL rather than looking for the helper's name: a
-        // mutation that reverted both call sites to bare `import()` and left
-        // the (now unused) helper in place SURVIVED a `toContain`
-        // assertion, because the token was still in the file. The property is
-        // "every load goes through the guarded path", not "the word appears".
-        // `(?<!typeof )` because the loader's own return type is
-        // `Promise<typeof import('onnxruntime-node')>` — a TYPE-position
-        // occurrence, erased at compile time. The first version of this
-        // assertion counted it and reported 2, which is the detector matching
-        // the writing about the thing rather than the thing.
-        const dynamicImports = provider.match(/(?<!typeof )import\('onnxruntime-node'\)/g) ?? [];
+        // No compile-time reference in ANY of the three forms that resolve.
+        expect(provider).not.toMatch(/import\s+type\s[^;]*from\s*'onnxruntime-node'/);
+        expect(provider).not.toMatch(/typeof\s+import\('onnxruntime-node'\)/);
+        expect(provider).not.toMatch(/import\('onnxruntime-node'\)/);
+        expect(provider).not.toMatch(/^import\s[^;]*from\s*'onnxruntime-node'/m);
+
+        // EXACTLY ONE dynamic load, through the `string`-typed id. This counts
+        // the CALL rather than looking for the helper's name: a mutation that
+        // reverted both call sites to a bare `import()` and left the now-unused
+        // helper in place SURVIVED a `toContain` assertion, because the token
+        // was still in the file. The property is "every load goes through the
+        // guarded path", not "the word appears".
+        const dynamicImports = provider.match(/import\(ONNX_MODULE_ID\)/g) ?? [];
         expect(dynamicImports).toHaveLength(1);
         const calls = provider.match(/loadOnnxRuntime\(\)/g) ?? [];
         expect(calls.length).toBeGreaterThanOrEqual(2); // both load sites
 
+        // The id must stay a BINDING — that indirection is what stops the
+        // compiler resolving the module. Measured with the package removed:
+        // an inline `import('onnxruntime-node')` gives 3 × TS2307, while both
+        // `const ID = '…'` and `const ID: string = '…'` give 0. So the
+        // assertion above (no literal specifier anywhere) is the one carrying
+        // the property; this one pins the declaration's SHAPE so the intent
+        // survives a tidy-up that inlines it.
+        //
+        // The `: string` annotation is deliberately part of that shape even
+        // though it is not load-bearing today: it makes the specifier
+        // non-literal by type as well as by position, so the property does not
+        // rest on TypeScript continuing to decline to follow a const-narrowed
+        // literal. Asserted rather than assumed, because the first draft of
+        // this comment claimed the annotation WAS the mechanism and the
+        // measurement said otherwise.
+        expect(provider).toMatch(/const ONNX_MODULE_ID:\s*string\s*=\s*'onnxruntime-node'/);
+
         // The failure names the cause rather than surfacing MODULE_NOT_FOUND.
-        expect(provider).toMatch(/not installed/);
+        expect(raw).toMatch(/not installed/);
     });
 
     it('no source file outside the provider imports it at all', () => {
