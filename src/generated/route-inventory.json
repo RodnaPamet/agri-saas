@@ -251,6 +251,11 @@
       "documented": false
     },
     {
+      "path": "/api/auth/terms",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/auth/token",
       "status": "live",
       "documented": false

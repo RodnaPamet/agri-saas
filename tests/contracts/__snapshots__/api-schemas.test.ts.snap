@@ -11745,6 +11745,29 @@ exports[`API contract — per-schema snapshots schema: TaskWatcher 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: TermsInfo 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Send this back verbatim as \`termsVersion\`. It is a DATE plus a \`-draft\` suffix while these terms are unreviewed, and the suffix is deliberate — a stored row reading \`…-draft\` can never be mistaken for acceptance of a reviewed document. Treat it as an opaque string: do not parse the date, and do not compare versions for ordering.",
+      "example": "2026-10-07-draft"
+    },
+    "url": {
+      "type": "string",
+      "description": "The page to show. RELATIVE by design — this product is served on more than one hostname, so an absolute URL would bake in an origin that is right for only one of them. Resolve it against the origin you called.",
+      "example": "/terms"
+    }
+  },
+  "required": [
+    "version",
+    "url"
+  ],
+  "description": "Carries no body text: open \`url\` to show the document, so its own draft banner travels with it rather than being restated as a field here."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: TraceLotNode 1`] = `
 "{
   "type": "object",
