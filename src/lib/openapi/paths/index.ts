@@ -35,6 +35,7 @@ import { registerLeasePaths } from './leases.paths';
 import { registerCadastreAndReportPaths } from './cadastre-reports.paths';
 import { registerFarmProfilePaths } from './farm-profile.paths';
 import { registerMeFarmsPaths } from './me-farms.paths';
+import { registerAdminMembersPaths } from './admin-members.paths';
 
 export function registerAllPaths(registry: OpenAPIRegistry): void {
     registerSecuritySchemes(registry);
@@ -69,4 +70,5 @@ export function registerAllPaths(registry: OpenAPIRegistry): void {
     registerCadastreAndReportPaths(registry);
     registerFarmProfilePaths(registry);
     registerMeFarmsPaths(registry);
+    registerAdminMembersPaths(registry);
 }
