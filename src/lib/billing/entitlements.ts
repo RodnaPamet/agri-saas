@@ -52,7 +52,15 @@
  */
 import type { RequestContext } from '@/app-layer/types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
-import { forbidden } from '@/lib/errors/types';
+import { codedForbidden, forbidden } from '@/lib/errors/types';
+import type { BillingStatus } from '@prisma/client';
+import {
+    isCapabilityRestricted,
+    resolvePastDueState,
+    PAST_DUE_GRACE_DAYS,
+    type PastDueState,
+    type RestrictedCapability,
+} from '@/lib/billing/past-due';
 
 /**
  * Run `cb` inside the caller's OPEN transaction when it supplied one, else
@@ -159,12 +167,20 @@ export function getBillingMode(): BillingMode {
  *     but has not started a paid subscription).
  *   • SAAS with a BillingAccount row → row's `plan`.
  *
- * Status (CANCELED, PAST_DUE, …) is INTENTIONALLY NOT YET ENFORCED
- * here — a CANCELED PRO tenant still resolves to PRO until the
- * subscription end date. The webhook handler is responsible for
- * downgrading the row to FREE when the period ends. Trying to
- * second-guess that here would race with the webhook and produce
- * confusing user-facing failures.
+ * Status (CANCELED, PAST_DUE, …) is STILL NOT ENFORCED HERE, and the
+ * reasoning is unchanged: a CANCELED PRO tenant resolves to PRO until the
+ * subscription end date, the webhook downgrades the row to FREE when the
+ * period ends, and second-guessing that here would race the webhook and
+ * produce confusing user-facing failures.
+ *
+ * PAST_DUE is now enforced, but NOT as a plan — see `assertNotPastDueRestricted`
+ * and `src/lib/billing/past-due.ts` (#1325). It withholds a named list of
+ * CAPABILITIES after a 14-day grace and leaves `plan` alone, precisely so this
+ * function keeps answering the question it is for. Pushing a failing tenant
+ * onto FREE here was the first design and is wrong: FREE is a set of COUNT
+ * limits, so a tenant would be told it has too many users while still browsing
+ * the exchange, and somebody would have to decide what happens to the 4th user
+ * who already exists.
  */
 export async function getEffectivePlan(
     ctx: RequestContext,
@@ -186,6 +202,115 @@ export async function getEffectivePlan(
         });
         return ((account?.plan ?? 'FREE') as Plan);
     });
+}
+
+// ─── PAST_DUE grace enforcement (#1325) ──────────────────────────
+
+/**
+ * Refuse a capability the owner's 14-day PAST_DUE ruling withholds.
+ *
+ * Call this at the same places `assertWithinLimit` is called — the mutation
+ * boundary — and at the two surfaces that close entirely. It is separate from
+ * `assertWithinLimit` on purpose: that one answers "have you got room on your
+ * plan", this one answers "is your account in good standing", and collapsing
+ * them would make a payment problem report itself as a plan limit and send the
+ * user to an upgrade page that cannot fix it.
+ *
+ * Self-hosted deployments are never restricted — there is no payment to fail.
+ *
+ * The failure is a 403 carrying the CODE `PAST_DUE_RESTRICTED` in `code`, not
+ * in `message` — the #1388 / #1405 convention. A client switches on it and
+ * routes to the billing PORTAL, which is a different destination from
+ * `plan_limit_exceeded`'s plan picker; a tenant sent to the wrong one cannot
+ * get out.
+ *
+ * **Deliberately NOT a `forbidden()` with an English sentence**, which is what
+ * the sibling `plan_limit_exceeded` and `ai_budget_exceeded` throws still are
+ * and what the `no-server-authored-user-copy` ratchet is counting down. The
+ * user-facing sentences live in `billing.pastDue.*` in BOTH locales, so the
+ * reader's language decides which they see; a message authored here would
+ * reach a Bulgarian farmer in English. `capability` rides in `params` so the
+ * code stays switchable while the detail is still available to a log.
+ */
+export async function assertNotPastDueRestricted(
+    ctx: RequestContext,
+    capability: RestrictedCapability,
+    tx?: PrismaTx,
+): Promise<void> {
+    if (BILLING_MODE === 'SELFHOSTED') return;
+
+    const facts = await runIn(ctx, tx, (db) =>
+        db.billingAccount.findUnique({
+            where: { tenantId: ctx.tenantId },
+            select: { status: true, pastDueSince: true },
+        }),
+    );
+    refuseIfRestricted(facts, capability);
+}
+
+/**
+ * The same gate for a caller that holds a tenant id and no `RequestContext`.
+ *
+ * `ingestUploadedFile` is the one that needs it, and it is also the most
+ * valuable place to gate: CLAUDE.md's upload convention makes it the choke
+ * point every record-backed upload reaches, so one call here covers evidence,
+ * journal attachments, invoices and the importers without touching any of
+ * them. `BillingAccount` is not RLS-scoped, so reading it on the global client
+ * is correct rather than a shortcut.
+ */
+export async function assertTenantNotPastDueRestricted(
+    tenantId: string,
+    capability: RestrictedCapability,
+): Promise<void> {
+    if (BILLING_MODE === 'SELFHOSTED') return;
+
+    // LAZY import, not a module-scope one. `entitlements` is imported by
+    // usecases all over `src/app-layer`, and pulling `@/lib/prisma` into its
+    // module graph makes every suite that partially mocks
+    // `@/lib/db/rls-middleware` fail to load — measured: two exchange suites
+    // died on `withRlsTripwireExtension is not a function` the moment the
+    // top-level import landed. Same reasoning as `src/auth.ts`'s lazy
+    // `resolveBearerSession`.
+    const { prisma } = await import('@/lib/prisma');
+    const facts = await prisma.billingAccount.findUnique({
+        where: { tenantId },
+        select: { status: true, pastDueSince: true },
+    });
+    refuseIfRestricted(facts, capability);
+}
+
+/** One refusal, so the two entry points cannot word it differently. */
+function refuseIfRestricted(
+    facts: { status: BillingStatus; pastDueSince: Date | null } | null,
+    capability: RestrictedCapability,
+): void {
+    if (!isCapabilityRestricted(facts, capability)) return;
+
+    throw codedForbidden('PAST_DUE_RESTRICTED', 'Account payment is outstanding.', {
+        capability,
+        graceDays: String(PAST_DUE_GRACE_DAYS),
+    });
+}
+
+/**
+ * The state a page needs to render the restriction banner.
+ *
+ * Returns the not-past-due state for self-hosted deployments and for tenants
+ * with no billing row, so a caller never has to special-case either.
+ */
+export async function getPastDueState(
+    ctx: RequestContext,
+    tx?: PrismaTx,
+): Promise<PastDueState> {
+    if (BILLING_MODE === 'SELFHOSTED') return resolvePastDueState(null);
+
+    const facts = await runIn(ctx, tx, (db) =>
+        db.billingAccount.findUnique({
+            where: { tenantId: ctx.tenantId },
+            select: { status: true, pastDueSince: true },
+        }),
+    );
+    return resolvePastDueState(facts);
 }
 
 // ─── AI model-tier gating ────────────────────────────────────────

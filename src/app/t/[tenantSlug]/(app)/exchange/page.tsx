@@ -1,5 +1,7 @@
 import { getTenantCtx } from '@/app-layer/context';
 import { requireModule } from '@/lib/security/require-module';
+import { getPastDueState } from '@/lib/billing/entitlements';
+import { PastDueRestricted } from '@/components/billing/PastDueRestricted';
 import { ExchangeClient } from './ExchangeClient';
 
 /**
@@ -20,5 +22,17 @@ export default async function ExchangePage({
     const { tenantSlug } = await params;
     const ctx = await getTenantCtx({ tenantSlug });
     await requireModule(ctx, 'EXCHANGE');
+
+    // #1325 — a payment outstanding past the 14-day grace closes BROWSING,
+    // and this surface is the right place for that because the module gate
+    // above already draws the same line: browsing is PARTICIPATION in the
+    // marketplace, while `/exchange/my-listings` is CUSTODY of your own rows
+    // and stays reachable. Rendered rather than redirected — see the
+    // component for why `requireModule`'s redirect is wrong here.
+    const pastDue = await getPastDueState(ctx);
+    if (pastDue.restricted) {
+        return <PastDueRestricted tenantSlug={tenantSlug} surface="exchange" />;
+    }
+
     return <ExchangeClient />;
 }

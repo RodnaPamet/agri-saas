@@ -15,6 +15,7 @@ import { regionByCode } from '@/lib/geo/bulgaria-regions';
 import { logger } from '@/lib/observability/logger';
 import { sendInquiryEmail } from '@/lib/email/inquiry-email';
 import { assertWithinLimit } from '@/lib/billing/entitlements';
+import { assertNotPastDueRestricted } from '@/lib/billing/entitlements';
 import { isLocale } from '@/lib/i18n/locales';
 import {
     Prisma,
@@ -108,6 +109,12 @@ export async function listActiveListings(
     page: ListingPageParams = {},
 ) {
     assertCanRead(ctx);
+    // Their own view of the market closes. Note what this does NOT do: every
+    // other farm keeps seeing this tenant's ACTIVE listings and can still
+    // contact them, and inbound threads keep working — the owner chose that
+    // scope so a payment problem never breaks a live negotiation with a
+    // PAYING buyer, and so nothing has to be restored when they pay.
+    await assertNotPastDueRestricted(ctx, 'exchange');
     const excludeSellerTenantIds = await sellerTenantsWithExchangeOff();
     return runInTenantContext(ctx, (db) =>
         ExchangeRepository.listActiveListings(
@@ -166,6 +173,10 @@ export async function createListing(ctx: RequestContext, input: CreateListingInp
         // so two concurrent creates on a tenant at limit-1 both counted
         // limit-1, both passed, and both wrote — the cap was advisory under
         // precisely the burst it exists to stop.
+        // In good standing first, then within plan. Two different
+        // problems with two different fixes — a payment failure must not
+        // send somebody to a plan picker (#1325).
+        await assertNotPastDueRestricted(ctx, 'exchange', db);
         await assertWithinLimit(ctx, 'exchange_listing', db);
 
         const listing = await ExchangeRepository.createListing(db, {

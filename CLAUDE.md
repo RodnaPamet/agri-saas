@@ -1008,6 +1008,52 @@ Adding a new gated resource is a one-line change in `PLAN_LIMITS`,
 a `switch` arm in `getCurrentCount`, and one
 `await assertWithinLimit(ctx, '<resource>')` call at the create-site.
 
+**A failed payment is a SECOND, separate gate, and it is not a plan (#1325).**
+`BillingAccount.status = 'PAST_DUE'` keeps full access for **14 days**
+(`PAST_DUE_GRACE_DAYS`), then withholds a named list of CAPABILITIES —
+exchange, trends, `task.create`, `upload`, `journal.create` — via
+`assertNotPastDueRestricted(ctx, '<capability>')` from
+`@/lib/billing/entitlements`. `plan` is never touched. Owner-ruled: read what
+you have, add nothing new, and the two market surfaces close.
+
+- **Keep the two failures distinguishable.** The refusal is a 403 carrying
+  `PAST_DUE_RESTRICTED` in `code` (the #1388 / #1405 convention, via
+  `codedForbidden`) and sends the user to the billing PORTAL;
+  `plan_limit_exceeded:` is a prose `forbidden()` and sends them to a plan
+  picker. Different destinations, and a tenant sent to the wrong one cannot get
+  out. Do not collapse the gates: "have you room on your plan" and "is your
+  account in good standing" are different questions with different fixes. Note
+  the new gate does NOT copy its sibling's prose message — the user-facing
+  sentences are in `billing.pastDue.*` in both locales, and
+  `no-server-authored-user-copy` is ratcheting the prose ones down.
+- **There is NO sweep, deliberately.** The restriction is COMPUTED from
+  `pastDueSince` at request time, so a `payment_succeeded` that clears the
+  column unrestricts the tenant on the very next request. #1325 specified a
+  scheduled job and then named the race it would have with the webhook; both
+  dissolve this way. Do not "optimise" it into a cron.
+- **Only `pastDueStatusPatch` may write `pastDueSince`.** Stripe fires
+  `invoice.payment_failed` on EVERY smart retry, so a site stamping `now()`
+  each time pushes the deadline out ~4× and the restriction never fires — a
+  14-day grace that silently lasts for ever, with every "entering PAST_DUE
+  sets the clock" test still green. All five `status` writes in
+  `src/lib/stripe.ts` spread that helper so the two columns cannot be written
+  apart.
+- **A NULL `pastDueSince` on a PAST_DUE row means IN-GRACE, never expired.**
+  That is every row that predates the column; reading it as expired would
+  restrict every already-failing tenant on the first request after a deploy.
+- **The restriction is the unpaid tenant's OWN view.** Their ACTIVE listings
+  stay visible to every other farm and inbound threads keep arriving — pulling
+  them would break live negotiations with PAYING buyers and would need a
+  suppressed-not-withdrawn state to restore from. Nothing is restored on
+  payment, which is what makes the narrow scope safe.
+- **Gate at the usecase, except where the usecase has no tenant.** Trends is
+  gated at its three ROUTES because `getPriceTrends` / `getMarketNews` take no
+  `RequestContext` and their payload is Redis-cached across tenants. Uploads
+  are gated once at `ingestUploadedFile`, the choke point every record-backed
+  upload reaches. `tests/guards/past-due-capability-coverage.test.ts` derives
+  its population from the filesystem, so a new exchange or trends USECASE
+  fails until somebody records whether it is gated or deliberately open.
+
 **See `docs/billing.md`** for the full operator + developer runbook,
 the reasoning behind plan limits, the failure-shape contract
 (`forbidden('plan_limit_exceeded: …')` → 403), and the "what NOT to

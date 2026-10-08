@@ -7,6 +7,8 @@ import { logger } from '@/lib/observability/logger';
 type BillingPlan = 'FREE' | 'TRIAL' | 'PRO' | 'ENTERPRISE';
 type BillingStatus = 'ACTIVE' | 'PAST_DUE' | 'CANCELED' | 'INCOMPLETE' | 'TRIALING';
 
+import { pastDueStatusPatch } from '@/lib/billing/past-due';
+
 // ─── Lazy Stripe client ───
 
 let _stripe: Stripe | null = null;
@@ -266,7 +268,13 @@ export async function handleWebhookEvent(event: Stripe.Event): Promise<void> {
                 data: {
                     stripeSubscriptionId: subscriptionId,
                     ...(checkoutPlan ? { plan: checkoutPlan } : {}),
-                    status: mapStripeStatus(sub.status as string),
+                    // `status` is never written alone — see
+                    // `pastDueStatusPatch`. A retry must not restart the clock.
+                    ...pastDueStatusPatch(
+                        billingAccount.status,
+                        mapStripeStatus(sub.status as string),
+                        billingAccount.pastDueSince,
+                    ),
                     currentPeriodEnd: getSubscriptionPeriodEnd(sub),
                     trialEndsAt: getSubscriptionTrialEnd(sub),
                 },
@@ -305,7 +313,11 @@ export async function handleWebhookEvent(event: Stripe.Event): Promise<void> {
                 data: {
                     stripeSubscriptionId: sub.id as string,
                     ...(subPlan ? { plan: subPlan } : {}),
-                    status: mapStripeStatus(sub.status as string),
+                    ...pastDueStatusPatch(
+                        billingAccount.status,
+                        mapStripeStatus(sub.status as string),
+                        billingAccount.pastDueSince,
+                    ),
                     currentPeriodEnd: getSubscriptionPeriodEnd(sub),
                     trialEndsAt: getSubscriptionTrialEnd(sub),
                 },
@@ -352,7 +364,11 @@ export async function handleWebhookEvent(event: Stripe.Event): Promise<void> {
                 where: { stripeCustomerId: customerId },
                 data: {
                     plan: 'FREE',
-                    status: 'CANCELED',
+                    ...pastDueStatusPatch(
+                        billingAccount.status,
+                        'CANCELED',
+                        billingAccount.pastDueSince,
+                    ),
                     stripeSubscriptionId: null,
                     currentPeriodEnd: null,
                 },
@@ -379,10 +395,19 @@ export async function handleWebhookEvent(event: Stripe.Event): Promise<void> {
             });
             if (!billingAccount) break;
 
-            // Mark account as PAST_DUE on payment failure
+            // Mark account as PAST_DUE on payment failure.
+            //
+            // This is the site the clock helper exists for: Stripe fires this
+            // on EVERY smart retry, so stamping `now()` here would push the
+            // 14-day deadline out roughly four times across the retry window
+            // and the restriction would never fire.
             await db.billingAccount.update({
                 where: { stripeCustomerId: customerId },
-                data: { status: 'PAST_DUE' },
+                data: pastDueStatusPatch(
+                    billingAccount.status,
+                    'PAST_DUE',
+                    billingAccount.pastDueSince,
+                ),
             });
 
             await db.billingEvent.create({
@@ -409,9 +434,17 @@ export async function handleWebhookEvent(event: Stripe.Event): Promise<void> {
 
             // Re-activate if was PAST_DUE
             if (billingAccount.status === 'PAST_DUE') {
+                // Clearing `pastDueSince` here is what makes #1325 need no
+                // scheduled sweep: the restriction is COMPUTED from this
+                // column, so a customer who pays on day 6 is unrestricted on
+                // their very next request with nothing to race.
                 await db.billingAccount.update({
                     where: { stripeCustomerId: customerId },
-                    data: { status: 'ACTIVE' },
+                    data: pastDueStatusPatch(
+                        billingAccount.status,
+                        'ACTIVE',
+                        billingAccount.pastDueSince,
+                    ),
                 });
             }
 

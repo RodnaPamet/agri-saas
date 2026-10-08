@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { assertNotPastDueRestricted } from '@/lib/billing/entitlements';
 import { jsonWithETag } from '@/lib/http/etag';
 import { getPriceTrends } from '@/app-layer/usecases/trends';
 import { TrendPricesQuerySchema } from '@/app-layer/schemas/trends.schemas';
@@ -22,6 +23,13 @@ export const GET = withApiErrorHandling(
         const params = await paramsPromise;
         // Authenticate + gate tenant access (payload itself is tenant-agnostic).
         const ctx = await getTenantCtx(params, req);
+
+        // #1325 — gated HERE rather than in the usecase, because
+        // `getPriceTrends`/`getMarketNews` are tenant-INDEPENDENT and
+        // Redis-cached across every tenant: a gate inside them has no tenant
+        // to test, and one that did would be bypassed by the next cache hit.
+        // The route is where the reader's tenant is known.
+        await assertNotPastDueRestricted(ctx, 'trends');
 
         // The reader's language, from their OWN column — not the request
         // cookie. A native client authenticates with a bearer token and sends

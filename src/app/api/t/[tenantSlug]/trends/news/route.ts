@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { assertNotPastDueRestricted } from '@/lib/billing/entitlements';
 import { jsonWithETag } from '@/lib/http/etag';
 import { getMarketNews } from '@/app-layer/usecases/trends';
 import { TrendNewsQuerySchema } from '@/app-layer/schemas/trends.schemas';
@@ -21,7 +22,18 @@ export const GET = withApiErrorHandling(
     ) => {
         const params = await paramsPromise;
         // Authenticate + gate tenant access (payload itself is tenant-agnostic).
-        await getTenantCtx(params, req);
+        const ctx = await getTenantCtx(params, req);
+
+        // #1325 — gated HERE rather than in the usecase, because
+        // `getMarketNews` is tenant-INDEPENDENT and Redis-cached across every
+        // tenant: a gate inside it has no tenant to test, and one that did
+        // would be bypassed by the next cache hit. The route is where the
+        // reader's tenant is known.
+        //
+        // The ctx was previously DISCARDED here (a bare `await` for its
+        // auth side effect alone), which is why this route needed a binding
+        // adding rather than just a line.
+        await assertNotPastDueRestricted(ctx, 'trends');
 
         const query = TrendNewsQuerySchema.parse(
             Object.fromEntries(req.nextUrl.searchParams.entries()),
