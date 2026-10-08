@@ -815,6 +815,37 @@
         ],
         "description": "Self-service signup payload (gated by AUTH_TEST_MODE in non-prod). The password is checked against HIBP via k-anonymity before persistence; emailVerification is initiated server-side. `turnstileToken` is required whenever the deployment has a Turnstile secret configured."
       },
+      "AuthRegisterStartRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 320
+          },
+          "password": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "turnstileToken": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "acceptedTerms": {},
+          "termsVersion": {}
+        },
+        "required": [
+          "email",
+          "password",
+          "name"
+        ],
+        "description": "Registration step 1: creates an UNVERIFIED user and emails a 6-digit code. Every address gets an identical 200, so nothing here reveals whether an account exists. Field constraints are shape-only — the password policy, the HIBP breach check, the Turnstile screen and the consent/version checks all run in the handler and answer with their own error codes."
+      },
       "AuthUiConfig": {
         "type": "object",
         "properties": {
