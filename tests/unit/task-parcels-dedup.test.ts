@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- test mocks mirror runtime
- * contracts; the codebase's standard file-level disable for test doubles. */
 /**
  * `listTaskParcels` returns each parcel ONCE, however many ways it is reached.
  *
@@ -37,10 +35,13 @@
  */
 import { makeRequestContext } from '../helpers/make-context';
 
-const mockDb: any = {};
+const mockDb = {};
 jest.mock('@/lib/db-context', () => ({
     __esModule: true,
-    runInTenantContext: (_c: any, fn: any) => fn(mockDb),
+    // `unknown` rather than `any`: the lint ceiling counts SUPPRESSED findings,
+    // so one `any` under a file-level disable costs exactly what a new warning
+    // costs. A passthrough mock needs neither.
+    runInTenantContext: (_c: unknown, fn: (db: unknown) => unknown) => fn(mockDb),
 }));
 
 const findBareById = jest.fn();
