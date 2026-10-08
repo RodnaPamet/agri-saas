@@ -51,6 +51,23 @@ export interface ExchangeMessageView {
     mine: boolean;
     /** Opaque id of the sender. Lets a client label a colleague's bubble. */
     senderUserId: string;
+    /**
+     * Who sent it, by name (#1348). Null when the user row has no name set.
+     *
+     * Resolved for EVERY sender in the thread, which is the owner's ruling: a
+     * seller now sees several threads from one farm (threads went per-person in
+     * #1323) and had no way to tell them apart. I recommended an anonymous
+     * per-thread label and the owner chose the name — the trade is recorded on
+     * #1348.
+     *
+     * It is consistent with what users are already told: the privacy notice
+     * says an offer request "carries your name and your message to that
+     * supplier", and opening an exchange thread is the same deliberate
+     * outbound contact. The contact-reveal gate still earns its keep — it
+     * gates PHONE and EMAIL, the means of reaching someone OFF-platform, which
+     * is a different disclosure from naming who you are already talking to.
+     */
+    senderName: string | null;
     /** Sent by someone else at the caller's own farm (#1298). */
     fromMyFarm: boolean;
     body: string | null;
@@ -388,6 +405,24 @@ export async function getExchangeThread(
             },
         });
 
+        // Names for the senders IN THIS THREAD only — never a general directory
+        // lookup. `User` carries no tenantId and no RLS policy, so a wider
+        // query would read strangers; this id set is bounded by the page the
+        // caller is already entitled to see.
+        //
+        // `User.name` is NOT encrypted — the model is absent from
+        // ENCRYPTED_FIELDS despite the legacy `nameEncrypted` column mapping —
+        // so this needs no cross-tenant DEK, which is the thing that would
+        // otherwise make a cross-farm name read hard.
+        const senderNames = new Map(
+            (
+                await db.user.findMany({
+                    where: { id: { in: [...new Set(page.map((m) => m.senderUserId))] } },
+                    select: { id: true, name: true },
+                })
+            ).map((u) => [u.id, u.name] as const),
+        );
+
         return {
             id: thread.id,
             listingId: thread.listingId,
@@ -410,6 +445,7 @@ export async function getExchangeThread(
                 id: m.id,
                 senderTenantId: m.senderTenantId,
                 senderUserId: m.senderUserId,
+                senderName: senderNames.get(m.senderUserId) ?? null,
                 // #1298 — "sent by ME", the person. It meant "sent by my
                 // FARM", which is what rendered a colleague's message as the
                 // reader's own.

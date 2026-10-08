@@ -6195,6 +6195,7 @@
         "useTitle": "What we use it for",
         "useOperate": "Running the application for your farm — showing your records back to you, and producing the reports and exports you ask for.",
         "useSuppliers": "When you tick the consent box on an offer request, your name and your message are shared with that supplier so they can contact you about it. Nothing is shared with a supplier unless you tick that box, and no offer request is stored without it.",
+        "useExchange": "When you open a conversation on the exchange, the farm you write to sees your name alongside your messages — the same as an offer request, and for the same reason: they need to know who they are talking to. Your phone number and email are NOT shared by writing; those stay behind the contact-reveal step, which both sides have to take deliberately.",
         "protectTitle": "How it is protected",
         "protectEncryption": "Sensitive free-text and contact fields are encrypted before they are written to the database, so they are not readable in a database dump.",
         "protectIsolation": "Each farm`s data is isolated at the database level. One organisation cannot read another`s records, and that isolation is enforced by the database itself rather than only by application code.",

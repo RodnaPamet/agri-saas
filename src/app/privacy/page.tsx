@@ -42,7 +42,12 @@ export default async function PrivacyPage() {
 
     const sections = [
         { key: 'collect', body: ['collectAccount', 'collectFarm', 'collectRequests'] },
-        { key: 'use', body: ['useOperate', 'useSuppliers'] },
+        // `useExchange` added with #1348: the exchange now shares a name with
+        // the other farm, exactly as an offer request does. The notice said so
+        // for offer requests only, and a document that describes one of two
+        // identical disclosures is worse than one that describes neither —
+        // a reader would reasonably infer the other does not happen.
+        { key: 'use', body: ['useOperate', 'useSuppliers', 'useExchange'] },
         { key: 'protect', body: ['protectEncryption', 'protectIsolation', 'protectConsent'] },
         { key: 'rights', body: ['rightsList'] },
     ] as const;
