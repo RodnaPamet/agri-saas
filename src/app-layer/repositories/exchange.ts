@@ -66,6 +66,21 @@ export interface ListingFilters {
      */
     searchRegionCodes?: string[];
     /**
+     * Canonical commodity slugs the search text resolves to — the crop-name
+     * twin of `searchRegionCodes`, and necessary for the same reason.
+     *
+     * `commodity` is STORED canonical: `exchange.schemas.ts` runs every write
+     * through `normalizeCommodity`, so «пшеница», «Wheat» and «wheat» all
+     * persist as `'wheat'`. A raw `contains` of the query therefore cannot
+     * match a Bulgarian crop name against its own listing — the product's
+     * primary language searching the product's primary field, finding nothing.
+     *
+     * Resolved in the ROUTE rather than here, matching `searchRegionCodes`:
+     * the vocabulary is a presentation concern and the repository stays a
+     * query builder. Reported by agrent-ios (agrent-ios#219).
+     */
+    searchCommodities?: string[];
+    /**
      * Seller tenants to hide — the tenants that switched the EXCHANGE module
      * OFF. See `listTenantIdsWithModuleDisabled`.
      */
@@ -153,8 +168,16 @@ export class ExchangeRepository {
         if (filters.search) {
             and.push({
                 OR: [
+                    // `contains` STAYS alongside the exact match below, and is not
+                    // redundant: it is what makes an English PREFIX work, since
+                    // `normalizeCommodity` is exact-match only and returns null for
+                    // «пшениц» or "whe". Replacing it would fix Bulgarian whole
+                    // words and break English partial ones.
                     { commodity: { contains: filters.search, mode: 'insensitive' } },
                     { regionName: { contains: filters.search, mode: 'insensitive' } },
+                    ...(filters.searchCommodities?.length
+                        ? [{ commodity: { in: filters.searchCommodities } }]
+                        : []),
                     ...(filters.searchRegionCodes?.length
                         ? [{ regionCode: { in: filters.searchRegionCodes } }]
                         : []),
