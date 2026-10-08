@@ -17,11 +17,92 @@
  */
 import { createHash } from 'crypto';
 import { existsSync, readFileSync } from 'fs';
-import type { InferenceSession, Tensor } from 'onnxruntime-node';
 import { env } from '@/env';
 import { logger } from '@/lib/observability/logger';
 import { PLANTVILLAGE_LABELS, isHealthyLabel } from './labels';
 import type { PestIdentification, VisionImage, VisionProvider } from './types';
+
+/**
+ * The slice of `onnxruntime-node`'s API this module uses, declared locally
+ * (#1392).
+ *
+ * ## Why not `import type` from the package
+ *
+ * `onnxruntime-node` is a platform-specific native addon in
+ * `optionalDependencies`, so `npm ci` is free to skip it — and when it does,
+ * `tsc` cannot resolve the package and `Typecheck` fails. It fired on #1385, a
+ * docs-only PR, which is how it was noticed at all.
+ *
+ * The code was already right about the RUNTIME: the import is dynamic, so
+ * nothing is pulled in for callers that only need the types. What nobody
+ * accounted for is that **the types share the package's fate** — a type-only
+ * import still needs the package on disk at compile time. Same family as the
+ * lockfile-`optional` trap this repo already records: npm reads `optional:
+ * true` on the lockfile ENTRY, so the whole optional closure can be absent on
+ * an install that reports success.
+ *
+ * ## All THREE references had to go, not the one the issue named
+ *
+ * Reproduced by moving `node_modules/onnxruntime-node` aside and running the
+ * real `npm run typecheck`:
+ *
+ *     onnx-provider.ts(20,47)  error TS2307   ← the `import type`
+ *     onnx-provider.ts(106,57) error TS2307   ← `typeof import('onnxruntime-node')`
+ *     onnx-provider.ts(108,29) error TS2307   ← `await import('onnxruntime-node')`
+ *
+ * Fixing only the first would have left the build failing in exactly the same
+ * intermittent way, and the fix would have looked correct. A dynamic `import()`
+ * is still statically resolved by the compiler when its specifier is a literal;
+ * that it runs late says nothing about when it is TYPED.
+ *
+ * ## These are structural, so they stay honest
+ *
+ * They describe only what this file touches. Nothing asserts they match
+ * upstream — if a future ORT renames `inputNames`, this module keeps compiling
+ * and fails at runtime, which is the trade for not depending on an optional
+ * install. It is the right trade here because the alternative is a Typecheck
+ * that fails on unrelated PRs, and because `identify()` is already behind
+ * `available()` and a try/catch that explains the absence.
+ */
+interface OrtTensor {
+    /** A typed array; the caller narrows it (`as Float32Array`). */
+    readonly data: unknown;
+}
+
+interface OrtInferenceSession {
+    readonly inputNames: readonly string[];
+    readonly outputNames: readonly string[];
+    run(feeds: Record<string, OrtTensor>): Promise<Record<string, OrtTensor>>;
+}
+
+interface OrtModule {
+    InferenceSession: { create(path: string): Promise<OrtInferenceSession> };
+    Tensor: new (type: string, data: Float32Array, dims: readonly number[]) => OrtTensor;
+}
+
+/**
+ * The module id, held in a binding on purpose.
+ *
+ * **The INDIRECTION is the mechanism.** `import()` with an inline string
+ * literal is resolved by the compiler; through a binding it is not. Measured
+ * with the package removed:
+ *
+ *     await import('onnxruntime-node')                  3 × TS2307
+ *     const ID = 'onnxruntime-node'; import(ID)         0
+ *     const ID: string = 'onnxruntime-node'; import(ID) 0
+ *
+ * So inlining this constant WOULD reintroduce the failure, and the `: string`
+ * annotation would NOT prevent it on its own — it is not what makes this work.
+ * It is kept as a statement of intent, and because it does not rely on the
+ * compiler continuing to decline to follow a const-narrowed literal: that is
+ * TypeScript's current choice rather than a guarantee, and the annotation
+ * makes the specifier non-literal by type as well as by position.
+ *
+ * I had this the wrong way round in the first draft of this comment and
+ * asserted the annotation was load-bearing. It reads plausibly, which is why
+ * it is worth recording that the measurement says otherwise.
+ */
+const ONNX_MODULE_ID: string = 'onnxruntime-node';
 
 /** Square input edge the model expects (MobileNetV2 / CropNet → 224). */
 const INPUT_SIZE = 224;
@@ -103,9 +184,9 @@ export function logitsToIdentification(
  * failed. Without it they would get a raw `MODULE_NOT_FOUND` naming a package
  * they never asked for, which reads as a code bug rather than an install one.
  */
-async function loadOnnxRuntime(): Promise<typeof import('onnxruntime-node')> {
+async function loadOnnxRuntime(): Promise<OrtModule> {
     try {
-        return await import('onnxruntime-node');
+        return (await import(ONNX_MODULE_ID)) as OrtModule;
     } catch (cause) {
         throw new Error(
             'The ONNX vision backend needs `onnxruntime-node`, which is not installed in ' +
@@ -121,7 +202,7 @@ async function loadOnnxRuntime(): Promise<typeof import('onnxruntime-node')> {
 export class OnnxVisionProvider implements VisionProvider {
     readonly backend = 'onnx' as const;
 
-    private sessionPromise: Promise<InferenceSession> | null = null;
+    private sessionPromise: Promise<OrtInferenceSession> | null = null;
     private modelVersion: string | null = null;
 
     /** True when a model file is configured AND present on disk. */
@@ -130,7 +211,7 @@ export class OnnxVisionProvider implements VisionProvider {
         return Boolean(path && existsSync(path));
     }
 
-    private async getSession(): Promise<InferenceSession> {
+    private async getSession(): Promise<OrtInferenceSession> {
         if (this.sessionPromise) return this.sessionPromise;
         const path = env.VISION_MODEL_PATH;
         if (!path || !existsSync(path)) {
@@ -182,10 +263,10 @@ export class OnnxVisionProvider implements VisionProvider {
         const ort = await loadOnnxRuntime();
 
         const input = await this.preprocess(image);
-        const tensor: Tensor = new ort.Tensor('float32', input, [1, 3, INPUT_SIZE, INPUT_SIZE]);
+        const tensor: OrtTensor = new ort.Tensor('float32', input, [1, 3, INPUT_SIZE, INPUT_SIZE]);
 
         const inputName = session.inputNames[0];
-        const feeds: Record<string, Tensor> = { [inputName]: tensor };
+        const feeds: Record<string, OrtTensor> = { [inputName]: tensor };
         const results = await session.run(feeds);
 
         const outputName = session.outputNames[0];
