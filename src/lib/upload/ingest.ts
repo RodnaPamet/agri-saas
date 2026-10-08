@@ -78,6 +78,7 @@ import { Readable } from 'node:stream';
 
 import { env } from '@/env';
 import { badRequest, codedBadRequest } from '@/lib/errors/types';
+import { assertTenantNotPastDueRestricted } from '@/lib/billing/entitlements';
 import { logger } from '@/lib/observability';
 
 import { isDownloadAllowed, scanUploadedBuffer } from '@/lib/storage/av-scan';
@@ -157,6 +158,15 @@ export async function ingestUploadedFile(
 ): Promise<IngestedUpload> {
     const declaredMime = file.type || 'application/octet-stream';
     const originalName = file.name || opts.fallbackName;
+
+    // Before any bytes are read or written. One call here covers evidence,
+    // journal attachments, invoices and the importers, because this is the
+    // choke point every record-backed upload reaches — gating the routes
+    // instead would be N sites and a new one would escape silently (#1325).
+    //
+    // The MAP is unaffected: the owner's ruling keeps parcels and imagery
+    // VISIBLE and stops only new uploads, so nothing here touches reads.
+    await assertTenantNotPastDueRestricted(tenantId, 'upload');
 
     // Cheap rejections first — no bytes read yet.
     if (!isAllowedMime(declaredMime)) {

@@ -86,8 +86,13 @@ jest.mock('@/lib/observability/logger', () => ({
 
 // Entitlements: assertWithinLimit is a no-op by default so createListing's
 // quota gate doesn't need a billing DB stub; the quota test overrides it.
+// A PARTIAL mock of a shared barrel, so every function the usecase calls has
+// to be listed — a missing one throws "is not a function" at the call site
+// rather than falling through to the real module. `assertNotPastDueRestricted`
+// arrived with #1325 and this is the suite that found that out.
 jest.mock('@/lib/billing/entitlements', () => ({
     assertWithinLimit: jest.fn().mockResolvedValue(undefined),
+    assertNotPastDueRestricted: jest.fn().mockResolvedValue(undefined),
 }));
 
 import { ExchangeRepository } from '@/app-layer/repositories/exchange';

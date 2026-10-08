@@ -1046,6 +1046,21 @@ model BillingAccount {
   status               BillingStatus @default(ACTIVE)
   currentPeriodEnd     DateTime?
   trialEndsAt          DateTime?
+  /// When `status` first became PAST_DUE, and the anchor for the 14-day
+  /// grace in #1325. Written only through `pastDueStatusPatch`
+  /// (`src/lib/billing/past-due.ts`), which keeps the ORIGINAL value across a
+  /// retry — Stripe fires `invoice.payment_failed` on every smart retry, so a
+  /// site that stamped `now()` each time would push the deadline out for ever.
+  ///
+  /// NULL means not past due, OR past due since before this column existed.
+  /// `resolvePastDueState` reads that null as IN-GRACE, never as expired:
+  /// treating it as expired would restrict every already-failing tenant the
+  /// moment this deployed, with no warning and no fourteen days.
+  ///
+  /// NOT derived from `currentPeriodEnd`. That needs no column and for a
+  /// past_due subscription is the moment payment was due — but it is Stripe's
+  /// field, nullable, and advanced by events this codebase does not model.
+  pastDueSince         DateTime?
   createdAt            DateTime      @default(now())
   updatedAt            DateTime      @updatedAt
   tenant               Tenant        @relation(fields: [tenantId], references: [id])
