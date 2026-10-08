@@ -69,6 +69,54 @@ export interface AiBudgetStatus {
  * status (so the caller can react to `softWarn`). Call BEFORE the model
  * call in `completeWithRouting`.
  */
+/**
+ * The single gate every AI spend path must pass — completions AND embeddings
+ * (#1345).
+ *
+ * ## Why this exists beside `assertAiBudget` rather than replacing it
+ *
+ * `assertAiBudget` was called from exactly one file, `ai/routing.ts`. That is
+ * a genuine choke point for COMPLETIONS, and not one for embeddings: three
+ * paths reach a provider without going through routing at all —
+ * `jobs/embed-chunks.ts`, `ai/rag/retrieve.ts` and `usecases/rag.ts`. So a
+ * tenant at its hard stop could still drive embedding spend, and RAG
+ * ingestion embeds per CHUNK.
+ *
+ * ## The part that is not a future problem
+ *
+ * `assertAiBudget` now carries P3.5f's unverified-farm gate — a SaaS tenant
+ * whose farm is not verified has NO budget whatever its plan. That gate has
+ * shipped, so "an unverified farm cannot spend" is a guarantee the product
+ * makes TODAY, and the three bypasses above are exactly the cost that scales
+ * with how much a speculative signup uploads. #1345 filed this as "becomes
+ * material when P3.5f starts relying on the gate"; it already does.
+ *
+ * ## Why not gate inside the provider
+ *
+ * `AiProvider.embed()` is the point every embedding path reaches and would be
+ * the better choke point — but `getEmbeddingProvider()` is synchronous and
+ * takes no context, and `embed(opts)` has no tenant in its options. Gating
+ * there means either an interface change across every provider and call site,
+ * or reading the tenant from AsyncLocalStorage, where a missing context would
+ * have to fail open or closed and both are wrong for different callers (a seed
+ * script has no tenant; a request that lost its context must not be exempt).
+ *
+ * So the gate stays at the call sites and
+ * `tests/guards/ai-spend-gate-covers-embeddings.test.ts` DERIVES the
+ * population from the filesystem instead: any file reaching an embedding
+ * provider must call this, so bypass number four fails CI rather than being
+ * discovered later. That is the trade — N call sites with a derived guard,
+ * against one choke point with a context problem.
+ */
+export async function assertAiSpendAllowed(ctx: RequestContext): Promise<AiBudgetStatus> {
+    // Deliberately a thin delegation today. It exists as its own name because
+    // the two call-site populations are different — `routing.ts` for
+    // completions, the embedding paths for the rest — and because a future
+    // embedding-specific rule (a separate cap, a cheaper tier) belongs here
+    // rather than inside the monthly-cap function.
+    return assertAiBudget(ctx);
+}
+
 export async function assertAiBudget(ctx: RequestContext): Promise<AiBudgetStatus> {
     const mode = getBillingMode();
     const plan = await getEffectivePlan(ctx);

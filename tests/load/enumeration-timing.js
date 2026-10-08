@@ -83,13 +83,35 @@ export const options = {
         },
     },
     thresholds: {
-        // THE assertion. p(95) rather than max: one sample can be hit by a GC
-        // pause or a container scheduling blip, and failing the build on a
-        // single outlier would make this test something people disable.
-        // p(95) over 150 paired differences still catches a real divergence —
-        // a branch that genuinely skipped bcrypt would be ~400ms out on
-        // EVERY sample, not 5% of them.
-        'enum_paired_spread_ms': [`p(95)<${MAX_SPREAD_MS}`],
+        // `med`, not `p(95)` — changed by #1411 after this gate reddened main
+        // on a run where the property plainly held.
+        //
+        // Measured 2026-10-08 on `66688b0a1`: branch medians 330.2 / 326.1 /
+        // 326.0 ms — within 4.2 ms, `shape mismatches: 0` — and p(95) of the
+        // per-trial |Δ| was 78.4 ms against this 50 ms band, with a max of
+        // 267.5 ms. A 267 ms tail beside a 4.2 ms median separation is a NOISE
+        // distribution, not a signal one: p(95) of the pairwise difference of
+        // two identically-distributed samples measures the per-trial variance
+        // of a shared CI runner, which is not the quantity this test is about.
+        //
+        // The old comment's own reasoning is what gives the game away — it
+        // said a real divergence "would be ~400ms out on EVERY sample, not 5%
+        // of them". Exactly so. If the defect moves every sample, the gate
+        // should read a CENTRAL statistic, where the defect is ~400 ms and
+        // noise is a few tens; reading the 95th percentile instead buys
+        // nothing against the defect and buys the whole noise tail against us.
+        //
+        // `med` keeps the "one GC pause must not fail the build" property that
+        // motivated p(95) in the first place — a median is strictly more
+        // robust to a single outlier than a 95th percentile is.
+        //
+        // The TIGHTER statistic the owner chose, `max |median_i − median_j|`,
+        // cannot be written as a k6 threshold: thresholds are per-metric and
+        // that one spans three. It is computed in `handleSummary`, written
+        // into the results JSON, and enforced by
+        // `scripts/check-enumeration-timing.mjs` in the same CI step. Both
+        // gates are live; neither replaces the other.
+        'enum_paired_spread_ms': [`med<${MAX_SPREAD_MS}`],
         // The status/body half, restated here so this script fails on its own
         // if the uniform response ever stops being uniform.
         'enum_shape_mismatch': ['count==0'],
@@ -222,9 +244,32 @@ export default function (data) {
     pairedSpread.add(Math.abs(a.ms - c.ms));
 }
 
+/**
+ * The separation between the three branch MEDIANS — the quantity this test is
+ * actually about, and the one `scripts/check-enumeration-timing.mjs` gates.
+ *
+ * Exported so that checker and this script cannot drift into two definitions
+ * of one number. It takes the metrics object rather than reaching for globals
+ * so a test can hand it a fixture.
+ */
+export function medianSeparationMs(metrics) {
+    const med = (name) => metrics?.[name]?.values?.med;
+    const xs = [
+        med('enum_branch_new_ms'),
+        med('enum_branch_pending_ms'),
+        med('enum_branch_taken_ms'),
+    ];
+    // An ABSENT median is not a separation of zero. A run where a branch never
+    // reported would otherwise score a perfect 0 ms and pass — the empty
+    // selection reading as a pass, one level down.
+    if (xs.some((v) => typeof v !== 'number' || !isFinite(v))) return NaN;
+    return Math.max(...xs) - Math.min(...xs);
+}
+
 export function handleSummary(data) {
     const med = (name) => data.metrics[name]?.values?.med ?? NaN;
     const spread = data.metrics['enum_paired_spread_ms']?.values ?? {};
+    const sep = medianSeparationMs(data.metrics);
     const lines = [
         '',
         '── registration enumeration timing (P3.10) ──',
@@ -232,15 +277,24 @@ export function handleSummary(data) {
         `  branch A (new)        : ${med('enum_branch_new_ms').toFixed(1)} ms (median)`,
         `  branch B (mid-signup) : ${med('enum_branch_pending_ms').toFixed(1)} ms`,
         `  branch C (taken)      : ${med('enum_branch_taken_ms').toFixed(1)} ms`,
-        `  paired |Δ| p(95)      : ${(spread['p(95)'] ?? NaN).toFixed(1)} ms  (band ${MAX_SPREAD_MS} ms)`,
-        `  paired |Δ| max        : ${(spread.max ?? NaN).toFixed(1)} ms`,
+        `  median separation     : ${sep.toFixed(1)} ms  (band ${MAX_SPREAD_MS} ms)  ← GATED`,
+        `  paired |Δ| med        : ${(spread.med ?? NaN).toFixed(1)} ms  (band ${MAX_SPREAD_MS} ms)  ← GATED`,
+        `  paired |Δ| p(95)      : ${(spread['p(95)'] ?? NaN).toFixed(1)} ms  (reported, NOT gated)`,
+        `  paired |Δ| max        : ${(spread.max ?? NaN).toFixed(1)} ms  (reported, NOT gated)`,
         `  shape mismatches      : ${data.metrics['enum_shape_mismatch']?.values?.count ?? 0}`,
         '',
         '  The three medians being close is the POINT, not an incidental.',
         '  They are close because hashPassword runs on every branch — the',
         '  two that discard the result included. A branch that skipped it',
-        '  would sit ~400ms below the others and the p(95) threshold would',
-        '  fail on every sample rather than a few.',
+        '  would sit ~400ms below the others, so BOTH gated figures would go',
+        '  to ~400ms: the defect moves every sample, which is exactly why a',
+        '  central statistic reads it and a 95th percentile only adds the',
+        '  noise tail (#1411).',
+        '',
+        '  p(95) and max are printed because the dispersion is worth seeing —',
+        '  a sudden jump in either says something about the RUNNER. Neither',
+        '  fails the build, and on 2026-10-08 p(95) failing it while the',
+        '  medians sat 4.2ms apart is what prompted the change.',
         '',
     ];
     return {

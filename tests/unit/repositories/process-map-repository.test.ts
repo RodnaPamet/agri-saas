@@ -68,7 +68,11 @@ function expectNoWrites(db: FakeDb) {
     expect(db.processEdge.deleteMany).not.toHaveBeenCalled();
     expect(db.processNode.deleteMany).not.toHaveBeenCalled();
     expect(db.processNode.createMany).not.toHaveBeenCalled();
-    expect(db.processEdge.createMany).not.toHaveBeenCalled();
+    // `create`, not `createMany`: edges are inserted one at a time
+    // (`ProcessMapRepository:372`). This helper is named "No destructive write
+    // of ANY kind", so a vacuous member of it is worse than a missing one —
+    // the name claims completeness (#1419).
+    expect(db.processEdge.create).not.toHaveBeenCalled();
 }
 
 let db: FakeDb;
