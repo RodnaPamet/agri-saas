@@ -204,3 +204,137 @@ pluralisation) should:
    convention).
 3. Route through `fetchWithRetry` from `src/lib/http/fetch-with-retry.ts`
    — do not hand-roll retry logic.
+
+
+---
+
+## Observability & Operational Hardening (Epic E) — the reasoning
+
+Relocated from CLAUDE.md (#1334). **Read this before changing the audit stream, the shutdown handler, or adding a password-accepting route.** It carries the retry/idempotency contract, the per-stage shutdown budgets and why they must fit under the container grace period, and the #1166 history of the HIBP scan — which was blind to the shape the primary signup route already had.
+
+Three remediations that close the operational gaps left after Epic D.
+Treat them as one subsystem — each protects a different blast-radius
+class for the same deploy event.
+
+**E.2 — Audit-stream retry + idempotency key.** `deliverBatch` in
+`src/app-layer/events/audit-stream.ts` now attempts each batch up
+to 3 times (original + 2 retries) on `408 / 429 / 5xx / network
+throw`. Linear backoff (1 s, 2 s). Every attempt carries the SAME
+`X-Agrent-Batch-Id` header — deterministic from
+`(tenantId, schemaVersion, eventIds)` via `computeBatchId` in
+`src/app-layer/events/webhook-headers.ts`. The legacy `X-Inflect-*`
+names are still dual-emitted alongside the canonical set with identical
+values, so the 2026-07 rename did not break existing SIEM integrations;
+`AUDIT_STREAM_LEGACY_HEADERS=0` drops them once every consumer has
+migrated. The same id doubles as
+`X-Agrent-Idempotency-Key`, so consumer SIEMs dedupe retries with
+zero retry-aware code on our side. Kill-switch via
+`AUDIT_STREAM_RETRY_ENABLED=0` (force single-POST for debugging a
+misbehaving SIEM without redeploy). Delivery is fully instrumented
+with OTel metrics — `deliverBatch` calls `recordAuditStreamDelivery`
+once per batch (success/failure counter + an attempts histogram for
+retry pressure + a duration histogram), `streamAuditEvent` calls
+`recordAuditStreamBufferOverflow` when a per-tenant buffer sheds an
+event at the hard cap, and an `audit_stream.buffer.depth` observable
+gauge reports backlog. Audit-stream failures deliberately do NOT
+gate `/api/readyz` — the path is out-of-band + fail-safe (the audit
+row is already committed); escalation is alert-based on the metrics.
+See `docs/implementation-notes/2026-05-21-audit-stream-observability.md`.
+
+`webhook-headers.ts` is the canonical module for any future outbound
+webhook in the repo (SCIM push, billing fanout, per-tenant SIEM
+pluralisation). Every caller uses `buildOutboundHeaders(...)` and
+`computeBatchId(...)` — never spell an outbound header name inline
+(`X-Agrent-*` is canonical; `X-Inflect-*` is the legacy alias, still
+dual-emitted with identical values by default), never hand-roll dedupe
+keys. The dual-emit is `buildOutboundHeaders`'s business, not a
+caller's: it drops to the canonical set alone under
+`AUDIT_STREAM_LEGACY_HEADERS=0`, read from `process.env` directly so an
+operator can flip it without a redeploy once every consumer SIEM has
+migrated.
+
+**E.3 — Graceful shutdown.** On a rolling deploy the process receives
+SIGTERM. Without a drain handler, three observability surfaces lose
+data: per-tenant audit-stream buffers (irreversible — events never
+reach the SIEM), OTel span batches still in the `BatchSpanProcessor`,
+and Sentry errors still in the transport queue.
+`installShutdownHandlers()` in `src/lib/observability/shutdown.ts`
+drains all three in the order most-to-least critical for audit
+correctness: audit buffers first, then OTel, then Sentry. Each stage
+is `Promise.race`'d against its per-stage budget from
+`src/lib/observability/shutdown-budget.ts` so a slow exporter never
+blocks past the container's grace period (k8s default 30 s). The
+three stage budgets (3 s + 2 s + 2 s = 7 s) fit under the 20 s
+ceiling — leaving 10+ s for Next.js's own HTTP-drain handler
+running in parallel. The handler never calls `process.exit` —
+`next start` owns the process lifecycle. Registration happens in
+`src/instrumentation.ts::register()`, after all `init*` calls, and
+is idempotent under HMR via a module-level flag. SIGINT gets the
+same treatment. A second SIGTERM falls through to Node's default
+(via `process.once`) so an escalating runtime can always terminate.
+
+Paired shutdown helpers live beside their init counterparts:
+`shutdownTelemetry` in `src/lib/observability/instrumentation.ts`,
+`shutdownSentry` in `src/lib/observability/sentry.ts`. Both are
+bounded, idempotent, never throw — the handler composes them as
+stable contracts.
+
+**E.4 — HIBP guardrail.** `tests/guardrails/hibp-coverage.test.ts`
+locks in the invariant that every API route ingesting a
+user-chosen password MUST import AND call
+`checkPasswordAgainstHIBP`. Mirrors the
+`sanitize-rich-text-coverage.test.ts` template: a curated
+`HIBP_REQUIRED_ROUTES` list (`auth/register`, `auth/change-password`,
+`auth/reset-password`) paired with a structural scan of
+`src/app/api/**/route.ts` for password-shaped Zod fields. An
+in-memory mutation regression proof confirms the detector catches
+removals. The structural scan auto-fails any new route that parses
+a `password` / `newPassword` / `currentPassword` /
+`confirmPassword` Zod field without registering.
+
+**The scan FOLLOWS IMPORTS** (`tests/helpers/password-schema-graph.ts`,
+#1166), and the sentence that used to end this paragraph — *"define
+password schemas inline in the route file so the scan sees them"* — is
+gone because following it cost you the API contract. The scan was a
+regex over route FILES, so a field declared in a shared schema module
+was invisible: `auth/change-password` and `auth/reset-password` scored
+2 and 1 matches, and **`auth/register` — the primary signup route —
+scored 0**, because it imports `AuthActionSchema` from `@/lib/schemas`.
+Nothing was exposed (the curated list names it and asserts the call),
+but the half of the guard that catches a route nobody registered was
+blind to the shape the most important password route already had. The
+inline convention could not be followed either:
+`scripts/openapi-build.ts` registers components by walking the
+`@/lib/schemas` module namespace, so moving `AuthRegisterSchema` into
+the route file drops `AuthRegisterRequest` from
+`src/generated/openapi.json` — measured, it reddens the full-spec
+drift check in `tests/contracts/api-schemas.test.ts` and orphans that
+schema's contract snapshot. The two inline password schemas are
+absent from the spec for exactly that reason. **So declare a request
+schema in `@/lib/schemas` as GAP-10 says, and import it by NAME** —
+resolution is per-symbol, and a namespace import
+(`import * as s from '@/lib/schemas'`) has no symbol to follow, which
+the guard asserts no route file uses.
+
+**It matches the field NAME, not the field's spelling.** The regex
+required a literal `z.` after the colon, so it read
+`password: z.string().min(8)` and was blind to
+`password: PwFieldSchema` — which is this repo's normal idiom for a
+reusable Zod field (23 uses across 12 files in `src/lib/schemas` and
+`src/app-layer/schemas`: `category: CostCategorySchema`,
+`geometry: PolygonGeometrySchema`, …). No password route happened to
+use it, so the flagged set is **3 of 374 route files before and
+after** and no measurement of the live tree could have shown the gap;
+a probe did — an unregistered route parsing
+`z.object({ password: PasswordFieldSchema })` left the guard green at
+13/13 while the inline-shaped probe beside it was reported by name.
+So there is no longer a shape this guard requires you to use. Name
+matching is gated on the declaration being Zod-shaped, and that gate
+is CORRECTNESS here rather than cost (it is cost on the composition
+walk): ungated it also flags `api/staging/seed`, which returns
+`login: { password: 'password123' }` — a hardcoded seed credential on
+a handler that 403s in production.
+
+**See `docs/epic-e-observability.md`** for the Epic E operator
+runbook (verification commands, rollback procedures, how to add a
+new password-handling route, how to add a new outbound webhook).
