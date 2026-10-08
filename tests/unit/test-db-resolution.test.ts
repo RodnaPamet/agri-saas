@@ -30,6 +30,39 @@ import {
 
 const url = (db: string) => `postgresql://u:p@127.0.0.1:5435/${db}?schema=public`;
 
+/**
+ * Run `fn` with `process.env.CI` set or unset, then restore it.
+ *
+ * `getBaseTestDatabaseUrl` BRANCHES on `CI`: a `DATABASE_URL_TEST` pin is
+ * returned verbatim when it is set and gets the per-checkout slot when it is
+ * not. Three assertions in this file used to arrange the pin and then inherit
+ * `CI` from whatever invoked jest — so they asserted the CI branch and only
+ * reached it when Actions happened to be the caller. They passed in CI and
+ * failed on every developer machine (#1406).
+ *
+ * The failure was INVERTED relative to its value: these assertions exist to
+ * protect the #1265 rule that a CI pin is honoured exactly — migrate one
+ * database, test another — so in CI, where the rule is live, they passed
+ * whatever the code did to the other path, and locally, where nobody depends
+ * on it, they were the only red tests in the file. Three permanent local
+ * failures are indistinguishable from three somebody just introduced, which
+ * is how a file stops being read.
+ *
+ * A test that reads an env var its subject branches on has to OWN that var.
+ */
+function withCi<T>(ciValue: string | undefined, fn: () => T): T {
+    const prev = process.env.CI;
+    if (ciValue === undefined) delete process.env.CI;
+    else process.env.CI = ciValue;
+    try {
+        return fn();
+    } finally {
+        if (prev === undefined) delete process.env.CI;
+        else process.env.CI = prev;
+    }
+}
+
+
 describe('assertIsTestDatabase', () => {
     it.each(['agri_saas_test', 'ci_testdb', 'agri_saas_test_w1', 'ci_testdb_w12'])(
         'accepts %s',
@@ -83,11 +116,22 @@ describe('getBaseTestDatabaseUrl', () => {
         expect(() => assertIsTestDatabase(getBaseTestDatabaseUrl(), 'getBaseTestDatabaseUrl')).not.toThrow();
     });
 
-    it('honours DATABASE_URL_TEST above everything else', () => {
+    it('honours DATABASE_URL_TEST above everything else — both branches of CI', () => {
         const prev = process.env.DATABASE_URL_TEST;
         process.env.DATABASE_URL_TEST = url('ci_testdb');
         try {
-            expect(getDbName(getBaseTestDatabaseUrl())).toBe('ci_testdb');
+            // Under CI the pin is VERBATIM: `prisma migrate deploy` runs against
+            // that exact name outside jest, so a slot would migrate one database
+            // and test another.
+            withCi('1', () => {
+                expect(getDbName(getBaseTestDatabaseUrl())).toBe('ci_testdb');
+            });
+            // Locally the SAME value is slotted, because two checkouts on one
+            // machine otherwise share a migration history. This half was never
+            // asserted, which is why the inverted failure went unnoticed.
+            withCi(undefined, () => {
+                expect(getDbName(getBaseTestDatabaseUrl())).toBe(`ci_testdb${checkoutDbSlot()}`);
+            });
         } finally {
             if (prev === undefined) delete process.env.DATABASE_URL_TEST;
             else process.env.DATABASE_URL_TEST = prev;
@@ -126,10 +170,18 @@ describe('migrateTestDb', () => {
      */
     it('pins DIRECT_DATABASE_URL as well, so an exported decoy cannot win', () => {
         process.env.DIRECT_DATABASE_URL = 'postgresql://u:p@127.0.0.1:5439/decoy_direct_db?schema=public';
-        migrateTestDb(runner);
-        const env = calls[0].env;
-        expect(getDbName(envUrl(env, 'DATABASE_URL'))).toBe('agri_saas_test');
-        expect(getDbName(envUrl(env, 'DIRECT_DATABASE_URL'))).toBe('agri_saas_test');
+        // `CI` arranged explicitly: the assertion is on the UNSLOTTED name, which
+        // is the CI branch of `getBaseTestDatabaseUrl`. Inherited, this passed in
+        // Actions and failed everywhere else (#1406). What it is really testing
+        // is that BOTH vars are pinned to the same resolved database, and that
+        // holds on either branch — so the branch is fixed rather than left to
+        // the caller.
+        withCi('1', () => {
+            migrateTestDb(runner);
+            const env = calls[0].env;
+            expect(getDbName(envUrl(env, 'DATABASE_URL'))).toBe('agri_saas_test');
+            expect(getDbName(envUrl(env, 'DIRECT_DATABASE_URL'))).toBe('agri_saas_test');
+        });
     });
 
     /** A success line that is not conditional on success is decoration. */
@@ -287,10 +339,28 @@ describe('the per-checkout database slot (#1171 mode 3)', () => {
         it('returns DATABASE_URL_TEST verbatim', () => {
             // CI runs `prisma migrate deploy` against this name OUTSIDE jest.
             // A slot here would migrate one database and test another.
+            //
+            // `CI` is SET here rather than inherited. This test's own title says
+            // "CI parity", and it was reaching the CI branch only when Actions
+            // happened to be the caller — asserting a branch by luck (#1406).
             const pinned = url('ci_testdb');
             process.env.DATABASE_URL_TEST = pinned;
-            expect(getBaseTestDatabaseUrl()).toBe(pinned);
-            expect(getDbName(getBaseTestDatabaseUrl())).toBe('ci_testdb');
+            withCi('1', () => {
+                expect(getBaseTestDatabaseUrl()).toBe(pinned);
+                expect(getDbName(getBaseTestDatabaseUrl())).toBe('ci_testdb');
+            });
+        });
+
+        it('control: the same pin WITHOUT CI is slotted, so the branch is real', () => {
+            // Without this, the assertion above would pass against an
+            // implementation that ignored `CI` and never slotted anything —
+            // i.e. against the absence of the behaviour it documents.
+            const pinned = url('ci_testdb');
+            process.env.DATABASE_URL_TEST = pinned;
+            withCi(undefined, () => {
+                expect(getBaseTestDatabaseUrl()).not.toBe(pinned);
+                expect(getDbName(getBaseTestDatabaseUrl())).toBe(`ci_testdb${checkoutDbSlot()}`);
+            });
         });
     });
 });
