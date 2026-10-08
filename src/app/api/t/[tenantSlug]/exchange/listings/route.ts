@@ -94,7 +94,13 @@ export const GET = withApiErrorHandling(
                 // while LOOKING like a filter. An empty array is omitted from the
                 // OR entirely by the repository.
                 searchCommodities: search
-                    ? [normalizeCommodity(search)].filter((c): c is string => Boolean(c))
+                    // `NonNullable<typeof c>`, not `string`: `normalizeCommodity`
+                    // returns a literal union (`'wheat' | 'maize' | … | null`), and a
+                    // type predicate's type must be assignable to its PARAMETER's
+                    // type — `string` is wider than the union, so it is not.
+                    ? [normalizeCommodity(search)].filter(
+                        (c): c is NonNullable<typeof c> => c !== null,
+                      )
                     : undefined,
             },
             {
