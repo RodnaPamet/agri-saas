@@ -1988,6 +1988,21 @@ jobs:
       - name: "Gate: k6 registration enumeration timing (P3.10)"
         run: k6 run -e RUN_ID=ci-${{ github.run_id }}-enum tests/load/enumeration-timing.js
 
+      # The SAME property on a tighter statistic, and the reason it is a
+      # separate step rather than another k6 threshold: thresholds are
+      # per-metric, and `max(median) - min(median)` across the three branch
+      # metrics spans three (#1411). k6 gates the pairwise form; this gates
+      # the direct one.
+      #
+      # `if: always()` so a k6 threshold breach does not hide this verdict —
+      # two gates on one property should both report, or the second is only
+      # ever read when the first already failed. It exits non-zero on an
+      # unreadable or absent results file, because a missing measurement is a
+      # broken instrument and not a clean run.
+      - name: "Gate: enumeration-timing median separation (#1411)"
+        if: always()
+        run: node scripts/check-enumeration-timing.mjs
+
       - name: Stop app
         if: always()
         run: |
