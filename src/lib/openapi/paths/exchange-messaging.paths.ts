@@ -301,7 +301,18 @@ export function registerExchangeMessagingPaths(registry: OpenAPIRegistry): void 
             'spends the next window the moment it opens and stays blocked; the header ' +
             'says when the budget is actually free. A blocked sender consumes quota too ' +
             '— the limit runs before the block check, so the cost of being blocked falls ' +
-            'on the blocked party. See #1161.',
+            'on the blocked party. See #1161.' +
+            '\n\n**Two 400 codes are specific to this route and worth handling by name.**' +
+            '\n\n`MESSAGE_TOO_LONG` — the sanitised, trimmed body exceeds 4000 UTF-16 code units. ' +
+            'AVOIDABLE rather than handleable: cap the composer at 4000 and it cannot occur, because ' +
+            'sanitising only shortens.' +
+            '\n\n`MESSAGE_EMPTY` — the body sanitised to nothing. **Reachable from input the USER ' +
+            'considers non-empty**: markup with no text (`<b></b>`), a lone tag, or pure whitespace all ' +
+            'arrive as something the person typed and leave as nothing. Do not render it verbatim as ' +
+            '"you wrote nothing" — the honest message is nearer "that message has no text in it".' +
+            '\n\nThe bound was documented as 8000 until now — exactly 2x the real limit — so a client ' +
+            'trusting the spec sent 6000 characters and was refused with a code the spec did not list ' +
+            '(#1391).',
         tags: ['Exchange messaging'],
         params: ThreadParams,
         headers: z.object({
@@ -317,7 +328,42 @@ export function registerExchangeMessagingPaths(registry: OpenAPIRegistry): void 
                         '`replayed: true`.',
                 }),
         }),
-        body: z.object({ body: z.string().min(1).max(8000) }).openapi('SendExchangeMessage'),
+        body: z
+            .object({
+                body: z
+                    .string()
+                    .min(1)
+                    .max(4000)
+                    .openapi({
+                        description:
+                            'The message text. **4000 is measured AFTER sanitising and trimming**, not on ' +
+                            'what the user typed: the server strips every tag, decodes the canonical ' +
+                            'entities, trims, and only then checks the length — so padding with markup ' +
+                            'cannot smuggle a longer message past the limit.' +
+                            '\n\n**Capping at 4000 client-side is sufficient and conservative.** ' +
+                            'Sanitising only ever SHORTENS — tags are removed, and `&lt;` becomes `<`, ' +
+                            'four units to one — so the sanitised length never exceeds the input length. ' +
+                            'A client that caps cannot be surprised by `MESSAGE_TOO_LONG`; that refusal is ' +
+                            'only reachable by a client that does not cap.' +
+                            '\n\nThe unit is **UTF-16 code units**, not characters and not bytes. For ' +
+                            'Cyrillic that is 1:1, so a Bulgarian farmer gets 4000 characters. Outside the ' +
+                            'BMP it is not: an emoji is 2 units, so 2001 emoji is refused at 4002. ' +
+                            'Counting grapheme clusters over-estimates the allowance; counting bytes ' +
+                            'under-estimates it.' +
+                            '\n\n`minLength: 1` is NECESSARY BUT NOT SUFFICIENT, which is the surprising ' +
+                            'part: emptiness is judged after sanitising too. `<b></b>` is eight characters, ' +
+                            'satisfies this constraint, sanitises to the empty string, and is refused with ' +
+                            '`MESSAGE_EMPTY`. A payload can pass the schema and still be rejected as empty.' +
+                            '\n\n**The server\'s request validator deliberately permits more (8000).** ' +
+                            'That is not a contradiction and not a bug: Zod cannot sanitise, so it is a ' +
+                            'cheap outer bound that rejects absurd payloads, and the real gate is the ' +
+                            'usecase — which is what keeps `MESSAGE_TOO_LONG` reachable as a CODE rather ' +
+                            'than collapsing it into a generic validation error. 4000 is the limit a client ' +
+                            'must respect.',
+                        example: 'Имате ли още налична пшеница?',
+                    }),
+            })
+            .openapi('SendExchangeMessage'),
         success: {
             status: 201,
             description: 'Sent.',

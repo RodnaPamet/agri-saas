@@ -39,8 +39,16 @@ import { logger } from '@/lib/observability/logger';
 import { codedBadRequest, codedForbidden, codedNotFound, internal } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 
-/** A message body longer than this is a document, not a message. */
-const MAX_BODY_LENGTH = 4000;
+/**
+ * A message body longer than this is a document, not a message.
+ *
+ * EXPORTED so the OpenAPI spec can be pinned to it rather than restating it.
+ * The two drifted — the spec said 8000, exactly 2x — and a client trusting the
+ * document sent 6000 characters and was refused with a code the document did
+ * not list (#1391). `tests/contracts/exchange-body-bound.test.ts` now fails if
+ * they diverge again.
+ */
+export const MAX_BODY_LENGTH = 4000;
 /** One page of scrollback. */
 const DEFAULT_PAGE_SIZE = 100;
 
