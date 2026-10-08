@@ -169,6 +169,45 @@ export function registerAuthNativePaths(registry: OpenAPIRegistry): void {
     });
 
     op(registry, {
+        method: 'post',
+        path: '/api/auth/native/apple',
+        operationId: 'signInWithApple',
+        summary: 'Sign in with Apple — identity token to token pair',
+        description:
+            'The one native sign-in that does NOT go through the system browser. `ASAuthorizationController` hands the app an identity token directly, so there is no `/start`, no code and no PKCE verifier: this single call IS the sign-in. Unauthenticated by construction — the identity token is the credential — and rate-limited at the pre-auth tier. ' +
+            '\n\n**The nonce is single-use.** Generate a fresh random `nonce` per attempt, pass its SHA-256 to Apple as the request nonce, and send the RAW value here. The server checks the hash matches the token AND claims the nonce exactly once, so a replayed token is refused even though its signature is still valid. Never reuse a nonce across attempts. ' +
+            '\n\n**Every verification failure is `400 { "error": "invalid_grant" }`** — bad signature, wrong audience, expired token, mismatched nonce and replayed nonce are indistinguishable ON PURPOSE. Do not branch on the reason; start a fresh authorisation. ' +
+            '\n\nTwo answers are deliberately distinguishable, because both are actionable and neither describes the token: `503 apple_sign_in_disabled` means the server has no Apple audience configured (an operator task, not a client bug), and `400 email_required` means Apple sent no email on what is a FIRST authorisation — request the email scope. ' +
+            '\n\n**A first sign-in returns `termsPending: true`.** There is no browser here, so nothing showed the terms before the account existed. Present them and call `POST /api/auth/accept-terms` with the bearer; until then every tenant and person route answers 403. That route is reachable while pending, as is this one. ' +
+            '\n\nApple sends `email` only on the FIRST authorisation — the account is keyed on Apple’s stable `sub`, so later sign-ins need no email and must not be treated as new users.',
+        tags: ['Auth'],
+        security: NO_AUTH,
+        body: z
+            .object({
+                identityToken: z.string().openapi({
+                    description:
+                        'The JWT from `ASAuthorizationAppleIDCredential.identityToken`. `identity_token` is also accepted.',
+                }),
+                nonce: z.string().openapi({
+                    description:
+                        'The RAW nonce this attempt used — the server hashes it. `rawNonce` / `raw_nonce` are also accepted. Single-use.',
+                }),
+            })
+            .openapi('AppleSignInRequest'),
+        success: {
+            status: 200,
+            description:
+                'The token pair, plus `termsPending` so the client knows whether to present the terms before doing anything else.',
+            schema: NativeTokenPair.extend({
+                termsPending: z.boolean().openapi({
+                    description:
+                        'True when this account has no recorded terms acceptance. Every tenant and person route answers 403 until `POST /api/auth/accept-terms` succeeds.',
+                }),
+            }).openapi('AppleSignInResponse'),
+        },
+    });
+
+    op(registry, {
         method: 'get',
         path: '/api/auth/native/adopt',
         operationId: 'adoptNativeSessionIntoWebview',

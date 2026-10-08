@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "5.5.3",
+    "version": "5.7.1",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -279,6 +279,43 @@
           "status",
           "dueAt"
         ]
+      },
+      "AppleSignInRequest": {
+        "type": "object",
+        "properties": {
+          "identityToken": {
+            "type": "string",
+            "description": "The JWT from `ASAuthorizationAppleIDCredential.identityToken`. `identity_token` is also accepted."
+          },
+          "nonce": {
+            "type": "string",
+            "description": "The RAW nonce this attempt used — the server hashes it. `rawNonce` / `raw_nonce` are also accepted. Single-use."
+          }
+        },
+        "required": [
+          "identityToken",
+          "nonce"
+        ]
+      },
+      "AppleSignInResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NativeTokenPair"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "termsPending": {
+                "type": "boolean",
+                "description": "True when this account has no recorded terms acceptance. Every tenant and person route answers 403 until `POST /api/auth/accept-terms` succeeds."
+              }
+            },
+            "required": [
+              "termsPending"
+            ]
+          }
+        ],
+        "description": "expiresIn is a DURATION in seconds for the access token; refreshExpiresAt is an ISO INSTANT for the refresh token. The two are deliberately different kinds — do not treat expiresIn as a timestamp."
       },
       "AssetCreateRequest": {
         "type": "object",
@@ -31853,6 +31890,135 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NativeTokenPair"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/native/apple": {
+      "post": {
+        "operationId": "signInWithApple",
+        "summary": "Sign in with Apple — identity token to token pair",
+        "description": "The one native sign-in that does NOT go through the system browser. `ASAuthorizationController` hands the app an identity token directly, so there is no `/start`, no code and no PKCE verifier: this single call IS the sign-in. Unauthenticated by construction — the identity token is the credential — and rate-limited at the pre-auth tier. \n\n**The nonce is single-use.** Generate a fresh random `nonce` per attempt, pass its SHA-256 to Apple as the request nonce, and send the RAW value here. The server checks the hash matches the token AND claims the nonce exactly once, so a replayed token is refused even though its signature is still valid. Never reuse a nonce across attempts. \n\n**Every verification failure is `400 { \"error\": \"invalid_grant\" }`** — bad signature, wrong audience, expired token, mismatched nonce and replayed nonce are indistinguishable ON PURPOSE. Do not branch on the reason; start a fresh authorisation. \n\nTwo answers are deliberately distinguishable, because both are actionable and neither describes the token: `503 apple_sign_in_disabled` means the server has no Apple audience configured (an operator task, not a client bug), and `400 email_required` means Apple sent no email on what is a FIRST authorisation — request the email scope. \n\n**A first sign-in returns `termsPending: true`.** There is no browser here, so nothing showed the terms before the account existed. Present them and call `POST /api/auth/accept-terms` with the bearer; until then every tenant and person route answers 403. That route is reachable while pending, as is this one. \n\nApple sends `email` only on the FIRST authorisation — the account is keyed on Apple’s stable `sub`, so later sign-ins need no email and must not be treated as new users.",
+        "tags": [
+          "Auth"
+        ],
+        "security": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppleSignInRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The token pair, plus `termsPending` so the client knows whether to present the terms before doing anything else.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppleSignInResponse"
                 }
               }
             }

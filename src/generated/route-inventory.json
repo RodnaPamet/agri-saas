@@ -185,6 +185,11 @@
       "documented": true
     },
     {
+      "path": "/api/auth/native/apple",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/auth/native/complete",
       "status": "live",
       "documented": true

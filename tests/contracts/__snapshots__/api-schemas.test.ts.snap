@@ -250,6 +250,49 @@ exports[`API contract — per-schema snapshots schema: AgDashboardTaskItem 1`] =
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: AppleSignInRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "identityToken": {
+      "type": "string",
+      "description": "The JWT from \`ASAuthorizationAppleIDCredential.identityToken\`. \`identity_token\` is also accepted."
+    },
+    "nonce": {
+      "type": "string",
+      "description": "The RAW nonce this attempt used — the server hashes it. \`rawNonce\` / \`raw_nonce\` are also accepted. Single-use."
+    }
+  },
+  "required": [
+    "identityToken",
+    "nonce"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AppleSignInResponse 1`] = `
+"{
+  "allOf": [
+    {
+      "$ref": "#/components/schemas/NativeTokenPair"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "termsPending": {
+          "type": "boolean",
+          "description": "True when this account has no recorded terms acceptance. Every tenant and person route answers 403 until \`POST /api/auth/accept-terms\` succeeds."
+        }
+      },
+      "required": [
+        "termsPending"
+      ]
+    }
+  ],
+  "description": "expiresIn is a DURATION in seconds for the access token; refreshExpiresAt is an ISO INSTANT for the refresh token. The two are deliberately different kinds — do not treat expiresIn as a timestamp."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: AssetCreateRequest 1`] = `
 "{
   "type": "object",
