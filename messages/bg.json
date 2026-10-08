@@ -4429,7 +4429,6 @@
       "leasePanelEmpty": "Още няма записани разходи по този договор.",
       "leasePanelNote": "Записват се на страницата с разходите. Отделно от плащанията по-горе — същата рента, погледната от страната на разхода, затова двете не се събират.",
       "itemPanelTitle": "Разходи за този продукт",
-      "incurredOnFacet": "Дата",
       "panelLoading": "Зареждане…",
       "panelOpenRegister": "Отвори регистъра",
       "itemPanelEmpty": "Все още няма записани разходи за този продукт.",
@@ -5887,7 +5886,8 @@
       "SERVICE": "Услуги",
       "OTHER": "Друго"
     },
-    "costCategoryFacet": "Категория"
+    "costCategoryFacet": "Категория",
+    "incurredOnFacet": "Дата"
   },
   "exchangeFilters": {
     "side": "Тип обява",

@@ -4429,7 +4429,6 @@
       "leasePanelEmpty": "No costs recorded against this lease yet.",
       "leasePanelNote": "Recorded on the costs page. Separate from the settlements above — the same rent, seen from the cost side, so the two are not added together.",
       "itemPanelTitle": "Costs for this product",
-      "incurredOnFacet": "Date",
       "panelLoading": "Loading…",
       "panelOpenRegister": "Open the register",
       "itemPanelEmpty": "No costs recorded against this product yet.",
@@ -5887,7 +5886,8 @@
       "SERVICE": "Services",
       "OTHER": "Other"
     },
-    "costCategoryFacet": "Category"
+    "costCategoryFacet": "Category",
+    "incurredOnFacet": "Date"
   },
   "exchangeFilters": {
     "side": "Offer type",
