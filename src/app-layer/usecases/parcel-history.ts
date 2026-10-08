@@ -32,6 +32,8 @@ import {
     encodeNumericCursor, decodeNumericCursor, keysetBeforeNumeric,
 } from '@/lib/exchange/cursor';
 import { codedBadRequest, codedNotFound } from '@/lib/errors/types';
+import { WorkItemRepository } from '../repositories/WorkItemRepository';
+import { taskParcelIds } from './task';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { WEED_VALUES } from '@/lib/agriculture/weed-options';
 
@@ -397,9 +399,72 @@ export interface WeedObservationInput {
     notes?: string | null;
 }
 
-/** Record which weeds were identified in a parcel on a date. */
-export async function createParcelWeedObservation(ctx: RequestContext, input: WeedObservationInput) {
-    assertCanWrite(ctx);
+/**
+ * Who may record a weed observation against a TASK's parcel.
+ *
+ * The third instance of the assignee self-serve rule, after `setTaskStatus`
+ * ("a restricted MECHANISATOR … must be able to complete their own farm
+ * tasks") and `markOperationParcel`. Owner decision 2026-10-08: a mechanisator
+ * closing their own task records what weeds they met, and without this they
+ * got a 403 from `assertCanWrite` on the only write the closing form makes.
+ *
+ * Two gates, and the second applies to EVERYONE:
+ *
+ *   1. general task write, OR being the task's assignee;
+ *   2. the parcel must be among the task's parcels.
+ *
+ * (2) is the SCOPE for an assignee — it is what stops "assigned to one task"
+ * becoming "may write to any parcel" — and for a privileged caller it is a
+ * correctness check that the post was not mis-addressed. Either way, posting a
+ * parcel that is not on the task is a client error rather than a permission
+ * one, which is why it is a coded 400 and not a 403.
+ *
+ * The parcel set comes from `taskParcelIds`, the same function behind
+ * `GET /tasks/{taskId}/parcels`, so the parcels an assignee can SEE are
+ * exactly the ones they can POST against.
+ */
+async function assertMayObserveForTask(
+    db: PrismaTx,
+    ctx: RequestContext,
+    taskId: string,
+    parcelId: string,
+): Promise<void> {
+    const task = await WorkItemRepository.findBareById(db, ctx, taskId);
+    if (!task) throw codedNotFound('TASK_NOT_FOUND', 'Task not found');
+
+    const isAssignee = !!ctx.userId && task.assigneeUserId === ctx.userId;
+    if (!ctx.permissions.canWrite && !isAssignee) {
+        assertCanWrite(ctx); // throws the canonical 403 for a non-assignee
+    }
+
+    const allowed = await taskParcelIds(db, ctx, taskId);
+    if (!allowed.includes(parcelId)) {
+        throw codedBadRequest(
+            'PARCEL_NOT_ON_TASK',
+            'That parcel is not on this task.',
+        );
+    }
+}
+
+/**
+ * Record which weeds were identified in a parcel on a date.
+ *
+ * `scope.taskId` switches the authorization from "general write" to the
+ * task-scoped self-serve rule above. It is a PARAMETER rather than a body
+ * field because the route carries it in the path: an optional field that
+ * GRANTS authorization when present makes omitting it the safe default rather
+ * than the enforced one.
+ */
+export async function createParcelWeedObservation(
+    ctx: RequestContext,
+    input: WeedObservationInput,
+    scope?: { taskId: string },
+) {
+    // Unscoped keeps its cheap pre-flight check. The scoped branch cannot:
+    // deciding it requires reading the task, so it happens inside the
+    // transaction below — where the task row and the parcel set are read
+    // under the same tenant binding as the write they authorise.
+    if (!scope) assertCanWrite(ctx);
     const { weedKeys, otherWeeds } = partitionWeeds(input.weeds ?? []);
     if (weedKeys.length === 0 && otherWeeds.length === 0) {
         throw codedBadRequest('WEEDS_REQUIRED', 'Record at least one weed.');
@@ -407,6 +472,7 @@ export async function createParcelWeedObservation(ctx: RequestContext, input: We
     const notes = cleanNotes(input.notes);
 
     return runInTenantContext(ctx, async (db) => {
+        if (scope) await assertMayObserveForTask(db, ctx, scope.taskId, input.parcelId);
         await requireParcel(db, ctx, input.parcelId);
         const row = await db.parcelWeedObservation.create({
             data: {

@@ -50,6 +50,7 @@ import {
     AddTaskCommentSchema,
     AddTaskLinkSchema,
 } from '@/lib/schemas';
+import { CreateTaskWeedObservationSchema } from '@/app-layer/schemas/parcel-history.schemas';
 
 const TenantParams = z.object({
     tenantSlug: z.string().openapi({ param: { name: 'tenantSlug', in: 'path' }, example: 'acme' }),
@@ -276,6 +277,48 @@ export function registerTaskPaths(registry: OpenAPIRegistry): void {
                 description:
                     'Wrapped in an object rather than returned as a bare array, so a count or a bounds can be added later without a breaking change. The sibling `/links` returns a bare array and is the route that now cannot grow.',
             }),
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/tasks/{taskId}/weed-observations',
+        operationId: 'createTaskWeedObservation',
+        summary: 'Record the weeds met while doing a task',
+        description:
+            'Built for agrent-ios#226 — the weeds half of the task-closing form, filled in by the ' +
+            'person standing in the field.' +
+            '\n\n**This is the route a MECHANISATOR can use.** The sibling ' +
+            '`POST /agro/parcels/{parcelId}/weed-observations` writes the same row but requires general ' +
+            'write permission, which a mechanisator does not have — so closing their own task used to ' +
+            'return 403 on the only write the form makes. Here the authorization is **general task ' +
+            'write OR being the task\'s assignee**, and the task id in the path is what bounds the ' +
+            'widening. Use this route from a task; use the parcel route for an observation that is not ' +
+            'tied to one.' +
+            '\n\n**`parcelId` must be one of the task\'s own parcels**, resolved by exactly the ' +
+            'function behind `GET /tasks/{taskId}/parcels`. So the parcels you can draw on the map are ' +
+            'exactly the parcels you can post against, and the two cannot drift. Anything else is ' +
+            '`PARCEL_NOT_ON_TASK`, a **400** rather than a 403: the request is mis-addressed, which is ' +
+            'a client bug worth surfacing, not a permission the farmer could be granted. That check ' +
+            'applies to PRIVILEGED callers too — an editor does not get to post to a parcel the task ' +
+            'does not touch.' +
+            '\n\n**One list of weeds, mixed.** The server decides which entries are catalogue keys ' +
+            'and which are free text; a client cannot choose the column, which is what keeps the ' +
+            'reportable half reportable. An empty resolution is `WEEDS_REQUIRED`.' +
+            '\n\n**No `Idempotency-Key` yet.** This route does NOT de-duplicate a retry, so a ' +
+            'resend after a timeout creates a second observation. Honouring the header needs a column ' +
+            'and a partial unique index on the model; until that ships, do not auto-retry this POST.' +
+            '\n\nRefusal codes: `TASK_NOT_FOUND` (404, and decided before any permission verdict so ' +
+            'a typo\'d id never reads as a permission problem), `PARCEL_NOT_ON_TASK` (400), ' +
+            '`PARCEL_NOT_FOUND` (404), `WEEDS_REQUIRED` (400).',
+        tags: ['Tasks'],
+        params: TaskParams,
+        body: CreateTaskWeedObservationSchema,
+        success: {
+            status: 201,
+            description:
+                'The observation exists. Only its `id` is returned — read the parcel\'s history for the row.',
+            schema: z.object({ id: z.string() }).openapi('CreateTaskWeedObservationResponse'),
         },
     });
 
