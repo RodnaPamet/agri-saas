@@ -6408,6 +6408,54 @@
         ],
         "description": "The `{ items, pageInfo }` convention — used by inventory, NOT by grain (`{rows, totalCount, truncated}`) or exchange (`{rows, nextCursor}`). One pager cannot serve all three."
       },
+      "ItemNameConflictError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "example": "NOT_FOUND"
+              },
+              "message": {
+                "type": "string",
+                "example": "Practice not found"
+              },
+              "requestId": {
+                "type": "string",
+                "example": "req_01HG7…"
+              },
+              "details": {},
+              "params": {
+                "type": "object",
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ]
+                },
+                "description": "Values for the client to interpolate into its own translated message, keyed per `code` — e.g. `{ \"max\": 120 }` for `FARM_NAME_TOO_LONG`. Ids and quantities only: strings and numbers, never an object and never personal data. Absent for codes that need no values.",
+                "example": {
+                  "max": 120
+                }
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "description": "A 409 from the case-insensitive unique index on `lower(name)`. `error.code` is **`CONFLICT`**, NOT `STALE_DATA` — and that distinction is the point of documenting it.\n\nThe other 409 family on this API is the optimistic lock (`STALE_DATA` on the farm profile, a field-operation line, a journal entry), where the remedy is to re-read and retry. **This one is not that.** Re-reading changes nothing: the name is taken and the remedy is a DIFFERENT NAME. A client that treats every 409 as a stale edit will tell the user to reload, which cannot help them.\n\n`error.details` carries Prisma's constraint target — the column list the collision was on — so a form can point at the offending field rather than reporting a generic failure.\n\nThe index is on `lower(name)`, so the collision is CASE-INSENSITIVE: «Пшеница» collides with «пшеница», and \"Wheat\" with \"wheat\". A client that de-duplicates its own list case-sensitively will think the name is free."
+      },
       "JobRunEnvelope": {
         "type": [
           "object",
@@ -32097,6 +32145,16 @@
               }
             }
           },
+          "409": {
+            "description": "That name is already taken, case-insensitively. Not a stale edit — re-reading will not free the name; ask for a different one.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemNameConflictError"
+                }
+              }
+            }
+          },
           "426": {
             "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
             "content": {
@@ -32450,6 +32508,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The rename collides with another item, case-insensitively. Same index and same remedy as create: a different name, not a re-read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemNameConflictError"
                 }
               }
             }

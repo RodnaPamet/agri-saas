@@ -20,6 +20,7 @@ import { notFound, forbidden } from '@/lib/errors/types';
 import { assertCanRead } from '@/app-layer/policies/common';
 import { withDeleted } from '@/lib/soft-delete';
 import type { StorageProviderType } from '@/lib/storage/types';
+import { contentDisposition } from '@/lib/http/content-disposition';
 
 export const GET = withApiErrorHandling(
     async (
@@ -98,7 +99,10 @@ export const GET = withApiErrorHandling(
             status: 200,
             headers: {
                 'Content-Type': fileRecord.mimeType,
-                'Content-Disposition': `attachment; filename="${fileRecord.originalName}"`,
+                // #1343 — this interpolated `originalName` RAW, and a header value is a
+                // ByteString: a Cyrillic filename did not degrade, it THREW, so this
+                // route answered 500 on every Bulgarian-named file.
+                'Content-Disposition': contentDisposition(fileRecord.originalName),
                 'Content-Length': String(fileRecord.sizeBytes),
                 'Cache-Control': 'private, no-store',
             },

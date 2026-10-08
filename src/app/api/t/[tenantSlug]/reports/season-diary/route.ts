@@ -12,6 +12,7 @@ import { getTenantCtx } from '@/app-layer/context';
 import { generateSeasonDiaryPdf } from '@/app-layer/reports/pdf/farm-record-diary';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { badRequest } from '@/lib/errors/types';
+import { contentDisposition } from '@/lib/http/content-disposition';
 
 /** Collect a PDFKit document into a Buffer (listeners first, then end()). */
 function collectPdfBuffer(pdfDoc: PDFKit.PDFDocument): Promise<Buffer> {
@@ -43,7 +44,7 @@ export const POST = withApiErrorHandling(
             status: 200,
             headers: {
                 'Content-Type': 'application/pdf',
-                'Content-Disposition': `attachment; filename="${fileName}"`,
+                'Content-Disposition': contentDisposition(fileName),
                 'Cache-Control': 'no-store',
                 'Content-Length': String(pdfBuffer.length),
             },

@@ -9,16 +9,19 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
 import { downloadEvidenceFile } from '@/app-layer/usecases/evidence';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { contentDisposition } from '@/lib/http/content-disposition';
 
 export const GET = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; fileId: string }> }) => {
     const params = await paramsPromise;
     const ctx = await getTenantCtx(params, req);
     const result = await downloadEvidenceFile(ctx, params.fileId);
 
-    // Sanitize filename for Content-Disposition
-    const safeName = result.originalName
-        .replace(/[^\x20-\x7E]/g, '_')
-        .replace(/"/g, "'");
+    // #1343 — the sanitiser that used to live here replaced every non-ASCII
+    // character with `_`, so «Фактура-2026.pdf» downloaded as
+    // `_______-2026.pdf` and two invoices with different Cyrillic names
+    // downloaded as the SAME filename. `contentDisposition` keeps the real
+    // name in RFC 6266 `filename*` and derives a transliterated ASCII
+    // fallback, which is readable rather than masked.
 
     // ─── S3: redirect to presigned URL ───
     if (result.mode === 'redirect') {
@@ -48,7 +51,7 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
         status: 200,
         headers: {
             'Content-Type': result.mimeType || 'application/octet-stream',
-            'Content-Disposition': `attachment; filename="${safeName}"`,
+            'Content-Disposition': contentDisposition(result.originalName),
             'Content-Length': String(result.sizeBytes),
             'X-Content-SHA256': result.sha256,
             'Cache-Control': 'private, no-cache',

@@ -24,6 +24,7 @@ import { jsonResponse } from '@/lib/api-response';
 import { getProcessMap } from '@/app-layer/usecases/process-map';
 import { generateProcessMapPdf } from '@/app-layer/reports/pdf/processMap';
 import { badRequest } from '@/lib/errors/types';
+import { contentDisposition } from '@/lib/http/content-disposition';
 
 // Force Node.js runtime — pdfkit needs stream / zlib / Buffer.
 export const runtime = 'nodejs';
@@ -106,7 +107,7 @@ export const POST = withApiErrorHandling(
             status: 200,
             headers: {
                 'Content-Type': 'application/pdf',
-                'Content-Disposition': `attachment; filename="${filename}"`,
+                'Content-Disposition': contentDisposition(filename),
                 'Content-Length': String(pdfBuffer.length),
                 'Cache-Control': 'no-store, max-age=0',
             },

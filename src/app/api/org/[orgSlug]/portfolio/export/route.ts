@@ -36,6 +36,7 @@ import {
     getPortfolioTenantHealth,
     getOverdueEvidenceAcrossOrg,
 } from '@/app-layer/usecases/portfolio';
+import { contentDisposition } from '@/lib/http/content-disposition';
 
 interface RouteContext {
     params: Promise<{ orgSlug: string }>;
@@ -143,7 +144,7 @@ export const GET = withApiErrorHandling(
             status: 200,
             headers: {
                 'Content-Type': 'text/csv; charset=utf-8',
-                'Content-Disposition': `attachment; filename="${filename}"`,
+                'Content-Disposition': contentDisposition(filename),
                 'Cache-Control': 'no-cache, no-store',
             },
         });
