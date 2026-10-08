@@ -19,6 +19,7 @@
 import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { UpdateOperationParcelSchema } from '@/lib/schemas';
+import { ParcelGeo } from './locations.paths';
 import { OperationParcelDTOSchema } from '@/lib/dto/operation-parcel.dto';
 import { TaskDTOSchema } from '@/lib/dto/task.dto';
 import { ApiErrorResponseSchema } from '@/lib/dto/common';
@@ -38,15 +39,21 @@ const LineParams = TaskParams.extend({
 });
 
 /**
- * The parcel geometry the detail view carries.
+ * The parcel geometry the detail view carries — `ParcelGeo`, imported.
  *
- * Looser than the `Parcel` DTO on purpose: this comes from
- * `ParcelRepository.listForLocation`, which returns the land-admin and soil
- * columns as well. See `ParcelGeo` in `locations.paths.ts` for the full
- * shape — referenced here only as a loose object so the two cannot drift
- * into contradicting each other from two places.
+ * This WAS `z.object({}).passthrough()`, with a comment saying to see
+ * `ParcelGeo` in `locations.paths.ts` "for the full shape — referenced here
+ * only as a loose object so the two cannot drift into contradicting each other
+ * from two places". The goal was right and the means inverted it: a schema that
+ * accepts any shape and declares none is WORSE for a client than an
+ * undocumented route, because an empty object type looks complete. A generated
+ * iOS client got a parcel with no fields and had to model from observed wire
+ * data instead of the contract (agrent-ios, 2026-10-07).
+ *
+ * Importing the one definition is what the comment was reaching for: both
+ * routes are served by the same `ParcelRepository.listForLocation` call, so
+ * there is now exactly one description and a `$ref` to it.
  */
-const OperationParcelGeometry = z.object({}).passthrough();
 
 const FieldOperationDetail = z
     .object({
@@ -66,7 +73,7 @@ const FieldOperationDetail = z
                     'location link — which is exactly what a partially-committed create leaves ' +
                     'behind, so a null here is a signal, not just an absence.',
             }),
-        parcels: z.array(OperationParcelGeometry).openapi({
+        parcels: z.array(ParcelGeo).openapi({
             description:
                 'Every parcel of the linked location (for the map backdrop) — NOT only the ' +
                 'parcels this job prescribes. The prescribed set is `lines`. Empty when ' +
