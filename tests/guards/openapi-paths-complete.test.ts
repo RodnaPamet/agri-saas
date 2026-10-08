@@ -120,7 +120,7 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 // leaving it undescribed would have been the wrong trade in the other
 // direction. "Baseline or describe" is a question about the AUDIENCE, not a
 // uniform rule.
-const UNDOCUMENTED_CEILING = 244;
+const UNDOCUMENTED_CEILING = 234;
 // Lowered 246 -> 245 by #1376: `/api/auth/register` was retired, so its
 // baseline entry went with it. The ceiling tracks the baseline exactly —
 // leaving slack is how a shrink-only ratchet quietly becomes a denylist with

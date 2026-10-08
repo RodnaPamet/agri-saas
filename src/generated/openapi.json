@@ -142,7 +142,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "invitedByUserId": {
             "type": [
@@ -175,7 +176,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "applicatorCertNo": {
             "type": [
@@ -204,10 +206,12 @@
             "description": "Set when the membership came from an organisation provisioning run rather than a manual invite."
           },
           "createdAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "updatedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "user": {
             "type": "object",
@@ -231,7 +235,8 @@
                 ]
               },
               "createdAt": {
-                "type": "string"
+                "type": "string",
+                "format": "date-time"
               }
             },
             "required": [
@@ -9672,13 +9677,16 @@
           },
           "expiresAt": {
             "type": "string",
+            "format": "date-time",
             "description": "When the invite stops appearing in this list. There is no `expired` state to observe — see the endpoint description."
           },
           "createdAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "updatedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "invitedBy": {
             "type": [

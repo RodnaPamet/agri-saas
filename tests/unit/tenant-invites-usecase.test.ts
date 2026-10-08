@@ -183,12 +183,18 @@ describe('listPendingInvites', () => {
         expect(args.where.expiresAt).toMatchObject({ gt: expect.any(Date) });
     });
 
-    it('orders by createdAt desc + includes invitedBy', async () => {
+    it('orders by createdAt desc + selects invitedBy', async () => {
+        // This asserted `args.include.invitedBy` until #1450. The query now
+        // uses an explicit `select` instead, because `include` returns every
+        // scalar — and one of this model's scalars is `token`, the acceptance
+        // credential. The relation is still loaded; it is just loaded through
+        // the field list rather than beside it.
         (mockTenantDb.tenantInvite.findMany as jest.Mock).mockResolvedValue([]);
         await listPendingInvites(adminCtx);
         const args = (mockTenantDb.tenantInvite.findMany as jest.Mock).mock.calls[0][0];
         expect(args.orderBy).toEqual({ createdAt: 'desc' });
-        expect(args.include.invitedBy.select).toEqual({ id: true, name: true });
+        expect(args.select.invitedBy.select).toEqual({ id: true, name: true });
+        expect(args.include).toBeUndefined();
     });
 
     it('rejects READER (admin gate)', async () => {

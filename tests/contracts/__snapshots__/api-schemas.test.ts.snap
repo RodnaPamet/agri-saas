@@ -98,7 +98,8 @@ exports[`API contract — per-schema snapshots schema: AdminMember 1`] = `
       "type": [
         "string",
         "null"
-      ]
+      ],
+      "format": "date-time"
     },
     "invitedByUserId": {
       "type": [
@@ -131,7 +132,8 @@ exports[`API contract — per-schema snapshots schema: AdminMember 1`] = `
       "type": [
         "string",
         "null"
-      ]
+      ],
+      "format": "date-time"
     },
     "applicatorCertNo": {
       "type": [
@@ -160,10 +162,12 @@ exports[`API contract — per-schema snapshots schema: AdminMember 1`] = `
       "description": "Set when the membership came from an organisation provisioning run rather than a manual invite."
     },
     "createdAt": {
-      "type": "string"
+      "type": "string",
+      "format": "date-time"
     },
     "updatedAt": {
-      "type": "string"
+      "type": "string",
+      "format": "date-time"
     },
     "user": {
       "type": "object",
@@ -187,7 +191,8 @@ exports[`API contract — per-schema snapshots schema: AdminMember 1`] = `
           ]
         },
         "createdAt": {
-          "type": "string"
+          "type": "string",
+          "format": "date-time"
         }
       },
       "required": [
@@ -10159,13 +10164,16 @@ exports[`API contract — per-schema snapshots schema: PendingInvite 1`] = `
     },
     "expiresAt": {
       "type": "string",
+      "format": "date-time",
       "description": "When the invite stops appearing in this list. There is no \`expired\` state to observe — see the endpoint description."
     },
     "createdAt": {
-      "type": "string"
+      "type": "string",
+      "format": "date-time"
     },
     "updatedAt": {
-      "type": "string"
+      "type": "string",
+      "format": "date-time"
     },
     "invitedBy": {
       "type": [

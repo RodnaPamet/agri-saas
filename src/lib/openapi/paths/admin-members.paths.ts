@@ -112,7 +112,7 @@ const MemberUserSchema = z.object({
     name: z.string().nullable(),
     email: z.string(),
     image: z.string().nullable(),
-    createdAt: z.string(),
+    createdAt: z.string().datetime(),
 });
 
 const AdminMemberSchema = z
@@ -133,10 +133,10 @@ const AdminMemberSchema = z
             description:
                 '`ACTIVE`, `INVITED` or `DEACTIVATED`. **Load-bearing, not decoration** — this list deliberately includes deactivated members. `REMOVED` never appears: that status exists so the row leaves this list.',
         }),
-        invitedAt: z.string().nullable(),
+        invitedAt: z.string().datetime().nullable(),
         invitedByUserId: z.string().nullable(),
         invitedBy: z.object({ id: z.string(), name: z.string().nullable() }).nullable(),
-        deactivatedAt: z.string().nullable(),
+        deactivatedAt: z.string().datetime().nullable(),
         applicatorCertNo: z.string().nullable().openapi({
             description: 'БАБХ plant-protection applicator certificate. Written by the `certificates` PUT, not by role edits.',
         }),
@@ -145,8 +145,8 @@ const AdminMemberSchema = z
         provisionedByOrgId: z.string().nullable().openapi({
             description: 'Set when the membership came from an organisation provisioning run rather than a manual invite.',
         }),
-        createdAt: z.string(),
-        updatedAt: z.string(),
+        createdAt: z.string().datetime(),
+        updatedAt: z.string().datetime(),
         user: MemberUserSchema,
         activeSessionCount: z.number().int().openapi({
             description:
@@ -161,12 +161,12 @@ const PendingInviteSchema = z
         tenantId: z.string(),
         email: z.string(),
         role: z.string(),
-        expiresAt: z.string().openapi({
+        expiresAt: z.string().datetime().openapi({
             description:
                 'When the invite stops appearing in this list. There is no `expired` state to observe — see the endpoint description.',
         }),
-        createdAt: z.string(),
-        updatedAt: z.string(),
+        createdAt: z.string().datetime(),
+        updatedAt: z.string().datetime(),
         invitedBy: z.object({ id: z.string(), name: z.string().nullable() }).nullable(),
     })
     .openapi('PendingInvite', {
