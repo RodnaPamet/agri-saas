@@ -70,6 +70,20 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
 
     // ─── Usecases ───
     const USECASE_ALLOWLIST: string[] = [
+        // P3.6 / agrent-ios — `my-farms.ts` answers "which farms are mine",
+        // so there is no tenant to scope to: that IS the question. And
+        // `runInUserContext` cannot serve it — `TenantMembership`'s only
+        // policies are `tenant_isolation` (keyed on `app.tenant_id`), its
+        // INSERT twin and `superuser_bypass`, with NO person clause, so a read
+        // with no tenant bound returns ZERO ROWS SILENTLY. An empty switcher
+        // would be indistinguishable from a person with no farms.
+        //
+        // What stands in for RLS is that `userId` comes from the session and
+        // never from the request, so a caller can only enumerate their own
+        // memberships. `src/app/tenants/page.tsx` queries the identical shape
+        // directly for the identical reason; this is that query moved
+        // somewhere an API route can reach.
+        'my-farms.ts',
         // #15 — `AgriEvent` is a GLOBAL catalogue (no tenantId / no RLS, like
         // `Unit` / `Promotion` / `Framework`). The tenant-facing READ still goes
         // through `runInTenantContext`; the global handle is used by exactly two

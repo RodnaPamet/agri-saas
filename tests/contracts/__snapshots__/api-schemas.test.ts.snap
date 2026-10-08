@@ -7799,6 +7799,48 @@ exports[`API contract — per-schema snapshots schema: MarketReference 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: MyFarms 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "farms": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string",
+            "description": "Use this for navigation. Server-generated and stable.",
+            "example": "zk-pobeda-9f3a1c20"
+          },
+          "name": {
+            "type": "string",
+            "example": "ЗК ПОБЕДА"
+          },
+          "role": {
+            "type": "string",
+            "description": "The caller's role IN THAT FARM: \`OWNER\`, \`ADMIN\`, \`EDITOR\`, \`READER\`, \`AUDITOR\` or \`MECHANISATOR\`. A growing union — treat an unrecognised value as the least privilege rather than as an error.",
+            "example": "OWNER"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "role"
+        ]
+      }
+    }
+  },
+  "required": [
+    "farms"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: NativeExchangeRequest 1`] = `
 "{
   "type": "object",
