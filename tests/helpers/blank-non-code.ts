@@ -45,6 +45,26 @@
  * comment and a `/*` inside a line comment is never reached as an opener.
  * That it holds by construction rather than by passing today's corpus is the
  * reason for doing it this way.
+ *
+ * ## Why this is not `tests/helpers/strip-comments.ts`
+ *
+ * That helper came first and three guards use it. Two differences, and only
+ * the first is why this module exists:
+ *
+ *   • It DELETES comments; this one blanks them to spaces. Every caller here
+ *     scans forward from a match index into the same string, so deleting
+ *     would leave those offsets pointing at the wrong place. Positions are
+ *     not a nicety for these two guards; they are the contract.
+ *   • It runs blocks before lines, so it has the first trap above — measured
+ *     to delete 10 exported declarations from `src/lib/schemas/index.ts` and
+ *     499 lines of `src/auth.ts`, filed as #1442. No guard is currently
+ *     blinded to anything it hunts, which is luck rather than design.
+ *
+ * It also deliberately spares a TRAILING `//` to avoid truncating a regex or
+ * a URL string — a real trade, made because a line-level regex cannot tell
+ * those apart. A state-aware pass gets that for free, so if #1442 moves the
+ * three consumers here, that limitation can go with it rather than being
+ * ported.
  */
 
 export interface BlankOptions {
