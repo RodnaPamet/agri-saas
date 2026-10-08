@@ -186,10 +186,13 @@ async function markReadFor(
 async function isBlocked(
     db: PrismaTx,
     sellerTenantId: string,
-    inquirerTenantId: string,
+    inquirerUserId: string,
 ): Promise<boolean> {
+    // Keyed on the PERSON since #1314. A colleague of a blocked buyer is NOT
+    // blocked — that is the ruling, and the evasion it allows (ask a colleague
+    // to send) is a known, accepted cost rather than an oversight.
     const row = await db.exchangeBlock.findFirst({
-        where: { sellerTenantId, blockedTenantId: inquirerTenantId },
+        where: { sellerTenantId, blockedUserId: inquirerUserId },
         select: { id: true },
     });
     return row !== null;
@@ -216,15 +219,15 @@ export async function blockExchangeParty(ctx: RequestContext, threadId: string) 
             throw codedForbidden('BLOCK_SELLER_ONLY', 'Only the seller can block a buyer.');
         }
 
-        const blockedTenantId = thread.inquirerTenantId;
+        const blockedUserId = thread.inquirerUserId;
         const existing = await db.exchangeBlock.findFirst({
-            where: { sellerTenantId: ctx.tenantId, blockedTenantId },
+            where: { sellerTenantId: ctx.tenantId, blockedUserId },
             select: { id: true },
         });
         if (existing) return { blocked: true, alreadyBlocked: true };
 
         await db.exchangeBlock.create({
-            data: { sellerTenantId: ctx.tenantId, blockedTenantId, createdByUserId: ctx.userId },
+            data: { sellerTenantId: ctx.tenantId, blockedUserId, createdByUserId: ctx.userId },
         });
         await logEvent(db, ctx, {
             action: 'CREATE',
@@ -235,8 +238,9 @@ export async function blockExchangeParty(ctx: RequestContext, threadId: string) 
                 category: 'entity_lifecycle',
                 entityName: 'ExchangeBlock',
                 operation: 'created',
-                // The blocked tenant id is NOT in `params` — ids of other
-                // tenants have no place in an audit payload this one can read.
+                // The blocked USER id is NOT in `params` — another farm's
+                // people have no place in an audit payload this farm can read,
+                // and that is more true of a person than it was of a tenant.
                 after: { threadId },
                 summary: 'Exchange contact blocked',
             },
@@ -256,7 +260,7 @@ export async function unblockExchangeParty(ctx: RequestContext, threadId: string
         // deleteMany, not delete: absent is the desired end state either way,
         // and a missing row must not be an error on an undo action.
         await db.exchangeBlock.deleteMany({
-            where: { sellerTenantId: ctx.tenantId, blockedTenantId: thread.inquirerTenantId },
+            where: { sellerTenantId: ctx.tenantId, blockedUserId: thread.inquirerUserId },
         });
         return { blocked: false };
     });
