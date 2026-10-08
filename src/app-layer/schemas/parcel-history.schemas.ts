@@ -28,18 +28,50 @@ export const CreateCropSeasonSchema = z
     .openapi('CreateParcelCropSeason');
 export type CreateCropSeasonBody = z.infer<typeof CreateCropSeasonSchema>;
 
+/**
+ * What an observation IS, shared by both routes that create one.
+ *
+ * Spread into two schemas rather than `.extend()`ed from one, because
+ * `CreateWeedObservationSchema` carries an `.openapi()` refId and extending a
+ * named schema would register a second component under the same name. One
+ * field set, two names.
+ *
+ * The point of sharing it: the parcel-scoped and task-scoped routes differ in
+ * WHO may post and nothing else. A client that can build a body for one can
+ * build it for the other, and a new field cannot land on half the surface.
+ */
+const WEED_OBSERVATION_FIELDS = {
+    observedAt: z.string().datetime(),
+    /**
+     * ONE list, mixed. The server decides which entries are catalogue keys
+     * and which are free text — see the usecase's `partitionWeeds`. The
+     * client cannot choose the column, which is what keeps the reportable
+     * half reportable.
+     */
+    weeds: z.array(z.string()).min(1),
+    notes: z.string().nullable().optional(),
+};
+
 export const CreateWeedObservationSchema = z
-    .object({
-        observedAt: z.string().datetime(),
-        /**
-         * ONE list, mixed. The server decides which entries are catalogue keys
-         * and which are free text — see the usecase's `partitionWeeds`. The
-         * client cannot choose the column, which is what keeps the reportable
-         * half reportable.
-         */
-        weeds: z.array(z.string()).min(1),
-        notes: z.string().nullable().optional(),
-    })
+    .object({ ...WEED_OBSERVATION_FIELDS })
     .strip()
     .openapi('CreateParcelWeedObservation');
 export type CreateWeedObservationBody = z.infer<typeof CreateWeedObservationSchema>;
+
+/**
+ * The task-scoped variant: `parcelId` moves into the BODY because the path
+ * spends its id on the task.
+ *
+ * The parcel is still mandatory — an observation is always ABOUT a parcel, and
+ * a task can touch several, so there is nothing sensible to default to. The
+ * server checks the id against the task's own parcel set, so a wrong one is a
+ * coded 400 rather than a write landing on a neighbour's field.
+ */
+export const CreateTaskWeedObservationSchema = z
+    .object({
+        parcelId: z.string().min(1).max(60),
+        ...WEED_OBSERVATION_FIELDS,
+    })
+    .strip()
+    .openapi('CreateTaskWeedObservation');
+export type CreateTaskWeedObservationBody = z.infer<typeof CreateTaskWeedObservationSchema>;

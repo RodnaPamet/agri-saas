@@ -3035,6 +3035,49 @@
           "weeds"
         ]
       },
+      "CreateTaskWeedObservation": {
+        "type": "object",
+        "properties": {
+          "parcelId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "observedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "weeds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "parcelId",
+          "observedAt",
+          "weeds"
+        ]
+      },
+      "CreateTaskWeedObservationResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
       "CreatedDataStream": {
         "type": "object",
         "properties": {
@@ -25553,6 +25596,161 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TaskParcelsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries an English `message` as a developer-facing fallback; it is NOT translated, so render your own copy keyed on `code`. Route-level 403s carry their own codes and are described on the operation that returns them.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/tasks/{taskId}/weed-observations": {
+      "post": {
+        "operationId": "createTaskWeedObservation",
+        "summary": "Record the weeds met while doing a task",
+        "description": "Built for agrent-ios#226 — the weeds half of the task-closing form, filled in by the person standing in the field.\n\n**This is the route a MECHANISATOR can use.** The sibling `POST /agro/parcels/{parcelId}/weed-observations` writes the same row but requires general write permission, which a mechanisator does not have — so closing their own task used to return 403 on the only write the form makes. Here the authorization is **general task write OR being the task's assignee**, and the task id in the path is what bounds the widening. Use this route from a task; use the parcel route for an observation that is not tied to one.\n\n**`parcelId` must be one of the task's own parcels**, resolved by exactly the function behind `GET /tasks/{taskId}/parcels`. So the parcels you can draw on the map are exactly the parcels you can post against, and the two cannot drift. Anything else is `PARCEL_NOT_ON_TASK`, a **400** rather than a 403: the request is mis-addressed, which is a client bug worth surfacing, not a permission the farmer could be granted. That check applies to PRIVILEGED callers too — an editor does not get to post to a parcel the task does not touch.\n\n**One list of weeds, mixed.** The server decides which entries are catalogue keys and which are free text; a client cannot choose the column, which is what keeps the reportable half reportable. An empty resolution is `WEEDS_REQUIRED`.\n\n**No `Idempotency-Key` yet.** This route does NOT de-duplicate a retry, so a resend after a timeout creates a second observation. Honouring the header needs a column and a partial unique index on the model; until that ships, do not auto-retry this POST.\n\nRefusal codes: `TASK_NOT_FOUND` (404, and decided before any permission verdict so a typo'd id never reads as a permission problem), `PARCEL_NOT_ON_TASK` (400), `PARCEL_NOT_FOUND` (404), `WEEDS_REQUIRED` (400).",
+        "tags": [
+          "Tasks"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "taskId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTaskWeedObservation"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The observation exists. Only its `id` is returned — read the parcel's history for the row.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateTaskWeedObservationResponse"
                 }
               }
             }

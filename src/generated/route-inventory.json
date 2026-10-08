@@ -1936,6 +1936,11 @@
       "documented": true
     },
     {
+      "path": "/api/t/{tenantSlug}/tasks/{taskId}/weed-observations",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/trends/news",
       "status": "live",
       "documented": true

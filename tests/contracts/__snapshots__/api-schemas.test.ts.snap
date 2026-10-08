@@ -3146,6 +3146,55 @@ exports[`API contract — per-schema snapshots schema: CreateParcelWeedObservati
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: CreateTaskWeedObservation 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "parcelId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 60
+    },
+    "observedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "weeds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "notes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "parcelId",
+    "observedAt",
+    "weeds"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: CreateTaskWeedObservationResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: CreatedDataStream 1`] = `
 "{
   "type": "object",

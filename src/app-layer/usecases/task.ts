@@ -681,6 +681,39 @@ export async function listTaskLinks(ctx: RequestContext, taskId: string) {
 }
 
 /**
+ * The deduplicated parcel ids a task touches — the ONE definition of "this
+ * task's parcels".
+ *
+ * Exported and shared on purpose. `listTaskParcels` answers
+ * `GET /tasks/{taskId}/parcels` with it, and `createParcelWeedObservation`'s
+ * task-scoped authorization decides with it, so **the parcels a restricted
+ * assignee can SEE are exactly the ones they can POST against**. Two copies of
+ * this union would drift the moment a third source of task parcels appeared,
+ * and the drift would show up as a 400 on a parcel the map had just drawn.
+ *
+ * Reads the operation lines UNCONDITIONALLY rather than gating on
+ * `task.type === FIELD_OPERATION`: only a field operation has OperationParcel
+ * rows by construction, so for every other type this is an indexed read
+ * returning nothing — and the branch it replaces would silently exclude a
+ * future task type that gains lines.
+ *
+ * Deduplication is load-bearing, not tidiness. `OperationParcel` rows are per
+ * (parcel, product), so a spray job with two products over three parcels
+ * arrives as six ids covering three; and a parcel can be BOTH linked and on a
+ * line, so the union is where a duplicate appears even if each source were
+ * distinct.
+ */
+export async function taskParcelIds(
+    db: PrismaTx,
+    ctx: RequestContext,
+    taskId: string,
+): Promise<string[]> {
+    const linkedIds = await TaskLinkRepository.listParcelIdsByTask(db, ctx, taskId);
+    const lineIds = await ParcelRepository.listOperationParcelIdsForTask(db, ctx, taskId);
+    return [...new Set([...linkedIds, ...lineIds])];
+}
+
+/**
  * The parcels a task touches, as a map needs them: `{ id, name, geometry }`.
  *
  * Contract agreed with agrent-ios and recorded on #1391 — read that before
@@ -710,22 +743,7 @@ export async function listTaskParcels(ctx: RequestContext, taskId: string): Prom
         const task = await WorkItemRepository.findBareById(db, ctx, taskId);
         if (!task) throw codedNotFound('TASK_NOT_FOUND', 'Task not found');
 
-        const linkedIds = await TaskLinkRepository.listParcelIdsByTask(db, ctx, taskId);
-
-        // Read the operation lines UNCONDITIONALLY rather than gating on
-        // `task.type === FIELD_OPERATION`. Only a field operation has
-        // OperationParcel rows by construction, so for every other type this
-        // is an indexed read returning nothing — and the branch it replaces is
-        // one that would silently exclude a future task type that gains lines.
-        // A cheap empty query beats a type check that can drift from the data
-        // model, and `task` is already loaded for the 404 either way.
-        const lineIds = await ParcelRepository.listOperationParcelIdsForTask(db, ctx, taskId);
-
-        // Deduplicate. `lineIds` is per (parcel, product), not per parcel —
-        // a spray job with two products over three parcels arrives as six ids
-        // covering three. Unioning the two sources makes this load-bearing
-        // rather than defensive: a parcel can be BOTH linked and on a line.
-        const parcelIds = [...new Set([...linkedIds, ...lineIds])];
+        const parcelIds = await taskParcelIds(db, ctx, taskId);
 
         // Ordering (name, then id) is the repository's, because it is part of
         // the response contract rather than this function's preference.
