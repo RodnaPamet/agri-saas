@@ -33,6 +33,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { collectSourceFiles } from '../helpers/collect-files';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const ROOTS = ['src/app-layer', 'src/lib'];
@@ -109,10 +110,33 @@ export function collectPersonalParamKeys(root: string, dirs: string[] = ROOTS): 
     for (const full of files) {
         const src = fs.readFileSync(full, 'utf8');
         for (const call of src.matchAll(CODED_CALL_START)) {
+            // Strings AND comments blanked before the brace scan (#1387).
+            // `${x}` contains a `{x}`, so a template literal in the message
+            // argument was read as the params object: measured, 20 of 104
+            // coded calls resolved their "params" to an interpolation. That
+            // cost both ways. It reported `FARM_NAME_MAX` as a personal key
+            // for containing NAME — and, worse and unreported, it meant the
+            // REAL params object of 5 of those calls was never examined at
+            // all, so the guard was blind on them.
+            //
+            // Blanking whole string literals rather than just `${…}` also
+            // closes the sibling case: a quoted `'use {name} here'` is
+            // likewise indistinguishable from an object literal to a regex.
             const args = argsOf(src, (call.index ?? 0) + call[0].length);
-            const obj = /\{([^{}]*)\}/.exec(args);
+            // LOCATE in the blanked text, READ from the original. Blanking is
+            // what makes `${x}` stop looking like an object literal; reading
+            // the original back is what keeps a QUOTED key — `{ 'owner-name':
+            // x }` — visible, since the blanked copy has erased it. Measured
+            // 0 quoted keys in the 104 coded calls today, so this costs
+            // nothing now and is the difference between a guard that stays
+            // correct and one that goes silently blind the first time
+            // somebody needs a hyphen in a key.
+            //
+            // Only sound because `blankNonCode` preserves positions exactly.
+            const scan = blankNonCode(args, { strings: true });
+            const obj = /\{([^{}]*)\}/.exec(scan);
             if (!obj) continue; // no params object among this call's arguments
-            const body = obj[1] ?? '';
+            const body = args.slice(obj.index + 1, obj.index + obj[0].length - 1);
             for (const entry of body.split(',')) {
                 const key = entry.split(':')[0]?.trim().replace(/['"`]/g, '');
                 if (!key || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
@@ -159,6 +183,111 @@ describe('error params carry no personal data', () => {
             );
             const found = collectPersonalParamKeys(dir, ['src/lib']);
             expect(found.map((h) => h.key)).toEqual(['lessorName']);
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('a template literal is not a params object (#1387)', () => {
+        const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'err-interp-'));
+        try {
+            fs.mkdirSync(path.join(dir, 'src/lib'), { recursive: true });
+            fs.writeFileSync(
+                path.join(dir, 'src/lib/sample.ts'),
+                [
+                    'throw codedBadRequest(',
+                    "    'FARM_NAME_TOO_LONG',",
+                    '    `A farm name may be at most ${FARM_NAME_MAX} characters.`,',
+                    '    undefined,',
+                    '    { max: FARM_NAME_MAX },',
+                    ');',
+                ].join('\n'),
+                'utf8',
+            );
+            // Reported `FARM_NAME_MAX` before the fix — for containing NAME —
+            // with no personal data anywhere near it.
+            expect(collectPersonalParamKeys(dir, ['src/lib'])).toEqual([]);
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('…and the REAL params object behind one is still read (#1387)', () => {
+        // The half the issue did not name, and the reason this is a fix and
+        // not a mute. When the scan stopped at the interpolation it never
+        // reached the actual params object, so it was BLIND on those calls —
+        // measured at 5 of the 20 affected. A change that merely stopped the
+        // false positive would pass the test above and leave the blindness.
+        const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'err-blind-'));
+        try {
+            fs.mkdirSync(path.join(dir, 'src/lib'), { recursive: true });
+            fs.writeFileSync(
+                path.join(dir, 'src/lib/sample.ts'),
+                [
+                    'throw codedBadRequest(',
+                    "    'LEASE_INVALID',",
+                    '    `The lease for ${parcel.code} is invalid.`,',
+                    '    undefined,',
+                    '    { lessorName: lease.lessorName },',
+                    ');',
+                ].join('\n'),
+                'utf8',
+            );
+            expect(collectPersonalParamKeys(dir, ['src/lib']).map((h) => h.key)).toEqual([
+                'lessorName',
+            ]);
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('a QUOTED key is still read, though the scan cannot see it (#1387)', () => {
+        // Blanking string literals is what makes `${x}` stop looking like an
+        // object, but it also erases a quoted key. The object is therefore
+        // LOCATED in the blanked copy and READ from the original, which only
+        // works because the blanker preserves positions exactly. No call in
+        // the repo uses a quoted key today, so without this fixture the
+        // regression would be invisible until someone needed a hyphen.
+        const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'err-quoted-'));
+        try {
+            fs.mkdirSync(path.join(dir, 'src/lib'), { recursive: true });
+            fs.writeFileSync(
+                path.join(dir, 'src/lib/sample.ts'),
+                [
+                    'throw codedBadRequest(',
+                    "    'X',",
+                    '    `msg ${a}`,',
+                    "    undefined,",
+                    "    { 'ownerName': x, id: y },",
+                    ');',
+                ].join('\n'),
+                'utf8',
+            );
+            expect(collectPersonalParamKeys(dir, ['src/lib']).map((h) => h.key)).toEqual([
+                'ownerName',
+            ]);
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('a brace inside a quoted MESSAGE is not a params object either (#1387)', () => {
+        // The sibling of the `${…}` case: `'use {name} here'` is just as
+        // indistinguishable from an object literal to a regex, and would
+        // report `name` on a call whose params are an id.
+        const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'err-brace-'));
+        try {
+            fs.mkdirSync(path.join(dir, 'src/lib'), { recursive: true });
+            fs.writeFileSync(
+                path.join(dir, 'src/lib/sample.ts'),
+                [
+                    "throw codedBadRequest('Y', 'Use {name} in the template.', undefined, {",
+                    '    id: parcel.id,',
+                    '});',
+                ].join('\n'),
+                'utf8',
+            );
+            expect(collectPersonalParamKeys(dir, ['src/lib'])).toEqual([]);
         } finally {
             fs.rmSync(dir, { recursive: true, force: true });
         }
