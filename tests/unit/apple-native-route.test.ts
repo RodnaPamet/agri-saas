@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- test mocks mirroring
- * runtime contracts; the codebase's standard file-level disable. */
-
 /**
  * `POST /api/auth/native/apple` — the sign-in itself (P4.2).
  *
@@ -19,28 +16,28 @@
  */
 const verifyAppleIdentityToken = jest.fn();
 jest.mock('@/lib/auth/apple', () => ({
-    verifyAppleIdentityToken: (...a: any[]) => verifyAppleIdentityToken(...a),
+    verifyAppleIdentityToken: (...a: unknown[]) => verifyAppleIdentityToken(...a),
 }));
 
 const issueRefreshToken = jest.fn();
 jest.mock('@/lib/auth/native/refresh-tokens', () => ({
     ...jest.requireActual('@/lib/auth/native/refresh-tokens'),
-    issueRefreshToken: (...a: any[]) => issueRefreshToken(...a),
+    issueRefreshToken: (...a: unknown[]) => issueRefreshToken(...a),
 }));
 
 const recordNewSession = jest.fn();
 jest.mock('@/lib/security/session-tracker', () => ({
     ...jest.requireActual('@/lib/security/session-tracker'),
-    recordNewSession: (...a: any[]) => recordNewSession(...a),
+    recordNewSession: (...a: unknown[]) => recordNewSession(...a),
 }));
 
 const redeemPendingInvites = jest.fn();
 jest.mock('@/lib/auth/invite-redemption', () => ({
-    redeemPendingInvites: (...a: any[]) => redeemPendingInvites(...a),
+    redeemPendingInvites: (...a: unknown[]) => redeemPendingInvites(...a),
 }));
 
 const encode = jest.fn();
-jest.mock('next-auth/jwt', () => ({ encode: (...a: any[]) => encode(...a) }));
+jest.mock('next-auth/jwt', () => ({ encode: (...a: unknown[]) => encode(...a) }));
 
 import { randomUUID } from 'node:crypto';
 

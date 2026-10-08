@@ -1,7 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- the middleware harness
- * mirrors runtime contracts (NextRequest, getToken); the file-level disable is
- * this codebase's standard pattern for these harnesses. */
-
 /**
  * Every HAND-MINTED session carries `termsPending`, so the consent gate can
  * hold it (P4.2, fixing a gap P3.1 left).
@@ -58,7 +54,7 @@ jest.mock('../../src/lib/rate-limit/apiReadRateLimit', () => ({
 const getToken = jest.fn();
 jest.mock('next-auth/jwt', () => ({
     ...jest.requireActual('next-auth/jwt'),
-    getToken: (...a: any[]) => getToken(...a),
+    getToken: (...a: unknown[]) => getToken(...a),
 }));
 
 import { buildSessionClaims } from '@/auth';
@@ -153,7 +149,7 @@ describe('§2 and the gate actually holds the resulting session', () => {
         // what the producer emits is what the gate reads.
         getToken.mockResolvedValue(claims);
 
-        const res = await middleware(req('/api/me/profile') as any);
+        const res = await middleware(req('/api/me/profile') as never);
         expect(res.status).toBe(403);
     });
 
@@ -166,7 +162,7 @@ describe('§2 and the gate actually holds the resulting session', () => {
         });
         getToken.mockResolvedValue(claims);
 
-        const res = await middleware(req('/api/me/profile') as any);
+        const res = await middleware(req('/api/me/profile') as never);
         expect([302, 307, 403]).not.toContain(res.status);
     });
 
@@ -182,7 +178,7 @@ describe('§2 and the gate actually holds the resulting session', () => {
         });
         getToken.mockResolvedValue(claims);
 
-        const res = await middleware(req('/api/auth/native/apple') as any);
+        const res = await middleware(req('/api/auth/native/apple') as never);
         expect(res.status).not.toBe(403);
     });
 });
