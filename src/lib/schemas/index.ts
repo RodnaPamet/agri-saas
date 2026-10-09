@@ -365,9 +365,12 @@ export const BulkTaskDueDateSchema = z.object({
  */
 export const AuthRegisterStartSchema = z
     .object({
-        email: z.string().min(1).max(320),
-        password: z.string().min(1),
-        name: z.string().min(1).max(200),
+        email: z.string().min(1).max(320).openapi({ example: 'ivan@example.bg' }),
+        password: z.string().min(1).openapi({
+            description:
+                'Checked against the password policy and against Have I Been Pwned. The HIBP screen fails OPEN: an outage there must not block signups, so a breached password may occasionally be accepted when the service is unreachable. **No minimum is declared here on purpose** — `validatePasswordPolicy` answers a distinct `too_short`, and a schema-level minimum would collapse that into `invalid_request`.',
+        }),
+        name: z.string().min(1).max(200).openapi({ example: 'Иван Иванов' }),
         /**
          * Cloudflare Turnstile token (P3.5c).
          *
@@ -384,10 +387,28 @@ export const AuthRegisterStartSchema = z
          * look exactly like a client bug.
          */
         turnstileToken: z.string().max(2048).optional(),
-        /** Checked for IDENTITY with `true` in the handler — see the docblock. */
-        acceptedTerms: z.unknown().optional(),
+        /**
+         * Checked for IDENTITY with `true` in the handler — see the docblock.
+         *
+         * `z.unknown()` at RUNTIME and `boolean` in the SPEC, deliberately
+         * (#1465). The runtime stays permissive so a wrong value answers
+         * `terms_not_accepted`, which a client can act on, rather than
+         * `invalid_request`, which it cannot. The published type still tells a
+         * client what to send — `z.unknown()` publishes no type at all, which
+         * is the one option that helps nobody.
+         */
+        acceptedTerms: z.unknown().optional().openapi({
+            type: 'boolean',
+            description:
+                'Consent to the terms of use and the privacy notice (P3.1). Send `true`. Checked for IDENTITY with `true` rather than truthiness, so no other value satisfies it. Absent or false is `400 terms_not_accepted`, refused before the password is hashed. **Not declared required**, because a schema-level rejection would lose that code — see #1393.',
+        }),
         /** Compared for equality with the served version in the handler. */
-        termsVersion: z.unknown().optional(),
+        termsVersion: z.unknown().optional().openapi({
+            type: 'string',
+            example: '2026-10-07-draft',
+            description:
+                'The terms version the client DISPLAYED. Compared for equality with the version the server is serving; a mismatch is `400 terms_version_stale`, whose body carries `currentVersion`. This exists so a page left open across a terms change cannot file a consent to a document nobody read — the stored record is of what the person actually saw. Read the current value by rendering `/terms`, or from the `currentVersion` field of a stale refusal.',
+        }),
     })
     .strip()
     .openapi('AuthRegisterStartRequest', {

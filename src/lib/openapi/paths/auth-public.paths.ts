@@ -16,6 +16,7 @@
  * better place.
  */
 import { z } from '@/lib/openapi/zod';
+import { AuthRegisterStartSchema } from '@/lib/schemas';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { op } from './helpers';
 
@@ -37,27 +38,29 @@ export function registerAuthPublicPaths(registry: OpenAPIRegistry): void {
             '\n\nSince P3.1 two further 400s join that list, and for the same reason — both are statements about the REQUEST, not the address: `terms_not_accepted` when consent is absent or not literally `true`, and `terms_version_stale` when the client names a version other than the one being served, carrying `currentVersion` so the client can reload and show the new terms rather than a generic failure.',
         tags: ['Auth'],
         security: NO_AUTH,
-        body: z.object({
-            email: z.string().min(1).max(320).openapi({ example: 'ivan@example.bg' }),
-            password: z.string().min(8).openapi({
-                description:
-                    'Checked against the password policy and against Have I Been Pwned. The HIBP screen fails OPEN: an outage there must not block signups, so a breached password may occasionally be accepted when the service is unreachable.',
-            }),
-            name: z.string().min(1).max(200).openapi({ example: 'Иван Иванов' }),
-            acceptedTerms: z.literal(true).openapi({
-                description:
-                    'Consent to the terms of use and the privacy notice (P3.1). REQUIRED, and checked for identity with `true` rather than truthiness — a client cannot satisfy it with any non-empty value. Absent or false is `400 terms_not_accepted`, refused before the password is hashed.',
-            }),
-            termsVersion: z.string().min(1).max(64).openapi({
-                example: '2026-10-07-draft',
-                description:
-                    'The terms version the client DISPLAYED. Compared for equality with the version the server is serving; a mismatch is `400 terms_version_stale`, whose body carries `currentVersion`. This exists so a page left open across a terms change cannot file a consent to a document nobody read — the stored record is of what the person actually saw. Read the current value by rendering /terms, or from the `currentVersion` field of a stale refusal.',
-            }),
-            turnstileToken: z.string().max(2048).optional().openapi({
-                description:
-                    'Cloudflare Turnstile token (P3.5c). OPTIONAL in the schema and REQUIRED at runtime whenever the deployment has a Turnstile secret configured — the two are not in conflict: a deployment with no secret renders no widget and has no token to send, so a required field would break signup for exactly the configuration that is live today. A missing token is refused once configured, never treated as a skip. Read the sitekey from /api/auth/ui-config to decide whether to render the widget at all; a null sitekey means render nothing.',
-            }),
-        }),
+        // ONE definition, not two (#1465). This used to be an inline
+        // `z.object({…})` duplicating `AuthRegisterStartSchema`, and the two
+        // had drifted into contradicting each other:
+        //
+        //   inline (published)   required: [acceptedTerms, email, name,
+        //                                  password, termsVersion]
+        //                        password: minLength 8
+        //   schema  (runtime)    required: [email, name, password]
+        //                        password: min(1)
+        //
+        // The runtime is right about both. A missing `acceptedTerms` answers
+        // `terms_not_accepted` and a short password answers `too_short`; the
+        // inline body told a client to expect `invalid_request` for either,
+        // which is the distinction #1393 and the consent gate exist to make.
+        // It also left `AuthRegisterStartRequest` an ORPHAN component that no
+        // path referenced, so the document carried two contracts for one body
+        // and published the wrong one.
+        //
+        // The field descriptions lived on the inline copy and are now on the
+        // schema — ported rather than dropped, which is why this is not simply
+        // a deletion. The CONSTRAINTS were deliberately not ported: the
+        // schema's looser bounds are load-bearing, as its docblock explains.
+        body: AuthRegisterStartSchema,
         success: {
             status: 200,
             description:

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "7.0.0",
+    "version": "8.0.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -1071,23 +1071,33 @@
           "email": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 320
+            "maxLength": 320,
+            "example": "ivan@example.bg"
           },
           "password": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "description": "Checked against the password policy and against Have I Been Pwned. The HIBP screen fails OPEN: an outage there must not block signups, so a breached password may occasionally be accepted when the service is unreachable. **No minimum is declared here on purpose** — `validatePasswordPolicy` answers a distinct `too_short`, and a schema-level minimum would collapse that into `invalid_request`."
           },
           "name": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 200
+            "maxLength": 200,
+            "example": "Иван Иванов"
           },
           "turnstileToken": {
             "type": "string",
             "maxLength": 2048
           },
-          "acceptedTerms": {},
-          "termsVersion": {}
+          "acceptedTerms": {
+            "type": "boolean",
+            "description": "Consent to the terms of use and the privacy notice (P3.1). Send `true`. Checked for IDENTITY with `true` rather than truthiness, so no other value satisfies it. Absent or false is `400 terms_not_accepted`, refused before the password is hashed. **Not declared required**, because a schema-level rejection would lose that code — see #1393."
+          },
+          "termsVersion": {
+            "type": "string",
+            "example": "2026-10-07-draft",
+            "description": "The terms version the client DISPLAYED. Compared for equality with the version the server is serving; a mismatch is `400 terms_version_stale`, whose body carries `currentVersion`. This exists so a page left open across a terms change cannot file a consent to a document nobody read — the stored record is of what the person actually saw. Read the current value by rendering `/terms`, or from the `currentVersion` field of a stale refusal."
+          }
         },
         "required": [
           "email",
@@ -34439,52 +34449,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "email": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 320,
-                    "example": "ivan@example.bg"
-                  },
-                  "password": {
-                    "type": "string",
-                    "minLength": 8,
-                    "description": "Checked against the password policy and against Have I Been Pwned. The HIBP screen fails OPEN: an outage there must not block signups, so a breached password may occasionally be accepted when the service is unreachable."
-                  },
-                  "name": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 200,
-                    "example": "Иван Иванов"
-                  },
-                  "acceptedTerms": {
-                    "type": "boolean",
-                    "enum": [
-                      true
-                    ],
-                    "description": "Consent to the terms of use and the privacy notice (P3.1). REQUIRED, and checked for identity with `true` rather than truthiness — a client cannot satisfy it with any non-empty value. Absent or false is `400 terms_not_accepted`, refused before the password is hashed."
-                  },
-                  "termsVersion": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 64,
-                    "example": "2026-10-07-draft",
-                    "description": "The terms version the client DISPLAYED. Compared for equality with the version the server is serving; a mismatch is `400 terms_version_stale`, whose body carries `currentVersion`. This exists so a page left open across a terms change cannot file a consent to a document nobody read — the stored record is of what the person actually saw. Read the current value by rendering /terms, or from the `currentVersion` field of a stale refusal."
-                  },
-                  "turnstileToken": {
-                    "type": "string",
-                    "maxLength": 2048,
-                    "description": "Cloudflare Turnstile token (P3.5c). OPTIONAL in the schema and REQUIRED at runtime whenever the deployment has a Turnstile secret configured — the two are not in conflict: a deployment with no secret renders no widget and has no token to send, so a required field would break signup for exactly the configuration that is live today. A missing token is refused once configured, never treated as a skip. Read the sitekey from /api/auth/ui-config to decide whether to render the widget at all; a null sitekey means render nothing."
-                  }
-                },
-                "required": [
-                  "email",
-                  "password",
-                  "name",
-                  "acceptedTerms",
-                  "termsVersion"
-                ]
+                "$ref": "#/components/schemas/AuthRegisterStartRequest"
               }
             }
           }

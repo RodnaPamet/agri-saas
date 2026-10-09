@@ -1072,23 +1072,33 @@ exports[`API contract — per-schema snapshots schema: AuthRegisterStartRequest 
     "email": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 320
+      "maxLength": 320,
+      "example": "ivan@example.bg"
     },
     "password": {
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "description": "Checked against the password policy and against Have I Been Pwned. The HIBP screen fails OPEN: an outage there must not block signups, so a breached password may occasionally be accepted when the service is unreachable. **No minimum is declared here on purpose** — \`validatePasswordPolicy\` answers a distinct \`too_short\`, and a schema-level minimum would collapse that into \`invalid_request\`."
     },
     "name": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 200
+      "maxLength": 200,
+      "example": "Иван Иванов"
     },
     "turnstileToken": {
       "type": "string",
       "maxLength": 2048
     },
-    "acceptedTerms": {},
-    "termsVersion": {}
+    "acceptedTerms": {
+      "type": "boolean",
+      "description": "Consent to the terms of use and the privacy notice (P3.1). Send \`true\`. Checked for IDENTITY with \`true\` rather than truthiness, so no other value satisfies it. Absent or false is \`400 terms_not_accepted\`, refused before the password is hashed. **Not declared required**, because a schema-level rejection would lose that code — see #1393."
+    },
+    "termsVersion": {
+      "type": "string",
+      "example": "2026-10-07-draft",
+      "description": "The terms version the client DISPLAYED. Compared for equality with the version the server is serving; a mismatch is \`400 terms_version_stale\`, whose body carries \`currentVersion\`. This exists so a page left open across a terms change cannot file a consent to a document nobody read — the stored record is of what the person actually saw. Read the current value by rendering \`/terms\`, or from the \`currentVersion\` field of a stale refusal."
+    }
   },
   "required": [
     "email",
