@@ -47,6 +47,16 @@
  * optional dependencies there is nothing to check, and that must look
  * different from "checked and clean".
  *
+ * **Both of those count inputs, and neither touches the DETECTOR.** That gap
+ * shipped: gutting `formsFor()` to `return []` left every assertion in this
+ * file green, so the guard could not fail — measured by
+ * `scripts/selector-teeth.mjs` on the push run after #1454 merged, having also
+ * failed on #1454's own head commit where nobody was reading non-required
+ * checks. Two denominators over the inputs and none over the selector is the
+ * empty-selection defect this guard's own docblock is about, one level up.
+ * The third control closes it, and anchors on real bytes rather than a
+ * synthetic fixture — see the test for why that anchor exists at all.
+ *
  * The escape hatch is a non-literal specifier: `import(ID)` where `ID` is
  * typed `string` is not resolved by the compiler and yields `any`. That is
  * what `onnx-provider.ts` does now, and the guard permits it because it is the
@@ -118,6 +128,37 @@ describe('an optional dependency does not gate Typecheck (#1392)', () => {
                 }
             }
         }
+    });
+
+    it('the FORM regexes can actually select — the control formsFor() needs', () => {
+        // The two denominators below count files and packages. Neither touches
+        // `formsFor`, so gutting it to `return []` left every assertion in this
+        // file passing — measured by `scripts/selector-teeth.mjs`, which
+        // reported the selector dead on the push run AFTER #1454 merged. The
+        // guard could not have failed, which is the defect its own docblock is
+        // about: an empty selection is a PASS.
+        //
+        // The control cannot look for a real offence, because a clean tree has
+        // none and that is the point of the guard. It anchors on the one place
+        // in the real population where the banned forms DO occur as bytes:
+        // `onnx-provider.ts`'s docblock quotes `typeof import('onnxruntime-node')`
+        // and `await import('onnxruntime-node')` while explaining why neither
+        // may appear as code. So the forms must match the RAW file and must not
+        // match the BLANKED one — which proves two things at once, on real bytes
+        // from the tree this guard scans: the regexes select, and the
+        // comment-blanking is what makes the file clean rather than luck.
+        const PROVIDER = join(REPO, 'src/app-layer/ai/vision/onnx-provider.ts');
+        const raw = readFileSync(PROVIDER, 'utf8');
+        const forms = formsFor('onnxruntime-node');
+
+        const countIn = (text: string): number =>
+            forms.reduce((n, { re }) => n + [...text.matchAll(re)].length, 0);
+
+        expect(forms.length).toBeGreaterThanOrEqual(4);
+        // The docblock quotes two of the banned forms verbatim.
+        expect(countIn(raw)).toBeGreaterThanOrEqual(2);
+        // And they are reachable only because they are comments.
+        expect(countIn(blankNonCode(raw))).toBe(0);
     });
 
     it('there ARE optional dependencies to check — the denominator', () => {
