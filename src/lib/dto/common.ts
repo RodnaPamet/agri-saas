@@ -54,13 +54,16 @@ export const RawErrorResponseSchema = z
     .object({ error: z.string() })
     .openapi('RawErrorResponse', {
         description:
-            'A bare error body: `{"error": "<code-or-message>"}` and nothing else — NOT the ' +
+            'A bare error body: `{"error": "<code-or-message>"}` — NOT the ' +
             '`ErrorResponse` envelope, so there is no `code`, `requestId`, `details` or ' +
             '`params`. Used by the native auth family, where it is the shape RFC 6749 §5.2 ' +
             'specifies for an OAuth token endpoint, and by the spatial-import and ' +
             'cadastre-import routes. A rate-limit (429) or an unexpected failure (5xx) on the ' +
             'same route still answers with `ErrorResponse`, because the error wrapper builds ' +
-            'those rather than the route.',
+            'those rather than the route.\n\nMOSTLY `error` alone, but not a guarantee: ' +
+            '`POST /api/auth/accept-terms` adds `currentVersion` on its stale-version ' +
+            'branch and declares that with its own `AcceptTermsErrorResponse`. This said ' +
+            '"and nothing else" until #1478, which was overstated the day it was written.',
     });
 
 export const UserRefSchema = z
