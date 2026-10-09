@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "8.0.0",
+    "version": "9.0.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -8209,6 +8209,72 @@
           "publishedAt"
         ],
         "description": "One aggregated agri-news article. summary and imageUrl are genuinely nullable — many feeds carry neither — so a client must render a headline-only item rather than treating it as malformed."
+      },
+      "NewsTagCatalogue": {
+        "type": "object",
+        "properties": {
+          "groups": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "enum": [
+                    "crops",
+                    "topics"
+                  ],
+                  "description": "Which half of the vocabulary. `crops` are the five commodities; `topics` are subject areas."
+                },
+                "label": {
+                  "type": "string",
+                  "example": "Култури"
+                },
+                "labelEn": {
+                  "type": "string",
+                  "example": "Crops"
+                },
+                "tags": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "description": "Stable ASCII slug. Crop keys are the commodity slugs — the same values `GET /trends/prices` takes — so a tag and a Борса search agree by construction.",
+                        "example": "wheat"
+                      },
+                      "label": {
+                        "type": "string",
+                        "description": "Bulgarian, and authoritative. Render this.",
+                        "example": "Пшеница"
+                      },
+                      "labelEn": {
+                        "type": "string",
+                        "description": "A speakable English label, for iOS Voice Control. A SECOND label, not a localisation mechanism — there is no fallback chain and no third language. Do not prefer it over `label` for display.",
+                        "example": "Wheat"
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "label",
+                      "labelEn"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "key",
+                "label",
+                "labelEn",
+                "tags"
+              ]
+            }
+          }
+        },
+        "required": [
+          "groups"
+        ]
       },
       "Notification": {
         "type": "object",
@@ -31134,6 +31200,144 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TrendNewsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries an English `message` as a developer-facing fallback; it is NOT translated, so render your own copy keyed on `code`. Route-level 403s carry their own codes and are described on the operation that returns them.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/trends/news/tags": {
+      "get": {
+        "operationId": "getNewsTagCatalogue",
+        "summary": "Новини — the tag vocabulary and its labels",
+        "description": "Every tag `NewsItem.tags` can contain, grouped, with Bulgarian and English labels. Build a tag filter or a preferences sheet from THIS rather than from a hard-coded list: the vocabulary is the server's, and a tag added here appears in the client with no app release.\n\n**Exactly two groups, `crops` then `topics`, and that is contract.** Do not flatten them — the grouping is what a sectioned picker renders from, and a client decoding a flat array breaks the moment a third group is added.\n\n**Treat an unrecognised tag key as a tag you cannot label, not as an error.** This list grows. An article may legitimately carry a key your build has never seen; show it using the `label` from this response rather than dropping the article.\n\n**Tenant-agnostic.** The vocabulary is identical for every farm; the tenant in the path authenticates the caller. `Cache-Control: private, max-age=86400` — hold it for a day. It also carries a weak ETag, so `If-None-Match` gets a **304** if you revalidate sooner.\n\n**No counts.** There is deliberately no \"how many articles carry this tag\" here: that varies per tenant and changes with every pull, and could not be correct inside a response cached for a day.",
+        "tags": [
+          "Trends"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The vocabulary. Never empty, and the two group keys are always present in this order.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NewsTagCatalogue"
                 }
               }
             }

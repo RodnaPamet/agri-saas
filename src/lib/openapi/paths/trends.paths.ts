@@ -192,4 +192,56 @@ export function registerTrendsPaths(registry: OpenAPIRegistry): void {
             schema: TrendNewsResponseSchema,
         },
     });
+
+    const NewsTagEntry = z.object({
+        key: z.string().openapi({
+            description:
+                'Stable ASCII slug. Crop keys are the commodity slugs — the same values `GET /trends/prices` takes — so a tag and a Борса search agree by construction.',
+            example: 'wheat',
+        }),
+        label: z.string().openapi({
+            description: 'Bulgarian, and authoritative. Render this.',
+            example: 'Пшеница',
+        }),
+        labelEn: z.string().openapi({
+            description:
+                'A speakable English label, for iOS Voice Control. A SECOND label, not a localisation mechanism — there is no fallback chain and no third language. Do not prefer it over `label` for display.',
+            example: 'Wheat',
+        }),
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/trends/news/tags',
+        operationId: 'getNewsTagCatalogue',
+        summary: 'Новини — the tag vocabulary and its labels',
+        description:
+            'Every tag `NewsItem.tags` can contain, grouped, with Bulgarian and English labels. Build a tag filter or a preferences sheet from THIS rather than from a hard-coded list: the vocabulary is the server\'s, and a tag added here appears in the client with no app release.' +
+            '\n\n**Exactly two groups, `crops` then `topics`, and that is contract.** Do not flatten them — the grouping is what a sectioned picker renders from, and a client decoding a flat array breaks the moment a third group is added.' +
+            '\n\n**Treat an unrecognised tag key as a tag you cannot label, not as an error.** This list grows. An article may legitimately carry a key your build has never seen; show it using the `label` from this response rather than dropping the article.' +
+            '\n\n**Tenant-agnostic.** The vocabulary is identical for every farm; the tenant in the path authenticates the caller. `Cache-Control: private, max-age=86400` — hold it for a day. It also carries a weak ETag, so `If-None-Match` gets a **304** if you revalidate sooner.' +
+            '\n\n**No counts.** There is deliberately no "how many articles carry this tag" here: that varies per tenant and changes with every pull, and could not be correct inside a response cached for a day.',
+        tags: ['Trends'],
+        params: TenantParams,
+        success: {
+            status: 200,
+            description:
+                'The vocabulary. Never empty, and the two group keys are always present in this order.',
+            schema: z
+                .object({
+                    groups: z.array(
+                        z.object({
+                            key: z.enum(['crops', 'topics']).openapi({
+                                description:
+                                    'Which half of the vocabulary. `crops` are the five commodities; `topics` are subject areas.',
+                            }),
+                            label: z.string().openapi({ example: 'Култури' }),
+                            labelEn: z.string().openapi({ example: 'Crops' }),
+                            tags: z.array(NewsTagEntry),
+                        }),
+                    ),
+                })
+                .openapi('NewsTagCatalogue'),
+        },
+    });
 }
