@@ -19,7 +19,7 @@
  * cannot tell you the value that reached the repository was clean.
  *
  * FOUR usecases write these columns and only one of them is `task.ts`:
- * `issue.ts` is the same `Task` row shape, `field-operation.ts` writes
+ * `field-operation.ts` writes
  * `resolution` through `WorkItemRepository.setStatus` DIRECTLY (it never calls
  * `setTaskStatus`), and the retention job interpolates a user-supplied
  * evidence title into `description` with no request context upstream.
@@ -74,25 +74,8 @@ jest.mock('@/app-layer/policies/task.policies', () => ({
     assertCanWriteTasks: jest.fn(),
     assertCanCommentOnTasks: jest.fn(),
 }));
-jest.mock('@/app-layer/policies/issue.policies', () => ({
-    assertCanReadIssues: jest.fn(),
-    assertCanCreateIssue: jest.fn(),
-    assertCanUpdateIssue: jest.fn(),
-    assertCanAssignIssue: jest.fn(),
-    assertCanResolveIssue: jest.fn(),
-    assertCanComment: jest.fn(),
-    assertCanManageLinks: jest.fn(),
-    assertCanManageBundles: jest.fn(),
-    assertCanFreeze: jest.fn(),
-}));
 
 import { createTask, updateTask, setTaskStatus, bulkSetTaskStatus } from '@/app-layer/usecases/task';
-import {
-    createIssue,
-    updateIssue,
-    setIssueStatus,
-    bulkSetStatus as bulkSetIssueStatus,
-} from '@/app-layer/usecases/issue';
 import { makeRequestContext } from '../../helpers/make-context';
 
 const ctx = makeRequestContext('ADMIN');
@@ -154,18 +137,6 @@ describe('Task.description is sanitised before the repository write', () => {
         expectStripped(mockUpdate.mock.calls[0][3].description);
     });
 
-    it('createIssue strips markup — same Task row, same column', async () => {
-        await createIssue(ctx, { title: 'I', type: 'TASK', description: HOSTILE });
-        expect(mockCreate).toHaveBeenCalledTimes(1);
-        expectStripped(mockCreate.mock.calls[0][2].description);
-    });
-
-    it('updateIssue strips markup', async () => {
-        await updateIssue(ctx, 'i1', { description: HOSTILE });
-        expect(mockUpdate).toHaveBeenCalledTimes(1);
-        expectStripped(mockUpdate.mock.calls[0][3].description);
-    });
-
     it('a null description is left null, not coerced to a string', async () => {
         // The column is nullable and the three-state contract matters:
         // `undefined` = leave alone, `null` = clear it.
@@ -192,18 +163,6 @@ describe('Task.resolution is sanitised before the repository write', () => {
 
     it('bulkSetTaskStatus strips markup', async () => {
         await bulkSetTaskStatus(ctx, ['t1'], 'RESOLVED', HOSTILE);
-        expect(mockBulkSetStatus).toHaveBeenCalledTimes(1);
-        expectStripped(mockBulkSetStatus.mock.calls[0][4]);
-    });
-
-    it('setIssueStatus strips markup', async () => {
-        await setIssueStatus(ctx, 'i1', 'RESOLVED', HOSTILE);
-        expect(mockSetStatus).toHaveBeenCalledTimes(1);
-        expectStripped(mockSetStatus.mock.calls[0][4]);
-    });
-
-    it('bulkSetIssueStatus strips markup', async () => {
-        await bulkSetIssueStatus(ctx, ['i1'], 'RESOLVED', HOSTILE);
         expect(mockBulkSetStatus).toHaveBeenCalledTimes(1);
         expectStripped(mockBulkSetStatus.mock.calls[0][4]);
     });

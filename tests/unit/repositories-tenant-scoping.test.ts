@@ -118,14 +118,14 @@ describe('deprecated repository aliases', () => {
         // These exist only so older call sites keep resolving. If a rename
         // ever breaks the alias, the failure is a runtime undefined at some
         // unrelated call site — cheap to pin here instead.
-        const issue = await import('@/app-layer/repositories/IssueRepository');
+        //
+        // `IssueRepository` was pinned here too until #1479 retired the
+        // `/issues/**` surface. It was a deprecated re-export of this same
+        // `WorkItemRepository` with no caller left in `src/`, so the alias
+        // had nothing to keep resolving — the file went with the surface.
         const task = await import('@/app-layer/repositories/TaskRepository');
         const real = await import('@/app-layer/repositories/WorkItemRepository');
 
-        expect(issue.IssueRepository).toBe(real.WorkItemRepository);
-        expect(issue.IssueLinkRepository).toBe(real.TaskLinkRepository);
-        expect(issue.IssueCommentRepository).toBe(real.TaskCommentRepository);
-        expect(issue.IssueWatcherRepository).toBe(real.TaskWatcherRepository);
         expect(task.TaskRepository).toBe(real.WorkItemRepository);
     });
 });

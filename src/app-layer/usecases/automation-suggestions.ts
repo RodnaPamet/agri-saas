@@ -44,15 +44,6 @@ export function rankRuleSuggestions(posture: SuggestionPosture): RuleSuggestion[
     const { coveredEvents } = posture;
 
     const candidates: Candidate[] = [
-        {
-            id: 'issue-created-task',
-            title: 'Turn new issues into tracked tasks',
-            rationale:
-                'Create a task for each issue so remediation is tracked to closure rather than living in a comment thread.',
-            triggerEvent: 'ISSUE_CREATED',
-            actionType: 'CREATE_TASK',
-            confidenceScore: 0.5,
-        },
     ];
 
     return candidates

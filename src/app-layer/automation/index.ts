@@ -37,8 +37,6 @@ export type {
     OnboardingRestartedData,
     TaskCreatedData,
     TaskStatusChangedData,
-    IssueCreatedData,
-    IssueStatusChangedData,
     SprayJobStartedData,
     OperationParcelMarkedData,
     HarvestYieldRecordedData,

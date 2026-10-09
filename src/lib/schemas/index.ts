@@ -455,18 +455,6 @@ export const AuthRegisterSchema = z.object({
 });
 
 
-// ─── Evidence Bundles ───
-
-export const CreateBundleSchema = z.object({
-    name: z.string().min(1).max(200),
-}).strip();
-
-export const AddBundleItemSchema = z.object({
-    entityType: z.enum(['FILE', 'EVIDENCE', 'INTEGRATION']),
-    entityId: z.string().min(1),
-    label: z.string().max(500).optional(),
-}).strip();
-
 // ─── Vendor Management ───
 
 

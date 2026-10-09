@@ -55,23 +55,31 @@ const RICH_TEXT_COVERAGE: Readonly<
     Record<string, { usecases: readonly string[]; sanitizer: Sanitizer }>
 > = {
     // `Task.description` / `Task.resolution` are written from FOUR places, not
-    // one — tasks and issues are the same `Task` row shape, field-operation
+    // one — field-operation
     // review writes `resolution` via `WorkItemRepository.setStatus` directly
     // (bypassing `setTaskStatus`), and the retention job interpolates a
     // user-supplied evidence title into `description` with no request context
     // upstream to have sanitised it. Listing only `task.ts` is what let the
     // file-level check below pass for two years while both columns went raw.
+    //
+    // `usecases/issue.ts` was listed here too until #1479 retired it. It
+    // wrote the SAME `Task.description` / `TaskComment.body` columns
+    // through the same repository, so its removal narrows the declared
+    // path set without narrowing the COLUMNS this guard covers — the
+    // surviving `task.ts` entry reaches the identical write seams. A
+    // deletion from this list is otherwise exactly how the two-year gap
+    // above happened, so: shrink it only when the path is gone, never
+    // when it is merely believed redundant.
     Task: {
         usecases: [
             'src/app-layer/usecases/task.ts',
-            'src/app-layer/usecases/issue.ts',
             'src/app-layer/usecases/field-operation.ts',
             'src/app-layer/jobs/retention-notifications.ts',
         ],
         sanitizer: 'sanitizePlainText',
     },
     TaskComment: {
-        usecases: ['src/app-layer/usecases/task.ts', 'src/app-layer/usecases/issue.ts'],
+        usecases: ['src/app-layer/usecases/task.ts'],
         sanitizer: 'sanitizePlainText',
     },
     // `ExchangeMessage.body` (#1222) — chat between two farms, and the single
