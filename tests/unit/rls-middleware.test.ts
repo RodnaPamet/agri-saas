@@ -24,8 +24,24 @@ jest.mock('@/lib/observability/logger', () => ({
     },
 }));
 
+// A PARTIAL mock, and `runWithAuditContext` has to be in it (#1431).
+//
+// `runWithoutRls` now publishes its declared reason into the audit context so
+// the missing-tenant warning can tell a declared bypass from an undeclared one.
+// A mock that supplies only `getAuditContext` therefore throws
+// `runWithAuditContext is not a function` — the partial-barrel-mock trap this
+// repo has hit before on `@/lib/audit`, where ~55 suites mock the barrel and a
+// new export breaks every one of them.
+//
+// The stand-in INVOKES the callback. A `jest.fn()` that returns undefined would
+// make every assertion below pass for the wrong reason: the callback would
+// never run, so "passes the raw client through" would be vacuous rather than
+// true.
 jest.mock('@/lib/audit-context', () => ({
     getAuditContext: jest.fn(),
+    runWithAuditContext: jest.fn(
+        (_ctx: unknown, fn: () => unknown) => fn(),
+    ),
 }));
 
 import {

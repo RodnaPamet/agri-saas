@@ -70,6 +70,22 @@ export interface AuditContextData {
     requestId?: string;
     /** Source of the operation: "api" | "job" | "seed" | "system" */
     source?: string;
+    /**
+     * Set by `runWithoutRls` to mark a DELIBERATE, declared RLS bypass (#1431).
+     *
+     * Typed `string` rather than `RlsBypassReason` on purpose: the allowlist
+     * lives in `rls-middleware.ts`, which already imports from here, and
+     * importing it back would make the cycle. Validation stays at the one door
+     * — `runWithoutRls` rejects an unknown reason before it can reach this
+     * field — so widening the type here does not widen what can be set.
+     *
+     * It exists because the typed bypass and the middleware's warning were two
+     * vocabularies that did not know about each other: a correctly-declared
+     * bypass still warned, and the only way to quieten it was `source`, which
+     * the allowlist knows nothing about. #1368 therefore carried TWO wrappers
+     * for one intent.
+     */
+    rlsBypassReason?: string;
 }
 
 /**
