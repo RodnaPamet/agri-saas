@@ -8452,6 +8452,140 @@ exports[`API contract — per-schema snapshots schema: LogEntryUpdateRequest 1`]
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: MachineryDepreciation 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "method": {
+      "type": "string",
+      "enum": [
+        "NONE",
+        "STRAIGHT_LINE"
+      ],
+      "description": "\`STRAIGHT_LINE\` when the tenant has opted in, \`NONE\` otherwise. \`NONE\` carries no charges."
+    },
+    "charges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "assetId": {
+            "type": "string"
+          },
+          "assetKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "assetName": {
+            "type": "string"
+          },
+          "purchaseCost": {
+            "type": "number"
+          },
+          "purchaseDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "usefulLifeYears": {
+            "type": "number"
+          },
+          "annualCharge": {
+            "type": "number",
+            "description": "Straight-line: \`purchaseCost ÷ usefulLifeYears\`."
+          },
+          "yearsElapsed": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Whole years since purchase, capped at the useful life. **\`null\` when \`purchaseDate\` is unset** — what a year costs is knowable without knowing when it started; how much life remains is not."
+          },
+          "remainingValue": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Remaining book value. \`null\` whenever \`yearsElapsed\` is."
+          },
+          "fullyDepreciated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "assetId",
+          "assetName",
+          "purchaseCost",
+          "usefulLifeYears",
+          "annualCharge",
+          "fullyDepreciated"
+        ]
+      }
+    },
+    "totalAnnualCharge": {
+      "type": "number",
+      "description": "Sum of \`charges[].annualCharge\`. \`0\` when there are none."
+    },
+    "unallocated": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "assetId": {
+            "type": "string"
+          },
+          "assetKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "assetName": {
+            "type": "string"
+          },
+          "purchaseCost": {
+            "type": "number"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "NO_USEFUL_LIFE"
+            ],
+            "description": "Why it produced no charge. A growing union — show an unrecognised value as \\"not depreciated\\" rather than treating it as an error."
+          }
+        },
+        "required": [
+          "assetId",
+          "assetName",
+          "purchaseCost",
+          "reason"
+        ]
+      }
+    },
+    "unallocatedCost": {
+      "type": "number",
+      "description": "Sum of \`unallocated[].purchaseCost\` — the capital value NOT represented in \`totalAnnualCharge\`."
+    },
+    "truncated": {
+      "type": "boolean",
+      "description": "True when the register hit the read bound, so the totals are partial."
+    }
+  },
+  "required": [
+    "method",
+    "charges",
+    "totalAnnualCharge",
+    "unallocated",
+    "unallocatedCost",
+    "truncated"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: MarketReference 1`] = `
 "{
   "type": "object",

@@ -650,4 +650,76 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
             schema: CostEntryDTOSchema,
         },
     });
+
+    const MachineryDepreciationCharge = z.object({
+        assetId: z.string(),
+        assetKey: z.string().nullable().optional(),
+        assetName: z.string(),
+        purchaseCost: z.number(),
+        purchaseDate: z.string().datetime().nullable().optional(),
+        usefulLifeYears: z.number(),
+        annualCharge: z.number().openapi({
+            description: 'Straight-line: `purchaseCost ÷ usefulLifeYears`.',
+        }),
+        yearsElapsed: z.number().nullable().optional().openapi({
+            description:
+                'Whole years since purchase, capped at the useful life. **`null` when `purchaseDate` is unset** — what a year costs is knowable without knowing when it started; how much life remains is not.',
+        }),
+        remainingValue: z.number().nullable().optional().openapi({
+            description: 'Remaining book value. `null` whenever `yearsElapsed` is.',
+        }),
+        fullyDepreciated: z.boolean(),
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/costs/machinery',
+        operationId: 'getMachineryDepreciation',
+        summary: 'Straight-line depreciation of the machine register',
+        description:
+            'Annual depreciation per machine, plus the farm total. `totalAnnualCharge` is the yearly figure to prefill an «Амортизация» cost line with.' +
+            '\n\n**Reported ALONGSIDE the crop rollup, never folded into it.** A tractor is not consumed by one planting, so adding it to `/grain/costs` would move every existing figure there.' +
+            '\n\n**`method: "NONE"` is not zero cost.** A tenant that has not opted in gets `NONE` with an empty `charges` array — "not computed" and "costs nothing" must not render identically, so branch on `method` before showing a total.' +
+            '\n\n**`unallocated` is the honesty field and is worth rendering.** Those are machines carrying a `purchaseCost` that produced NO charge, each with a `reason` (today only `NO_USEFUL_LIFE`). `unallocatedCost` is the value the figures above do NOT represent — a farm with a large `unallocatedCost` has an understated `totalAnnualCharge`, and nothing else in the response says so.' +
+            '\n\n**`truncated: true` means the register hit the read bound**, so the totals are partial. Treat it like `unallocatedCost`: a number worth showing rather than a flag to ignore.' +
+            '\n\nCarries a weak ETag; send `If-None-Match` and handle **304**.',
+        tags: ['Grain'],
+        params: TenantParams,
+        success: {
+            status: 200,
+            description:
+                'The depreciation view. Never an error for a tenant that has not opted in — that is `method: "NONE"`.',
+            schema: z
+                .object({
+                    method: z.enum(['NONE', 'STRAIGHT_LINE']).openapi({
+                        description:
+                            '`STRAIGHT_LINE` when the tenant has opted in, `NONE` otherwise. `NONE` carries no charges.',
+                    }),
+                    charges: z.array(MachineryDepreciationCharge),
+                    totalAnnualCharge: z.number().openapi({
+                        description: 'Sum of `charges[].annualCharge`. `0` when there are none.',
+                    }),
+                    unallocated: z.array(
+                        z.object({
+                            assetId: z.string(),
+                            assetKey: z.string().nullable().optional(),
+                            assetName: z.string(),
+                            purchaseCost: z.number(),
+                            reason: z.enum(['NO_USEFUL_LIFE']).openapi({
+                                description:
+                                    'Why it produced no charge. A growing union — show an unrecognised value as "not depreciated" rather than treating it as an error.',
+                            }),
+                        }),
+                    ),
+                    unallocatedCost: z.number().openapi({
+                        description:
+                            'Sum of `unallocated[].purchaseCost` — the capital value NOT represented in `totalAnnualCharge`.',
+                    }),
+                    truncated: z.boolean().openapi({
+                        description: 'True when the register hit the read bound, so the totals are partial.',
+                    }),
+                })
+                .openapi('MachineryDepreciation'),
+        },
+    });
 }
