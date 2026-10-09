@@ -952,13 +952,109 @@ interface AllocationLand {
 }
 
 /**
+ * Spread one cost across PARCELS, then carry each parcel's share onward.
+ *
+ * Extracted from `computePayroll`'s HOLDING / PARCEL_SUBSET arm so the TARGET
+ * arm can reuse it for the one case where it currently attributes NOTHING —
+ * an unlinked row on a farm with no plantings. Two copies of this would be two
+ * answers about where a cost landed, and only one of them conserves.
+ *
+ * Per parcel: the plantings on it if it has any, else the parcel's own
+ * `cropType` (owner ruling 2026-10-09, #1512). A parcel that resolves to
+ * neither keeps its share in `unallocatedToCrop` — idle land is reported,
+ * never redistributed onto the cropped parcels, because that would make
+ * fallow land free and make the remaining crop look MORE expensive the more
+ * land is left idle.
+ */
+function spreadAcrossLand(
+    row: CostEntryRow,
+    amount: number,
+    parcels: readonly ParcelInfo[],
+    plantingInfo: Map<string, PlantingInfo>,
+    acc: Map<CanonicalCommodity, CommodityAcc>,
+    land: AllocationLand,
+    unallocated: UnallocatedAcc,
+): void {
+    const spread = spreadOverParcels(amount, parcels, land.knownPlantingsByParcel);
+    for (const [plantingId, share] of spread.byTarget) {
+        const info = plantingInfo.get(plantingId);
+        if (info?.commodity == null) continue; // targets are known-commodity by construction.
+        const a = ensureAcc(acc, info.commodity);
+        a.payrollCost += share;
+        a.payrollCostCurrencies.add(row.currency);
+        a.payrollAllocated = true;
+    }
+    // A parcel with no planting still names a crop — its own
+    // `Parcel.cropType` — so its share is attributable after all.
+    //
+    // Owner ruling 2026-10-09 (#1512): per parcel, the plantings on it
+    // if it has any, else the parcel itself. PER PARCEL and not per
+    // farm, because a farm-level fallback would count a parcel that has
+    // both a planting and an `areaHa` twice. The loop above has already
+    // taken every parcel WITH a planting, so these are exactly the
+    // parcels the plantings could not speak for.
+    //
+    // This is what makes a spread attributable on a real farm. Measured
+    // on production: 1 CropType, 1 CropPlan, 1 Planting, all sample
+    // data, against 4 live parcels carrying 1386.8 дка of crop — so
+    // before this, 100% of a HOLDING spread landed in
+    // `unallocatedToCrop` and every per-commodity cost read zero.
+    //
+    // `payrollAllocated` is set for the same reason the planting branch
+    // sets it: the share was computed from an area weight, not read off
+    // a direct link, and the calculator must keep reading it as
+    // ALLOCATED rather than EXACT.
+    const unattributableIds: string[] = [];
+    let unattributableAmount = 0;
+    for (const parcelId of spread.unallocatedParcelIds) {
+        const share = spread.unallocatedByParcel.get(parcelId) ?? 0;
+        const commodity = land.parcelById.get(parcelId)?.commodity ?? null;
+        if (commodity == null) {
+            // No planting AND no resolvable crop — genuinely idle land,
+            // or a `cropType` outside the market vocabulary (`Grass`).
+            // Reported, never redistributed: pushing it onto the cropped
+            // parcels would make fallow land free and make the remaining
+            // crop look more expensive the more land is left idle.
+            unattributableIds.push(parcelId);
+            unattributableAmount += share;
+            continue;
+        }
+        const a = ensureAcc(acc, commodity);
+        a.payrollCost += share;
+        a.payrollCostCurrencies.add(row.currency);
+        a.payrollAllocated = true;
+    }
+    addUnallocated(
+        unallocated,
+        // Summed from the same cent-exact per-parcel shares the loop
+        // read, so this cannot disagree with what was attributed above.
+        // `spread.unallocatedAmount` is the pre-fallback total and is
+        // deliberately NOT used here — it would report money that has
+        // just been charged to a crop as unattributable as well.
+        round2(unattributableAmount),
+        unattributableIds,
+        (id) => land.parcelById.get(id)?.areaHa ?? 0,
+        row.currency,
+    );
+}
+
+/**
  * 3c/6. PAYROLL — attributed, or spread across land the farmer chose.
  *
  * TARGET (the default, and every row written before `allocationBasis`
- * existed) is untouched: direct `plantingId`/`seasonId` links attribute
- * straight through, and an unlinked row allocates pro-rata by area share
- * across the plantings in scope. Not "equivalent to" the old behaviour —
- * the same code path, so an existing row cannot move by a cent.
+ * existed) keeps its code path wherever that path produced a figure: direct
+ * `plantingId`/`seasonId` links attribute straight through, and an unlinked
+ * row allocates pro-rata by area share across the plantings in scope. Not
+ * "equivalent to" the old behaviour — the same code, so an existing row
+ * cannot move by a cent.
+ *
+ * The one case that CHANGED is the one that produced nothing: an unlinked
+ * row with NO plantings in scope used to be reported unattributable, and now
+ * falls back to the parcels' own crops via `spreadAcrossLand`. A farm with
+ * plantings never reaches it, which is what preserves the invariant above.
+ * A SEASON-SCOPED row still reports unattributable — `Parcel.cropType` has
+ * no year, so attributing one would charge a past season's cost to today's
+ * crop.
  *
  * HOLDING and PARCEL_SUBSET spread over PARCELS and carry each parcel's
  * share onward to the plantings on it (`spreadOverParcels`). A parcel with
@@ -1006,67 +1102,7 @@ function computePayroll(
                 continue;
             }
 
-            const spread = spreadOverParcels(amount, parcels, land.knownPlantingsByParcel);
-            for (const [plantingId, share] of spread.byTarget) {
-                const info = plantingInfo.get(plantingId);
-                if (info?.commodity == null) continue; // targets are known-commodity by construction.
-                const a = ensureAcc(acc, info.commodity);
-                a.payrollCost += share;
-                a.payrollCostCurrencies.add(row.currency);
-                a.payrollAllocated = true;
-            }
-            // A parcel with no planting still names a crop — its own
-            // `Parcel.cropType` — so its share is attributable after all.
-            //
-            // Owner ruling 2026-10-09 (#1512): per parcel, the plantings on it
-            // if it has any, else the parcel itself. PER PARCEL and not per
-            // farm, because a farm-level fallback would count a parcel that has
-            // both a planting and an `areaHa` twice. The loop above has already
-            // taken every parcel WITH a planting, so these are exactly the
-            // parcels the plantings could not speak for.
-            //
-            // This is what makes a spread attributable on a real farm. Measured
-            // on production: 1 CropType, 1 CropPlan, 1 Planting, all sample
-            // data, against 4 live parcels carrying 1386.8 дка of crop — so
-            // before this, 100% of a HOLDING spread landed in
-            // `unallocatedToCrop` and every per-commodity cost read zero.
-            //
-            // `payrollAllocated` is set for the same reason the planting branch
-            // sets it: the share was computed from an area weight, not read off
-            // a direct link, and the calculator must keep reading it as
-            // ALLOCATED rather than EXACT.
-            const unattributableIds: string[] = [];
-            let unattributableAmount = 0;
-            for (const parcelId of spread.unallocatedParcelIds) {
-                const share = spread.unallocatedByParcel.get(parcelId) ?? 0;
-                const commodity = land.parcelById.get(parcelId)?.commodity ?? null;
-                if (commodity == null) {
-                    // No planting AND no resolvable crop — genuinely idle land,
-                    // or a `cropType` outside the market vocabulary (`Grass`).
-                    // Reported, never redistributed: pushing it onto the cropped
-                    // parcels would make fallow land free and make the remaining
-                    // crop look more expensive the more land is left idle.
-                    unattributableIds.push(parcelId);
-                    unattributableAmount += share;
-                    continue;
-                }
-                const a = ensureAcc(acc, commodity);
-                a.payrollCost += share;
-                a.payrollCostCurrencies.add(row.currency);
-                a.payrollAllocated = true;
-            }
-            addUnallocated(
-                unallocated,
-                // Summed from the same cent-exact per-parcel shares the loop
-                // read, so this cannot disagree with what was attributed above.
-                // `spread.unallocatedAmount` is the pre-fallback total and is
-                // deliberately NOT used here — it would report money that has
-                // just been charged to a crop as unattributable as well.
-                round2(unattributableAmount),
-                unattributableIds,
-                (id) => land.parcelById.get(id)?.areaHa ?? 0,
-                row.currency,
-            );
+            spreadAcrossLand(row, amount, parcels, plantingInfo, acc, land, unallocated);
             continue;
         }
 
@@ -1085,6 +1121,40 @@ function computePayroll(
 
         const targets = (row.seasonId != null ? plantingsBySeason.get(row.seasonId) : allKnownPlantings) ?? [];
         if (targets.length === 0) {
+            // No plantings to spread across — but the farm's PARCELS still name
+            // crops, so the cost is attributable after all. Same per-parcel rule
+            // the spread arm uses (#1512): plantings if any, else the parcel.
+            //
+            // This is the arm the owner's farm actually takes. All four of its
+            // live cost entries are TARGET with no link, and it has no real
+            // plantings (1 CropType / 1 CropPlan / 1 Planting, all sample), so
+            // #1541 — which only reached the HOLDING / PARCEL_SUBSET arm — left
+            // every one of them unattributable. Measured before assuming:
+            // `ParcelInfo.commodity` is populated and `targets` is empty.
+            //
+            // TWO guards, and each one is the difference between a figure and a
+            // fabrication:
+            //
+            //   · `row.seasonId == null` — a SEASON-SCOPED row is never parcel
+            //     attributed. `Parcel.cropType` is the crop standing there NOW,
+            //     with no year on it, so charging a 2025 cost to today's crop
+            //     would be inventing the association. `ParcelCropSeason`
+            //     (parcelId, year, cropType) is the right basis for that and is
+            //     not used here because I cannot confirm it holds any rows —
+            //     see #1530.
+            //
+            //   · at least one parcel must resolve to a commodity. Without this
+            //     the fallback would move a case that currently reports through
+            //     `payrollUnattributable` into `unallocatedToCrop` — a different
+            //     channel saying a different thing — while attributing nothing.
+            //
+            // The TARGET invariant above still holds: a farm WITH plantings has
+            // a non-empty `targets` and never reaches this branch, so no
+            // existing row moves by a cent.
+            if (row.seasonId == null && land.parcels.some((p) => p.commodity != null)) {
+                spreadAcrossLand(row, amount, land.parcels, plantingInfo, acc, land, unallocated);
+                continue;
+            }
             exclusions.payrollUnattributable.push(row.id);
             continue;
         }

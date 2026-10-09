@@ -1603,6 +1603,120 @@ describe('parcel cropType fallback — plantings if any, else the parcel', () =>
 });
 
 /**
+ * An UNLINKED TARGET cost on a farm with no plantings falls back to the
+ * parcels' own crops.
+ *
+ * This is the arm the owner's farm actually takes, and #1541 did not reach it:
+ * that change added the per-parcel `cropType` fallback inside the HOLDING /
+ * PARCEL_SUBSET spread only, while all four of the farm's live cost entries
+ * are TARGET with no link and it has no real plantings. So every one of them
+ * stayed unattributable and every per-commodity payroll cost still read zero.
+ *
+ * The TARGET invariant is narrow and survives: a farm WITH plantings never
+ * reaches this branch, so no existing row moves by a cent. Only the case that
+ * previously produced NOTHING behaves differently.
+ */
+describe('TARGET basis — unlinked, no plantings, falls back to parcel crops', () => {
+    it("attributes an unlinked cost to the parcels' crops when there are no plantings", async () => {
+        // The owner's shape: TARGET, no plantingId, no seasonId, no plantings,
+        // parcels carrying real cropTypes.
+        mockDb.parcel.findMany.mockResolvedValue([
+            parcel('p-maize', 30, 'Maize'),
+            parcel('p-wheat', 10, 'Wheat'),
+        ]);
+        mockDb.planting.findMany.mockResolvedValue([]);
+        mockDb.costEntry.findMany.mockResolvedValue([payroll({ allocationBasis: 'TARGET' })]);
+        mockGetMarketReferences.mockResolvedValue(priced(['maize', 'wheat']));
+
+        const result = await netWorthResult(ctx);
+
+        // 100.00 over 40 ha, 3:1 by area.
+        expect(result.rows.find((r) => r.commodity === 'maize')?.payrollCost).toBe(75);
+        expect(result.rows.find((r) => r.commodity === 'wheat')?.payrollCost).toBe(25);
+        expect(result.exclusions.payrollUnattributable).toEqual([]);
+        expect(result.unallocatedToCrop.amount).toBe(0);
+        expect(allocatedCents(result)).toBe(10_000);
+    });
+
+    it('does NOT parcel-attribute a SEASON-SCOPED row', async () => {
+        // The guard that stops a fabrication. `Parcel.cropType` is the crop
+        // standing there NOW and carries no year, so charging a season-scoped
+        // cost to it would invent the association. `ParcelCropSeason` is the
+        // right basis for that and is deliberately not used — see #1530.
+        mockDb.parcel.findMany.mockResolvedValue([parcel('p-maize', 10, 'Maize')]);
+        mockDb.planting.findMany.mockResolvedValue([]);
+        mockDb.costEntry.findMany.mockResolvedValue([
+            payroll({ allocationBasis: 'TARGET', seasonId: 's-past' }),
+        ]);
+        mockGetMarketReferences.mockResolvedValue(priced(['maize']));
+
+        const result = await netWorthResult(ctx);
+
+        expect(result.exclusions.payrollUnattributable.map((e) => e.id)).toEqual(['pay-1']);
+        expect(result.rows.find((r) => r.commodity === 'maize')?.payrollCost ?? 0).toBe(0);
+    });
+
+    it('leaves the row unattributable when NO parcel resolves to a commodity', async () => {
+        // The channel guard. Without the `.some(...)` check the fallback would
+        // run, attribute nothing, and report the cost through
+        // `unallocatedToCrop` instead — a different surface saying a different
+        // thing about a case that is unchanged in substance.
+        mockDb.parcel.findMany.mockResolvedValue([
+            parcel('p-grass', 10, 'Grass'),
+            parcel('p-bare', 10, null),
+        ]);
+        mockDb.planting.findMany.mockResolvedValue([]);
+        mockDb.costEntry.findMany.mockResolvedValue([payroll({ allocationBasis: 'TARGET' })]);
+        mockGetMarketReferences.mockResolvedValue(priced([]));
+
+        const result = await netWorthResult(ctx);
+
+        expect(result.exclusions.payrollUnattributable.map((e) => e.id)).toEqual(['pay-1']);
+        expect(result.unallocatedToCrop.amount).toBe(0);
+    });
+
+    it('a farm WITH plantings is untouched — the TARGET invariant', async () => {
+        // The assertion that makes this change safe. The parcel says Maize and
+        // the planting says wheat; TARGET must still weight PLANTINGS, so the
+        // whole cost goes to wheat and maize gets nothing. If the fallback ever
+        // fired when plantings exist, an existing row would move.
+        mockDb.parcel.findMany.mockResolvedValue([parcel('p-1', 10, 'Maize')]);
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'plant-1', parcelId: 'p-1', areaM2: 100_000 }),
+        ]);
+        mockDb.costEntry.findMany.mockResolvedValue([payroll({ allocationBasis: 'TARGET' })]);
+        mockGetMarketReferences.mockResolvedValue(priced(['wheat', 'maize']));
+
+        const result = await netWorthResult(ctx);
+
+        expect(result.rows.find((r) => r.commodity === 'wheat')?.payrollCost).toBe(100);
+        expect(result.rows.find((r) => r.commodity === 'maize')?.payrollCost ?? 0).toBe(0);
+    });
+
+    it('conserves over awkward amounts on the fallback path', async () => {
+        for (const amount of [100, 0.01, 999.99, 1_234.56, 7]) {
+            resetMocks();
+            mockDb.parcel.findMany.mockResolvedValue([
+                parcel('p-a', 1.7, 'Maize'),
+                parcel('p-b', 2.3, 'Wheat'),
+                parcel('p-grass', 0.9, 'Grass'),
+            ]);
+            mockDb.planting.findMany.mockResolvedValue([]);
+            mockDb.costEntry.findMany.mockResolvedValue([
+                payroll({ amount, allocationBasis: 'TARGET' }),
+            ]);
+            mockGetMarketReferences.mockResolvedValue(priced(['maize', 'wheat']));
+
+            const result = await netWorthResult(ctx);
+            expect({ amount, cents: allocatedCents(result) }).toEqual({
+                amount,
+                cents: Math.round(amount * 100),
+            });
+        }
+    });
+});
+
+/**
  * The usecase POPULATES `unattributedCostEntries` from its own exclusions.
  *
  * Every other test of this field asserts what the vocabulary DOES with it.
