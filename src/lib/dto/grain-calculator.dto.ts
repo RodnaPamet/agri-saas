@@ -247,6 +247,16 @@ export const CalculatorRowSchema = z
          */
         unvaluedNoUnitCost: z.number(),
         unvaluedUnitMismatch: z.number(),
+        unattributedCostEntries: z.number().openapi({
+            description:
+                'Cost entries that reached NO commodity, farm-wide. The SECOND reason ' +
+                '`cashCostTotal` is a floor rather than a total: an unattributed cost is ' +
+                'missing from EVERY per-commodity figure, so the same count rides every row. ' +
+                'Non-zero means read the cost — and anything divided by it — as "at least". ' +
+                'Distinct from `unallocatedToCrop`, which is land with no crop and is NOT a ' +
+                'floor: that spread is deliberately not redistributed, so each commodity’s ' +
+                'share stays exact.',
+        }),
 
         netWorth: z.number().nullable(),
         /**

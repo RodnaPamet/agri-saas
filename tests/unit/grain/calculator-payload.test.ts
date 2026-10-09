@@ -100,6 +100,7 @@ function row(over: Partial<CommodityNetWorthRow> = {}): CommodityNetWorthRow {
         //   netAssetPosition = standingCropValue + grainOnHandValue - rentCostProduceValue
         //   netWorth         = netAssetPosition - cashCostTotal
         unvaluedNoUnitCost: 0,
+        unattributedCostEntries: 0,
         unvaluedUnitMismatch: 0,
         netAssetPosition: 26_880,
         netWorth: 25_630,

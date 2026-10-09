@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "10.6.0",
+    "version": "10.6.2",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -1956,6 +1956,10 @@
           "unvaluedUnitMismatch": {
             "type": "number"
           },
+          "unattributedCostEntries": {
+            "type": "number",
+            "description": "Cost entries that reached NO commodity, farm-wide. The SECOND reason `cashCostTotal` is a floor rather than a total: an unattributed cost is missing from EVERY per-commodity figure, so the same count rides every row. Non-zero means read the cost — and anything divided by it — as \"at least\". Distinct from `unallocatedToCrop`, which is land with no crop and is NOT a floor: that spread is deliberately not redistributed, so each commodity’s share stays exact."
+          },
           "netWorth": {
             "type": [
               "number",
@@ -2043,6 +2047,7 @@
           "cashCostTotal",
           "unvaluedNoUnitCost",
           "unvaluedUnitMismatch",
+          "unattributedCostEntries",
           "netWorth",
           "netWorthUnavailableReason",
           "netWorthUnavailableCode",

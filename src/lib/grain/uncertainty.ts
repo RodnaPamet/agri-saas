@@ -51,18 +51,47 @@ export type UncertaintyState = (typeof UNCERTAINTY)[keyof typeof UNCERTAINTY];
 export interface UncertaintyInput {
     unvaluedNoUnitCost: number;
     unvaluedUnitMismatch: number;
+    /**
+     * Cost entries that reached NO commodity. See `costIsFloor` — this is the
+     * second way a cost total can be incomplete, and it was invisible.
+     */
+    unattributedCostEntries: number;
     payrollAllocated: boolean;
     netWorth: number | null;
 }
 
 /**
- * True when the cost total is incomplete — consumptions the usecase could
- * not price. They change no figure; they make `cashCostTotal` a floor.
+ * True when the cost total is incomplete. TWO causes, and they are
+ * independent — either alone makes `cashCostTotal` a floor rather than a
+ * total, and neither changes a figure.
+ *
+ *   · **unvalued consumption** — the usecase could not price a movement. The
+ *     planting is counted; only the money is missing.
+ *   · **unattributed entries** — a cost exists and reached no commodity at
+ *     all, so it is missing from every per-commodity figure rather than from
+ *     one of them.
+ *
+ * The second was added for #1530 and is the reason this docblock now lists
+ * causes. Before it, a farm whose costs could not be attributed reached
+ * `UNCERTAINTY.EXACT`: the figure read as exact while being structurally
+ * short, which is the one thing the whole vocabulary exists to prevent.
+ *
+ * NOT a cause: `unallocatedToCrop`. A spread that lands on idle land is
+ * deliberately not redistributed, so each commodity's share is EXACT and the
+ * farm total is simply split between crops and fallow. Treating that as a
+ * floor would qualify a figure that is right.
  */
 export function costIsFloor(
-    row: Pick<UncertaintyInput, 'unvaluedNoUnitCost' | 'unvaluedUnitMismatch'>,
+    row: Pick<
+        UncertaintyInput,
+        'unvaluedNoUnitCost' | 'unvaluedUnitMismatch' | 'unattributedCostEntries'
+    >,
 ): boolean {
-    return row.unvaluedNoUnitCost > 0 || row.unvaluedUnitMismatch > 0;
+    return (
+        row.unvaluedNoUnitCost > 0 ||
+        row.unvaluedUnitMismatch > 0 ||
+        row.unattributedCostEntries > 0
+    );
 }
 
 /**

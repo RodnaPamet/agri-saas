@@ -26,6 +26,7 @@ const base = {
     priceCurrency: 'EUR' as string | null,
     standingCropExcludedCount: 0,
     unvaluedNoUnitCost: 0,
+    unattributedCostEntries: 0,
     unvaluedUnitMismatch: 0,
     payrollAllocated: false,
 };
@@ -127,5 +128,38 @@ describe('computeBreakEven', () => {
                 }).uncertainty,
             ).toBe(UNCERTAINTY.REFUSED);
         });
+    });
+});
+
+describe('an unattributed cost makes break-even a floor (#1530)', () => {
+    // Opposite direction to per-area, same cause: the price that clears an
+    // understated cost is itself understated, so the break-even price is an
+    // AT_LEAST. Getting this backwards would tell a farmer they can sell
+    // cheaper than they can.
+    it('reads AT_LEAST on the new cause ALONE', () => {
+        const r = computeBreakEven({
+            ...base,
+            standingCropExpectedKg: 40_000,
+            attributableCost: 2_000,
+            pricePerTonne: 300,
+            priceCurrency: 'BGN',
+            unattributedCostEntries: 1,
+        });
+
+        expect(r.uncertainty).toBe(UNCERTAINTY.AT_LEAST);
+        expect(r.breakEvenPricePerTonne).not.toBeNull();
+    });
+
+    it('and EXACT when nothing is unattributed — the control', () => {
+        const r = computeBreakEven({
+            ...base,
+            standingCropExpectedKg: 40_000,
+            attributableCost: 2_000,
+            pricePerTonne: 300,
+            priceCurrency: 'BGN',
+            unattributedCostEntries: 0,
+        });
+
+        expect(r.uncertainty).toBe(UNCERTAINTY.EXACT);
     });
 });

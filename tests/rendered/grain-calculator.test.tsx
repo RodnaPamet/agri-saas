@@ -137,6 +137,7 @@ function withServerDerived(
                 standingCropExcludedCount: 0,
                 unvaluedNoUnitCost: row.unvaluedNoUnitCost,
                 unvaluedUnitMismatch: row.unvaluedUnitMismatch,
+                unattributedCostEntries: row.unattributedCostEntries,
                 payrollAllocated: row.payrollAllocated,
             }),
         perArea:
@@ -148,6 +149,7 @@ function withServerDerived(
                 standingCropExcludedCount: 0,
                 unvaluedNoUnitCost: row.unvaluedNoUnitCost,
                 unvaluedUnitMismatch: row.unvaluedUnitMismatch,
+                unattributedCostEntries: row.unattributedCostEntries,
                 payrollAllocated: row.payrollAllocated,
             }),
         netUncertainty: row.netUncertainty ?? netWorthUncertainty(row),
@@ -218,6 +220,7 @@ function wheatRow(over: Partial<CalculatorRow> = {}): CalculatorRow {
         cashCostTotal: 5_500,
 
         unvaluedNoUnitCost: 0,
+        unattributedCostEntries: 0,
         unvaluedUnitMismatch: 0,
         netWorth: 18_750,
         netWorthUnavailableReason: null,
@@ -260,6 +263,7 @@ function maizeRow(over: Partial<CalculatorRow> = {}): CalculatorRow {
         cashCostTotal: 900,
 
         unvaluedNoUnitCost: 0,
+        unattributedCostEntries: 0,
         unvaluedUnitMismatch: 0,
         netWorth: null,
         netWorthUnavailableReason: 'No market price is available for maize.',

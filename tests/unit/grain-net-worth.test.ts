@@ -1601,3 +1601,88 @@ describe('parcel cropType fallback — plantings if any, else the parcel', () =>
         }
     });
 });
+
+/**
+ * The usecase POPULATES `unattributedCostEntries` from its own exclusions.
+ *
+ * Every other test of this field asserts what the vocabulary DOES with it.
+ * This is the only one that proves the usecase supplies it: hardcode it to 0
+ * in `finalizeRow` and all of those keep passing, because their fixtures set
+ * the value by hand. That is the seam a new reader creates (#1530).
+ */
+describe('unattributedCostEntries is wired from the usecase (#1530)', () => {
+    /** A payroll row linked to a planting whose crop has no commodity. */
+    const unattributableSetup = () => {
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'p-good', areaM2: 10_000 }),
+            planting({
+                id: 'p-bad',
+                areaM2: 10_000,
+                cropPlan: { seasonId: 's-1', cropType: { commodityCanonical: null } },
+            }),
+        ]);
+        mockDb.costEntry.findMany.mockResolvedValue([
+            payroll({ id: 'pay-1', plantingId: 'p-bad' }),
+        ]);
+        mockGetMarketReferences.mockResolvedValue(priced(['wheat']));
+    };
+
+    it('counts an entry that reached no commodity, and says so on the row', async () => {
+        unattributableSetup();
+
+        const result = await netWorthResult(ctx);
+
+        // The exclusion is recorded...
+        expect(result.exclusions.payrollUnattributable.map((e) => e.id)).toEqual(['pay-1']);
+        // ...and it reaches the row, which is the wiring this test exists for.
+        const wheat = result.rows.find((r) => r.commodity === 'wheat');
+        expect(wheat?.unattributedCostEntries).toBe(1);
+        // ...and the figures built from cost are qualified rather than exact.
+        expect(wheat?.perArea.uncertainty).toBe('atMost');
+    });
+
+    it('rides EVERY row, because the cost is missing from every figure', async () => {
+        // The count is farm-wide, not per-commodity: an unattributed cost is
+        // absent from all of them, so splitting it between rows would imply we
+        // knew which crop it belonged to — the thing we just failed to work out.
+        mockDb.parcel.findMany.mockResolvedValue([]);
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'p-wheat', areaM2: 10_000 }),
+            planting({
+                id: 'p-maize',
+                areaM2: 10_000,
+                cropPlan: { seasonId: 's-1', cropType: { commodityCanonical: 'maize' } },
+            }),
+            planting({
+                id: 'p-bad',
+                areaM2: 10_000,
+                cropPlan: { seasonId: 's-1', cropType: { commodityCanonical: null } },
+            }),
+        ]);
+        mockDb.costEntry.findMany.mockResolvedValue([payroll({ id: 'pay-1', plantingId: 'p-bad' })]);
+        mockGetMarketReferences.mockResolvedValue(priced(['wheat', 'maize']));
+
+        const result = await netWorthResult(ctx);
+
+        expect(result.rows.length).toBeGreaterThan(1);
+        for (const r of result.rows) {
+            expect({ commodity: r.commodity, n: r.unattributedCostEntries }).toEqual({
+                commodity: r.commodity,
+                n: 1,
+            });
+        }
+    });
+
+    it('is 0 when every cost was attributed — the control', async () => {
+        // Without this, the two assertions above pass for a field hardcoded to
+        // a non-zero constant.
+        mockDb.planting.findMany.mockResolvedValue([planting({ id: 'p-good', areaM2: 10_000 })]);
+        mockDb.costEntry.findMany.mockResolvedValue([payroll({ id: 'pay-1', plantingId: 'p-good' })]);
+        mockGetMarketReferences.mockResolvedValue(priced(['wheat']));
+
+        const result = await netWorthResult(ctx);
+
+        expect(result.exclusions.payrollUnattributable).toEqual([]);
+        expect(result.rows.find((r) => r.commodity === 'wheat')?.unattributedCostEntries).toBe(0);
+    });
+});

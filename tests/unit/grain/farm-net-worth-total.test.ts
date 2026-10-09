@@ -35,6 +35,7 @@ function row(over: Partial<Parameters<typeof foldFarmTotals>[0][number]> = {}) {
         cashCostTotal: 5_500,
         netWorth: 18_750 as number | null,
         unvaluedNoUnitCost: 0,
+        unattributedCostEntries: 0,
         unvaluedUnitMismatch: 0,
         payrollAllocated: false,
         ...over,
