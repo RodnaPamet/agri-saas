@@ -16,16 +16,26 @@
  * has to CREATE something, which is why they are not validated at the HTTP
  * boundary: whether they are needed depends on whether the name matched.
  *
- * **The category is enforced on both paths.** Previously the item lookup
- * checked only tenant and `deletedAt`, so a fertiliser's id passed as
- * `productItemId` was accepted and filed as a spray — while the usecase's own
- * comment asserted that "the kind is implicit in the Item's category".
+ * **The category is enforced ONE WAY only**, and the asymmetry was earned:
  *
- * The rule enforced is the COMPLEMENT one the UI already applies
- * (`ParcelDetailSheet.tsx:172`): fertiliser ⇒ `FERTILIZER`, product ⇒ anything
- * that is not. Not `product ⇒ PESTICIDE`, which was the obvious reading and
- * would have rejected the lime, seed and fuel applications that picker offers
- * today.
+ *     fertiliser field  ⇒  item MUST be `FERTILIZER`   (`FERTILIZER_EXPECTED`)
+ *     product field     ⇒  any category, fertiliser included
+ *
+ * The reported defect was "a fertiliser's id passed as `productItemId` is
+ * accepted and filed as a spray", and the first implementation refused it. That
+ * broke `prisma/fixtures/ag-demo.ts`, which files «Aqua Ammonium 28%» — a
+ * FERTILIZER — as a SPRAY at 3 L/ha. Liquid nitrogen goes through a sprayer, so
+ * the "defect" is a legitimate operation and the symmetric rule was wrong.
+ *
+ * Owner ruling 2026-10-09, with that evidence in hand: relax it. Only the other
+ * direction is incoherent — a PESTICIDE in the fertiliser field means a job
+ * whose `operationType` says FERTILIZE while its input is a plant protection
+ * product, which files into the wrong ДНЕВНИК table.
+ *
+ * `ParcelDetailSheet.tsx:172` still filters fertilisers out of the product
+ * picker. That is a UI convenience and deliberately NOT enforced here: the
+ * picker narrows what is easy to pick, the server refuses only what is
+ * incoherent.
  */
 import { PrismaClient, Role, MembershipStatus } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -176,6 +186,43 @@ describeFn('a typed product name (DB-backed)', () => {
         expect(rows[0].isArchetype).toBe(false);
     });
 
+    it('a NEW liquid fertiliser on the product path needs no ПРЗ number', async () => {
+        // The consequence of relaxing the category rule, raised by agrent-ios.
+        // A fertiliser may be sprayed — so a typed name on the product path may
+        // legitimately BE a fertiliser. Without `newProductCategory` it would be
+        // created as a PESTICIDE, the farmer would be asked to invent a ПРЗ
+        // registration number for something that has none, and the item would
+        // sit in the wrong category for every later record.
+        const name = `Аква Амониев ${TAG}`;
+
+        await createFieldOperation(
+            ctx(),
+            locationId,
+            spray({ productName: name, newProductCategory: 'FERTILIZER' }),
+        );
+
+        const rows = await itemsNamed(name);
+        expect(rows).toHaveLength(1);
+        expect(rows[0].category).toBe('FERTILIZER');
+    });
+
+    it('defaults a new product-path name to PESTICIDE when no category is given', async () => {
+        // Defaulting rather than requiring is what keeps every existing caller
+        // working, and PESTICIDE is what a typed spray name usually means.
+        const name = `Без Категория ${TAG}`;
+
+        await createFieldOperation(
+            ctx(),
+            locationId,
+            spray({
+                productName: name,
+                newProductRegistration: { pppRegistrationNo: '7-ПРЗ', quarantinePeriodDays: 2 },
+            }),
+        );
+
+        expect((await itemsNamed(name))[0].category).toBe('PESTICIDE');
+    });
+
     it('refuses to create a PESTICIDE without its regulatory fields', async () => {
         const name = `Без Регистрация ${TAG}`;
 
@@ -212,13 +259,23 @@ describeFn('a typed product name (DB-backed)', () => {
         expect(rows[0].category).toBe('FERTILIZER');
     });
 
-    it("refuses a fertiliser's ID passed as productItemId", async () => {
-        // The defect the category ruling closes. Before it, this was accepted
-        // and filed as a SPRAY, with the Task's operationType saying one thing
-        // and the Item's category another.
-        await expect(
-            createFieldOperation(ctx(), locationId, spray({ productItemId: fertilizerId })),
-        ).rejects.toMatchObject({ code: 'PRODUCT_EXPECTED' });
+    it("ACCEPTS a fertiliser's ID on the product path — a sprayed fertiliser is real", async () => {
+        // This originally asserted a refusal (`PRODUCT_EXPECTED`), because the
+        // reported defect was "a fertiliser filed as a spray". Implementing
+        // that broke `prisma/fixtures/ag-demo.ts`, which files «Aqua Ammonium
+        // 28%» — a FERTILIZER — as a SPRAY at 3 L/ha. That is not a mistake:
+        // liquid nitrogen is applied through a sprayer.
+        //
+        // Owner ruling 2026-10-09: relax it. The rule is one-sided, and this
+        // case is the one that proves the symmetric version was wrong — so it
+        // is kept as an acceptance rather than deleted.
+        const result = await createFieldOperation(
+            ctx(),
+            locationId,
+            spray({ productItemId: fertilizerId }),
+        );
+
+        expect(result).toBeDefined();
     });
 
     it("refuses a pesticide's ID passed as fertilizerItemId", async () => {

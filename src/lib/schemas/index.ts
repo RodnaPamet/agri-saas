@@ -586,6 +586,13 @@ export const CreateFieldOperationSchema = z.object({
      * them for every typed name, including one that matches a product created
      * last season.
      */
+    newProductCategory: z
+        .enum(['PESTICIDE', 'FERTILIZER'])
+        .optional()
+        .openapi({
+            description:
+                'What a `productName` that matches NOTHING should be created as. Defaults to `PESTICIDE`, which is what a typed spray name usually means.\n\n**Send `FERTILIZER` for a liquid fertiliser applied through a sprayer.** That is a legitimate spray (`FERTILIZER_EXPECTED` is deliberately one-sided), but without this field such a product would be created as a PESTICIDE — and a PESTICIDE cannot be created without a ПРЗ registration number it does not have, so the farmer would be asked to invent one and the item would sit in the wrong category for every later record.\n\nIgnored when the name matches an existing product, and ignored entirely on the `fertilizerName` path, which always creates a `FERTILIZER`.',
+        }),
     newProductRegistration: z
         .object({ ...REGULATORY })
         .strip()

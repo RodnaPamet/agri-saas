@@ -64,6 +64,19 @@ export function PrescriptionPanel({ locationId, tenantSlug, selectedParcelIds, o
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    /**
+     * Case-insensitive, to agree with the server's unique index on
+     * `(tenantId, lower(name))`. A case-sensitive check would hide the ПРЗ
+     * fields for a name the server then matches — harmless — but the reverse,
+     * hiding them when the server WILL create, is a refusal in the field.
+     */
+    const typedNameIsNew = useMemo(() => {
+        const needle = productName.trim().toLowerCase();
+        if (!needle) return false;
+        return !(items ?? []).some((it) => it.name.trim().toLowerCase() === needle);
+    }, [items, productName]);
+    const registrationComplete = !!pppRegNo.trim() && quarantineDays.trim() !== '';
+
     const canSubmit = Boolean(
         selectedParcelIds.length > 0 &&
         productName.trim() &&
@@ -117,18 +130,6 @@ export function PrescriptionPanel({ locationId, tenantSlug, selectedParcelIds, o
         }
     };
 
-    /**
-     * Case-insensitive, to agree with the server's unique index on
-     * `(tenantId, lower(name))`. A case-sensitive check would hide the ПРЗ
-     * fields for a name the server then matches — harmless — but the reverse,
-     * hiding them when the server WILL create, is a refusal in the field.
-     */
-    const typedNameIsNew = useMemo(() => {
-        const needle = productName.trim().toLowerCase();
-        if (!needle) return false;
-        return !(items ?? []).some((it) => it.name.trim().toLowerCase() === needle);
-    }, [items, productName]);
-    const registrationComplete = !!pppRegNo.trim() && quarantineDays.trim() !== '';
     const unitOptions: ComboboxOption[] = (units ?? []).map((u) => ({ value: u.id, label: u.symbol }));
 
     return (

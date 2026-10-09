@@ -45,6 +45,17 @@ export interface CreateFieldOperationInput {
     fertilizerName?: string | null;
     fertilizerDoseValue?: number | null;
     fertilizerDoseUnitId?: string | null;
+    /**
+     * What a `productName` matching nothing is created as. Defaults to
+     * PESTICIDE.
+     *
+     * Needed because the category rule is one-sided: a fertiliser may be
+     * sprayed, so a typed name on the product path may legitimately BE a
+     * fertiliser — and creating it as a PESTICIDE would demand a ПРЗ
+     * registration number it does not have. Raised by agrent-ios as a
+     * consequence of the owner's relaxation, which it is.
+     */
+    newProductCategory?: 'PESTICIDE' | 'FERTILIZER' | null;
     /** БАБХ fields, consulted only when a typed name has to CREATE a product. */
     newProductRegistration?: {
         pppRegistrationNo?: string | null;
@@ -111,31 +122,34 @@ function resolveChosenInput(input: CreateFieldOperationInput): ChosenInput {
 }
 
 /**
- * The category rule, enforced server-side for the first time (owner, 2026-10-09).
+ * The category rule — ONE-SIDED, and the asymmetry is the whole of it.
  *
- * It is the complement rule the UI has always applied —
- * `ParcelDetailSheet.tsx:172` filters the product picker to
- * `category !== 'FERTILIZER'` and the fertiliser picker to
- * `category === 'FERTILIZER'` — and NOT `product → PESTICIDE`, which was the
- * obvious reading and would have been wrong. That picker offers SEED,
- * AMENDMENT, FUEL, HARVESTED_PRODUCE and OTHER on the product path today, so a
- * strict PESTICIDE rule would reject a lime or a seed application the web
- * currently allows.
+ *   fertiliser field  ⇒  the item MUST be `FERTILIZER`
+ *   product field     ⇒  any category, INCLUDING `FERTILIZER`
  *
- * What it does close is the defect it was asked to close: nothing previously
- * checked that the FIELD used matched the item, so a fertiliser's id passed as
- * `productItemId` was accepted and filed as a spray. The item lookup checked
- * only tenant and `deletedAt`, while this file's own comment asserted that "the
- * kind is implicit in the Item's category".
+ * Owner ruling 2026-10-09, after implementing the symmetric version broke our
+ * own demo fixture. `prisma/fixtures/ag-demo.ts` files «Aqua Ammonium 28%» —
+ * category FERTILIZER — as a SPRAY at 3 L/ha through the product field, and
+ * that is real agronomy rather than a mistake: liquid nitrogen goes through a
+ * sprayer. A `product ⇒ not FERTILIZER` rule would have refused it.
+ *
+ * So the defect originally reported — "a fertiliser filed as a spray" — turns
+ * out to be a legitimate operation, and only the other direction is wrong. A
+ * PESTICIDE in the fertiliser field means a job whose `operationType` says
+ * FERTILIZE while its input is a plant protection product, which files into the
+ * wrong ДНЕВНИК table.
+ *
+ * Worth knowing that `ParcelDetailSheet.tsx:172` still filters fertilisers OUT
+ * of the product picker. That is a UI convenience and is deliberately NOT
+ * enforced here: the picker narrows what is easy to choose, this function
+ * refuses only what is incoherent.
  */
 function assertCategoryMatchesKind(category: string, isFertilizer: boolean): void {
-    const ok = isFertilizer ? category === 'FERTILIZER' : category !== 'FERTILIZER';
-    if (ok) return;
+    if (!isFertilizer) return;
+    if (category === 'FERTILIZER') return;
     throw codedBadRequest(
-        isFertilizer ? 'FERTILIZER_EXPECTED' : 'PRODUCT_EXPECTED',
-        isFertilizer
-            ? 'That item is not a fertiliser. Use the product field for it, or choose a fertiliser.'
-            : 'That item is a fertiliser. Use the fertiliser field for it.',
+        'FERTILIZER_EXPECTED',
+        'That item is not a fertiliser. Use the product field for it, or choose a fertiliser.',
         { category },
     );
 }
@@ -194,6 +208,7 @@ async function resolveInputItemId(
     ctx: RequestContext,
     chosen: ChosenInput,
     registration: CreateFieldOperationInput['newProductRegistration'],
+    newCategory: CreateFieldOperationInput['newProductCategory'],
 ): Promise<string> {
     if (chosen.itemId) return chosen.itemId;
 
@@ -275,7 +290,13 @@ async function resolveInputItemId(
         // ruling coherent: a new PPP needs its two regulatory fields, which is
         // why `newProductRegistration` exists. An EXISTING item on this path
         // may be any non-FERTILIZER category, per the picker's own filter.
-        category: chosen.isFertilizer ? 'FERTILIZER' : 'PESTICIDE',
+        // The fertiliser path always creates a FERTILIZER. The product path
+        // defaults to PESTICIDE — what a typed spray name usually means — but
+        // accepts FERTILIZER, because a liquid fertiliser through a sprayer is
+        // a legitimate spray and creating it as a PESTICIDE would demand a ПРЗ
+        // number it has none of. Defaulting rather than requiring keeps every
+        // existing caller working.
+        category: chosen.isFertilizer ? 'FERTILIZER' : (newCategory ?? 'PESTICIDE'),
         defaultUnitId: baseUnit.id,
         pppRegistrationNo: registration?.pppRegistrationNo ?? null,
         quarantinePeriodDays: registration?.quarantinePeriodDays ?? null,
@@ -388,7 +409,12 @@ export async function createFieldOperation(
     // Resolve the id-or-name to an id BEFORE the transaction below — a P2002
     // from creating an Item would poison an interactive transaction, so the
     // create and its race live in their own. See `resolveInputItemId`.
-    const itemId = await resolveInputItemId(ctx, chosen, input.newProductRegistration);
+    const itemId = await resolveInputItemId(
+        ctx,
+        chosen,
+        input.newProductRegistration,
+        input.newProductCategory,
+    );
     // Water carrier only applies to a product spray (never a fertilizer line).
     const waterRateValue = chosen.isFertilizer ? null : input.waterRateValue ?? null;
     const waterRateUnitId = chosen.isFertilizer ? null : input.waterRateUnitId ?? null;
