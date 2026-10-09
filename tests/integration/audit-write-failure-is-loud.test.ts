@@ -57,6 +57,30 @@ describeFn('a lost audit row is reported in every environment (#1223)', () => {
     let errorSpy: jest.SpyInstance;
     let metricSpy: jest.SpyInstance;
     let bare: typeof import('@prisma/client').PrismaClient.prototype;
+    /**
+     * The delegates these cleanups reach for, named rather than cast to `any`.
+     *
+     * `bare` is typed as `PrismaClient.prototype`, which does not expose the
+     * model delegates, so every call below needed an escape. `as any` was that
+     * escape and it cost a lint warning each — five in this file, and the
+     * ceiling has no headroom left to pay for them (#1247 banked 25 and
+     * warnings have since grown past it).
+     *
+     * A named shape is the better escape anyway: it says WHICH delegates the
+     * test touches, so a model rename breaks here loudly instead of surviving
+     * as `any` and failing at runtime.
+     */
+    type CleanupDelegates = {
+        location: {
+            deleteMany(args: unknown): Promise<unknown>;
+            findUnique(args: unknown): Promise<unknown>;
+        };
+        auditLog: { deleteMany(args: unknown): Promise<{ count: number }> };
+        tenant: { deleteMany(args: unknown): Promise<unknown> };
+        $disconnect(): Promise<void>;
+    };
+    const raw = (): CleanupDelegates => bare as unknown as CleanupDelegates;
+
 
     beforeAll(async () => {
         const { PrismaClient } = require('@prisma/client');
@@ -74,10 +98,10 @@ describeFn('a lost audit row is reported in every environment (#1223)', () => {
     });
 
     afterAll(async () => {
-        await (bare as any).location.deleteMany({ where: { tenantId: TENANT } });
-        await (bare as any).auditLog.deleteMany({ where: { tenantId: TENANT } }).catch(() => {});
-        await (bare as any).tenant.deleteMany({ where: { id: TENANT } });
-        await (bare as any).$disconnect();
+        await raw().location.deleteMany({ where: { tenantId: TENANT } });
+        await raw().auditLog.deleteMany({ where: { tenantId: TENANT } }).catch(() => ({ count: 0 }));
+        await raw().tenant.deleteMany({ where: { id: TENANT } });
+        await raw().$disconnect();
     });
 
     beforeEach(() => {
@@ -143,7 +167,9 @@ describeFn('a lost audit row is reported in every environment (#1223)', () => {
         const created = await write();
 
         expect((created as { id: string }).id).toBeTruthy();
-        const found = await (bare as any).location.findUnique({ where: { id: (created as { id: string }).id } });
+        const found = await raw().location.findUnique({
+            where: { id: (created as { id: string }).id },
+        });
         expect(found).not.toBeNull();
     });
 

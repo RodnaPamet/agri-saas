@@ -29,9 +29,41 @@
  * bump, the number would stop meaning "clients must update" and start meaning
  * "time passed".
  */
-export const API_CONTRACT_VERSION = 2;
+export const API_CONTRACT_VERSION = 3;
 
 /*
+ * 2 -> 3 (2026-10-09): `ParcelGeo.geometry.type` and `Parcel.geometry.type`
+ * narrowed from `["Polygon", "MultiPolygon"]` to `MultiPolygon` alone.
+ *
+ * WHAT BROKE, AND WHY IT COULD NOT BE ADDITIVE. An enum narrowing is one of
+ * the six classes `scripts/openapi-breaking.ts` scores, and there is no
+ * additive way to say "this value never occurs" — stating it in the
+ * description alone would leave a generated client emitting a two-case enum
+ * for a one-case reality, which is the defect agrent-ios reported in the
+ * first place, inverted.
+ *
+ * The removed value CANNOT OCCUR, measured three ways:
+ *   · the column is `geometry(MultiPolygon, 4326)`, so PostGIS refuses a
+ *     Polygon at write time (migration 20260613090735_ag_feature1_spray_map);
+ *   · `src/lib/db/geo.ts` wraps every input in `ST_Multi` (11 occurrences);
+ *   · zero write sites bypass that module, which
+ *     `tests/guardrails/geo-raw-sql-containment.test.ts` enforces.
+ * agrent-ios independently confirms it decodes MultiPolygon only.
+ *
+ * WHICH CLIENT VERSIONS STOP WORKING: none. The classifier's own detail reads
+ * "a client still sending it is rejected", and this is a RESPONSE field —
+ * nobody sends it. The baseline being narrowed is #1455's declaration from
+ * earlier the same day, which was never true of any response this server can
+ * produce, so no client can have relied on it.
+ *
+ * RELEASE SEQUENCE: none required, which is the honest answer rather than a
+ * skipped step. `docs/api-compatibility.md` asks for app-first because a
+ * behaviour change strands installed builds; nothing about the wire changes
+ * here, and the only known client already decodes the narrower form.
+ * `MINIMUM_SUPPORTED_CLIENT_VERSION` stays at 1.
+ *
+ * Signed off by the repository owner on the PR, per "Who decides".
+ *
  * 1 -> 2 (2026-10-08): `Task` split into `TaskListItem` and `TaskDetail`.
  *
  * Breaking by the classes above — `GET /tasks` has its `$ref` REPOINTED and

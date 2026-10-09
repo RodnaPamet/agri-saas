@@ -8,7 +8,7 @@
       "name": "Proprietary"
     }
   },
-  "x-api-version": 2,
+  "x-api-version": 3,
   "x-minimum-client-version": 1,
   "x-client-version-header": "x-agrent-client-version",
   "servers": [
@@ -1071,23 +1071,33 @@
           "email": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 320
+            "maxLength": 320,
+            "example": "ivan@example.bg"
           },
           "password": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "description": "Checked against the password policy and against Have I Been Pwned. The HIBP screen fails OPEN: an outage there must not block signups, so a breached password may occasionally be accepted when the service is unreachable. **No minimum is declared here on purpose** — `validatePasswordPolicy` answers a distinct `too_short`, and a schema-level minimum would collapse that into `invalid_request`."
           },
           "name": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 200
+            "maxLength": 200,
+            "example": "Иван Иванов"
           },
           "turnstileToken": {
             "type": "string",
             "maxLength": 2048
           },
-          "acceptedTerms": {},
-          "termsVersion": {}
+          "acceptedTerms": {
+            "type": "boolean",
+            "description": "Consent to the terms of use and the privacy notice (P3.1). Send `true`. Checked for IDENTITY with `true` rather than truthiness, so no other value satisfies it. Absent or false is `400 terms_not_accepted`, refused before the password is hashed. **Not declared required**, because a schema-level rejection would lose that code — see #1393."
+          },
+          "termsVersion": {
+            "type": "string",
+            "example": "2026-10-07-draft",
+            "description": "The terms version the client DISPLAYED. Compared for equality with the version the server is serving; a mismatch is `400 terms_version_stale`, whose body carries `currentVersion`. This exists so a page left open across a terms change cannot file a consent to a document nobody read — the stored record is of what the person actually saw. Read the current value by rendering `/terms`, or from the `currentVersion` field of a stale refusal."
+          }
         },
         "required": [
           "email",
@@ -7197,7 +7207,9 @@
             "items": {
               "type": "number"
             },
-            "description": "Bounding box as `[west, south, east, north]`, WGS84 degrees. Null when the location has no imported parcels to bound. Exactly four numbers — the weather job rejects anything else rather than guessing an order.",
+            "minItems": 4,
+            "maxItems": 4,
+            "description": "Bounding box as `[west, south, east, north]` — `[minLon, minLat, maxLon, maxLat]`, **longitude first**, per GeoJSON and the reverse of the `lat, lon` a human quotes. WGS84 degrees, exactly four numbers. Null when the location has no imported parcels to bound.",
             "example": [
               23.1,
               42.4,
@@ -7347,7 +7359,16 @@
             "type": "string"
           },
           "bounds": {
-            "description": "`[west, south, east, north]`, or null when no parcel has geometry."
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "number"
+            },
+            "minItems": 4,
+            "maxItems": 4,
+            "description": "Bounding box as `[west, south, east, north]` — `[minLon, minLat, maxLon, maxLat]`, **longitude first**, per GeoJSON and the reverse of the `lat, lon` a human quotes. WGS84 degrees, exactly four numbers. Null when no parcel in this location has geometry, which is distinct from an empty box."
           },
           "parcels": {
             "type": "array",
@@ -7358,6 +7379,7 @@
         },
         "required": [
           "locationId",
+          "bounds",
           "parcels"
         ],
         "description": "A location’s parcels as GeoJSON, with the location’s bounding box."
@@ -8619,7 +8641,29 @@
               "null"
             ]
           },
-          "geometry": {},
+          "geometry": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "MultiPolygon"
+                ]
+              },
+              "coordinates": {
+                "type": "array",
+                "items": {}
+              }
+            },
+            "required": [
+              "type",
+              "coordinates"
+            ],
+            "description": "GeoJSON MultiPolygon in WGS84. Always a MultiPolygon, never a bare `Polygon` — a single-ring parcel arrives as a MultiPolygon containing one polygon."
+          },
           "properties": {}
         },
         "required": [
@@ -8702,7 +8746,16 @@
             "description": "Every POSITIONED parcel, so the view can switch from clusters to parcels once zoomed in — the cluster grid bottoms out at 200 m and cannot separate them."
           },
           "bbox": {
-            "description": "[minLon, minLat, maxLon, maxLat] of the positioned parcels."
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "number"
+            },
+            "minItems": 4,
+            "maxItems": 4,
+            "description": "Bounding box as `[west, south, east, north]` — `[minLon, minLat, maxLon, maxLat]`, **longitude first**, per GeoJSON and the reverse of the `lat, lon` a human quotes. WGS84 degrees, exactly four numbers. Covers the POSITIONED parcels only — a location whose parcels all lack geometry contributes nothing to it."
           },
           "positionedCount": {
             "type": "integer"
@@ -8725,6 +8778,7 @@
         "required": [
           "clusters",
           "parcels",
+          "bbox",
           "positionedCount",
           "unpositionedCount",
           "unpositionedParcelIds",
@@ -8932,7 +8986,6 @@
               "type": {
                 "type": "string",
                 "enum": [
-                  "Polygon",
                   "MultiPolygon"
                 ]
               },
@@ -10811,7 +10864,18 @@
           "flagged": {
             "type": "number"
           },
-          "bounds": {},
+          "bounds": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "number"
+            },
+            "minItems": 4,
+            "maxItems": 4,
+            "description": "Bounding box as `[west, south, east, north]` — `[minLon, minLat, maxLon, maxLat]`, **longitude first**, per GeoJSON and the reverse of the `lat, lon` a human quotes. WGS84 degrees, exactly four numbers. Null when the import produced no bounded geometry."
+          },
           "jobRunId": {
             "type": "string"
           }
@@ -10825,6 +10889,7 @@
           "matched",
           "created",
           "flagged",
+          "bounds",
           "jobRunId"
         ],
         "description": "The `details` payload of a completed `spatial-import` job. parcelCount is matched + created — what the file contained. flagged counts existing parcels the file omitted, which were kept rather than deleted, so it is deliberately NOT part of parcelCount."
@@ -12222,7 +12287,7 @@
           "lastObservedAt",
           "points"
         ],
-        "description": "One price line, grouped by (source, region) so a chart can split lines that differ in unit or currency — series are NOT comparable across those without conversion. lastObservedAt is the newest observation anywhere, which is what distinguishes a series reporting this week from one that stopped months ago; both otherwise present a points array whose last entry looks equally current."
+        "description": "One price line, grouped by (source, region, **stage**) so a chart can split lines that differ in unit, currency or delivery point — BG wheat has nine delivery points whose prices differ by tens of euros per tonne, so two series sharing a source and region are routinely different lines — series are NOT comparable across those without conversion. lastObservedAt is the newest observation anywhere, which is what distinguishes a series reporting this week from one that stopped months ago; both otherwise present a points array whose last entry looks equally current."
       },
       "Unit": {
         "type": "object",
@@ -34459,52 +34524,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "email": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 320,
-                    "example": "ivan@example.bg"
-                  },
-                  "password": {
-                    "type": "string",
-                    "minLength": 8,
-                    "description": "Checked against the password policy and against Have I Been Pwned. The HIBP screen fails OPEN: an outage there must not block signups, so a breached password may occasionally be accepted when the service is unreachable."
-                  },
-                  "name": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 200,
-                    "example": "Иван Иванов"
-                  },
-                  "acceptedTerms": {
-                    "type": "boolean",
-                    "enum": [
-                      true
-                    ],
-                    "description": "Consent to the terms of use and the privacy notice (P3.1). REQUIRED, and checked for identity with `true` rather than truthiness — a client cannot satisfy it with any non-empty value. Absent or false is `400 terms_not_accepted`, refused before the password is hashed."
-                  },
-                  "termsVersion": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 64,
-                    "example": "2026-10-07-draft",
-                    "description": "The terms version the client DISPLAYED. Compared for equality with the version the server is serving; a mismatch is `400 terms_version_stale`, whose body carries `currentVersion`. This exists so a page left open across a terms change cannot file a consent to a document nobody read — the stored record is of what the person actually saw. Read the current value by rendering /terms, or from the `currentVersion` field of a stale refusal."
-                  },
-                  "turnstileToken": {
-                    "type": "string",
-                    "maxLength": 2048,
-                    "description": "Cloudflare Turnstile token (P3.5c). OPTIONAL in the schema and REQUIRED at runtime whenever the deployment has a Turnstile secret configured — the two are not in conflict: a deployment with no secret renders no widget and has no token to send, so a required field would break signup for exactly the configuration that is live today. A missing token is refused once configured, never treated as a skip. Read the sitekey from /api/auth/ui-config to decide whether to render the widget at all; a null sitekey means render nothing."
-                  }
-                },
-                "required": [
-                  "email",
-                  "password",
-                  "name",
-                  "acceptedTerms",
-                  "termsVersion"
-                ]
+                "$ref": "#/components/schemas/AuthRegisterStartRequest"
               }
             }
           }
