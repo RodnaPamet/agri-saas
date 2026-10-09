@@ -63,7 +63,7 @@ export interface OverheadDefault {
 }
 
 export interface CostDefaults {
-    /** One entry per overhead category that has any history. Absent means none. */
+    /** One entry per overhead category with prior entries. Absent means none. */
     overheads: OverheadDefault[];
 }
 
