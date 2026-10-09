@@ -57,6 +57,85 @@ const StaleDataError = ApiErrorResponseSchema.openapi('StaleDataError', {
         '`FarmProfileStaleDataError`, `OperationParcelStaleDataError` and `ItemNameConflictError`.',
 });
 
+/**
+ * The journal list's query contract, mirroring `JournalQuerySchema` in
+ * `src/app/api/t/[tenantSlug]/journal/route.ts`.
+ *
+ * It was undocumented: the operation published only `tenantSlug`, so a client
+ * reading the spec saw a list endpoint with no way to filter it, while eleven
+ * parameters were live. That is the direction that costs a client release —
+ * agrent-ios had to read the route source to find `locationId`.
+ *
+ * Kept as prose descriptions rather than a shared schema import because the
+ * route's object is `.strip()`ed and carries coercions (`z.coerce.number`,
+ * `csvEnumField`) whose INPUT shape is a string — documenting the parsed type
+ * would describe what the handler receives, not what a client sends.
+ */
+const JournalListQuery = z.object({
+    limit: z.coerce.number().int().min(1).max(100).optional().openapi({
+        param: { name: 'limit', in: 'query' },
+        description:
+            'Page size, 1-100. Sending EITHER `limit` or `cursor` switches the response from a ' +
+            'flat array to `{ rows, nextCursor }` — see the operation description.',
+    }),
+    cursor: z.string().optional().openapi({
+        param: { name: 'cursor', in: 'query' },
+        description:
+            'Opaque keyset cursor from a previous `nextCursor`. A position, not a timestamp to ' +
+            'parse or construct: a client that builds its own has coupled itself to the sort key.',
+    }),
+    type: z.string().optional().openapi({
+        param: { name: 'type', in: 'query' },
+        description:
+            'Comma-separated `LogEntryType` members, e.g. `INPUT_APPLICATION,HARVEST`. An ' +
+            'invalid member is a 400 rather than a silent drop. Omit the parameter to clear the ' +
+            'facet — an empty value matches nothing.',
+    }),
+    status: z.string().optional().openapi({
+        param: { name: 'status', in: 'query' },
+        description: 'Comma-separated `LogEntryStatus` members. Same rules as `type`.',
+    }),
+    q: z.string().optional().openapi({
+        param: { name: 'q', in: 'query' },
+        description: 'Case-insensitive substring search over `title` and `notes`.',
+    }),
+    occurredFrom: z.string().optional().openapi({
+        param: { name: 'occurredFrom', in: 'query' },
+        description: 'Inclusive lower bound on `occurredAt`. Either bound may be sent alone.',
+    }),
+    occurredTo: z.string().optional().openapi({
+        param: { name: 'occurredTo', in: 'query' },
+        description: 'Inclusive upper bound on `occurredAt`.',
+    }),
+    deleted: z.enum(['true', 'false']).optional().openapi({
+        param: { name: 'deleted', in: 'query' },
+        description:
+            'The recycle bin — soft-deleted entries ONLY, never mixed with live ones. Escalates ' +
+            'to an admin check and returns `{ entries }`, a third response shape.',
+    }),
+    crop: z.string().optional().openapi({
+        param: { name: 'crop', in: 'query' },
+        description:
+            'Comma-separated `Parcel.cropType` values. Matches through the entry\'s operation ' +
+            'LINE, so a free-hand entry with no line never matches — the intended ' +
+            'agronomic-only scope, not an omission.',
+    }),
+    locationId: z.string().optional().openapi({
+        param: { name: 'locationId', in: 'query' },
+        description:
+            'A «блок» — the `Location` a shapefile import creates. Matches an entry reached by ' +
+            'EITHER path: one a person linked to the block explicitly, or one whose operation ' +
+            'line sits on a parcel belonging to it. The second path is where the bulk of a ' +
+            'ДНЕВНИК lives, because the spray flow writes an operation line and no location ' +
+            'link; the second path was added for #1544, before which automatic spray records were ' +
+            'absent from a block-filtered journal with nothing to say so.',
+    }),
+    cropPlanId: z.string().optional().openapi({
+        param: { name: 'cropPlanId', in: 'query' },
+        description: 'Entries linked to a planting of this crop plan, for the plan-detail tab.',
+    }),
+});
+
 export function registerJournalPaths(registry: OpenAPIRegistry): void {
     op(registry, {
         method: 'get',
@@ -70,6 +149,7 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
             'Three bodies on one operation — a client must branch on the query it sent.',
         tags: ['Journal'],
         params: TenantParams,
+        query: JournalListQuery,
         success: {
             status: 200,
             description:
