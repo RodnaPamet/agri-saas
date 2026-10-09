@@ -9,7 +9,7 @@ import { logEvent } from '../events/audit';
 import { runInTenantContext, withTenantDb, PrismaTx } from '@/lib/db-context';
 import { runWithoutRls } from '@/lib/db/rls-middleware';
 import { EXCHANGE_CURRENCY } from '@/lib/exchange/currency';
-import { forbidden, notFound, badRequest, conflict } from '@/lib/errors/types';
+import { forbidden, notFound, badRequest, codedConflict } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { regionByCode } from '@/lib/geo/bulgaria-regions';
 import { logger } from '@/lib/observability/logger';
@@ -412,7 +412,17 @@ export async function createInquiry(ctx: RequestContext, input: CreateInquiryInp
                 err instanceof Prisma.PrismaClientKnownRequestError &&
                 err.code === 'P2002'
             ) {
-                throw conflict('You have already expressed interest in this listing');
+                // `codedConflict`, not `conflict`: the plain helper defaults
+                // `code` to the generic 'CONFLICT', and THREE unrelated
+                // refusals shared it — this one, the promotion lead, and a
+                // taken company name. A client switching on `code`, which is
+                // what the spec's ErrorResponse tells clients to do, could not
+                // tell them apart (#1391). Same defect `farm-creation.ts`
+                // documents for `badRequest`, one status along.
+                throw codedConflict(
+                    'LISTING_INTEREST_ALREADY_SENT',
+                    'You have already expressed interest in this listing.',
+                );
             }
             throw err;
         }

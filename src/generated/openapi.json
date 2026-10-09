@@ -6417,6 +6417,54 @@
           "parcelIds"
         ]
       },
+      "InquiryAlreadySentError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "example": "NOT_FOUND"
+              },
+              "message": {
+                "type": "string",
+                "example": "Practice not found"
+              },
+              "requestId": {
+                "type": "string",
+                "example": "req_01HG7…"
+              },
+              "details": {},
+              "params": {
+                "type": "object",
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ]
+                },
+                "description": "Values for the client to interpolate into its own translated message, keyed per `code` — e.g. `{ \"max\": 120 }` for `FARM_NAME_TOO_LONG`. Ids and quantities only: strings and numbers, never an object and never personal data. Absent for codes that need no values.",
+                "example": {
+                  "max": 120
+                }
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "description": "A 409 `LISTING_INTEREST_ALREADY_SENT`. One inquiry per tenant per listing — the `@@unique` index is the guarantee, and a P2002 from it is what raises this. Distinct from `STALE_DATA`: there is no version to re-read and no edit to merge, so a client treating every 409 as a stale edit tells the operator the wrong thing (#1391)."
+      },
       "InsuranceCatalogue": {
         "type": "object",
         "properties": {
@@ -32665,6 +32713,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`LISTING_INTEREST_ALREADY_SENT` — this tenant has already enquired about this listing. One inquiry per tenant per listing, on a unique index, so it is NOT a stale edit and re-reading will not clear it: the inquiry already exists and the seller already has it. Show the existing thread rather than offering to send again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InquiryAlreadySentError"
                 }
               }
             }

@@ -53,6 +53,7 @@ import {
     RespondToInquirySchema,
     UpdateListingStatusSchema,
 } from '@/app-layer/schemas/exchange.schemas';
+import { ApiErrorResponseSchema } from '@/lib/dto/common';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { op } from './helpers';
 
@@ -144,6 +145,18 @@ const StatusAckSchema = z
         description:
             'A status transition acknowledgement. Deliberately NOT the full object: the caller already holds it and the transition is the only thing that changed.',
     });
+
+const InquiryAlreadySentError = ApiErrorResponseSchema.openapi(
+    'InquiryAlreadySentError',
+    {
+        description:
+            'A 409 `LISTING_INTEREST_ALREADY_SENT`. One inquiry per tenant per listing — the ' +
+            '`@@unique` index is the guarantee, and a P2002 from it is what raises this. ' +
+            'Distinct from `STALE_DATA`: there is no version to re-read and no edit to merge, ' +
+            'so a client treating every 409 as a stale edit tells the operator the wrong thing ' +
+            '(#1391).',
+    },
+);
 
 export function registerExchangeListingPaths(registry: OpenAPIRegistry): void {
     op(registry, {
@@ -286,6 +299,17 @@ export function registerExchangeListingPaths(registry: OpenAPIRegistry): void {
         params: TenantParams,
         body: CreateInquirySchema,
         success: { status: 201, description: 'The created inquiry’s id and status.', schema: StatusAckSchema },
+        extraResponses: {
+            409: {
+                description:
+                    '`LISTING_INTEREST_ALREADY_SENT` — this tenant has already enquired about ' +
+                    'this listing. One inquiry per tenant per listing, on a unique index, so it ' +
+                    'is NOT a stale edit and re-reading will not clear it: the inquiry already ' +
+                    'exists and the seller already has it. Show the existing thread rather than ' +
+                    'offering to send again.',
+                content: { 'application/json': { schema: InquiryAlreadySentError } },
+            },
+        },
     });
 
     op(registry, {

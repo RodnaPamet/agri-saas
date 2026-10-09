@@ -10,7 +10,7 @@ import { RequestContext } from '../types';
 import { assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
-import { conflict, notFound } from '@/lib/errors/types';
+import { codedConflict, notFound } from '@/lib/errors/types';
 import {
     EntraGroupMappingCreateSchema,
     EntraGroupMappingUpdateSchema,
@@ -46,7 +46,12 @@ export async function createEntraGroupMapping(ctx: RequestContext, raw: unknown)
             });
         } catch (e) {
             if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
-                throw conflict('A mapping for this Entra group already exists');
+                // Coded for the same reason as the other P2002 refusals in
+                // this sweep — see `createInquiry` in exchange.ts (#1391).
+                throw codedConflict(
+                    'ENTRA_GROUP_MAPPING_EXISTS',
+                    'A mapping for this Entra group already exists.',
+                );
             }
             throw e;
         }
