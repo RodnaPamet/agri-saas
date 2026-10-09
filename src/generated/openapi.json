@@ -8062,6 +8062,137 @@
         },
         "description": "Partial update for a field-journal entry. Every field optional. When quantities / locationIds / equipmentIds are supplied they fully REPLACE the existing set (full-replace semantics, matching the create shape)."
       },
+      "MachineryDepreciation": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "NONE",
+              "STRAIGHT_LINE"
+            ],
+            "description": "`STRAIGHT_LINE` when the tenant has opted in, `NONE` otherwise. `NONE` carries no charges."
+          },
+          "charges": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "assetId": {
+                  "type": "string"
+                },
+                "assetKey": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "assetName": {
+                  "type": "string"
+                },
+                "purchaseCost": {
+                  "type": "number"
+                },
+                "purchaseDate": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
+                "usefulLifeYears": {
+                  "type": "number"
+                },
+                "annualCharge": {
+                  "type": "number",
+                  "description": "Straight-line: `purchaseCost ÷ usefulLifeYears`."
+                },
+                "yearsElapsed": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "description": "Whole years since purchase, capped at the useful life. **`null` when `purchaseDate` is unset** — what a year costs is knowable without knowing when it started; how much life remains is not."
+                },
+                "remainingValue": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "description": "Remaining book value. `null` whenever `yearsElapsed` is."
+                },
+                "fullyDepreciated": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "assetId",
+                "assetName",
+                "purchaseCost",
+                "usefulLifeYears",
+                "annualCharge",
+                "fullyDepreciated"
+              ]
+            }
+          },
+          "totalAnnualCharge": {
+            "type": "number",
+            "description": "Sum of `charges[].annualCharge`. `0` when there are none."
+          },
+          "unallocated": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "assetId": {
+                  "type": "string"
+                },
+                "assetKey": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "assetName": {
+                  "type": "string"
+                },
+                "purchaseCost": {
+                  "type": "number"
+                },
+                "reason": {
+                  "type": "string",
+                  "enum": [
+                    "NO_USEFUL_LIFE"
+                  ],
+                  "description": "Why it produced no charge. A growing union — show an unrecognised value as \"not depreciated\" rather than treating it as an error."
+                }
+              },
+              "required": [
+                "assetId",
+                "assetName",
+                "purchaseCost",
+                "reason"
+              ]
+            }
+          },
+          "unallocatedCost": {
+            "type": "number",
+            "description": "Sum of `unallocated[].purchaseCost` — the capital value NOT represented in `totalAnnualCharge`."
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when the register hit the read bound, so the totals are partial."
+          }
+        },
+        "required": [
+          "method",
+          "charges",
+          "totalAnnualCharge",
+          "unallocated",
+          "unallocatedCost",
+          "truncated"
+        ]
+      },
       "MarketReference": {
         "type": "object",
         "properties": {
@@ -24898,6 +25029,144 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CostEntry"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries an English `message` as a developer-facing fallback; it is NOT translated, so render your own copy keyed on `code`. Route-level 403s carry their own codes and are described on the operation that returns them.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/costs/machinery": {
+      "get": {
+        "operationId": "getMachineryDepreciation",
+        "summary": "Straight-line depreciation of the machine register",
+        "description": "Annual depreciation per machine, plus the farm total. `totalAnnualCharge` is the yearly figure to prefill an «Амортизация» cost line with.\n\n**Reported ALONGSIDE the crop rollup, never folded into it.** A tractor is not consumed by one planting, so adding it to `/grain/costs` would move every existing figure there.\n\n**`method: \"NONE\"` is not zero cost.** A tenant that has not opted in gets `NONE` with an empty `charges` array — \"not computed\" and \"costs nothing\" must not render identically, so branch on `method` before showing a total.\n\n**`unallocated` is the honesty field and is worth rendering.** Those are machines carrying a `purchaseCost` that produced NO charge, each with a `reason` (today only `NO_USEFUL_LIFE`). `unallocatedCost` is the value the figures above do NOT represent — a farm with a large `unallocatedCost` has an understated `totalAnnualCharge`, and nothing else in the response says so.\n\n**`truncated: true` means the register hit the read bound**, so the totals are partial. Treat it like `unallocatedCost`: a number worth showing rather than a flag to ignore.\n\nCarries a weak ETag; send `If-None-Match` and handle **304**.",
+        "tags": [
+          "Grain"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The depreciation view. Never an error for a tenant that has not opted in — that is `method: \"NONE\"`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MachineryDepreciation"
                 }
               }
             }

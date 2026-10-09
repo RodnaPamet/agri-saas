@@ -963,7 +963,7 @@
     {
       "path": "/api/t/{tenantSlug}/costs/machinery",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/dashboard/ag",
