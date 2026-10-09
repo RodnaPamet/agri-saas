@@ -70,6 +70,23 @@ interface Scenario {
     runId: string;
     /** The watched workflow's name. Defaults to a workflow with no exception. */
     wf?: string;
+    /**
+     * The names of the run's FAILED jobs, as the failed-job probe reports them.
+     *
+     * Defaults to a single ordinary job, so every pre-existing case in this
+     * file keeps exercising the report-it path it was written for. A scenario
+     * that wants the suppression branch has to ask for it by name.
+     */
+    failedJobs?: string[];
+    /** Overrides the above with a verbatim answer, to drive a malformed one. */
+    rawFailedProbe?: string;
+    /** Makes the failed-job probe EXIT NON-ZERO, i.e. the API read failed. */
+    failedProbeFails?: boolean;
+    /**
+     * Overrides `FLAKY_JOBS`. Defaults to leaving it unset, so every other
+     * case exercises the value production actually runs with.
+     */
+    flakyJobs?: string;
 }
 
 /**
@@ -82,6 +99,7 @@ function run(s: Scenario): { out: string; calls: string[] } {
         const callLog = path.join(dir, 'calls.txt');
         const jobsCreated = s.jobsCreated ?? 0;
         const jobsExecuted = s.jobsExecuted ?? jobsCreated;
+        const failedJobs = s.failedJobs ?? ['Build'];
         // Newlines are squashed to spaces so one gh invocation stays one log
         // line — the issue body is multi-line and would otherwise be split
         // across entries, hiding the marker this test checks for.
@@ -91,11 +109,30 @@ printf '%s\\n' "\${args//$'\\n'/ }" >> ${JSON.stringify(callLog)}
 case "$1 $2" in
   "issue list")   printf '%s' ${JSON.stringify(s.openIssue ?? '')} ;;
   "issue view")   printf '%s' ${JSON.stringify(s.existingBody ?? '')} ;;
-  api*)           ${
-      s.rawProbe === undefined
-          ? `printf '%s\\t%s' '${jobsCreated}' '${jobsExecuted}'`
-          : `printf '%s' ${JSON.stringify(s.rawProbe)}`
-  } ;;
+  api*)
+    # TWO different probes reach the gh api stub: the cancel-shape probe
+    # (#748) and the failed-job probe (#1472). They are told apart by their jq,
+    # because answering one with the other's shape is how a suppression branch
+    # ends up tested by accident.
+    case "$args" in
+      *'select(.conclusion == "failure")'*)
+        ${
+            s.failedProbeFails
+                ? `exit 1`
+                : s.rawFailedProbe !== undefined
+                  ? `printf '%s' ${JSON.stringify(s.rawFailedProbe)}`
+                  : `printf '%s\\t%s' '${failedJobs.length}' ${JSON.stringify(failedJobs.join('|'))}`
+        }
+        ;;
+      *)
+        ${
+            s.rawProbe === undefined
+                ? `printf '%s\\t%s' '${jobsCreated}' '${jobsExecuted}'`
+                : `printf '%s' ${JSON.stringify(s.rawProbe)}`
+        }
+        ;;
+    esac
+    ;;
 esac
 exit 0
 `;
@@ -115,6 +152,9 @@ exit 0
                 BRANCH: 'main',
                 SHA: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
                 REPO: 'RodnaPamet/agri-saas',
+                // Only set when the scenario asks, so every other case runs
+                // against the shipped default.
+                ...(s.flakyJobs === undefined ? {} : { FLAKY_JOBS: s.flakyJobs }),
             },
         });
 
@@ -379,6 +419,172 @@ describe('CI-failure notifier — files for real failures, and only those', () =
             runId: '302',
             jobsCreated: 1,
             wf: 'CI',
+        });
+
+        expect(created(calls)).toBe(true);
+    });
+});
+
+/**
+ * A run whose ONLY failed jobs are known-flaky is not reported (#1472).
+ *
+ * The measurement behind this: 20 of the 35 classifiable `ci-failure` issues
+ * in the notifier's 39 most recent were the E2E flake and nothing else. 57%.
+ * They all self-closed on the next green merge, and the damage was not to the
+ * queue's length but to its credibility — #1468 held a real Lint breach that
+ * blocked three PRs, stayed open four hours, and was skipped twice because it
+ * looked like the other twenty.
+ *
+ * Every case below exists because suppression is the SILENT branch, and the
+ * only way a silent branch earns trust is by being unreachable from every
+ * state except the one it is for.
+ */
+describe('flaky-only failures are not reported, and nothing else is silenced', () => {
+    it('a run whose only failed job is E2E files NOTHING', () => {
+        const { calls, out } = run({
+            conclusion: 'failure',
+            runId: '400',
+            failedJobs: ['E2E'],
+        });
+
+        expect(created(calls)).toBe(false);
+        expect(commented(calls)).toBe(false);
+        // Suppressed is not the same as invisible. A run nobody files about
+        // must still be findable in this workflow's own log, or the fix trades
+        // an unread queue for one that cannot be audited at all.
+        expect(out).toContain('every failed job is in FLAKY_JOBS');
+        expect(out).toContain('400');
+    });
+
+    it('the sharded names are matched, not just the bare rollup', () => {
+        // The real shape on this repo: two shards plus the rollup job. If only
+        // `E2E` matched, every actual E2E failure would still be filed and the
+        // change would do nothing — green tests, zero effect.
+        const { calls } = run({
+            conclusion: 'failure',
+            runId: '401',
+            failedJobs: ['E2E (shard 1/2)', 'E2E (shard 2/2)', 'E2E'],
+        });
+
+        expect(created(calls)).toBe(false);
+    });
+
+    it('a MIXED run still files — the other cause is real', () => {
+        // #1428 was exactly this: E2E plus a genuine Load Smoke failure. The
+        // flake must not carry the real failure out with it.
+        const { calls } = run({
+            conclusion: 'failure',
+            runId: '402',
+            failedJobs: ['E2E (shard 1/2)', 'Load Smoke (k6)'],
+        });
+
+        expect(created(calls)).toBe(true);
+    });
+
+    it('an ordinary failure is untouched', () => {
+        const { calls } = run({
+            conclusion: 'failure',
+            runId: '403',
+            failedJobs: ['Lint'],
+        });
+
+        expect(created(calls)).toBe(true);
+    });
+
+    it('CONTROL: a job merely CONTAINING E2E is not flaky', () => {
+        // The rule is "named E2E, or E2E followed by a parenthesised shard" —
+        // not a substring. A future `E2E fixtures build` or `Pre-E2E seed` is
+        // an ordinary job and its failure is an ordinary failure. Without this
+        // the matcher would widen silently as job names are added.
+        const { calls } = run({
+            conclusion: 'failure',
+            runId: '404',
+            failedJobs: ['E2E fixtures build'],
+        });
+
+        expect(created(calls)).toBe(true);
+    });
+
+    it('ZERO failed jobs files — an empty set must not satisfy "all of them"', () => {
+        // The trap this exists for: "every failed job is flaky" is vacuously
+        // TRUE of a run with no failed jobs, and that lands in the silent
+        // branch. A run can genuinely conclude `failure` with nothing
+        // attributed — a startup failure, or a conclusion the Jobs API has not
+        // filled in — and that is the failure least likely to be noticed
+        // anywhere else.
+        const { calls, out } = run({
+            conclusion: 'failure',
+            runId: '405',
+            failedJobs: [],
+        });
+
+        expect(created(calls)).toBe(true);
+        expect(out).toContain('no failed job in the API');
+    });
+
+    it('a probe that FAILS files, and says so', () => {
+        // Same rule the cancel probe follows (#748): a read that did not
+        // happen is not evidence of absence. Rate limit, 5xx or jq error must
+        // not be able to buy silence.
+        const { calls, out } = run({
+            conclusion: 'failure',
+            runId: '406',
+            failedProbeFails: true,
+        });
+
+        expect(created(calls)).toBe(true);
+        expect(out).toContain('::error::');
+        expect(out).toContain('cannot tell a flaky-only failure from a real one');
+    });
+
+    it('a MALFORMED probe answer files, and says so', () => {
+        // Prose where a count belongs must not be read as "0 failed jobs",
+        // which is the branch above, nor as a flaky-only run.
+        const { calls, out } = run({
+            conclusion: 'failure',
+            runId: '407',
+            rawFailedProbe: 'gh: command failed',
+        });
+
+        expect(created(calls)).toBe(true);
+        expect(out).toContain('::error::');
+    });
+
+    it('suppression applies with an issue already open — no comment either', () => {
+        // Otherwise a flake would keep an unrelated real failure's issue alive
+        // by commenting on it, and would refresh its high-water mark so the
+        // next green could no longer close it.
+        const { calls } = run({
+            conclusion: 'failure',
+            runId: '408',
+            openIssue: '99',
+            failedJobs: ['E2E'],
+        });
+
+        expect(created(calls)).toBe(false);
+        expect(commented(calls)).toBe(false);
+    });
+
+    it('a flaky-only TIMED OUT run is also suppressed', () => {
+        // `timed_out` shares the branch, and an E2E shard hitting its budget
+        // is the same flake wearing a different conclusion.
+        const { calls } = run({
+            conclusion: 'timed_out',
+            runId: '409',
+            failedJobs: ['E2E (shard 2/2)'],
+        });
+
+        expect(created(calls)).toBe(false);
+    });
+
+    it('FLAKY_JOBS is configurable, and empty means suppress nothing', () => {
+        // A reviewer must be able to turn this off without editing logic, and
+        // the off state has to be the safe one.
+        const { calls } = run({
+            conclusion: 'failure',
+            runId: '410',
+            failedJobs: ['E2E'],
+            flakyJobs: '',
         });
 
         expect(created(calls)).toBe(true);
