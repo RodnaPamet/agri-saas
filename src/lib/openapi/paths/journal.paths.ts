@@ -46,9 +46,15 @@ const LogEntryLike = z
 
 const StaleDataError = ApiErrorResponseSchema.openapi('StaleDataError', {
     description:
-        'A 409 from the optimistic lock. `error.details.currentVersion` carries the version ' +
-        'the server holds — read it from `error.details`, NOT from the body root. A client ' +
-        'that treats this as success loses the operator’s edit (#921/#922).',
+        'A 409 `STALE_DATA` from the optimistic lock. `error.details.currentVersion` carries ' +
+        'the version the server holds — read it from `error.details`, NOT from the body root. ' +
+        'A client that treats this as success loses the operator’s edit (#921/#922).' +
+        '\n\nThe code is named here because this response had the only 409 in the spec that ' +
+        'did not name one (#1391). It explained the semantics and the field to read, and never ' +
+        'wrote the literal a client switches on — so the only `code` value visible was this ' +
+        'schema\'s inherited `example: "NOT_FOUND"`, which is a plausible thing to code against ' +
+        'and wrong. Four sibling 409s already name theirs in prose exactly like this: see ' +
+        '`FarmProfileStaleDataError`, `OperationParcelStaleDataError` and `ItemNameConflictError`.',
 });
 
 export function registerJournalPaths(registry: OpenAPIRegistry): void {
