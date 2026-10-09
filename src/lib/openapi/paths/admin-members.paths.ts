@@ -231,7 +231,18 @@ export function registerAdminMembersPaths(registry: OpenAPIRegistry): void {
             status: 200,
             description:
                 'The farm\'s memberships, oldest first. With `?view=invites`, the pending-invite array instead.',
-            schema: z.array(AdminMemberSchema),
+            // A UNION, because the route genuinely answers two shapes on one
+            // status and the prose above already says so. The description is
+            // read by a human; the schema is read by a GENERATOR, which is the
+            // whole argument #1391 makes about `format: date-time` one level
+            // down — agrent-ios hand-writes its models and was fine, and the
+            // next client will not.
+            //
+            // `PendingInviteSchema` rather than a new one: `?view=invites`
+            // calls the SAME `listPendingInvites` usecase as
+            // `GET /admin/invites`, which declares `z.array(PendingInviteSchema)`
+            // below. Two schemas for one usecase is how the two would drift.
+            schema: z.union([z.array(AdminMemberSchema), z.array(PendingInviteSchema)]),
         },
     });
 
