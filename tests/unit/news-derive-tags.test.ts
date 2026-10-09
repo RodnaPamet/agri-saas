@@ -108,7 +108,22 @@ describe('Bulgarian inflection is caught; mid-word matches are not', () => {
         // load-bearing rather than defensive.
         expect(deriveTags('Социален доклад за селските райони', null)).not.toContain('soybean');
         expect(deriveTags('Цената на солта', null)).not.toContain('soybean');
-        expect(deriveTags('Реколтата от соя', null)).toEqual([]);
+        // «Соята в България» rather than «Реколтата от соя», and the swap is
+        // the point of this comment. The original fixture asserted `toEqual([])`
+        // — the whole tag set is empty — on a sentence whose SUBJECT is soy but
+        // which also says «Реколтата». When «Пазар» was added on the owner's
+        // definition ("harvest, export, import and yield news"), `реколт`
+        // started matching and this went red.
+        //
+        // The test was right and its fixture was not: it grades "soybean is not
+        // a crop tag", and `toEqual([])` grades the entire sentence. So the
+        // strong assertion moves to a sentence that can carry it, and the
+        // harvest sentence keeps the assertion this test is actually about —
+        // plus the `trade` it now correctly earns, so the interaction is
+        // recorded rather than rediscovered.
+        expect(deriveTags('Соята в България', null)).toEqual([]);
+        expect(deriveTags('Реколтата от соя', null)).not.toContain('soybean');
+        expect(deriveTags('Реколтата от соя', null)).toEqual(['trade']);
     });
 
     it('the floor is exercised by `maize`, which is the only tagged alias it floors', () => {
