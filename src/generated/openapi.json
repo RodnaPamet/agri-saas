@@ -2,13 +2,13 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "7.0.0",
+    "version": "7.2.2",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
     }
   },
-  "x-api-version": 2,
+  "x-api-version": 3,
   "x-minimum-client-version": 1,
   "x-client-version-header": "x-agrent-client-version",
   "servers": [
@@ -7197,7 +7197,9 @@
             "items": {
               "type": "number"
             },
-            "description": "Bounding box as `[west, south, east, north]`, WGS84 degrees. Null when the location has no imported parcels to bound. Exactly four numbers — the weather job rejects anything else rather than guessing an order.",
+            "minItems": 4,
+            "maxItems": 4,
+            "description": "Bounding box as `[west, south, east, north]` — `[minLon, minLat, maxLon, maxLat]`, **longitude first**, per GeoJSON and the reverse of the `lat, lon` a human quotes. WGS84 degrees, exactly four numbers. Null when the location has no imported parcels to bound.",
             "example": [
               23.1,
               42.4,
@@ -7347,7 +7349,16 @@
             "type": "string"
           },
           "bounds": {
-            "description": "`[west, south, east, north]`, or null when no parcel has geometry."
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "number"
+            },
+            "minItems": 4,
+            "maxItems": 4,
+            "description": "Bounding box as `[west, south, east, north]` — `[minLon, minLat, maxLon, maxLat]`, **longitude first**, per GeoJSON and the reverse of the `lat, lon` a human quotes. WGS84 degrees, exactly four numbers. Null when no parcel in this location has geometry, which is distinct from an empty box."
           },
           "parcels": {
             "type": "array",
@@ -7358,6 +7369,7 @@
         },
         "required": [
           "locationId",
+          "bounds",
           "parcels"
         ],
         "description": "A location’s parcels as GeoJSON, with the location’s bounding box."
@@ -8619,7 +8631,29 @@
               "null"
             ]
           },
-          "geometry": {},
+          "geometry": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "MultiPolygon"
+                ]
+              },
+              "coordinates": {
+                "type": "array",
+                "items": {}
+              }
+            },
+            "required": [
+              "type",
+              "coordinates"
+            ],
+            "description": "GeoJSON MultiPolygon in WGS84. Always a MultiPolygon, never a bare `Polygon` — a single-ring parcel arrives as a MultiPolygon containing one polygon."
+          },
           "properties": {}
         },
         "required": [
@@ -8702,7 +8736,16 @@
             "description": "Every POSITIONED parcel, so the view can switch from clusters to parcels once zoomed in — the cluster grid bottoms out at 200 m and cannot separate them."
           },
           "bbox": {
-            "description": "[minLon, minLat, maxLon, maxLat] of the positioned parcels."
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "number"
+            },
+            "minItems": 4,
+            "maxItems": 4,
+            "description": "Bounding box as `[west, south, east, north]` — `[minLon, minLat, maxLon, maxLat]`, **longitude first**, per GeoJSON and the reverse of the `lat, lon` a human quotes. WGS84 degrees, exactly four numbers. Covers the POSITIONED parcels only — a location whose parcels all lack geometry contributes nothing to it."
           },
           "positionedCount": {
             "type": "integer"
@@ -8725,6 +8768,7 @@
         "required": [
           "clusters",
           "parcels",
+          "bbox",
           "positionedCount",
           "unpositionedCount",
           "unpositionedParcelIds",
@@ -8932,7 +8976,6 @@
               "type": {
                 "type": "string",
                 "enum": [
-                  "Polygon",
                   "MultiPolygon"
                 ]
               },
@@ -10811,7 +10854,18 @@
           "flagged": {
             "type": "number"
           },
-          "bounds": {},
+          "bounds": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "number"
+            },
+            "minItems": 4,
+            "maxItems": 4,
+            "description": "Bounding box as `[west, south, east, north]` — `[minLon, minLat, maxLon, maxLat]`, **longitude first**, per GeoJSON and the reverse of the `lat, lon` a human quotes. WGS84 degrees, exactly four numbers. Null when the import produced no bounded geometry."
+          },
           "jobRunId": {
             "type": "string"
           }
@@ -10825,6 +10879,7 @@
           "matched",
           "created",
           "flagged",
+          "bounds",
           "jobRunId"
         ],
         "description": "The `details` payload of a completed `spatial-import` job. parcelCount is matched + created — what the file contained. flagged counts existing parcels the file omitted, which were kept rather than deleted, so it is deliberately NOT part of parcelCount."
@@ -12222,7 +12277,7 @@
           "lastObservedAt",
           "points"
         ],
-        "description": "One price line, grouped by (source, region) so a chart can split lines that differ in unit or currency — series are NOT comparable across those without conversion. lastObservedAt is the newest observation anywhere, which is what distinguishes a series reporting this week from one that stopped months ago; both otherwise present a points array whose last entry looks equally current."
+        "description": "One price line, grouped by (source, region, **stage**) so a chart can split lines that differ in unit, currency or delivery point — BG wheat has nine delivery points whose prices differ by tens of euros per tonne, so two series sharing a source and region are routinely different lines — series are NOT comparable across those without conversion. lastObservedAt is the newest observation anywhere, which is what distinguishes a series reporting this week from one that stopped months ago; both otherwise present a points array whose last entry looks equally current."
       },
       "Unit": {
         "type": "object",

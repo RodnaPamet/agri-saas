@@ -134,7 +134,7 @@ export const ParcelGeo = z
         // emits `any`.
         geometry: z
             .object({
-                type: z.enum(['Polygon', 'MultiPolygon']),
+                type: z.literal('MultiPolygon'),
                 coordinates: z.array(z.unknown()).openapi({
                     description:
                         'Nested coordinate arrays, as GeoJSON nests them — `[[[lon, lat], …]]` for a Polygon, one level deeper for a MultiPolygon. Left unconstrained here rather than modelled to four levels, which no generator handles usefully.',
@@ -258,9 +258,15 @@ const LocationBulkDeleteResult = z
 const LocationParcels = z
     .object({
         locationId: z.string(),
-        bounds: z.unknown().nullable().openapi({
-            description: '`[west, south, east, north]`, or null when no parcel has geometry.',
-        }),
+        bounds: z
+            .array(z.number())
+            .nullable()
+            .openapi({
+                minItems: 4,
+                maxItems: 4,
+                description:
+                    'Bounding box as `[west, south, east, north]` — `[minLon, minLat, maxLon, maxLat]`, **longitude first**, per GeoJSON and the reverse of the `lat, lon` a human quotes. WGS84 degrees, exactly four numbers. Null when no parcel in this location has geometry, which is distinct from an empty box.',
+            }),
         parcels: z.array(ParcelGeo),
     })
     .openapi('LocationParcels', {
@@ -423,7 +429,15 @@ const ParcelClusterOverview = z
                 'Every POSITIONED parcel, so the view can switch from clusters to parcels once ' +
                 'zoomed in — the cluster grid bottoms out at 200 m and cannot separate them.',
         }),
-        bbox: z.unknown().nullable().openapi({ description: '[minLon, minLat, maxLon, maxLat] of the positioned parcels.' }),
+        bbox: z
+            .array(z.number())
+            .nullable()
+            .openapi({
+                minItems: 4,
+                maxItems: 4,
+                description:
+                    'Bounding box as `[west, south, east, north]` — `[minLon, minLat, maxLon, maxLat]`, **longitude first**, per GeoJSON and the reverse of the `lat, lon` a human quotes. WGS84 degrees, exactly four numbers. Covers the POSITIONED parcels only — a location whose parcels all lack geometry contributes nothing to it.',
+            }),
         positionedCount: z.number().int(),
         unpositionedCount: z.number().int().openapi({
             description:
@@ -597,7 +611,15 @@ const SpatialImportDetails = z
          * an import. Reporting "imported N parcels" must not include these.
          */
         flagged: z.number(),
-        bounds: z.unknown().nullable(),
+        bounds: z
+            .array(z.number())
+            .nullable()
+            .openapi({
+                minItems: 4,
+                maxItems: 4,
+                description:
+                    'Bounding box as `[west, south, east, north]` — `[minLon, minLat, maxLon, maxLat]`, **longitude first**, per GeoJSON and the reverse of the `lat, lon` a human quotes. WGS84 degrees, exactly four numbers. Null when the import produced no bounded geometry.',
+            }),
         jobRunId: z.string(),
     })
     .openapi('SpatialImportDetails', {
