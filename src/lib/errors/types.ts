@@ -1,5 +1,6 @@
 import { ZodError } from 'zod';
 import { env } from '@/env';
+import { uniqueViolationTargets } from './unique-violation';
 
 /**
  * Standard API Error Response Shape
@@ -287,7 +288,31 @@ export function toApiErrorResponse(error: unknown, requestId?: string): { payloa
             status = 409;
             payload.error.code = 'CONFLICT';
             payload.error.message = 'A resource with that unique constraint already exists';
-            payload.error.details = prismaError.meta?.target;
+            // `meta.target` alone is populated only for indexes Prisma models
+            // from the schema. A PARTIAL or EXPRESSION index lives in raw SQL —
+            // Prisma can express neither — and under the Prisma 7 pg adapter such
+            // a violation arrives with `meta.target` undefined and the constraint
+            // nested at `meta.driverAdapterError.cause.constraint`. So every
+            // raw-SQL unique index in this repo produced a 409 whose `details`
+            // was absent: a client told that something unique collided, with no
+            // indication of what (#1500). Measured against the real database.
+            //
+            // Best-effort BY DESIGN, confirmed with agrent-ios: the array may
+            // hold column names (schema index) or an index name (raw SQL), and
+            // those are different kinds of string. iOS reads `details` on a 409
+            // for exactly one thing — `STALE_DATA`'s currentVersion /
+            // expectedVersion object, which is a different code set elsewhere and
+            // is untouched here — and decodes this field with `try?`, so a shape
+            // it does not expect costs that field and never the envelope. An
+            // index name is less useful than columns and more honest than
+            // nothing.
+            //
+            // `uniqueViolationTargets` deliberately omits
+            // `cause.originalMessage`, which carries the offending VALUE. This is
+            // the site that makes that non-negotiable: whatever it returns lands
+            // in a client-facing field.
+            const targets = uniqueViolationTargets(error);
+            if (targets.length > 0) payload.error.details = targets;
         } else if (prismaError.code === 'P2025') {
             status = 404;
             payload.error.code = 'NOT_FOUND';

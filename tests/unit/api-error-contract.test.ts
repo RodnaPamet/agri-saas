@@ -15,7 +15,8 @@
  *   - successful responses are passed through unchanged
  *   - representative subclasses round-trip correctly (4xx + 5xx + domain)
  *   - unknown thrown values do not leak stack traces
- *   - Prisma P2002/P2025 round-trip to 409/404
+ *   - Prisma P2002/P2025 round-trip to 409/404, including the RAW-SQL
+ *     index shape whose `details` was absent before #1500
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -268,6 +269,84 @@ describe('Epic E — withApiErrorHandling HTTP contract', () => {
             const body = (await readJson(res)) as ErrorBody;
             expect(body.error.code).toBe('CONFLICT');
             expect(body.error.details).toEqual(['email']);
+        });
+
+        it('P2002 from a RAW-SQL index → 409 whose details names the index (#1500)', async () => {
+            // The shape a partial or expression index actually produces. Prisma
+            // models neither, so `meta.target` is undefined and the constraint
+            // arrives nested under the pg driver adapter. Measured against the
+            // real database on #1500, not invented for this test.
+            //
+            // Before the fix this assertion was `toBeUndefined()` in effect:
+            // every raw-SQL unique index in the repo produced a 409 that named
+            // nothing, so a client was told something unique collided with no
+            // indication of what.
+            const handler = withApiErrorHandling(async () => {
+                throw {
+                    code: 'P2002',
+                    message: 'Unique constraint failed',
+                    meta: {
+                        driverAdapterError: {
+                            cause: {
+                                constraint: { index: 'Item_tenantId_name_active_key' },
+                                originalMessage:
+                                    'Key (tenantId, lower(name))=(t1, карате зеон) already exists',
+                            },
+                        },
+                    },
+                };
+            });
+            const res = await handler(makeRequest('POST'), {});
+            expect(res.status).toBe(409);
+            const body = (await readJson(res)) as ErrorBody;
+            expect(body.error.code).toBe('CONFLICT');
+            expect(body.error.details).toEqual(['Item_tenantId_name_active_key']);
+
+            // The negative half, and the reason this site is sensitive: Postgres
+            // puts the offending VALUE in that detail string. It must never reach
+            // a client-facing field.
+            expect(JSON.stringify(body)).not.toContain('карате зеон');
+            expect(JSON.stringify(body)).not.toContain('lower(name)');
+        });
+
+        it('P2002 with constraint.fields prefers the column names it carries', async () => {
+            // `constraint.fields` is sometimes present and is the better answer
+            // when it is — column names are what a field-highlighting form would
+            // need, where an index name is only good for a log.
+            const handler = withApiErrorHandling(async () => {
+                throw {
+                    code: 'P2002',
+                    message: 'Unique constraint failed',
+                    meta: {
+                        driverAdapterError: {
+                            cause: {
+                                constraint: {
+                                    index: 'Item_tenantId_name_active_key',
+                                    fields: ['tenantId', 'name'],
+                                },
+                            },
+                        },
+                    },
+                };
+            });
+            const res = await handler(makeRequest('POST'), {});
+            const body = (await readJson(res)) as ErrorBody;
+            expect(body.error.details).toEqual(
+                expect.arrayContaining(['tenantId', 'name']),
+            );
+        });
+
+        it('P2002 carrying NO identifier omits details rather than sending []', async () => {
+            // An empty array reads as "we looked and there are no columns",
+            // which is a different claim from "this shape told us nothing".
+            const handler = withApiErrorHandling(async () => {
+                throw { code: 'P2002', message: 'Unique constraint failed', meta: {} };
+            });
+            const res = await handler(makeRequest('POST'), {});
+            expect(res.status).toBe(409);
+            const body = (await readJson(res)) as ErrorBody;
+            expect(body.error.code).toBe('CONFLICT');
+            expect(body.error.details).toBeUndefined();
         });
 
         it('Prisma P2025 (record not found) → 404 NOT_FOUND', async () => {
