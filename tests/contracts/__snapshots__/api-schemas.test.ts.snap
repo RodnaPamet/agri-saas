@@ -8618,6 +8618,75 @@ exports[`API contract — per-schema snapshots schema: NewsItem 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: NewsTagCatalogue 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "groups": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "enum": [
+              "crops",
+              "topics"
+            ],
+            "description": "Which half of the vocabulary. \`crops\` are the five commodities; \`topics\` are subject areas."
+          },
+          "label": {
+            "type": "string",
+            "example": "Култури"
+          },
+          "labelEn": {
+            "type": "string",
+            "example": "Crops"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "description": "Stable ASCII slug. Crop keys are the commodity slugs — the same values \`GET /trends/prices\` takes — so a tag and a Борса search agree by construction.",
+                  "example": "wheat"
+                },
+                "label": {
+                  "type": "string",
+                  "description": "Bulgarian, and authoritative. Render this.",
+                  "example": "Пшеница"
+                },
+                "labelEn": {
+                  "type": "string",
+                  "description": "A speakable English label, for iOS Voice Control. A SECOND label, not a localisation mechanism — there is no fallback chain and no third language. Do not prefer it over \`label\` for display.",
+                  "example": "Wheat"
+                }
+              },
+              "required": [
+                "key",
+                "label",
+                "labelEn"
+              ]
+            }
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "labelEn",
+          "tags"
+        ]
+      }
+    }
+  },
+  "required": [
+    "groups"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: Notification 1`] = `
 "{
   "type": "object",
