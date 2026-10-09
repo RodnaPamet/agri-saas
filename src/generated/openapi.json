@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "9.0.0",
+    "version": "9.1.1",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -5427,6 +5427,14 @@
             "type": "string",
             "format": "date-time"
           },
+          "completedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the work was completed, for «Завършена на …». Set on `RESOLVED` and `CLOSED` only — **`null` for a `CANCELED` task as well as an open one**, so do not render a date merely because the status is terminal (`isCompletedStatus` is deliberately narrower than `isTerminalStatus`, and that gap is the point).\n\n**Do not substitute `updatedAt`.** Any later edit to a closed task moves it, so a task completed in March and re-assigned in September would report September. That is why this field exists rather than a client-side derivation.\n\nPresent for historical tasks too: the column has always been written, so a completion date is correct retroactively with no backfill."
+          },
           "assigneeUserId": {
             "type": [
               "string",
@@ -5456,7 +5464,7 @@
           "updatedAt"
         ],
         "additionalProperties": {},
-        "description": "One row of the operator queue. This is the `taskListSelect` projection, NOT the full Task returned by the create — it carries no tenantId, description, priority or metadataJson."
+        "description": "One row of the operator queue. This is the `taskListSelect` projection, NOT the full Task returned by the create — it carries no tenantId, description or metadataJson.\n\n`priority` was previously named here as an omission and is not one: the projection has carried it since the list became orderable by it. It reaches you through `.passthrough()` rather than as a declared field."
       },
       "FarmTaskTrendPoint": {
         "type": "object",

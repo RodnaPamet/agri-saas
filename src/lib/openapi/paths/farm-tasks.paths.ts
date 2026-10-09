@@ -102,6 +102,17 @@ const FarmTaskListItem = z
         dueAt: z.string().datetime().nullable().optional(),
         createdAt: z.string().datetime(),
         updatedAt: z.string().datetime(),
+        completedAt: z
+            .string()
+            .datetime()
+            .nullable()
+            .optional()
+            .openapi({
+                description:
+                    'When the work was completed, for «Завършена на …». Set on `RESOLVED` and `CLOSED` only — **`null` for a `CANCELED` task as well as an open one**, so do not render a date merely because the status is terminal (`isCompletedStatus` is deliberately narrower than `isTerminalStatus`, and that gap is the point).' +
+                    '\n\n**Do not substitute `updatedAt`.** Any later edit to a closed task moves it, so a task completed in March and re-assigned in September would report September. That is why this field exists rather than a client-side derivation.' +
+                    '\n\nPresent for historical tasks too: the column has always been written, so a completion date is correct retroactively with no backfill.',
+            }),
         assigneeUserId: z.string().nullable().optional(),
         assignee: UserRefSchema.nullable().optional(),
     })
@@ -109,8 +120,11 @@ const FarmTaskListItem = z
     .openapi('FarmTaskListItem', {
         description:
             'One row of the operator queue. This is the `taskListSelect` projection, NOT the ' +
-            'full Task returned by the create — it carries no tenantId, description, priority ' +
-            'or metadataJson.',
+            'full Task returned by the create — it carries no tenantId, description or ' +
+            'metadataJson.' +
+            '\n\n`priority` was previously named here as an omission and is not one: the ' +
+            'projection has carried it since the list became orderable by it. It reaches you ' +
+            'through `.passthrough()` rather than as a declared field.',
     });
 
 const FarmTaskCreateRequest = z
