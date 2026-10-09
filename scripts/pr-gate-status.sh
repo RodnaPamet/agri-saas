@@ -15,10 +15,32 @@
 #
 # ## Exit codes, and why "cannot read the gate" needs its own
 #
-#   0  every required context passes
+#   0  every required context passes AND no other context is red
 #   1  outstanding — something has not finished
 #   2  a required context is RED
 #   3  the gate could not be READ, so this script has no answer
+#   4  every required context passes, but a NON-REQUIRED one is RED
+#
+# ## 4 exists because scoring only the required set made me blind
+#
+# Scoring the required contexts BY NAME was the right fix for the opposite
+# defect (a skipped required check reports as passing, so aggregates score
+# absence as green). It also meant a red NON-required check was invisible, and
+# that is not hypothetical: `Selector teeth` failed on #1454's own head commit,
+# this script printed `9/9 required passing`, I read that as green, and the
+# merge shipped a guard whose selector could not fail — the exact defect that
+# job exists to catch. The job had done its work; the instrument I was reading
+# did not show it.
+#
+# So a non-required red no longer rounds to green. It gets its own code rather
+# than 2, because the merge DECISION is still different: a required red cannot
+# be merged, a non-required red is a judgement a person has to make. What it
+# must not be is unprinted.
+#
+# A context that declares itself advisory IN ITS OWN NAME — `(non-blocking)` —
+# is the repo saying it may fail, so it is reported and does not set the code.
+# That rule is read off the name rather than kept as a list here: a second list
+# of what may fail is a thing to forget to update.
 #
 # 3 exists because of a positive control that caught the first version: with an
 # unreadable repository the script exited 1, which is also "checks still
@@ -65,6 +87,34 @@ for ctx in "${REQUIRED[@]}"; do
     esac
 done
 echo "  ── ${green}/${#REQUIRED[@]} required passing · ${waiting} outstanding · ${bad} red"
+
+# Everything the rollup carries that branch protection does NOT require. Red
+# here blocks nothing on GitHub, which is precisely why it needs printing.
+REQ_JSON=$(printf '%s\n' "${REQUIRED[@]}" | jq -R . | jq -s .)
+other_bad=0; advisory=0
+while IFS=$'\t' read -r name cc; do
+    [ -z "$name" ] && continue
+    if [[ "$name" == *"non-blocking"* ]]; then
+        printf '  %-38s %s  (advisory — self-declared, not scored)\n' "$name" "$cc"
+        advisory=$((advisory+1))
+    else
+        printf '  %-38s %s  <-- RED, not required\n' "$name" "$cc"
+        other_bad=$((other_bad+1))
+    fi
+done < <(jq -r --argjson req "$REQ_JSON" '
+    .statusCheckRollup[]?
+    | (.name // .context) as $n
+    | select(($req | index($n)) == null)
+    | select((.conclusion // "") | IN("FAILURE","CANCELLED","TIMED_OUT","ACTION_REQUIRED"))
+    | "\($n)\t\(.conclusion)"' <<<"$ROLLUP")
+
+if [ "$other_bad" -gt 0 ]; then
+    echo "  ── ${other_bad} NON-REQUIRED context(s) red. GitHub will let this merge; that is"
+    echo "     not the same as the change being sound. #1454 merged a dead guard selector"
+    echo "     this way, with the required set at 9/9."
+fi
+
 [ "$bad" -gt 0 ] && exit 2
 [ "$waiting" -gt 0 ] && exit 1
+[ "$other_bad" -gt 0 ] && exit 4
 exit 0

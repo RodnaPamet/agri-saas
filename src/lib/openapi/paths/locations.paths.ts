@@ -43,6 +43,7 @@ import { ParcelLeaseSchema } from '@/app-layer/schemas/lease.schemas';
 import { LocationListItemDTOSchema } from '@/lib/dto/location.dto';
 import { UserRefSchema } from '@/lib/dto/common';
 import { op } from './helpers';
+import { RawErrorResponseSchema } from '@/lib/dto/common';
 
 // ─── Path parameters ────────────────────────────────────────────────
 //
@@ -103,13 +104,6 @@ const TileParams = LocationParams.extend({
  * that branches on `error.code` reads `undefined` on exactly the paths a
  * flaky field upload hits most.
  */
-const RawErrorResponse = z
-    .object({ error: z.string() })
-    .openapi('RawErrorResponse', {
-        description:
-            'Non-canonical error body used by the spatial-import and cadastre-import routes: a ' +
-            'bare message string, with no `code`, `requestId` or `details`.',
-    });
 
 /**
  * Exported so `field-operations.paths.ts` can reference THIS object rather than
@@ -716,7 +710,7 @@ const PdfBody = z.string().openapi({
     description: 'The ДНЕВНИК as a PDF document.',
 });
 
-const rawErrorJson = { 'application/json': { schema: RawErrorResponse } };
+const rawErrorJson = { 'application/json': { schema: RawErrorResponseSchema } };
 const plainTextError = { 'text/plain': { schema: z.string() } };
 
 export function registerLocationPaths(registry: OpenAPIRegistry): void {

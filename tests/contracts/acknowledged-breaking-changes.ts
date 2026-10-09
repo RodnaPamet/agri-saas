@@ -105,6 +105,39 @@ export const ACKNOWLEDGED_BREAKING_CHANGES: readonly AcknowledgedBreakingChange[
             'being narrowed landed hours earlier in #1455 and was never true of any response ' +
             'this server can produce.',
     },
+    {
+        kind: 'type-changed',
+        schema: 'POST /api/auth/accept-terms -> 400',
+        property: 'error',
+        contractVersion: 3,
+        pr: 1467,
+        date: '2026-10-09',
+        why:
+            'The spec was wrong, not the server. src/app/api/auth/accept-terms/route.ts ' +
+            'answers jsonResponse({ error: \'terms_not_accepted\' }, { status: 400 }) and ' +
+            '{ error: \'terms_version_stale\', ... } — `error` is a bare string on every ' +
+            'branch, and no code path on this route has ever built the rich ErrorResponse ' +
+            'object the spec declared. So this narrows a DECLARATION to what the ' +
+            'implementation already did; no response any client can receive changes shape. ' +
+            'A generated client that typed `error` as an object was already mis-decoding ' +
+            'every 400 from this route.',
+    },
+    {
+        // No `property`: this is one decision about one envelope, and it
+        // produces five findings (code, message, requestId, details, params).
+        kind: 'property-removed',
+        schema: 'POST /api/auth/accept-terms -> 400',
+        contractVersion: 3,
+        pr: 1467,
+        date: '2026-10-09',
+        why:
+            'The same single fact as the type-changed entry above: `error` is a string here, ' +
+            'so it has no sub-properties to remove. Each of the five was documented and ' +
+            'never sent — a client reading error.code got undefined BEFORE this change, ' +
+            'which is what makes the removal a correction rather than a withdrawal. ' +
+            'Verified against the route rather than inferred from the request shape, after ' +
+            'doing exactly that inference wrong on #1443 earlier today.',
+    },
 ];
 
 /** True when `entry` covers `finding`. */
