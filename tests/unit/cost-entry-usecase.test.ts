@@ -288,6 +288,46 @@ describe('createCostEntry — one domain link only', () => {
         ).rejects.toThrow(/only be set on a RENT/);
     });
 
+    it('amountPerDca ROUND-TRIPS — stored and returned', async () => {
+        // #1511 added the column and the migration and stopped there, so
+        // `amountPerDca` existed in the database with no way to write or read
+        // it — which made that PR's claim to deliver "the per-decare rate as
+        // entered" false. Caught by checking the SERVED spec after it deployed:
+        // CREDIT and DEPRECIATION were there, `amountPerDca` was not.
+        //
+        // Asserted as TWO halves, because they are two separate failures and
+        // the shared `create` mock resolves to a FIXED row — so a single
+        // end-to-end assertion would fail for the fixture rather than the code,
+        // which is how it failed on the first attempt.
+        //
+        // Half one: the value reaches the write.
+        await createCostEntry(ctx, baseInput({ amountPerDca: 1.6683 }));
+        expect(mockDb.costEntry.create.mock.calls.at(-1)?.[0]?.data).toMatchObject({
+            amountPerDca: 1.6683,
+        });
+
+        // Half two: `toDto` carries it back out when the row has it. The DTO
+        // schema naming a field `toDto` never populates is a silent failure —
+        // the declaration and the mapping are edited in different files.
+        mockDb.costEntry.create.mockResolvedValueOnce({ ...row(), amountPerDca: 1.6683 });
+        const dto = await createCostEntry(ctx, baseInput({ amountPerDca: 1.6683 }));
+        expect(dto).toMatchObject({ amountPerDca: 1.6683 });
+    });
+
+    it('a TOTAL-only entry returns null, not zero', async () => {
+        // The distinction the column exists for. Zero is a rate the farmer
+        // typed; null says they typed a total instead, and a defaults read has
+        // to tell them apart. `?? 0` here would make every historical row look
+        // like a rate entry of zero.
+        const dto = await createCostEntry(ctx, baseInput());
+
+        expect(dto).toMatchObject({
+            amountPerDca: null,
+            payrollHeadcount: null,
+            payrollAnnualPerPerson: null,
+        });
+    });
+
     it('REJECTS half a payroll breakdown', async () => {
         // A form showing "3 people × ?" is worse than showing the total alone,
         // so a half-filled pair is a client bug rather than a partial answer to

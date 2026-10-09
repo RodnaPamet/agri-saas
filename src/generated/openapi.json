@@ -2724,6 +2724,24 @@
           "amount": {
             "type": "number"
           },
+          "amountPerDca": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "payrollHeadcount": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "payrollAnnualPerPerson": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
           "currency": {
             "type": "string"
           },
@@ -20748,6 +20766,13 @@
                       "null"
                     ],
                     "minLength": 1
+                  },
+                  "amountPerDca": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "exclusiveMinimum": 0
                   },
                   "payrollHeadcount": {
                     "type": [

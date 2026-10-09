@@ -361,6 +361,25 @@ export const CreateCostEntrySchema = z
         leaseId: z.string().min(1).nullable().optional(),
         itemId: z.string().min(1).nullable().optional(),
         /**
+         * The per-decare figure AS THE FARMER TYPED IT.
+         *
+         * #1511 added the column and the migration and stopped there — so it
+         * existed in the database with no way to write or read it, which made
+         * that PR's claim to deliver "the per-decare rate as entered" false.
+         * This is the wire half it was missing.
+         *
+         * `amount` stays authoritative; every SUM, margin and break-even reads
+         * it and nothing downstream changes. This records what was entered so
+         * the calculator's "last values" default can read it back exactly,
+         * which `amount` alone cannot give: dividing a rounded total by an area
+         * recovers a number the farmer never typed.
+         *
+         * NOT cross-checked against `amount`, for the same reason the payroll
+         * pair below is not — an area may be stale, rounded, or simply not what
+         * the farmer had in mind when they typed the rate.
+         */
+        amountPerDca: z.coerce.number().positive().nullable().optional(),
+        /**
          * How a PAYROLL figure was arrived at — «брой хора × годишна заплата».
          *
          * An INPUT AID, not a constraint. `amount` stays authoritative and is

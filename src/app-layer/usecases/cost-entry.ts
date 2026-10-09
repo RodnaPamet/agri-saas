@@ -247,6 +247,9 @@ export function toDto(row: {
     id: string;
     category: CostCategory;
     amount: Prisma.Decimal | number;
+    amountPerDca?: Prisma.Decimal | number | null;
+    payrollHeadcount?: number | null;
+    payrollAnnualPerPerson?: Prisma.Decimal | number | null;
     currency: string;
     incurredOn: Date;
     supplier: string | null;
@@ -279,6 +282,14 @@ export function toDto(row: {
         id: row.id,
         category: row.category,
         amount: dec(row.amount) ?? 0,
+        // `?? null`, NOT `?? 0`. Zero is a rate the farmer typed; null is
+        // "they typed a total instead", and a defaults read has to tell them
+        // apart. `amount` defaults to 0 above because a cost always has one —
+        // these do not, and collapsing the distinction would make every
+        // historical row look like a rate entry of zero.
+        amountPerDca: dec(row.amountPerDca) ?? null,
+        payrollHeadcount: row.payrollHeadcount ?? null,
+        payrollAnnualPerPerson: dec(row.payrollAnnualPerPerson) ?? null,
         currency: row.currency,
         incurredOn: row.incurredOn,
         supplier: row.supplier,
@@ -489,6 +500,7 @@ async function createCostEntryImpl(
             locationId: input.locationId ?? null,
             parcelId: input.parcelId ?? null,
             leaseId: input.leaseId ?? null,
+            amountPerDca: input.amountPerDca ?? null,
             payrollHeadcount: input.payrollHeadcount ?? null,
             payrollAnnualPerPerson: input.payrollAnnualPerPerson ?? null,
             itemId: input.itemId ?? null,
