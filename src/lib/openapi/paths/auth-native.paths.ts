@@ -56,7 +56,7 @@
  */
 import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
-import { op } from './helpers';
+import { op, rawErrorResponses } from './helpers';
 
 /** Unauthenticated by construction — the code and verifier ARE the credential. */
 const NO_AUTH: Array<Record<string, string[]>> = [];
@@ -86,6 +86,10 @@ export function registerAuthNativePaths(registry: OpenAPIRegistry): void {
     op(registry, {
         method: 'get',
         path: '/api/auth/native/start',
+        extraResponses: rawErrorResponses({
+            400:
+                '`invalid_request`, `unsupported_code_challenge_method`, `redirect_uri_not_allowed` or `unsupported_provider` — a BARE body, not the `ErrorResponse` envelope. The first two are RFC 6749 §5.2 / RFC 7636 codes; branch on the string.',
+        }),
         operationId: 'startNativeSignIn',
         summary: 'Begin native sign-in in the system browser',
         description:
@@ -118,6 +122,14 @@ export function registerAuthNativePaths(registry: OpenAPIRegistry): void {
     op(registry, {
         method: 'get',
         path: '/api/auth/native/complete',
+        extraResponses: rawErrorResponses({
+            400:
+                '`no_handoff`, `invalid_handoff` or `redirect_uri_not_allowed` — a BARE body, not the envelope.',
+            401:
+                '`not_authenticated` or `session_invalid` — a BARE body, not the envelope.',
+            409:
+                '`session_not_tracked` — a BARE body. The session exists but was never recorded, so it cannot be handed off; sign in again.',
+        }),
         operationId: 'completeNativeSignIn',
         summary: 'Mint the code and hand it to the app',
         description:
@@ -136,6 +148,10 @@ export function registerAuthNativePaths(registry: OpenAPIRegistry): void {
     op(registry, {
         method: 'post',
         path: '/api/auth/native/exchange',
+        extraResponses: rawErrorResponses({
+            400:
+                '`invalid_grant` — a BARE body, as RFC 6749 §5.2 specifies for a token exchange.',
+        }),
         operationId: 'exchangeNativeAuthCode',
         summary: 'Exchange the code and PKCE verifier for a token pair',
         description:
@@ -171,6 +187,12 @@ export function registerAuthNativePaths(registry: OpenAPIRegistry): void {
     op(registry, {
         method: 'post',
         path: '/api/auth/native/apple',
+        extraResponses: rawErrorResponses({
+            400:
+                '`invalid_grant` — a BARE body. Covers a bad signature, the wrong audience, an expired token, a nonce mismatch and a replayed nonce, deliberately indistinguishable.',
+            503:
+                '`apple_sign_in_disabled` — a BARE body. No Apple audience is configured for this flow, so the feature is dormant rather than broken.',
+        }),
         operationId: 'signInWithApple',
         summary: 'Sign in with Apple — identity token to token pair',
         description:
@@ -210,6 +232,10 @@ export function registerAuthNativePaths(registry: OpenAPIRegistry): void {
     op(registry, {
         method: 'get',
         path: '/api/auth/native/adopt',
+        extraResponses: rawErrorResponses({
+            401:
+                '`invalid_bearer` — a BARE body, not the envelope.',
+        }),
         operationId: 'adoptNativeSessionIntoWebview',
         summary: 'Turn a native bearer into a webview cookie session',
         description:
@@ -233,6 +259,10 @@ export function registerAuthNativePaths(registry: OpenAPIRegistry): void {
     op(registry, {
         method: 'post',
         path: '/api/auth/token/refresh',
+        extraResponses: rawErrorResponses({
+            401:
+                '`invalid_grant` — a BARE body, as RFC 6749 §5.2 specifies. Covers an unknown, expired, rotated or revoked refresh token, deliberately indistinguishable.',
+        }),
         operationId: 'refreshNativeToken',
         summary: 'Spend a refresh token for a new pair',
         description:
@@ -265,6 +295,10 @@ export function registerAuthNativePaths(registry: OpenAPIRegistry): void {
     op(registry, {
         method: 'post',
         path: '/api/auth/native/revoke',
+        extraResponses: rawErrorResponses({
+            400:
+                '`invalid_request` — a BARE body, not the envelope.',
+        }),
         operationId: 'revokeNativeSession',
         summary: 'Sign this device out',
         description:
