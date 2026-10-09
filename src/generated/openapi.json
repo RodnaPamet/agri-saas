@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "9.1.1",
+    "version": "9.4.3",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -51,6 +51,23 @@
       }
     },
     "schemas": {
+      "AcceptTermsErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "terms_version_stale"
+          },
+          "currentVersion": {
+            "type": "string",
+            "example": "2026-10-07-draft",
+            "description": "The terms version the server is serving. Present ONLY on `terms_version_stale`, absent on `terms_not_accepted`. Re-fetch `GET /api/auth/terms` and present the terms again — do not submit this value back, which would record consent to text the person has not read."
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
       "AcceptTermsRequest": {
         "type": "object",
         "properties": {
@@ -10508,7 +10525,7 @@
         "required": [
           "error"
         ],
-        "description": "A bare error body: `{\"error\": \"<code-or-message>\"}` and nothing else — NOT the `ErrorResponse` envelope, so there is no `code`, `requestId`, `details` or `params`. Used by the native auth family, where it is the shape RFC 6749 §5.2 specifies for an OAuth token endpoint, and by the spatial-import and cadastre-import routes. A rate-limit (429) or an unexpected failure (5xx) on the same route still answers with `ErrorResponse`, because the error wrapper builds those rather than the route."
+        "description": "A bare error body: `{\"error\": \"<code-or-message>\"}` — NOT the `ErrorResponse` envelope, so there is no `code`, `requestId`, `details` or `params`. Used by the native auth family, where it is the shape RFC 6749 §5.2 specifies for an OAuth token endpoint, and by the spatial-import and cadastre-import routes. A rate-limit (429) or an unexpected failure (5xx) on the same route still answers with `ErrorResponse`, because the error wrapper builds those rather than the route.\n\nMOSTLY `error` alone, but not a guarantee: `POST /api/auth/accept-terms` adds `currentVersion` on its stale-version branch and declares that with its own `AcceptTermsErrorResponse`. This said \"and nothing else\" until #1478, which was overstated the day it was written."
       },
       "RegisterStartResult": {
         "type": "object",
@@ -27279,11 +27296,11 @@
             }
           },
           "400": {
-            "description": "`terms_not_accepted` or `terms_version_stale` — a BARE body, not the envelope. The latter carries `currentVersion` so a client can say \"reload and read the new terms\".",
+            "description": "`terms_not_accepted` or `terms_version_stale` — a BARE body, not the envelope. The latter carries `currentVersion`, DECLARED here rather than only described, so a generated client has a field to read it from.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RawErrorResponse"
+                  "$ref": "#/components/schemas/AcceptTermsErrorResponse"
                 }
               }
             }
