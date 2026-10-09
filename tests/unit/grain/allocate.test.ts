@@ -252,6 +252,72 @@ describe('spreadOverParcels — land is the denominator', () => {
         expect(3000 / 30).toBe(spread.unallocatedAmount / spread.unallocatedAreaHa);
     });
 
+    it('breaks the unallocated total down PER PARCEL, summing to that total', () => {
+        // The caller needs one parcel's own share, not just the total: the
+        // grain calculator attributes a parcel with no planting through its
+        // own `Parcel.cropType` and must then report only the remainder.
+        // Re-deriving a single share outside this function would be a second
+        // copy of the weighting, and the two would disagree on the odd cent.
+        const spread = spreadOverParcels(
+            6000,
+            [
+                { id: 'cropped', areaHa: 30 },
+                { id: 'maize-no-planting', areaHa: 20 },
+                { id: 'fallow', areaHa: 10 },
+            ],
+            new Map([['cropped', [{ id: 'wheat-planting', areaHa: 30 }]]]),
+        );
+
+        // 100 лв/ha throughout: 3000 / 2000 / 1000.
+        expect(spread.byTarget.get('wheat-planting')).toBe(3000);
+        expect(spread.unallocatedByParcel.get('maize-no-planting')).toBe(2000);
+        expect(spread.unallocatedByParcel.get('fallow')).toBe(1000);
+        // A parcel that DID carry its share onward must not appear here.
+        expect(spread.unallocatedByParcel.has('cropped')).toBe(false);
+
+        const perParcelSum = [...spread.unallocatedByParcel.values()].reduce((a, b) => a + b, 0);
+        expect(Math.round(perParcelSum * 100) / 100).toBe(spread.unallocatedAmount);
+        // Same population as the id list, so a caller iterating either one
+        // cannot silently miss a parcel the other names.
+        expect([...spread.unallocatedByParcel.keys()].sort()).toEqual(
+            [...spread.unallocatedParcelIds].sort(),
+        );
+    });
+
+    it('leaves the per-parcel breakdown EMPTY when every parcel carried its share', () => {
+        // Not merely zero-valued — absent. A caller looping over it must do
+        // nothing at all when there is nothing unattributed, and an entry
+        // holding 0 would attribute a zero share to a crop.
+        const spread = spreadOverParcels(
+            100,
+            [{ id: 'cropped', areaHa: 10 }],
+            new Map([['cropped', [{ id: 'p1', areaHa: 10 }]]]),
+        );
+
+        expect(spread.unallocatedByParcel.size).toBe(0);
+        expect(spread.unallocatedAmount).toBe(0);
+    });
+
+    it('reconciles the per-parcel breakdown on amounts that do not divide', () => {
+        // The odd cent has to land somewhere, and wherever it lands the
+        // breakdown must still add up to the total the caller is told.
+        for (const amount of [100.01, 0.07, 1_234.56, 10, 0.03]) {
+            for (const n of [2, 3, 7]) {
+                const parcels = Array.from({ length: n }, (_, i) => ({
+                    id: `p${i}`,
+                    areaHa: i + 1,
+                }));
+                // No targets anywhere, so EVERY parcel is unallocated and the
+                // breakdown must account for the whole amount.
+                const spread = spreadOverParcels(amount, parcels, new Map());
+
+                const sum = [...spread.unallocatedByParcel.values()].reduce((a, b) => a + b, 0);
+                expect(Math.round(sum * 100)).toBe(Math.round(amount * 100));
+                expect(spread.unallocatedByParcel.size).toBe(n);
+            }
+        }
+    });
+
     it('conserves to the cent on an amount that divides evenly into nothing', () => {
         // Three parcels, 100.00. Rounding each share independently loses a
         // cent at the first level and can lose another at the second.

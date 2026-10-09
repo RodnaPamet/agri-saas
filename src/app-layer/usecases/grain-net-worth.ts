@@ -664,6 +664,7 @@ interface CostEntryRow {
 interface ParcelRow {
     id: string;
     areaHa: unknown;
+    cropType: string | null;
 }
 interface AllocationParcelRow {
     costEntryId: string;
@@ -674,6 +675,37 @@ interface AllocationParcelRow {
 interface ParcelInfo {
     id: string;
     areaHa: number;
+    /**
+     * The commodity this parcel's own `cropType` names, or null.
+     *
+     * Resolved with `normalizeCommodity`, NOT `resolveCanonical` — and that is
+     * the whole of why this field is not a one-liner. `resolveCanonical` wraps
+     * `isCanonicalCommodity`, which is an exact match against lowercase slugs,
+     * while the crop picker persists CAPITALISED catalogue values
+     * (`src/lib/agriculture/crop-options.ts`: `'Wheat'`, `'Maize'`, `'Canola'`,
+     * `'Grass'`). Measured against every one of the seven:
+     *
+     *     Wheat      isCanonical=false  normalize=wheat
+     *     Barley     isCanonical=false  normalize=barley
+     *     Canola     isCanonical=false  normalize=rapeseed
+     *     Maize      isCanonical=false  normalize=maize
+     *     Sunflower  isCanonical=false  normalize=sunflower
+     *     Peas       isCanonical=false  normalize=peas
+     *     Grass      isCanonical=false  normalize=null
+     *
+     * So the obvious implementation — mirroring the `resolveCanonical` call
+     * three lines down, which is correct for `CropType.commodityCanonical`
+     * because that column already holds a slug — resolves NOTHING on any farm
+     * and ships a fallback that cannot fire. `normalizeCommodity` case-folds
+     * and carries `COMMODITY_ALIASES`, which is where `canola → rapeseed`
+     * lives; the picker and the market vocabulary disagree on that word
+     * outright, not just on case.
+     *
+     * `Grass` resolving to null is correct and not a gap: a ley is a land use,
+     * not a traded commodity, so its share of a spread cost stays
+     * unattributable rather than being charged to a crop that does not exist.
+     */
+    commodity: CanonicalCommodity | null;
 }
 
 /** Resolve a `CropType.commodityCanonical` string to a validated slug, or null. */
@@ -917,8 +949,15 @@ interface AllocationLand {
  *
  * HOLDING and PARCEL_SUBSET spread over PARCELS and carry each parcel's
  * share onward to the plantings on it (`spreadOverParcels`). A parcel with
- * no in-scope known-commodity planting keeps its share, which lands in
- * `unallocatedToCrop` rather than being pushed onto the crops.
+ * no in-scope known-commodity planting then falls back to its OWN
+ * `Parcel.cropType` (owner ruling 2026-10-09, #1512 — per parcel, plantings
+ * if any, else the parcel), and only a parcel that resolves to neither keeps
+ * its share in `unallocatedToCrop`. Idle land is still never redistributed
+ * onto the cropped parcels.
+ *
+ * That fallback is not a nicety: production carries 1 CropType, 1 CropPlan
+ * and 1 Planting, all sample data, against 4 live parcels holding 1386.8 дка
+ * of crop. Without it every spread on a real farm was 100% unattributable.
  *
  * `payrollAllocated` marks any commodity that received an allocated (not
  * directly linked) share, whichever basis produced it — the calculator
@@ -963,10 +1002,55 @@ function computePayroll(
                 a.payrollCostCurrencies.add(row.currency);
                 a.payrollAllocated = true;
             }
+            // A parcel with no planting still names a crop — its own
+            // `Parcel.cropType` — so its share is attributable after all.
+            //
+            // Owner ruling 2026-10-09 (#1512): per parcel, the plantings on it
+            // if it has any, else the parcel itself. PER PARCEL and not per
+            // farm, because a farm-level fallback would count a parcel that has
+            // both a planting and an `areaHa` twice. The loop above has already
+            // taken every parcel WITH a planting, so these are exactly the
+            // parcels the plantings could not speak for.
+            //
+            // This is what makes a spread attributable on a real farm. Measured
+            // on production: 1 CropType, 1 CropPlan, 1 Planting, all sample
+            // data, against 4 live parcels carrying 1386.8 дка of crop — so
+            // before this, 100% of a HOLDING spread landed in
+            // `unallocatedToCrop` and every per-commodity cost read zero.
+            //
+            // `payrollAllocated` is set for the same reason the planting branch
+            // sets it: the share was computed from an area weight, not read off
+            // a direct link, and the calculator must keep reading it as
+            // ALLOCATED rather than EXACT.
+            const unattributableIds: string[] = [];
+            let unattributableAmount = 0;
+            for (const parcelId of spread.unallocatedParcelIds) {
+                const share = spread.unallocatedByParcel.get(parcelId) ?? 0;
+                const commodity = land.parcelById.get(parcelId)?.commodity ?? null;
+                if (commodity == null) {
+                    // No planting AND no resolvable crop — genuinely idle land,
+                    // or a `cropType` outside the market vocabulary (`Grass`).
+                    // Reported, never redistributed: pushing it onto the cropped
+                    // parcels would make fallow land free and make the remaining
+                    // crop look more expensive the more land is left idle.
+                    unattributableIds.push(parcelId);
+                    unattributableAmount += share;
+                    continue;
+                }
+                const a = ensureAcc(acc, commodity);
+                a.payrollCost += share;
+                a.payrollCostCurrencies.add(row.currency);
+                a.payrollAllocated = true;
+            }
             addUnallocated(
                 unallocated,
-                spread.unallocatedAmount,
-                spread.unallocatedParcelIds,
+                // Summed from the same cent-exact per-parcel shares the loop
+                // read, so this cannot disagree with what was attributed above.
+                // `spread.unallocatedAmount` is the pre-fallback total and is
+                // deliberately NOT used here — it would report money that has
+                // just been charged to a crop as unattributable as well.
+                round2(unattributableAmount),
+                unattributableIds,
                 (id) => land.parcelById.get(id)?.areaHa ?? 0,
                 row.currency,
             );
@@ -1389,7 +1473,10 @@ async function loadTenantRows(db: PrismaTx, ctx: RequestContext, seasonId: strin
     // is not selected; the tenantId-leading index serves the scan.
     const parcelRows = await db.parcel.findMany({
         where: { tenantId: ctx.tenantId, deletedAt: null },
-        select: { id: true, areaHa: true },
+        // `cropType` is what a parcel with no planting is attributed through —
+        // see `ParcelInfo.commodity`. A string column on a row already being
+        // read, so it costs nothing beyond the bytes.
+        select: { id: true, areaHa: true, cropType: true },
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         take: PARCEL_TAKE + 1,
     });
@@ -1549,6 +1636,7 @@ export async function getGrainNetWorth(
     const parcelInfos: ParcelInfo[] = fetched.parcels.map((p: ParcelRow) => ({
         id: p.id,
         areaHa: dec(p.areaHa),
+        commodity: normalizeCommodity(p.cropType),
     }));
     const knownPlantingsByParcel = new Map<string, PlantingInfo[]>();
     for (const [parcelId, group] of plantingsByParcel) {
