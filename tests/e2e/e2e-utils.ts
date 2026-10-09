@@ -745,9 +745,76 @@ export async function expectRouteTransition(
     // three) points at two costs of different sizes. The prediction is
     // recorded on #1076 before the change: this one fixes the URL wait and
     // leaves the paint wait open.
-    await page.waitForURL(opts.url, {
-        timeout: opts.navTimeout ?? 15_000,
-        waitUntil: 'domcontentloaded',
-    });
+    // On failure, append the state that distinguishes the live #1076
+    // candidates, because the PLAYWRIGHT ARTIFACT IS NOT KEPT for an attempt
+    // that later passes on retry — the upload is conditioned on the shard's
+    // outcome (#1492). The job LOG is kept, including this message, so a
+    // thrown error is the only channel that survives a 1-in-3 flake.
+    //
+    // That asymmetry is why six hypotheses have been refuted on #1076 without
+    // reaching a cause: the one attempt worth reading is the one CI discards,
+    // and the single trace that ever diagnosed it existed only because that
+    // run happened to fail all three attempts.
+    //
+    // What is collected answers the questions the measured facts leave open:
+    // one selection toggle took effect, the second click reached nothing, and
+    // the selection ended cleared — without the row node being replaced.
+    try {
+        await page.waitForURL(opts.url, {
+            timeout: opts.navTimeout ?? 15_000,
+            waitUntil: 'domcontentloaded',
+        });
+    } catch (err) {
+        throw new Error(
+            `${(err as Error).message}\n` +
+                `--- #1076 diagnostics (the artifact for this attempt is not kept) ---\n` +
+                (await describeListState(page)),
+        );
+    }
     await expect(opts.content).toBeVisible({ timeout: opts.paintTimeout ?? 30_000 });
+}
+
+/**
+ * A compact snapshot of list-page state, for a failure message.
+ *
+ * Deliberately NOT an assertion and deliberately tolerant: it runs on a page
+ * that has just failed, so every read is wrapped — a diagnostic that throws
+ * replaces the real error with its own and destroys the evidence it exists to
+ * gather.
+ */
+async function describeListState(page: Page): Promise<string> {
+    try {
+        const snap = await page.evaluate(() => {
+            const rows = Array.from(document.querySelectorAll('tbody tr'));
+            const checked = document.querySelectorAll(
+                '[aria-label="Select row"][data-state="checked"]',
+            ).length;
+            const toolbar = document.querySelector('[data-testid="selection-toolbar"]');
+            // `performance.getEntriesByType('navigation')` grows by one per
+            // document navigation, so >1 proves a navigation HAPPENED and the
+            // URL wait merely missed it; ===1 proves none was ever committed.
+            const navs = performance.getEntriesByType('navigation').length;
+            return {
+                url: location.href,
+                rowCount: rows.length,
+                rowsChecked: checked,
+                firstRowText: (rows[0]?.textContent ?? '').trim().slice(0, 60),
+                toolbarLabel: (toolbar?.textContent ?? '').trim().slice(0, 40),
+                toolbarInert: toolbar?.hasAttribute('inert') ?? null,
+                navigationEntries: navs,
+                activeElement: document.activeElement?.tagName ?? null,
+            };
+        });
+        return (
+            `  url                : ${snap.url}\n` +
+            `  rows               : ${snap.rowCount}\n` +
+            `  rows CHECKED       : ${snap.rowsChecked}   <- 1 selection toggle leaves 1; a cleared selection leaves 0\n` +
+            `  first row          : ${snap.firstRowText}\n` +
+            `  selection toolbar  : "${snap.toolbarLabel}" inert=${snap.toolbarInert}   <- label is STICKY (lastSelectedCount), not live\n` +
+            `  navigation entries : ${snap.navigationEntries}   <- 1 means no navigation was ever committed\n` +
+            `  activeElement      : ${snap.activeElement}`
+        );
+    } catch (e) {
+        return `  (diagnostics unavailable: ${(e as Error).message.slice(0, 80)})`;
+    }
 }
