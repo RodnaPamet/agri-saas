@@ -102,15 +102,39 @@ test.describe('Admin Area Regression', () => {
             const slug = await loginAndGetTenant(page, READER_USER);
             await safeGoto(page, `/t/${slug}/admin${subpage}`, { waitUntil: 'domcontentloaded' });
 
-            // Middleware should redirect non-admin to dashboard.
-            // If it doesn't (edge case), the admin layout guard shows
-            // the ForbiddenPage with "Access Denied" / "Permission denied".
-            const url = page.url();
-            const notOnAdmin = !url.includes('/admin');
-            const hasForbidden = await page.locator('#forbidden-heading').isVisible().catch(() => false);
-            const hasPermissionText = await page.getByText(/permission|forbidden|denied|access/i).isVisible().catch(() => false);
-
-            expect(notOnAdmin || hasForbidden || hasPermissionText).toBeTruthy();
+            // ONE positive assertion, not a three-way OR (#1514).
+            //
+            // The comment this replaces said "middleware should redirect
+            // non-admin to dashboard". It does not, deliberately —
+            // `src/middleware.ts:279-294` returns `NextResponse.next()` for an
+            // admin PAGE and lets the Server Component guard in
+            // `admin/layout.tsx` render `<ForbiddenPage>`, because redirecting
+            // the HTML request crashed the Next 14 dev server. Only
+            // `/api/admin` gets `ADMIN_REQUIRED`.
+            //
+            // So the URL STAYS on /admin, `!url.includes('/admin')` was false
+            // on every one of these cases, and the OR never short-circuited on
+            // its first term. The three-way shape then had two problems:
+            //
+            //   • the sound check was a BARE `#id` behind `.catch(() => false)`,
+            //     so a Next streaming duplicate — the #1495 failure, in this
+            //     very file — silently degraded it to `false`;
+            //   • the fallback `/access/i` cannot tell a denial page from the
+            //     admin page it excludes. Measured: 22 admin-namespace strings
+            //     contain "access", including
+            //     `admin.rbac.breadcrumbRolesAccess` = "Roles & Access", a
+            //     breadcrumb on /admin/rbac — one of the subpages below.
+            //
+            // Together: if the layout guard ever broke, a READER would see the
+            // RBAC admin page and this test would pass on its breadcrumb.
+            //
+            // The contract is "the ForbiddenPage renders". Asserted directly,
+            // scoped to `main` so a streaming duplicate is a pass rather than a
+            // swallowed false, and with no `.catch` — a strict-mode violation
+            // is information, not a `false`.
+            await expect(
+                page.getByRole('main').locator('#forbidden-heading'),
+            ).toBeVisible({ timeout: 15_000 });
         });
     }
 });

@@ -287,8 +287,12 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
             }
 
             // Allow the request to proceed to the App Router.
-            // The Server Component guard in `admin/layout.tsx` will
-            // safely capture this and render the `<ForbiddenPage>`.
+            // The guard in `admin/layout.tsx` will safely capture this and
+            // render the `<ForbiddenPage>`. It is a CLIENT component, not a
+            // Server Component as this comment claimed until 2026-10-09 —
+            // which matters, because a client guard decides what is DISPLAYED
+            // and the thing that keeps admin DATA away from a non-admin is the
+            // `/api/admin/**` refusal a few lines above.
             // (Avoiding NextResponse.redirect(dashboardUrl) here prevents a known Next.js 14 dev server crash
             // where 307-redirecting an HTML request back to the browser's currently active URL causes an Edge Runtime panic).
             return NextResponse.next();
