@@ -1,0 +1,25 @@
+-- ═══════════════════════════════════════════════════════════════════
+--  COST CALCULATOR — how a PAYROLL figure was arrived at
+-- ═══════════════════════════════════════════════════════════════════
+--
+--  Owner decision, 2026-10-09: salaries are entered per year, "either a total
+--  or an optional number of people × yearly salary", and they spread per
+--  decare over the WHOLE farm rather than over one crop's decares — which is
+--  the existing HOLDING basis and needs no change.
+--
+--  What was missing is the breakdown itself. Requested by agrent-ios so the
+--  web can show it and the "last values" default can recall it, which `amount`
+--  alone cannot give back: a total carries no trace of the headcount behind it.
+--
+--  `amount` remains authoritative and is NOT cross-checked against
+--  headcount × annualPerPerson. Three people at 12 000 is 36 000, but a farm
+--  whose third hire started in May will enter 35 500 beside the same
+--  headcount, and refusing that would block a true figure to protect an
+--  identity nobody asked for. Both-or-neither and PAYROLL-only ARE enforced,
+--  in the usecase, because one without the other cannot be rendered and the
+--  pair is meaningless on a fuel cost.
+--
+--  Both nullable: every existing row, and every future total-only entry, has
+--  no breakdown. Null means "entered as a total", which is information.
+ALTER TABLE "CostEntry" ADD COLUMN IF NOT EXISTS "payrollHeadcount" INTEGER;
+ALTER TABLE "CostEntry" ADD COLUMN IF NOT EXISTS "payrollAnnualPerPerson" DECIMAL(14,2);

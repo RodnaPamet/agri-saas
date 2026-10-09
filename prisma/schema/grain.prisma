@@ -345,6 +345,23 @@ model CostEntry {
   /// make every entry look like a rate entry and destroy that distinction —
   /// the same reason `bottomTabOrder` keeps `null` and `[]` apart.
   amountPerDca    Decimal?     @db.Decimal(14, 4)
+  /// How the farmer arrived at a PAYROLL figure, when they used the breakdown.
+  ///
+  /// Owner decision 2026-10-09: salaries are entered per year, "either a total
+  /// or an optional number of people × yearly salary". So this pair is an INPUT
+  /// AID, not a constraint — recorded so the web can show the breakdown and the
+  /// "last values" default can recall it, exactly as `amountPerDca` is.
+  ///
+  /// `amount` stays authoritative and is NOT cross-checked against the product.
+  /// That is deliberate: three people at 12 000 is 36 000, but a farmer whose
+  /// third hire started in May will legitimately enter 35 500 beside the same
+  /// headcount. Refusing the mismatch would block a true figure to protect an
+  /// arithmetic identity the owner never asked for.
+  ///
+  /// Both or neither — one without the other cannot be rendered ("3 people ×
+  /// ?") and is a client bug. PAYROLL only, like `leaseId` is RENT only.
+  payrollHeadcount       Int?
+  payrollAnnualPerPerson Decimal?  @db.Decimal(14, 2)
   /// ISO-4217 code, e.g. "BGN" / "EUR". Plaintext, and mirrors
   /// `Contract.priceCurrency`. Never blended — there is no FX table in
   /// this repo, so consumers group BY currency or refuse.

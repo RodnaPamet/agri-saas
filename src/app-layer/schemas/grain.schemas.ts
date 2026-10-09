@@ -360,6 +360,21 @@ export const CreateCostEntrySchema = z
         parcelId: z.string().min(1).nullable().optional(),
         leaseId: z.string().min(1).nullable().optional(),
         itemId: z.string().min(1).nullable().optional(),
+        /**
+         * How a PAYROLL figure was arrived at — «брой хора × годишна заплата».
+         *
+         * An INPUT AID, not a constraint. `amount` stays authoritative and is
+         * NOT cross-checked against the product: three people at 12 000 is
+         * 36 000, but a farm whose third hire started in May will legitimately
+         * enter 35 500 beside the same headcount, and refusing that would block
+         * a true figure to protect an identity the owner never asked for.
+         *
+         * Both or neither, and PAYROLL only — enforced in the usecase, where
+         * `category` is in hand. One without the other cannot be rendered, and
+         * the pair is meaningless on a fuel cost.
+         */
+        payrollHeadcount: z.coerce.number().int().positive().nullable().optional(),
+        payrollAnnualPerPerson: z.coerce.number().positive().nullable().optional(),
         allocationBasis: CostAllocationBasisSchema.optional(),
         allocationParcelIds: AllocationParcelIds.optional(),
     })
