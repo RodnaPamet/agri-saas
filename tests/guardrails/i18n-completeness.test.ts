@@ -119,7 +119,6 @@ const UNTRANSLATED_ALLOWLIST = new Map<string, string>([
     // spelling of a surface the nav, the breadcrumbs and the map all call
     // «Борса». It is now «Борса» in bg and "Exchange" in en — see
     // docs/nav-vocabulary.md.
-    ['locations.spray.techniqueLabel', 'deliberately bilingual heading (BG / EN)'],
     // Units / example content already locale-neutral or in Bulgarian.
     ['grain.yield.colTPerHa', 'unit "t / ha" — identical across locales'],
 ]);
