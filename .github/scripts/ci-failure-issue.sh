@@ -38,6 +38,81 @@ MARKER_PREFIX="<!-- ci-failure-run:"
 # genuinely ambiguous conclusion is suppressed.
 SUPERSEDED_ONLY="${SUPERSEDED_ONLY:-Publish image to GHCR}"
 
+# ── a run whose ONLY failed jobs are known-flaky is not reported (#1472) ──
+#
+# Owner decision, 2026-10-09, taken with the measurement in front of them: of
+# the 35 classifiable `ci-failure` issues in this notifier's 39 most recent,
+# 20 — 57% — were the E2E flake and nothing else. Every one self-closed on the
+# next green merge, and the cost was not the issues themselves but what they
+# did to the ones that mattered: #1468 recorded a real Lint breach that was
+# blocking three PRs, sat open for four hours, and was passed over twice
+# because it looked exactly like the other twenty.
+#
+# So this is a VOLUME change and nothing else. De-dupe, the `ci-failure-run:`
+# high-water mark and auto-close are all correct and are untouched — all three
+# were verified against live runs on 2026-10-09 (filed 05:49 on a failure, held
+# through an older success, closed by a newer one).
+#
+# A `|`-separated list of job BASE names. Each entry matches a job called
+# exactly that, or one called `<entry> (…)` — which is how this repo names
+# shards (`E2E (shard 1/2)`). Written as a prefix rule rather than a glob
+# because a `case` pattern cannot carry the parentheses literally.
+#
+# Deliberately NOT in the `on: workflows:` key: `workflow_run` carries the RUN,
+# and E2E is a JOB inside `CI`. Filtering by workflow name there would match
+# nothing at all.
+# The colon is deliberately absent. `${VAR:-default}` substitutes when the
+# variable is unset OR EMPTY, which would make `FLAKY_JOBS=` mean "use the
+# default" — so the one value a reviewer would reach for to switch this off
+# would quietly switch it on. `${VAR-default}` honours an explicit empty.
+FLAKY_JOBS="${FLAKY_JOBS-E2E}"
+
+is_flaky_job() {
+    local name="$1" entry
+    local IFS='|'
+    for entry in ${FLAKY_JOBS}; do
+        [ "${name}" = "${entry}" ] && return 0
+        # The literal half is quoted so `(` stays a character and only `*` is a
+        # wildcard; an unquoted `E2E (shard *)` would not even parse here.
+        case "${name}" in
+            "${entry} ("*) return 0 ;;
+        esac
+    done
+    return 1
+}
+
+# True only when the run has at least one failed job and EVERY failed job is in
+# FLAKY_JOBS. False in every other case, INCLUDING every case where it could
+# not find out — the same rule the cancel probe follows, and for the same
+# reason: suppression must never be what happens when a read fails.
+all_failed_jobs_are_flaky() {
+    local probe count names name
+    if ! probe="$("$GH" api "repos/${REPO}/actions/runs/${RUN_ID}/jobs?per_page=100" \
+        --jq '[.jobs[] | select(.conclusion == "failure") | .name] | [length, join("|")] | @tsv')"; then
+        echo "::error::could not read the job list for run ${RUN_ID} — cannot tell a flaky-only failure from a real one, so reporting it"
+        return 1
+    fi
+    count="${probe%%$'\t'*}"
+    names="${probe#*$'\t'}"
+    if ! [ "${count}" -eq "${count}" ] 2>/dev/null; then
+        echo "::error::failed-job probe returned no usable answer: '${probe}' — reporting the failure"
+        return 1
+    fi
+    # An EMPTY set satisfies "every failed job is flaky" vacuously, and that
+    # branch is silence. A run really can conclude `failure` with no failed job
+    # attributed — a startup failure, or a conclusion the Jobs API has not
+    # filled in yet — and that is precisely the failure nobody else reports.
+    if [ "${count}" -eq 0 ]; then
+        echo "run ${RUN_ID} concluded ${CONCLUSION} with no failed job in the API — reporting it rather than reading an empty list as 'only flaky'"
+        return 1
+    fi
+    local IFS='|'
+    for name in ${names}; do
+        is_flaky_job "${name}" || return 1
+    done
+    return 0
+}
+
 find_open_issue() {
     # Exact title over the LABEL, never `--search`: the search index lags by
     # seconds to minutes, which is precisely the window in which a nightly
@@ -101,6 +176,14 @@ case "$CONCLUSION" in
         ;;
 
     failure|timed_out)
+        # Checked BEFORE the `EXISTING` split, so a flaky-only failure neither
+        # files nor comments. Leaving the high-water mark untouched is correct:
+        # the mark should track the newest failure worth reporting, and this is
+        # not one, so the next green still closes whatever real failure is open.
+        if all_failed_jobs_are_flaky; then
+            echo "run ${RUN_ID}: every failed job is in FLAKY_JOBS (${FLAKY_JOBS}) — not reporting (#1472)"
+            exit 0
+        fi
         if [ -n "$EXISTING" ]; then
             "$GH" issue comment "$EXISTING" --repo "$REPO" --body "$(body)"
             # Refresh the high-water mark so a later success must be newer than
