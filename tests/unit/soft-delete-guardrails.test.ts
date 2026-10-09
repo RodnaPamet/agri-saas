@@ -7,6 +7,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
+import { blankNonCode } from '../helpers/blank-non-code';
 import { SOFT_DELETE_MODELS } from '@/lib/soft-delete';
 import { SOFT_DELETE_TARGETS } from '@/lib/security/classification';
 
@@ -92,17 +93,51 @@ describe('Soft-Delete CI Guardrails', () => {
         expect(violations).toEqual([]);
     });
 
-    /** Remove block and line comments so the scan reads code, not commentary. */
+    /**
+     * Remove block and line comments so the scan reads code, not commentary.
+     *
+     * Delegates to the shared state-aware blanker (#1497). The two local
+     * `.replace()` calls it replaces ran block comments FIRST, which is the
+     * #1442 bug — a `//` line carrying a `/*` opens a block to a regex, and
+     * the match runs to the next block-close marker, taking the real
+     * lines with it. This
+     * suite collects all of `src/`, where nine files hold such a line.
+     *
+     * Measured: the old order kept 130 of `src/middleware.ts`'s 326 non-blank
+     * code lines, so a raw-SQL `DELETE` in the 196 it dropped would not have
+     * been seen — a guard scanning less than it believes and reporting clean.
+     *
+     * Strings are deliberately KEPT (`blankNonCode`'s default), which is what
+     * the third positive control below requires: a templated
+     * `DELETE FROM "Evidence"` must still be visible to this scan.
+     */
     function stripComments(src: string): string {
-        return src
-            .replace(/\/\*[\s\S]*?\*\//g, '')
-            .replace(/(^|[^:])\/\/.*$/gm, '$1');
+        return blankNonCode(src);
     }
 
     test('the comment stripper leaves code and removes commentary (self-check)', () => {
         expect(stripComments('/** DELETE FROM "Evidence" */\nconst a = 1;')).not.toContain('DELETE');
         expect(stripComments('// DELETE FROM "Evidence"\nconst a = 1;')).not.toContain('DELETE');
         expect(stripComments('const q = `DELETE FROM "Evidence"`;')).toContain('DELETE FROM');
+
+        // The #1442 trigger, and the one assertion here that would have FAILED
+        // before this stripper delegated to `blankNonCode`. A line comment
+        // carrying a block-open is ordinary in this repo — nine files under
+        // `src/` have one, always a comment naming a glob — and with block
+        // comments stripped first it opened a block that ran to the next
+        // block-close marker, deleting every real line in between.
+        //
+        // Without this case the self-check above passes either way, which is
+        // the shape that let 24 copies of this helper carry the bug while
+        // every suite reported clean.
+        const trigger = [
+            '// a comment naming /* a glob',
+            'const q = `DELETE FROM "Evidence"`;',
+            '/* a real docblock */',
+            'const keep = 2;',
+        ].join('\n');
+        expect(stripComments(trigger)).toContain('DELETE FROM');
+        expect(stripComments(trigger)).toContain('keep');
     });
 
     test('no raw SQL DELETE against soft-delete tables outside of approved files', () => {

@@ -111,6 +111,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const ROOT = path.resolve(__dirname, '../..');
 const SRC = path.join(ROOT, 'src');
 
@@ -200,10 +202,57 @@ function walk(dir: string, out: string[] = []): string[] {
     return out;
 }
 
-/** Strip block + line comments so prose can't satisfy a code assertion. */
+/**
+ * Strip block + line comments so prose can't satisfy a code assertion.
+ *
+ * Delegates to the shared state-aware blanker (#1497). It used to be
+ * two local `.replace()` calls with block comments FIRST, which is the
+ * #1442 bug: a `//` line containing `/*` opens a block as far as a regex
+ * is concerned, and the match then runs to the next block-close marker, deleting every
+ * real line between. This guard walks all of `src/`, which holds nine such
+ * lines — `src/middleware.ts:295` and `:629`, `src/auth.ts:226` and `:981`,
+ * and five more, each an innocuous comment naming a glob like
+ * `/api/auth/*` or `messages/*.json`.
+ *
+ * Measured on this tree: the old order kept 130 of `middleware.ts`'s 326
+ * non-blank code lines and 433 of `auth.ts`'s 551 — 511 lines across the
+ * nine files that this guard was scanning past while reporting clean.
+ *
+ * `blankNonCode` also BLANKS rather than deletes, keeping newlines and
+ * column positions, so the `^`-anchored patterns below match the same
+ * positions they always did instead of lines sliding up into each other.
+ */
 function stripComments(src: string): string {
-    return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+    return blankNonCode(src);
 }
+
+describe('the comment stripper this guard scans through (#1497)', () => {
+    it('keeps code after a line comment that carries a block-open', () => {
+        // This guard walks ALL of `src/`, and nine files there hold a line
+        // comment containing a block-open — `src/middleware.ts:295`,
+        // `src/auth.ts:226` and friends, each naming a glob such as
+        // `/api/auth/` + a star. With block comments stripped first, that
+        // opened a block running to the next block-close marker: measured on
+        // this tree, the old order kept 130 of middleware.ts's 326 non-blank
+        // code lines and 433 of auth.ts's 551.
+        //
+        // There was no self-check here before, which is why the loss was
+        // invisible: every assertion in this file passed against 40% of the
+        // file it believed it was reading.
+        const src = [
+            '// a comment naming /* a glob',
+            'onPointerDown={handler}',
+            '/* a real docblock */',
+            'onFocus={other}',
+        ].join('\n');
+        const code = stripComments(src);
+        expect(code).toMatch(/onPointerDown/);
+        expect(code).toMatch(/onFocus/);
+        // and commentary is still gone
+        expect(code).not.toMatch(/real docblock/);
+        expect(code).not.toMatch(/naming/);
+    });
+});
 
 /**
  * Every file under `src/` that imports the tooltip module — by alias
@@ -313,11 +362,19 @@ function findPointerClassTokens(src: string): string[] {
  * Files other than the owner that make a pointer-class decision, minus the
  * tokens each one is explicitly excused for.
  */
-function consumersWithPointerLogic(files: string[]): Array<{ file: string; tokens: string[] }> {
+function consumersWithPointerLogic(
+    files: string[],
+    // Injected so a control can run the SAME pipeline with no excuses and
+    // prove it still selects. Defaults to the real allowlist, so every
+    // production call site is unchanged.
+    allowlist: Readonly<
+        Record<string, { tokens: readonly string[]; reason: string }>
+    > = POINTER_LOGIC_ALLOWLIST,
+): Array<{ file: string; tokens: string[] }> {
     return files
         .filter((f) => f !== TOUCH_OWNER)
         .map((f) => {
-            const excused = POINTER_LOGIC_ALLOWLIST[f]?.tokens ?? [];
+            const excused = allowlist[f]?.tokens ?? [];
             return {
                 file: f,
                 tokens: findPointerClassTokens(read(f)).filter((t) => !excused.includes(t)),
@@ -533,6 +590,37 @@ describe('tooltip touch path — one owner', () => {
             );
         }
         expect(offenders).toEqual([]);
+    });
+
+    it('the offender selector can actually select — the control it was missing', () => {
+        // `Selector teeth` reported this selector DEAD on #1531: gutting
+        // `consumersWithPointerLogic` to `return []` left every assertion in
+        // this file green. The reason is the one the tool exists to find — its
+        // only consumer asserts `offenders` is `[]`, and on a clean tree it IS
+        // `[]`, so an empty selection and a correct one are the same
+        // observation. An empty selection is a PASS.
+        //
+        // The control runs the same pipeline with NO excuses. Every allowlisted
+        // file carries the token it is excused for — the next test pins that on
+        // real bytes — so with the excuses removed each one MUST come back as an
+        // offender. That is real source, not a fixture: a gutted selector
+        // returns nothing and fails here.
+        const allowlisted = Object.keys(POINTER_LOGIC_ALLOWLIST);
+        expect(allowlisted.length).toBeGreaterThan(0);
+
+        const unexcused = consumersWithPointerLogic(consumers, {});
+        for (const file of allowlisted) {
+            const found = unexcused.find((o) => o.file === file);
+            expect(found).toBeDefined();
+            expect(found!.tokens.length).toBeGreaterThan(0);
+        }
+
+        // And the excuses are load-bearing rather than decorative: with the
+        // real allowlist those same files are NOT offenders.
+        const excused = consumersWithPointerLogic(consumers);
+        for (const file of allowlisted) {
+            expect(excused.find((o) => o.file === file)).toBeUndefined();
+        }
     });
 
     it('carries no stale allowlist entries', () => {
