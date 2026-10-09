@@ -22,7 +22,8 @@ import * as yaml from 'js-yaml';
 
 /**
  * Mirrors `gh api repos/RodnaPamet/agri-saas/branches/main/protection
- * -q '.required_status_checks.contexts[]'`, read 2026-09-22.
+ * -q '.required_status_checks.contexts[]'`, read 2026-10-09 (TEN contexts;
+ * nine until `Selector teeth` was added for #1477).
  *
  * A test cannot reach the API, so this is a PIN, not a derivation: if
  * protection changes, this list changes in the same PR. A required check
@@ -39,6 +40,14 @@ const REQUIRED_CHECKS = [
     'Docker Build & Scan',
     'Test',
     'Coverage (≥60%)',
+    // Added 2026-10-09 (#1477). It was advisory, and that is how #1454
+    // merged with it RED: `scripts/pr-gate-status.sh` scored only the
+    // required set and printed `9/9 required passing`, so a guard whose
+    // selector could not fail shipped past the one job built to catch it.
+    // It qualifies for this list on its own terms rather than by fiat —
+    // no `if:` and no `needs:`, so it cannot report `skipped`, which is
+    // the property the three assertions below actually check.
+    'Selector teeth',
 ];
 
 type Job = { name?: string; if?: unknown; needs?: unknown };

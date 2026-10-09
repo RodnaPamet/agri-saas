@@ -32,6 +32,13 @@
 # job exists to catch. The job had done its work; the instrument I was reading
 # did not show it.
 #
+# That specific instance can no longer recur: `Selector teeth` became a
+# REQUIRED context on 2026-10-09 (#1477, owner-approved), so a red one is now
+# exit 2 — cannot merge — rather than the exit 4 this comment describes. The
+# example is kept because the DEFECT is not about that one job: any check
+# outside the required set is invisible to a scorer that reads only the
+# required set, and there are still ~15 such contexts on a typical PR.
+#
 # So a non-required red no longer rounds to green. It gets its own code rather
 # than 2, because the merge DECISION is still different: a required red cannot
 # be merged, a non-required red is a judgement a person has to make. What it

@@ -127,7 +127,29 @@ export function commonErrorResponses(): RouteConfig['responses'] {
                 're-minted afterwards because `termsPending` is a JWT claim.\n\n' +
                 'Each carries an English `message` as a developer-facing fallback; it is NOT ' +
                 'translated, so render your own copy keyed on `code`. Route-level 403s carry ' +
-                'their own codes and are described on the operation that returns them.',
+                'their own codes and are described on the operation that returns them.\n\n' +
+                'One route-level code is described HERE rather than per-operation. MOST ' +
+                'operations cannot return it — it is confined to the five capability ' +
+                'families named below — but it means the same thing on each of them, and ' +
+                'one of the five (`upload`) is gated at a choke point that many unrelated ' +
+                'routes reach, so an exhaustive per-operation list would be the kind that ' +
+                'is wrong by omission:\n\n' +
+                '- `PAST_DUE_RESTRICTED` — a payment on this tenant failed and the 14-day ' +
+                'grace period has elapsed. It is NOT a quota or a plan ceiling: the plan is ' +
+                'untouched and nothing was exceeded. The withheld capabilities are exactly ' +
+                '`exchange`, `trends`, `task.create`, `upload` and `journal.create`; every ' +
+                'other surface, including reading everything already recorded, is unaffected. ' +
+                'The tenant\'s own ACTIVE exchange listings stay visible to other farms and ' +
+                'inbound threads keep arriving — this is the unpaid tenant\'s own view ' +
+                'closing, not a withdrawal.\n\n' +
+                '  The restriction is COMPUTED per request, with no sweep and nothing to ' +
+                'settle, so a cleared balance lifts it on the very next request — a client ' +
+                'can honestly tell the user to resolve it and refresh. This description ' +
+                'deliberately names no remedy beyond that: App Store guideline 3.1.1 keeps ' +
+                'the native client from pointing anyone to pay outside the app, so a ' +
+                'prescribed destination would be unreachable for one of the two clients ' +
+                '(#1490). What both clients CAN do is distinguish this from ' +
+                '`plan_limit_exceeded:` and say which happened.',
             content: json,
         },
         404: { description: 'Not found, or not visible to this tenant.', content: json },
