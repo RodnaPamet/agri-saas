@@ -18,7 +18,7 @@
  * `/assets/[id]` mounts exactly as the practice detail page did.
  */
 import { test, expect } from '@playwright/test';
-import { loginAndGetTenant, safeGoto, waitForHydration, expectRouteTransition } from './e2e-utils';
+import { loginAndGetTenant, safeGoto, waitForHydration, expectRouteTransition, instrumentRowGestures } from './e2e-utils';
 
 test.describe('EntityDetailLayout', () => {
     test('asset detail page renders the shell — breadcrumbs, header, body', async ({
@@ -43,6 +43,9 @@ test.describe('EntityDetailLayout', () => {
         // A double-click on an unhydrated row is two no-ops that surface 15s
         // later as a URL that never changed. `networkidle` used to cover this.
         await waitForHydration(page, '[data-testid="assets-table"] tbody tr');
+        // See the note in data-table-platform.spec.ts — measure the event,
+        // not the paint (#1076).
+        await instrumentRowGestures(page);
         await firstRow.locator('td').last().dblclick();
 
         // The shell's three structural promises:

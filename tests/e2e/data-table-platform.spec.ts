@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { loginAndGetTenant, waitForHydration, expectRouteTransition } from './e2e-utils';
+import { loginAndGetTenant, waitForHydration, expectRouteTransition, instrumentRowGestures } from './e2e-utils';
 
 /**
  * DataTable Platform E2E — Validates that all migrated list pages render
@@ -178,6 +178,11 @@ test.describe('DataTable Platform — Row click navigation', () => {
         // against a seed of four; without a before-count that is ambiguous
         // between "it shrank" and "it was always 1".
         const rowsBefore = await rows.count();
+        // Installed BEFORE the gesture: the failure message can then say
+        // whether both clicks reached the same row, which is the fork every
+        // remaining #1076 hypothesis sits on and the one thing reading the DOM
+        // afterwards cannot settle.
+        await instrumentRowGestures(page);
         await rows.first().locator('td').last().dblclick();
         // ONE helper, two budgets sized for what each half does (#1076). The
         // paint had 10s here — less than the URL wait that precedes it and
@@ -207,6 +212,11 @@ test.describe('DataTable Platform — Row click navigation', () => {
         // against a seed of four; without a before-count that is ambiguous
         // between "it shrank" and "it was always 1".
         const rowsBefore = await rows.count();
+        // Installed BEFORE the gesture: the failure message can then say
+        // whether both clicks reached the same row, which is the fork every
+        // remaining #1076 hypothesis sits on and the one thing reading the DOM
+        // afterwards cannot settle.
+        await instrumentRowGestures(page);
         await rows.first().locator('td').last().dblclick();
         // Same shape, same fix as the Assets case above.
         await expectRouteTransition(page, {

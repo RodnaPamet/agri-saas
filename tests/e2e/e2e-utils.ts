@@ -801,6 +801,67 @@ export async function expectRouteTransition(
  * replaces the real error with its own and destroys the evidence it exists to
  * gather.
  */
+/**
+ * Record every click and dblclick that reaches a table row, before the gesture.
+ *
+ * ## Why this and not another DOM read
+ *
+ * #1076 has had THREE inferences withdrawn, all of them from reading rendered
+ * state after the fact. `<DataTable>`'s selection is smoothed on purpose and
+ * each indirection has a comment saying so: the toolbar label is a sticky
+ * `lastSelectedCount`, the row checkbox is an `isSelected` SNAPSHOT captured at
+ * parent-render time, and only the toolbar's `inert` reads live state. Reading
+ * paint and reasoning backwards produced a mechanism each time and none of
+ * them survived.
+ *
+ * The fork every remaining hypothesis sits on is about EVENTS, and no amount
+ * of reading the DOM afterwards can settle it:
+ *
+ *   - both clicks hit the same row and the browser never synthesised `dblclick`
+ *   - the two clicks had DIFFERENT targets, so `dblclick` fired above the row
+ *
+ * `MouseEvent.detail` and the target's identity distinguish those directly. So
+ * this listens in the capture phase on `document`, which cannot be prevented by
+ * a handler and does not change what the page does.
+ *
+ * Install it BEFORE the gesture; `describeListState` prints what it collected
+ * into the failure message, which is the only channel that survives an attempt
+ * that later passes on retry (#1493).
+ */
+export async function instrumentRowGestures(page: Page): Promise<void> {
+    await page.evaluate(() => {
+        interface Rec { type: string; detail: number; rowKey: string; tag: string }
+        const w = window as unknown as { __rowGestures?: Rec[] };
+        if (w.__rowGestures) return; // idempotent — a spec may call this twice
+        w.__rowGestures = [];
+        const describeRow = (el: EventTarget | null): string => {
+            const node = el instanceof Element ? el.closest('tr,[role="row"]') : null;
+            if (!node) return '(not a row)';
+            // The row's own identity: the detail link's href carries the id,
+            // which is what `getRowId` keys selection on. Falls back to the
+            // first cell's text, which is enough to tell two rows apart.
+            const href = node.querySelector('a[href]')?.getAttribute('href') ?? '';
+            const id = href.split('/').pop() ?? '';
+            return id || (node.textContent ?? '').trim().slice(0, 24) || '(empty row)';
+        };
+        for (const type of ['click', 'dblclick'] as const) {
+            document.addEventListener(
+                type,
+                (e) => {
+                    const me = e as MouseEvent;
+                    w.__rowGestures!.push({
+                        type,
+                        detail: me.detail,
+                        rowKey: describeRow(e.target),
+                        tag: e.target instanceof Element ? e.target.tagName : '?',
+                    });
+                },
+                true, // CAPTURE — cannot be stopped by a handler on the way down
+            );
+        }
+    });
+}
+
 async function describeListState(page: Page): Promise<string> {
     try {
         const snap = await page.evaluate(() => {
@@ -822,6 +883,9 @@ async function describeListState(page: Page): Promise<string> {
                 toolbarInert: toolbar?.hasAttribute('inert') ?? null,
                 navigationEntries: navs,
                 activeElement: document.activeElement?.tagName ?? null,
+                gestures:
+                    (window as unknown as { __rowGestures?: unknown[] })
+                        .__rowGestures ?? null,
             };
         });
         return (
@@ -831,7 +895,19 @@ async function describeListState(page: Page): Promise<string> {
             `  first row          : ${snap.firstRowText}\n` +
             `  selection toolbar  : "${snap.toolbarLabel}" inert=${snap.toolbarInert}   <- label is STICKY (lastSelectedCount), not live\n` +
             `  navigation entries : ${snap.navigationEntries}   <- 1 means no navigation was ever committed\n` +
-            `  activeElement      : ${snap.activeElement}`
+            `  activeElement      : ${snap.activeElement}\n` +
+            `  row gestures       : ${
+                snap.gestures === null
+                    ? '(not instrumented — call instrumentRowGestures before the gesture)'
+                    : (snap.gestures as Array<Record<string, unknown>>).length === 0
+                      ? 'NONE reached a row   <- the clicks never arrived at all'
+                      : (snap.gestures as Array<Record<string, unknown>>)
+                            .map(
+                                (g) =>
+                                    `${g.type}(detail=${g.detail}) on ${g.tag} row=${g.rowKey}`,
+                            )
+                            .join('\n                       ')
+            }`
         );
     } catch (e) {
         return `  (diagnostics unavailable: ${(e as Error).message.slice(0, 80)})`;
