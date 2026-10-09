@@ -432,3 +432,160 @@ export async function disconnectTestClient(): Promise<void> {
         _client = null;
     }
 }
+
+/**
+ * Hard-delete tenants a fixture created, OWNER memberships included (#1432).
+ *
+ * ## Why a helper rather than three `deleteMany` calls
+ *
+ * A tenant with an active OWNER **cannot** be hard-deleted, by design.
+ * `tenant_membership_last_owner_guard` (migration
+ * `20260424220000_epic1_last_owner_trigger`) is `BEFORE UPDATE OR DELETE`, so
+ * the OWNER row can be neither demoted, deactivated, nor removed:
+ *
+ *     LAST_OWNER_GUARD: tenant cmuzt… would have zero active OWNERs
+ *
+ * and `TenantMembership.tenantId` is not `ON DELETE CASCADE`, so the tenant
+ * delete then fails on the FK too. That is the trigger working — production
+ * soft-deletes tenants, and `last-owner-guard.test.ts` asserts this exact
+ * refusal.
+ *
+ * Fixtures are the one legitimate exception: they are rows nobody should keep,
+ * in a database that exists to be thrown away.
+ *
+ * ## `SET LOCAL session_replication_role`
+ *
+ * Transaction-scoped, so it cannot leak into another test the way
+ * `ALTER TABLE … DISABLE TRIGGER` would, and it takes no DDL lock. Measured on
+ * the test container: with it set, deleting four memberships including the
+ * OWNER succeeds; without it the first row is refused.
+ *
+ * It needs superuser, which the test role has (`test`, `usesuper = true`) and
+ * which `app_user` deliberately does not — so this cannot be reached from
+ * application code even by accident.
+ *
+ * ## It VERIFIES, and that is the point
+ *
+ * The teardown this replaces was three `deleteMany(…).catch(() => {})` calls.
+ * Every one failed and every one was swallowed, so a teardown that removed
+ * nothing was indistinguishable from one that worked: **18 leaked tenants
+ * across 6 runs** when measured, and the suite green throughout. Same shape as
+ * `resetDatabase`'s rotted table list above.
+ *
+ * So this counts what is left and throws. A teardown that cannot clean up must
+ * say so rather than leave the next reader to find it in `psql`.
+ */
+export async function hardDeleteTenants(
+    prisma: PrismaClient,
+    tenantIds: readonly string[],
+): Promise<void> {
+    if (tenantIds.length === 0) return;
+
+    // The same guard every destructive helper here runs. A function whose job
+    // is to switch OFF an integrity trigger must not be pointable at a
+    // database it does not own.
+    assertIsTestDatabase(getTestDatabaseUrl(), 'hardDeleteTenants');
+
+    const ids = [...tenantIds];
+    await prisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
+        await tx.$executeRawUnsafe(
+            `DELETE FROM "TenantMembership" WHERE "tenantId" = ANY($1::text[])`,
+            ids,
+        );
+        await tx.$executeRawUnsafe(
+            `DELETE FROM "TenantOnboarding" WHERE "tenantId" = ANY($1::text[])`,
+            ids,
+        );
+        await tx.$executeRawUnsafe(`DELETE FROM "Tenant" WHERE id = ANY($1::text[])`, ids);
+    });
+
+    const left = await prisma.tenant.count({ where: { id: { in: ids } } });
+    if (left > 0) {
+        throw new Error(
+            `hardDeleteTenants: ${left} of ${ids.length} tenant(s) survived teardown.\n` +
+                `This used to be swallowed by \`.catch(() => {})\`, which is how #1432 ` +
+                `leaked 18 tenants across 6 runs while the suite reported green.\n` +
+                `If a new FK now references Tenant, add it to this helper — do not ` +
+                `re-add the catch.`,
+        );
+    }
+}
+
+/**
+ * Hard-delete organizations a fixture created, and whatever still points at
+ * them (#1432).
+ *
+ * `organization.delete()` in a teardown fails on a foreign key the moment the
+ * suite has done anything — `OrgAuditLog` alone is enough, and an org-members
+ * test writes one by design. That failure was swallowed too, so six
+ * organizations leaked alongside the eighteen tenants.
+ *
+ * ## The dependent tables are DERIVED, not listed
+ *
+ * `resetDatabase` above is the cautionary tale: a hand-maintained table list
+ * that rotted for months behind a `catch`, still naming `Membership` (never a
+ * model here), `Risk` (uprooted) and 18 GRC tables. A list is wrong the moment
+ * the schema moves and nothing says so.
+ *
+ * So this asks the catalogue which tables reference `Organization` and clears
+ * those. Add an FK tomorrow and this handles it with no edit — which is the
+ * only way a teardown helper stays true to a schema it does not control.
+ *
+ * Tables already emptied by `hardDeleteTenants` (`Tenant`,
+ * `TenantMembership.provisionedByOrgId`) are harmless to re-clear: the delete
+ * matches nothing.
+ *
+ * ## Audit rows
+ *
+ * `OrgAuditLog` is hash-chained and immutable by design, and this deletes it.
+ * That is correct HERE and nowhere else: these are rows a fixture minted in a
+ * database built to be dropped. Nothing in `src/` may do this, which is why
+ * the helper lives in `tests/` behind `assertIsTestDatabase`.
+ */
+export async function hardDeleteOrganizations(
+    prisma: PrismaClient,
+    orgIds: readonly string[],
+): Promise<void> {
+    if (orgIds.length === 0) return;
+    assertIsTestDatabase(getTestDatabaseUrl(), 'hardDeleteOrganizations');
+
+    const ids = [...orgIds];
+    const dependents = await prisma.$queryRawUnsafe<
+        Array<{ table_name: string; column_name: string }>
+    >(`
+        SELECT tc.table_name, kcu.column_name
+          FROM information_schema.table_constraints tc
+          JOIN information_schema.key_column_usage kcu
+            ON kcu.constraint_name = tc.constraint_name
+          JOIN information_schema.constraint_column_usage ccu
+            ON ccu.constraint_name = tc.constraint_name
+         WHERE tc.constraint_type = 'FOREIGN KEY'
+           AND ccu.table_name = 'Organization'
+           AND tc.table_name <> 'Organization'
+    `);
+
+    await prisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
+        for (const { table_name, column_name } of dependents) {
+            // Identifiers come from the catalogue, not from a caller, so there
+            // is nothing here a test could inject. Quoted because this schema
+            // uses PascalCase table names.
+            await tx.$executeRawUnsafe(
+                `DELETE FROM "${table_name}" WHERE "${column_name}" = ANY($1::text[])`,
+                ids,
+            );
+        }
+        await tx.$executeRawUnsafe(`DELETE FROM "Organization" WHERE id = ANY($1::text[])`, ids);
+    });
+
+    const left = await prisma.organization.count({ where: { id: { in: ids } } });
+    if (left > 0) {
+        throw new Error(
+            `hardDeleteOrganizations: ${left} of ${ids.length} organization(s) survived ` +
+                `teardown, after clearing ${dependents.length} referencing table(s).\n` +
+                `Do not re-add a \`.catch\` — that is how #1432 leaked 6 organizations ` +
+                `across 6 runs with the suite green.`,
+        );
+    }
+}

@@ -21,7 +21,7 @@
  * E2E in a future O-2 follow-up.
  */
 import { DB_AVAILABLE } from './db-helper';
-import { prismaTestClient } from '../helpers/db';
+import { prismaTestClient, hardDeleteTenants, hardDeleteOrganizations } from '../helpers/db';
 import type { PrismaClient } from '@prisma/client';
 
 import {
@@ -95,19 +95,21 @@ describeFn('Epic O-2 — full organization lifecycle (DB-backed)', () => {
     });
 
     afterAll(async () => {
-        await prisma.tenantMembership.deleteMany({
-            where: { tenantId: { in: createdTenantIds } },
-        }).catch(() => {});
-        await prisma.tenantOnboarding.deleteMany({
-            where: { tenantId: { in: createdTenantIds } },
-        }).catch(() => {});
-        await prisma.tenant.deleteMany({
-            where: { id: { in: createdTenantIds } },
-        }).catch(() => {});
-        await prisma.orgMembership.deleteMany({
-            where: { organizationId: orgId },
-        }).catch(() => {});
-        await prisma.organization.delete({ where: { id: orgId } }).catch(() => {});
+        // `hardDeleteTenants` rather than three bare `deleteMany`s, and NOT
+        // behind a `.catch` — see #1432. A tenant with an active OWNER cannot
+        // be hard-deleted (`tenant_membership_last_owner_guard`), so all three
+        // of those calls failed, all three were swallowed, and this teardown
+        // had never once worked: 18 tenants leaked across 6 runs with the
+        // suite green throughout.
+        await hardDeleteTenants(prisma, createdTenantIds);
+        // `hardDeleteOrganizations`, not `organization.delete()`. With the
+        // tenants gone the delete still failed on a foreign key — the suite
+        // writes `OrgAuditLog` rows by design, and five other tables reference
+        // Organization. That failure was swallowed too, which is how six
+        // organizations leaked alongside the eighteen tenants. The helper
+        // derives the referencing tables from the catalogue so a new FK does
+        // not silently restore the leak.
+        await hardDeleteOrganizations(prisma, [orgId]);
         await prisma.user.deleteMany({
             where: {
                 id: { in: [creatorUserId, secondCisoUserId, readerUserId].filter(Boolean) },
