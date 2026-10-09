@@ -723,4 +723,49 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
                 .openapi('MachineryDepreciation'),
         },
     });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/grain/costs/defaults',
+        operationId: 'getCostDefaults',
+        summary: '«Последни стойности» — what the farm last entered',
+        description:
+            'The farm\'s own last value for each OVERHEAD category, so «Нов разход» opens prefilled rather than empty.' +
+            '\n\n**The farm\'s own history, never a benchmark.** There is no Agrent-wide table behind this — the owner\'s decision was explicit. A farm with no history gets an empty `overheads` array, and that is the correct first-run state rather than an error.' +
+            '\n\n**Yearly overheads only** — `PAYROLL`, `CREDIT`, `DEPRECIATION`, `OTHER`. `RENT` is deliberately absent: it is a per-decare crop line in the owner\'s split, not an overhead, however fixed it is.' +
+            '\n\n**`payrollHeadcount` / `payrollAnnualPerPerson` are `null`, never `0`, when a plain total was entered.** Zero people earning a salary is a different claim from "they typed a total", and a prefill that wrote zeros over that distinction would overwrite real figures with a number nobody typed.' +
+            '\n\n**`incurredOn` is returned so a STALE default is visible.** Last year\'s salary figure prefilled silently is worse than one shown with its date beside it.' +
+            '\n\n**No `commodity` parameter yet.** The per-crop half needs a commodity→cost path that does not exist: `CostEntry` has no commodity column, and all four live cost entries on the owner\'s farm carry no domain link at all (`parcelId`, `seasonId`, `plantingId`, `locationId`, `itemId`, `leaseId` each set on zero). Adding it later is additive — a client that does not send it keeps this behaviour.' +
+            '\n\nCarries a weak ETag; send `If-None-Match` and handle **304**.',
+        tags: ['Grain'],
+        params: TenantParams,
+        success: {
+            status: 200,
+            description:
+                'The latest overhead figures, in a fixed category order so the form\'s fields do not reorder between visits. Empty when the farm has no overhead history.',
+            schema: z
+                .object({
+                    overheads: z.array(
+                        z.object({
+                            category: z
+                                .enum(['PAYROLL', 'CREDIT', 'DEPRECIATION', 'OTHER'])
+                                .openapi({ description: 'Which overhead this is the last value for.' }),
+                            amount: z.number().openapi({ description: 'The yearly figure as entered.' }),
+                            currency: z.string(),
+                            incurredOn: z.string().datetime().openapi({
+                                description:
+                                    'When it was incurred. Show it — a default from last season should look like one.',
+                            }),
+                            payrollHeadcount: z.number().int().nullable().optional().openapi({
+                                description:
+                                    'PAYROLL only. `null` means a plain total was entered, which is NOT the same as zero people.',
+                            }),
+                            payrollAnnualPerPerson: z.number().nullable().optional(),
+                        }),
+                    ),
+                })
+                .openapi('CostDefaults'),
+        },
+    });
+
 }
