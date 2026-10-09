@@ -202,7 +202,6 @@ describe("a route's error body matches the schema its operation declares", () =>
     it('reports its denominator', () => {
         const documented = rows.filter((r) => r.documented);
         const canonical = rows.filter((r) => r.contradicts);
-        // eslint-disable-next-line no-console
         console.log(
             `    SCOPE: src/app/api/t only — /api/auth and the rest are NOT measured\n` +
                 `           (28 files / 78 occurrences outside, 34 contradictions; see docblock)\n` +

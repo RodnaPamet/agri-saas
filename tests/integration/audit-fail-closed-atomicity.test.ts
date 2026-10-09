@@ -63,6 +63,17 @@ const APP_DB_URL = process.env.DATABASE_URL ?? DB_URL;
 /** A bare client: no audit extension, so the verifier writes no audit rows. */
 const verifier = new PrismaClient({ adapter: new PrismaPg({ connectionString: APP_DB_URL }) });
 
+/**
+ * The one delegate these assertions reach for, named rather than cast to
+ * `any`.
+ *
+ * Two `as any` casts cost two lint warnings, and the ceiling has no headroom
+ * left to pay for them. Naming the shape also means a `location` rename breaks
+ * here loudly rather than surviving as `any` and failing at runtime.
+ */
+type LocationReader = { location: { findUnique(args: unknown): Promise<unknown> } };
+const verifierRaw = () => verifier as unknown as LocationReader;
+
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
 /**
@@ -243,7 +254,7 @@ describeFn('a fail-closed audit row is atomic with its write (#1223)', () => {
         ).rejects.toThrow();
 
         // The business write is GONE — the audit failure took it with it.
-        const found = await (verifier as any).location.findUnique({ where: { id: locId } });
+        const found = await verifierRaw().location.findUnique({ where: { id: locId } });
         expect(found).toBeNull();
     });
 
@@ -275,7 +286,7 @@ describeFn('a fail-closed audit row is atomic with its write (#1223)', () => {
         });
 
         // The write SURVIVED, and logEvent's row did not.
-        const found = await (verifier as any).location.findUnique({ where: { id: locId } });
+        const found = await verifierRaw().location.findUnique({ where: { id: locId } });
         expect(found).not.toBeNull();
         expect(await auditRowsForActor(TENANT, 'Location', 'USER')).toBe(beforeUser);
         // ...while the extension's own audit of that same write DID land, which
