@@ -64,7 +64,7 @@ test.describe('RBAC Access Control', () => {
         // away from it. `toPass` retries an OBSERVATION here, never an action.
         await expect(async () => {
             if (!new URL(page.url()).pathname.includes('/admin/rbac')) return; // redirected — allowed
-            await expect(page.locator('#forbidden-heading')).toBeVisible();
+            await expect(page.getByRole('main').locator('#forbidden-heading')).toBeVisible();
         }).toPass({ timeout: 15_000 });
 
         // ...and only now is the absence meaningful.
