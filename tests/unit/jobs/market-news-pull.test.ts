@@ -44,6 +44,7 @@ interface NewsUpsertArgs {
     create: {
         source: string;
         category: string;
+        tags: string[];
         title: string;
         summary: string;
         url: string;
@@ -51,7 +52,7 @@ interface NewsUpsertArgs {
         publishedAt: Date;
         guidHash: string;
     };
-    update: Record<string, unknown>;
+    update: Record<string, unknown> & { tags: string[]; category: string };
 }
 
 interface NewsDeleteManyArgs {
@@ -123,6 +124,49 @@ describe('runMarketNewsPull', () => {
 
         const cats = db._upserts.map((u) => u.create.category);
         expect(cats).toEqual(['market', 'policy']);
+    });
+
+    it('writes derived tags on create — the wiring, not just the function', async () => {
+        // `deriveTags` existing is not `deriveTags` running. Without this the
+        // tagger could be deleted from the job and nothing would notice: the
+        // column defaults to `[]`, so every article would simply arrive
+        // untagged and the feature would rot silently rather than fail.
+        const db = fakeDb();
+        const fetchFeedImpl = jest
+            .fn()
+            .mockResolvedValue([
+                rawItem({ title: 'Нови субсидии за производителите на пшеница' }),
+            ]);
+        await runMarketNewsPull({}, { db: asDb(db), fetchFeedImpl, now: NOW });
+        expect(db._upserts[0].create.tags).toEqual(['subsidies', 'wheat']);
+    });
+
+    it('writes tags on UPDATE too, so a re-seen item is re-tagged', async () => {
+        // The half that matters more. An item tagged on create and not on
+        // update keeps whatever vocabulary existed the day it first arrived,
+        // so a keyword-rule change would reach only articles published after
+        // it — and the backfill would have to cover everything else forever.
+        const db = fakeDb();
+        const fetchFeedImpl = jest
+            .fn()
+            .mockResolvedValue([rawItem({ title: 'Цената на тон пшеница на борсата' })]);
+        await runMarketNewsPull({}, { db: asDb(db), fetchFeedImpl, now: NOW });
+        const { create, update } = db._upserts[0];
+        expect(update.tags).toEqual(['prices', 'wheat']);
+        // And the two branches agree — computed once, not twice.
+        expect(update.tags).toEqual(create.tags);
+    });
+
+    it('an article matching no rule is written with [] rather than omitted', async () => {
+        // `[]` is a real value: "matched no rule", not "not yet classified".
+        // Omitting the field would leave the default and read identically,
+        // which is why this asserts the written value rather than the row.
+        const db = fakeDb();
+        const fetchFeedImpl = jest
+            .fn()
+            .mockResolvedValue([rawItem({ title: 'Общо събрание на кооперацията' })]);
+        await runMarketNewsPull({}, { db: asDb(db), fetchFeedImpl, now: NOW });
+        expect(db._upserts[0].create.tags).toEqual([]);
     });
 
     it('sanitises HTML out of title + summary before persisting', async () => {

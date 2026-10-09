@@ -109,6 +109,22 @@ model MarketNewsItem {
   imageUrl String?
   /// Publish time from the feed (pubDate / atom:updated). Drives feed order.
   publishedAt DateTime
+  /// Inclusive topic + crop tags, several per article (#231).
+  ///
+  /// SEPARATE from `category`, which stays. `category` is exclusive and
+  /// priority-ordered — policy beats market — because one field forced a
+  /// choice. Tags remove the forcing: a subsidy story about wheat carries
+  /// BOTH `subsidies` and `wheat`, and there is no precedence to apply.
+  ///
+  /// Empty is a real value rather than a gap. An article matching no rule
+  /// carries `[]`, which is the honest answer and what the «Всички» switch
+  /// keeps reachable.
+  ///
+  /// Crop tags ARE the commodity slugs, resolved through COMMODITY_ALIASES
+  /// rather than a parallel keyword list — so one vocabulary serves news
+  /// tagging and Борса search, and a new crop is added in one place. See
+  /// `src/lib/news/categorize.ts`.
+  tags String[] @default([])
   /// Idempotent-upsert + dedupe key: sha256(guid || link).
   guidHash String
   /// Last time the pull saw this item (refreshed on every upsert).
@@ -122,4 +138,8 @@ model MarketNewsItem {
   @@index([category, publishedAt])
   /// Backs the all-categories read: newest first + the 60-day prune scan.
   @@index([publishedAt])
+  /// GIN — `tags hasSome [...]` is array containment, which a btree cannot
+  /// serve. Declared here so the schema and the database agree; the index is
+  /// also written explicitly in the migration.
+  @@index([tags], type: Gin)
 }
