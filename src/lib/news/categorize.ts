@@ -116,7 +116,7 @@ const MARKET_KEYWORDS: readonly string[] = [
  * findable in search and not in news, or the reverse, with nothing failing.
  * One vocabulary, one place to add a crop.
  */
-const CROP_TAGS = ['wheat', 'maize', 'sunflower', 'rapeseed', 'barley'] as const;
+export const CROP_TAGS = ['wheat', 'maize', 'sunflower', 'rapeseed', 'barley'] as const;
 
 /**
  * Topic stems, matched as a PREFIX OF A WORD — see {@link matchesWordPrefix}.
@@ -142,6 +142,78 @@ const CROP_TAGS = ['wheat', 'maize', 'sunflower', 'rapeseed', 'barley'] as const
  */
 const TOPIC_STEMS: Readonly<Record<string, readonly string[]>> = {
     subsidies: POLICY_KEYWORDS,
+    // «Пазар» — owner decision, 2026-10-09, confirmed directly.
+    //
+    // Slugged `trade`, NOT `market`, and the reason is a real collision:
+    // `market` is already a NEWS_CATEGORIES value, so a tag of the same name
+    // would make `?category=market` and `?tags=market` two different filters
+    // sharing one word. The label is «Пазар» either way — slugs are stable
+    // ASCII identifiers and the labels are authoritative (§2 of the contract).
+    //
+    // Distinct from `prices`, which owns price MOVEMENT (цена/борса/фючърс).
+    // This is market STRUCTURE: who is buying, where it is going, trade
+    // access. Tagging is inclusive (§3), so a story about export prices
+    // legitimately carries both and that is the honest answer.
+    //
+    // `борса` deliberately stays in `prices` alone. It names the commodity
+    // exchange specifically, which is a price surface in this product, and
+    // duplicating it here would make every quote story a trade story too.
+    trade: [
+        // Covers пазар / пазарът / пазари / пазарен.
+        'пазар',
+        // `търгов`, not `търг`: it reaches търговия/търговски/търговец without
+        // also reaching a bare «търг» (a tender), which is a procurement story
+        // more often than a market one. Verified: «Търг за ремонт на пътя»
+        // tags nothing.
+        'търгов',
+        // ── the definite forms ONLY, and the reason is measured ──
+        //
+        // A bare `износ` is a prefix of «износване» (wear), and `внос` of
+        // «вноска» (a loan installment). Both were tried and both fired:
+        // «Износването на гумите на трактора» and «Вноската по кредита е
+        // платена» came back tagged `trade`. A PREFIX matcher cannot separate
+        // them, so the indefinite forms are not listed at all.
+        //
+        // The cost is named rather than hidden: a headline written
+        // «Износ на пшеница за Турция», with no article, is NOT tagged. That
+        // is the deliberate trade — for a filter, an irrelevant article makes
+        // the feature look broken, while a missed one is invisible.
+        //
+        // DO NOT add `износа` here. `matchesWordPrefix` runs every stem
+        // through `stemOf` first, which strips a trailing vowel when ≥
+        // MIN_STEM_LENGTH remains — so `износа` becomes `износ` and silently
+        // restores the bug above. `износът` survives because it ends in a
+        // consonant. `вноса` survives because trimming it leaves 4 characters,
+        // under the floor.
+        'износът',
+        'вносът',
+        'вноса',
+        // ── harvest and yield, on the owner's own definition ──
+        //
+        // Owner, 2026-10-09: «Пазар» is for "harvest, export, import and yield
+        // news". An earlier version of this list dropped `реколта` on the
+        // reasoning that a harvest is production rather than market — which was
+        // my inference about what the topic meant, against the person who
+        // defined it. Supply IS the market story in a commodity feed: a harvest
+        // figure is why a price moves.
+        //
+        // `реколт` because `stemOf` would trim `реколта` to exactly this
+        // anyway (6 characters, over the floor); written trimmed so the list
+        // says what it matches.
+        'реколт',
+        // `добив` (yield) does NOT reach «добитък» (livestock) — they diverge
+        // at the fifth character, в against т — so the two topics stay
+        // separate. Checked rather than assumed, because a yield story
+        // silently tagged `livestock` would be invisible.
+        'добив',
+        // English
+        'market',
+        'export',
+        'import',
+        'trade',
+        'harvest',
+        'yield',
+    ],
     prices: [
         // Bulgarian. `цена`/`цени`/`ценов` rather than the bare `цен`, which
         // is a prefix of `център` and would tag every story mentioning a
@@ -313,6 +385,19 @@ function stemOf(alias: string): string {
  * Deterministic, no I/O, no AI: the property that lets this unit-test without
  * a network, exactly as `categorize` does.
  */
+/**
+ * Every topic tag `deriveTags` can emit, derived from the keyword table rather
+ * than restated beside it.
+ *
+ * The contract's own warning about the crop list applies here too: "a parallel
+ * list would drift from the search vocabulary... the next person would update
+ * one". `TOPIC_STEMS` is the vocabulary; this is a read of it.
+ */
+export const TOPIC_TAGS = Object.keys(TOPIC_STEMS).sort() as readonly string[];
+
+/** Every tag in the vocabulary, crops and topics together. */
+export const ALL_NEWS_TAGS: readonly string[] = [...CROP_TAGS, ...TOPIC_TAGS].sort();
+
 export function deriveTags(title: string, summary: string | null | undefined): string[] {
     const words = wordsOf(`${title ?? ''} ${summary ?? ''}`);
     if (words.length === 0) return [];

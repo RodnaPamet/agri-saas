@@ -68,7 +68,6 @@ const SELECTABLE_STATUSES = ['OPEN', 'TRIAGED', 'IN_PROGRESS', 'BLOCKED', 'CLOSE
 // Statuses a task can legally move to RESOLVED from (BLOCKED must be unblocked
 // first — see WORK_ITEM_TRANSITIONS). "Mark done" is only offered from these.
 const DONE_FROM_STATUSES = ['OPEN', 'TRIAGED', 'IN_PROGRESS', 'PENDING_REVIEW'];
-const PRIORITY_VALUES = ['P0', 'P1', 'P2', 'P3'];
 
 // Farm-task type picker options, grouped by category (catalog order).
 const TYPE_BY_VALUE = new Map(FARM_TASK_TYPES.map((ty) => [ty.key, ty]));
@@ -109,7 +108,6 @@ export function FarmTaskDetailClient({
     const statusLabel = (s: string) => (te.has(`status.${s}`) ? te(`status.${s}`) : s);
     const typeLabel = (ty: string) => (te.has(`type.${ty}`) ? te(`type.${ty}`) : ty);
     const severityLabel = (s: string) => (te.has(`severity.${s}`) ? te(`severity.${s}`) : s);
-    const priorityLabel = (p: string) => (te.has(`priority.${p}`) ? te(`priority.${p}`) : p);
     const categoryLabel = (c: string) => (te.has(`category.${c}`) ? te(`category.${c}`) : c);
     const actionLabel = (a: string) => (te.has(`action.${a}`) ? te(`action.${a}`) : a.replace(/_/g, ' '));
     const relationLabel = (r: string) => (te.has(`relation.${r}`) ? te(`relation.${r}`) : r.replace(/_/g, ' '));
@@ -117,7 +115,6 @@ export function FarmTaskDetailClient({
     const ENTITY_TYPE_CB_OPTIONS: ComboboxOption[] = ENTITY_TYPE_OPTIONS.map((et) => ({ value: et, label: entityTypeLabel(et) }));
     const RELATION_CB_OPTIONS: ComboboxOption[] = RELATION_OPTIONS.map((r) => ({ value: r, label: relationLabel(r) }));
     const TASK_STATUS_CB_OPTIONS: ComboboxOption[] = SELECTABLE_STATUSES.map((val) => ({ value: val, label: statusLabel(val) }));
-    const PRIORITY_CB_OPTIONS: ComboboxOption[] = PRIORITY_VALUES.map((p) => ({ value: p, label: priorityLabel(p) }));
 
     const [tab, setTab] = useState<Tab>('overview');
 
@@ -155,6 +152,11 @@ export function FarmTaskDetailClient({
     // field-work type). Severity + compliance type are not edited here.
     const [showEditModal, setShowEditModal] = useState(false);
     const [editForm, setEditForm] = useState<EditFarmTaskForm>({
+        // `priority` is no longer shown anywhere in this view (owner, 2026-10-09:
+        // «Сериозност» is the one urgency signal; «Приоритет» is removed). It is
+        // still carried through the edit form and sent on save, hydrated from
+        // the task at :429 — so editing a task does NOT silently reset its
+        // stored priority to P2. The server still orders the list by it.
         title: '', description: '', priority: 'P2', dueAt: '', farmTaskType: '',
     });
     const [savingEdit, setSavingEdit] = useState(false);
@@ -710,10 +712,6 @@ export function FarmTaskDetailClient({
                             </p>
                         </div>
                         <div>
-                            <span className="text-xs text-content-subtle uppercase">{t('priority')}</span>
-                            <p className="text-sm text-content-default mt-1">{priorityLabel(task.priority)}</p>
-                        </div>
-                        <div>
                             <span className="text-xs text-content-subtle uppercase">{t('assignee')}</span>
                             <p className="text-sm text-content-default mt-1">{task.assignee?.name || '—'}</p>
                         </div>
@@ -1011,18 +1009,6 @@ export function FarmTaskDetailClient({
                                         />
                                     </FormField>
                                 )}
-                                <FormField label={tf('fieldPriority')}>
-                                    <Combobox
-                                        id="edit-task-priority"
-                                        options={PRIORITY_CB_OPTIONS}
-                                        selected={PRIORITY_CB_OPTIONS.find((o) => o.value === editForm.priority) ?? null}
-                                        setSelected={(o) => setEditForm((f) => ({ ...f, priority: o?.value ?? 'P2' }))}
-                                        placeholder={tf('priorityPlaceholder')}
-                                        hideSearch
-                                        aria-label={tf('priorityAria')}
-                                        matchTriggerWidth
-                                    />
-                                </FormField>
                                 <FormField label={tf('fieldDueDate')}>
                                     <DatePicker
                                         id="edit-task-due"

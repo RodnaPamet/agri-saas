@@ -1946,6 +1946,11 @@
       "documented": true
     },
     {
+      "path": "/api/t/{tenantSlug}/trends/news/tags",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/trends/prices",
       "status": "live",
       "documented": true

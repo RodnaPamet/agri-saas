@@ -5656,6 +5656,14 @@ exports[`API contract — per-schema snapshots schema: FarmTaskListItem 1`] = `
       "type": "string",
       "format": "date-time"
     },
+    "completedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "When the work was completed, for «Завършена на …». Set on \`RESOLVED\` and \`CLOSED\` only — **\`null\` for a \`CANCELED\` task as well as an open one**, so do not render a date merely because the status is terminal (\`isCompletedStatus\` is deliberately narrower than \`isTerminalStatus\`, and that gap is the point).\\n\\n**Do not substitute \`updatedAt\`.** Any later edit to a closed task moves it, so a task completed in March and re-assigned in September would report September. That is why this field exists rather than a client-side derivation.\\n\\nPresent for historical tasks too: the column has always been written, so a completion date is correct retroactively with no backfill."
+    },
     "assigneeUserId": {
       "type": [
         "string",
@@ -5685,7 +5693,7 @@ exports[`API contract — per-schema snapshots schema: FarmTaskListItem 1`] = `
     "updatedAt"
   ],
   "additionalProperties": {},
-  "description": "One row of the operator queue. This is the \`taskListSelect\` projection, NOT the full Task returned by the create — it carries no tenantId, description, priority or metadataJson."
+  "description": "One row of the operator queue. This is the \`taskListSelect\` projection, NOT the full Task returned by the create — it carries no tenantId, description or metadataJson.\\n\\n\`priority\` was previously named here as an omission and is not one: the projection has carried it since the list became orderable by it. It reaches you through \`.passthrough()\` rather than as a declared field."
 }"
 `;
 
@@ -8615,6 +8623,75 @@ exports[`API contract — per-schema snapshots schema: NewsItem 1`] = `
     "publishedAt"
   ],
   "description": "One aggregated agri-news article. summary and imageUrl are genuinely nullable — many feeds carry neither — so a client must render a headline-only item rather than treating it as malformed."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: NewsTagCatalogue 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "groups": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "enum": [
+              "crops",
+              "topics"
+            ],
+            "description": "Which half of the vocabulary. \`crops\` are the five commodities; \`topics\` are subject areas."
+          },
+          "label": {
+            "type": "string",
+            "example": "Култури"
+          },
+          "labelEn": {
+            "type": "string",
+            "example": "Crops"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "description": "Stable ASCII slug. Crop keys are the commodity slugs — the same values \`GET /trends/prices\` takes — so a tag and a Борса search agree by construction.",
+                  "example": "wheat"
+                },
+                "label": {
+                  "type": "string",
+                  "description": "Bulgarian, and authoritative. Render this.",
+                  "example": "Пшеница"
+                },
+                "labelEn": {
+                  "type": "string",
+                  "description": "A speakable English label, for iOS Voice Control. A SECOND label, not a localisation mechanism — there is no fallback chain and no third language. Do not prefer it over \`label\` for display.",
+                  "example": "Wheat"
+                }
+              },
+              "required": [
+                "key",
+                "label",
+                "labelEn"
+              ]
+            }
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "labelEn",
+          "tags"
+        ]
+      }
+    }
+  },
+  "required": [
+    "groups"
+  ]
 }"
 `;
 

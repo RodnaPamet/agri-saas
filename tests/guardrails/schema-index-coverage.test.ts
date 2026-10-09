@@ -317,7 +317,15 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
         model: 'Task',
         fields: ['tenantId', 'priority', 'createdAt'],
         justification:
-            "WorkItemRepository.list() default sort: [{ priority: 'asc' }, { createdAt: 'desc' }]",
+            // The default sort stopped being this index's reason on 2026-10-09:
+            // `WorkItemRepository.list()` now orders by CURSOR_ORDER_BY
+            // ([{ createdAt: 'desc' }, { id: 'desc' }]), which the
+            // [tenantId, createdAt] index already covers. The index stays
+            // because the FILTER still uses it — `where.priority` is a
+            // [tenantId, priority] prefix match — and that is now the whole of
+            // its justification. Named precisely so the next reader does not
+            // find a sort that no longer exists.
+            'TaskListFilters.priority (where.priority) — a [tenantId, priority] prefix match. NOT the default sort, which is CURSOR_ORDER_BY and is served by [tenantId, createdAt].',
     },
     {
         model: 'Task',

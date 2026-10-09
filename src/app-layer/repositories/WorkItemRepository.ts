@@ -38,7 +38,13 @@ export interface TaskListParams {
 // list view never reads (the TasksClient never references
 // `_count.{links,comments,watchers}`). Detail (getById) keeps the
 // wider shape on purpose.
-const taskListSelect = {
+/**
+ * Exported for `tests/guards/task-list-spec-matches-projection.test.ts`, which
+ * compares it against the published `FarmTaskListItem` schema. A field the spec
+ * declares and this does not project is a promise to clients the server does
+ * not keep, and `.passthrough()` means nothing else notices.
+ */
+export const taskListSelect = {
     id: true,
     key: true,
     title: true,
@@ -57,6 +63,26 @@ const taskListSelect = {
     dueAt: true,
     createdAt: true,
     updatedAt: true,
+    /**
+     * When the work was COMPLETED, for a row that wants to say «Завършена на …».
+     *
+     * The column has existed and been written since the model did — `setStatus`
+     * and `bulkSetStatus` both stamp `isCompletedStatus(status) ? new Date() : null`
+     * — and the dashboard's completed-vs-created trend already reads it, with a
+     * docblock asserting that a non-null value is exactly "completed work". It
+     * was simply never projected here, so the only client able to show a
+     * completion date was the one that could run that aggregate.
+     *
+     * Requested by agrent-ios: the phone shipped «Отворена на …» (opened on)
+     * where the owner wanted «Завършена на …», because a list row had no other
+     * honest option. `updatedAt` is NOT a substitute and they were right to
+     * refuse it — any later edit to a closed task moves it, so a task completed
+     * in March and re-assigned in September would report September.
+     *
+     * Costs no migration and no backfill: every task ever completed already
+     * carries its date, so this is correct retroactively the moment it deploys.
+     */
+    completedAt: true,
     assigneeUserId: true,
     /**
      * `email` is projected here DELIBERATELY, and the decision is the owner's
@@ -94,7 +120,23 @@ export class WorkItemRepository {
         const where = WorkItemRepository._buildWhere(ctx, filters);
         return db.task.findMany({
             where,
-            orderBy: [{ priority: 'asc' }, { createdAt: 'desc' }],
+            // Newest first, no urgency sort — owner, 2026-10-09, alongside
+            // removing «Приоритет» from the web task UI. Ordering by a field no
+            // caller can see is the defect `taskListSelect`'s comment below
+            // records being fixed once already; hiding the field re-created it,
+            // so the sort goes rather than the projection.
+            //
+            // `CURSOR_ORDER_BY` rather than a local literal, because the
+            // cursor-paginated read at `listTasksPage` ALREADY used it — so
+            // this list was ordered by priority while the paged list was
+            // ordered newest-first, and the same tenant's tasks came back in
+            // two different orders depending on whether a cursor was passed.
+            // Sharing the constant is what stops them drifting apart again.
+            //
+            // It also brings the `{ id: 'desc' }` tiebreaker, which this path
+            // lacked: `createdAt` ties are real for bulk-created tasks, and
+            // without it their relative order was arbitrary between reads.
+            orderBy: CURSOR_ORDER_BY,
             select: taskListSelect,
             ...(options.take ? { take: options.take } : {}),
         });

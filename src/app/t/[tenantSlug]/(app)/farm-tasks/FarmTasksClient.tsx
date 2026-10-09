@@ -75,7 +75,6 @@ interface FarmTaskRow {
 interface EquipmentRow { id: string; name: string; category: string; make: string | null; model: string | null; }
 interface LocationRow { id: string; name: string; }
 
-type Priority = 'P0' | 'P1' | 'P2' | 'P3';
 
 const STATUS_BADGE: Record<string, StatusBadgeVariant> = {
     OPEN: 'neutral',
@@ -87,7 +86,6 @@ const STATUS_BADGE: Record<string, StatusBadgeVariant> = {
     CLOSED: 'neutral',
     CANCELED: 'neutral',
 };
-const PRIORITY_VALUES = ['P0', 'P1', 'P2', 'P3'];
 // Statuses a task can legally reach RESOLVED from (BLOCKED must be unblocked
 // first). "Mark done" is only offered from these — see WORK_ITEM_TRANSITIONS.
 const DONE_FROM_STATUSES = ['OPEN', 'TRIAGED', 'IN_PROGRESS', 'PENDING_REVIEW'];
@@ -133,7 +131,6 @@ function FarmTasksInner({ tenantSlug, currentUserId }: { tenantSlug: string; cur
     const statusLabel = (s: string) => (te.has(`status.${s}`) ? te(`status.${s}`) : s);
     const typeLabel = (ty: string) => (te.has(`type.${ty}`) ? te(`type.${ty}`) : ty.replace(/_/g, ' '));
     const categoryLabel = (c: string) => (te.has(`category.${c}`) ? te(`category.${c}`) : c);
-    const PRIORITY_OPTIONS: ComboboxOption[] = PRIORITY_VALUES.map((v) => ({ value: v, label: te(`priority.${v}`) }));
 
     // Manager view — the whole tenant's field work, so the assignee filter is
     // meaningful and it fully replaces the retired compliance task list.
@@ -201,7 +198,6 @@ function FarmTasksInner({ tenantSlug, currentUserId }: { tenantSlug: string; cur
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [title, setTitle] = useState('');
     const [farmTaskType, setFarmTaskType] = useState('');
-    const [priority, setPriority] = useState<Priority>('P2');
     const [dueAt, setDueAt] = useState<Date | null>(null);
     const [assigneeUserId, setAssigneeUserId] = useState<string | null>(null);
     const [locationIds, setLocationIds] = useState<string[]>([]);
@@ -232,7 +228,7 @@ function FarmTasksInner({ tenantSlug, currentUserId }: { tenantSlug: string; cur
     );
 
     const resetForm = () => {
-        setTitle(''); setFarmTaskType(''); setPriority('P2'); setDueAt(null);
+        setTitle(''); setFarmTaskType(''); setDueAt(null);
         setAssigneeUserId(null); setLocationIds([]); setEquipmentIds([]); setError(null);
     };
     const openCreate = () => { resetForm(); setIsCreateOpen(true); };
@@ -256,7 +252,6 @@ function FarmTasksInner({ tenantSlug, currentUserId }: { tenantSlug: string; cur
                 body: {
                     title: title.trim(),
                     farmTaskType,
-                    priority,
                     dueAt: dueAt ? dueAt.toISOString() : null,
                     assigneeUserId: assigneeUserId || null,
                     locationIds,
@@ -630,33 +625,19 @@ function FarmTasksInner({ tenantSlug, currentUserId }: { tenantSlug: string; cur
                             <FormField label={t('fieldTitle')} required>
                                 <Input id="farm-task-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t('titlePlaceholder')} />
                             </FormField>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-default">
-                                <FormField label={t('fieldTaskType')} required>
-                                    <Combobox
-                                        id="farm-task-type"
-                                        options={TYPE_OPTIONS}
-                                        selected={TYPE_OPTIONS.find((o) => o.value === farmTaskType) ?? null}
-                                        setSelected={(o) => setFarmTaskType(o?.value ?? '')}
-                                        optionDescription={(o) => { const def = TYPE_BY_VALUE.get(o.value); return def ? categoryLabel(def.category) : null; }}
-                                        placeholder={t('taskTypePlaceholder')}
-                                        searchPlaceholder={t('taskTypeSearch')}
-                                        aria-label={t('taskTypeAria')}
-                                        matchTriggerWidth
-                                    />
-                                </FormField>
-                                <FormField label={t('fieldPriority')}>
-                                    <Combobox
-                                        id="farm-task-priority"
-                                        options={PRIORITY_OPTIONS}
-                                        selected={PRIORITY_OPTIONS.find((o) => o.value === priority) ?? null}
-                                        setSelected={(o) => setPriority((o?.value as Priority) ?? 'P2')}
-                                        placeholder={t('priorityPlaceholder')}
-                                        hideSearch
-                                        aria-label={t('priorityAria')}
-                                        matchTriggerWidth
-                                    />
-                                </FormField>
-                            </div>
+                            <FormField label={t('fieldTaskType')} required>
+                                <Combobox
+                                    id="farm-task-type"
+                                    options={TYPE_OPTIONS}
+                                    selected={TYPE_OPTIONS.find((o) => o.value === farmTaskType) ?? null}
+                                    setSelected={(o) => setFarmTaskType(o?.value ?? '')}
+                                    optionDescription={(o) => { const def = TYPE_BY_VALUE.get(o.value); return def ? categoryLabel(def.category) : null; }}
+                                    placeholder={t('taskTypePlaceholder')}
+                                    searchPlaceholder={t('taskTypeSearch')}
+                                    aria-label={t('taskTypeAria')}
+                                    matchTriggerWidth
+                                />
+                            </FormField>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-default">
                                 <FormField label={t('fieldDueDate')}>
                                     <DatePicker id="farm-task-due" className="w-full" value={dueAt} onChange={setDueAt} clearable placeholder={t('datePlaceholder')} aria-label={t('dueDateAria')} />
