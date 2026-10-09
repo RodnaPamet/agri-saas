@@ -255,9 +255,18 @@ const RequiredPositiveAmount = z
     .max(MAX_COST_AMOUNT, `amount must be ${MAX_COST_AMOUNT} or less`);
 
 /**
- * The eight cost categories, mirrored from the Prisma `CostCategory`
- * enum. Spelled out rather than derived so the wire contract is readable
- * at the schema and a schema change is a visible diff.
+ * The ten cost categories, mirrored from the Prisma `CostCategory` enum.
+ * Spelled out rather than derived so the wire contract is readable at the
+ * schema and a schema change is a visible diff.
+ *
+ * `CREDIT` and `DEPRECIATION` were added for the «Нов разход» overhead sheet
+ * (owner, 2026-10-09). Both are HOLDING-basis costs by nature — interest
+ * belongs to the year and a tractor is not consumed by one planting — so they
+ * spread like `PAYROLL` rather than over a crop's area.
+ *
+ * A client that does not recognise a value should show it as the raw key
+ * rather than dropping the row: this list grows, and a cost omitted from a
+ * total is worse than one labelled badly.
  */
 export const COST_CATEGORIES = [
     'PAYROLL',
@@ -267,6 +276,8 @@ export const COST_CATEGORIES = [
     'SEED',
     'PESTICIDE',
     'SERVICE',
+    'CREDIT',
+    'DEPRECIATION',
     'OTHER',
 ] as const;
 

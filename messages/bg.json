@@ -5883,6 +5883,8 @@
       "SEED": "Семена",
       "PESTICIDE": "Препарати",
       "SERVICE": "Услуги",
+      "CREDIT": "Кредитни разходи",
+      "DEPRECIATION": "Амортизация",
       "OTHER": "Друго"
     },
     "costCategoryFacet": "Категория",

@@ -44,7 +44,21 @@ const asIcon = (c: unknown): FilterIcon => c as FilterIcon;
 /** A next-intl translator scoped to the `grainEnums` namespace. */
 type Translator = (key: string) => string;
 
-/** The eight categories, in the order the create form offers them. */
+/**
+ * The ten categories, in the order the create form offers them.
+ *
+ * A THIRD copy of this list — `prisma/schema/enums.prisma` and
+ * `grain.schemas.ts` hold the others — and the duplication is deliberate:
+ * `grain.schemas.ts` imports `@prisma/client`, and pulling the Prisma client
+ * into a browser bundle to read string literals is not a trade worth making.
+ *
+ * It is also where the list goes STALE, which is why
+ * `tests/guards/cost-categories-agree.test.ts` now compares all three. Adding
+ * `CREDIT` and `DEPRECIATION` to the enum and the wire schema but not here
+ * would have put them in the database and on the API while leaving them
+ * invisible in the web UI — present everywhere except where a farmer could
+ * pick one.
+ */
 export const COST_CATEGORY_VALUES = [
     'PAYROLL',
     'RENT',
@@ -53,6 +67,8 @@ export const COST_CATEGORY_VALUES = [
     'SEED',
     'PESTICIDE',
     'SERVICE',
+    'CREDIT',
+    'DEPRECIATION',
     'OTHER',
 ] as const;
 

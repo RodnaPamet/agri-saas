@@ -2822,6 +2822,8 @@ exports[`API contract — per-schema snapshots schema: CostEntry 1`] = `
         "SEED",
         "PESTICIDE",
         "SERVICE",
+        "CREDIT",
+        "DEPRECIATION",
         "OTHER"
       ]
     },

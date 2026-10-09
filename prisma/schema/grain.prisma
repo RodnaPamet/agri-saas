@@ -326,6 +326,25 @@ model CostEntry {
   /// Listing it in the encryption manifest would fail SILENTLY: the
   /// middleware skips every non-string value without logging.
   amount          Decimal      @db.Decimal(14, 2)
+  /// The per-decare figure AS THE FARMER TYPED IT, when they typed one.
+  ///
+  /// `amount` stays authoritative — it is what every SUM, margin and
+  /// break-even reads, and nothing downstream changes. This column exists so
+  /// the figure can be read BACK exactly, which `amount` alone cannot give:
+  /// dividing a rounded total by an area recovers a number the farmer never
+  /// entered, and the calculator's "last values" default would then drift a
+  /// little further from the truth on every reuse.
+  ///
+  /// Four decimal places, not two. A per-decare rate is divided, so 2dp would
+  /// round away real precision before it was ever multiplied back up — a
+  /// 1234.56 лв cost over 740 dca is 1.6683 лв/дка, and storing 1.67 misstates
+  /// the total by over 1 лв.
+  ///
+  /// Nullable, and the null is meaningful: it means the farmer entered a TOTAL
+  /// rather than a rate. Defaulting it to `amount / area` for those rows would
+  /// make every entry look like a rate entry and destroy that distinction —
+  /// the same reason `bottomTabOrder` keeps `null` and `[]` apart.
+  amountPerDca    Decimal?     @db.Decimal(14, 4)
   /// ISO-4217 code, e.g. "BGN" / "EUR". Plaintext, and mirrors
   /// `Contract.priceCurrency`. Never blended — there is no FX table in
   /// this repo, so consumers group BY currency or refuse.

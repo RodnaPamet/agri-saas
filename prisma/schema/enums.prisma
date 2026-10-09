@@ -926,6 +926,18 @@ enum CostCategory {
   SEED
   PESTICIDE
   SERVICE
+  /// Interest and fees on borrowing — «Кредитни разходи». An OVERHEAD: it
+  /// belongs to the holding and a year, not to one planting, so it spreads on
+  /// the HOLDING basis like PAYROLL rather than on a crop's area.
+  CREDIT
+  /// Straight-line depreciation of the machine register — «Амортизация».
+  ///
+  /// Also an overhead, and for the reason `/costs/machinery` states: a tractor
+  /// is not consumed by one planting. The yearly figure a farmer enters here
+  /// is PREFILLED from `GET /costs/machinery`'s `totalAnnualCharge` and may be
+  /// typed over — owner decision 2026-10-09, both ways deliberately, because
+  /// the register is a good estimate and not an authority.
+  DEPRECIATION
   OTHER
 }
 

@@ -2716,6 +2716,8 @@
               "SEED",
               "PESTICIDE",
               "SERVICE",
+              "CREDIT",
+              "DEPRECIATION",
               "OTHER"
             ]
           },
@@ -20657,6 +20659,8 @@
                       "SEED",
                       "PESTICIDE",
                       "SERVICE",
+                      "CREDIT",
+                      "DEPRECIATION",
                       "OTHER"
                     ]
                   },
@@ -21076,6 +21080,8 @@
                       "SEED",
                       "PESTICIDE",
                       "SERVICE",
+                      "CREDIT",
+                      "DEPRECIATION",
                       "OTHER"
                     ]
                   },
