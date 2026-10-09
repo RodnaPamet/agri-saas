@@ -39,6 +39,27 @@
  * Counting them here keeps the number visible instead of letting it reach 69
  * again unnoticed, and the ceiling is the only honest way to do that while they
  * exist.
+ *
+ * ## SCOPE: tenant routes only, and the zero below means less than it looks
+ *
+ * The root is `src/app/api/t`. Everything else is invisible to this file —
+ * measured at **28 files and 78 occurrences**, of which `/api/auth/` is 14
+ * files and 44 occurrences, carrying **34 per-status contradictions right now.**
+ *
+ * So "contradicting: 0" is 0 AMONG TENANT ROUTES, not 0 in the codebase, and a
+ * reader who took it for the latter would be badly wrong. The scope is printed
+ * beside the number for that reason — a coverage figure that does not name its
+ * axis scores everything off-axis as nonexistent.
+ *
+ * It is deliberately not widened yet. agrent backend-2 is documenting the auth
+ * family's bare shape as `RawErrorResponse` — correctly: `invalid_grant` and
+ * `invalid_request` are RFC 6749 §5.2, so a conforming OAuth client expects
+ * exactly that body at a token endpoint, and converging them would break
+ * conformance to chase consistency. Widening the root before that lands would
+ * make this guard red for 34 bodies that are about to become correct, and a
+ * guard that is red for work already in flight is a guard people learn to
+ * ignore. Widen the root to `src/app/api` once that is in; the expected result
+ * is 0.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
@@ -164,8 +185,9 @@ describe("a route's error body matches the schema its operation declares", () =>
                     `\n\nThe spec promises { error: { code, message } } and the code returns a ` +
                     `string, so a client switching on error.code reads undefined. Use a coded ` +
                     `helper and keep the existing prose as the message.\n\n` +
-                    `Population: ${rows.length} file(s) with a bare-string body; ` +
-                    `${rows.filter((r) => r.documented).length} on documented paths.`,
+                    `Population: ${rows.length} bare-string bodies under src/app/api/t; ` +
+                    `${rows.filter((r) => r.documented).length} on documented paths. ` +
+                    `Routes OUTSIDE src/app/api/t are not measured by this file.`,
             );
         }
         expect(bad).toEqual([]);
@@ -182,7 +204,9 @@ describe("a route's error body matches the schema its operation declares", () =>
         const canonical = rows.filter((r) => r.contradicts);
         // eslint-disable-next-line no-console
         console.log(
-            `    bare-string error bodies (path+status): ${rows.length}\n` +
+            `    SCOPE: src/app/api/t only — /api/auth and the rest are NOT measured\n` +
+                `           (28 files / 78 occurrences outside, 34 contradictions; see docblock)\n` +
+                `    bare-string error bodies (path+status): ${rows.length}\n` +
                 `    on a DOCUMENTED path                 : ${documented.length}\n` +
                 `    contradicting that status's schema   : ${canonical.length}  (must be 0)\n` +
                 `    occurrences on undocumented paths   : ${
