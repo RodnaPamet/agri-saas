@@ -132,7 +132,7 @@ test.describe('Epic 56 — tooltip + copy primitives', () => {
         // The <code> starts as a loading placeholder and fills in once
         // `GET /admin/scim` resolves; wait for a real URL rather than a
         // dash/placeholder so the clipboard comparison is meaningful.
-        const endpointEl = page.locator('#scim-endpoint-url');
+        const endpointEl = page.getByRole('main').locator('#scim-endpoint-url');
         await expect(endpointEl).toBeVisible({ timeout: 30_000 });
         await expect(endpointEl).toContainText(/https?:\/\/.+\/api\/scim\/v2/, {
             timeout: 30_000,
