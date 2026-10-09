@@ -26,7 +26,7 @@ import { logger } from '@/lib/observability/logger';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { resolveNewsFeeds } from '@/lib/news/feeds';
 import { fetchFeed } from '@/lib/news/rss-client';
-import { categorize } from '@/lib/news/categorize';
+import { categorize, deriveTags } from '@/lib/news/categorize';
 import type { MarketNewsPullPayload } from './types';
 import { isHttpUrl } from '@/lib/security/safe-url';
 
@@ -156,6 +156,17 @@ export async function runMarketNewsPull(
 
             const hash = guidHash(feed.slug, raw.guid);
 
+            // Tags are written on BOTH branches of the upsert, and the `update`
+            // half is the one that matters. Re-tagging an item the pull sees
+            // again means a change to the keyword rules propagates on its own,
+            // without a migration — and it means the backfill only has to cover
+            // items the feeds have already dropped.
+            //
+            // Computed here rather than inside the upsert so the two branches
+            // cannot drift: an item tagged on create and not on update would
+            // keep whatever vocabulary existed the day it first arrived.
+            const tags = deriveTags(title, summary);
+
             // Idempotent upsert on the natural dedupe key (a WRITE in the loop —
             // the N+1 guard is about READS; mirrors market-prices-pull's point
             // upsert loop).
@@ -164,6 +175,7 @@ export async function runMarketNewsPull(
                 create: {
                     source: feed.slug,
                     category,
+                    tags,
                     title,
                     summary,
                     url: raw.url,
@@ -173,6 +185,7 @@ export async function runMarketNewsPull(
                 },
                 update: {
                     category,
+                    tags,
                     title,
                     summary,
                     url: raw.url,

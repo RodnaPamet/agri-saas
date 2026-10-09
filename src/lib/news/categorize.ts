@@ -247,8 +247,7 @@ function wordsOf(haystack: string): string[] {
  * final vowel: `пшеницата` begins with `пшеница`, and `пшеници` does NOT. So
  * the matcher prefixes the alias's STEM, trimming one trailing vowel when what
  * remains is still long enough to be distinctive. `пшеница` -> `пшениц`
- * catches all three forms; `соя` is left whole, because `со` would prefix
- * `социален` and `солта`.
+ * catches all three forms.
  *
  * `categorize` below keeps its own substring matcher and is unchanged. Its
  * stems are deliberately TRUNCATED (`субсиди`, `цен на`) and some contain
@@ -270,15 +269,33 @@ function matchesWordPrefix(words: readonly string[], stems: readonly string[]): 
  * Shortest distinctive prefix of `alias` — itself, or itself minus one
  * trailing vowel.
  *
- * MIN_STEM_LENGTH is the whole safety of this. Trimming is what makes
- * `пшеници` match (the final vowel differs from `пшеница`'s), and it is also
- * what would make `соя` match `социален` if applied blindly. Five characters
- * leaves every long Bulgarian crop name trimmed and every short one intact,
- * which is the split that matters:
+ * Trimming is what makes `пшеници` match, since its final vowel differs from
+ * `пшеница`'s. MIN_STEM_LENGTH bounds it. Measured over the five crops this
+ * module actually tags, the split is:
  *
- *     пшеница (7) -> пшениц (6)    соя (3) -> соя
- *     царевица (8) -> царевиц (7)  овес (4) -> овес   (ends in a consonant)
- *     рапица (6) -> рапиц (5)      ечемик (6) -> ечемик (consonant)
+ *     пшеница (7) -> пшениц (6)    maize (5) -> maiz (4), FLOORED
+ *     царевица (8) -> царевиц (7)  слънчоглед, ечемик: end in a consonant,
+ *     рапица (6) -> рапиц (5)      so they are never trimmed at all
+ *     canola (6) -> canol (5)
+ *
+ * ## An honest note on what the floor currently protects
+ *
+ * Only `maize` is floored, and `maiz` would prefix nothing else in the
+ * corpus — so the floor FIRES but prevents no live collision. It is defence
+ * for the next crop added, not a fix for a present one.
+ *
+ * I had justified it with `соя` -> `со` matching `социален` and `солта`, which
+ * agrent backend-2 suggested pinning with a fixture. The fixture failed, and
+ * for a better reason than either of us expected: **soybean is not one of the
+ * five crops this module tags**, so `соя` is never consulted and that
+ * collision cannot occur. The justification cited a vocabulary wider than the
+ * one in use — the same one-level-off mistake that produced #1447's substring
+ * test and #1465's two readings.
+ *
+ * So the floor stays, with its real reason stated: it is cheap, it is
+ * exercised by `maize`, and `соя` becomes a live concern the moment soybean
+ * joins CROP_TAGS — at which point the collision is real and this comment is
+ * the warning.
  */
 const MIN_STEM_LENGTH = 5;
 const TRAILING_VOWEL = /[аеиоуъюяaeiou]$/u;

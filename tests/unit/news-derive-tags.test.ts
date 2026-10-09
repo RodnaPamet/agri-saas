@@ -94,6 +94,33 @@ describe('Bulgarian inflection is caught; mid-word matches are not', () => {
         expect(deriveTags(text, null)).not.toContain(slug);
     });
 
+    it('soybean is NOT a news crop tag, so «соя» tags nothing', () => {
+        // Written at agrent backend-2's suggestion to pin the «социален»
+        // collision the stem floor was supposed to prevent. It does not exist:
+        // soybean is in COMMODITY_ALIASES but NOT in the five crops this
+        // module tags, so `соя` is never consulted and `со` can never be
+        // derived from it.
+        //
+        // Keeping the case because the absence is worth asserting. If soybean
+        // is ever added to CROP_TAGS, the first two assertions below start
+        // exercising the floor for real, and the third will fail and have to
+        // be flipped — which is the signal that the floor has become
+        // load-bearing rather than defensive.
+        expect(deriveTags('Социален доклад за селските райони', null)).not.toContain('soybean');
+        expect(deriveTags('Цената на солта', null)).not.toContain('soybean');
+        expect(deriveTags('Реколтата от соя', null)).toEqual([]);
+    });
+
+    it('the floor is exercised by `maize`, which is the only tagged alias it floors', () => {
+        // `maize` (5) would trim to `maiz` (4) and the floor keeps it whole.
+        // That is the one place the bound currently fires, and `maiz` would
+        // collide with nothing — so the floor fires without preventing a live
+        // collision. Asserted so the claim in the source is checkable rather
+        // than asserted: maize must still tag, trimmed or not.
+        expect(deriveTags('Цената на царевица и maize futures', null)).toContain('maize');
+        expect(deriveTags('MAIZE prices', null)).toContain('maize');
+    });
+
     it('control: those stems really are present mid-word', () => {
         // Otherwise the cases above pass against text containing nothing,
         // proving nothing about prefix-versus-substring.
