@@ -173,6 +173,11 @@ test.describe('DataTable Platform — Row click navigation', () => {
         // double-click on a server-rendered row is two no-ops, and the failure
         // surfaces 10s later as a URL that never changed. Name the row.
         await waitForHydration(page, '[data-testid="assets-table"] tbody tr');
+        // Counted BEFORE the gesture so the failure can say whether the row
+        // set SHRANK under it (#1076). The capture showed 1 row at failure
+        // against a seed of four; without a before-count that is ambiguous
+        // between "it shrank" and "it was always 1".
+        const rowsBefore = await rows.count();
         await rows.first().locator('td').last().dblclick();
         // ONE helper, two budgets sized for what each half does (#1076). The
         // paint had 10s here — less than the URL wait that precedes it and
@@ -182,6 +187,7 @@ test.describe('DataTable Platform — Row click navigation', () => {
         await expectRouteTransition(page, {
             content: page.locator('#asset-title-heading'),
             url: /\/assets\/[a-zA-Z0-9-]+$/,
+            rowsBefore,
         });
     });
 
@@ -196,11 +202,17 @@ test.describe('DataTable Platform — Row click navigation', () => {
 
         // Same as the Assets case above.
         await waitForHydration(page, '[data-testid="farm-tasks-table"] tbody tr');
+        // Counted BEFORE the gesture so the failure can say whether the row
+        // set SHRANK under it (#1076). The capture showed 1 row at failure
+        // against a seed of four; without a before-count that is ambiguous
+        // between "it shrank" and "it was always 1".
+        const rowsBefore = await rows.count();
         await rows.first().locator('td').last().dblclick();
         // Same shape, same fix as the Assets case above.
         await expectRouteTransition(page, {
             content: page.locator('#task-title'),
             url: /\/farm-tasks\/[a-zA-Z0-9-]+$/,
+            rowsBefore,
         });
     });
 });
