@@ -153,6 +153,10 @@ export async function loginAndGetTenant(
     // submit button) doesn't trigger Playwright strict-mode violations.
     // The `#credentials-form` anchor lives on the login page's primary
     // <form>. See src/app/login/page.tsx.
+    // BARE on purpose. `<main>` comes from `AppShell`
+    // (src/components/layout/AppShell.tsx:237), which `/login` does not
+    // mount — there is no `main` landmark on that page to scope to
+    // (#1516).
     const credentialsForm = page.locator('#credentials-form');
     const emailInput = credentialsForm.locator('input[type="email"][name="email"]');
     // Resilience against `next dev` server pressure on long serial runs:
@@ -683,6 +687,12 @@ export async function waitForFieldMapWarm(page: Page): Promise<void> {
 
 export async function openJournalEntryModalWarm(page: Page): Promise<void> {
     await page.getByRole('button', { name: 'Add entry' }).click();
+    // BARE on purpose. This id belongs to a MODAL, and the Modal
+    // primitive renders through `Dialog.Portal` / `Drawer.Portal`
+    // (src/components/ui/modal.tsx:234,306) — so its content is
+    // mounted OUTSIDE `<main>` and `getByRole('main')` would never
+    // resolve it. Scoping this would convert a passing assertion into
+    // a permanent failure (#1516).
     await expect(page.locator('#journal-entry-title')).toBeVisible();
     // THE LOAD-BEARING WAIT. Do not replace this with the title input, and do
     // not delete it as redundant — it is the only assertion here that proves

@@ -89,7 +89,7 @@ test.describe('Core Lifecycle Flow', () => {
             // The modal's onSuccess pushes to the new asset's detail page.
             await page.waitForURL('**/assets/**', { timeout: 30000 });
             await page.waitForSelector('#asset-title-heading', { timeout: 60000 });
-            await expect(page.locator('#asset-title-heading')).toContainText(
+            await expect(page.getByRole('main').locator('#asset-title-heading')).toContainText(
                 ASSET_NAME,
                 { timeout: 5000 },
             );
@@ -119,6 +119,12 @@ test.describe('Core Lifecycle Flow', () => {
             await page.click('#add-evidence-btn');
             await page.waitForSelector('#upload-form', { timeout: 5000 });
 
+            // BARE on purpose. This id belongs to a MODAL, and the Modal
+            // primitive renders through `Dialog.Portal` / `Drawer.Portal`
+            // (src/components/ui/modal.tsx:234,306) — so its content is
+            // mounted OUTSIDE `<main>` and `getByRole('main')` would never
+            // resolve it. Scoping this would convert a passing assertion into
+            // a permanent failure (#1516).
             await page.locator('#file-input').setInputFiles(EVIDENCE_FIXTURE);
             await page.fill('#upload-title-input', EVIDENCE_TITLE);
 
@@ -129,6 +135,12 @@ test.describe('Core Lifecycle Flow', () => {
             // happens on the entity's own detail page (step D).
 
             await page.click('#submit-upload-btn');
+            // BARE on purpose. This id belongs to a MODAL, and the Modal
+            // primitive renders through `Dialog.Portal` / `Drawer.Portal`
+            // (src/components/ui/modal.tsx:234,306) — so its content is
+            // mounted OUTSIDE `<main>` and `getByRole('main')` would never
+            // resolve it. Scoping this would convert a passing assertion into
+            // a permanent failure (#1516).
             await expect(page.locator('#upload-form')).not.toBeVisible({
                 timeout: 15000,
             });
@@ -162,7 +174,7 @@ test.describe('Core Lifecycle Flow', () => {
             await page.click('#submit-asset-evidence-btn');
 
             // The form closes on success and the panel refetches.
-            await expect(page.locator('#asset-evidence-form')).not.toBeVisible({
+            await expect(page.getByRole('main').locator('#asset-evidence-form')).not.toBeVisible({
                 timeout: 30_000,
             });
             // Settle on EITHER branch first: EvidenceSubTable renders
@@ -173,10 +185,10 @@ test.describe('Core Lifecycle Flow', () => {
             await page.waitForSelector('#evidence-table, #no-evidence', {
                 timeout: 30_000,
             });
-            await expect(page.locator('#evidence-table')).toBeVisible({
+            await expect(page.getByRole('main').locator('#evidence-table')).toBeVisible({
                 timeout: 5_000,
             });
-            await expect(page.locator('#evidence-table')).toContainText(
+            await expect(page.getByRole('main').locator('#evidence-table')).toContainText(
                 ATTACHED_TITLE,
                 { timeout: 15_000 },
             );
@@ -200,10 +212,10 @@ test.describe('Core Lifecycle Flow', () => {
             await page.waitForSelector('#evidence-table, #no-evidence', {
                 timeout: 30_000,
             });
-            await expect(page.locator('#evidence-table')).toBeVisible({
+            await expect(page.getByRole('main').locator('#evidence-table')).toBeVisible({
                 timeout: 5_000,
             });
-            await expect(page.locator('#evidence-table')).toContainText(
+            await expect(page.getByRole('main').locator('#evidence-table')).toContainText(
                 ATTACHED_TITLE,
                 { timeout: 15_000 },
             );
@@ -211,7 +223,7 @@ test.describe('Core Lifecycle Flow', () => {
             // this asset, so it must NOT appear on the asset's panel —
             // this is what makes the assertion above about the LINK
             // rather than about evidence existing in the tenant.
-            await expect(page.locator('#evidence-table')).not.toContainText(
+            await expect(page.getByRole('main').locator('#evidence-table')).not.toContainText(
                 EVIDENCE_TITLE,
             );
         });

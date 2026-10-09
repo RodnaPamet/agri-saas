@@ -43,6 +43,10 @@ async function signInWithCredentials(
 ): Promise<string> {
     await safeGoto(page, '/login', { waitUntil: 'domcontentloaded', timeout: 60_000 });
 
+    // BARE on purpose. `<main>` comes from `AppShell`
+    // (src/components/layout/AppShell.tsx:237), which `/login` does not
+    // mount — there is no `main` landmark on that page to scope to
+    // (#1516).
     const credentialsForm = page.locator('#credentials-form');
     await credentialsForm.locator('input[type="email"][name="email"]').waitFor({
         state: 'visible',
@@ -183,6 +187,10 @@ test.describe('Invitation journey (Epic 1)', () => {
                 await page.click('a[href*="start-signin"]');
                 await page.waitForURL(/\/login/, { timeout: 30_000 });
 
+                // BARE on purpose. `<main>` comes from `AppShell`
+                // (src/components/layout/AppShell.tsx:237), which `/login` does not
+                // mount — there is no `main` landmark on that page to scope to
+                // (#1516).
                 const credentialsForm = page.locator('#credentials-form');
                 await credentialsForm
                     .locator('input[type="email"][name="email"]')
