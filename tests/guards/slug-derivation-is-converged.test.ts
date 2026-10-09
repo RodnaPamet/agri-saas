@@ -30,7 +30,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { collectTrackedFiles } from '../helpers/collect-files';
-import { stripComments } from '../helpers/strip-comments';
+import { blankNonCode } from '../helpers/blank-non-code';
 import { toSlug } from '@/lib/bg-transliterate';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -81,7 +81,7 @@ describe('slug derivation is converged on toSlug', () => {
             // the offender report are both repo-relative.
             const rel = path.relative(ROOT, abs);
             if (rel === OWNER) continue;
-            const code = stripComments(fs.readFileSync(abs, 'utf8'));
+            const code = blankNonCode(fs.readFileSync(abs, 'utf8'));
             for (const [i, line] of code.split('\n').entries()) {
                 if (STRIP.test(line)) offenders.push(`${rel}:${i + 1}`);
             }
@@ -90,7 +90,7 @@ describe('slug derivation is converged on toSlug', () => {
     });
 
     it('CONTROL: the stripper does not simply return nothing', () => {
-        // Without this, a stripComments that returned '' would make the
+        // Without this, a blankNonCode that returned '' would make the
         // assertion above pass forever. Five of the converged sites now carry
         // the banned pattern in a COMMENT explaining why it was removed, so
         // this guard genuinely depends on comment-stripping being real — and
@@ -98,7 +98,7 @@ describe('slug derivation is converged on toSlug', () => {
         const sample = `/* .replace(/[^a-z0-9]+/g, '-') in a block comment */
 // .replace(/[^a-z0-9]+/g, '-') in a line comment
 const kept = 'https://example.test';`;
-        const out = stripComments(sample);
+        const out = blankNonCode(sample);
         expect(out).toContain('https://example.test'); // not over-eager
         expect(STRIP.test(out)).toBe(false); // and it did strip
     });

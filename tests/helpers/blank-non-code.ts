@@ -46,25 +46,35 @@
  * That it holds by construction rather than by passing today's corpus is the
  * reason for doing it this way.
  *
- * ## Why this is not `tests/helpers/strip-comments.ts`
+ * ## It replaced `tests/helpers/strip-comments.ts`, which is now DELETED (#1442)
  *
- * That helper came first and three guards use it. Two differences, and only
- * the first is why this module exists:
+ * That helper came first and had two differences, only the first of which is
+ * why this module was written:
  *
- *   • It DELETES comments; this one blanks them to spaces. Every caller here
+ *   • It DELETED comments; this one blanks them to spaces. Every caller here
  *     scans forward from a match index into the same string, so deleting
  *     would leave those offsets pointing at the wrong place. Positions are
- *     not a nicety for these two guards; they are the contract.
- *   • It runs blocks before lines, so it has the first trap above — measured
+ *     not a nicety for these guards; they are the contract.
+ *   • It ran blocks before lines, so it had the first trap above — measured
  *     to delete 10 exported declarations from `src/lib/schemas/index.ts` and
- *     499 lines of `src/auth.ts`, filed as #1442. No guard is currently
- *     blinded to anything it hunts, which is luck rather than design.
+ *     499 lines of `src/auth.ts`.
  *
- * It also deliberately spares a TRAILING `//` to avoid truncating a regex or
- * a URL string — a real trade, made because a line-level regex cannot tell
- * those apart. A state-aware pass gets that for free, so if #1442 moves the
- * three consumers here, that limitation can go with it rather than being
- * ported.
+ * Its three consumers moved here and it was removed. **No guard changed
+ * verdict in the move** — all 18 of their assertions passed before and after,
+ * and the full suite stayed at 693 suites green. So the bug was latent in
+ * those three populations rather than hiding a violation: worth fixing
+ * because the next file to grow a `//` line containing `/*` would have been
+ * silently excised, not because something was being missed.
+ *
+ * The old helper also spared a TRAILING `//` deliberately, to avoid
+ * truncating a regex or a URL string — a real trade, because a line-level
+ * regex cannot tell those apart. This pass is state-aware and gets that for
+ * free, so the limitation went with the file rather than being ported.
+ *
+ * **What this did NOT fix:** roughly 28 test files declare their OWN local
+ * `stripComments`, most of them with the same block-before-line ordering.
+ * Those are untouched here and are the larger half of the problem — a shared
+ * helper has one place to fix, and a copied one has 28.
  */
 
 export interface BlankOptions {
