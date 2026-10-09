@@ -76,14 +76,26 @@ const EMISSION = /coded(?:BadRequest|NotFound|Forbidden|Conflict)\(\s*['"]([A-Z]
  * stops being emitted, so this list cannot outlive what it excuses.
  */
 const UNDOCUMENTED_BASELINE: readonly string[] = [
+    // `COMPANY_NAME_TAKEN` and `PROMOTION_LEAD_ALREADY_SENT` are new as of
+    // #1391's 409 work and are here for a specific reason: their ROUTES are
+    // not in the spec at all (`/admin/companies/{id}`, `/offers/leads`,
+    // `/sso/entra/group-mappings` — three
+    // of the 243 on `openapi-undocumented-baseline.json`). Naming a code on
+    // an undocumented route means documenting the route, which is a larger
+    // change than the one that introduced the code. Their sibling,
+    // `LISTING_INTEREST_ALREADY_SENT`, IS documented, because
+    // `POST /exchange/inquiries` was already in the spec and only wanted the
+    // 409 it could already answer.
     'ACCOUNT_HAS_NO_EMAIL',
     'API_KEY_FAMILY_NOT_ENABLED',
     'API_KEY_WRONG_SURFACE',
     'BLOCK_SELLER_ONLY',
+    'COMPANY_NAME_TAKEN',
     'CROP_PLAN_NOT_READY',
     'CROP_SEASON_YEAR_INVALID',
     'CROP_TYPE_INVALID',
     'DOSE_UNIT_NOT_FOUND',
+    'ENTRA_GROUP_MAPPING_EXISTS',
     'FARM_NAME_NOT_SLUGGABLE',
     'FARM_NAME_REQUIRED',
     'FARM_SLUG_UNAVAILABLE',
@@ -133,6 +145,7 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     'PARCEL_LOCATION_MISMATCH',
     'PAST_DUE_RESTRICTED',
     'PESTICIDE_REGULATORY_FIELDS_REQUIRED',
+    'PROMOTION_LEAD_ALREADY_SENT',
     'PRODUCT_DOSE_REQUIRED',
     'PRODUCT_IS_SAMPLE_ARCHETYPE',
     'TASK_NOT_AWAITING_REVIEW',
