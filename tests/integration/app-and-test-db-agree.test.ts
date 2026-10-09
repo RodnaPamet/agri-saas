@@ -43,8 +43,7 @@
 import {
     getTestDatabaseUrl,
     getBaseTestDatabaseUrl,
-    prismaTestClient,
-} from '../helpers/db';
+    prismaTestClient, isParallelRun } from '../helpers/db';
 
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 
@@ -88,12 +87,37 @@ describeFn('the app and the tests use the same database (#1265)', () => {
         }
     });
 
-    it('all four resolvers name ONE database', () => {
+    it('the three LIVE resolvers name one database, and base relates to it correctly', () => {
+        // Three resolvers, not four (#1502).
+        //
+        // `getBaseTestDatabaseUrl` is by definition the UNSLOTTED base, so
+        // under per-worker isolation it differs from the three that actually
+        // carry a connection — and that difference is the isolation WORKING:
+        //
+        //     app          agri_saas_test_cde5cee23_w1
+        //     dbHelper     agri_saas_test_cde5cee23_w1
+        //     testClient   agri_saas_test_cde5cee23_w1
+        //     base         agri_saas_test_cde5cee23      <- correct, not a fault
+        //
+        // Comparing all four therefore failed on EVERY parallel local run and
+        // passed only under CI's `--runInBand`, where there is one worker and
+        // no suffix. A developer running the integration suite the obvious way
+        // got the message below — which warns that the run may be writing to
+        // development data — while the isolation was in fact correct.
+        //
+        // A safety check that cries wolf is one people learn to run with
+        // `--runInBand` and stop reading, which is the ending the `::notice`
+        // flake annotations had before #1076.
+        //
+        // So the three that must agree are compared, the loud message is kept
+        // for the divergence it was written for (#1265: the app side once
+        // resolved to a real DEV database), and `base`'s own relationship is
+        // asserted separately below — equal when serial, their prefix when
+        // parallel, which is the invariant that holds in both modes.
         const seen = {
             app: dbName(process.env.DATABASE_URL),
             dbHelper: dbName(DB_URL),
             testClient: dbName(getTestDatabaseUrl()),
-            base: dbName(getBaseTestDatabaseUrl()),
         };
         const distinct = [...new Set(Object.values(seen))];
         if (distinct.length !== 1) {
@@ -113,6 +137,22 @@ describeFn('the app and the tests use the same database (#1265)', () => {
             );
         }
         expect(distinct).toHaveLength(1);
+
+        // `base` is not a connection, so it is asserted by RELATIONSHIP.
+        // Getting this wrong in the other direction would be worse than the
+        // bug: if base and the live three were unrelated strings, the slotting
+        // would be broken and every per-worker clone would be pointing
+        // somewhere unintended — which is exactly #1265. So this still fails
+        // when it should, it just no longer fails when it should not.
+        const base = dbName(getBaseTestDatabaseUrl());
+        const live = distinct[0]!;
+        if (isParallelRun()) {
+            expect(live).toMatch(
+                new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}_w\\d+$`),
+            );
+        } else {
+            expect(live).toBe(base);
+        }
     });
 
     it('...and it is a database this repo OWNS, never a dev or prod one', () => {
