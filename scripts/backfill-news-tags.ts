@@ -55,6 +55,23 @@
  *   npx tsx scripts/backfill-news-tags.ts                  # report only
  *   npx tsx scripts/backfill-news-tags.ts --apply          # write
  *   npx tsx scripts/backfill-news-tags.ts --revert <file>  # undo
+ *
+ * ## Not part of the runtime image, and that is deliberate
+ *
+ * The production build ships no `tsx` and no `scripts/` tree — devDependencies
+ * are pruned before the runner stage, and that stage copies only
+ * `entrypoint.sh` and `wait-for-migrations.sh` individually (Dockerfile:182).
+ * So this cannot be run with `docker compose exec app`, and it is not supposed
+ * to be: like `backfill-journal-title-descriptors.ts`, it is an OPERATOR TOOL
+ * run against the database, with `DATABASE_URL` pointed at it.
+ *
+ * Worth knowing why that is the right answer rather than a limitation, because
+ * the alternative looks tempting. `scripts/worker.ts` and `scripts/seed.ts` are
+ * esbuild-bundled into `dist/` precisely so they CAN run in the container — but
+ * both are things production does repeatedly and on its own schedule. A
+ * one-off over a countable number of rows is not, and bundling it would put a
+ * destructive operator command permanently inside the deployed image where
+ * nothing distinguishes it from the app's own entrypoints.
  */
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
