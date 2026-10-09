@@ -217,6 +217,22 @@ export const UpdateTaskSchema = z.object({
 });
 
 export const SetTaskStatusSchema = z.object({
+    /**
+     * Seven of `WorkItemStatus`'s eight members. `PENDING_REVIEW` is
+     * deliberately absent and was silently absent until #1391: a client that
+     * READ `PENDING_REVIEW` off a task and tried to set it back got a 400 with
+     * nothing in the spec to explain why.
+     *
+     * It is absent because nothing sets it directly. A FIELD_OPERATION whose
+     * parcels are all marked DONE lands there on its own, and a reviewer leaves
+     * it through the field-operation review endpoint — approve to RESOLVED, or
+     * request changes to IN_PROGRESS. Accepting it here would let a client skip
+     * the gate the status exists to impose.
+     *
+     * So the asymmetry is the design: `PENDING_REVIEW` is receivable and not
+     * settable. The dashboard's task schema declares it for that reason and
+     * says so.
+     */
     status: z.enum(['OPEN', 'TRIAGED', 'IN_PROGRESS', 'BLOCKED', 'RESOLVED', 'CLOSED', 'CANCELED']),
     resolution: z.string().max(5000).nullable().optional(),
 }).strip().openapi('TaskSetStatusRequest', {

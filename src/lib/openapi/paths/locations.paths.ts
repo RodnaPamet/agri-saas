@@ -128,11 +128,29 @@ export const ParcelGeo = z
         areaHa: z.number().nullable().openapi({
             description: 'On-ellipsoid hectares, computed in PostGIS. A NUMBER here, unlike the STRING on an OperationParcel line.',
         }),
-        geometry: z.unknown().nullable().openapi({
-            description:
-                'GeoJSON (WGS84). Simplified when the read passed `?simplify=` — never for ' +
-                'sketch/edit, which needs exact geometry.',
-        }),
+        // Was `z.unknown()`, which published a description and no TYPE (#1391).
+        // That is the shape a probe misreads as fixed: checking "is this `{}`"
+        // passes the moment a description is added, while a generator still
+        // emits `any`.
+        geometry: z
+            .object({
+                type: z.enum(['Polygon', 'MultiPolygon']),
+                coordinates: z.array(z.unknown()).openapi({
+                    description:
+                        'Nested coordinate arrays, as GeoJSON nests them — `[[[lon, lat], …]]` for a Polygon, one level deeper for a MultiPolygon. Left unconstrained here rather than modelled to four levels, which no generator handles usefully.',
+                }),
+            })
+            .passthrough()
+            .nullable()
+            .openapi({
+                description:
+                    'GeoJSON geometry, WGS84. Simplified when the read passed `?simplify=` — never for ' +
+                    'sketch/edit, which needs exact geometry.' +
+                    '\n\n**Null is reachable and is not an error.** A simplify tolerance large enough to ' +
+                    'collapse a small parcel returns null rather than a degenerate shape, so a client ' +
+                    'must handle a parcel it cannot draw. Re-read without `?simplify=` to get the exact ' +
+                    'geometry.',
+            }),
         properties: z.unknown().nullable(),
         cadastralId: z.string().nullable().openapi({
             description: 'КАИС identifier `ЕКАТТЕ.масив.парцел`; null when not linked.',

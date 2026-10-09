@@ -28,7 +28,28 @@ export const LocationListItemDTOSchema = z.object({
     ownerUserId: z.string().nullable().optional(),
     spatialFileId: z.string().nullable().optional(),
     spatialFormat: z.string().nullable().optional(),
-    boundsJson: z.unknown().nullable().optional(),
+    /**
+     * `[west, south, east, north]` in WGS84 degrees.
+     *
+     * Was `z.unknown()`, which published as literally `{}` — a client could
+     * not tell an array from an object from a string (#1391). The shape is not
+     * in doubt: `weather-pull.ts` validates it as four numbers before taking a
+     * centroid, and the cadastre import writes it from
+     * `ParcelRepository.boundsForLocation`.
+     *
+     * Still nullable and optional: a location with no imported parcels has no
+     * bounds, and the weather job treats that as "no coordinates, skip".
+     */
+    boundsJson: z
+        .array(z.number())
+        .length(4)
+        .nullable()
+        .optional()
+        .openapi({
+            description:
+                'Bounding box as `[west, south, east, north]`, WGS84 degrees. Null when the location has no imported parcels to bound. Exactly four numbers — the weather job rejects anything else rather than guessing an order.',
+            example: [23.1, 42.4, 23.6, 42.9],
+        }),
     createdAt: z.string().datetime().optional(),
     updatedAt: z.string().datetime().optional(),
     owner: UserRefSchema.nullable().optional(),
