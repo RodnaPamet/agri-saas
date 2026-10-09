@@ -67,6 +67,9 @@ const SEED_TENANT = 'acme-corp';
 async function loginAsCiso(page: Page, preferredTenant = SEED_TENANT): Promise<string> {
     await safeGoto(page, '/login', { timeout: 90_000 });
 
+    // Bare on purpose: `<main>` comes from `AppShell` (AppShell.tsx:237),
+    // which `/login` does not mount — there is no `main` landmark on this
+    // page to scope to, and `getByRole('main')` here would never resolve.
     const credentialsForm = page.locator('#credentials-form');
     const emailInput = credentialsForm.locator('input[type="email"][name="email"]');
     await emailInput.waitFor({ state: 'visible', timeout: 30_000 });
@@ -138,13 +141,21 @@ test.describe('CISO portfolio journey (Epic O-4)', () => {
         // two: the GRC teardown removed the coverage KPI because
         // PortfolioSummary.practices stopped being computed (plan §8f).
         // Asserted ABSENT rather than just dropped, so a revert is visible.
-        await expect(page.locator('#org-stat-overdue-evidence')).toBeVisible();
-        await expect(page.locator('#org-stat-tenants')).toBeVisible();
+        // The count-0 assertion stays BARE while its two siblings above are
+        // scoped to `main`, and the asymmetry is deliberate. Scoping narrows
+        // what "absent" means: a coverage tile that came back in a header or
+        // a toolbar would satisfy a `main`-scoped count-0 and the revert this
+        // line exists to catch would pass. Absence is also immune to the
+        // reason the siblings needed scoping at all — a Next streaming
+        // duplicate inflates a count only when the element is PRESENT, which
+        // is a correct failure here, never a false one.
+        await expect(page.getByRole('main').locator('#org-stat-overdue-evidence')).toBeVisible();
+        await expect(page.getByRole('main').locator('#org-stat-tenants')).toBeVisible();
         await expect(page.locator('#org-stat-coverage')).toHaveCount(0);
 
         // Drill-down + tenant coverage sections are present.
-        await expect(page.locator('#org-drilldown-ctas')).toBeVisible();
-        await expect(page.locator('#org-tenant-coverage')).toBeVisible();
+        await expect(page.getByRole('main').locator('#org-drilldown-ctas')).toBeVisible();
+        await expect(page.getByRole('main').locator('#org-tenant-coverage')).toBeVisible();
 
         // The seeded acme-corp tenant is rendered as a clickable row.
         await expect(
@@ -163,7 +174,7 @@ test.describe('CISO portfolio journey (Epic O-4)', () => {
     test('E — overdue evidence list renders with tenant attribution or empty state', async ({ page }) => {
         await loginAsCiso(page);
         await safeGoto(page, `/org/${ORG_SLUG}/evidence`);
-        await expect(page.locator('#org-evidence-table')).toBeVisible({
+        await expect(page.getByRole('main').locator('#org-evidence-table')).toBeVisible({
             timeout: 30_000,
         });
 
@@ -207,7 +218,11 @@ test.describe('CISO portfolio journey (Epic O-4)', () => {
 
         // The create button is gated by `permissions.canWrite` —
         // AUDITOR never has it. Absence of the button is the read-only
-        // proof.
+        // proof, and that proof is PAGE-WIDE: scoping it to `main` would
+        // let the button reappear in a header or toolbar and still pass,
+        // which is the opposite of what this asserts. Left bare for the
+        // same reason as `#org-stat-coverage` above; the positive control
+        // the count-0 needs is the assets-table check immediately above.
         await expect(page.locator('#new-asset-btn')).toHaveCount(0);
     });
 
@@ -292,7 +307,7 @@ test.describe('CISO portfolio journey (Epic O-4)', () => {
         expect(createRes.status()).toBe(201);
 
         await safeGoto(page, `/org/${ORG_SLUG}/tenants`);
-        await expect(page.locator('#org-tenants-table')).toBeVisible({
+        await expect(page.getByRole('main').locator('#org-tenants-table')).toBeVisible({
             timeout: 30_000,
         });
         await expect(
