@@ -362,11 +362,19 @@ function findPointerClassTokens(src: string): string[] {
  * Files other than the owner that make a pointer-class decision, minus the
  * tokens each one is explicitly excused for.
  */
-function consumersWithPointerLogic(files: string[]): Array<{ file: string; tokens: string[] }> {
+function consumersWithPointerLogic(
+    files: string[],
+    // Injected so a control can run the SAME pipeline with no excuses and
+    // prove it still selects. Defaults to the real allowlist, so every
+    // production call site is unchanged.
+    allowlist: Readonly<
+        Record<string, { tokens: readonly string[]; reason: string }>
+    > = POINTER_LOGIC_ALLOWLIST,
+): Array<{ file: string; tokens: string[] }> {
     return files
         .filter((f) => f !== TOUCH_OWNER)
         .map((f) => {
-            const excused = POINTER_LOGIC_ALLOWLIST[f]?.tokens ?? [];
+            const excused = allowlist[f]?.tokens ?? [];
             return {
                 file: f,
                 tokens: findPointerClassTokens(read(f)).filter((t) => !excused.includes(t)),
@@ -582,6 +590,37 @@ describe('tooltip touch path — one owner', () => {
             );
         }
         expect(offenders).toEqual([]);
+    });
+
+    it('the offender selector can actually select — the control it was missing', () => {
+        // `Selector teeth` reported this selector DEAD on #1531: gutting
+        // `consumersWithPointerLogic` to `return []` left every assertion in
+        // this file green. The reason is the one the tool exists to find — its
+        // only consumer asserts `offenders` is `[]`, and on a clean tree it IS
+        // `[]`, so an empty selection and a correct one are the same
+        // observation. An empty selection is a PASS.
+        //
+        // The control runs the same pipeline with NO excuses. Every allowlisted
+        // file carries the token it is excused for — the next test pins that on
+        // real bytes — so with the excuses removed each one MUST come back as an
+        // offender. That is real source, not a fixture: a gutted selector
+        // returns nothing and fails here.
+        const allowlisted = Object.keys(POINTER_LOGIC_ALLOWLIST);
+        expect(allowlisted.length).toBeGreaterThan(0);
+
+        const unexcused = consumersWithPointerLogic(consumers, {});
+        for (const file of allowlisted) {
+            const found = unexcused.find((o) => o.file === file);
+            expect(found).toBeDefined();
+            expect(found!.tokens.length).toBeGreaterThan(0);
+        }
+
+        // And the excuses are load-bearing rather than decorative: with the
+        // real allowlist those same files are NOT offenders.
+        const excused = consumersWithPointerLogic(consumers);
+        for (const file of allowlisted) {
+            expect(excused.find((o) => o.file === file)).toBeUndefined();
+        }
     });
 
     it('carries no stale allowlist entries', () => {
