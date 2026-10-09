@@ -108,6 +108,7 @@ export function toCalculatorRow(row: CommodityNetWorthRow): CalculatorRow {
         payrollAllocated: row.payrollAllocated,
         cashCostTotal: row.cashCostTotal,
         unvaluedNoUnitCost: row.unvaluedNoUnitCost,
+        unattributedCostEntries: row.unattributedCostEntries,
         unvaluedUnitMismatch: row.unvaluedUnitMismatch,
 
         netWorth: row.netWorth,

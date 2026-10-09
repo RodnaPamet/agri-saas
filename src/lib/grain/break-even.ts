@@ -40,6 +40,8 @@ export interface BreakEvenInput {
     standingCropExcludedCount: number;
     unvaluedNoUnitCost: number;
     unvaluedUnitMismatch: number;
+    /** Cost entries that reached NO commodity — see `costIsFloor`. */
+    unattributedCostEntries: number;
     payrollAllocated: boolean;
 }
 

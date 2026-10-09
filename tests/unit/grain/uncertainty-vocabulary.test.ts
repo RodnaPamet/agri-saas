@@ -29,6 +29,7 @@ import {
 
 const exact = {
     unvaluedNoUnitCost: 0,
+    unattributedCostEntries: 0,
     unvaluedUnitMismatch: 0,
     payrollAllocated: false,
     netWorth: 18_750 as number | null,
@@ -45,6 +46,67 @@ describe('costIsFloor', () => {
 
     it('is true when a lot’s unit did not match the product’s', () => {
         expect(costIsFloor({ ...exact, unvaluedUnitMismatch: 1 })).toBe(true);
+    });
+
+    it('is true when a cost entry reached NO commodity (#1530)', () => {
+        // The second cause, and the one that was invisible. A cost that could
+        // not be attributed is missing from EVERY per-commodity figure, so the
+        // total is a floor for exactly the same reason an unpriced consumption
+        // makes it one.
+        expect(costIsFloor({ ...exact, unattributedCostEntries: 1 })).toBe(true);
+    });
+
+    it('keeps the three causes INDEPENDENT — each alone is sufficient', () => {
+        // The assertion that stops the new cause being carried by an old one.
+        // A test that set two at once would pass with either implemented, and
+        // "both are checked" and "only the first is checked" would be the same
+        // observation.
+        const causes = [
+            'unvaluedNoUnitCost',
+            'unvaluedUnitMismatch',
+            'unattributedCostEntries',
+        ] as const;
+
+        for (const only of causes) {
+            const row = { ...exact, [only]: 3 };
+            expect({ only, floor: costIsFloor(row) }).toEqual({ only, floor: true });
+            // ...and the other two are genuinely zero in that row, so the
+            // `true` above cannot have come from a sibling.
+            for (const other of causes) {
+                if (other !== only) expect(row[other]).toBe(0);
+            }
+        }
+    });
+
+    it('is false when all three are zero — the control', () => {
+        // Without this the loop above passes for a `costIsFloor` that returns
+        // true unconditionally.
+        expect(costIsFloor({ ...exact, unvaluedNoUnitCost: 0, unvaluedUnitMismatch: 0, unattributedCostEntries: 0 })).toBe(false);
+    });
+});
+
+describe('an unattributed cost qualifies every figure that reads cost (#1530)', () => {
+    // Before this, a farm whose costs reached no commodity got
+    // UNCERTAINTY.EXACT: the figure read as exact while being structurally
+    // short. Each of the four qualifiers is asserted separately, because they
+    // disagree on DIRECTION — a cost that is too low makes the cost itself an
+    // "at least" and the margin built from it an "at most".
+    const unattributed = { ...exact, unattributedCostEntries: 2 };
+
+    it('the cost total reads AT_LEAST', () => {
+        expect(costUncertainty(unattributed)).toBe(UNCERTAINTY.AT_LEAST);
+    });
+
+    it('net worth reads AT_MOST', () => {
+        // Cost understated => net worth overstated. Opposite direction, same
+        // cause, and getting the direction wrong would tell a farmer their
+        // position is worse than it is rather than better.
+        expect(netWorthUncertainty(unattributed)).toBe(UNCERTAINTY.AT_MOST);
+    });
+
+    it('and EXACT once nothing is unattributed', () => {
+        expect(costUncertainty(exact)).toBe(UNCERTAINTY.EXACT);
+        expect(netWorthUncertainty(exact)).toBe(UNCERTAINTY.EXACT);
     });
 });
 
@@ -120,6 +182,7 @@ describe('costUncertainty', () => {
 describe('composeFarmUncertainty', () => {
     const row = (over: Partial<Parameters<typeof composeFarmUncertainty>[0][number]> = {}) => ({
         unvaluedNoUnitCost: 0,
+        unattributedCostEntries: 0,
         unvaluedUnitMismatch: 0,
         payrollAllocated: false,
         netWorth: 100 as number | null,

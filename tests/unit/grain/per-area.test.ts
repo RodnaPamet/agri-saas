@@ -34,6 +34,7 @@ const base = {
     attributableCost: 5_000,
     standingCropExcludedCount: 0,
     unvaluedNoUnitCost: 0,
+    unattributedCostEntries: 0,
     unvaluedUnitMismatch: 0,
     payrollAllocated: false,
 };
@@ -148,5 +149,28 @@ describe('computePerArea', () => {
         });
         // 37 dca → (10,000 − 3,333) / 37 = 180.189…
         expect(r.marginPerDca).toBe(180.19);
+    });
+});
+
+describe('an unattributed cost makes the per-dca figures a ceiling (#1530)', () => {
+    // Direction matters: an understated cost overstates the margin, so the
+    // per-area figures become AT_MOST. Before #1530 this reached EXACT — the
+    // figure read as exact while being structurally short, which is the one
+    // thing the vocabulary exists to prevent.
+    const priced = { ...base, standingCropAreaHa: 10, standingCropValue: 5_000, attributableCost: 2_000 };
+
+    it('reads AT_MOST on the new cause ALONE', () => {
+        const r = computePerArea({ ...priced, unattributedCostEntries: 1 });
+
+        expect(r.uncertainty).toBe(UNCERTAINTY.AT_MOST);
+        // The figures are still produced — qualified, not withheld. Withholding
+        // would be worse than qualifying, and is what the refusal codes are for.
+        expect(r.marginPerDca).not.toBeNull();
+        expect(r.refusalCode).toBeNull();
+    });
+
+    it('and EXACT when nothing is unattributed — the control', () => {
+        const r = computePerArea({ ...priced, unattributedCostEntries: 0 });
+        expect(r.uncertainty).toBe(UNCERTAINTY.EXACT);
     });
 });

@@ -348,6 +348,19 @@ export interface CommodityNetWorthRow {
      */
     unvaluedNoUnitCost: number;
     unvaluedUnitMismatch: number;
+    /**
+     * Cost entries that reached NO commodity, farm-wide. The SECOND reason
+     * `cashCostTotal` is a floor, and it was invisible until #1530: a cost
+     * that could not be attributed is missing from EVERY per-commodity
+     * figure, so the same count rides every row rather than being split
+     * between them.
+     *
+     * Deliberately not `unallocatedToCrop`'s parcels: a spread landing on
+     * idle land is not redistributed by design, so each commodity's share is
+     * exact and only the farm total is split. Qualifying that would mark a
+     * right figure as incomplete.
+     */
+    unattributedCostEntries: number;
 
     netAssetPosition: number | null;
     /** `netAssetPosition - cashCostTotal`, computed ONLY when the cash
@@ -1281,6 +1294,14 @@ function finalizeRow(
     const pricePerTonne = reference?.pricePerTonne ?? null;
     const priceCurrency = reference?.currency ?? null;
 
+    // DEDUPED, because one entry can be pushed twice — a cost linked to a
+    // planting with an unknown commodity lands in `plantingsUnknownCommodity`
+    // AND here. `finalizeRow` runs BEFORE the de-duplication pass at the end
+    // of the usecase, so counting the raw array would double some entries.
+    // Only `> 0` is load-bearing downstream, but a count that can double is a
+    // count somebody will eventually print.
+    const unattributedCostEntries = new Set(exclusions.payrollUnattributable).size;
+
     if (pricePerTonne == null) {
         exclusions.commoditiesWithNoPrice.push(commodity);
     }
@@ -1429,6 +1450,7 @@ function finalizeRow(
         // floor whenever either of these is non-zero.
         unvaluedNoUnitCost: a.unvaluedNoUnitCost,
         unvaluedUnitMismatch: a.unvaluedUnitMismatch,
+        unattributedCostEntries,
 
         netAssetPosition,
         netWorth,
@@ -1442,6 +1464,7 @@ function finalizeRow(
             standingCropExcludedCount: a.standingCropExcludedCount,
             unvaluedNoUnitCost: a.unvaluedNoUnitCost,
             unvaluedUnitMismatch: a.unvaluedUnitMismatch,
+            unattributedCostEntries,
             payrollAllocated: a.payrollAllocated,
         }),
         breakEven: computeBreakEven({
@@ -1452,6 +1475,7 @@ function finalizeRow(
             standingCropExcludedCount: a.standingCropExcludedCount,
             unvaluedNoUnitCost: a.unvaluedNoUnitCost,
             unvaluedUnitMismatch: a.unvaluedUnitMismatch,
+            unattributedCostEntries,
             payrollAllocated: a.payrollAllocated,
         }),
         netWorthUnavailableReason,
