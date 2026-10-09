@@ -2805,6 +2805,66 @@ exports[`API contract — per-schema snapshots schema: ContractListRow 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: CostDefaults 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "overheads": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "PAYROLL",
+              "CREDIT",
+              "DEPRECIATION",
+              "OTHER"
+            ],
+            "description": "Which overhead this is the last value for."
+          },
+          "amount": {
+            "type": "number",
+            "description": "The yearly figure as entered."
+          },
+          "currency": {
+            "type": "string"
+          },
+          "incurredOn": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When it was incurred. Show it — a default from last season should look like one."
+          },
+          "payrollHeadcount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "PAYROLL only. \`null\` means a plain total was entered, which is NOT the same as zero people."
+          },
+          "payrollAnnualPerPerson": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "category",
+          "amount",
+          "currency",
+          "incurredOn"
+        ]
+      }
+    }
+  },
+  "required": [
+    "overheads"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: CostEntry 1`] = `
 "{
   "type": "object",

@@ -2700,6 +2700,63 @@
         "additionalProperties": {},
         "description": "A contract as the LIST returns it: the model plus computed fulfilment, value and benchmark. The encrypted terms/pricingNotes are NOT projected on a list — fetch the contract itself for those."
       },
+      "CostDefaults": {
+        "type": "object",
+        "properties": {
+          "overheads": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "category": {
+                  "type": "string",
+                  "enum": [
+                    "PAYROLL",
+                    "CREDIT",
+                    "DEPRECIATION",
+                    "OTHER"
+                  ],
+                  "description": "Which overhead this is the last value for."
+                },
+                "amount": {
+                  "type": "number",
+                  "description": "The yearly figure as entered."
+                },
+                "currency": {
+                  "type": "string"
+                },
+                "incurredOn": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "When it was incurred. Show it — a default from last season should look like one."
+                },
+                "payrollHeadcount": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "description": "PAYROLL only. `null` means a plain total was entered, which is NOT the same as zero people."
+                },
+                "payrollAnnualPerPerson": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "category",
+                "amount",
+                "currency",
+                "incurredOn"
+              ]
+            }
+          }
+        },
+        "required": [
+          "overheads"
+        ]
+      },
       "CostEntry": {
         "type": "object",
         "properties": {
@@ -25263,6 +25320,144 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MachineryDepreciation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries an English `message` as a developer-facing fallback; it is NOT translated, so render your own copy keyed on `code`. Route-level 403s carry their own codes and are described on the operation that returns them.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/grain/costs/defaults": {
+      "get": {
+        "operationId": "getCostDefaults",
+        "summary": "«Последни стойности» — what the farm last entered",
+        "description": "The farm's own last value for each OVERHEAD category, so «Нов разход» opens prefilled rather than empty.\n\n**The farm's own history, never a benchmark.** There is no Agrent-wide table behind this — the owner's decision was explicit. A farm with no history gets an empty `overheads` array, and that is the correct first-run state rather than an error.\n\n**Yearly overheads only** — `PAYROLL`, `CREDIT`, `DEPRECIATION`, `OTHER`. `RENT` is deliberately absent: it is a per-decare crop line in the owner's split, not an overhead, however fixed it is.\n\n**`payrollHeadcount` / `payrollAnnualPerPerson` are `null`, never `0`, when a plain total was entered.** Zero people earning a salary is a different claim from \"they typed a total\", and a prefill that wrote zeros over that distinction would overwrite real figures with a number nobody typed.\n\n**`incurredOn` is returned so a STALE default is visible.** Last year's salary figure prefilled silently is worse than one shown with its date beside it.\n\n**No `commodity` parameter yet.** The per-crop half needs a commodity→cost path that does not exist: `CostEntry` has no commodity column, and all four live cost entries on the owner's farm carry no domain link at all (`parcelId`, `seasonId`, `plantingId`, `locationId`, `itemId`, `leaseId` each set on zero). Adding it later is additive — a client that does not send it keeps this behaviour.\n\nCarries a weak ETag; send `If-None-Match` and handle **304**.",
+        "tags": [
+          "Grain"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The latest overhead figures, in a fixed category order so the form's fields do not reorder between visits. Empty when the farm has no overhead history.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostDefaults"
                 }
               }
             }
