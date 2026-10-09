@@ -55,10 +55,31 @@ test.describe('Admin Area Regression', () => {
         const slug = await loginAndGetTenant(page, ADMIN_USER);
         await safeGoto(page, `/t/${slug}/admin/scim`, { waitUntil: 'domcontentloaded' });
 
-        await expect(page.getByRole('heading', { name: /SCIM Provisioning/i })).toBeVisible({ timeout: 60000 });
-        await expect(page.locator('#scim-endpoint-url')).toBeVisible({ timeout: 30000 });
-        await expect(page.locator('#generate-token-btn')).toBeVisible({ timeout: 10000 });
-        const setupGuide = page.getByText('Setup Guide');
+        // Scoped to `main`, not page-level (#1495).
+        //
+        // This flaked as a TIMEOUT and was not one. The real failure:
+        //
+        //     strict mode violation: locator('#scim-endpoint-url')
+        //     resolved to 2 elements
+        //
+        // The page emits that id exactly ONCE
+        // (`admin/scim/page.tsx:159`), so the second element is a Next
+        // STREAMING DUPLICATE of the page — the class CLAUDE.md already names:
+        // "Scope `#id` / role locators to `getByRole('main')` where a Next
+        // streaming duplicate of the page could match — never a bare
+        // page-level locator." This test used the bare form the convention
+        // forbids, and the duplicate only exists during streaming, which is
+        // what made it look like a timing flake.
+        //
+        // The `60000 / 30000 / 10000` ladder is left alone deliberately: it is
+        // a previous flake's scar tissue and worth revisiting, but changing
+        // timeouts in the same diff as the real fix would make it impossible
+        // to tell which one worked.
+        const main = page.getByRole('main');
+        await expect(main.getByRole('heading', { name: /SCIM Provisioning/i })).toBeVisible({ timeout: 60000 });
+        await expect(main.locator('#scim-endpoint-url')).toBeVisible({ timeout: 30000 });
+        await expect(main.locator('#generate-token-btn')).toBeVisible({ timeout: 10000 });
+        const setupGuide = main.getByText('Setup Guide');
         await setupGuide.scrollIntoViewIfNeeded();
         await expect(setupGuide).toBeVisible({ timeout: 10000 });
     });
