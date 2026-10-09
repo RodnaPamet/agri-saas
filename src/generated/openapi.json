@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "10.4.0",
+    "version": "10.6.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -13180,6 +13180,122 @@
             "required": true,
             "name": "tenantSlug",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "Page size, 1-100. Sending EITHER `limit` or `cursor` switches the response from a flat array to `{ rows, nextCursor }` — see the operation description."
+            },
+            "required": false,
+            "description": "Page size, 1-100. Sending EITHER `limit` or `cursor` switches the response from a flat array to `{ rows, nextCursor }` — see the operation description.",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Opaque keyset cursor from a previous `nextCursor`. A position, not a timestamp to parse or construct: a client that builds its own has coupled itself to the sort key."
+            },
+            "required": false,
+            "description": "Opaque keyset cursor from a previous `nextCursor`. A position, not a timestamp to parse or construct: a client that builds its own has coupled itself to the sort key.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Comma-separated `LogEntryType` members, e.g. `INPUT_APPLICATION,HARVEST`. An invalid member is a 400 rather than a silent drop. Omit the parameter to clear the facet — an empty value matches nothing."
+            },
+            "required": false,
+            "description": "Comma-separated `LogEntryType` members, e.g. `INPUT_APPLICATION,HARVEST`. An invalid member is a 400 rather than a silent drop. Omit the parameter to clear the facet — an empty value matches nothing.",
+            "name": "type",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Comma-separated `LogEntryStatus` members. Same rules as `type`."
+            },
+            "required": false,
+            "description": "Comma-separated `LogEntryStatus` members. Same rules as `type`.",
+            "name": "status",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Case-insensitive substring search over `title` and `notes`."
+            },
+            "required": false,
+            "description": "Case-insensitive substring search over `title` and `notes`.",
+            "name": "q",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Inclusive lower bound on `occurredAt`. Either bound may be sent alone."
+            },
+            "required": false,
+            "description": "Inclusive lower bound on `occurredAt`. Either bound may be sent alone.",
+            "name": "occurredFrom",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Inclusive upper bound on `occurredAt`."
+            },
+            "required": false,
+            "description": "Inclusive upper bound on `occurredAt`.",
+            "name": "occurredTo",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "description": "The recycle bin — soft-deleted entries ONLY, never mixed with live ones. Escalates to an admin check and returns `{ entries }`, a third response shape."
+            },
+            "required": false,
+            "description": "The recycle bin — soft-deleted entries ONLY, never mixed with live ones. Escalates to an admin check and returns `{ entries }`, a third response shape.",
+            "name": "deleted",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Comma-separated `Parcel.cropType` values. Matches through the entry's operation LINE, so a free-hand entry with no line never matches — the intended agronomic-only scope, not an omission."
+            },
+            "required": false,
+            "description": "Comma-separated `Parcel.cropType` values. Matches through the entry's operation LINE, so a free-hand entry with no line never matches — the intended agronomic-only scope, not an omission.",
+            "name": "crop",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "A «блок» — the `Location` a shapefile import creates. Matches an entry reached by EITHER path: one a person linked to the block explicitly, or one whose operation line sits on a parcel belonging to it. The second path is where the bulk of a ДНЕВНИК lives, because the spray flow writes an operation line and no location link; the second path was added for #1544, before which automatic spray records were absent from a block-filtered journal with nothing to say so."
+            },
+            "required": false,
+            "description": "A «блок» — the `Location` a shapefile import creates. Matches an entry reached by EITHER path: one a person linked to the block explicitly, or one whose operation line sits on a parcel belonging to it. The second path is where the bulk of a ДНЕВНИК lives, because the spray flow writes an operation line and no location link; the second path was added for #1544, before which automatic spray records were absent from a block-filtered journal with nothing to say so.",
+            "name": "locationId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Entries linked to a planting of this crop plan, for the plan-detail tab."
+            },
+            "required": false,
+            "description": "Entries linked to a planting of this crop plan, for the plan-detail tab.",
+            "name": "cropPlanId",
+            "in": "query"
           }
         ],
         "responses": {

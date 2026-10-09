@@ -292,12 +292,83 @@ describe('JournalRepository — filter translation', () => {
         expect(whereOf(db.logEntry.findMany)).not.toHaveProperty('operationParcel');
     });
 
-    it('filters by location through the join table', async () => {
+    it('filters by location through the join table OR the operation line', async () => {
+        // Two paths reach one block, and only the join table was matched.
+        // The INPUT_APPLICATION entry the spray flow writes passes
+        // `operationParcelId` and NO `locationIds`, so every automatic spray
+        // record was invisible to `?locationId=` — a farmer filtering their
+        // ДНЕВНИК by block saw the hand-linked entries only, with nothing to
+        // say the rest existed.
         await JournalRepository.list(asTx(db), ctx, { locationId: 'loc-1' });
 
-        expect(whereOf(db.logEntry.findMany).locations).toEqual({
-            some: { locationId: 'loc-1' },
+        expect(whereOf(db.logEntry.findMany).AND).toEqual([
+            {
+                OR: [
+                    { locations: { some: { locationId: 'loc-1' } } },
+                    { operationParcel: { is: { parcel: { is: { locationId: 'loc-1' } } } } },
+                ],
+            },
+        ]);
+    });
+
+    it('does NOT clobber the free-text search when both are given', async () => {
+        // Why the clause is `AND` and not `OR`. `where.OR` is already taken by
+        // `q`, so assigning `OR` here would silently discard the search and
+        // return every entry in the block — a filter that widens when you add
+        // a term to it.
+        await JournalRepository.list(asTx(db), ctx, { locationId: 'loc-1', q: 'пшеница' });
+
+        const where = whereOf(db.logEntry.findMany);
+        expect(where.OR).toEqual([
+            { title: { contains: 'пшеница', mode: 'insensitive' } },
+            { notes: { contains: 'пшеница', mode: 'insensitive' } },
+        ]);
+        expect(where.AND).toHaveLength(1);
+    });
+
+    it('keeps the crop filter intact alongside a location filter', async () => {
+        // Both now reach through `operationParcel`, so the risk is one
+        // overwriting the other: crop assigns `where.operationParcel` while
+        // location nests its own copy inside `AND[0].OR[1]`. Prisma ANDs the
+        // two, which is the intended "this crop, in this block".
+        await JournalRepository.list(asTx(db), ctx, { locationId: 'loc-1', crop: ['wheat'] });
+
+        const where = whereOf(db.logEntry.findMany);
+        expect(where.operationParcel).toEqual({
+            is: { parcel: { is: { cropType: { in: ['wheat'] } } } },
         });
+        expect(where.AND).toHaveLength(1);
+    });
+
+    it('a paginated read keeps the location clause alongside the cursor', async () => {
+        // `listPaginated` also writes `where.AND` — for its cursor predicate —
+        // and it appends rather than assigns. If it ever assigned, page two of
+        // a block-filtered journal would silently become page two of the WHOLE
+        // journal: more rows, no error, and the filter apparently working on
+        // page one.
+        await JournalRepository.listPaginated(asTx(db), ctx, {
+            limit: 10,
+            cursor: encodeCursor({ createdAt: '2026-05-01T00:00:00.000Z', id: 'e-1' }),
+            filters: { locationId: 'loc-1' },
+        });
+
+        const and = whereOf(db.logEntry.findMany).AND as unknown[];
+        expect(and).toHaveLength(2);
+        // The location clause survives, and the cursor rode alongside it.
+        expect(and[0]).toEqual({
+            OR: [
+                { locations: { some: { locationId: 'loc-1' } } },
+                { operationParcel: { is: { parcel: { is: { locationId: 'loc-1' } } } } },
+            ],
+        });
+    });
+
+    it('adds no location clause at all when the filter is absent', async () => {
+        // The cleared-facet direction. An `AND: [{ OR: [...] }]` emitted with
+        // an undefined id would match nothing and blank the journal.
+        await JournalRepository.list(asTx(db), ctx, {});
+
+        expect(whereOf(db.logEntry.findMany)).not.toHaveProperty('AND');
     });
 
     it('filters by crop plan through plantings', async () => {

@@ -241,9 +241,53 @@ export class JournalRepository {
         if (filters?.crop?.length) {
             where.operationParcel = { is: { parcel: { is: { cropType: { in: filters.crop } } } } };
         }
-        // Location — entries logged against a location (LogLocation join).
+        // Location — a «блок» in the owner's words: "a collection of parcels,
+        // the one uploaded in the shape files". TWO paths reach one, and only
+        // the first was matched.
+        //
+        //   1. LogLocation — an entry a person explicitly linked to the block.
+        //   2. operationParcel → parcel → locationId — an entry attached to an
+        //      operation LINE, which names a parcel, which belongs to a block.
+        //
+        // Path 2 is where the bulk of a ДНЕВНИК lives. The INPUT_APPLICATION
+        // entry the spray flow writes (`inventory.ts`, the
+        // `createLogEntryWithAudit` call) passes `operationParcelId: line.id`
+        // and NO `locationIds`, so every automatic spray record was invisible
+        // to `?locationId=`. A farmer filtering their journal by block saw only
+        // the hand-linked entries and no indication the rest existed — the
+        // worst shape for a regulatory record, since an incomplete ДНЕВНИК
+        // reads exactly like a complete one.
+        //
+        // The tell was that `crop` and `locationId` disagreed about which
+        // entries belong to a block: `crop` already matches through
+        // `operationParcel` (just above), so the same spray record was
+        // reachable by crop and unreachable by block.
+        //
+        // `AND`, not `OR`, and that is load-bearing: `where.OR` is already
+        // taken by the `q` free-text search a dozen lines up, so assigning
+        // `where.OR` here would silently discard the search and return the
+        // whole block — a filter that WIDENS when you add a term to it.
+        //
+        // Assigning `AND` is safe because the one other writer accumulates:
+        // `listPaginated` appends its cursor predicate with
+        // `if (where.AND) { push } else { assign }`, so a paginated read keeps
+        // this clause on page two. That ordering is the whole reason the
+        // cursor code is written defensively; do not "simplify" it to an
+        // assignment, or the second page of a block-filtered journal becomes
+        // the second page of the WHOLE journal.
         if (filters?.locationId) {
-            where.locations = { some: { locationId: filters.locationId } };
+            where.AND = [
+                {
+                    OR: [
+                        { locations: { some: { locationId: filters.locationId } } },
+                        {
+                            operationParcel: {
+                                is: { parcel: { is: { locationId: filters.locationId } } },
+                            },
+                        },
+                    ],
+                },
+            ];
         }
         // Crop plan — entries linked (LogPlanting) to a planting of this plan.
         // LogEntry → plantings (LogPlanting[]) → planting (Planting).cropPlanId.

@@ -1594,33 +1594,83 @@ jobs:
           fi
 
           if [ "${E2E_OUTCOME}" != "success" ]; then
-            if [ "${#MARKED[@]}" -gt 0 ]; then
-              {
-                echo "### E2E shard ${{ matrix.shard }} — ${#MARKED[@]} failing spec line(s)"
-                echo
-                echo '```'
-                printf '%s\n' "${MARKED[@]}"
-                echo '```'
-              } >> "$GITHUB_STEP_SUMMARY"
-              for line in "${MARKED[@]}"; do
-                echo "::error::${line}"
-              done
+            if [ "${#MARKED[@]}" -eq 0 ]; then
+              # The empty case is the one that matters. "Found no failures" and
+              # "my pattern no longer matches" produce identical output, and this
+              # step exists precisely because a silent non-answer once read as a
+              # pass. So when the shard did NOT succeed and this found nothing,
+              # say so loudly rather than printing reassuring silence.
+              echo "::warning::E2E shard ${{ matrix.shard }} did not succeed (outcome=${E2E_OUTCOME}) but no '✘' line was found in its log."
+              echo "::warning::Either it failed before running a test (setup, build, web server), or this extractor's marker is stale — check the log tail below before trusting it."
+              tail -n 40 "$LOG" || true
               exit 0
             fi
 
-            # The empty case is the one that matters. "Found no failures" and
-            # "my pattern no longer matches" produce identical output, and this
-            # step exists precisely because a silent non-answer once read as a
-            # pass. So when the shard did NOT succeed and this found nothing,
-            # say so loudly rather than printing reassuring silence.
-            echo "::warning::E2E shard ${{ matrix.shard }} did not succeed (outcome=${E2E_OUTCOME}) but no '✘' line was found in its log."
-            echo "::warning::Either it failed before running a test (setup, build, web server), or this extractor's marker is stale — check the log tail below before trusting it."
-            tail -n 40 "$LOG" || true
-            exit 0
+            # A ✘ on a RED shard is not necessarily a FAILURE (#1529).
+            #
+            # `retries: 2`, so a spec that failed an attempt and PASSED a later
+            # one prints both a ✘ and a ✓. Annotating every ✘ as an error here
+            # reports a recovered flake as a failure AND skips the ledger split
+            # below entirely — so a brand-new flake arrives looking exactly like
+            # the failure that reddened the shard.
+            #
+            # Measured on run 37959012790: `88 passed  1 failed  1 flaky`, two ✘
+            # lines, both emitted as ::error. One was the genuine failure; the
+            # other was tooltip-and-copy.spec.ts:125 "SCIM endpoint — CopyButton
+            # writes to clipboard", which recovered on retry and is NOT in the
+            # ledger — the ledgered entry for that file is a different test. So
+            # a new flake appeared and nothing said so.
+            #
+            # Playwright prints `N flaky` in its summary, but per-SPEC the only
+            # in-log evidence is a later ✓ for the same test, so that is the
+            # match. The outcome still decides what a ✘ MEANS — this only stops
+            # the red branch from answering for lines the log says recovered.
+            RECOVERED=(); FAILED=()
+            for line in "${MARKED[@]}"; do
+              # `tests/e2e/<file>.spec.ts:<line>:<col>` — the test's identity
+              # WITHIN THIS LOG. A line number is right here and wrong in the
+              # ledger, and the difference is the scope: the ledger matches
+              # across COMMITS, where a comment added above a test moves it
+              # (entity-detail-layout went :24 -> :51 inside one PR), while this
+              # matches a ✘ to a ✓ inside one log from one commit, where nothing
+              # can have moved.
+              key=$(printf '%s' "${line}" | grep -oE 'tests/e2e/[^ ]+\.spec\.ts:[0-9]+:[0-9]+' | head -1)
+              if [ -n "${key}" ] && grep -F "${key}" "$LOG" | grep -qF '✓'; then
+                RECOVERED+=("${line}")
+              else
+                # A line this could not key counts as FAILED, never recovered.
+                # If the marker format drifts, this must over-report failures
+                # rather than silently reclassify them as flakes — the same
+                # fail-loud direction the empty case above takes.
+                FAILED+=("${line}")
+              fi
+            done
+
+            if [ "${#FAILED[@]}" -gt 0 ]; then
+              {
+                echo "### E2E shard ${{ matrix.shard }} — ${#FAILED[@]} failing spec line(s)"
+                echo
+                echo '```'
+                printf '%s\n' "${FAILED[@]}"
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+              for line in "${FAILED[@]}"; do
+                echo "::error::${line}"
+              done
+            fi
+
+            # Fall through to the ledger split carrying ONLY the recovered
+            # lines, so a red shard classifies its flakes exactly as a green one
+            # does. Re-using that block rather than copying it: two spellings of
+            # the ledger match is how a red shard and a green shard come to
+            # disagree about what is already known.
+            MARKED=("${RECOVERED[@]}")
           fi
 
-          # Green shard. Any ✘ here passed on retry, so it is a FLAKE: not a
-          # failure, but not nothing either. `gh run rerun` overwrites a job's
+          # Flake classification. Every ✘ reaching here passed on retry — on a
+          # green shard that is all of them, and on a red shard it is the
+          # RECOVERED subset the branch above sorted out (#1529). So it is a
+          # FLAKE: not a failure, but not nothing either. `gh run rerun` overwrites a job's
           # conclusion, so re-running to get unblocked deletes the only record
           # that a spec ever failed — which biases every stability figure taken
           # from the run list downwards. A notice costs nothing on a clean run
