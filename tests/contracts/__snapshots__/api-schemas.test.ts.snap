@@ -10841,7 +10841,7 @@ exports[`API contract — per-schema snapshots schema: RawErrorResponse 1`] = `
   "required": [
     "error"
   ],
-  "description": "Non-canonical error body used by the spatial-import and cadastre-import routes: a bare message string, with no \`code\`, \`requestId\` or \`details\`."
+  "description": "A bare error body: \`{\\"error\\": \\"<code-or-message>\\"}\` and nothing else — NOT the \`ErrorResponse\` envelope, so there is no \`code\`, \`requestId\`, \`details\` or \`params\`. Used by the native auth family, where it is the shape RFC 6749 §5.2 specifies for an OAuth token endpoint, and by the spatial-import and cadastre-import routes. A rate-limit (429) or an unexpected failure (5xx) on the same route still answers with \`ErrorResponse\`, because the error wrapper builds those rather than the route."
 }"
 `;
 

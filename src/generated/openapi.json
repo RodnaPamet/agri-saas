@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "7.0.0",
+    "version": "7.2.2",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -10333,7 +10333,7 @@
         "required": [
           "error"
         ],
-        "description": "Non-canonical error body used by the spatial-import and cadastre-import routes: a bare message string, with no `code`, `requestId` or `details`."
+        "description": "A bare error body: `{\"error\": \"<code-or-message>\"}` and nothing else — NOT the `ErrorResponse` envelope, so there is no `code`, `requestId`, `details` or `params`. Used by the native auth family, where it is the shape RFC 6749 §5.2 specifies for an OAuth token endpoint, and by the spatial-import and cadastre-import routes. A rate-limit (429) or an unexpected failure (5xx) on the same route still answers with `ErrorResponse`, because the error wrapper builds those rather than the route."
       },
       "RegisterStartResult": {
         "type": "object",
@@ -27092,21 +27092,21 @@
             }
           },
           "400": {
-            "description": "Invalid request body or query parameters.",
+            "description": "`terms_not_accepted` or `terms_version_stale` — a BARE body, not the envelope. The latter carries `currentVersion` so a client can say \"reload and read the new terms\".",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/RawErrorResponse"
                 }
               }
             }
           },
           "401": {
-            "description": "Not signed in, or the session was refused.",
+            "description": "`unauthenticated` — a BARE body, not the envelope.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/RawErrorResponse"
                 }
               }
             }
@@ -33566,11 +33566,11 @@
             "description": "Redirect to the provider via NextAuth. Follow it in the browser session; there is no body."
           },
           "400": {
-            "description": "Invalid request body or query parameters.",
+            "description": "`invalid_request`, `unsupported_code_challenge_method`, `redirect_uri_not_allowed` or `unsupported_provider` — a BARE body, not the `ErrorResponse` envelope. The first two are RFC 6749 §5.2 / RFC 7636 codes; branch on the string.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/RawErrorResponse"
                 }
               }
             }
@@ -33679,21 +33679,21 @@
             "description": "Redirect to the app’s registered URI with the single-use code. No body."
           },
           "400": {
-            "description": "Invalid request body or query parameters.",
+            "description": "`no_handoff`, `invalid_handoff` or `redirect_uri_not_allowed` — a BARE body, not the envelope.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/RawErrorResponse"
                 }
               }
             }
           },
           "401": {
-            "description": "Not signed in, or the session was refused.",
+            "description": "`not_authenticated` or `session_invalid` — a BARE body, not the envelope.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/RawErrorResponse"
                 }
               }
             }
@@ -33714,6 +33714,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`session_not_tracked` — a BARE body. The session exists but was never recorded, so it cannot be handed off; sign in again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RawErrorResponse"
                 }
               }
             }
@@ -33808,11 +33818,11 @@
             }
           },
           "400": {
-            "description": "Invalid request body or query parameters.",
+            "description": "`invalid_grant` — a BARE body, as RFC 6749 §5.2 specifies for a token exchange.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/RawErrorResponse"
                 }
               }
             }
@@ -33937,11 +33947,11 @@
             }
           },
           "400": {
-            "description": "Invalid request body or query parameters.",
+            "description": "`invalid_grant` — a BARE body. Covers a bad signature, the wrong audience, an expired token, a nonce mismatch and a replayed nonce, deliberately indistinguishable.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/RawErrorResponse"
                 }
               }
             }
@@ -34032,6 +34042,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "`apple_sign_in_disabled` — a BARE body. No Apple audience is configured for this flow, so the feature is dormant rather than broken.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RawErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -34079,11 +34099,11 @@
             }
           },
           "401": {
-            "description": "Not signed in, or the session was refused.",
+            "description": "`invalid_bearer` — a BARE body, not the envelope.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/RawErrorResponse"
                 }
               }
             }
@@ -34208,11 +34228,11 @@
             }
           },
           "401": {
-            "description": "Not signed in, or the session was refused.",
+            "description": "`invalid_grant` — a BARE body, as RFC 6749 §5.2 specifies. Covers an unknown, expired, rotated or revoked refresh token, deliberately indistinguishable.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/RawErrorResponse"
                 }
               }
             }
@@ -34327,11 +34347,11 @@
             }
           },
           "400": {
-            "description": "Invalid request body or query parameters.",
+            "description": "`invalid_request` — a BARE body, not the envelope.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/RawErrorResponse"
                 }
               }
             }
@@ -34501,11 +34521,11 @@
             }
           },
           "400": {
-            "description": "Invalid request body or query parameters.",
+            "description": "`invalid_request`, `turnstile_failed`, `disposable_email`, `terms_not_accepted` or `terms_version_stale` — a BARE body, not the envelope. `terms_version_stale` also carries `currentVersion`. These are coded refusals rather than schema rejections ON PURPOSE (#1393): a missing `acceptedTerms` is retryable, and a schema-level rejection would not be.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/RawErrorResponse"
                 }
               }
             }
@@ -34647,11 +34667,11 @@
             }
           },
           "400": {
-            "description": "Invalid request body or query parameters.",
+            "description": "`invalid_request` — a BARE body, not the envelope.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/RawErrorResponse"
                 }
               }
             }
