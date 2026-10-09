@@ -33,7 +33,7 @@ import {
     TaskWatcherRepository,
 } from '@/app-layer/repositories/WorkItemRepository';
 import { makeRequestContext } from '../../helpers/make-context';
-import { encodeCursor, MAX_LIMIT, DEFAULT_LIMIT } from '@/lib/pagination';
+import { encodeCursor, MAX_LIMIT, DEFAULT_LIMIT, CURSOR_ORDER_BY } from '@/lib/pagination';
 import { Prisma } from '@prisma/client';
 import type { PrismaTx } from '@/lib/db-context';
 
@@ -380,14 +380,31 @@ describe('WorkItemRepository — list shape', () => {
         expect(select).not.toHaveProperty('_count');
     });
 
-    it('orders the list by priority first, then newest', async () => {
-        // Break: losing the priority key reshuffles the Tasks page into
-        // pure recency, burying P0 work under whatever was typed last.
+    it('orders the list newest-first, sharing the cursor path\'s constant', async () => {
+        // This test previously asserted `[{ priority: 'asc' }, { createdAt:
+        // 'desc' }]`, and carried the argument against changing it: "losing the
+        // priority key reshuffles the Tasks page into pure recency, burying P0
+        // work under whatever was typed last." That cost is real and was put to
+        // the owner in those terms. Their decision, 2026-10-09, alongside
+        // removing «Приоритет» from the web task UI: newest first, no urgency
+        // sort. Recorded rather than quietly flipped, because the trade is the
+        // part a future reader needs.
+        //
+        // What the change also FIXES, which was not the reason for it: this
+        // list ordered by priority while `listTasksPage` ordered by
+        // CURSOR_ORDER_BY, so the same tenant's tasks came back in two
+        // different orders depending on whether a cursor was passed. Asserting
+        // the shared constant — not a literal copy of it — is what keeps them
+        // from drifting apart again.
         await WorkItemRepository.list(asTx(db), ctx);
 
+        expect(argOf(db.task.findMany).orderBy).toEqual(CURSOR_ORDER_BY);
+        // And it is genuinely newest-first with a total order, not merely
+        // equal to some constant: an assertion against an identifier alone
+        // would pass if CURSOR_ORDER_BY were changed to anything at all.
         expect(argOf(db.task.findMany).orderBy).toEqual([
-            { priority: 'asc' },
             { createdAt: 'desc' },
+            { id: 'desc' },
         ]);
     });
 
