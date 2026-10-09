@@ -9,7 +9,7 @@
  */
 
 import { DB_AVAILABLE } from './db-helper';
-import { prismaTestClient } from '../helpers/db';
+import { prismaTestClient, hardDeleteTenants } from '../helpers/db';
 import type { PrismaClient } from '@prisma/client';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -25,18 +25,21 @@ describeFn('last-OWNER DB trigger', () => {
     });
 
     afterAll(async () => {
-        // Best-effort cleanup — order matters (memberships before tenants).
-        try {
-            await prisma.tenantMembership.deleteMany({
-                where: { tenantId: { in: await prisma.tenant.findMany({ where: { slug: { in: tenantSlugs } }, select: { id: true } }).then(ts => ts.map(t => t.id)) } },
-            });
-        } catch { /* ignore */ }
-        try {
-            await prisma.tenant.deleteMany({ where: { slug: { in: tenantSlugs } } });
-        } catch { /* ignore */ }
-        try {
-            await prisma.user.deleteMany({ where: { id: { in: userIds } } });
-        } catch { /* ignore */ }
+        // NOT best-effort, and no `catch`. This suite creates tenants with
+        // active OWNERs on purpose — it exists to assert that the last-OWNER
+        // guard refuses to remove them — so its own teardown hit that same
+        // trigger on every run and every failure was swallowed (#1432). The
+        // suite reported green while leaking every fixture it made.
+        //
+        // `hardDeleteTenants` disables the trigger for the delete inside one
+        // transaction and then COUNTS what is left, so a teardown that cannot
+        // clean up says so.
+        const created = await prisma.tenant.findMany({
+            where: { slug: { in: tenantSlugs } },
+            select: { id: true },
+        });
+        await hardDeleteTenants(prisma, created.map((t) => t.id));
+        await prisma.user.deleteMany({ where: { id: { in: userIds } } });
         await prisma.$disconnect();
     });
 
