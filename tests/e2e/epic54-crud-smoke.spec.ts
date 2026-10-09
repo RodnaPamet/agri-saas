@@ -39,6 +39,10 @@ test.describe('Epic 54 — CRUD/detail surfaces mount on demand', () => {
         const tenantSlug = await loginAndGetTenant(page);
 
         await safeGoto(page, `/t/${tenantSlug}/assets/new`);
+        // BARE on purpose. This id belongs to a MODAL, and the Modal primitive
+        // renders through `Dialog.Portal` / `Drawer.Portal`
+        // (src/components/ui/modal.tsx:234,306), so its content is mounted
+        // OUTSIDE `<main>`. Scoping it would never resolve (#1516).
         await expect(page.locator('#asset-name-input')).toBeVisible({ timeout: 15000 });
         await expect(page).toHaveURL(/\/assets(\?|$)/);
     });

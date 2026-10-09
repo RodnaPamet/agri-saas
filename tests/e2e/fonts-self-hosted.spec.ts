@@ -92,6 +92,9 @@ test.describe('self-hosted web fonts', () => {
 
         await safeGoto(page, '/login', { timeout: 90_000 });
         await expect(
+            // BARE on purpose. `<main>` comes from `AppShell`
+            // (src/components/layout/AppShell.tsx:237), which `/login` does not
+            // mount — there is no `main` landmark to scope to (#1516).
             page.locator('#credentials-form input[type="email"][name="email"]'),
         ).toBeVisible({ timeout: 60_000 });
 

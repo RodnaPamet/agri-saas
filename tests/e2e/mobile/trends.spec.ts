@@ -53,7 +53,7 @@ test.describe('Trends page @mobile', () => {
         // Switch the range selector — the panel re-renders (chart OR empty
         // state), and the selected range flips. Data-agnostic: works whether
         // or not the market backend is configured.
-        const oneYear = page.locator('#trends-range-1y');
+        const oneYear = page.getByRole('main').locator('#trends-range-1y');
         if (await oneYear.count()) {
             await oneYear.click();
             await expect(oneYear).toHaveAttribute('aria-selected', 'true');
@@ -76,7 +76,7 @@ test.describe('Trends page @mobile', () => {
         await expect(page.getByRole('main').locator('#trends-news-panel')).toBeVisible();
 
         // Switch the category filter — panel re-renders, selection flips.
-        const policyFilter = page.locator('#trends-news-filter-policy');
+        const policyFilter = page.getByRole('main').locator('#trends-news-filter-policy');
         if (await policyFilter.count()) {
             await policyFilter.click();
             await expect(policyFilter).toHaveAttribute('aria-selected', 'true');

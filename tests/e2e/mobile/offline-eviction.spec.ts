@@ -59,6 +59,10 @@ test.describe('offline outbox survives eviction visibly @mobile', () => {
         await openJournalEntryModalWarm(page);
 
         await page.context().setOffline(true);
+        // BARE on purpose. This id belongs to a MODAL, and the Modal primitive
+        // renders through `Dialog.Portal` / `Drawer.Portal`
+        // (src/components/ui/modal.tsx:234,306), so its content is mounted
+        // OUTSIDE `<main>`. Scoping it would never resolve (#1516).
         await page.locator('#journal-entry-title').fill(title);
         await page.locator('#journal-entry-submit').click();
         await expect(page.locator('#journal-entry-title')).toBeHidden();

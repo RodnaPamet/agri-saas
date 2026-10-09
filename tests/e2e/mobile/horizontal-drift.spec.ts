@@ -229,7 +229,7 @@ test.describe('mobile horizontal-drift ratchet @mobile', () => {
         await test.step('journal + create-entry', async () => {
             await safeGoto(page, `/t/${tenantSlug}/journal`);
             await settle(page);
-            const trigger = page.locator('#new-journal-btn');
+            const trigger = page.getByRole('main').locator('#new-journal-btn');
             if (await trigger.count()) {
                 // Server-rendered button: it is in the DOM before React
                 // attaches onClick, and an unhydrated click is a silent no-op.

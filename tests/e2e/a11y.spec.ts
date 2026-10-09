@@ -160,7 +160,7 @@ test.describe('a11y — interactive overlays', () => {
         // selector rather than a text-/data-testid chain: the latter
         // raced the toolbar render in some seeded states, tripping a
         // conditional `test.skip` and leaving the surface uncovered.
-        const newAssetBtn = page.locator('#new-asset-btn');
+        const newAssetBtn = page.getByRole('main').locator('#new-asset-btn');
         await expect(newAssetBtn).toBeVisible({ timeout: 30_000 });
         await newAssetBtn.click();
 

@@ -75,7 +75,7 @@ test.describe('mobile offline basemap pack @mobile', () => {
         await expect(canvas).toBeVisible({ timeout: 30_000 });
 
         // ── Download the bounded offline basemap pack ────────────────────
-        const download = page.locator('#download-offline-map-btn');
+        const download = page.getByRole('main').locator('#download-offline-map-btn');
         await expect(download).toBeVisible({ timeout: 15_000 });
         await download.click();
         // The toast confirms the requests completed — NOT that a tile was

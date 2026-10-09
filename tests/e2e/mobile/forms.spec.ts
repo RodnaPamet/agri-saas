@@ -154,6 +154,10 @@ test.describe('mobile forms — FAB launches create @mobile', () => {
         // Exact, not merely sufficient: this create form carries a stable id.
         const dialog = page
             .getByRole('dialog')
+            // BARE on purpose. This id belongs to a MODAL, and the Modal primitive
+            // renders through `Dialog.Portal` / `Drawer.Portal`
+            // (src/components/ui/modal.tsx:234,306), so its content is mounted
+            // OUTSIDE `<main>`. Scoping it would never resolve (#1516).
             .filter({ has: page.locator('#new-location-form') });
         await expect(dialog).toBeVisible({ timeout: 15_000 });
         const nameInput = dialog.getByRole('textbox').first();
