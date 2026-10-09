@@ -5,6 +5,7 @@ import { assignCustomRole } from '@/app-layer/usecases/custom-roles';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { z } from 'zod';
 import { jsonResponse } from '@/lib/api-response';
+import { codedBadRequest } from '@/lib/errors/types';
 
 const UpdateMemberSchema = z.object({
     role: z.enum(['OWNER', 'ADMIN', 'EDITOR', 'AUDITOR', 'READER', 'MECHANISATOR']).optional(),
@@ -38,10 +39,14 @@ export const PATCH = withApiErrorHandling(
             }
 
             if (!result) {
-                return jsonResponse(
-                    { error: 'No changes specified' },
-                    { status: 400 },
-                );
+                // A coded throw, not a bespoke body. This returned
+                // `{ error: 'No changes specified' }` — a STRING where the
+                // spec declares this operation's 400 as `ErrorResponse`, so a
+                // client switching on `error.code` read `undefined` (#1447).
+                //
+                // The prose is preserved verbatim as the message, so anything
+                // rendering it shows the same text.
+                throw codedBadRequest('NO_CHANGES_SPECIFIED', 'No changes specified');
             }
 
             return jsonResponse(result);

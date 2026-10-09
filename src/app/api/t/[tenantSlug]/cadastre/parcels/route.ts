@@ -42,6 +42,7 @@ import {
 import { jsonResponse } from '@/lib/api-response';
 import { getRedis } from '@/lib/redis';
 import type { FeatureCollection } from 'geojson';
+import { codedBadRequest } from '@/lib/errors/types';
 
 const CACHE_TTL_SECONDS = 86_400; // 1 day — parcel boundaries are stable.
 const CACHE_CONTROL = 'public, max-age=86400';
@@ -69,7 +70,10 @@ export const GET = withApiErrorHandling(
         // one). A valid-but-out-of-bounds bbox degrades to an empty collection.
         const bbox = parseBbox(req.nextUrl.searchParams.get('bbox'));
         if (!bbox) {
-            return jsonResponse({ error: 'invalid bbox' }, { status: 400 });
+            // Coded, not a bare string: the spec declares this operation's 400
+            // as `ErrorResponse` and the string contradicted it (#1447). Prose
+            // preserved verbatim.
+            throw codedBadRequest('INVALID_BBOX', 'invalid bbox');
         }
 
         // Bounds abuse — outside Bulgaria OR too large ⇒ empty collection (200).
