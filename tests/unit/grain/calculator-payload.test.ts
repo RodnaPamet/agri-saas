@@ -278,3 +278,55 @@ describe('the payload conforms to the schema the API publishes', () => {
         expect(CalculatorDataSchema.safeParse(poisoned).success).toBe(false);
     });
 });
+
+/**
+ * The printed slices must sum to the printed total (#556).
+ *
+ * #556 was a figure whose parts did not add up to the number beside them, and
+ * the `IMPUTED_LAND_CHARGE` docblock keeps that term OUT of `cashCostTotal`
+ * for exactly this reason: "a fourth term would leave the printed slices short
+ * of the printed total".
+ *
+ * That constraint was never asserted. The closest test pinned
+ * `[800, 300, 150]` against a fixture whose `cashCostTotal` is `1_250` — the
+ * identity held by coincidence of the numbers chosen, so a fourth term added
+ * to the total and forgotten in the breakdown left it green.
+ *
+ * This is the PAYLOAD half: the breakdown mirrors the total it is shown
+ * beside. The usecase half — that the usecase's own `cashCostTotal` equals the
+ * sum of the slices built from its own row — is in
+ * `tests/unit/grain-net-worth.test.ts`, because only there is the total
+ * COMPUTED rather than supplied by a fixture.
+ */
+describe('the cost slices sum to cashCostTotal', () => {
+    /** Summed the way the UI adds them: over the values it renders. */
+    const sliceSum = (r: ReturnType<typeof toCalculatorRow>) =>
+        Math.round(r.costBreakdown.reduce((s, x) => s + x.value, 0) * 100) / 100;
+
+    it('holds on the default fixture', () => {
+        const r = toCalculatorRow(row());
+        expect(sliceSum(r)).toBe(r.cashCostTotal);
+    });
+
+    it('holds across varied compositions, so it is not one fixture’s coincidence', () => {
+        const cases = [
+            { attributedCropCost: 0, rentCostMoneyAmount: 0, payrollCost: 0, cashCostTotal: 0 },
+            { attributedCropCost: 1_234.56, rentCostMoneyAmount: 0, payrollCost: 0.01, cashCostTotal: 1_234.57 },
+            { attributedCropCost: 0, rentCostMoneyAmount: 999.99, payrollCost: 0, cashCostTotal: 999.99 },
+            { attributedCropCost: 10, rentCostMoneyAmount: 20, payrollCost: 30, cashCostTotal: 60 },
+        ];
+
+        for (const c of cases) {
+            const r = toCalculatorRow(row(c));
+            expect({ ...c, sum: sliceSum(r) }).toEqual({ ...c, sum: c.cashCostTotal });
+        }
+    });
+
+    it('does NOT hold when a term joins the total without joining the breakdown', () => {
+        // #556 simulated directly rather than hoped against: this is what a
+        // fourth `cashCostTotal` term looks like before its slice is added. If
+        // the assertions above can pass for such a row, they are decoration.
+        const r = toCalculatorRow(row({ cashCostTotal: 1_250 + 400 }));
+        expect(sliceSum(r)).not.toBe(r.cashCostTotal);
+    });
+});

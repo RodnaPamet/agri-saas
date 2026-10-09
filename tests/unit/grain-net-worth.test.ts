@@ -38,6 +38,7 @@ jest.mock('@/app-layer/usecases/trends', () => ({
 }));
 
 import { getGrainNetWorth } from '@/app-layer/usecases/grain-net-worth';
+import { toCalculatorRow } from '@/lib/grain/calculator-payload';
 import { makeRequestContext } from '../helpers/make-context';
 import { assertNetWorthInvariants } from '../helpers/grain-net-worth-invariants';
 import { costUncertainty } from '@/lib/grain/uncertainty';
@@ -1798,5 +1799,66 @@ describe('unattributedCostEntries is wired from the usecase (#1530)', () => {
 
         expect(result.exclusions.payrollUnattributable).toEqual([]);
         expect(result.rows.find((r) => r.commodity === 'wheat')?.unattributedCostEntries).toBe(0);
+    });
+});
+
+/**
+ * The usecase's own `cashCostTotal` equals the sum of its printed slices
+ * (#556, the usecase half).
+ *
+ * `tests/unit/grain/calculator-payload.test.ts` asserts the same identity, but
+ * against a fixture whose `cashCostTotal` is set by hand — so it cannot catch
+ * the mistake that matters: the USECASE adding a fourth term to the total and
+ * nobody adding its slice. Here both sides are computed from the same scenario.
+ *
+ * This is the guard #1530's slice 3 needs before a fourth term exists, not
+ * after.
+ */
+describe('cashCostTotal equals the sum of its printed slices (#556)', () => {
+    const sliceSum = (r: Parameters<typeof toCalculatorRow>[0]) =>
+        Math.round(
+            toCalculatorRow(r).costBreakdown.reduce((s, x) => s + x.value, 0) * 100,
+        ) / 100;
+
+    it('holds on a farm with all three cost terms live', async () => {
+        mockDb.planting.findMany.mockResolvedValue([planting({ id: 'p-1', areaM2: 30_000 })]);
+        mockDb.parcelLease.findMany.mockResolvedValue([]);
+        mockDb.costEntry.findMany.mockResolvedValue([payroll({ amount: 275.55 })]);
+        mockGetMarketReferences.mockResolvedValue(priced(['wheat']));
+
+        const result = await netWorthResult(ctx);
+
+        expect(result.rows.length).toBeGreaterThan(0);
+        for (const r of result.rows) {
+            expect({ commodity: r.commodity, sum: sliceSum(r) }).toEqual({
+                commodity: r.commodity,
+                sum: r.cashCostTotal,
+            });
+        }
+    });
+
+    it('holds over awkward payroll amounts, where the odd cent lands', async () => {
+        for (const amount of [0.01, 7, 100, 999.99, 1_234.56]) {
+            resetMocks();
+            mockDb.planting.findMany.mockResolvedValue([
+                planting({ id: 'p-1', areaM2: 17_000 }),
+                planting({
+                    id: 'p-2',
+                    areaM2: 23_000,
+                    cropPlan: { seasonId: 's-1', cropType: { commodityCanonical: 'maize' } },
+                }),
+            ]);
+            mockDb.costEntry.findMany.mockResolvedValue([payroll({ amount })]);
+            mockGetMarketReferences.mockResolvedValue(priced(['wheat', 'maize']));
+
+            const result = await netWorthResult(ctx);
+            for (const r of result.rows) {
+                expect({ amount, commodity: r.commodity, sum: sliceSum(r) }).toEqual({
+                    amount,
+                    commodity: r.commodity,
+                    sum: r.cashCostTotal,
+                });
+            }
+        }
     });
 });
