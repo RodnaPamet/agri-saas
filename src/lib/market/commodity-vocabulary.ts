@@ -392,6 +392,39 @@ export function commoditiesMatchingPrefix(
     const folded = foldForLookup(raw);
     if (folded.length < minLength) return [];
 
+    const exact = prefixHits(folded);
+    if (exact.length > 0) return exact;
+
+    // ── the inflected plural, as a FALLBACK only (#1473) ──
+    //
+    // Bulgarian pluralises an -а/-я noun by REPLACING the final vowel, so the
+    // plural is never a prefix of the singular: «пшеници» does not begin
+    // «пшеница». Measured before this change, 10 of 10 crops resolved in the
+    // singular and 0 in the plural — «пшеници», «царевици», «рапици», «лещи»
+    // and «сои» all returned nothing, while «цени на пшеници» is the ordinary
+    // way to say it.
+    //
+    // Dropping the query's trailing vowel turns «пшеници» into «пшениц», which
+    // IS a prefix of «пшеница».
+    //
+    // A FALLBACK and not a transformation, deliberately: the exact prefix is
+    // tried first and stemming only runs when it found nothing. So this cannot
+    // change any answer that already existed — «леща» still resolves through
+    // its own alias rather than through a stem, and an alias added later ending
+    // in -ещ cannot silently re-route a word that used to match exactly.
+    //
+    // The length floor is applied to the STEM, not only to the input. Without
+    // that, a two-character query ending in a vowel would stem to one character
+    // and match most of the table; `commoditiesMatchingPrefix('ц')` must stay
+    // empty, and the floor is what keeps it so.
+    const stem = stripTrailingVowel(folded);
+    if (stem !== null && stem.length >= minLength) return prefixHits(stem);
+
+    return exact;
+}
+
+/** Every canonical commodity whose slug or alias begins with `folded`. */
+function prefixHits(folded: string): CanonicalCommodity[] {
     const hits = new Set<CanonicalCommodity>();
     // The canonical slugs are not all present as alias keys, so they are
     // matched in their own right rather than assumed to be in the table.
@@ -402,6 +435,21 @@ export function commoditiesMatchingPrefix(
         if (alias.startsWith(folded) && isCanonicalCommodity(slug)) hits.add(slug);
     }
     return [...hits].sort();
+}
+
+/**
+ * `folded` minus one trailing vowel, or null when it does not end in one.
+ *
+ * NOT shared with `stemOf` in `lib/news/categorize.ts`, and the difference is
+ * real rather than duplication: that one stems the ALIAS so an article's
+ * inflected word can match a stored tag, and it carries a 5-character floor
+ * suited to whole crop names. This stems the QUERY a person typed into a search
+ * box, and its floor is the search's own `COMMODITY_PREFIX_MIN_LENGTH`. Merging
+ * them would mean one floor serving two different jobs.
+ */
+function stripTrailingVowel(folded: string): string | null {
+    if (!/[аеиоуъюяaeiou]$/u.test(folded)) return null;
+    return folded.slice(0, -1);
 }
 
 /** True when `value` is already a canonical (crop) slug. */

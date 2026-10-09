@@ -119,6 +119,78 @@ describe('the prefix resolver', () => {
         expect(commoditiesMatchingPrefix('s', 1).length).toBeGreaterThan(1);
     });
 
+    it('an inflected PLURAL resolves — all ten crops (#1473)', () => {
+        // Bulgarian pluralises an -а/-я noun by REPLACING the final vowel, so
+        // the plural is never a prefix of the singular: «пшеници» does not
+        // begin «пшеница». Measured before the fix, 10 of 10 crops resolved in
+        // the singular and 0 in the plural, while «цени на пшеници» is the
+        // ordinary way to say it.
+        expect(commoditiesMatchingPrefix('пшеници')).toEqual(['wheat']);
+        expect(commoditiesMatchingPrefix('царевици')).toEqual(['maize']);
+        expect(commoditiesMatchingPrefix('слънчогледи')).toEqual(['sunflower']);
+        expect(commoditiesMatchingPrefix('рапици')).toEqual(['rapeseed']);
+        expect(commoditiesMatchingPrefix('ечемики')).toEqual(['barley']);
+        expect(commoditiesMatchingPrefix('овеси')).toEqual(['oats']);
+        expect(commoditiesMatchingPrefix('ръжи')).toEqual(['rye']);
+        expect(commoditiesMatchingPrefix('грахи')).toEqual(['peas']);
+        expect(commoditiesMatchingPrefix('лещи')).toEqual(['lentils']);
+        // «соя» → «сои» loses TWO characters to the stem, leaving exactly the
+        // two-character floor. It is the case closest to the boundary and the
+        // one that would break first if the floor moved.
+        expect(commoditiesMatchingPrefix('сои')).toEqual(['soybean']);
+    });
+
+    it('stemming is a FALLBACK — an exact answer is never widened', () => {
+        // The safety property of the change, and finding a case that can
+        // actually FAIL took a search: at the default floor, stemming only ever
+        // widens a prefix by one character, and across all 279 prefixes of
+        // every alias there is NOT ONE query where exact-first and
+        // always-stemming disagree. A test at the default floor therefore
+        // proves nothing — the first version of this test passed with the
+        // exact-first guard deleted.
+        //
+        // `minLength: 1` exposes it, using the same parameter the control below
+        // already relies on:
+        //
+        //     со @1  ->  ['soybean']                exact wins
+        //     с  @1  ->  ['soybean', 'sunflower']   what the stem would answer
+        //
+        // So if stemming ran unconditionally, «со» would answer for «с» and
+        // pick up sunflower. It must not.
+        expect(commoditiesMatchingPrefix('со', 1)).toEqual(['soybean']);
+        expect(commoditiesMatchingPrefix('с', 1)).toEqual(['soybean', 'sunflower']);
+
+        // And the ordinary cases, which hold at the default floor even though
+        // they cannot distinguish the two orders — kept because they are what a
+        // reader will check first.
+        expect(commoditiesMatchingPrefix('so')).toEqual(['soybean', 'wheat']);
+        expect(commoditiesMatchingPrefix('леща')).toEqual(['lentils']);
+        expect(commoditiesMatchingPrefix('пше')).toEqual(['wheat']);
+    });
+
+    it('the floor applies to the STEM, not only to the input', () => {
+        // Without that, a two-character query ending in a vowel stems to one
+        // character and matches most of the table. These are above the floor as
+        // typed and below it once stemmed, so they must stay empty.
+        //
+        // Measured rather than assumed, after a first draft asserted «ца» here
+        // and was wrong: «ца» IS an exact prefix of «царевица», so it resolves
+        // on the exact path before stemming is reached — and «ра», «со» and
+        // «ле» likewise match rapeseed, soybean and lentils. Only a
+        // two-character query with no exact match tests the floor at all.
+        for (const q of ['ше', 'жи', 'ти', 'ко', 'въ', 'ня', 'пе']) {
+            expect(commoditiesMatchingPrefix(q)).toEqual([]);
+        }
+        // The control: a two-character query that DOES have an exact prefix
+        // still answers, so the loop above is not passing because the resolver
+        // refuses everything short.
+        expect(commoditiesMatchingPrefix('ца')).toEqual(['maize']);
+        // And a refused INPUT stays refused — `нафта` is diesel, which this
+        // resolver does not answer for, plural or not.
+        expect(commoditiesMatchingPrefix('нафти')).toEqual([]);
+        expect(commoditiesMatchingPrefix('дизели')).toEqual([]);
+    });
+
     it('a MID-WORD fragment does not match — this is a prefix, not a substring', () => {
         // The function is named for prefixes and documented as such, and until
         // this case existed nothing held it to that: swapping `startsWith` for
