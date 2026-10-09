@@ -261,15 +261,18 @@ describe('Empty-state copy tone (Roadmap-3 PR-6)', () => {
                 // from the hardcoded JSX: knowledge-detail version fallbacks
                 // ("No version published yet.", "No versions yet.") and the
                 // location-detail inline `<p>` fallbacks ("No parcels yet —
-                // use …", "No spray jobs yet. …", spray-wizard "This location
-                // has no parcels yet."). Full sentences with legitimate
+                // use …", "No spray jobs yet. …"). The spray-wizard entry
+                // `locations.spray.noParcels` went with the other 49 dead
+                // `locations.spray.*` keys in #1501 — a skip-list never
+                // consults an entry for a key that no longer exists, so this
+                // guard stayed green either way and the exemption would have
+                // outlived what it excused. Full sentences with legitimate
                 // terminal punctuation, not terse EmptyState titles — same
                 // rationale as the T04–T11 exemptions above.
                 'knowledge.detail.noVersionPublished',
                 'knowledge.detail.noVersionsYet',
                 'locations.detail.noParcelsHint',
                 'locations.detail.noSprayJobs',
-                'locations.spray.noParcels',
             ]);
             if (SANCTIONED.has(key)) continue;
             // Sanctioned namespace: `riskManager.*` keys are the
