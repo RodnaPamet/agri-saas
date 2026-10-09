@@ -209,7 +209,8 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
             'Creates one cost entry. `allocationBasis` decides how it reaches a crop — read ' +
             "the enum's own docs before choosing, because the basis is what makes a cost " +
             'attributable rather than stranded in `unallocatedToCrop` on the calculator.' +
-            '\n\n**Honours `Idempotency-Key`.** Send one, minted BEFORE the first attempt and reused on every retry of the same logical write. The server maps it to `clientMutationId` and a replay returns the ORIGINAL row rather than booking the figure twice. These are FINANCIAL records: an undeduped retry moves net worth with nothing erroring.',
+            '\n\n**Honours `Idempotency-Key`.** Send one, minted BEFORE the first attempt and reused on every retry of the same logical write. The server maps it to `clientMutationId` and a replay returns the ORIGINAL row rather than booking the figure twice. These are FINANCIAL records: an undeduped retry moves net worth with nothing erroring.' +
+            '\n\n**The salary breakdown is both-or-neither, and `PAYROLL` only.** `payrollHeadcount` and `payrollAnnualPerPerson` record how a salary figure was arrived at — «брой хора × годишна заплата» — so the form can show the breakdown and a defaults read can recall it. `amount` stays authoritative and is deliberately NOT cross-checked against the product: a farm whose third hire started in May will enter a total below `headcount × perPerson`, and refusing that would block a true figure to protect an identity nobody asked for. Sending one without the other is `PAYROLL_BREAKDOWN_INCOMPLETE`, with the absent field named in `params.missing`; sending either on a non-PAYROLL category is `PAYROLL_BREAKDOWN_NOT_APPLICABLE`.',
         tags: ['Grain'],
         params: TenantParams,
         body: CreateCostEntrySchema,

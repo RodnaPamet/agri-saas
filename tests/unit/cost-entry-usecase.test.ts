@@ -288,6 +288,111 @@ describe('createCostEntry — one domain link only', () => {
         ).rejects.toThrow(/only be set on a RENT/);
     });
 
+    it('amountPerDca ROUND-TRIPS — stored and returned', async () => {
+        // #1511 added the column and the migration and stopped there, so
+        // `amountPerDca` existed in the database with no way to write or read
+        // it — which made that PR's claim to deliver "the per-decare rate as
+        // entered" false. Caught by checking the SERVED spec after it deployed:
+        // CREDIT and DEPRECIATION were there, `amountPerDca` was not.
+        //
+        // Asserted as TWO halves, because they are two separate failures and
+        // the shared `create` mock resolves to a FIXED row — so a single
+        // end-to-end assertion would fail for the fixture rather than the code,
+        // which is how it failed on the first attempt.
+        //
+        // Half one: the value reaches the write.
+        await createCostEntry(ctx, baseInput({ amountPerDca: 1.6683 }));
+        expect(mockDb.costEntry.create.mock.calls.at(-1)?.[0]?.data).toMatchObject({
+            amountPerDca: 1.6683,
+        });
+
+        // Half two: `toDto` carries it back out when the row has it. The DTO
+        // schema naming a field `toDto` never populates is a silent failure —
+        // the declaration and the mapping are edited in different files.
+        mockDb.costEntry.create.mockResolvedValueOnce({ ...row(), amountPerDca: 1.6683 });
+        const dto = await createCostEntry(ctx, baseInput({ amountPerDca: 1.6683 }));
+        expect(dto).toMatchObject({ amountPerDca: 1.6683 });
+    });
+
+    it('a TOTAL-only entry returns null, not zero', async () => {
+        // The distinction the column exists for. Zero is a rate the farmer
+        // typed; null says they typed a total instead, and a defaults read has
+        // to tell them apart. `?? 0` here would make every historical row look
+        // like a rate entry of zero.
+        const dto = await createCostEntry(ctx, baseInput());
+
+        expect(dto).toMatchObject({
+            amountPerDca: null,
+            payrollHeadcount: null,
+            payrollAnnualPerPerson: null,
+        });
+    });
+
+    it('REJECTS half a payroll breakdown', async () => {
+        // A form showing "3 people × ?" is worse than showing the total alone,
+        // so a half-filled pair is a client bug rather than a partial answer to
+        // keep. `params.missing` names the absent field so the client can focus
+        // the right input rather than clearing both.
+        await expect(
+            createCostEntry(ctx, baseInput({ category: 'PAYROLL', payrollHeadcount: 3 })),
+        ).rejects.toMatchObject({ code: 'PAYROLL_BREAKDOWN_INCOMPLETE' });
+        await expect(
+            createCostEntry(
+                ctx,
+                baseInput({ category: 'PAYROLL', payrollAnnualPerPerson: 12000 }),
+            ),
+        ).rejects.toMatchObject({ code: 'PAYROLL_BREAKDOWN_INCOMPLETE' });
+        expect(mockDb.costEntry.create).not.toHaveBeenCalled();
+    });
+
+    it('REJECTS a payroll breakdown on a non-PAYROLL entry', async () => {
+        // Same reasoning as the lease link above: a headcount on a fuel invoice
+        // would render a salary breakdown on a cost that has none.
+        await expect(
+            createCostEntry(
+                ctx,
+                baseInput({ category: 'FUEL', payrollHeadcount: 3, payrollAnnualPerPerson: 1 }),
+            ),
+        ).rejects.toMatchObject({ code: 'PAYROLL_BREAKDOWN_NOT_APPLICABLE' });
+    });
+
+    it('ACCEPTS a payroll total that does not equal headcount × per-person', async () => {
+        // The deliberate absence, asserted so it cannot be "fixed" silently.
+        // 3 × 12 000 = 36 000; this entry says 35 500, which is what a farm
+        // whose third hire started in May will actually enter. Refusing it
+        // would block a true figure to protect an arithmetic identity the owner
+        // never asked for.
+        await createCostEntry(
+            ctx,
+            baseInput({
+                category: 'PAYROLL',
+                amount: 35500,
+                payrollHeadcount: 3,
+                payrollAnnualPerPerson: 12000,
+            }),
+        );
+
+        expect(mockDb.costEntry.create).toHaveBeenCalled();
+    });
+
+    it('persists the breakdown as given, and null when absent', async () => {
+        // The point of the columns: `amount` alone carries no trace of the
+        // headcount behind it, so a "last values" default could never recall
+        // the breakdown. Asserting the WRITE rather than the parse, because a
+        // field validated and then dropped on the way to Prisma is the failure
+        // this would otherwise miss.
+        await createCostEntry(
+            ctx,
+            baseInput({ category: 'PAYROLL', payrollHeadcount: 4, payrollAnnualPerPerson: 9000 }),
+        );
+        const withPair = mockDb.costEntry.create.mock.calls.at(-1)?.[0]?.data;
+        expect(withPair).toMatchObject({ payrollHeadcount: 4, payrollAnnualPerPerson: 9000 });
+
+        await createCostEntry(ctx, baseInput({ category: 'PAYROLL' }));
+        const without = mockDb.costEntry.create.mock.calls.at(-1)?.[0]?.data;
+        expect(without).toMatchObject({ payrollHeadcount: null, payrollAnnualPerPerson: null });
+    });
+
     it('accepts a lease link on a RENT entry', async () => {
         await createCostEntry(ctx, baseInput({ category: 'RENT', leaseId: 'lease-1' }));
         expect(mockDb.costEntry.create.mock.calls[0][0].data.leaseId).toBe('lease-1');

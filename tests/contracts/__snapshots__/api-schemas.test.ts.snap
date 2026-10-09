@@ -2830,6 +2830,24 @@ exports[`API contract — per-schema snapshots schema: CostEntry 1`] = `
     "amount": {
       "type": "number"
     },
+    "amountPerDca": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "payrollHeadcount": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "payrollAnnualPerPerson": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
     "currency": {
       "type": "string"
     },

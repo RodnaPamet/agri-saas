@@ -360,6 +360,40 @@ export const CreateCostEntrySchema = z
         parcelId: z.string().min(1).nullable().optional(),
         leaseId: z.string().min(1).nullable().optional(),
         itemId: z.string().min(1).nullable().optional(),
+        /**
+         * The per-decare figure AS THE FARMER TYPED IT.
+         *
+         * #1511 added the column and the migration and stopped there — so it
+         * existed in the database with no way to write or read it, which made
+         * that PR's claim to deliver "the per-decare rate as entered" false.
+         * This is the wire half it was missing.
+         *
+         * `amount` stays authoritative; every SUM, margin and break-even reads
+         * it and nothing downstream changes. This records what was entered so
+         * the calculator's "last values" default can read it back exactly,
+         * which `amount` alone cannot give: dividing a rounded total by an area
+         * recovers a number the farmer never typed.
+         *
+         * NOT cross-checked against `amount`, for the same reason the payroll
+         * pair below is not — an area may be stale, rounded, or simply not what
+         * the farmer had in mind when they typed the rate.
+         */
+        amountPerDca: z.coerce.number().positive().nullable().optional(),
+        /**
+         * How a PAYROLL figure was arrived at — «брой хора × годишна заплата».
+         *
+         * An INPUT AID, not a constraint. `amount` stays authoritative and is
+         * NOT cross-checked against the product: three people at 12 000 is
+         * 36 000, but a farm whose third hire started in May will legitimately
+         * enter 35 500 beside the same headcount, and refusing that would block
+         * a true figure to protect an identity the owner never asked for.
+         *
+         * Both or neither, and PAYROLL only — enforced in the usecase, where
+         * `category` is in hand. One without the other cannot be rendered, and
+         * the pair is meaningless on a fuel cost.
+         */
+        payrollHeadcount: z.coerce.number().int().positive().nullable().optional(),
+        payrollAnnualPerPerson: z.coerce.number().positive().nullable().optional(),
         allocationBasis: CostAllocationBasisSchema.optional(),
         allocationParcelIds: AllocationParcelIds.optional(),
     })

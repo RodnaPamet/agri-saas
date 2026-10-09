@@ -187,6 +187,17 @@ export const CostEntryDTOSchema = z
          * amount reads as 0, never null.
          */
         amount: z.number(),
+        /**
+         * The per-decare rate as entered, or null when a TOTAL was entered.
+         *
+         * The null is information rather than an absence: it says the farmer
+         * typed a total, which is why this is not derived as `amount / area`
+         * for rows that lack it. A defaults read distinguishes the two.
+         */
+        amountPerDca: z.number().nullable().optional(),
+        /** How a PAYROLL figure was arrived at, or null for a plain total. */
+        payrollHeadcount: z.number().int().nullable().optional(),
+        payrollAnnualPerPerson: z.number().nullable().optional(),
         currency: z.string(),
         incurredOn: z.string().datetime(),
         supplier: z.string().nullable(),

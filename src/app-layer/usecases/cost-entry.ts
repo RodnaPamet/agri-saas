@@ -5,7 +5,7 @@ import { isUniqueViolation } from '@/lib/errors/prisma';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { notFound, badRequest, codedBadRequest } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { CostEntryRepository, type CostEntryFilters } from '../repositories/CostEntryRepository';
 import { FileRepository } from '../repositories/FileRepository';
@@ -70,6 +70,58 @@ function parseRequiredDate(value: string, label: string): Date {
  * standing between a caller and a row that breaks both pages. It is
  * asserted by an executing test, not merely by this comment.
  */
+/**
+ * The PAYROLL breakdown is both-or-neither, and PAYROLL only.
+ *
+ * Owner decision 2026-10-09: salaries are entered per year, "either a total or
+ * an optional number of people × yearly salary". The pair is an INPUT AID,
+ * recorded for the breakdown and the "last values" default — `amount` stays
+ * authoritative.
+ *
+ * ## What is NOT checked, deliberately
+ *
+ * `headcount × annualPerPerson` is not compared against `amount`. Three people
+ * at 12 000 is 36 000, but a farm whose third hire started in May will enter
+ * 35 500 beside the same headcount. Refusing that would block a true figure to
+ * protect an arithmetic identity nobody asked for, and the owner's phrasing —
+ * "either a total OR a number of people × salary" — reads as a way to arrive
+ * at the figure rather than a constraint on it.
+ *
+ * ## What is
+ *
+ * One without the other cannot be rendered: a form showing "3 people × ?" is
+ * worse than showing the total alone, so a half-filled pair is a client bug
+ * rather than a partial answer worth keeping. And the pair is meaningless on a
+ * FUEL or SEED cost — the same reasoning that makes `leaseId` RENT-only.
+ *
+ * Coded, unlike its neighbours: the uncoded `badRequest`s around it are the
+ * #1391 gap, and adding more of them would widen it.
+ */
+function assertPayrollBreakdown(input: {
+    category?: string | null;
+    payrollHeadcount?: number | null;
+    payrollAnnualPerPerson?: number | null;
+}): void {
+    const hasCount = input.payrollHeadcount != null;
+    const hasRate = input.payrollAnnualPerPerson != null;
+    if (!hasCount && !hasRate) return;
+
+    if (hasCount !== hasRate) {
+        throw codedBadRequest(
+            'PAYROLL_BREAKDOWN_INCOMPLETE',
+            'A salary breakdown needs both the number of people and the yearly salary per person, or neither.',
+            { missing: hasCount ? 'payrollAnnualPerPerson' : 'payrollHeadcount' },
+        );
+    }
+    if (input.category !== 'PAYROLL') {
+        throw codedBadRequest(
+            'PAYROLL_BREAKDOWN_NOT_APPLICABLE',
+            'A salary breakdown may only be set on a PAYROLL cost entry.',
+            { category: String(input.category ?? '') },
+        );
+    }
+}
+
 export function assertSingleDomainLink(input: {
     category?: CostCategory | string;
     plantingId?: string | null;
@@ -88,6 +140,7 @@ export function assertSingleDomainLink(input: {
     if (input.leaseId != null && input.category !== 'RENT') {
         throw badRequest('leaseId may only be set on a RENT cost entry');
     }
+    assertPayrollBreakdown(input);
 }
 
 /**
@@ -194,6 +247,9 @@ export function toDto(row: {
     id: string;
     category: CostCategory;
     amount: Prisma.Decimal | number;
+    amountPerDca?: Prisma.Decimal | number | null;
+    payrollHeadcount?: number | null;
+    payrollAnnualPerPerson?: Prisma.Decimal | number | null;
     currency: string;
     incurredOn: Date;
     supplier: string | null;
@@ -226,6 +282,14 @@ export function toDto(row: {
         id: row.id,
         category: row.category,
         amount: dec(row.amount) ?? 0,
+        // `?? null`, NOT `?? 0`. Zero is a rate the farmer typed; null is
+        // "they typed a total instead", and a defaults read has to tell them
+        // apart. `amount` defaults to 0 above because a cost always has one —
+        // these do not, and collapsing the distinction would make every
+        // historical row look like a rate entry of zero.
+        amountPerDca: dec(row.amountPerDca) ?? null,
+        payrollHeadcount: row.payrollHeadcount ?? null,
+        payrollAnnualPerPerson: dec(row.payrollAnnualPerPerson) ?? null,
         currency: row.currency,
         incurredOn: row.incurredOn,
         supplier: row.supplier,
@@ -436,6 +500,9 @@ async function createCostEntryImpl(
             locationId: input.locationId ?? null,
             parcelId: input.parcelId ?? null,
             leaseId: input.leaseId ?? null,
+            amountPerDca: input.amountPerDca ?? null,
+            payrollHeadcount: input.payrollHeadcount ?? null,
+            payrollAnnualPerPerson: input.payrollAnnualPerPerson ?? null,
             itemId: input.itemId ?? null,
             allocationBasis: input.allocationBasis ?? 'TARGET',
             createdByUserId: ctx.userId ?? null,
