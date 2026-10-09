@@ -56,7 +56,7 @@ async function linkUrlEvidence(page: Page, note: string): Promise<void> {
     await page.fill('#asset-evidence-url', 'https://example.com/evidence-doc');
     await page.fill('#asset-evidence-note', note);
     await page.click('#submit-asset-evidence-btn');
-    await expect(page.locator('#evidence-table')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('main').locator('#evidence-table')).toBeVisible({ timeout: 10000 });
 }
 
 test.describe('Asset → Evidence Linking', () => {

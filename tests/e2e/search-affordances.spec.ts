@@ -41,6 +41,12 @@ test.describe('Search affordances', () => {
         // Open the Filter dropdown — the live content search lives within.
         await waitForHydration(page, '[data-filter-trigger]');
         await filterTrigger.click();
+        // BARE on purpose, and this one is the least obvious of the set. The
+        // search input lives INSIDE the Filter dropdown — `filter-select.tsx:334`
+        // is what turns `searchId` into an id — and that popover is rendered by
+        // `src/components/ui/popover.tsx`, which uses `createPortal` (:242) and
+        // `Drawer.Portal` (:182). So it is outside `<main>` despite looking like
+        // ordinary page furniture (#1516).
         const search = page.locator('#assets-search input');
         await expect(search).toBeVisible();
 
