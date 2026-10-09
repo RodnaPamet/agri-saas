@@ -49,6 +49,10 @@ test.describe('Authentication Flow', () => {
 
         // Should see email/password form
         await expect(page.locator('input[type="email"][name="email"]')).toBeVisible();
+        // BARE on purpose. `<main>` comes from `AppShell`
+        // (src/components/layout/AppShell.tsx:237), which `/login` does not
+        // mount — there is no `main` landmark on that page to scope to
+        // (#1516).
         await expect(page.locator('#credentials-form input[type="password"]')).toBeVisible();
     });
 
