@@ -131,6 +131,19 @@ export interface ParcelSpread {
     unallocatedAmount: number;
     /** Those parcels, named. */
     unallocatedParcelIds: string[];
+    /**
+     * Per-parcel breakdown of `unallocatedAmount` — parcel id → its own share,
+     * cent-exact and unrounded.
+     *
+     * `unallocatedAmount` is the sum, so this adds no information about the
+     * TOTAL. It exists because a caller may be able to attribute SOME of those
+     * parcels by another route and must then report only the remainder: the
+     * grain calculator resolves a parcel with no planting through its own
+     * `Parcel.cropType`, which reaches a commodity that no planting could.
+     * Re-deriving a single parcel's share outside this function would mean a
+     * second copy of the weighting, and the two would disagree on the odd cent.
+     */
+    unallocatedByParcel: Map<string, number>;
     /** Their area — the land that absorbed `unallocatedAmount`. */
     unallocatedAreaHa: number;
 }
@@ -175,10 +188,17 @@ export function spreadOverParcels(
 ): ParcelSpread {
     const byTarget = new Map<string, number>();
     const unallocatedParcelIds: string[] = [];
+    const unallocatedByParcel = new Map<string, number>();
     let unallocatedAmount = 0;
     let unallocatedAreaHa = 0;
     if (parcels.length === 0) {
-        return { byTarget, unallocatedAmount: 0, unallocatedParcelIds, unallocatedAreaHa: 0 };
+        return {
+            byTarget,
+            unallocatedAmount: 0,
+            unallocatedParcelIds,
+            unallocatedByParcel,
+            unallocatedAreaHa: 0,
+        };
     }
 
     const parcelShares = allocateByWeights(amount, computeAreaWeights(parcels));
@@ -189,6 +209,10 @@ export function spreadOverParcels(
         if (targets.length === 0) {
             unallocatedAmount += share;
             unallocatedParcelIds.push(parcel.id);
+            // `+=`, not `set`: a duplicate parcel id in `parcels` would
+            // otherwise keep only its last share here while `unallocatedAmount`
+            // counted both, and the two would stop summing to each other.
+            unallocatedByParcel.set(parcel.id, (unallocatedByParcel.get(parcel.id) ?? 0) + share);
             unallocatedAreaHa += parcel.areaHa > 0 ? parcel.areaHa : 0;
             continue;
         }
@@ -203,6 +227,7 @@ export function spreadOverParcels(
         // A sum of exact cent values — the rounding only clears float noise.
         unallocatedAmount: Math.round(unallocatedAmount * 100) / 100,
         unallocatedParcelIds,
+        unallocatedByParcel,
         unallocatedAreaHa: Math.round(unallocatedAreaHa * 1000) / 1000,
     };
 }

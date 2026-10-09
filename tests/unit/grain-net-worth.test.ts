@@ -849,8 +849,13 @@ function payroll(over: Record<string, unknown> = {}) {
     return costEntry({ id: 'pay-1', category: 'PAYROLL', amount: 100, allocationBasis: 'TARGET', ...over });
 }
 
-function parcel(id: string, areaHa: number | null) {
-    return { id, areaHa };
+/**
+ * `cropType` defaults to null, so every pre-existing call keeps the behaviour
+ * it asserted: a parcel with no planting AND no crop named on it stays
+ * unattributable exactly as before.
+ */
+function parcel(id: string, areaHa: number | null, cropType: string | null = null) {
+    return { id, areaHa, cropType };
 }
 
 /** Money the farm entered, wherever the allocator put it, to the cent. */
@@ -1459,5 +1464,140 @@ describe('allocation basis — query shape', () => {
 
         expect(mockDb.parcel.findMany.mock.calls[0][0].take).toBe(5001);
         expect(result.truncated).toBe(true);
+    });
+});
+
+/**
+ * A parcel with no planting is attributed through its OWN `Parcel.cropType`.
+ *
+ * Owner ruling 2026-10-09 (#1512): per parcel, the plantings on it if it has
+ * any, else the parcel itself. This is what makes a spread attributable on a
+ * real farm — production carries 1 CropType, 1 CropPlan and 1 Planting, all
+ * sample data, against 4 live parcels holding 1386.8 дка of crop, so before
+ * this every spread was 100% unattributable.
+ */
+describe('parcel cropType fallback — plantings if any, else the parcel', () => {
+    it('attributes a parcel with a crop and NO planting to that crop', async () => {
+        mockDb.parcel.findMany.mockResolvedValue([parcel('p-maize', 10, 'Maize')]);
+        mockDb.planting.findMany.mockResolvedValue([]);
+        mockDb.costEntry.findMany.mockResolvedValue([payroll({ allocationBasis: 'HOLDING' })]);
+        mockGetMarketReferences.mockResolvedValue(priced(['maize']));
+
+        const result = await netWorthResult(ctx);
+
+        const maize = result.rows.find((r) => r.commodity === 'maize');
+        expect(maize?.payrollCost).toBe(100);
+        // Nothing left over: the parcel was attributed, not reported idle.
+        expect(result.unallocatedToCrop.amount).toBe(0);
+        expect(allocatedCents(result)).toBe(10_000);
+    });
+
+    it('resolves the CAPITALISED values the crop picker actually persists', async () => {
+        // The regression this guards is a one-word change. `resolveCanonical`
+        // wraps `isCanonicalCommodity`, an exact match against lowercase
+        // slugs, and the picker persists 'Wheat' / 'Canola' / 'Maize'. Using
+        // it here — mirroring the call three lines above in the source, which
+        // is correct for `CropType.commodityCanonical` — resolves NOTHING on
+        // any farm and makes this whole fallback inert while staying green.
+        //
+        // 'Canola' is the sharper half: the picker and the market vocabulary
+        // disagree on the WORD, not just the case, and only COMMODITY_ALIASES
+        // carries canola → rapeseed.
+        mockDb.parcel.findMany.mockResolvedValue([
+            parcel('p-w', 10, 'Wheat'),
+            parcel('p-c', 10, 'Canola'),
+        ]);
+        mockDb.planting.findMany.mockResolvedValue([]);
+        mockDb.costEntry.findMany.mockResolvedValue([payroll({ allocationBasis: 'HOLDING' })]);
+        mockGetMarketReferences.mockResolvedValue(priced(['wheat', 'rapeseed']));
+
+        const result = await netWorthResult(ctx);
+
+        expect(result.rows.find((r) => r.commodity === 'wheat')?.payrollCost).toBe(50);
+        expect(result.rows.find((r) => r.commodity === 'rapeseed')?.payrollCost).toBe(50);
+        expect(result.unallocatedToCrop.amount).toBe(0);
+    });
+
+    it('prefers the PLANTING over the parcel crop, so neither is double-counted', async () => {
+        // The per-parcel half of the owner's ruling. A farm-level fallback
+        // would take this parcel twice — once through its planting and once
+        // through its cropType — and the two would disagree about which crop.
+        // The planting is the more specific record and wins.
+        mockDb.parcel.findMany.mockResolvedValue([parcel('p-1', 10, 'Maize')]);
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'plant-1', parcelId: 'p-1', areaM2: 100_000 }),
+        ]);
+        mockDb.costEntry.findMany.mockResolvedValue([payroll({ allocationBasis: 'HOLDING' })]);
+        mockGetMarketReferences.mockResolvedValue(priced(['wheat', 'maize']));
+
+        const result = await netWorthResult(ctx);
+
+        // `planting()` defaults to wheat, so the whole 100 goes to wheat...
+        expect(result.rows.find((r) => r.commodity === 'wheat')?.payrollCost).toBe(100);
+        // ...and nothing is charged to the parcel's own Maize.
+        expect(result.rows.find((r) => r.commodity === 'maize')?.payrollCost ?? 0).toBe(0);
+        expect(allocatedCents(result)).toBe(10_000);
+    });
+
+    it('leaves a parcel whose cropType is not a commodity unattributable', async () => {
+        // 'Grass' is in the picker and resolves to no commodity, correctly: a
+        // ley is a land use, not something the market prices. Its share must
+        // be REPORTED, never charged to a crop that does not exist and never
+        // redistributed onto the cropped parcels — redistributing would make
+        // idle land free and make the remaining crop look more expensive the
+        // more land is left fallow.
+        mockDb.parcel.findMany.mockResolvedValue([
+            parcel('p-maize', 10, 'Maize'),
+            parcel('p-grass', 10, 'Grass'),
+        ]);
+        mockDb.planting.findMany.mockResolvedValue([]);
+        mockDb.costEntry.findMany.mockResolvedValue([payroll({ allocationBasis: 'HOLDING' })]);
+        mockGetMarketReferences.mockResolvedValue(priced(['maize']));
+
+        const result = await netWorthResult(ctx);
+
+        expect(result.rows.find((r) => r.commodity === 'maize')?.payrollCost).toBe(50);
+        expect(result.unallocatedToCrop.amount).toBe(50);
+        expect(result.unallocatedToCrop.parcelIds).toEqual(['p-grass']);
+        // Conservation across the new split: attributed + reported = amount.
+        expect(allocatedCents(result)).toBe(10_000);
+    });
+
+    it('marks a cropType-derived share ALLOCATED, not exact', async () => {
+        // The share came from an area weight, not a direct link, so the
+        // calculator must keep reading it through the same uncertainty
+        // vocabulary a pro-rata payroll share has always used.
+        mockDb.parcel.findMany.mockResolvedValue([parcel('p-maize', 10, 'Maize')]);
+        mockDb.planting.findMany.mockResolvedValue([]);
+        mockDb.costEntry.findMany.mockResolvedValue([payroll({ allocationBasis: 'HOLDING' })]);
+        mockGetMarketReferences.mockResolvedValue(priced(['maize']));
+
+        const result = await netWorthResult(ctx);
+
+        expect(result.rows.find((r) => r.commodity === 'maize')?.payrollAllocated).toBe(true);
+    });
+
+    it('conserves over awkward amounts with a mixed holding', async () => {
+        for (const amount of [100, 0.01, 999.99, 1_234.56, 7]) {
+            resetMocks();
+            mockDb.parcel.findMany.mockResolvedValue([
+                parcel('p-planted', 1.7),
+                parcel('p-crop-only', 2.3, 'Maize'),
+                parcel('p-grass', 0.9, 'Grass'),
+            ]);
+            mockDb.planting.findMany.mockResolvedValue([
+                planting({ id: 'plant-a', parcelId: 'p-planted', areaM2: 17_000 }),
+            ]);
+            mockDb.costEntry.findMany.mockResolvedValue([
+                payroll({ amount, allocationBasis: 'HOLDING' }),
+            ]);
+            mockGetMarketReferences.mockResolvedValue(priced(['wheat', 'maize']));
+
+            const result = await netWorthResult(ctx);
+            expect({ amount, cents: allocatedCents(result) }).toEqual({
+                amount,
+                cents: Math.round(amount * 100),
+            });
+        }
     });
 });
