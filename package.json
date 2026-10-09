@@ -46,7 +46,7 @@
         "typecheck": "tsc --noEmit && tsc -p tsconfig.scripts.json --noEmit",
         "check:optional-closure": "node scripts/check-optional-closure.mjs",
         "lint": "tsx scripts/lint-ceiling.ts",
-        "count-any": "node scripts/count-any.js",
+        "count-any": "tsx scripts/count-any.ts",
         "ci:local": "node scripts/ci-local.mjs",
         "e2e:local": "node scripts/e2e-local.mjs",
         "db:test:up": "docker compose -f docker-compose.test.yml up -d --wait",

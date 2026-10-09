@@ -8,39 +8,49 @@
  * `warn` puts lint back in the green but loses the "no new any"
  * pressure.
  *
- * This guard bridges the gap. Counts `any` patterns across `src/`
- * (SAME regexes as `scripts/count-any.js`) and caps them at the
- * current floor. New code that introduces `: any`, `<any>`,
- * `useState<any>`, `as any`, or `@ts-ignore` pushes the total up,
- * which fails this test. Caps only go DOWN — as types get added,
- * lower the cap.
+ * This guard bridges the gap. It caps the `any` patterns across `src/` at the
+ * current floor; new code that introduces `: any`, `<any>`, `useState<any>`,
+ * `as any`, or `@ts-ignore` pushes a count up, which fails this test. Caps
+ * only go DOWN — as types get added, lower the cap.
  *
  * Same ratchet pattern as `tests/guardrails/raw-color-ratchet.test.ts`
  * (Epic 51 — raw Tailwind colours) and `tests/guards/epic60-ratchet.test.ts`
  * (Epic 60 — inline patterns).
  *
- * To lower the cap after a cleanup sweep:
- *   1. Run `node scripts/count-any.js` to see the new total.
+ * To lower the caps after a cleanup sweep:
+ *   1. Run `npm run count-any` to see the new totals.
  *   2. Update the `CAPS` below to match, never higher.
+ *
+ * ## The patterns and the counting are NOT in this file (#1526)
+ *
+ * Both live in `scripts/lib/any-patterns.ts`, shared with `npm run count-any`
+ * — so the number step 1 prints is, by construction, the number step 2 is
+ * re-flooring against. They used to be separate implementations, and the
+ * `as any` regex disagreed between the two guards that enforce it: this one
+ * and `scripts/count-any.js` matched `/as\s+any\b/` with no LEADING word
+ * boundary, while `tests/guardrails/no-explicit-any-ratchet.test.ts` matched
+ * `/\bas\s+any\b/`. The enforcing copy was the broken one, so the words
+ * "has any" counted as a cast and a docblock reddened a shard on #1523. That
+ * module's docblock carries the detail.
+ *
+ * ## Why there is a drift sentinel now
+ *
+ * This guard asserted only `actual <= cap`, so nothing pulled a cap down when
+ * the count fell. Measured at the time of #1526, three of the five caps had
+ * accumulated slack — `: any` **226**, `<any>` 41, `useState<any>` 23 — which
+ * means a PR could have added 226 new `: any` annotations and stayed green.
+ * The guard's own cap comment claimed each was "lowered to the exact
+ * post-cleanup floor so the gain cannot silently erode"; the gain had eroded,
+ * in the direction that leaves no trace, because improvement and regression
+ * were indistinguishable to a one-sided assertion.
+ *
+ * `tests/guardrails/no-explicit-any-ratchet.test.ts` already had this
+ * sentinel, but it governs only its own `CURRENT_BASELINE` — the CODE-level
+ * `as any` count, after comment stripping. It never covered these five
+ * raw-text caps, so nobody owned them.
  */
 
-import * as fs from 'fs';
-import * as path from 'path';
-
-const SRC_DIR = path.resolve(__dirname, '../../src');
-
-interface Pattern {
-    label: string;
-    regex: RegExp;
-}
-
-const PATTERNS: Pattern[] = [
-    { label: ': any', regex: /:\s*any\b/g },
-    { label: '<any>', regex: /<any>/g },
-    { label: 'useState<any>', regex: /useState<any>/g },
-    { label: 'as any', regex: /as\s+any\b/g },
-    { label: '// @ts-ignore', regex: /\/\/\s*@ts-ignore/g },
-];
+import { ANY_PATTERNS, countAll } from '../../scripts/lib/any-patterns';
 
 /**
  * Per-pattern cap. Current floor — can only go down when code is
@@ -55,52 +65,59 @@ const CAPS: Record<string, number> = {
     // not strip comments) — the code-level count is 4, tracked by
     // tests/guardrails/no-explicit-any-ratchet.test.ts.
     // R10-PR3 follow-up (2026-05-24) — `<any>` raised from 61 → 63.
-    // The raw-`<table>` → DataTable migration of the vendor
-    // assessments + subprocessors sub-tables introduced two
-    // `createColumns<any>([...])` casts: `s.subprocessor`,
-    // `a.template`, and the rest of those rows are typed loosely
-    // (the existing page-level `assessments` and `subs` arrays are
-    // `any[]` upstream — typing them properly is a separate cleanup).
-    ': any': 357,
-    '<any>': 63,
-    'useState<any>': 24,
-    'as any': 18,
+    //
+    // #1526 (2026-10-09) — re-floored all five to the measured count, and
+    // the drift sentinel below now keeps them there. The previous values
+    // (357 / 63 / 24 / 18 / 0) carried 226 / 42 / 23 / 0 / 0 of slack.
+    // `as any` fell 18 → 16 because the two remaining hits were the English
+    // words "has any", not casts; the other three fell because the debt was
+    // genuinely paid down and nothing recorded it.
+    ': any': 131,
+    '<any>': 21,
+    'useState<any>': 1,
+    'as any': 16,
     '// @ts-ignore': 0,
 };
 
-function walk(dir: string): string[] {
-    const out: string[] = [];
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-            if (entry.name === 'node_modules' || entry.name === '.next') continue;
-            out.push(...walk(full));
-        } else if (/\.(ts|tsx)$/.test(entry.name)) {
-            out.push(full);
-        }
-    }
-    return out;
-}
-
-function countAll(): Record<string, number> {
-    const totals: Record<string, number> = {};
-    for (const { label } of PATTERNS) totals[label] = 0;
-
-    for (const file of walk(SRC_DIR)) {
-        const content = fs.readFileSync(file, 'utf-8');
-        for (const { label, regex } of PATTERNS) {
-            regex.lastIndex = 0;
-            const matches = content.match(regex);
-            totals[label] += matches ? matches.length : 0;
-        }
-    }
-    return totals;
-}
+/**
+ * How much a cap may sit above the live count before this guard demands it be
+ * lowered. Same tolerance the sibling guardrail uses.
+ *
+ * Not zero: a cap pinned exactly equal would redden main on the very PR that
+ * REMOVES an `any`, which punishes the improvement the ratchet exists to
+ * encourage. Five is enough room for a cleanup to land and be re-floored in a
+ * follow-up, and far too little to hide a migration's worth of new debt.
+ */
+const MAX_SLACK = 5;
 
 describe('`any` usage ratchet', () => {
-    const totals = countAll();
+    const { totals, filesScanned } = countAll();
 
-    test.each(PATTERNS.map((p) => p.label))('%s stays within cap', (label) => {
+    it('control: the scan found files, and the as-any regex has BOTH boundaries', () => {
+        // Without the denominator this whole suite passes vacuously: a walk
+        // that returns nothing counts zero of everything and satisfies every
+        // cap. That is the empty-selection failure one level up from the one
+        // the caps catch.
+        expect(filesScanned).toBeGreaterThan(1000);
+
+        // The #1526 defect, asserted as BEHAVIOUR rather than by eyeballing
+        // the regex. A missing leading \b makes the first of these match.
+        const asAny = ANY_PATTERNS.find((p) => p.label === 'as any');
+        expect(asAny).toBeDefined();
+        const re = () => new RegExp(asAny!.regex.source, 'g');
+
+        // Ordinary English that must NOT count as a cast.
+        expect('a category that has any history'.match(re())).toBeNull();
+        expect('this was any good'.match(re())).toBeNull();
+        expect('an alias any reader would follow'.match(re())).toBeNull();
+
+        // ...and a real cast, which must still count. Without this the
+        // assertions above are satisfied by a regex that matches nothing.
+        expect('const x = y as any;'.match(re())).toHaveLength(1);
+        expect('(foo as any).bar'.match(re())).toHaveLength(1);
+    });
+
+    test.each(ANY_PATTERNS.map((p) => p.label))('%s stays within cap', (label) => {
         const cap = CAPS[label];
         const actual = totals[label];
         if (actual > cap) {
@@ -117,14 +134,33 @@ describe('`any` usage ratchet', () => {
         expect(actual).toBeLessThanOrEqual(cap);
     });
 
+    test.each(ANY_PATTERNS.map((p) => p.label))(
+        '%s cap tracks the live count (drift sentinel)',
+        (label) => {
+            const cap = CAPS[label];
+            const actual = totals[label];
+            const slack = cap - actual;
+            if (slack > MAX_SLACK) {
+                throw new Error(
+                    `Pattern "${label}" is at ${actual} but its cap is ${cap} — ` +
+                        `${slack} of slack, over the ${MAX_SLACK} allowed. The debt was ` +
+                        `paid down and the cap was not lowered, so that much new \`any\` ` +
+                        `could land without failing anything. Set CAPS['${label}'] to ` +
+                        `${actual} (run \`npm run count-any\` to confirm). Never raise it ` +
+                        `to close this gap — that is the regression this sentinel exists ` +
+                        `to make visible.`,
+                );
+            }
+            expect(slack).toBeLessThanOrEqual(MAX_SLACK);
+        },
+    );
+
     it('total stays within sum of per-pattern caps', () => {
         const total = Object.values(totals).reduce((a, b) => a + b, 0);
         const capTotal = Object.values(CAPS).reduce((a, b) => a + b, 0);
         if (total > capTotal) {
             // Covered by per-pattern tests; this is the readable roll-up.
-            throw new Error(
-                `Total \`any\` usages: ${total} (cap sum ${capTotal}).`,
-            );
+            throw new Error(`Total \`any\` usages: ${total} (cap sum ${capTotal}).`);
         }
         expect(total).toBeLessThanOrEqual(capTotal);
     });

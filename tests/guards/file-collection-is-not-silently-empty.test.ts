@@ -161,7 +161,6 @@ const HAND_ROLLED_COLLECTORS: readonly string[] = [
     'tests/guards/nav-routes-exist.test.ts',
     'tests/guards/no-ad-hoc-tooltip-title.test.ts',
     'tests/guards/no-decorative-emoji-in-messages.test.ts',
-    'tests/guards/no-explicit-any-ratchet.test.ts',
     'tests/guards/no-hand-rolled-menus.test.ts',
     'tests/guards/no-hardcoded-ui-strings.test.ts',
     'tests/guards/no-horizontal-drift-patterns.test.ts',
