@@ -289,6 +289,186 @@ function hasPaths(spec: Json): boolean {
     return !!paths && typeof paths === 'object' && Object.keys(paths).length > 0;
 }
 
+/**
+ * How deep a `$ref` chain is followed when comparing a path's schema.
+ *
+ * Counts REF HOPS, not tree depth, and the distinction is load-bearing. An
+ * earlier version incremented on every structural level, so a ref nested six
+ * keys down — `anyOf[0].properties.rows.items.$ref`, which is exactly where
+ * #1390's lives — was never resolved at all. It still got CAUGHT, as a
+ * `ref-retargeted`, but the protection against a rename-to-identical crying
+ * wolf silently did not apply there: an unresolved ref is compared as a
+ * string.
+ *
+ * Four hops is past anything this document chains (an envelope -> a row
+ * schema -> a nested object -> a leaf) and the `seen` set already makes a
+ * cycle terminate, so the bound is a belt rather than the brace. A chain
+ * deeper than this compares the `$ref` nodes as they stand, which
+ * under-reports rather than hangs — the direction a safety gate should fail in.
+ */
+const REF_RESOLVE_DEPTH = 4;
+
+/**
+ * A schema node with its `$ref`s replaced by the components they name.
+ *
+ * Needed because the path-level comparison below asks a question the component
+ * walk cannot: a response that stops pointing at `Task` and starts pointing at
+ * `TaskListItem` changes nothing about either component, so comparing the two
+ * documents' `components.schemas` finds nothing. The information lives in the
+ * PATH, and only in the path.
+ *
+ * Resolving rather than comparing the `$ref` STRING is the part that makes this
+ * usable. A component renamed to an identical copy would otherwise read as
+ * breaking, the fix would cry wolf on its first refactor, and people would
+ * route around it — which is failure mode 2 in `openapi-breaking-change.test.ts`
+ * and the reason that file's additive cases are as load-bearing as its breaking
+ * ones. Resolved, a rename to an identical shape produces no findings and a
+ * repoint to a SMALLER shape produces `property-removed` for each field the
+ * client loses, which names the actual harm instead of the pointer move.
+ */
+function resolveRefs(
+    spec: Json,
+    node: unknown,
+    seen: ReadonlySet<string> = new Set(),
+    depth = 0,
+): unknown {
+    if (depth >= REF_RESOLVE_DEPTH || !isSchemaNode(node)) return node;
+
+    const ref = refOf(node);
+    if (ref !== null) {
+        const name = ref.split('/').pop() ?? '';
+        // A cycle, or a ref to something this document does not define. Both
+        // return the node unresolved: under-report, never loop.
+        if (seen.has(name)) return node;
+        const target = schemasOf(spec)[name];
+        if (!isSchemaNode(target)) return node;
+        return resolveRefs(spec, target, new Set(seen).add(name), depth + 1);
+    }
+
+    // Structural recursion keeps the SAME depth — only a ref hop above
+    // increments it. Otherwise the budget is spent on tree nesting and a
+    // deeply-placed ref is never followed.
+    const out: Json = {};
+    for (const [key, value] of Object.entries(node)) {
+        if (Array.isArray(value)) {
+            out[key] = value.map((entry) => resolveRefs(spec, entry, seen, depth));
+        } else if (isSchemaNode(value)) {
+            out[key] = resolveRefs(spec, value, seen, depth);
+        } else {
+            out[key] = value;
+        }
+    }
+    return out;
+}
+
+const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete'] as const;
+
+/** The `application/json` schema of a response, or null. */
+function responseSchema(op: Json, status: string): unknown {
+    const responses = op.responses;
+    if (!isSchemaNode(responses)) return null;
+    const res = responses[status];
+    if (!isSchemaNode(res)) return null;
+    const content = res.content;
+    if (!isSchemaNode(content)) return null;
+    const json = content['application/json'];
+    if (!isSchemaNode(json)) return null;
+    return json.schema ?? null;
+}
+
+/** The `application/json` schema of a request body, or null. */
+function requestSchema(op: Json): unknown {
+    const body = op.requestBody;
+    if (!isSchemaNode(body)) return null;
+    const content = body.content;
+    if (!isSchemaNode(content)) return null;
+    const json = content['application/json'];
+    if (!isSchemaNode(json)) return null;
+    return json.schema ?? null;
+}
+
+/**
+ * Compare what each OPERATION points at, not just what each component says.
+ *
+ * ## Why this exists (#1463)
+ *
+ * `findBreakingChanges` iterated `Object.entries(prevSchemas)` and nothing
+ * else, so its whole field of view was `components.schemas`. A path's `$ref`
+ * was never read, which means the single most direct way to narrow a response
+ * — repoint it at a smaller schema — was invisible.
+ *
+ * That is not hypothetical. `API_CONTRACT_VERSION` 1 -> 2 exists because #1390
+ * repointed `GET /tasks` from `Task` to `TaskListItem` and took ten documented
+ * properties off a row clients decode. Measured on that exact diff, the gate
+ * returned `[]`: no component was removed, no component lost a property, only
+ * the pointer moved. The version bump announced a change the gate could not
+ * see, and the two were never connected — no test and no classifier reads
+ * `API_CONTRACT_VERSION`. It is the policy ritual, not the mechanism.
+ *
+ * ## Scope, and what is deliberately left out
+ *
+ * Measured first: across the last 40 spec-touching commits, exactly ONE
+ * contained a path-level response repoint (#1390's, three of them). So this
+ * fires rarely and fires on the real thing — it is not a gate that reddens
+ * every refactor.
+ *
+ * An operation or path DISAPPEARING is also breaking and also undetected, and
+ * is NOT added here. It is a different blast radius that wants its own
+ * measurement, and bundling two widenings into one change would make a red
+ * impossible to attribute. Named rather than silently omitted.
+ *
+ * `sendable` is false for a response and true for a request body, which is the
+ * same asymmetry `requestReachableSchemas` already encodes: a property
+ * becoming required breaks a SENDER, never a reader.
+ */
+function comparePathSchemas(previous: Json, next: Json, out: BreakingChange[]): void {
+    const prevPaths = isSchemaNode(previous.paths) ? previous.paths : {};
+    const nextPaths = isSchemaNode(next.paths) ? next.paths : {};
+
+    for (const [path, prevOpsRaw] of Object.entries(prevPaths)) {
+        const nextOpsRaw = (nextPaths as Json)[path];
+        if (!isSchemaNode(prevOpsRaw) || !isSchemaNode(nextOpsRaw)) continue;
+
+        for (const method of HTTP_METHODS) {
+            const prevOp = prevOpsRaw[method];
+            const nextOp = nextOpsRaw[method];
+            if (!isSchemaNode(prevOp) || !isSchemaNode(nextOp)) continue;
+
+            // ── responses ──
+            const prevResponses = isSchemaNode(prevOp.responses) ? prevOp.responses : {};
+            for (const status of Object.keys(prevResponses)) {
+                const a = resolveRefs(previous, responseSchema(prevOp, status));
+                const b = resolveRefs(next, responseSchema(nextOp, status));
+                if (!isSchemaNode(a) || !isSchemaNode(b)) continue;
+                compareNode(
+                    a,
+                    b,
+                    `${method.toUpperCase()} ${path} -> ${status}`,
+                    '',
+                    out,
+                    new Set(),
+                    false, // a response is READ, never sent
+                );
+            }
+
+            // ── request body ──
+            const a = resolveRefs(previous, requestSchema(prevOp));
+            const b = resolveRefs(next, requestSchema(nextOp));
+            if (isSchemaNode(a) && isSchemaNode(b)) {
+                compareNode(
+                    a,
+                    b,
+                    `${method.toUpperCase()} ${path} -> request`,
+                    '',
+                    out,
+                    new Set(),
+                    true, // a request body is SENT
+                );
+            }
+        }
+    }
+}
+
 export function findBreakingChanges(previous: Json, next: Json): BreakingChange[] {
     const out: BreakingChange[] = [];
     const prevSchemas = schemasOf(previous);
@@ -335,6 +515,41 @@ export function findBreakingChanges(previous: Json, next: Json): BreakingChange[
                 !describesOperations || sendable.has(name),
             );
         }
+    }
+
+    // The paths, which the component walk above cannot reach.
+    //
+    // Deduplicated against the component findings by KIND + LEAF PROPERTY
+    // NAME, and the leaf is the load-bearing part. This file already decided
+    // that a change to a `$ref` TARGET is reported ONCE under the target
+    // rather than once per referencing site — `openapi-breaking-change.test.ts`
+    // asserts it, and resolving refs for the path walk re-reports every such
+    // change under each operation that references the schema. Keying on the
+    // full property PATH does not collapse those, because the component walk
+    // says `prop` where the path walk says `/anyOf[0].rows[].prop`.
+    //
+    // What survives the filter is the class this widening exists for: a
+    // property the component walk never reported because no component changed
+    // — #1390's repoint, where both `Task` and `TaskListItem` are untouched and
+    // only the pointer moved.
+    //
+    // Over-suppression is possible where two unrelated properties share a leaf
+    // name, and that direction is the right one to err in: it defers to the
+    // existing calibrated behaviour instead of overriding it.
+    const componentFindings = out.length;
+    const pathFindings: BreakingChange[] = [];
+    comparePathSchemas(previous, next, pathFindings);
+
+    const leafOf = (property: string | undefined): string =>
+        (property ?? '').split(/[./]/).filter(Boolean).pop() ?? '';
+    const alreadySeen = new Set(
+        out.slice(0, componentFindings).map((c) => `${c.kind}|${leafOf(c.property)}`),
+    );
+    for (const finding of pathFindings) {
+        const key = `${finding.kind}|${leafOf(finding.property)}`;
+        if (alreadySeen.has(key)) continue;
+        alreadySeen.add(key);
+        out.push(finding);
     }
 
     return out;

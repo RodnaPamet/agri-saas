@@ -25,6 +25,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { buildOpenApiDoc, serializeDoc } from '../../scripts/openapi-build';
 import { findBreakingChanges } from '../../scripts/openapi-breaking';
+import { API_CONTRACT_VERSION } from '../../src/lib/api/contract-version';
+import {
+    ACKNOWLEDGED_BREAKING_CHANGES,
+    unacknowledged,
+} from './acknowledged-breaking-changes';
 import {
     baseSha,
     blobPresentAt,
@@ -389,7 +394,15 @@ describe('the real gate: this PR against its BASE (#1228)', () => {
     it('introduces no breaking change against the BASE contract', () => {
         if (!baseText) return; // reported by the status test above
         const found = findBreakingChanges(JSON.parse(baseText), generatedDoc);
-        expect({ breaking: found, base: origin }).toEqual({ breaking: [], base: origin });
+        // Minus what the owner has authorised for THIS contract version.
+        // Before #1463 this asserted `[]` unconditionally, so a deliberate
+        // breaking change had two routes through the gate — edit this line, or
+        // route around it — and both are how a safety gate stops meaning
+        // anything. See `acknowledged-breaking-changes.ts` for the lifecycle;
+        // the short version is that an entry expires at the next version bump,
+        // so the list cannot accumulate.
+        const unexpected = unacknowledged(found);
+        expect({ breaking: unexpected, base: origin }).toEqual({ breaking: [], base: origin });
     });
 
     it('control: the base and the generated doc are both real, populated specs', () => {
@@ -422,5 +435,179 @@ describe('the real gate: this PR against its BASE (#1228)', () => {
         const found = findBreakingChanges(base, mutated);
         expect(found.length).toBeGreaterThan(0);
         expect(JSON.stringify(found)).toContain(prop);
+    });
+});
+
+describe('a path repointed at a smaller schema is breaking (#1463)', () => {
+    /**
+     * #1390's shape, as a fixture, because the real evidence lives in git
+     * history and a guard cannot depend on that staying reachable.
+     *
+     * `GET /p` 200 points at an envelope whose `rows` items are `Big`; after,
+     * they are `Small`. No COMPONENT changes — both schemas exist, untouched —
+     * so the component walk finds nothing, which is exactly how the real one
+     * passed the gate while bumping `API_CONTRACT_VERSION` 1 -> 2.
+     *
+     * Nested inside `anyOf` deliberately: that is where #1390's ref actually
+     * sat, and an earlier version of the fix counted tree depth rather than
+     * ref hops, so a ref that deep was never resolved.
+     */
+    const Big = {
+        type: 'object',
+        properties: { id: { type: 'string' }, note: { type: 'string' }, extra: { type: 'string' } },
+    };
+    const Small = { type: 'object', properties: { id: { type: 'string' } } };
+    const Clone = {
+        type: 'object',
+        properties: { id: { type: 'string' }, note: { type: 'string' }, extra: { type: 'string' } },
+    };
+
+    const doc = (rowRef: string) => ({
+        paths: {
+            '/p': {
+                get: {
+                    responses: {
+                        '200': {
+                            content: {
+                                'application/json': {
+                                    schema: {
+                                        anyOf: [
+                                            {
+                                                type: 'object',
+                                                properties: {
+                                                    rows: {
+                                                        type: 'array',
+                                                        items: { $ref: `#/components/schemas/${rowRef}` },
+                                                    },
+                                                },
+                                            },
+                                        ],
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        },
+        components: { schemas: { Big, Small, Clone } },
+    });
+
+    it('reports the properties a client LOSES, not merely that a pointer moved', () => {
+        const found = findBreakingChanges(doc('Big') as never, doc('Small') as never);
+        const lost = found.filter((f) => f.kind === 'property-removed').map((f) => f.property);
+        expect(found.length).toBeGreaterThan(0);
+        expect(lost.join(' ')).toContain('note');
+        expect(lost.join(' ')).toContain('extra');
+    });
+
+    it('control: no COMPONENT changed, so the old component-only walk saw nothing', () => {
+        // The whole reason this class was invisible. If this ever fails, the
+        // fixture has started changing a component and stops reproducing
+        // #1390's shape.
+        const before = doc('Big') as never as Record<string, unknown>;
+        const after = doc('Small') as never as Record<string, unknown>;
+        const schemasOnly = (d: Record<string, unknown>) => ({ components: (d as { components: unknown }).components });
+        expect(findBreakingChanges(schemasOnly(before) as never, schemasOnly(after) as never)).toEqual([]);
+    });
+
+    it('a rename to an IDENTICAL schema is NOT breaking', () => {
+        // The cry-wolf guard. Resolving both sides is what makes this quiet;
+        // comparing `$ref` STRINGS would report every refactor and the gate
+        // would be routed around — failure mode 2 in this file's docblock.
+        expect(findBreakingChanges(doc('Big') as never, doc('Clone') as never)).toEqual([]);
+    });
+
+    it('a request body gaining a required field is breaking; a response gaining one is not', () => {
+        // The asymmetry `requestReachableSchemas` already encodes, now applied
+        // at the path level: a newly required property breaks a SENDER, never
+        // a reader.
+        const withBody = (required: string[]) => ({
+            paths: {
+                '/q': {
+                    post: {
+                        requestBody: {
+                            content: {
+                                'application/json': {
+                                    schema: { type: 'object', properties: { a: { type: 'string' } }, required },
+                                },
+                            },
+                        },
+                        responses: {
+                            '200': {
+                                content: {
+                                    'application/json': {
+                                        schema: { type: 'object', properties: { a: { type: 'string' } }, required },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            components: { schemas: {} },
+        });
+        const found = findBreakingChanges(withBody([]) as never, withBody(['a']) as never);
+        const kinds = found.map((f) => f.kind);
+        expect(kinds).toContain('property-now-required');
+        // Once, for the request — not twice with the response counted too.
+        expect(kinds.filter((k) => k === 'property-now-required')).toHaveLength(1);
+    });
+});
+
+describe('the acknowledgement list stays honest (#1463)', () => {
+    it('every entry is scoped to the CURRENT contract version', () => {
+        // The garbage collector. An entry is honoured only while
+        // `API_CONTRACT_VERSION` equals its `contractVersion`, so the next bump
+        // invalidates the previous window and this assertion refuses to let it
+        // be bumped again until the stale entries are cleared. Without it the
+        // list becomes a permanent exemption file, which is the failure mode of
+        // every allowlist that outlives what it allowed.
+        const stale = ACKNOWLEDGED_BREAKING_CHANGES.filter(
+            (e) => e.contractVersion !== API_CONTRACT_VERSION,
+        );
+        if (stale.length > 0) {
+            throw new Error(
+                `${stale.length} acknowledgement(s) name a contract version other than ` +
+                    `the current ${API_CONTRACT_VERSION}:\n` +
+                    stale
+                        .map((e) => `  ${e.kind} ${e.schema} (v${e.contractVersion}, PR #${e.pr})`)
+                        .join('\n') +
+                    `\n\nThe break they authorised is in the base by now, so nothing detects ` +
+                    `it and the entry does nothing. Delete them.`,
+            );
+        }
+        expect(stale).toEqual([]);
+    });
+
+    it('every entry carries a PR, a date and a reason', () => {
+        // A bare {kind, schema} would make this a place to PUT things. The
+        // point is that it is a place to JUSTIFY them, reviewable in a diff —
+        // which an edited assertion is not.
+        const thin = ACKNOWLEDGED_BREAKING_CHANGES.filter(
+            (e) => !e.pr || !/^\d{4}-\d{2}-\d{2}$/.test(e.date ?? '') || (e.why ?? '').trim().length < 20,
+        );
+        expect(thin).toEqual([]);
+    });
+
+    it('control: the matcher actually matches, and the version scoping actually bites', () => {
+        // Without this the two assertions above pass against an empty list for
+        // the wrong reason — a matcher that never matches is indistinguishable
+        // from a list with nothing in it.
+        const finding = { kind: 'enum-narrowed', schema: 'X', property: 'y' };
+        const entry = {
+            kind: 'enum-narrowed',
+            schema: 'X',
+            contractVersion: API_CONTRACT_VERSION,
+            pr: 1,
+            date: '2026-10-09',
+            why: 'a reason long enough to pass the thinness check above',
+        };
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { acknowledges } = require('./acknowledged-breaking-changes');
+        expect(acknowledges(entry, finding)).toBe(true);
+        expect(acknowledges({ ...entry, contractVersion: API_CONTRACT_VERSION + 1 }, finding)).toBe(false);
+        expect(acknowledges({ ...entry, property: 'other' }, finding)).toBe(false);
+        expect(acknowledges({ ...entry, schema: 'Other' }, finding)).toBe(false);
     });
 });
