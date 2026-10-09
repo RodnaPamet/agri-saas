@@ -36,7 +36,7 @@
  * no wiring gap: the thing under test IS the workflow.
  *
  * Sibling guard: tests/guards/required-checks-always-report.test.ts pins
- * the nine required contexts and the always()/!cancelled() property that
+ * the ten required contexts and the always()/!cancelled() property that
  * keeps these aggregates REPORTING. This one pins what they report.
  */
 import { spawnSync } from 'node:child_process';
