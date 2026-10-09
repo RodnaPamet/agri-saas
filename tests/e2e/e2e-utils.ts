@@ -721,7 +721,22 @@ export async function openJournalEntryModalWarm(page: Page): Promise<void> {
  */
 export async function expectRouteTransition(
     page: Page,
-    opts: { content: Locator; url: RegExp; navTimeout?: number; paintTimeout?: number },
+    opts: {
+        content: Locator;
+        url: RegExp;
+        navTimeout?: number;
+        paintTimeout?: number;
+        /**
+         * Row count observed BEFORE the gesture that should have navigated.
+         *
+         * The #1076 capture showed `rows: 1` at failure against a seed of
+         * four, and `rowSelection` non-empty while no rendered row was
+         * checked — i.e. the selected row had left the table. Whether the set
+         * SHRANK during the gesture or was already 1 when it started is the
+         * next fact needed, and only the caller can see the before.
+         */
+        rowsBefore?: number;
+    },
 ): Promise<void> {
     // `waitUntil: 'domcontentloaded'`, not Playwright's default of `'load'`.
     //
@@ -768,6 +783,10 @@ export async function expectRouteTransition(
         throw new Error(
             `${(err as Error).message}\n` +
                 `--- #1076 diagnostics (the artifact for this attempt is not kept) ---\n` +
+                (opts.rowsBefore === undefined
+                    ? ''
+                    : `  rows BEFORE gesture: ${opts.rowsBefore}   <- compare with \`rows\` below;` +
+                      ` a DROP means the set changed under the gesture\n`) +
                 (await describeListState(page)),
         );
     }
