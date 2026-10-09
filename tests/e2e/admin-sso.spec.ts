@@ -30,7 +30,7 @@ test.describe('Admin SSO Configuration', () => {
         // a strict-mode violation instead of waiting the double out. Asserting
         // the count first waits for the window to close while still failing a
         // page that really did render two — `.first()` would pass on both.
-        const ssoPill = page.locator('#sso-pill-btn');
+        const ssoPill = page.getByRole('main').locator('#sso-pill-btn');
         await expect(ssoPill).toHaveCount(1, { timeout: 15000 });
         await expect(ssoPill).toBeVisible();
     });
@@ -50,8 +50,8 @@ test.describe('Admin SSO Configuration', () => {
         // role="radio" inside a role="radiogroup" (not role="button").
         // Target by the stable ids preserved on each option (see
         // src/app/t/[tenantSlug]/(app)/admin/sso/page.tsx).
-        await expect(page.locator('#sso-tab-oidc')).toBeVisible({ timeout: 30000 });
-        await expect(page.locator('#sso-tab-saml')).toBeVisible({ timeout: 10000 });
+        await expect(page.getByRole('main').locator('#sso-tab-oidc')).toBeVisible({ timeout: 30000 });
+        await expect(page.getByRole('main').locator('#sso-tab-saml')).toBeVisible({ timeout: 10000 });
 
         // Save button
         await expect(page.getByRole('button', { name: /Save Configuration/i })).toBeVisible({ timeout: 10000 });
@@ -61,9 +61,9 @@ test.describe('Admin SSO Configuration', () => {
         const tenantSlug = await loginAndGetTenant(page, ADMIN_USER);
 
         await safeGoto(page, `/t/${tenantSlug}/admin/sso`, { waitUntil: 'domcontentloaded' });
-        await expect(page.locator('#sso-tab-saml')).toBeVisible({ timeout: 30000 });
+        await expect(page.getByRole('main').locator('#sso-tab-saml')).toBeVisible({ timeout: 30000 });
 
-        await page.locator('#sso-tab-saml').click();
+        await page.getByRole('main').locator('#sso-tab-saml').click();
 
         // SAML-specific heading should appear
         await expect(page.getByRole('heading', { name: /SAML/i })).toBeVisible({ timeout: 5000 });
@@ -84,7 +84,7 @@ test.describe('Admin SSO Configuration', () => {
         // Prove the guard rendered before asserting what it withheld.
         await expect(async () => {
             if (!new URL(page.url()).pathname.includes('/admin/sso')) return; // redirected — allowed
-            await expect(page.locator('#forbidden-heading')).toBeVisible();
+            await expect(page.getByRole('main').locator('#forbidden-heading')).toBeVisible();
         }).toPass({ timeout: 15_000 });
 
         await expect(page.getByRole('button', { name: /Save Configuration/i })).toHaveCount(0);

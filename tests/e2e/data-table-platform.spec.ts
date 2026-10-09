@@ -190,7 +190,7 @@ test.describe('DataTable Platform — Row click navigation', () => {
         // allowance. This spec flaked on the same CI run that exhausted
         // entity-detail's retries.
         await expectRouteTransition(page, {
-            content: page.locator('#asset-title-heading'),
+            content: page.getByRole('main').locator('#asset-title-heading'),
             url: /\/assets\/[a-zA-Z0-9-]+$/,
             rowsBefore,
         });
@@ -220,7 +220,7 @@ test.describe('DataTable Platform — Row click navigation', () => {
         await rows.first().locator('td').last().dblclick();
         // Same shape, same fix as the Assets case above.
         await expectRouteTransition(page, {
-            content: page.locator('#task-title'),
+            content: page.getByRole('main').locator('#task-title'),
             url: /\/farm-tasks\/[a-zA-Z0-9-]+$/,
             rowsBefore,
         });

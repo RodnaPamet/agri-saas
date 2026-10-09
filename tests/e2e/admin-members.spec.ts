@@ -24,24 +24,24 @@ test.describe('Admin Member Management', () => {
         await expect(page.getByRole('heading', { name: /Members/i })).toBeVisible({ timeout: 30000 });
 
         // Members table should exist and have at least one row (the admin user)
-        await expect(page.locator('#members-table')).toBeVisible({ timeout: 15000 });
-        await expect(page.locator('#members-table tbody tr').first()).toBeVisible({ timeout: 15000 });
+        await expect(page.getByRole('main').locator('#members-table')).toBeVisible({ timeout: 15000 });
+        await expect(page.getByRole('main').locator('#members-table tbody tr').first()).toBeVisible({ timeout: 15000 });
     });
 
     test('admin can open invite form', async ({ page }) => {
         const tenantSlug = await loginAndGetTenant(page, ADMIN_USER);
 
         await safeGoto(page, `/t/${tenantSlug}/admin/members`, { waitUntil: 'domcontentloaded' });
-        await expect(page.locator('#members-table')).toBeVisible({ timeout: 30000 });
+        await expect(page.getByRole('main').locator('#members-table')).toBeVisible({ timeout: 30000 });
 
         // Click invite button
         await page.click('#invite-member-btn');
 
         // Invite form should appear
-        await expect(page.locator('#invite-form')).toBeVisible({ timeout: 5000 });
-        await expect(page.locator('#invite-email-input')).toBeVisible();
-        await expect(page.locator('#invite-role-select')).toBeVisible();
-        await expect(page.locator('#send-invite-btn')).toBeVisible();
+        await expect(page.getByRole('main').locator('#invite-form')).toBeVisible({ timeout: 5000 });
+        await expect(page.getByRole('main').locator('#invite-email-input')).toBeVisible();
+        await expect(page.getByRole('main').locator('#invite-role-select')).toBeVisible();
+        await expect(page.getByRole('main').locator('#send-invite-btn')).toBeVisible();
     });
 
     test('admin page shows members pill button', async ({ page }) => {
@@ -61,7 +61,7 @@ test.describe('Admin Member Management', () => {
         // which would pass just as happily on a page that really did render
         // two. Same barrier the header assertion in admin-regression.spec.ts
         // already uses, for the same reason.
-        const pill = page.locator('#members-pill-btn');
+        const pill = page.getByRole('main').locator('#members-pill-btn');
         await expect(pill).toHaveCount(1, { timeout: 15000 });
         await expect(pill).toBeVisible();
     });
@@ -87,9 +87,19 @@ test.describe('Admin Member Management', () => {
         // `toPass` retries an OBSERVATION, never an action.
         await expect(async () => {
             if (!new URL(page.url()).pathname.includes('/admin/members')) return; // redirected — allowed
-            await expect(page.locator('#forbidden-heading')).toBeVisible();
+            await expect(page.getByRole('main').locator('#forbidden-heading')).toBeVisible();
         }).toPass({ timeout: 15_000 });
 
+        // BARE on purpose, while every `toBeVisible` above is scoped to `main`
+        // (#1516). Two reasons, and both are specific to an absence assertion:
+        //
+        //   · Scoping would WEAKEN it. This is the proof a non-admin cannot see
+        //     the members table at all; scoped to `main`, a table rendered in a
+        //     header, drawer or portal would satisfy it.
+        //   · It is immune to the defect the others needed fixing for. A Next
+        //     streaming duplicate inflates a locator's count only when the
+        //     element is PRESENT — which here is a correct failure, never a
+        //     spurious one.
         await expect(page.locator('#members-table')).toHaveCount(0);
 
         // Verify the admin API endpoint properly rejects non-admin requests with 403
