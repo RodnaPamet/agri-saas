@@ -15,6 +15,7 @@
 import { z } from '@/lib/openapi/zod';
 import { httpsUrl } from '@/lib/schemas/url';
 import { normaliseTechnique } from '@/lib/agro/application-techniques';
+import { REGULATORY } from '@/app-layer/schemas/catalog.schemas';
 
 export const EmptyBodySchema = z.object({}).strip().openapi('EmptyBody', {
     description: 'Empty request body. Used by mutation endpoints whose semantics live entirely in the URL (e.g. POST /restore on a soft-deleted resource).',
@@ -518,12 +519,88 @@ export const CreateFieldOperationSchema = z.object({
     // never both and never neither (#3, the exclusive on-screen selector).
     // Each kind's fields are individually optional; the superRefine below
     // enforces the XOR + that the chosen kind's dose + unit are present.
-    productItemId: z.string().min(1).optional(),
+    productItemId: z
+        .string()
+        .min(1)
+        .optional()
+        .openapi({
+            description:
+                "An existing product by id. Still fully supported — but the web no longer sends it: the owner removed the product and fertiliser dropdowns on 2026-10-09 in favour of `productName`, because 22 of 24 catalogue items on a seeded farm are archetypes and a picker mostly offered things #1078 refuses at completion.\n\nSend this OR `productName`, never both. The item must not be a `FERTILIZER` — use `fertilizerItemId` for one — or the call is refused with `PRODUCT_EXPECTED`.",
+        }),
+    /**
+     * A typed product name instead of an id — owner decision, 2026-10-09.
+     *
+     * 22 of 24 catalogue items on the owner's farm are seeded archetypes, so
+     * "pick from the catalogue" is in practice "pick something that will be
+     * refused at completion" (#1078). The server resolves this to the farm's
+     * own product of that name, case-insensitively, or creates it.
+     *
+     * Exactly one of `productItemId` / `productName` — not both. `max(200)`
+     * matches `CreateItemSchema.name`, since the same string ends up there.
+     */
+    productName: z
+        .string()
+        .trim()
+        .min(1)
+        .max(200)
+        .optional()
+        .openapi({
+            description:
+                "A typed product name INSTEAD of `productItemId` — send one or the other, never both. Resolved to the farm's own product of that name (case-insensitive, soft-deleted rows ignored) or created.\n\n**If it has to create one, `newProductRegistration` is required**, because a new product on this path is a PESTICIDE and a ПРЗ without its registration number and quarantine period cannot produce a complete ДНЕВНИК. The refusal is `PESTICIDE_REGULATORY_FIELDS_REQUIRED` and names which field is missing in `params.missing`.\n\nIf the name MATCHES an existing product, `newProductRegistration` is ignored — this call creates an operation, not an edit, and an operation payload must not silently rewrite a stored ПРЗ №.",
+            example: 'Карате Зеон 050 CS',
+        }),
     doseValue: z.coerce.number().positive('Dose must be greater than zero').optional(),
     doseUnitId: z.string().min(1).optional(),
-    fertilizerItemId: z.string().min(1).optional(),
+    fertilizerItemId: z
+        .string()
+        .min(1)
+        .optional()
+        .openapi({
+            description:
+                'An existing fertiliser by id. Still supported; the web now sends `fertilizerName` instead. Send this OR `fertilizerName`, never both. The item MUST be category `FERTILIZER` or the call is refused with `FERTILIZER_EXPECTED` — previously nothing checked this, so a pesticide passed here was filed as a fertilisation.',
+        }),
+    fertilizerName: z
+        .string()
+        .trim()
+        .min(1)
+        .max(200)
+        .optional()
+        .openapi({
+            description:
+                'The fertiliser counterpart of `productName`, with one difference: a fertiliser created this way needs NO regulatory fields. `assertPesticideIsFilable` constrains PESTICIDE only — a fertiliser has no ЗЗР registration and demanding one would invent a rule the product form does not have.',
+            example: 'Амониев нитрат 34.4%',
+        }),
     fertilizerDoseValue: z.coerce.number().positive('Fertilizer dose must be greater than zero').optional(),
     fertilizerDoseUnitId: z.string().min(1).optional(),
+    /**
+     * БАБХ fields for a product this call has to CREATE, and only then.
+     *
+     * `assertPesticideIsFilable` requires `pppRegistrationNo` and
+     * `quarantinePeriodDays` for a PESTICIDE, because they print in ДНЕВНИК
+     * columns 8–9 and produce the earliest-harvest date — a ПРЗ without them
+     * stores a row guaranteed to file badly, which is why that guard exists.
+     *
+     * NOT validated here, deliberately. Whether they are needed depends on
+     * whether `productName` matched an existing product, which only the usecase
+     * knows after it has looked. Requiring them at the boundary would demand
+     * them for every typed name, including one that matches a product created
+     * last season.
+     */
+    newProductCategory: z
+        .enum(['PESTICIDE', 'FERTILIZER'])
+        .optional()
+        .openapi({
+            description:
+                'What a `productName` that matches NOTHING should be created as. Defaults to `PESTICIDE`, which is what a typed spray name usually means.\n\n**Send `FERTILIZER` for a liquid fertiliser applied through a sprayer.** That is a legitimate spray (`FERTILIZER_EXPECTED` is deliberately one-sided), but without this field such a product would be created as a PESTICIDE — and a PESTICIDE cannot be created without a ПРЗ registration number it does not have, so the farmer would be asked to invent one and the item would sit in the wrong category for every later record.\n\nIgnored when the name matches an existing product, and ignored entirely on the `fertilizerName` path, which always creates a `FERTILIZER`.',
+        }),
+    newProductRegistration: z
+        .object({ ...REGULATORY })
+        .strip()
+        .optional()
+        .openapi({
+            description:
+                'БАБХ fields for a product this call has to CREATE, and only then. Required alongside a `productName` that matches nothing; ignored when it matches. `pppRegistrationNo` makes the trade name in ДНЕВНИК column 4 checkable and `quarantinePeriodDays` feeds column 8 plus the earliest-harvest date in column 9.',
+        }),
     // Optional water-carrier rate (per-decare) for the spray tank — only
     // meaningful for a product spray. Persisted on the line so the per-parcel
     // water total (rate × parcel dca) can be recomputed wherever the job shows.
@@ -544,8 +621,12 @@ export const CreateFieldOperationSchema = z.object({
         .optional()
         .transform((v) => (v === undefined ? undefined : normaliseTechnique(v))),
 }).strip().superRefine((val, ctx) => {
-    const hasProduct = !!val.productItemId;
-    const hasFertilizer = !!val.fertilizerItemId;
+    // The XOR is now over the KIND, and each kind may be named either way.
+    // Keeping it keyed on the kind rather than on the four fields is what makes
+    // the dose rules below unchanged: a dose belongs to the input, not to how
+    // the input was identified.
+    const hasProduct = !!val.productItemId || !!val.productName;
+    const hasFertilizer = !!val.fertilizerItemId || !!val.fertilizerName;
     if (hasProduct === hasFertilizer) {
         ctx.addIssue({
             code: z.ZodIssueCode.custom,
@@ -553,6 +634,23 @@ export const CreateFieldOperationSchema = z.object({
             message: 'Choose exactly one input — a product OR a fertilizer.',
         });
         return;
+    }
+    // An id AND a name for the same kind is a client bug, not a preference to
+    // resolve. Silently preferring one would make the other field look honoured
+    // and send the operator's typed name nowhere.
+    if (val.productItemId && val.productName) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['productName'],
+            message: 'Send either productItemId or productName, not both.',
+        });
+    }
+    if (val.fertilizerItemId && val.fertilizerName) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['fertilizerName'],
+            message: 'Send either fertilizerItemId or fertilizerName, not both.',
+        });
     }
     if (hasProduct && (val.doseValue == null || !val.doseUnitId)) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['doseValue'], message: 'A product dose and unit are required.' });

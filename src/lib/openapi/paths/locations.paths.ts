@@ -986,7 +986,8 @@ export function registerLocationPaths(registry: OpenAPIRegistry): void {
             'usecase returns the original instead of a duplicate. The replay check requires ' +
             '`parcelCount > 0` on the existing job, because the create spans TWO transactions ' +
             'and a crash between them leaves a Task with no lines that must NOT be reported as ' +
-            'synced.',
+            'synced.' +
+            '\n\n**400 codes for the input a job applies.** `OPERATION_INPUT_AMBIGUOUS` — not exactly one kind, or an id AND a name for the same kind. `PRODUCT_DOSE_REQUIRED` / `FERTILIZER_DOSE_REQUIRED` — the chosen kind needs its dose and unit. `PRODUCT_NOT_FOUND` / `FERTILIZER_NOT_FOUND` — the id names nothing in this farm. `FERTILIZER_EXPECTED` — the fertiliser field was given an item that is not a `FERTILIZER`. **The converse is deliberately NOT enforced**: a liquid fertiliser applied through a sprayer is a legitimate SPRAY, so the product field accepts any category. `PRODUCT_NAME_REQUIRED` — a `productName` empty once trimmed and sanitised. `PESTICIDE_REGULATORY_FIELDS_REQUIRED` — a typed name has to CREATE a plant protection product and `newProductRegistration` is missing a field, named in `params.missing`. `DOSE_UNIT_HAS_NO_BASE` — a typed name has to create a product but the dose unit is not a `<base>-per-<area>` rate, so no stock unit can be derived; create the product from the catalogue instead.',
         tags: ['Field operations'],
         params: LocationParams,
         body: CreateFieldOperationSchema,

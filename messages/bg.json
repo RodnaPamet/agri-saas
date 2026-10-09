@@ -2674,9 +2674,6 @@
         "kindFertilizer": "Тор",
         "product": "Продукт",
         "fertilizer": "Тор",
-        "selectProduct": "Изберете продукт",
-        "selectFertilizer": "Изберете тор",
-        "noItems": "Няма артикули в каталога",
         "dose": "Доза",
         "dosePlaceholder": "напр. 200",
         "unit": "Единица",
@@ -2710,13 +2707,14 @@
         "deleteConfirmBody": "Парцелът и свързаните операции ще бъдат премахнати. Действието е необратимо.",
         "deleteConfirmLabel": "Изтрий парцел",
         "deleteFailed": "Парцелът не може да бъде изтрит",
-        "viewHistory": "Виж историята"
+        "viewHistory": "Виж историята",
+        "typeProduct": "напр. Карате Зеон 050 CS",
+        "typeFertilizer": "напр. Амониев нитрат 34.4%"
       },
       "prescription": {
         "createFailed": "Неуспешно създаване на задача",
         "parcelsSelected": "{count, plural, one {# избран парцел} other {# избрани парцела}}. Задайте продукт + доза, за да създадете задача за пръскане.",
         "product": "Продукт",
-        "selectProduct": "Изберете продукт…",
         "dose": "Доза",
         "dosePlaceholder": "напр. 2.5",
         "unit": "Единица",
@@ -2726,7 +2724,8 @@
         "note": "Бележка",
         "notePlaceholder": "Незадължителна бележка за целта",
         "creating": "Създаване…",
-        "createJob": "Създай задача за пръскане"
+        "createJob": "Създай задача за пръскане",
+        "typeProduct": "напр. Карате Зеон 050 CS"
       },
       "spatialImport": {
         "title": "Импорт на парцели",

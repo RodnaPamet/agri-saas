@@ -37,8 +37,27 @@ export const ItemQuerySchema = z
     })
     .strip();
 
-/** The regulatory fields shared by create and update — БАБХ farm-record data. */
-const REGULATORY = {
+/**
+ * The regulatory fields shared by create and update — БАБХ farm-record data.
+ *
+ * Exported so `CreateFieldOperationSchema` (`src/lib/schemas/index.ts`) takes
+ * the same declarations for a typed product name that has to CREATE the
+ * product. Shared rather than restated, so the bounds cannot drift between the
+ * product form and the operation sheet: a `max(120)` on one side and a
+ * `max(200)` on the other would reject from the field a registration number the
+ * inventory form stores happily.
+ *
+ * The two files import DIFFERENT `z` — plain `zod` here, the `.openapi()`-
+ * extended instance there — and spreading these into an object built by the
+ * other instance typechecks fine. I asserted the opposite while diagnosing an
+ * unrelated CI failure and was wrong; the actual error was a use-before-declare
+ * in `PrescriptionPanel.tsx`. Recorded because the wrong explanation is the
+ * kind that gets copied: it sounds like a real constraint.
+ *
+ * `src/lib` importing from `src/app-layer` is conventional here — 41 other lib
+ * modules already do, and no guard forbids it.
+ */
+export const REGULATORY = {
     /** Days produce may not be harvested after application. */
     quarantinePeriodDays: z.number().int().nonnegative().nullable().optional(),
     activeIngredient: z.string().max(200).nullable().optional(),

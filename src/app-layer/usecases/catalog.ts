@@ -6,6 +6,7 @@ import { badRequest, notFound, codedBadRequest, codedConflict } from '@/lib/erro
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { cachedListRead } from '@/lib/cache/list-cache';
 import { Prisma, ItemCategory, QuantityMeasure } from '@prisma/client';
+import { uniqueViolationTargets } from '@/lib/errors/prisma';
 
 /**
  * Per-hectare RATE unit keys — hidden from the dose-unit picker (Bulgaria
@@ -109,12 +110,15 @@ function assertPesticideIsFilable(next: {
  */
 function asDuplicateNameConflict(err: unknown): never {
     const code = (err as { code?: unknown })?.code;
-    const target = (err as { meta?: { target?: unknown } })?.meta?.target;
+    // `uniqueViolationTargets`, not `meta.target` alone. The index this
+    // translates is a PARTIAL, raw-SQL one (`Item_tenantId_name_active_key`),
+    // which Prisma does not model — so under the pg driver adapter
+    // `meta.target` is `undefined` and the constraint arrives nested instead.
+    // Narrowing on `meta.target` meant this translation stopped firing and a
+    // raw P2002 reached the client, with nothing failing: the code below was
+    // still correct and simply never reached. Measured, not inferred.
     const hitNameIndex =
-        code === 'P2002' &&
-        (typeof target === 'string'
-            ? target.includes('name')
-            : Array.isArray(target) && target.some((t) => String(t).includes('name')));
+        code === 'P2002' && uniqueViolationTargets(err).some((t) => t.includes('name'));
     if (!hitNameIndex) throw err;
     // No `params`, and no interpolation either.
     //

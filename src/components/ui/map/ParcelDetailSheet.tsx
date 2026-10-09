@@ -94,6 +94,9 @@ export function ParcelDetailSheet({
     const t = useTranslations('ag.map');
     const tc = useTranslations('common');
     const tCrops = useTranslations('crops');
+    // The ПРЗ labels already exist under `inventory`; borrowing them keeps one
+    // spelling of «№ на регистрация на ПРЗ» rather than a second copy here.
+    const tInv = useTranslations('inventory');
     const buildUrl = useTenantApiUrl();
     const { tenantSlug } = useParams<{ tenantSlug: string }>();
     const { submit } = useOfflineSync();
@@ -106,7 +109,13 @@ export function ParcelDetailSheet({
     const { data: me } = useSWR<MeResponse>('/api/auth/me', apiGet);
 
     const [kind, setKind] = useState<InputKind>('PRODUCT');
-    const [itemId, setItemId] = useState('');
+    // Free text, not a chosen id — owner decision, 2026-10-09: the product and
+    // fertiliser dropdowns are gone. 22 of 24 catalogue items on the owner's
+    // farm are seeded archetypes, so a picker mostly offered things #1078
+    // refuses at completion.
+    const [itemName, setItemName] = useState('');
+    const [pppRegNo, setPppRegNo] = useState('');
+    const [quarantineDays, setQuarantineDays] = useState('');
     const [dose, setDose] = useState('');
     const [waterRate, setWaterRate] = useState('');
     const [techniqueKey, setTechniqueKey] = useState('');
@@ -128,7 +137,9 @@ export function ParcelDetailSheet({
     /* eslint-disable react-hooks/set-state-in-effect -- intentional form re-seed. */
     useEffect(() => {
         setKind('PRODUCT');
-        setItemId('');
+        setItemName('');
+        setPppRegNo('');
+        setQuarantineDays('');
         setDose('');
         setDoseUnitIdOverride('');
         setWaterRate('');
@@ -168,12 +179,30 @@ export function ParcelDetailSheet({
     const waterRateUnitId = waterRateUnitIdOverride || defaultWaterRateUnitId;
     const assigneeUserId = assigneeUserIdOverride ?? me?.user?.id ?? null;
 
-    const itemOptions = useMemo<ComboboxOption<ItemDTO>[]>(() => {
-        const pool = (items ?? []).filter((it) =>
-            kind === 'FERTILIZER' ? it.category === 'FERTILIZER' : it.category !== 'FERTILIZER',
-        );
-        return pool.map((it) => ({ value: it.id, label: it.name, meta: it }));
-    }, [items, kind]);
+    /**
+     * Does the typed name already exist on this farm?
+     *
+     * Answered CLIENT-SIDE against the `/items` the sheet already fetched, so
+     * revealing the ПРЗ fields costs no request. Case-insensitive to match the
+     * server, whose unique index is on `(tenantId, lower(name))` — a
+     * case-sensitive check here would hide the fields for «карате зеон», the
+     * server would then match the existing row, and the operator would have
+     * been asked for nothing. Harmless in that direction; the opposite
+     * (hiding them when the server WILL create) is the one that produces a
+     * refusal, so the comparison has to agree with the constraint.
+     */
+    const typedNameIsNew = useMemo(() => {
+        const needle = itemName.trim().toLowerCase();
+        if (!needle) return false;
+        return !(items ?? []).some((it) => it.name.trim().toLowerCase() === needle);
+    }, [items, itemName]);
+
+    // A NEW product is created as a PESTICIDE, and `assertPesticideIsFilable`
+    // requires both fields — they print in ДНЕВНИК columns 8–9. A new
+    // FERTILIZER needs neither, so the block stays hidden for that kind.
+    const needsRegistration = kind === 'PRODUCT' && typedNameIsNew;
+    const registrationComplete = !!pppRegNo.trim() && quarantineDays.trim() !== '';
+
     const unitOptions = useMemo<ComboboxOption<UnitDTO>[]>(
         () => (units ?? []).map((u) => ({ value: u.id, label: u.symbol, meta: u })),
         [units],
@@ -243,7 +272,18 @@ export function ParcelDetailSheet({
             ? totalLabel(waterNumber, selectedWaterUnit.symbol, areaHa)
             : null;
 
-    const canSubmit = !!parcel && !!itemId && doseValid && !!doseUnitId && !!assigneeUserId && !submitting;
+    const canSubmit =
+        !!parcel &&
+        !!itemName.trim() &&
+        doseValid &&
+        !!doseUnitId &&
+        !!assigneeUserId &&
+        // Blocked in the form rather than refused by the server: the operator
+        // is standing in a field, and PESTICIDE_REGULATORY_FIELDS_REQUIRED
+        // arriving after submit is the "refused at the worst moment" shape this
+        // whole change exists to remove.
+        (!needsRegistration || registrationComplete) &&
+        !submitting;
 
     const onCropChange = async (value: string) => {
         if (!parcel || value === cropValue) return;
@@ -271,9 +311,22 @@ export function ParcelDetailSheet({
                     assigneeUserId,
                     parcelIds: [parcel.id],
                     ...(isFertilizer
-                        ? { fertilizerItemId: itemId, fertilizerDoseValue: doseNumber, fertilizerDoseUnitId: doseUnitId }
+                        ? { fertilizerName: itemName.trim(), fertilizerDoseValue: doseNumber, fertilizerDoseUnitId: doseUnitId }
                         : {
-                              productItemId: itemId,
+                              productName: itemName.trim(),
+                              // Sent only when the name is new. On a match the
+                              // server ignores it — an operation payload must
+                              // not silently rewrite a stored ПРЗ № — so
+                              // omitting it keeps the request honest about what
+                              // it is asking for.
+                              ...(needsRegistration
+                                  ? {
+                                        newProductRegistration: {
+                                            pppRegistrationNo: pppRegNo.trim(),
+                                            quarantinePeriodDays: Number(quarantineDays),
+                                        },
+                                    }
+                                  : {}),
                               doseValue: doseNumber,
                               doseUnitId,
                               waterRateValue: waterValid ? waterNumber : null,
@@ -347,28 +400,56 @@ export function ParcelDetailSheet({
                             selected={kind}
                             selectAction={(v) => {
                                 setKind(v as InputKind);
-                                setItemId('');
+                                setItemName('');
+                                setPppRegNo('');
+                                setQuarantineDays('');
                             }}
                             options={kindOptions}
                         />
                     </FormField>
 
                     <FormField label={kind === 'FERTILIZER' ? t('parcelSheet.fertilizer') : t('parcelSheet.product')} required>
-                        <Combobox
-                            options={itemOptions}
-                            selected={itemOptions.find((o) => o.value === itemId) ?? null}
-                            setSelected={(o) => setItemId(o?.value ?? '')}
+                        <Input
+                            id="parcel-sheet-item-name"
+                            value={itemName}
+                            onChange={(e) => setItemName(e.target.value)}
                             placeholder={
-                                itemOptions.length
-                                    ? kind === 'FERTILIZER'
-                                        ? t('parcelSheet.selectFertilizer')
-                                        : t('parcelSheet.selectProduct')
-                                    : t('parcelSheet.noItems')
+                                kind === 'FERTILIZER'
+                                    ? t('parcelSheet.typeFertilizer')
+                                    : t('parcelSheet.typeProduct')
                             }
                             aria-label={kind === 'FERTILIZER' ? t('parcelSheet.fertilizer') : t('parcelSheet.product')}
-                            matchTriggerWidth
                         />
                     </FormField>
+
+                    {/* Shown only for a product name this farm does not have
+                        yet. A new product is created as a PESTICIDE and cannot
+                        be saved without these two — they are ДНЕВНИК columns
+                        8–9 and the earliest-harvest date. Asking here rather
+                        than letting the server refuse keeps the operator from
+                        being stopped mid-field by
+                        PESTICIDE_REGULATORY_FIELDS_REQUIRED. */}
+                    {needsRegistration && (
+                        <div className="grid grid-cols-2 gap-default">
+                            <FormField label={tInv('pppRegNo')} required>
+                                <Input
+                                    id="parcel-sheet-ppp-reg"
+                                    value={pppRegNo}
+                                    onChange={(e) => setPppRegNo(e.target.value)}
+                                    aria-label={tInv('pppRegNo')}
+                                />
+                            </FormField>
+                            <FormField label={tInv('quarantineDays')} required>
+                                <Input
+                                    id="parcel-sheet-quarantine"
+                                    inputMode="numeric"
+                                    value={quarantineDays}
+                                    onChange={(e) => setQuarantineDays(e.target.value)}
+                                    aria-label={tInv('quarantineDays')}
+                                />
+                            </FormField>
+                        </div>
+                    )}
 
                     <div className="grid grid-cols-2 gap-default">
                         <FormField label={t('parcelSheet.dose')} required>
