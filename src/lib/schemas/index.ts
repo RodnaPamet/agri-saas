@@ -16,6 +16,7 @@ import { z } from '@/lib/openapi/zod';
 import { httpsUrl } from '@/lib/schemas/url';
 import { normaliseTechnique } from '@/lib/agro/application-techniques';
 import { REGULATORY } from '@/app-layer/schemas/catalog.schemas';
+import { requestTimestamp } from './timestamp';
 
 export const EmptyBodySchema = z.object({}).strip().openapi('EmptyBody', {
     description: 'Empty request body. Used by mutation endpoints whose semantics live entirely in the URL (e.g. POST /restore on a soft-deleted resource).',
@@ -196,7 +197,7 @@ export const CreateTaskSchema = z.object({
     severity: z.enum(['INFO', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).optional(),
     priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional(),
     source: z.enum(['MANUAL', 'TEMPLATE', 'POLICY_REVIEW', 'AUDIT', 'INTEGRATION']).optional(),
-    dueAt: z.string().nullable().optional(),
+    dueAt: requestTimestamp().nullable().optional(),
     assigneeUserId: z.string().nullable().optional(),
     reviewerUserId: z.string().nullable().optional(),
     metadataJson: z.any().optional(),
@@ -210,7 +211,7 @@ export const UpdateTaskSchema = z.object({
     type: z.enum(['TASK', 'IMPROVEMENT']).optional(),
     severity: z.enum(['INFO', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).optional(),
     priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional(),
-    dueAt: z.string().nullable().optional(),
+    dueAt: requestTimestamp().nullable().optional(),
     reviewerUserId: z.string().nullable().optional(),
     metadataJson: z.any().optional(),
 }).strip().openapi('TaskUpdateRequest', {
@@ -302,7 +303,7 @@ export const BulkTaskStatusSchema = z.object({
 
 export const BulkTaskDueDateSchema = z.object({
     taskIds: z.array(z.string().min(1)).min(1).max(100),
-    dueAt: z.string().nullable(),
+    dueAt: requestTimestamp().nullable(),
 }).strip();
 
 // ─── Issue Compatibility Aliases (deprecated — use Task schemas) ───
@@ -595,7 +596,7 @@ export const CreateFieldOperationSchema = z.object({
     waterRateValue: z.coerce.number().positive('Water rate must be greater than zero').nullable().optional(),
     waterRateUnitId: z.string().min(1).nullable().optional(),
     targetNote: z.string().max(2000).nullable().optional(),
-    dueAt: z.string().nullable().optional(),
+    dueAt: requestTimestamp().nullable().optional(),
     // БАБХ farm-record — "Техника за приложение" (one rig per job).
     // Normalised on write so the column cannot accumulate `Dron` beside
     // `dron` again — it did, twice, in two casings, on the legally-filed
@@ -708,7 +709,7 @@ const HarvestLotPayloadSchema = z.object({
     quantity: z.coerce.number().positive('Harvest quantity must be positive'),
     lotCode: z.string().max(120).optional().nullable(),
     locationId: z.string().optional().nullable(),
-    expiresAt: z.string().optional().nullable(),
+    expiresAt: requestTimestamp().optional().nullable(),
     parcelId: z.string().optional().nullable(),
     sourceLotIds: z.array(z.string().min(1)).max(100).optional(),
     costAmount: z.coerce.number().nonnegative().optional().nullable(),
@@ -729,7 +730,7 @@ const HarvestLotPayloadSchema = z.object({
 export const CreateLogEntrySchema = z.object({
     type: z.enum(LOG_ENTRY_TYPE_VALUES),
     status: z.enum(['PLANNED', 'DONE']).optional(),
-    occurredAt: z.string().optional().nullable(),
+    occurredAt: requestTimestamp().optional().nullable(),
     title: z.string().min(1, 'Title is required').max(500),
     notes: z.string().max(20000).optional().nullable(),
     quantities: z.array(LogQuantitySchema).max(50).optional(),
@@ -747,7 +748,7 @@ export const CreateLogEntrySchema = z.object({
 export const UpdateLogEntrySchema = z.object({
     type: z.enum(LOG_ENTRY_TYPE_VALUES).optional(),
     status: z.enum(['PLANNED', 'DONE']).optional(),
-    occurredAt: z.string().optional().nullable(),
+    occurredAt: requestTimestamp().optional().nullable(),
     title: z.string().min(1).max(500).optional(),
     notes: z.string().max(20000).optional().nullable(),
     quantities: z.array(LogQuantitySchema).max(50).optional(),
