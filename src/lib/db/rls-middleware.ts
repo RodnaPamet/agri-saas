@@ -52,7 +52,7 @@
 
 import type { PrismaClient } from '@prisma/client';
 import { Prisma } from '@prisma/client';
-import { getAuditContext } from '@/lib/audit-context';
+import { getAuditContext, runWithAuditContext } from '@/lib/audit-context';
 import { logger } from '@/lib/observability/logger';
 import * as prismaModule from '@/lib/prisma';
 
@@ -197,7 +197,20 @@ export async function runWithoutRls<T>(
         caller: extractCallerFingerprint(new Error()),
     });
 
-    return callback(getPrismaClient());
+    // Publish the declaration into the audit context so the warning below can
+    // tell a DECLARED bypass from an undeclared one (#1431). Before this, it
+    // could not: `runWithoutRls` set no ALS state, so the only way to quieten
+    // the warning was the other vocabulary (`source`), and #1368 had to carry
+    // two wrappers for one intent.
+    //
+    // SPREAD, never replace. `runWithAuditContext` installs a fresh store, so
+    // passing only the reason would drop `tenantId`, `actorUserId` and
+    // `requestId` for everything inside the bypass — which is how an audit row
+    // loses its actor. Same mistake #1368 avoided by spreading there.
+    return runWithAuditContext(
+        { ...getAuditContext(), rlsBypassReason: options.reason },
+        () => callback(getPrismaClient()),
+    );
 }
 
 /**
@@ -399,10 +412,16 @@ export function withRlsTripwireExtension<T extends { $extends: any }>(
                     const hasTenant = !!ctx?.tenantId;
                     const source = ctx?.source;
 
+                    // A declared bypass counts as deliberate alongside the
+                    // three `source` values (#1431). `runWithoutRls` validates
+                    // the reason against `RlsBypassReason` before setting it,
+                    // so presence here means a reviewed declaration and not
+                    // merely a caller-supplied string.
                     const isBypassContext =
                         source === 'seed' ||
                         source === 'job' ||
-                        source === 'system';
+                        source === 'system' ||
+                        !!ctx?.rlsBypassReason;
 
                     if (hasTenant || isBypassContext) {
                         return query(args);

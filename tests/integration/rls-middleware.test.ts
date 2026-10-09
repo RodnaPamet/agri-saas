@@ -28,6 +28,8 @@ import {
     runInTenantContext,
     runWithoutRls,
 } from '@/lib/db/rls-middleware';
+import { logger } from '@/lib/observability/logger';
+import { getAuditContext, runWithAuditContext } from '@/lib/audit-context';
 import type { RequestContext } from '@/app-layer/types';
 import { getPermissionsForRole } from '@/lib/permissions';
 
@@ -244,6 +246,94 @@ describeFn('RLS middleware — live PostgreSQL enforcement', () => {
                 }
             );
             expect(created.tenantId).toBe(tenantB);
+        });
+
+        test('a DECLARED bypass does not trip the missing-tenant warning (#1431)', async () => {
+            /**
+             * The two halves used to not know about each other.
+             * `runWithoutRls({ reason })` validated the reason, logged
+             * `bypass_invoked`, and set NO AsyncLocalStorage state — while the
+             * warning decided "is this deliberate?" from `source`, which the
+             * typed allowlist knows nothing about. So a correctly-declared
+             * WRITE still warned, and the only way to quieten it was the other
+             * vocabulary: #1368 carried two wrappers for one intent.
+             *
+             * Nothing caught it because no bypass call site wrote. Measured on
+             * main at the time: five `runWithoutRls` sites, all reads, and a
+             * read takes the `logger.debug` branch.
+             *
+             * The test immediately above this one is a writing bypass and
+             * passed throughout, because it asserts on the returned row and
+             * not on the log.
+             */
+            const warns: Array<{ msg: string }> = [];
+            const infos: Array<{ msg: string; meta: Record<string, unknown> }> = [];
+            const warnSpy = jest
+                .spyOn(logger, 'warn')
+                .mockImplementation(((m: string) => {
+                    warns.push({ msg: String(m) });
+                }) as never);
+            const infoSpy = jest
+                .spyOn(logger, 'info')
+                .mockImplementation(((m: string, meta?: unknown) => {
+                    infos.push({
+                        msg: String(m),
+                        meta: (meta ?? {}) as Record<string, unknown>,
+                    });
+                }) as never);
+            try {
+                await runWithoutRls({ reason: 'test' }, async (db) => {
+                    await db.automationRule.create({
+                        data: {
+                            tenantId: tenantB,
+                            name: `declared-bypass-${SUFFIX}`,
+                            triggerEvent: 'TASK_CREATED',
+                            actionType: 'NOTIFY_USER',
+                            actionConfigJson: {},
+                        },
+                    });
+                });
+
+                // CONTROL FIRST. Without it, "no warning" is satisfied by a
+                // write that never reached the middleware at all, or by a
+                // logger tap that captured nothing — which is the shape this
+                // repo keeps finding behind green assertions.
+                const invoked = infos.filter(
+                    (l) => l.msg === 'rls-middleware.bypass_invoked',
+                );
+                expect(invoked.length).toBeGreaterThan(0);
+                expect(invoked[0]!.meta.reason).toBe('test');
+
+                // The property: no warning, with NO `source` override in play.
+                expect(
+                    warns.filter(
+                        (l) => l.msg === 'rls-middleware.missing_tenant_context',
+                    ),
+                ).toHaveLength(0);
+            } finally {
+                warnSpy.mockRestore();
+                infoSpy.mockRestore();
+            }
+        });
+
+        test('the bypass SPREADS the outer audit context rather than replacing it', async () => {
+            /**
+             * `runWithAuditContext` installs a whole new store, so setting only
+             * the reason would drop `tenantId`, `actorUserId` and `requestId`
+             * for everything inside the bypass — which is how an audit row
+             * loses its actor. #1368 avoided exactly that by spreading, and
+             * this asserts the same property now that `runWithoutRls` is the
+             * one doing it.
+             */
+            const observed = await runWithAuditContext(
+                { tenantId: 'outer-tenant', actorUserId: 'outer-actor', requestId: 'req-outer' },
+                async () =>
+                    runWithoutRls({ reason: 'test' }, async () => getAuditContext()),
+            );
+            expect(observed?.tenantId).toBe('outer-tenant');
+            expect(observed?.actorUserId).toBe('outer-actor');
+            expect(observed?.requestId).toBe('req-outer');
+            expect(observed?.rlsBypassReason).toBe('test');
         });
     });
 
