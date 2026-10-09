@@ -41,6 +41,23 @@
  * requires you to use.
  */
 
+// Migrated to the shared state-aware `blankNonCode` (#1497).
+//
+// The local copy this replaces removed BLOCK comments before LINE comments, so
+// a `//` line containing `/*` opened a block that ran to the next `*/` and
+// deleted the code between. Nine files under `src/` carry such a line for
+// ordinary reasons, and this guard can reach one of them.
+//
+// Measured on `src/lib/schemas/index.ts` before the swap: the buggy strip saw
+// 36 exported declarations where a correct one sees 38 — `UpdateTaskSchema`
+// and `SetTaskStatusSchema` were invisible. No PASSWORD schema was among them,
+// so this guard was not blind to anything it polices; the exposure was latent,
+// and the next password field declared in that region would have been missed
+// silently.
+//
+// `blankNonCode` also blanks to spaces rather than deleting, so any caller
+// indexing forward from a match keeps its offsets.
+import { blankNonCode } from '../helpers/blank-non-code';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -166,12 +183,9 @@ const INLINE_USE_RE =
     /\(\s*await\s+checkPasswordAgainstHIBP\s*\([^)]*\)\s*\)\s*\.\s*breached\b/;
 
 /** Remove comments so prose mentioning `breached` cannot satisfy the check. */
-function stripComments(src: string): string {
-    return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
-}
 
 function usesResult(src: string): boolean {
-    const code = stripComments(src);
+    const code = blankNonCode(src);
     if (INLINE_USE_RE.test(code)) return true;
 
     BOUND_CALL_RE.lastIndex = 0;

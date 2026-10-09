@@ -21,6 +21,23 @@
  * that exported them — reappears anywhere under `src/`. It is the
  * "cannot silently return" enforcement for the legacy guard.
  */
+// Migrated to the shared state-aware `blankNonCode` (#1497).
+//
+// The local copy this replaces removed BLOCK comments before LINE comments, so
+// a `//` line containing `/*` opened a block that ran to the next `*/` and
+// deleted the code between. Nine files under `src/` carry such a line for
+// ordinary reasons, and this guard can reach one of them.
+//
+// Measured on `src/lib/schemas/index.ts` before the swap: the buggy strip saw
+// 36 exported declarations where a correct one sees 38 — `UpdateTaskSchema`
+// and `SetTaskStatusSchema` were invisible. No PASSWORD schema was among them,
+// so this guard was not blind to anything it polices; the exposure was latent,
+// and the next password field declared in that region would have been missed
+// silently.
+//
+// `blankNonCode` also blanks to spaces rather than deleting, so any caller
+// indexing forward from a match keeps its offsets.
+import { blankNonCode } from '../helpers/blank-non-code';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -45,11 +62,6 @@ const BANNED_MODULE = '@/lib/auth/require-admin';
  * real, executable code counts. The line-comment pattern keeps the
  * character before `//` so `https://` URLs survive intact.
  */
-function stripComments(src: string): string {
-    return src
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/(^|[^:])\/\/.*$/gm, '$1');
-}
 
 /**
  * Every `.ts`/`.tsx` file under `src/`, as absolute paths (the call site below
@@ -67,7 +79,7 @@ function srcFiles(): string[] {
 
 /** Returns the banned tokens found in real (non-comment) code. */
 function scanForLegacyGuard(code: string): string[] {
-    const stripped = stripComments(code);
+    const stripped = blankNonCode(code);
     const hits: string[] = [];
     for (const id of BANNED_IDENTIFIERS) {
         if (new RegExp(`\\b${id}\\b`).test(stripped)) hits.push(id);
