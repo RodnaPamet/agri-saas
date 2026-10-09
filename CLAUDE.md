@@ -1026,6 +1026,20 @@ you have, add nothing new, and the two market surfaces close.
   the new gate does NOT copy its sibling's prose message — the user-facing
   sentences are in `billing.pastDue.*` in both locales, and
   `no-server-authored-user-copy` is ratcheting the prose ones down.
+  **The "different destinations" half is true of the WEB client only (#1490).**
+  App Store guideline 3.1.1 keeps the native client from pointing anyone to pay
+  outside the app, so on iOS both refusals are statements with no routing —
+  different Bulgarian sentences, the same (absent) destination. That does NOT
+  weaken the rule above: the codes must stay distinct because a farmer should be
+  told a payment failed rather than that they lack permission, which is what the
+  generic FORBIDDEN string was saying. It does mean the justification is the
+  WORDING on one client and the ROUTING on the other, so do not reach for the
+  destination argument when the surface in question is native. The spec's own
+  description of the code therefore names no remedy — a documented remedy only
+  one client can perform is the same defect as a code only one client can read.
+  `PAST_DUE_RESTRICTED` IS in the spec now, in the shared 403 description in
+  `src/lib/openapi/paths/helpers.ts`; it was the first entry ever deleted from
+  `UNDOCUMENTED_BASELINE` rather than added to it.
 - **There is NO sweep, deliberately.** The restriction is COMPUTED from
   `pastDueSince` at request time, so a `payment_succeeded` that clears the
   column unrestricts the tenant on the very next request. #1325 specified a

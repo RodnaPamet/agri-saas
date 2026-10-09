@@ -15,11 +15,22 @@
  * precise cause — `PESTICIDE_REGULATORY_FIELDS_REQUIRED`,
  * `WATER_RATE_UNIT_REQUIRED` — is shown as "something went wrong".
  *
- * `PAST_DUE_RESTRICTED` is the sharpest case and is in the undocumented set. It
- * decides WHERE the client sends the user: the billing portal for a failed
- * payment, versus a plan picker for `plan_limit_exceeded`. CLAUDE.md states
- * that contract in terms — "a tenant sent to the wrong one cannot get out" —
- * and the code carrying it is not in the spec.
+ * `PAST_DUE_RESTRICTED` was the sharpest case and is **documented now** (#1490)
+ * — the first entry deleted from the baseline rather than added to it. It sits
+ * in the shared 403 description in `src/lib/openapi/paths/helpers.ts`, not on a
+ * single operation, because it is confined to five capability families and one
+ * of them (`upload`) is gated at a choke point many unrelated routes reach.
+ *
+ * Writing it down corrected the reasoning that made it urgent. The original
+ * argument was that the code decides WHERE a client sends the user — billing
+ * portal versus plan picker — which CLAUDE.md states in terms. That is true of
+ * the WEB client only: App Store guideline 3.1.1 keeps the native client from
+ * pointing anyone to pay outside the app, so on iOS both refusals are
+ * statements with no routing. The codes still have to be distinct — "a payment
+ * failed" and "you are out of quota" need different sentences — but the spec
+ * describes what the code MEANS and prescribes no destination, because a
+ * documented remedy only one client can perform is the same defect one level
+ * up from a code only one client can read.
  *
  * ## Why a ratchet and not one PR that documents 67 codes
  *
@@ -141,7 +152,6 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     'OPERATION_PARCEL_NOT_FOUND',
     'PARCELS_NOT_IN_LOCATION',
     'PARCEL_LOCATION_MISMATCH',
-    'PAST_DUE_RESTRICTED',
     'PROMOTION_LEAD_ALREADY_SENT',
     'PRODUCT_IS_SAMPLE_ARCHETYPE',
     'TASK_NOT_AWAITING_REVIEW',
