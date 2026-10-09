@@ -186,7 +186,7 @@ export function collectServerAuthoredCopy(root: string, dirs: string[] = ROOTS):
  * progress: leaving it would buy five real messages' worth of headroom for
  * nothing, which is what the drift sentinel below exists to prevent.
  */
-const CURRENT_BASELINE = 497;
+const CURRENT_BASELINE = 492;
 
 /** Slack tolerated before the sentinel demands the baseline be lowered. */
 const DRIFT_ALLOWANCE = 15;

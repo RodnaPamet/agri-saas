@@ -1540,12 +1540,19 @@ jobs:
       # `always()` is load-bearing and is the whole reason this step exists
       # separately: a cancelled job skips every step without it.
       - name: Name the failing specs
+        id: failing_specs
         if: always()
         env:
           E2E_OUTCOME: ${{ steps.e2e.outcome }}
         run: |
           LOG="${RUNNER_TEMP}/e2e-shard-${{ matrix.shard }}.log"
           if [ ! -f "$LOG" ]; then
+            # `false` rather than nothing: an UNSET output is indistinguishable
+            # from "no attempt failed" at the `if:` below, and this path knows
+            # neither. It is safe to say false here only because the artifact
+            # upload also keeps `failure() || cancelled()`, which is what
+            # actually covers a run that died before writing a log.
+            echo "had_failed_attempt=false" >> "$GITHUB_OUTPUT"
             echo "::warning::No Playwright log for shard ${{ matrix.shard }} (outcome=${E2E_OUTCOME}). The run died before writing one."
             exit 0
           fi
@@ -1566,6 +1573,25 @@ jobs:
           # So the outcome decides what a ✘ MEANS: a failure when the shard
           # did not succeed, a flake when it did.
           mapfile -t MARKED < <(grep -F '✘' "$LOG" | sed 's/^[[:space:]]*//' | sort -u)
+
+          # ── published for the artifact upload (#1492) ──
+          #
+          # Set HERE, before the outcome split, because this step has several
+          # `exit 0` paths and an output set inside one branch is unset in the
+          # others — which the `if:` below cannot tell from "nothing failed".
+          #
+          # A ✘ means an ATTEMPT failed, whatever the shard concluded. That is
+          # exactly the condition the artifact upload needs and could not
+          # express: `failure()` is the SHARD's verdict, so a spec that failed
+          # twice and passed on the third attempt uploaded nothing, and the two
+          # attempts whose traces would diagnose it were discarded. The only
+          # trace that has ever diagnosed #1076 existed because that run
+          # happened to fail 3-of-3.
+          if [ "${#MARKED[@]}" -gt 0 ]; then
+            echo "had_failed_attempt=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "had_failed_attempt=false" >> "$GITHUB_OUTPUT"
+          fi
 
           if [ "${E2E_OUTCOME}" != "success" ]; then
             if [ "${#MARKED[@]}" -gt 0 ]; then
@@ -1709,7 +1735,7 @@ jobs:
       # cancellations it cannot catch (pathological setup, a manual cancel).
       # `always()` would pay artifact storage on every green run instead.
       - name: Upload Playwright HTML report
-        if: ${{ failure() || cancelled() }}
+        if: ${{ failure() || cancelled() || steps.failing_specs.outputs.had_failed_attempt == 'true' }}
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report-shard-${{ matrix.shard }}
@@ -1718,7 +1744,7 @@ jobs:
         continue-on-error: true
 
       - name: Upload test results (traces, screenshots, videos)
-        if: ${{ failure() || cancelled() }}
+        if: ${{ failure() || cancelled() || steps.failing_specs.outputs.had_failed_attempt == 'true' }}
         uses: actions/upload-artifact@v7
         with:
           name: playwright-test-results-shard-${{ matrix.shard }}

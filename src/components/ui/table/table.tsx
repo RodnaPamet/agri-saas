@@ -8,7 +8,16 @@
  * fields (disableTruncate / headerTooltip) are now typed via the module
  * augmentation in `./tanstack-table.d.ts` and no longer require casts.
  */
-import { cn, deepEqual, isClickOnInteractiveChild } from "./table-utils";
+import {
+  cn,
+  deepEqual,
+  isClickOnInteractiveChild,
+  hasActivated,
+  isGestureCompletingClick,
+  markActivated,
+  NO_ROW_ACTIVATION,
+  resetActivation,
+} from "./table-utils";
 import {
   Column,
   ColumnDef,
@@ -470,6 +479,9 @@ const ResizableTableRow = memo(
     isSelected,
   }: ResizableTableRowProps<T>) {
     const { className, ...rest } = rowProps || {};
+    // Per-row, so one row's gesture cannot suppress another's. See
+    // `activateRowOnce` in table-utils for why both click paths share it.
+    const activatedAt = useRef(NO_ROW_ACTIVATION);
 
     return (
       <tr
@@ -508,6 +520,21 @@ const ResizableTableRow = memo(
           selectionEnabled
             ? (e) => {
                 if (isClickOnInteractiveChild(e)) return;
+                // The SECOND click of a gesture IS the row action, taken
+                // from the click's own count instead of waiting for a
+                // `dblclick` that a re-render can lose (#1076). Toggle
+                // back first, so selection still ends where it started —
+                // the contract the comment above has always stated.
+                if (onRowClick && isGestureCompletingClick(e)) {
+                  row.toggleSelected();
+                  if (!hasActivated(activatedAt, row.id)) {
+                    markActivated(activatedAt, row.id);
+                    onRowClick(row, e);
+                  }
+                  return;
+                }
+                // A `detail === 1` click opens a new gesture.
+                if (e.detail <= 1) resetActivation(activatedAt, row.id);
                 row.toggleSelected();
               }
             : // No selection to compete with → a single click runs the
@@ -555,10 +582,18 @@ const ResizableTableRow = memo(
           // Only when selection owns the single click does the row
           // action need a double-click. With selection off it already
           // fires on single click above.
+          //
+          // Kept as a SECOND route to the same action, deduped against the
+          // `detail === 2` click above. Still load-bearing rather than
+          // vestigial: a bare `fireEvent.doubleClick` dispatches no clicks
+          // at all, so this is the only path such a caller has.
           selectionEnabled && onRowClick
             ? (e) => {
                 if (isClickOnInteractiveChild(e)) return;
-                onRowClick(row, e);
+                if (!hasActivated(activatedAt, row.id)) onRowClick(row, e);
+                // The dblclick TERMINATES the gesture either way, so a bare
+                // `fireEvent.doubleClick` works more than once.
+                resetActivation(activatedAt, row.id);
               }
             : undefined
         }
@@ -692,6 +727,10 @@ export function Table<T>({
   children,
   enableColumnResizing = false,
 }: TableProps<T>) {
+  // ONE ref for the non-resizable branch, which builds its rows inline
+  // and so has no per-row hook. `activateRowOnce` keys on the row id, so a
+  // shared ref cannot let one row's gesture suppress another's.
+  const rowActivation = useRef(NO_ROW_ACTIVATION);
   const t = useTranslations("ui.table");
   const selectionEnabled = selectionEnabledProp ?? true;
   const visibleColumns = table.getVisibleLeafColumns();
@@ -1170,6 +1209,26 @@ export function Table<T>({
                         selectionEnabled
                           ? (e) => {
                               if (isClickOnInteractiveChild(e)) return;
+                              // The second click of a gesture IS the row
+                              // action, read from the click's own count
+                              // rather than a `dblclick` a re-render can
+                              // lose (#1076). This branch is the one most
+                              // list pages take — the same reason the
+                              // keyboard comment below exists.
+                              if (
+                                onRowClick &&
+                                isGestureCompletingClick(e)
+                              ) {
+                                row.toggleSelected();
+                                if (!hasActivated(rowActivation, row.id)) {
+                                  markActivated(rowActivation, row.id);
+                                  onRowClick(row, e);
+                                }
+                                return;
+                              }
+                              if (e.detail <= 1) {
+                                resetActivation(rowActivation, row.id);
+                              }
                               row.toggleSelected();
                             }
                           : // Selection off → single click runs the row
@@ -1202,10 +1261,17 @@ export function Table<T>({
                           : undefined
                       }
                       onDoubleClick={
+                        // Second, deduped route to the same action — see
+                        // `activateRowOnce`. Without the dedupe a full
+                        // gesture would activate TWICE on this branch,
+                        // which is a doubled `router.push`.
                         selectionEnabled && onRowClick
                           ? (e) => {
                               if (isClickOnInteractiveChild(e)) return;
-                              onRowClick(row, e);
+                              if (!hasActivated(rowActivation, row.id)) {
+                                onRowClick(row, e);
+                              }
+                              resetActivation(rowActivation, row.id);
                             }
                           : undefined
                       }

@@ -1,5 +1,25 @@
 // Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
 
+exports[`API contract — per-schema snapshots schema: AcceptTermsErrorResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "error": {
+      "type": "string",
+      "example": "terms_version_stale"
+    },
+    "currentVersion": {
+      "type": "string",
+      "example": "2026-10-07-draft",
+      "description": "The terms version the server is serving. Present ONLY on \`terms_version_stale\`, absent on \`terms_not_accepted\`. Re-fetch \`GET /api/auth/terms\` and present the terms again — do not submit this value back, which would record consent to text the person has not read."
+    }
+  },
+  "required": [
+    "error"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: AcceptTermsRequest 1`] = `
 "{
   "type": "object",
@@ -6762,6 +6782,57 @@ exports[`API contract — per-schema snapshots schema: InquiredParcelIds 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: InquiryAlreadySentError 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "error": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "example": "NOT_FOUND"
+        },
+        "message": {
+          "type": "string",
+          "example": "Practice not found"
+        },
+        "requestId": {
+          "type": "string",
+          "example": "req_01HG7…"
+        },
+        "details": {},
+        "params": {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "description": "Values for the client to interpolate into its own translated message, keyed per \`code\` — e.g. \`{ \\"max\\": 120 }\` for \`FARM_NAME_TOO_LONG\`. Ids and quantities only: strings and numbers, never an object and never personal data. Absent for codes that need no values.",
+          "example": {
+            "max": 120
+          }
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ]
+    }
+  },
+  "required": [
+    "error"
+  ],
+  "description": "A 409 \`LISTING_INTEREST_ALREADY_SENT\`. One inquiry per tenant per listing — the \`@@unique\` index is the guarantee, and a P2002 from it is what raises this. Distinct from \`STALE_DATA\`: there is no version to re-read and no edit to merge, so a client treating every 409 as a stale edit tells the operator the wrong thing (#1391)."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: InsuranceCatalogue 1`] = `
 "{
   "type": "object",
@@ -11022,7 +11093,7 @@ exports[`API contract — per-schema snapshots schema: RawErrorResponse 1`] = `
   "required": [
     "error"
   ],
-  "description": "A bare error body: \`{\\"error\\": \\"<code-or-message>\\"}\` and nothing else — NOT the \`ErrorResponse\` envelope, so there is no \`code\`, \`requestId\`, \`details\` or \`params\`. Used by the native auth family, where it is the shape RFC 6749 §5.2 specifies for an OAuth token endpoint, and by the spatial-import and cadastre-import routes. A rate-limit (429) or an unexpected failure (5xx) on the same route still answers with \`ErrorResponse\`, because the error wrapper builds those rather than the route."
+  "description": "A bare error body: \`{\\"error\\": \\"<code-or-message>\\"}\` — NOT the \`ErrorResponse\` envelope, so there is no \`code\`, \`requestId\`, \`details\` or \`params\`. Used by the native auth family, where it is the shape RFC 6749 §5.2 specifies for an OAuth token endpoint, and by the spatial-import and cadastre-import routes. A rate-limit (429) or an unexpected failure (5xx) on the same route still answers with \`ErrorResponse\`, because the error wrapper builds those rather than the route.\\n\\nMOSTLY \`error\` alone, but not a guarantee: \`POST /api/auth/accept-terms\` adds \`currentVersion\` on its stale-version branch and declares that with its own \`AcceptTermsErrorResponse\`. This said \\"and nothing else\\" until #1478, which was overstated the day it was written."
 }"
 `;
 

@@ -5643,7 +5643,7 @@
       "BLOCKED": "Блокирана",
       "PENDING_REVIEW": "Очаква преглед",
       "RESOLVED": "Готова",
-      "CLOSED": "Затворена",
+      "CLOSED": "Завършена",
       "CANCELED": "Отказана"
     },
     "type": {

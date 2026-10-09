@@ -25,7 +25,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { collectTrackedFiles } from '../helpers/collect-files';
-import { stripComments } from '../helpers/strip-comments';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -69,7 +69,7 @@ describe('registration entry points are screened for bots', () => {
             // `verifyTurnstile` in comments, and a guard that matched a
             // docblock explaining the call would pass with the call deleted.
             // I have shipped exactly that bug before.
-            const code = stripComments(fs.readFileSync(abs, 'utf8'));
+            const code = blankNonCode(fs.readFileSync(abs, 'utf8'));
             if (!/verifyTurnstile\s*\(/.test(code)) unscreened.push(rel);
         }
 
@@ -84,7 +84,7 @@ describe('registration entry points are screened for bots', () => {
         for (const abs of ENTRY_POINTS) {
             const rel = path.relative(ROOT, abs);
             if (rel in NOT_AN_ENTRY_POINT) continue;
-            const code = stripComments(fs.readFileSync(abs, 'utf8'));
+            const code = blankNonCode(fs.readFileSync(abs, 'utf8'));
             // `!<something>.ok` within a few lines of the call. Deliberately
             // loose about the variable name: pinning `turnstile.ok` would go
             // blind at a rename, which is how a needle loses its thread.
@@ -96,11 +96,11 @@ describe('registration entry points are screened for bots', () => {
         // Without this, a regex that matched nothing would make the two
         // assertions above pass forever.
         const real = 'const t = await verifyTurnstile(body.token);\nif (!t.ok) return refuse();';
-        expect(/verifyTurnstile\s*\(/.test(stripComments(real))).toBe(true);
+        expect(/verifyTurnstile\s*\(/.test(blankNonCode(real))).toBe(true);
         expect(real).toMatch(/verifyTurnstile\s*\([\s\S]{0,400}?!\s*\w+\.ok/);
 
         const commentOnly = '// we deliberately do not call verifyTurnstile() here\nconst x = 1;';
-        expect(/verifyTurnstile\s*\(/.test(stripComments(commentOnly))).toBe(false);
+        expect(/verifyTurnstile\s*\(/.test(blankNonCode(commentOnly))).toBe(false);
     });
 
     it('every exemption names a route that exists', () => {

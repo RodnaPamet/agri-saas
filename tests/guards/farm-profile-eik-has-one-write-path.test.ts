@@ -31,7 +31,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { collectTrackedFiles } from '../helpers/collect-files';
-import { stripComments } from '../helpers/strip-comments';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -56,7 +56,7 @@ describe('FarmProfile.eik has exactly one write path', () => {
         // write list; removing the field from it stopped tenant writes and
         // also stopped the farm SEEING its own verified number. So the lists
         // are now separate and this asserts the separation, not an absence.
-        const src = stripComments(
+        const src = blankNonCode(
             fs.readFileSync(path.join(ROOT, 'src/app-layer/usecases/farm-profile.ts'), 'utf8'),
         );
 
@@ -80,7 +80,7 @@ describe('FarmProfile.eik has exactly one write path', () => {
         // one is a breaking change and that gate has no waiver — so the
         // refusal is explicit here. Silence would look to a client exactly
         // like a successful write of a regulator-facing number.
-        const src = stripComments(
+        const src = blankNonCode(
             fs.readFileSync(path.join(ROOT, 'src/app-layer/usecases/farm-profile.ts'), 'utf8'),
         );
         // The window spans the stored-value read that sits between the guard
@@ -98,7 +98,7 @@ describe('FarmProfile.eik has exactly one write path', () => {
         // KEY would have 400'd every farm-profile save from the owner's phone
         // with the number unchanged. The comparison is the fix, so assert the
         // comparison exists rather than just the throw.
-        const src = stripComments(
+        const src = blankNonCode(
             fs.readFileSync(path.join(ROOT, 'src/app-layer/usecases/farm-profile.ts'), 'utf8'),
         );
         expect(src).toMatch(/norm\(input\.eik\)\s*!==/);
@@ -111,7 +111,7 @@ describe('FarmProfile.eik has exactly one write path', () => {
         for (const abs of files) {
             const rel = path.relative(ROOT, abs);
             if (rel === OWNER) continue;
-            const code = stripComments(fs.readFileSync(abs, 'utf8'));
+            const code = blankNonCode(fs.readFileSync(abs, 'utf8'));
             // A `farmProfile.update`/`upsert`/`create` whose data mentions
             // `eik`. Deliberately a windowed match rather than a bare `eik:` match:
             // `eik` appears legitimately all over the codebase (validation,
@@ -129,7 +129,7 @@ describe('FarmProfile.eik has exactly one write path', () => {
         // would make it pass forever, and the removal of the free-edit path is
         // only safe because a legitimate path replaced it — a guard proving
         // "nobody writes this field" would be proving the feature is broken.
-        const code = stripComments(fs.readFileSync(path.join(ROOT, OWNER), 'utf8'));
+        const code = blankNonCode(fs.readFileSync(path.join(ROOT, OWNER), 'utf8'));
         expect(code).toMatch(
             /farmProfile\s*\.\s*upsert\s*\([\s\S]{0,400}?\beik\b/,
         );

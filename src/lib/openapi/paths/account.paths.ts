@@ -91,6 +91,48 @@ const BottomTabOrder = z
         example: ['/dashboard', '/farm-tasks', '/locations', '/journal', '/exchange'],
     });
 
+/**
+ * `POST /api/auth/accept-terms`'s 400 — a bare body that carries ONE extra field.
+ *
+ * The route answers two 400s and they are not the same shape:
+ *
+ *     { error: 'terms_not_accepted' }
+ *     { error: 'terms_version_stale', currentVersion: '2026-10-07-draft' }
+ *
+ * `currentVersion` was already described in prose, on this operation and on
+ * its 400, and prose is read by a person while the SCHEMA is read by a
+ * generator — the same gap this spec had on `format: date-time` (#1391) and on
+ * `?view=invites`. A client generated from `RawErrorResponse` got `{ error }`
+ * and no field to read the server's version out of.
+ *
+ * Optional rather than a `oneOf` of two near-identical objects: the union is
+ * harder for a hand-written client to consume than one optional field with a
+ * note, and hand-written is what agrent-ios is doing today.
+ *
+ * It is NOT a replay of the accepted version. agrent-ios deliberately does not
+ * consume it — on `terms_version_stale` their screen re-fetches
+ * `GET /api/auth/terms` and asks again, because accepting the version the
+ * server names would record consent to text the person never saw. A client
+ * must treat this as "your copy is stale, go and read the current one", never
+ * as something to echo back.
+ */
+const AcceptTermsErrorResponse = z
+    .object({
+        error: z.string().openapi({ example: 'terms_version_stale' }),
+        currentVersion: z
+            .string()
+            .optional()
+            .openapi({
+                example: '2026-10-07-draft',
+                description:
+                    'The terms version the server is serving. Present ONLY on ' +
+                    '`terms_version_stale`, absent on `terms_not_accepted`. Re-fetch ' +
+                    '`GET /api/auth/terms` and present the terms again — do not submit this ' +
+                    'value back, which would record consent to text the person has not read.',
+            }),
+    })
+    .openapi('AcceptTermsErrorResponse');
+
 export function registerAccountPaths(registry: OpenAPIRegistry): void {
     op(registry, {
         method: 'get',
@@ -169,12 +211,20 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
     op(registry, {
         method: 'post',
         path: '/api/auth/accept-terms',
-        extraResponses: rawErrorResponses({
-            400:
-                '`terms_not_accepted` or `terms_version_stale` — a BARE body, not the envelope. The latter carries `currentVersion` so a client can say \"reload and read the new terms\".',
-            401:
-                '`unauthenticated` — a BARE body, not the envelope.',
-        }),
+        extraResponses: {
+            ...rawErrorResponses({
+                401:
+                    '`unauthenticated` — a BARE body, not the envelope.',
+            }),
+            // Overridden rather than taken from `rawErrorResponses`, because
+            // this 400 carries `currentVersion` and `RawErrorResponse` declares
+            // `error` alone. Spread first so this wins.
+            400: {
+                description:
+                    '`terms_not_accepted` or `terms_version_stale` — a BARE body, not the envelope. The latter carries `currentVersion`, DECLARED here rather than only described, so a generated client has a field to read it from.',
+                content: { 'application/json': { schema: AcceptTermsErrorResponse } },
+            },
+        },
         operationId: 'acceptTerms',
         summary: 'Record that the signed-in user accepts the current terms',
         description:

@@ -174,12 +174,22 @@ describeFn('farm tasks (DB)', () => {
         expect(replayed!.status).toBe('IN_PROGRESS');
     });
 
-    test('a listed row carries the field the list is SORTED by', async () => {
-        // `WorkItemRepository.list` orders by `[{ priority: 'asc' }, …]` and
-        // `taskListSelect` did not project `priority`, so every caller got rows
-        // ordered by something it could not see. The native client found it by
-        // having one urgency signal where the product has two: severity alone,
-        // with no way to show or re-sort by priority.
+    test('a listed row carries priority, which clients may use even though the web UI no longer shows it', async () => {
+        // This test was called "a listed row carries the field the list is
+        // SORTED by", and that reason expired on 2026-10-09: the list now
+        // orders by CURSOR_ORDER_BY, so priority is no longer the sort key.
+        //
+        // The ASSERTION still holds and is still worth keeping — which is why
+        // this is a rename rather than a deletion. `priority` remains in
+        // `taskListSelect` because the API still filters on it (`where.priority`)
+        // and a client may still display or sort by it; the owner's decision
+        // removed «Приоритет» from the WEB UI, not from the wire. A projection
+        // that dropped it would break those callers silently.
+        //
+        // Worth noting the original defect it was written for, because it is
+        // the mirror of this one: the list used to be ordered by a field
+        // `taskListSelect` did not project, so every caller got rows ordered by
+        // something it could not see.
         //
         // This asserts the VALUE, not the key's presence — `toHaveProperty`
         // would pass on an undefined a missing projection also produces.

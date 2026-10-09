@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "9.1.1",
+    "version": "9.4.3",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -51,6 +51,23 @@
       }
     },
     "schemas": {
+      "AcceptTermsErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "terms_version_stale"
+          },
+          "currentVersion": {
+            "type": "string",
+            "example": "2026-10-07-draft",
+            "description": "The terms version the server is serving. Present ONLY on `terms_version_stale`, absent on `terms_not_accepted`. Re-fetch `GET /api/auth/terms` and present the terms again — do not submit this value back, which would record consent to text the person has not read."
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
       "AcceptTermsRequest": {
         "type": "object",
         "properties": {
@@ -6468,6 +6485,54 @@
           "parcelIds"
         ]
       },
+      "InquiryAlreadySentError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "example": "NOT_FOUND"
+              },
+              "message": {
+                "type": "string",
+                "example": "Practice not found"
+              },
+              "requestId": {
+                "type": "string",
+                "example": "req_01HG7…"
+              },
+              "details": {},
+              "params": {
+                "type": "object",
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ]
+                },
+                "description": "Values for the client to interpolate into its own translated message, keyed per `code` — e.g. `{ \"max\": 120 }` for `FARM_NAME_TOO_LONG`. Ids and quantities only: strings and numbers, never an object and never personal data. Absent for codes that need no values.",
+                "example": {
+                  "max": 120
+                }
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "description": "A 409 `LISTING_INTEREST_ALREADY_SENT`. One inquiry per tenant per listing — the `@@unique` index is the guarantee, and a P2002 from it is what raises this. Distinct from `STALE_DATA`: there is no version to re-read and no edit to merge, so a client treating every 409 as a stale edit tells the operator the wrong thing (#1391)."
+      },
       "InsuranceCatalogue": {
         "type": "object",
         "properties": {
@@ -10511,7 +10576,7 @@
         "required": [
           "error"
         ],
-        "description": "A bare error body: `{\"error\": \"<code-or-message>\"}` and nothing else — NOT the `ErrorResponse` envelope, so there is no `code`, `requestId`, `details` or `params`. Used by the native auth family, where it is the shape RFC 6749 §5.2 specifies for an OAuth token endpoint, and by the spatial-import and cadastre-import routes. A rate-limit (429) or an unexpected failure (5xx) on the same route still answers with `ErrorResponse`, because the error wrapper builds those rather than the route."
+        "description": "A bare error body: `{\"error\": \"<code-or-message>\"}` — NOT the `ErrorResponse` envelope, so there is no `code`, `requestId`, `details` or `params`. Used by the native auth family, where it is the shape RFC 6749 §5.2 specifies for an OAuth token endpoint, and by the spatial-import and cadastre-import routes. A rate-limit (429) or an unexpected failure (5xx) on the same route still answers with `ErrorResponse`, because the error wrapper builds those rather than the route.\n\nMOSTLY `error` alone, but not a guarantee: `POST /api/auth/accept-terms` adds `currentVersion` on its stale-version branch and declares that with its own `AcceptTermsErrorResponse`. This said \"and nothing else\" until #1478, which was overstated the day it was written."
       },
       "RegisterStartResult": {
         "type": "object",
@@ -27282,11 +27347,11 @@
             }
           },
           "400": {
-            "description": "`terms_not_accepted` or `terms_version_stale` — a BARE body, not the envelope. The latter carries `currentVersion` so a client can say \"reload and read the new terms\".",
+            "description": "`terms_not_accepted` or `terms_version_stale` — a BARE body, not the envelope. The latter carries `currentVersion`, DECLARED here rather than only described, so a generated client has a field to read it from.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RawErrorResponse"
+                  "$ref": "#/components/schemas/AcceptTermsErrorResponse"
                 }
               }
             }
@@ -32716,6 +32781,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`LISTING_INTEREST_ALREADY_SENT` — this tenant has already enquired about this listing. One inquiry per tenant per listing, on a unique index, so it is NOT a stale edit and re-reading will not clear it: the inquiry already exists and the seller already has it. Show the existing thread rather than offering to send again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InquiryAlreadySentError"
                 }
               }
             }
@@ -45191,10 +45266,20 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/AdminMember"
-                  }
+                  "anyOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminMember"
+                      }
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PendingInvite"
+                      }
+                    }
+                  ]
                 }
               }
             }

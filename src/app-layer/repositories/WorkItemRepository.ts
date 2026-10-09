@@ -120,7 +120,23 @@ export class WorkItemRepository {
         const where = WorkItemRepository._buildWhere(ctx, filters);
         return db.task.findMany({
             where,
-            orderBy: [{ priority: 'asc' }, { createdAt: 'desc' }],
+            // Newest first, no urgency sort — owner, 2026-10-09, alongside
+            // removing «Приоритет» from the web task UI. Ordering by a field no
+            // caller can see is the defect `taskListSelect`'s comment below
+            // records being fixed once already; hiding the field re-created it,
+            // so the sort goes rather than the projection.
+            //
+            // `CURSOR_ORDER_BY` rather than a local literal, because the
+            // cursor-paginated read at `listTasksPage` ALREADY used it — so
+            // this list was ordered by priority while the paged list was
+            // ordered newest-first, and the same tenant's tasks came back in
+            // two different orders depending on whether a cursor was passed.
+            // Sharing the constant is what stops them drifting apart again.
+            //
+            // It also brings the `{ id: 'desc' }` tiebreaker, which this path
+            // lacked: `createdAt` ties are real for bulk-created tasks, and
+            // without it their relative order was arbitrary between reads.
+            orderBy: CURSOR_ORDER_BY,
             select: taskListSelect,
             ...(options.take ? { take: options.take } : {}),
         });
