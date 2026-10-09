@@ -5884,6 +5884,8 @@
       "SEED": "Seed",
       "PESTICIDE": "Crop protection",
       "SERVICE": "Services",
+      "CREDIT": "Credit expense",
+      "DEPRECIATION": "Depreciation",
       "OTHER": "Other"
     },
     "costCategoryFacet": "Category",
