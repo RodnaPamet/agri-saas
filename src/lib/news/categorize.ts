@@ -20,6 +20,7 @@
  *
  * @module lib/news/categorize
  */
+import { COMMODITY_ALIASES } from '@/lib/market/commodity-vocabulary';
 
 /** The three buckets the News tab filters by. Single source of truth — the
  *  Zod enum in `trends.schemas.ts` is built from this tuple. */
@@ -94,6 +95,228 @@ const MARKET_KEYWORDS: readonly string[] = [
     'yield',
     'tonne',
 ];
+
+// ─── Tags (#231) ────────────────────────────────────────────────────
+//
+// INCLUSIVE and unordered, unlike `categorize` below. That function is
+// exclusive and priority-ordered — policy beats market — because one column
+// forced a choice. Tags remove the forcing: a subsidy story about wheat
+// carries BOTH `subsidies` and `wheat`, and there is no precedence to apply.
+//
+// `[]` is a real answer. An article matching no rule carries no tags, which is
+// honest and is what the «Всички» switch keeps reachable.
+
+/**
+ * The crops the news feed tags, as commodity slugs.
+ *
+ * These ARE `CANONICAL_COMMODITIES` entries, and the aliases come from
+ * `COMMODITY_ALIASES` rather than a keyword list written here. A parallel list
+ * would not merely duplicate — it would DRIFT from the vocabulary #1444 taught
+ * to resolve Bulgarian crop prefixes for Борса search, so a crop would become
+ * findable in search and not in news, or the reverse, with nothing failing.
+ * One vocabulary, one place to add a crop.
+ */
+const CROP_TAGS = ['wheat', 'maize', 'sunflower', 'rapeseed', 'barley'] as const;
+
+/**
+ * Topic stems, matched as a PREFIX OF A WORD — see {@link matchesWordPrefix}.
+ *
+ * `subsidies` reuses `POLICY_KEYWORDS` wholesale: those stems already ARE
+ * subsidy, regulation and payment terms, and a second list beside them would
+ * be the same drift problem as a second crop list.
+ *
+ * `prices` is deliberately NARROWER than `MARKET_KEYWORDS`, and this is a
+ * considered departure from the contract in
+ * `docs/implementation-notes/2026-10-08-news-tags-and-preferences-contract.md`,
+ * which called the two "near-duplicates". They should not be. `MARKET_KEYWORDS`
+ * includes `реколт`, `износ`, `внос` and `добив` — harvest, export, import,
+ * yield — and a farmer opting into «Цени» expecting price news would receive
+ * every harvest story. The contract's goal was that `category` become
+ * expressible as tags so it can eventually be dropped; `market` is still
+ * expressible, just as a UNION of several tags rather than as one. Trading an
+ * exact one-to-one mapping for a tag that means what its label says is the
+ * right way round.
+ *
+ * A harvest story mentioning no price and no subsidy therefore gets its crop
+ * tags and no topic tag. That is correct, not a gap.
+ */
+const TOPIC_STEMS: Readonly<Record<string, readonly string[]>> = {
+    subsidies: POLICY_KEYWORDS,
+    prices: [
+        // Bulgarian. `цена`/`цени`/`ценов` rather than the bare `цен`, which
+        // is a prefix of `център` and would tag every story mentioning a
+        // centre.
+        'цена',
+        'цени',
+        'ценов',
+        'поскъпв',
+        'поевтин',
+        'борса',
+        'борсов',
+        'фючърс',
+        'котировк',
+        // English
+        'price',
+        'futures',
+        'quote',
+        'tonne',
+    ],
+    weather: [
+        'време',
+        'дъжд',
+        'суша',
+        'засушав',
+        'градушк',
+        'слана',
+        'температур',
+        'прогноз',
+        'валеж',
+        'weather',
+        'drought',
+        'rainfall',
+        'frost',
+        'hail',
+        'forecast',
+    ],
+    inputs: [
+        // `тор` is safe as a word PREFIX — `фактор`, `директор` and `сектор`
+        // contain it but do not start with it, which is the whole reason this
+        // matcher is prefix-based rather than substring.
+        'тор',
+        'торов',
+        'торене',
+        'препарат',
+        'пестицид',
+        'хербицид',
+        'фунгицид',
+        'семена',
+        'посевен',
+        'fertilis',
+        'fertiliz',
+        'pesticide',
+        'herbicide',
+        'fungicide',
+        'seed',
+    ],
+    machinery: [
+        'техник',
+        'трактор',
+        'комбайн',
+        'машин',
+        'инвентар',
+        'прикачн',
+        'tractor',
+        'combine',
+        'machinery',
+        'harvester',
+        'implement',
+    ],
+    livestock: [
+        'животновъдств',
+        'говед',
+        'свине',
+        'свиневъдств',
+        'овце',
+        'овцевъдств',
+        'птицевъдств',
+        'мляко',
+        'млечен',
+        'livestock',
+        'cattle',
+        'swine',
+        'sheep',
+        'poultry',
+        'dairy',
+    ],
+};
+
+/** Letter runs, lowercased — the words a stem may prefix. */
+function wordsOf(haystack: string): string[] {
+    return haystack.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+}
+
+/**
+ * True when any stem begins one of the words in `words`.
+ *
+ * PREFIX, not substring, and the distinction is load-bearing in both
+ * languages. Substring matching fires mid-word: `dryer` contains `rye`,
+ * `словесен` contains `овес`. Prefix matching cannot.
+ *
+ * But a whole alias is the wrong prefix to match, which a test caught after I
+ * claimed otherwise. Bulgarian does not only APPEND a suffix — it REPLACES the
+ * final vowel: `пшеницата` begins with `пшеница`, and `пшеници` does NOT. So
+ * the matcher prefixes the alias's STEM, trimming one trailing vowel when what
+ * remains is still long enough to be distinctive. `пшеница` -> `пшениц`
+ * catches all three forms; `соя` is left whole, because `со` would prefix
+ * `социален` and `солта`.
+ *
+ * `categorize` below keeps its own substring matcher and is unchanged. Its
+ * stems are deliberately TRUNCATED (`субсиди`, `цен на`) and some contain
+ * spaces, so substring is the right matcher for them; changing it would alter
+ * a shipped classification. The two rules differ because the two vocabularies
+ * do.
+ *
+ * What this cannot prevent is a longer word that genuinely BEGINS with a stem.
+ * That is the same mechanism inflection relies on, so it is a trade rather
+ * than a bug — and the stem list is the thing to check when a tag looks
+ * over-broad.
+ */
+function matchesWordPrefix(words: readonly string[], stems: readonly string[]): boolean {
+    const trimmed = stems.map(stemOf);
+    return words.some((word) => trimmed.some((stem) => word.startsWith(stem)));
+}
+
+/**
+ * Shortest distinctive prefix of `alias` — itself, or itself minus one
+ * trailing vowel.
+ *
+ * MIN_STEM_LENGTH is the whole safety of this. Trimming is what makes
+ * `пшеници` match (the final vowel differs from `пшеница`'s), and it is also
+ * what would make `соя` match `социален` if applied blindly. Five characters
+ * leaves every long Bulgarian crop name trimmed and every short one intact,
+ * which is the split that matters:
+ *
+ *     пшеница (7) -> пшениц (6)    соя (3) -> соя
+ *     царевица (8) -> царевиц (7)  овес (4) -> овес   (ends in a consonant)
+ *     рапица (6) -> рапиц (5)      ечемик (6) -> ечемик (consonant)
+ */
+const MIN_STEM_LENGTH = 5;
+const TRAILING_VOWEL = /[аеиоуъюяaeiou]$/u;
+
+function stemOf(alias: string): string {
+    if (!TRAILING_VOWEL.test(alias)) return alias;
+    const trimmed = alias.slice(0, -1);
+    return trimmed.length >= MIN_STEM_LENGTH ? trimmed : alias;
+}
+
+/**
+ * Every tag an article carries — crops and topics, several of each, in a
+ * stable sorted order.
+ *
+ * Deterministic, no I/O, no AI: the property that lets this unit-test without
+ * a network, exactly as `categorize` does.
+ */
+export function deriveTags(title: string, summary: string | null | undefined): string[] {
+    const words = wordsOf(`${title ?? ''} ${summary ?? ''}`);
+    if (words.length === 0) return [];
+
+    const tags = new Set<string>();
+
+    for (const crop of CROP_TAGS) {
+        const aliases = Object.entries(COMMODITY_ALIASES)
+            .filter(([, slug]) => slug === crop)
+            .map(([alias]) => alias);
+        // The slug itself is not always an alias key, so it is matched in its
+        // own right rather than assumed present in the table.
+        if (matchesWordPrefix(words, [crop, ...aliases])) tags.add(crop);
+    }
+
+    for (const [topic, stems] of Object.entries(TOPIC_STEMS)) {
+        if (matchesWordPrefix(words, stems)) tags.add(topic);
+    }
+
+    return [...tags].sort();
+}
 
 /** True when any stem in `stems` appears in the lowercased haystack. */
 function matchesAny(haystack: string, stems: readonly string[]): boolean {
