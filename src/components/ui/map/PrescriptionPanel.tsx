@@ -7,7 +7,7 @@
  * OperationParcel line per selected parcel.
  */
 import { useTranslations } from 'next-intl';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
@@ -40,6 +40,8 @@ export interface PrescriptionPanelProps {
 
 export function PrescriptionPanel({ locationId, tenantSlug, selectedParcelIds, onCreated }: PrescriptionPanelProps) {
     const t = useTranslations('ag.map.prescription');
+    // Reusing `inventory`'s ПРЗ labels rather than a second spelling of them.
+    const tInv = useTranslations('inventory');
     const buildUrl = useTenantApiUrl();
     const { data: items } = useTenantSWR<ItemDTO[]>('/items');
     // Units are a slow-changing catalog — relax SWR revalidation.
@@ -48,7 +50,13 @@ export function PrescriptionPanel({ locationId, tenantSlug, selectedParcelIds, o
         dedupingInterval: 60_000,
     });
 
-    const [productItemId, setProductItemId] = useState('');
+    // Free text, not a chosen id — owner decision, 2026-10-09: the product and
+    // fertiliser dropdowns are gone. This picker was also the one with NO
+    // category filter at all, so it offered fertilisers on the product path;
+    // removing it resolves that too.
+    const [productName, setProductName] = useState('');
+    const [pppRegNo, setPppRegNo] = useState('');
+    const [quarantineDays, setQuarantineDays] = useState('');
     const [doseValue, setDoseValue] = useState('');
     const [doseUnitId, setDoseUnitId] = useState('');
     const [assigneeUserId, setAssigneeUserId] = useState<string | null>(null);
@@ -57,7 +65,16 @@ export function PrescriptionPanel({ locationId, tenantSlug, selectedParcelIds, o
     const [error, setError] = useState<string | null>(null);
 
     const canSubmit = Boolean(
-        selectedParcelIds.length > 0 && productItemId && doseValue && doseUnitId && assigneeUserId && !busy,
+        selectedParcelIds.length > 0 &&
+        productName.trim() &&
+        doseValue &&
+        doseUnitId &&
+        assigneeUserId &&
+        // Blocked here rather than refused after submit: this panel creates a
+        // job over several parcels at once, so a server refusal costs the whole
+        // batch.
+        (!typedNameIsNew || registrationComplete) &&
+        !busy,
     );
 
     const submit = async () => {
@@ -71,14 +88,24 @@ export function PrescriptionPanel({ locationId, tenantSlug, selectedParcelIds, o
                     operationType: 'SPRAY',
                     assigneeUserId,
                     parcelIds: selectedParcelIds,
-                    productItemId,
+                    productName: productName.trim(),
+                    ...(typedNameIsNew
+                        ? {
+                              newProductRegistration: {
+                                  pppRegistrationNo: pppRegNo.trim(),
+                                  quarantinePeriodDays: Number(quarantineDays),
+                              },
+                          }
+                        : {}),
                     doseValue: Number(doseValue),
                     doseUnitId,
                     targetNote: note || null,
                 },
             );
             onCreated?.(result);
-            setProductItemId('');
+            setProductName('');
+            setPppRegNo('');
+            setQuarantineDays('');
             setDoseValue('');
             setDoseUnitId('');
             setAssigneeUserId(null);
@@ -90,7 +117,18 @@ export function PrescriptionPanel({ locationId, tenantSlug, selectedParcelIds, o
         }
     };
 
-    const productOptions: ComboboxOption[] = (items ?? []).map((it) => ({ value: it.id, label: it.name }));
+    /**
+     * Case-insensitive, to agree with the server's unique index on
+     * `(tenantId, lower(name))`. A case-sensitive check would hide the ПРЗ
+     * fields for a name the server then matches — harmless — but the reverse,
+     * hiding them when the server WILL create, is a refusal in the field.
+     */
+    const typedNameIsNew = useMemo(() => {
+        const needle = productName.trim().toLowerCase();
+        if (!needle) return false;
+        return !(items ?? []).some((it) => it.name.trim().toLowerCase() === needle);
+    }, [items, productName]);
+    const registrationComplete = !!pppRegNo.trim() && quarantineDays.trim() !== '';
     const unitOptions: ComboboxOption[] = (units ?? []).map((u) => ({ value: u.id, label: u.symbol }));
 
     return (
@@ -104,16 +142,37 @@ export function PrescriptionPanel({ locationId, tenantSlug, selectedParcelIds, o
                 </div>
             )}
             <FormField label={t('product')} required>
-                <Combobox
-                    id="prescription-product-select"
-                    options={productOptions}
-                    selected={productOptions.find((o) => o.value === productItemId) ?? null}
-                    setSelected={(opt) => setProductItemId(opt?.value ?? '')}
-                    placeholder={t('selectProduct')}
-                    matchTriggerWidth
-                    forceDropdown
+                <Input
+                    id="prescription-product-name"
+                    value={productName}
+                    onChange={(e) => setProductName(e.target.value)}
+                    placeholder={t('typeProduct')}
+                    aria-label={t('product')}
                 />
             </FormField>
+            {/* A product this farm does not have yet is created as a PESTICIDE,
+                which cannot be saved without both of these. */}
+            {typedNameIsNew && (
+                <div className="grid grid-cols-2 gap-default">
+                    <FormField label={tInv('pppRegNo')} required>
+                        <Input
+                            id="prescription-ppp-reg"
+                            value={pppRegNo}
+                            onChange={(e) => setPppRegNo(e.target.value)}
+                            aria-label={tInv('pppRegNo')}
+                        />
+                    </FormField>
+                    <FormField label={tInv('quarantineDays')} required>
+                        <Input
+                            id="prescription-quarantine"
+                            inputMode="numeric"
+                            value={quarantineDays}
+                            onChange={(e) => setQuarantineDays(e.target.value)}
+                            aria-label={tInv('quarantineDays')}
+                        />
+                    </FormField>
+                </div>
+            )}
             <div className="grid grid-cols-2 gap-default">
                 <FormField label={t('dose')} required>
                     <Input type="number" min="0" step="0.0001" value={doseValue} onChange={(e) => setDoseValue(e.target.value)} placeholder={t('dosePlaceholder')} />

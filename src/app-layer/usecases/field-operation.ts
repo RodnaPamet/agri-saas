@@ -14,6 +14,7 @@ import { WorkItemRepository, TaskLinkRepository } from '../repositories/WorkItem
 import { ParcelRepository } from '../repositories/ParcelRepository';
 import { TERMINAL_WORK_ITEM_STATUSES } from '../domain/work-item-status';
 import { recordInputApplication, type InputApplicationResult } from './inventory';
+import { createItem } from './catalog';
 import { traceAgUsecase } from '@/lib/observability';
 import { logger } from '@/lib/observability/logger';
 import { trace } from '@opentelemetry/api';
@@ -33,12 +34,23 @@ export interface CreateFieldOperationInput {
     assigneeUserId: string;
     parcelIds: string[];
     // Exactly one input kind is supplied — a product OR a fertilizer (#3).
+    // Within a kind, exactly one of the id or the NAME.
     productItemId?: string | null;
+    /** A typed product name, resolved to the farm's own product or created. */
+    productName?: string | null;
     doseValue?: number | null;
     doseUnitId?: string | null;
     fertilizerItemId?: string | null;
+    /** The fertiliser counterpart of `productName`. */
+    fertilizerName?: string | null;
     fertilizerDoseValue?: number | null;
     fertilizerDoseUnitId?: string | null;
+    /** БАБХ fields, consulted only when a typed name has to CREATE a product. */
+    newProductRegistration?: {
+        pppRegistrationNo?: string | null;
+        quarantinePeriodDays?: number | null;
+        activeIngredient?: string | null;
+    } | null;
     /** Optional per-decare water-carrier rate for the spray tank (product only). */
     waterRateValue?: number | null;
     waterRateUnitId?: string | null;
@@ -49,7 +61,9 @@ export interface CreateFieldOperationInput {
 }
 
 interface ChosenInput {
-    itemId: string;
+    /** Exactly one is set — the caller gave an id or a name, never both. */
+    itemId: string | null;
+    itemName: string | null;
     doseValue: number;
     doseUnitId: string;
     isFertilizer: boolean;
@@ -62,17 +76,212 @@ interface ChosenInput {
  * and requires the chosen kind's dose + unit.
  */
 function resolveChosenInput(input: CreateFieldOperationInput): ChosenInput {
-    const hasProduct = !!input.productItemId;
-    const hasFertilizer = !!input.fertilizerItemId;
+    const hasProduct = !!input.productItemId || !!input.productName;
+    const hasFertilizer = !!input.fertilizerItemId || !!input.fertilizerName;
     if (hasProduct === hasFertilizer) {
         throw codedBadRequest('OPERATION_INPUT_AMBIGUOUS', 'Choose exactly one input — a product OR a fertilizer.');
     }
+    // An id AND a name for the same kind is a client bug, not a preference to
+    // resolve. Preferring one silently would make the other field look honoured
+    // and send the operator's typed name nowhere.
+    if (input.productItemId && input.productName) {
+        throw codedBadRequest('OPERATION_INPUT_AMBIGUOUS', 'Send either productItemId or productName, not both.');
+    }
+    if (input.fertilizerItemId && input.fertilizerName) {
+        throw codedBadRequest('OPERATION_INPUT_AMBIGUOUS', 'Send either fertilizerItemId or fertilizerName, not both.');
+    }
     if (hasProduct) {
         if (input.doseValue == null || !input.doseUnitId) throw codedBadRequest('PRODUCT_DOSE_REQUIRED', 'A product dose and unit are required.');
-        return { itemId: input.productItemId!, doseValue: input.doseValue, doseUnitId: input.doseUnitId, isFertilizer: false };
+        return {
+            itemId: input.productItemId ?? null,
+            itemName: input.productName ?? null,
+            doseValue: input.doseValue,
+            doseUnitId: input.doseUnitId,
+            isFertilizer: false,
+        };
     }
     if (input.fertilizerDoseValue == null || !input.fertilizerDoseUnitId) throw codedBadRequest('FERTILIZER_DOSE_REQUIRED', 'A fertilizer dose and unit are required.');
-    return { itemId: input.fertilizerItemId!, doseValue: input.fertilizerDoseValue, doseUnitId: input.fertilizerDoseUnitId, isFertilizer: true };
+    return {
+        itemId: input.fertilizerItemId ?? null,
+        itemName: input.fertilizerName ?? null,
+        doseValue: input.fertilizerDoseValue,
+        doseUnitId: input.fertilizerDoseUnitId,
+        isFertilizer: true,
+    };
+}
+
+/**
+ * The category rule, enforced server-side for the first time (owner, 2026-10-09).
+ *
+ * It is the complement rule the UI has always applied —
+ * `ParcelDetailSheet.tsx:172` filters the product picker to
+ * `category !== 'FERTILIZER'` and the fertiliser picker to
+ * `category === 'FERTILIZER'` — and NOT `product → PESTICIDE`, which was the
+ * obvious reading and would have been wrong. That picker offers SEED,
+ * AMENDMENT, FUEL, HARVESTED_PRODUCE and OTHER on the product path today, so a
+ * strict PESTICIDE rule would reject a lime or a seed application the web
+ * currently allows.
+ *
+ * What it does close is the defect it was asked to close: nothing previously
+ * checked that the FIELD used matched the item, so a fertiliser's id passed as
+ * `productItemId` was accepted and filed as a spray. The item lookup checked
+ * only tenant and `deletedAt`, while this file's own comment asserted that "the
+ * kind is implicit in the Item's category".
+ */
+function assertCategoryMatchesKind(category: string, isFertilizer: boolean): void {
+    const ok = isFertilizer ? category === 'FERTILIZER' : category !== 'FERTILIZER';
+    if (ok) return;
+    throw codedBadRequest(
+        isFertilizer ? 'FERTILIZER_EXPECTED' : 'PRODUCT_EXPECTED',
+        isFertilizer
+            ? 'That item is not a fertiliser. Use the product field for it, or choose a fertiliser.'
+            : 'That item is a fertiliser. Use the fertiliser field for it.',
+        { category },
+    );
+}
+
+/**
+ * The stock unit a new Item should default to, derived from the DOSE unit.
+ *
+ * A dose unit is a RATE (`l-per-ha`); an Item's `defaultUnit` is a stock unit
+ * (`l`). Storing the rate would "work" — nothing enforces the dimension — and
+ * would be wrong later, surfacing as an inventory figure in litres-per-hectare
+ * that nobody can reconcile.
+ *
+ * There is no stored rate→base relation on `Unit`, only the key convention the
+ * model documents (`"l-per-ha", "kg", "l"`). Measured over the seeded set, all
+ * eight rate units follow it and every base exists:
+ *
+ *   g-per-dca  g-per-ha  -> g        l-per-dca  l-per-ha  -> l
+ *   kg-per-dca kg-per-ha -> kg       ml-per-dca ml-per-ha -> ml
+ *
+ * So the derivation is sound today and `tests/guards/rate-units-have-a-base-unit.test.ts`
+ * is what keeps it sound: a rate unit added without a resolvable base is a red
+ * build rather than a surprise at the first typed product name.
+ */
+export function baseUnitKeyOf(doseUnitKey: string): string | null {
+    const i = doseUnitKey.indexOf('-per-');
+    if (i <= 0) return null;
+    return doseUnitKey.slice(0, i);
+}
+
+/**
+ * Turn the chosen input's id-or-name into an Item id.
+ *
+ * ## Why this runs BEFORE the operation's transaction
+ *
+ * Creating an Item can hit `Item_tenantId_name_active_key`, the partial
+ * case-insensitive unique index, and a P2002 inside an interactive Postgres
+ * transaction POISONS it — every later statement in that transaction fails, so
+ * a catch-and-re-read would be recovering inside a dead transaction. Resolving
+ * first means the race is handled in its own transaction and the operation's
+ * transaction only ever sees a settled id.
+ *
+ * `createFieldOperation` already commits in two transactions for a related
+ * reason (`createTask` opens its own, so `clientMutationId` is durable first),
+ * so a third pre-transaction is the shape this usecase already has rather than
+ * a new one.
+ *
+ * ## The lookup is case-insensitive because the CONSTRAINT is
+ *
+ * The unique index is on `(tenantId, lower(name)) WHERE deletedAt IS NULL`. A
+ * case-SENSITIVE find would miss «Карате Зеон» for a stored «КАРАТЕ ЗЕОН`,
+ * then attempt a create, then take a P2002 — turning a successful match into a
+ * 409 for the operator. The find and the constraint have to agree on what
+ * "same name" means.
+ */
+async function resolveInputItemId(
+    ctx: RequestContext,
+    chosen: ChosenInput,
+    registration: CreateFieldOperationInput['newProductRegistration'],
+): Promise<string> {
+    if (chosen.itemId) return chosen.itemId;
+
+    const name = sanitizePlainText((chosen.itemName ?? '').trim());
+    if (!name) {
+        throw codedBadRequest('PRODUCT_NAME_REQUIRED', 'A product name is required.');
+    }
+
+    const found = await runInTenantContext(ctx, (db) =>
+        db.item.findFirst({
+            where: {
+                tenantId: ctx.tenantId,
+                name: { equals: name, mode: 'insensitive' },
+                deletedAt: null,
+                // ── never resolve a typed name to an ARCHETYPE ──
+                //
+                // Raised by agrent-ios, and it is the defect this whole change
+                // exists to remove rather than a detail. The seeded «Generic …»
+                // products are still in the table and still in the unique
+                // index; #1078 refuses to COMPLETE a line against one, because
+                // ДНЕВНИК column 4 wants a trade name and an archetype is an
+                // active-ingredient descriptor. So a lookup that matched one
+                // would hand the operator a job that cannot be filed — the
+                // exact "refused at the worst moment" shape free text was
+                // introduced to avoid.
+                //
+                // The consequence worth knowing: an operator who types the
+                // exact name of a SURVIVING archetype gets
+                // `ITEM_NAME_ALREADY_EXISTS` from the create instead, because
+                // `Item_tenantId_name_active_key` still sees it. That is a
+                // comprehensible 409 rather than a job that dies at
+                // completion, and it only arises for an archetype a past
+                // record still uses — the ones the owner's removal keeps.
+                isArchetype: false,
+            },
+            select: { id: true, category: true },
+        }),
+    );
+    if (found) {
+        // A matched name is used as-is. The regulatory fields in
+        // `newProductRegistration` are IGNORED here rather than applied: this
+        // call is creating an operation, not editing a product, and letting an
+        // operation payload silently rewrite a stored ПРЗ № would make the
+        // farm record editable from a surface nobody reviews it on.
+        assertCategoryMatchesKind(found.category, chosen.isFertilizer);
+        return found.id;
+    }
+
+    const doseUnit = await runInTenantContext(ctx, (db) =>
+        db.unit.findUnique({ where: { id: chosen.doseUnitId }, select: { key: true } }),
+    );
+    if (!doseUnit) throw codedBadRequest('DOSE_UNIT_NOT_FOUND', 'Dose unit not found.');
+    const baseKey = baseUnitKeyOf(doseUnit.key);
+    const baseUnit = baseKey
+        ? await runInTenantContext(ctx, (db) =>
+              db.unit.findUnique({ where: { key: baseKey }, select: { id: true } }),
+          )
+        : null;
+    if (!baseUnit) {
+        // Loud rather than storing the rate unit as the stock unit. The guard
+        // test should make this unreachable; if it fires, the convention it
+        // guards has changed and the message says where to look.
+        throw codedBadRequest(
+            'DOSE_UNIT_HAS_NO_BASE',
+            'That dose unit has no stock unit to create a product against. Create the product from the catalogue instead.',
+            { doseUnit: doseUnit.key },
+        );
+    }
+
+    // `createItem` rather than a local `db.item.create`: it holds
+    // `assertPesticideIsFilable`, the name sanitisation, the unit check and the
+    // P2002 → named-409 translation. A second implementation here is how the
+    // regulatory rule ends up enforced on one path and not the other, which is
+    // the mistake its own docblock describes being avoided once already.
+    const created = await createItem(ctx, {
+        name,
+        // The product path creates a PESTICIDE — the only category a typed
+        // spray name can sensibly mean, and the one that makes the owner's
+        // ruling coherent: a new PPP needs its two regulatory fields, which is
+        // why `newProductRegistration` exists. An EXISTING item on this path
+        // may be any non-FERTILIZER category, per the picker's own filter.
+        category: chosen.isFertilizer ? 'FERTILIZER' : 'PESTICIDE',
+        defaultUnitId: baseUnit.id,
+        pppRegistrationNo: registration?.pppRegistrationNo ?? null,
+        quarantinePeriodDays: registration?.quarantinePeriodDays ?? null,
+        activeIngredient: registration?.activeIngredient ?? null,
+    });
+    return created.id;
 }
 
 function titleCase(s: string): string {
@@ -176,6 +385,10 @@ export async function createFieldOperation(
 
     // The operation applies exactly one input — a product XOR a fertilizer.
     const chosen = resolveChosenInput(input);
+    // Resolve the id-or-name to an id BEFORE the transaction below — a P2002
+    // from creating an Item would poison an interactive transaction, so the
+    // create and its race live in their own. See `resolveInputItemId`.
+    const itemId = await resolveInputItemId(ctx, chosen, input.newProductRegistration);
     // Water carrier only applies to a product spray (never a fertilizer line).
     const waterRateValue = chosen.isFertilizer ? null : input.waterRateValue ?? null;
     const waterRateUnitId = chosen.isFertilizer ? null : input.waterRateUnitId ?? null;
@@ -193,13 +406,21 @@ export async function createFieldOperation(
         if (missing.length) throw codedBadRequest('PARCELS_NOT_IN_LOCATION', 'Some selected parcels do not belong to this location.');
 
         const item = await db.item.findFirst({
-            where: { id: chosen.itemId, tenantId: ctx.tenantId, deletedAt: null },
-            select: { id: true },
+            where: { id: itemId, tenantId: ctx.tenantId, deletedAt: null },
+            select: { id: true, category: true },
         });
         if (!item) throw codedBadRequest(
             chosen.isFertilizer ? 'FERTILIZER_NOT_FOUND' : 'PRODUCT_NOT_FOUND',
             chosen.isFertilizer ? 'Fertilizer not found.' : 'Product not found.',
         );
+        // The category check applies to the ID path too, not only to a typed
+        // name. This lookup previously selected `{ id: true }` and checked only
+        // tenant and `deletedAt`, so a fertiliser's id passed as
+        // `productItemId` was accepted and filed as a spray — while this file's
+        // own comment asserted that "the kind is implicit in the Item's
+        // category". A name resolved above has already been checked; doing it
+        // here as well covers both and keeps one rule rather than two.
+        assertCategoryMatchesKind(item.category, chosen.isFertilizer);
 
         const unit = await db.unit.findUnique({ where: { id: chosen.doseUnitId }, select: { id: true } });
         if (!unit) throw codedBadRequest('DOSE_UNIT_NOT_FOUND', 'Dose unit not found.');
@@ -317,7 +538,7 @@ export async function createFieldOperation(
                 tenantId: ctx.tenantId,
                 taskId: task.id,
                 parcelId,
-                productItemId: chosen.itemId,
+                productItemId: itemId,
                 doseValue: chosen.doseValue,
                 doseUnitId: chosen.doseUnitId,
                 waterRateValue,
@@ -363,7 +584,7 @@ export async function createFieldOperation(
             locationId,
             operationType: opType,
             parcelCount,
-            productItemId: chosen.itemId,
+            productItemId: itemId,
             assigneeUserId: input.assigneeUserId,
         },
     });

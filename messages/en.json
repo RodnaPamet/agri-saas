@@ -2674,9 +2674,6 @@
         "kindFertilizer": "Fertilizer",
         "product": "Product",
         "fertilizer": "Fertilizer",
-        "selectProduct": "Select product",
-        "selectFertilizer": "Select fertilizer",
-        "noItems": "No items in the catalogue",
         "dose": "Dose",
         "dosePlaceholder": "e.g. 200",
         "unit": "Unit",
@@ -2710,13 +2707,14 @@
         "deleteConfirmBody": "The parcel and its field-operation lines will be removed. This cannot be undone.",
         "deleteConfirmLabel": "Delete parcel",
         "deleteFailed": "Could not delete the parcel",
-        "viewHistory": "View history"
+        "viewHistory": "View history",
+        "typeProduct": "e.g. Karate Zeon 050 CS",
+        "typeFertilizer": "e.g. Ammonium nitrate 34.4%"
       },
       "prescription": {
         "createFailed": "Failed to create job",
         "parcelsSelected": "{count, plural, one {# parcel} other {# parcels}} selected. Assign a product + dose to create a spray job.",
         "product": "Product",
-        "selectProduct": "Select a product…",
         "dose": "Dose",
         "dosePlaceholder": "e.g. 2.5",
         "unit": "Unit",
@@ -2726,7 +2724,8 @@
         "note": "Note",
         "notePlaceholder": "Optional target note",
         "creating": "Creating…",
-        "createJob": "Create spray job"
+        "createJob": "Create spray job",
+        "typeProduct": "e.g. Karate Zeon 050 CS"
       },
       "spatialImport": {
         "title": "Import parcels",

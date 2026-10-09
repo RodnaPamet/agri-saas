@@ -37,8 +37,16 @@ export const ItemQuerySchema = z
     })
     .strip();
 
-/** The regulatory fields shared by create and update — БАБХ farm-record data. */
-const REGULATORY = {
+/**
+ * The regulatory fields shared by create and update — БАБХ farm-record data.
+ *
+ * Exported since #1495: `CreateFieldOperationSchema` accepts them too, for a
+ * typed product name that has to CREATE the product. Shared rather than
+ * restated, so the bounds cannot drift between the product form and the
+ * operation sheet — a `max(120)` on one side and `max(200)` on the other would
+ * reject from one surface what the other accepted.
+ */
+export const REGULATORY = {
     /** Days produce may not be harvested after application. */
     quarantinePeriodDays: z.number().int().nonnegative().nullable().optional(),
     activeIngredient: z.string().max(200).nullable().optional(),

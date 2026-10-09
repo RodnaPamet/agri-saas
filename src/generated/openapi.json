@@ -5582,7 +5582,15 @@
           },
           "productItemId": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "description": "An existing product by id. Still fully supported — but the web no longer sends it: the owner removed the product and fertiliser dropdowns on 2026-10-09 in favour of `productName`, because 22 of 24 catalogue items on a seeded farm are archetypes and a picker mostly offered things #1078 refuses at completion.\n\nSend this OR `productName`, never both. The item must not be a `FERTILIZER` — use `fertilizerItemId` for one — or the call is refused with `PRODUCT_EXPECTED`."
+          },
+          "productName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "A typed product name INSTEAD of `productItemId` — send one or the other, never both. Resolved to the farm's own product of that name (case-insensitive, soft-deleted rows ignored) or created.\n\n**If it has to create one, `newProductRegistration` is required**, because a new product on this path is a PESTICIDE and a ПРЗ without its registration number and quarantine period cannot produce a complete ДНЕВНИК. The refusal is `PESTICIDE_REGULATORY_FIELDS_REQUIRED` and names which field is missing in `params.missing`.\n\nIf the name MATCHES an existing product, `newProductRegistration` is ignored — this call creates an operation, not an edit, and an operation payload must not silently rewrite a stored ПРЗ №.",
+            "example": "Карате Зеон 050 CS"
           },
           "doseValue": {
             "type": "number",
@@ -5594,7 +5602,15 @@
           },
           "fertilizerItemId": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "description": "An existing fertiliser by id. Still supported; the web now sends `fertilizerName` instead. Send this OR `fertilizerName`, never both. The item MUST be category `FERTILIZER` or the call is refused with `FERTILIZER_EXPECTED` — previously nothing checked this, so a pesticide passed here was filed as a fertilisation."
+          },
+          "fertilizerName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "The fertiliser counterpart of `productName`, with one difference: a fertiliser created this way needs NO regulatory fields. `assertPesticideIsFilable` constrains PESTICIDE only — a fertiliser has no ЗЗР registration and demanding one would invent a rule the product form does not have.",
+            "example": "Амониев нитрат 34.4%"
           },
           "fertilizerDoseValue": {
             "type": "number",
@@ -5603,6 +5619,33 @@
           "fertilizerDoseUnitId": {
             "type": "string",
             "minLength": 1
+          },
+          "newProductRegistration": {
+            "type": "object",
+            "properties": {
+              "quarantinePeriodDays": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "activeIngredient": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 200
+              },
+              "pppRegistrationNo": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 120
+              }
+            },
+            "description": "БАБХ fields for a product this call has to CREATE, and only then. Required alongside a `productName` that matches nothing; ignored when it matches. `pppRegistrationNo` makes the trade name in ДНЕВНИК column 4 checkable and `quarantinePeriodDays` feeds column 8 plus the earliest-harvest date in column 9."
           },
           "waterRateValue": {
             "type": [
