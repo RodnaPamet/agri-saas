@@ -61,7 +61,15 @@ import { useTranslations } from "next-intl";
 
 import { SortOrder } from "../icons";
 import { Tooltip } from "../tooltip";
-import { cn, isClickOnInteractiveChild } from "./table-utils";
+import {
+    cn,
+    isClickOnInteractiveChild,
+    hasActivated,
+    isGestureCompletingClick,
+    markActivated,
+    NO_ROW_ACTIVATION,
+    resetActivation,
+} from "./table-utils";
 
 export const DEFAULT_VIRTUAL_ROW_HEIGHT = 44;
 
@@ -203,6 +211,9 @@ function VirtualRow<T>({
     columnsAfterSelect,
     firstContentColumnId,
 }: RowComponentProps<RowItemData<T>>) {
+    // BEFORE the early return — hook order must not depend on `row`, or an
+    // instance that flips between present and absent changes its hook count.
+    const activatedAt = React.useRef(NO_ROW_ACTIVATION);
     const row = rows[index];
     if (!row) return null;
 
@@ -239,6 +250,22 @@ function VirtualRow<T>({
                 selectionEnabled
                     ? (e) => {
                           if (isClickOnInteractiveChild(e)) return;
+                          // The second click of a gesture IS the row
+                          // action, read from the click's own count rather
+                          // than from a `dblclick` a re-render can lose
+                          // (#1076). Toggle back first so selection ends
+                          // where it started. Mirrors ResizableTableRow.
+                          if (onRowClick && isGestureCompletingClick(e)) {
+                              row.toggleSelected();
+                              if (!hasActivated(activatedAt, row.id)) {
+                                  markActivated(activatedAt, row.id);
+                                  onRowClick(row, e);
+                              }
+                              return;
+                          }
+                          if (e.detail <= 1) {
+                              resetActivation(activatedAt, row.id);
+                          }
                           row.toggleSelected();
                       }
                     : // Selection off → single click runs the row action
@@ -251,10 +278,16 @@ function VirtualRow<T>({
                       : undefined
             }
             onDoubleClick={
+                // A second, deduped route to the same action — see
+                // `activateRowOnce`. Kept because a bare
+                // `fireEvent.doubleClick` dispatches no clicks at all.
                 selectionEnabled && onRowClick
                     ? (e) => {
                           if (isClickOnInteractiveChild(e)) return;
-                          onRowClick(row, e);
+                          if (!hasActivated(activatedAt, row.id)) {
+                              onRowClick(row, e);
+                          }
+                          resetActivation(activatedAt, row.id);
                       }
                     : undefined
             }

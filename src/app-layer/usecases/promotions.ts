@@ -13,7 +13,7 @@ import type { RequestContext } from '../types';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
-import { notFound, conflict, badRequest } from '@/lib/errors/types';
+import { notFound, codedConflict, badRequest } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { translateFor } from '@/lib/i18n/server-messages';
 import { DEFAULT_LOCALE, isLocale } from '@/lib/i18n/locales';
@@ -239,7 +239,12 @@ export async function createPromotionLead(ctx: RequestContext, input: CreateProm
             // @@unique([promotionId, inquirerTenantId]) — one lead per tenant per
             // promotion. Turn the raw unique violation into a friendly conflict.
             if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-                throw conflict('You have already requested an offer for this promotion');
+                // Coded for the same reason as the exchange inquiry — see
+                // `createInquiry` in exchange.ts (#1391).
+                throw codedConflict(
+                    'PROMOTION_LEAD_ALREADY_SENT',
+                    'You have already requested an offer for this promotion.',
+                );
             }
             throw err;
         }

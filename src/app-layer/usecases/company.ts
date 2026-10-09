@@ -26,7 +26,7 @@ import type { PrismaTx } from '@/lib/db-context';
 import type { RequestContext } from '../types';
 import { logEvent } from '../events/audit';
 import { sanitizePlainText } from '@/lib/security/sanitize';
-import { badRequest, conflict, notFound } from '@/lib/errors/types';
+import { badRequest, codedConflict, notFound } from '@/lib/errors/types';
 import { Prisma } from '@prisma/client';
 import { companyNameKey } from './promotions';
 
@@ -102,7 +102,15 @@ export async function createCompany(db: PrismaTx, ctx: RequestContext, input: Co
         // raw violation into a message support can act on, since the whole
         // point of the key is that "Syngenta" and "syngenta " are one supplier.
         if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-            throw conflict(`A company named "${name}" already exists`);
+            // The name is NOT interpolated into the message. The operator
+            // has just typed it, so nothing is lost by not echoing it, and a
+            // user-supplied value inside server copy is what
+            // `farm-creation.ts` warns against — it also keeps `message` a
+            // static English fallback rather than a half-localised one.
+            throw codedConflict(
+                'COMPANY_NAME_TAKEN',
+                'A company with that name already exists.',
+            );
         }
         throw err;
     }
@@ -156,7 +164,12 @@ export async function updateCompany(
         return company;
     } catch (err) {
         if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-            throw conflict('Another company already uses that name');
+            // Same code as create: both are the `nameKey` unique index, and
+            // the remedy is identical — pick a different name, not a re-read.
+            throw codedConflict(
+                'COMPANY_NAME_TAKEN',
+                'Another company already uses that name.',
+            );
         }
         throw err;
     }
