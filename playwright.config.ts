@@ -51,7 +51,20 @@ export default defineConfig({
         baseURL: process.env.URL || 'http://localhost:3006',
         trace: 'retain-on-failure',
         screenshot: 'only-on-failure',
-        video: 'on',
+        // `retain-on-failure`, not `on` — measured, in support of #1492.
+        //
+        // `on` records a video of EVERY test. In a real shard-2 artifact that
+        // was 94 files / 24.1 MB, against 29.9 MB of trace for the three failed
+        // attempts that were the actual evidence. A video of a passing test has
+        // never been read by anyone and nothing in the repo references one.
+        //
+        // The cost matters because #1492 widens the artifact upload to fire on
+        // a retry-PASSED flake, which is most runs. A retry-passed flake has
+        // ONE failed attempt, so after this line the upload is roughly one
+        // ~10 MB trace rather than that plus 24 MB of videos of tests that
+        // passed. Widening the condition without narrowing this is the version
+        // that gets reverted on cost in a week.
+        video: 'retain-on-failure',
     },
     projects: [
         {
