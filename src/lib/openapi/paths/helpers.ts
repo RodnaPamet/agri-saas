@@ -36,7 +36,7 @@ import type { OpenAPIRegistry, RouteConfig } from '@asteasolutions/zod-to-openap
 // `ZodObject`, not `AnyZodObject` — the latter is zod v3 vintage and this
 // repo is on zod 4.
 import type { ZodObject, ZodTypeAny } from 'zod';
-import { ApiErrorResponseSchema } from '@/lib/dto/common';
+import { ApiErrorResponseSchema, RawErrorResponseSchema } from '@/lib/dto/common';
 
 /** The auth schemes the API actually uses. Registered once, referenced by name. */
 export function registerSecuritySchemes(registry: OpenAPIRegistry): void {
@@ -79,6 +79,34 @@ export function registerSecuritySchemes(registry: OpenAPIRegistry): void {
  * contract for every operation — and a client that mistakes it for a payload
  * rejection parks its queue (#938).
  */
+/**
+ * Override individual status codes with the BARE error body (#1391).
+ *
+ * `commonErrorResponses()` declares the `ErrorResponse` envelope for
+ * 400/401/403/404/426/429 on every route that uses it. That is right almost
+ * everywhere and wrong for the auth family, whose routes answer their own
+ * refusals with `{"error": "<code>"}`. Pass the statuses a route actually
+ * refuses with and what it can send; `op()` spreads `extraResponses` AFTER the
+ * common entries, so this replaces them.
+ *
+ * Only the codes a route raises ITSELF belong here. 429 and 5xx stay on the
+ * envelope — `withApiErrorHandling` builds those and knows nothing about the
+ * route's vocabulary, so claiming the bare shape for them would be the same
+ * contradiction one status code over.
+ */
+export function rawErrorResponses(
+    spec: Record<number, string>,
+): NonNullable<RouteConfig['responses']> {
+    const out: NonNullable<RouteConfig['responses']> = {};
+    for (const [status, description] of Object.entries(spec)) {
+        out[Number(status)] = {
+            description,
+            content: { 'application/json': { schema: RawErrorResponseSchema } },
+        };
+    }
+    return out;
+}
+
 export function commonErrorResponses(): RouteConfig['responses'] {
     const json = { 'application/json': { schema: ApiErrorResponseSchema } };
     return {

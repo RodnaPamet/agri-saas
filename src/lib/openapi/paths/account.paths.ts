@@ -26,7 +26,7 @@ import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { MAX_BOTTOM_TABS } from '@/lib/account/bottom-tabs';
 import { ApiErrorResponseSchema } from '@/lib/dto/common';
-import { op } from './helpers';
+import { op, rawErrorResponses } from './helpers';
 
 /**
  * The caller's effective avatar URL, and the ONE hazard a client has to know
@@ -169,6 +169,12 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
     op(registry, {
         method: 'post',
         path: '/api/auth/accept-terms',
+        extraResponses: rawErrorResponses({
+            400:
+                '`terms_not_accepted` or `terms_version_stale` — a BARE body, not the envelope. The latter carries `currentVersion` so a client can say \"reload and read the new terms\".',
+            401:
+                '`unauthenticated` — a BARE body, not the envelope.',
+        }),
         operationId: 'acceptTerms',
         summary: 'Record that the signed-in user accepts the current terms',
         description:

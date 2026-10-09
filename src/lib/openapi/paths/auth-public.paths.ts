@@ -18,7 +18,7 @@
 import { z } from '@/lib/openapi/zod';
 import { AuthRegisterStartSchema } from '@/lib/schemas';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
-import { op } from './helpers';
+import { op, rawErrorResponses } from './helpers';
 
 /** Read before any credential exists — there is nothing to authenticate with yet. */
 const NO_AUTH: Array<Record<string, string[]>> = [];
@@ -27,6 +27,10 @@ export function registerAuthPublicPaths(registry: OpenAPIRegistry): void {
     op(registry, {
         method: 'post',
         path: '/api/auth/register/start',
+        extraResponses: rawErrorResponses({
+            400:
+                '`invalid_request`, `turnstile_failed`, `disposable_email`, `terms_not_accepted` or `terms_version_stale` — a BARE body, not the envelope. `terms_version_stale` also carries `currentVersion`. These are coded refusals rather than schema rejections ON PURPOSE (#1393): a missing `acceptedTerms` is retryable, and a schema-level rejection would not be.',
+        }),
         operationId: 'registerStart',
         summary: 'Begin registration: create an unverified account and email a 6-digit code',
         description:
@@ -77,6 +81,10 @@ export function registerAuthPublicPaths(registry: OpenAPIRegistry): void {
     op(registry, {
         method: 'post',
         path: '/api/auth/register/verify',
+        extraResponses: rawErrorResponses({
+            400:
+                '`invalid_request` — a BARE body, not the envelope.',
+        }),
         operationId: 'registerVerify',
         summary: 'Finish email verification with the 6-digit code',
         description:

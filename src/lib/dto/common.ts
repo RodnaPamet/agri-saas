@@ -7,6 +7,62 @@ import { z } from '@/lib/openapi/zod';
 // ─── Shared Refs ───
 
 /** Minimal user reference returned in most includes */
+/**
+ * The OTHER error body: a bare machine code, not the `ErrorResponse` envelope.
+ *
+ * Lifted out of `locations.paths.ts` in #1391 so the auth family can reference
+ * the SAME component rather than describing the shape a second time. Two names
+ * for one shape would also defeat
+ * `tests/contracts/error-bodies-match-their-declared-schema.test.ts`, which
+ * compares dereferenced schema NAMES — a second name makes a mismatch read as
+ * agreement.
+ *
+ * ## Why two shapes exist on purpose
+ *
+ * Measured on #1391: the spec declared `ErrorResponse` for 78 4xx responses
+ * across 13 `/api/auth/*` paths, while 11 auth route files answer their own
+ * refusals with `{"error": "<code>"}` — a STRING where the schema said OBJECT,
+ * so a strict decoder fails. The bare form is deliberate: `invalid_grant` and
+ * `invalid_request` are RFC 6749 §5.2 codes and
+ * `unsupported_code_challenge_method` is RFC 7636's, so a conforming OAuth
+ * client expects exactly this at a token endpoint. Converging those routes on
+ * the envelope would break that conformance and any non-iOS caller keying on
+ * the string — and on a public repo those cannot be enumerated.
+ *
+ * So the contract admits two error shapes and says which applies where. The
+ * owner decided that on #1391.
+ *
+ * ## Which responses carry which
+ *
+ * A refusal the route raises ITSELF is bare. Everything the wrapper produces —
+ * the 429 rate-limit, any unexpected 5xx — stays `ErrorResponse`, because
+ * `withApiErrorHandling` builds those and knows nothing about the route's
+ * vocabulary. That split is why `op()`'s `extraResponses` overrides individual
+ * status codes rather than the whole family.
+ *
+ * ## `error` is deliberately not an enum
+ *
+ * The codes are per-route and several are RFC-defined, so an enum would either
+ * go stale or claim a closed set the RFCs do not promise. Each operation's own
+ * response description lists what it can send.
+ *
+ * The same shape also serves the spatial-import and cadastre-import routes,
+ * where it predates this reasoning and `#1447` is converging the ones that
+ * contradicted their own declaration.
+ */
+export const RawErrorResponseSchema = z
+    .object({ error: z.string() })
+    .openapi('RawErrorResponse', {
+        description:
+            'A bare error body: `{"error": "<code-or-message>"}` and nothing else — NOT the ' +
+            '`ErrorResponse` envelope, so there is no `code`, `requestId`, `details` or ' +
+            '`params`. Used by the native auth family, where it is the shape RFC 6749 §5.2 ' +
+            'specifies for an OAuth token endpoint, and by the spatial-import and ' +
+            'cadastre-import routes. A rate-limit (429) or an unexpected failure (5xx) on the ' +
+            'same route still answers with `ErrorResponse`, because the error wrapper builds ' +
+            'those rather than the route.',
+    });
+
 export const UserRefSchema = z
     .object({
         id: z.string().openapi({ example: 'usr_01HG7…' }),
