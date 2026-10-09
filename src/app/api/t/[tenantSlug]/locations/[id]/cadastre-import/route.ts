@@ -17,6 +17,7 @@ import {
 import { assertCanWrite } from '@/app-layer/policies/common';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
+import { codedBadRequest } from '@/lib/errors/types';
 
 export const GET = withApiErrorHandling(
     async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; id: string }> }) => {
@@ -37,7 +38,14 @@ export const POST = withApiErrorHandling(
             ? (body!.identifiers.filter((v) => typeof v === 'string') as string[])
             : null;
         if (!identifiers || identifiers.length === 0) {
-            return jsonResponse({ error: 'Provide a non-empty "identifiers" array.' }, { status: 400 });
+            // Coded: this operation's 400 declares `ErrorResponse` while its
+            // 413/415 declare `RawErrorResponse`, so the bare string
+            // contradicted the one status it was returned with (#1447). Prose
+            // preserved verbatim.
+            throw codedBadRequest(
+                'IDENTIFIERS_REQUIRED',
+                'Provide a non-empty "identifiers" array.',
+            );
         }
 
         const result = await stageLocationCadastreImport(ctx, params.id, { identifiers });
