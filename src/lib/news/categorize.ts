@@ -285,6 +285,36 @@ const TOPIC_STEMS: Readonly<Record<string, readonly string[]>> = {
     ],
     livestock: [
         'животновъдств',
+        // ── the ordinary words, not only the formal register (#1486) ──
+        //
+        // Every Bulgarian stem above is either the sector noun
+        // («животновъдство» — animal husbandry) or a species («говеда»,
+        // «свине», «овце»). The words a farmer and a headline actually use
+        // were absent, so «Добитъкът в стопанството е здрав» tagged NOTHING
+        // and never reached a reader who had selected «Животновъдство».
+        //
+        // TWO stems, both ending in a CONSONANT, and that is the whole of the
+        // care here.
+        //
+        // `добитъ` was the first attempt and it is WRONG — it walks into the
+        // trap this file already warns about for `износа`. `ъ` is in
+        // TRAILING_VOWEL, so `matchesWordPrefix` runs `stemOf` over it and
+        // silently trims it to `добит` (6 → 5, still at MIN_STEM_LENGTH).
+        // And `добит` is the past participle of «добивам» — so «добитото
+        // зърно», the HARVESTED grain, tagged livestock. A yield story filed
+        // under animals, invisible to anyone reading either topic.
+        //
+        // Measured: `добитъ` and `добит` produce identical output, which is
+        // how the mutation that shortened it survived and pointed at this.
+        //
+        // `добитък` (ends in к) and `добитъц` (ends in ц) cannot be trimmed, so
+        // they match what they say: «добитък», «добитъка», «добитъкът» and
+        // «добитъци», «добитъците» — and nothing of «добитото».
+        'добитък',
+        'добитъц',
+        // «крави» is the everyday word where «говеда» is the formal one, and
+        // they are the same animal in two registers.
+        'крав',
         'говед',
         'свине',
         'свиневъдств',

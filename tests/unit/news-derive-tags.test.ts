@@ -197,3 +197,64 @@ describe('`prices` is narrower than the market category, deliberately', () => {
         expect(deriveTags('Цената на тон пшеница на борсата', null)).toContain('prices');
     });
 });
+
+describe('the livestock topic uses the ordinary words, not only the formal ones (#1486)', () => {
+    it('«добитък» and its inflections tag livestock', () => {
+        // Every Bulgarian stem in this topic was the sector noun
+        // («животновъдство») or a species («говеда», «свине», «овце»). The word
+        // a farmer and a headline actually use was absent, so this tagged
+        // NOTHING and never reached a reader who had selected «Животновъдство».
+        expect(deriveTags('Добитъкът в стопанството е здрав', null)).toContain('livestock');
+        expect(deriveTags('Добитъка изведоха на паша', null)).toContain('livestock');
+        // The plural replaces the final consonant cluster, which is why the
+        // stem is `добитъ` rather than `добитък` — the latter misses this.
+        expect(deriveTags('Цените на добитъците падат', null)).toContain('livestock');
+    });
+
+    it('«крави» tags livestock, where «говеда» is the formal register', () => {
+        expect(deriveTags('Кравите дават повече мляко', null)).toContain('livestock');
+        expect(deriveTags('Кравата се разболя', null)).toContain('livestock');
+    });
+
+    it('«добив» stays a TRADE story and never becomes livestock', () => {
+        // The boundary that makes the stem length load-bearing. «добив» (yield)
+        // and «добитък» (livestock) diverge at the FIFTH character, в against
+        // т, so any stem shorter than five merges the two topics and tags every
+        // yield story as livestock. Checked rather than reasoned about.
+        for (const yieldStory of [
+            'Добивите от пшеница са по-високи',
+            'Добив на зърно',
+        ]) {
+            expect(deriveTags(yieldStory, null)).toContain('trade');
+            expect(deriveTags(yieldStory, null)).not.toContain('livestock');
+        }
+    });
+
+    it('the PAST PARTICIPLE of «добивам» is not livestock', () => {
+        // The case that caught a defect in the first version of this fix, and
+        // the reason the stems end in consonants.
+        //
+        // `добитъ` looked safe and was not: `ъ` is in TRAILING_VOWEL, so
+        // `matchesWordPrefix` ran `stemOf` over it and silently trimmed it to
+        // `добит` — the past participle of «добивам». So «добитото зърно», the
+        // HARVESTED grain, tagged livestock: a yield story filed under animals,
+        // invisible to anyone reading either topic.
+        //
+        // It is exactly the trap `categorize.ts` already warns about for
+        // `износа`, two changes later and in the other direction.
+        expect(deriveTags('Добитото зърно е на склад', null)).not.toContain('livestock');
+        expect(deriveTags('Добитата продукция', null)).not.toContain('livestock');
+    });
+
+    it('CONTROL: other добр-/доба- words are not livestock either', () => {
+        // `добитъ` is six characters precisely so it cannot reach these. Without
+        // the control, a shortened stem would pass every case above while
+        // tagging «доброто време» and «добавката към фуража» as livestock —
+        // and a weather story filed under animals is invisible to both.
+        expect(deriveTags('Доброто време помага', null)).not.toContain('livestock');
+        expect(deriveTags('Добавката към фуража', null)).not.toContain('livestock');
+        // And the weather story still gets its own tag, so the control is not
+        // passing because the tagger stopped working.
+        expect(deriveTags('Доброто време помага', null)).toContain('weather');
+    });
+});
