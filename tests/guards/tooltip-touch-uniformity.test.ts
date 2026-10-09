@@ -111,6 +111,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const ROOT = path.resolve(__dirname, '../..');
 const SRC = path.join(ROOT, 'src');
 
@@ -200,10 +202,57 @@ function walk(dir: string, out: string[] = []): string[] {
     return out;
 }
 
-/** Strip block + line comments so prose can't satisfy a code assertion. */
+/**
+ * Strip block + line comments so prose can't satisfy a code assertion.
+ *
+ * Delegates to the shared state-aware blanker (#1497). It used to be
+ * two local `.replace()` calls with block comments FIRST, which is the
+ * #1442 bug: a `//` line containing `/*` opens a block as far as a regex
+ * is concerned, and the match then runs to the next block-close marker, deleting every
+ * real line between. This guard walks all of `src/`, which holds nine such
+ * lines — `src/middleware.ts:295` and `:629`, `src/auth.ts:226` and `:981`,
+ * and five more, each an innocuous comment naming a glob like
+ * `/api/auth/*` or `messages/*.json`.
+ *
+ * Measured on this tree: the old order kept 130 of `middleware.ts`'s 326
+ * non-blank code lines and 433 of `auth.ts`'s 551 — 511 lines across the
+ * nine files that this guard was scanning past while reporting clean.
+ *
+ * `blankNonCode` also BLANKS rather than deletes, keeping newlines and
+ * column positions, so the `^`-anchored patterns below match the same
+ * positions they always did instead of lines sliding up into each other.
+ */
 function stripComments(src: string): string {
-    return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+    return blankNonCode(src);
 }
+
+describe('the comment stripper this guard scans through (#1497)', () => {
+    it('keeps code after a line comment that carries a block-open', () => {
+        // This guard walks ALL of `src/`, and nine files there hold a line
+        // comment containing a block-open — `src/middleware.ts:295`,
+        // `src/auth.ts:226` and friends, each naming a glob such as
+        // `/api/auth/` + a star. With block comments stripped first, that
+        // opened a block running to the next block-close marker: measured on
+        // this tree, the old order kept 130 of middleware.ts's 326 non-blank
+        // code lines and 433 of auth.ts's 551.
+        //
+        // There was no self-check here before, which is why the loss was
+        // invisible: every assertion in this file passed against 40% of the
+        // file it believed it was reading.
+        const src = [
+            '// a comment naming /* a glob',
+            'onPointerDown={handler}',
+            '/* a real docblock */',
+            'onFocus={other}',
+        ].join('\n');
+        const code = stripComments(src);
+        expect(code).toMatch(/onPointerDown/);
+        expect(code).toMatch(/onFocus/);
+        // and commentary is still gone
+        expect(code).not.toMatch(/real docblock/);
+        expect(code).not.toMatch(/naming/);
+    });
+});
 
 /**
  * Every file under `src/` that imports the tooltip module — by alias
