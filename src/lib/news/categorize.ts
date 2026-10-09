@@ -188,11 +188,31 @@ const TOPIC_STEMS: Readonly<Record<string, readonly string[]>> = {
         'износът',
         'вносът',
         'вноса',
+        // ── harvest and yield, on the owner's own definition ──
+        //
+        // Owner, 2026-10-09: «Пазар» is for "harvest, export, import and yield
+        // news". An earlier version of this list dropped `реколта` on the
+        // reasoning that a harvest is production rather than market — which was
+        // my inference about what the topic meant, against the person who
+        // defined it. Supply IS the market story in a commodity feed: a harvest
+        // figure is why a price moves.
+        //
+        // `реколт` because `stemOf` would trim `реколта` to exactly this
+        // anyway (6 characters, over the floor); written trimmed so the list
+        // says what it matches.
+        'реколт',
+        // `добив` (yield) does NOT reach «добитък» (livestock) — they diverge
+        // at the fifth character, в against т — so the two topics stay
+        // separate. Checked rather than assumed, because a yield story
+        // silently tagged `livestock` would be invisible.
+        'добив',
         // English
         'market',
         'export',
         'import',
         'trade',
+        'harvest',
+        'yield',
     ],
     prices: [
         // Bulgarian. `цена`/`цени`/`ценов` rather than the bare `цен`, which

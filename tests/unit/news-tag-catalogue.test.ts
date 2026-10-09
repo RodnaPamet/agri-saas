@@ -133,6 +133,33 @@ describe('«Пазар» is in the catalogue and the tagger emits it', () => {
         expect(deriveTags('Търг за ремонт на пътя', null)).not.toContain('trade');
     });
 
+    it('covers the four things the owner defined it as', () => {
+        // Owner, 2026-10-09: «Пазар» is for "harvest, export, import and yield
+        // news". An earlier version of this list had `реколта` REMOVED, on my
+        // reasoning that a harvest is production rather than market. That was
+        // an inference about what the topic meant, made against the person who
+        // defined it, and it was wrong — in a commodity feed supply IS the
+        // market story, because a harvest figure is why a price moves.
+        //
+        // One case per word of the definition, so dropping any one of them
+        // again is a red test rather than a silent narrowing.
+        expect(deriveTags('Реколтата от слънчоглед е прибрана', null)).toContain('trade');
+        expect(deriveTags('Добивите от пшеница са по-високи', null)).toContain('trade');
+        expect(deriveTags('Износът на царевица расте', null)).toContain('trade');
+        expect(deriveTags('Вносът на торове е спрян', null)).toContain('trade');
+    });
+
+    it('«добив» (yield) does not leak into livestock via «добитък»', () => {
+        // The two words diverge at the fifth character — добиВ against добиТък
+        // — so a prefix matcher keeps them apart. Checked rather than assumed,
+        // because a yield story silently tagged `livestock` would be invisible
+        // to everything else here.
+        const yieldStory = deriveTags('Добивите от пшеница са по-високи', null);
+
+        expect(yieldStory).toContain('trade');
+        expect(yieldStory).not.toContain('livestock');
+    });
+
     it('«борса» stays a price story and does not become a trade story', () => {
         // A deliberate boundary: `борса` names the commodity exchange, which
         // is a price surface in this product. Duplicating it into `trade`
