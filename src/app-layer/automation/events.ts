@@ -32,8 +32,6 @@ export const AUTOMATION_EVENTS = {
 
     // ─── Issues (high-value automation: incident detection, alert
     //     routing, cross-issue linkage) ───
-    ISSUE_CREATED: 'ISSUE_CREATED',
-    ISSUE_STATUS_CHANGED: 'ISSUE_STATUS_CHANGED',
 
     // ─── Time-based (PR-E) — synthesized by the cron-trigger-sweep N days
     //     before a target entity's due date. The single Archer-parity

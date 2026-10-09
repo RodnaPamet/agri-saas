@@ -1,23 +1,31 @@
 /**
  * Audit Coherence S8 (2026-05-24) — structural ratchet locking the
- * Task & Issue Remediation gap closures.
+ * Task Remediation gap closures.
+ *
+ * Covered the parallel `issue.ts` paths too until #1479 retired that
+ * surface. Those assertions read a file that no longer exists, so the
+ * suite failed to LOAD rather than failing a test — ENOENT at module
+ * scope, `Tests: 0 total`, and no ✕ line naming it. Worth knowing: a
+ * guard that reads source at describe-time reports a deleted subject as
+ * a suite error, which is louder than a vacuous pass but easy to
+ * mis-read as a pass in a batch run.
  *
  * Four gaps addressed in this PR:
  *
  *   Gap A — work-item state machine. `WORK_ITEM_TRANSITIONS` table
  *   in `domain/work-item-status.ts` + `checkWorkItemTransition` +
  *   `formatTransitionError`. Wired into setTaskStatus,
- *   bulkSetTaskStatus, setIssueStatus, bulkSetStatus.
+ *   bulkSetTaskStatus.
  *
  *   Gap B — required `resolution` on terminal transitions
- *   (RESOLVED / CLOSED / CANCELED) on both task + issue paths.
+ *   (RESOLVED / CLOSED / CANCELED) on the task paths.
  *
  *   Gap C — `detailsJson.fromStatus = null` hardcode bug. Every
  *   STATUS_CHANGED audit row now ships the real fromStatus + the
  *   real toStatus. (Pre-S8 these were `null` + the action-name
  *   placeholder.)
  *
- *   Gap D — `services/sla.ts` integration. `getTask` + `getIssue`
+ *   Gap D — `services/sla.ts` integration. `getTask`
  *   attach the derived `sla: { triageBreach, resolveBreach, label }`
  *   shape so the frontend stops needing client-side SLA math.
  */
@@ -28,7 +36,7 @@ const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) =>
     fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
-describe('Audit S8 — Task & Issue Remediation', () => {
+describe('Audit S8 — Task Remediation', () => {
     describe('Gap A — work-item state machine', () => {
         const domain = read('src/app-layer/domain/work-item-status.ts');
 
@@ -102,25 +110,10 @@ describe('Audit S8 — Task & Issue Remediation', () => {
             expect(block).toMatch(/checkWorkItemTransition\(/);
         });
 
-        it('issue.ts wires the gate into setIssueStatus + bulkSetStatus', () => {
-            const src = read('src/app-layer/usecases/issue.ts');
-            expect(src).toMatch(/import\s*\{[\s\S]*?checkWorkItemTransition[\s\S]*?\}\s*from\s*['"]\.\.\/domain\/work-item-status['"]/);
-            const setBlock = src.slice(
-                src.indexOf('export async function setIssueStatus'),
-                src.indexOf('export async function setIssueStatus') + 2500,
-            );
-            expect(setBlock).toMatch(/checkWorkItemTransition\(fromStatus,\s*status\)/);
-            const bulkBlock = src.slice(
-                src.indexOf('export async function bulkSetStatus'),
-            );
-            expect(bulkBlock).toMatch(/WorkItemRepository\.listByIds/);
-            expect(bulkBlock).toMatch(/checkWorkItemTransition\(/);
-        });
     });
 
     describe('Gap B — resolution required on terminal transitions', () => {
         const taskSrc = read('src/app-layer/usecases/task.ts');
-        const issueSrc = read('src/app-layer/usecases/issue.ts');
 
         it('setTaskStatus refuses an empty resolution on terminal moves', () => {
             expect(taskSrc).toMatch(
@@ -137,17 +130,10 @@ describe('Audit S8 — Task & Issue Remediation', () => {
             expect(occurrences?.length).toBeGreaterThanOrEqual(2);
         });
 
-        it('setIssueStatus / bulk refuse an empty resolution on terminal moves', () => {
-            const occurrences = issueSrc.match(
-                /A resolution is required when moving an issue to/g,
-            );
-            expect(occurrences?.length).toBeGreaterThanOrEqual(2);
-        });
     });
 
     describe('Gap C — detailsJson fromStatus + toStatus carry real values', () => {
         const taskSrc = read('src/app-layer/usecases/task.ts');
-        const issueSrc = read('src/app-layer/usecases/issue.ts');
 
         // Anchor every Task STATUS_CHANGED audit row to the real
         // fromStatus identifier; the hardcoded `fromStatus: null`
@@ -166,33 +152,10 @@ describe('Audit S8 — Task & Issue Remediation', () => {
             expect(matches.length).toBeGreaterThanOrEqual(2);
         });
 
-        it('issue.ts emits fromStatus / toStatus from the prefetched values', () => {
-            const stripped = issueSrc.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
-            expect(stripped).not.toMatch(
-                /entityName:\s*['"]Issue['"][\s\S]{0,80}fromStatus:\s*null/,
-            );
-            expect(stripped).not.toMatch(/toStatus:\s*['"]ISSUE_STATUS_CHANGED['"]/);
-            const matches = stripped.match(/category:\s*['"]status_change['"][\s\S]{0,200}fromStatus[\s\S]{0,200}toStatus:\s*status/g) || [];
-            expect(matches.length).toBeGreaterThanOrEqual(2);
-        });
-
-        it('BUNDLE_FROZEN is re-categorised away from status_change', () => {
-            // Bundle freeze is an entity_lifecycle event on the
-            // bundle, not a status transition on the issue. The
-            // hardcoded `toStatus: 'BUNDLE_FROZEN'` is gone.
-            expect(issueSrc).not.toMatch(
-                /toStatus:\s*['"]BUNDLE_FROZEN['"]/,
-            );
-            const bundleBlock = issueSrc.slice(
-                issueSrc.indexOf('BUNDLE_FROZEN'),
-            );
-            expect(bundleBlock).toMatch(/category:\s*['"]entity_lifecycle['"]/);
-        });
     });
 
     describe('Gap D — sla.ts wired into getTask + getIssue', () => {
         const taskSrc = read('src/app-layer/usecases/task.ts');
-        const issueSrc = read('src/app-layer/usecases/issue.ts');
 
         it('task.ts imports getSlaStatus and attaches sla on getTask', () => {
             expect(taskSrc).toMatch(
@@ -207,17 +170,5 @@ describe('Audit S8 — Task & Issue Remediation', () => {
             );
         });
 
-        it('issue.ts imports getSlaStatus and attaches sla on getIssue', () => {
-            expect(issueSrc).toMatch(
-                /import\s*\{\s*getSlaStatus\s*\}\s*from\s*['"]\.\.\/services\/sla['"]/,
-            );
-            const getBlock = issueSrc.slice(
-                issueSrc.indexOf('export async function getIssue('),
-                issueSrc.indexOf('export async function getIssue(') + 1200,
-            );
-            expect(getBlock).toMatch(
-                /sla:\s*getSlaStatus\(issue\.severity,\s*issue\.createdAt,\s*issue\.status\)/,
-            );
-        });
     });
 });

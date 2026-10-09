@@ -23,35 +23,33 @@
 import { rankRuleSuggestions } from '@/app-layer/usecases/automation-suggestions';
 
 describe('rankRuleSuggestions', () => {
-    it('returns ranked suggestions ordered by descending confidence', () => {
-        const out = rankRuleSuggestions({ coveredEvents: new Set() });
-        expect(out.length).toBeGreaterThan(0);
-        // ranks are 1-based + contiguous, ordered by descending confidence
-        expect(out[0].rank).toBe(1);
-        for (let i = 1; i < out.length; i++) {
-            expect(out[i].rank).toBe(i + 1);
-            expect(out[i - 1].confidenceScore).toBeGreaterThanOrEqual(out[i].confidenceScore);
-        }
+    /**
+     * The candidate list is EMPTY as of #1479, and this assertion is the
+     * forcing function rather than a note.
+     *
+     * `rankRuleSuggestions` held exactly one candidate, triggering on
+     * `ISSUE_CREATED`. That event lost its only producer when the
+     * `/issues/**` surface was retired, so the suggestion would have led a
+     * tenant to build a rule that could never fire — the defect CLAUDE.md
+     * records against `TEST_PLAN_*`. The candidate went with the surface.
+     *
+     * Three tests stood here and asserted real behaviour this function still
+     * implements: descending-confidence ordering, exclusion of an event an
+     * enabled rule already covers, and contiguous re-ranking after an
+     * exclusion. None of them can run against an empty list, and `candidates`
+     * is a module-local const with no injection seam.
+     *
+     * So this asserts the empty state INSTEAD, which means **adding a
+     * candidate fails this test** — and whoever adds one has to restore those
+     * three in the same diff. A conditional skip was the alternative and it is
+     * the worse one: it reads as a pass. See #1525.
+     */
+    it('offers no candidates at all — and adding one must restore the ranking tests', () => {
+        expect(rankRuleSuggestions({ coveredEvents: new Set() })).toEqual([]);
     });
 
-    it('excludes suggestions whose trigger event is already covered by an enabled rule', () => {
-        // Sanity: the candidate is offered when nothing covers it...
-        expect(
-            rankRuleSuggestions({ coveredEvents: new Set() })
-                .find((s) => s.triggerEvent === 'ISSUE_CREATED'),
-        ).toBeDefined();
-        // ...and withheld when an enabled rule already handles that event.
-        const out = rankRuleSuggestions({ coveredEvents: new Set(['ISSUE_CREATED']) });
-        expect(out.find((s) => s.triggerEvent === 'ISSUE_CREATED')).toBeUndefined();
-    });
-
-    it('re-ranks contiguously after an exclusion (no gap where the dropped one sat)', () => {
-        const full = rankRuleSuggestions({ coveredEvents: new Set() });
-        const trimmed = rankRuleSuggestions({ coveredEvents: new Set(['ISSUE_CREATED']) });
-        expect(trimmed.length).toBe(full.length - 1);
-        trimmed.forEach((s, i) => expect(s.rank).toBe(i + 1));
-    });
-
+    // Vacuous while the candidate list is empty (it iterates nothing), kept
+    // because it is the invariant that matters the moment one is added.
     it('never emits a confidence score above 1', () => {
         const out = rankRuleSuggestions({ coveredEvents: new Set() });
         for (const s of out) expect(s.confidenceScore).toBeLessThanOrEqual(1);

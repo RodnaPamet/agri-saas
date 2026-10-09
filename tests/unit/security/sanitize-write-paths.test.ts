@@ -15,7 +15,6 @@
  *
  *   Epic C.5 — comment surfaces over `TaskComment.body`
  *     · task.addTaskComment   (plain-text body)
- *     · issue.addIssueComment (plain-text body — same repository)
  *
  * GRC teardown phase 2 removed the policy / finding / risk / vendor /
  * audit / control-test write-path blocks along with their usecases,
@@ -86,24 +85,12 @@ jest.mock('@/app-layer/policies/task.policies', () => ({
     assertCanCommentOnTasks: jest.fn(),
 }));
 
-jest.mock('@/app-layer/policies/issue.policies', () => ({
-    assertCanReadIssues: jest.fn(),
-    assertCanCreateIssue: jest.fn(),
-    assertCanUpdateIssue: jest.fn(),
-    assertCanAssignIssue: jest.fn(),
-    assertCanResolveIssue: jest.fn(),
-    assertCanComment: jest.fn(),
-    assertCanManageLinks: jest.fn(),
-    assertCanManageBundles: jest.fn(),
-    assertCanFreeze: jest.fn(),
-}));
 
 jest.mock('@/app-layer/notifications/enqueue', () => ({
     enqueueEmail: jest.fn(),
 }));
 
 import { addTaskComment } from '@/app-layer/usecases/task';
-import { addIssueComment } from '@/app-layer/usecases/issue';
 import { makeRequestContext } from '../../helpers/make-context';
 
 const ctx = makeRequestContext('ADMIN');
@@ -137,19 +124,3 @@ describe('addTaskComment sanitises the body before persisting', () => {
     });
 });
 
-describe('addIssueComment sanitises the body before persisting', () => {
-    it('strips <script> entirely', async () => {
-        await addIssueComment(ctx, 'issue-1', 'hi<script>alert(1)</script>tail');
-        const body = mockTaskCommentAdd.mock.calls[0][3];
-        expect(body).not.toMatch(/<script/i);
-        expect(body).not.toMatch(/alert/);
-        expect(body).toContain('hi');
-        expect(body).toContain('tail');
-    });
-
-    it('decodes HTML entities so a stored `&lt;script&gt;` cannot roundtrip', async () => {
-        await addIssueComment(ctx, 'issue-1', '&lt;script&gt;x&lt;/script&gt;');
-        const body = mockTaskCommentAdd.mock.calls[0][3];
-        expect(body).toBe('<script>x</script>');
-    });
-});

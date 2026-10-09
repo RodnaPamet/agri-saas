@@ -38,26 +38,6 @@ export const AUTOMATION_TEMPLATES: ReadonlyArray<AutomationTemplate> = [
         actionConfig: { userIds: ['{{task.managerId}}'], message: 'Task {{task.title}} is blocked.' },
         tags: ['task', 'notify'],
     },
-    {
-        id: 'tpl_critical_issue_ciso',
-        name: 'Notify CISO on critical issue',
-        description: 'Fires on ISSUE_CREATED with CRITICAL severity.',
-        trigger: 'ISSUE_CREATED',
-        filter: { logic: 'AND', conditions: [{ field: 'severity', operator: 'eq', value: 'CRITICAL' }] },
-        actionType: 'NOTIFY_USER',
-        actionConfig: { userIds: ['{{tenant.cisoId}}'], message: 'Critical issue: {{issue.title}}.' },
-        tags: ['issue', 'notify'],
-    },
-    {
-        id: 'tpl_slack_finding_webhook',
-        name: 'Push to Slack on audit finding',
-        description: 'Fires on ISSUE_CREATED and POSTs to a Slack incoming webhook.',
-        trigger: 'ISSUE_CREATED',
-        filter: null,
-        actionType: 'WEBHOOK',
-        actionConfig: { url: 'https://hooks.slack.com/services/REPLACE/ME', method: 'POST' },
-        tags: ['issue', 'webhook'],
-    },
 ];
 
 export function getTemplateById(id: string): AutomationTemplate | undefined {

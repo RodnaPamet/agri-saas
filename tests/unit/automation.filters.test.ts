@@ -25,10 +25,10 @@ function probeEvent(
     data: { title: string; score: number; category: string | null }
 ): AutomationDomainEvent {
     return {
-        event: 'ISSUE_CREATED',
+        event: 'TASK_CREATED',
         tenantId: 't',
-        entityType: 'Issue',
-        entityId: 'i-1',
+        entityType: 'Task',
+        entityId: 't-1',
         actorUserId: null,
         emittedAt: new Date(),
         data,

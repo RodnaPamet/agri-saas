@@ -53,7 +53,6 @@ const COVERED_FAMILIES = [
     'grain',
     'insurance',
     'inventory',
-    'issues',
     'items',
     'journal',
     'knowledge',
@@ -71,7 +70,13 @@ const COVERED_FAMILIES = [
  * above returned 143 files on 2026-08-13. It is an anti-vacuity floor —
  * if a legitimate route deletion lowers it, lower this in the same diff.
  */
-const MEASURED_ROUTE_COUNT = 143;
+// 143 -> 144. #1479 removed the `issues` family (15 route files) from
+// COVERED_FAMILIES above, which is what the per-family non-empty check
+// below caught — working exactly as this file's docblock promises. The
+// floor itself still passed at 143 because it had 16 of slack, so it is
+// re-measured here against the surviving 23 families rather than left
+// loose: a floor that a deletion cannot move is not holding anything.
+const MEASURED_ROUTE_COUNT = 144;
 
 function getAllRouteFiles(dir: string): string[] {
     const files: string[] = [];

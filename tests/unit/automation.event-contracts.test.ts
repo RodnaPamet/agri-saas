@@ -77,24 +77,6 @@ function buildFakeEvent(
                     resolution: null,
                 },
             };
-        case 'ISSUE_CREATED':
-            return {
-                ...base,
-                event: name,
-                data: {
-                    key: 'ISS-1',
-                    title: 't',
-                    severity: 'HIGH',
-                    status: 'OPEN',
-                    assigneeUserId: null,
-                },
-            };
-        case 'ISSUE_STATUS_CHANGED':
-            return {
-                ...base,
-                event: name,
-                data: { fromStatus: 'OPEN', toStatus: 'RESOLVED' },
-            };
         case 'SPRAY_JOB_STARTED':
             return {
                 ...base,

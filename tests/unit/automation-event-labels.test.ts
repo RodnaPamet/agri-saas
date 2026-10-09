@@ -30,14 +30,14 @@ describe('event-labels', () => {
     });
 
     it('returns filter fields for an event that has them, [] otherwise', () => {
-        const issueFields = filterFieldsForEvent('ISSUE_CREATED');
-        expect(issueFields.some((f) => f.field === 'severity')).toBe(true);
+        const taskFields = filterFieldsForEvent('TASK_CREATED');
+        expect(taskFields.some((f) => f.field === 'priority')).toBe(true);
         expect(filterFieldsForEvent('NONEXISTENT_EVENT')).toEqual([]);
     });
 
     it('enum filter fields carry options', () => {
-        const sev = filterFieldsForEvent('ISSUE_CREATED').find((f) => f.field === 'severity');
-        expect(sev?.type).toBe('enum');
-        expect(sev?.options?.length).toBeGreaterThan(0);
+        const pri = filterFieldsForEvent('TASK_CREATED').find((f) => f.field === 'priority');
+        expect(pri?.type).toBe('enum');
+        expect(pri?.options?.length).toBeGreaterThan(0);
     });
 });
