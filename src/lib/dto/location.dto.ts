@@ -46,8 +46,14 @@ export const LocationListItemDTOSchema = z.object({
         .nullable()
         .optional()
         .openapi({
+            // `minItems`/`maxItems` EXPLICITLY: Zod's `.length(4)` above does
+            // not reach the OpenAPI output — measured, the published schema was
+            // an unbounded number array while this description promised four.
+            // A generator reads the schema, not the prose.
+            minItems: 4,
+            maxItems: 4,
             description:
-                'Bounding box as `[west, south, east, north]`, WGS84 degrees. Null when the location has no imported parcels to bound. Exactly four numbers — the weather job rejects anything else rather than guessing an order.',
+                'Bounding box as `[west, south, east, north]` — `[minLon, minLat, maxLon, maxLat]`, **longitude first**, per GeoJSON and the reverse of the `lat, lon` a human quotes. WGS84 degrees, exactly four numbers. Null when the location has no imported parcels to bound.',
             example: [23.1, 42.4, 23.6, 42.9],
         }),
     createdAt: z.string().datetime().optional(),
@@ -118,8 +124,22 @@ export const ParcelDTOSchema = z.object({
     name: z.string(),
     cropType: z.string().nullable().optional(),
     areaHa: z.number().nullable().optional(),
-    /** GeoJSON MultiPolygon (WGS84), serialized via ST_AsGeoJSON. */
-    geometry: z.unknown().nullable().optional(),
+    /**
+     * GeoJSON MultiPolygon (WGS84). ALWAYS a MultiPolygon, never a bare
+     * Polygon — see `ParcelGeo.geometry` in `locations.paths.ts` for the
+     * measurement behind that.
+     */
+    geometry: z
+        .object({
+            type: z.literal('MultiPolygon'),
+            coordinates: z.array(z.unknown()),
+        })
+        .nullable()
+        .optional()
+        .openapi({
+            description:
+                'GeoJSON MultiPolygon in WGS84. Always a MultiPolygon, never a bare `Polygon` — a single-ring parcel arrives as a MultiPolygon containing one polygon.',
+        }),
     properties: z.unknown().nullable().optional(),
 }).passthrough().openapi('Parcel', {
     description: 'One imported parcel polygon. geometry is GeoJSON MultiPolygon in WGS84; areaHa is the on-ellipsoid area in hectares.',

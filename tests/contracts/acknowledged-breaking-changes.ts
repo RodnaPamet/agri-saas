@@ -87,7 +87,25 @@ export interface AcknowledgedBreakingChange {
  *         why: 'Polygon cannot occur: the column is geometry(MultiPolygon,4326) and ST_Multi wraps every write.',
  *     }
  */
-export const ACKNOWLEDGED_BREAKING_CHANGES: readonly AcknowledgedBreakingChange[] = [];
+export const ACKNOWLEDGED_BREAKING_CHANGES: readonly AcknowledgedBreakingChange[] = [
+    {
+        kind: 'enum-narrowed',
+        schema: 'ParcelGeo',
+        property: 'geometry.type',
+        contractVersion: 3,
+        pr: 1461,
+        date: '2026-10-09',
+        why:
+            'Polygon cannot occur. The column is geometry(MultiPolygon, 4326) so PostGIS ' +
+            'refuses one at write time, every write path in src/lib/db/geo.ts wraps the input ' +
+            'in ST_Multi (11 occurrences), and zero write sites bypass that module — which ' +
+            'geo-raw-sql-containment enforces. agrent-ios independently confirms it decodes ' +
+            'MultiPolygon only, and this is a RESPONSE field, so the classifier\'s own harm ' +
+            'statement ("a client still sending it is rejected") cannot apply. The declaration ' +
+            'being narrowed landed hours earlier in #1455 and was never true of any response ' +
+            'this server can produce.',
+    },
+];
 
 /** True when `entry` covers `finding`. */
 export function acknowledges(
