@@ -1456,7 +1456,7 @@ diff.** `tests/guards/e2e-audit-writes-not-silently-zero.test.ts` holds the
 wiring and EXECUTES the checker, including that it fails on an empty log.
 
 **A required aggregate cannot tell "nothing to run" from "the detector
-broke" — unless it reads the prerequisite's result.** Three of the nine
+broke" — unless it reads the prerequisite's result.** Three of the ten
 required contexts are summary jobs that register AFTER the work: `Test`
 (`test-summary`), `E2E` (`e2e`) and `Docker Build & Scan`
 (`docker-summary`). The heavy job skips on a content-only diff and the
