@@ -39,7 +39,9 @@
  * So the marker and the reporter are asserted to AGREE, derived from the two
  * files independently rather than restated here.
  */
+import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 
 import * as yaml from 'js-yaml';
@@ -172,5 +174,203 @@ describe('a non-green E2E shard names its failures', () => {
         const referenced = JSON.stringify(namer).match(/steps\.([A-Za-z0-9_-]+)\.outcome/)?.[1];
         expect(referenced).toBeTruthy();
         expect(stepNamed(RUN_STEP)?.id).toBe(referenced);
+    });
+});
+
+/**
+ * On a RED shard, a recovered flake must not be announced as a failure (#1529).
+ *
+ * `retries: 2`, so a spec that failed an attempt and passed a later one prints
+ * both a ✘ and a ✓. The red branch used to annotate every ✘ as `::error` and
+ * return, which did two things: it reported a recovered flake as a failure, and
+ * it skipped the ledgered/unledgered split entirely — so a brand-new flake
+ * arrived looking exactly like the failure that reddened the shard.
+ *
+ * Measured on run 37959012790: `88 passed  1 failed  1 flaky`, two ✘ lines,
+ * both `::error`. One was the real failure; the other was
+ * `tooltip-and-copy.spec.ts:125` "SCIM endpoint — CopyButton writes to
+ * clipboard", which recovered on retry and is NOT in the ledger — the ledgered
+ * entry for that file is a different test. A new flake appeared and nothing
+ * said so.
+ *
+ * WHY THIS EXECUTES THE STEP rather than asserting on its text: the sibling
+ * assertions above can only show that a branch is PRESENT. Whether a ✘ with a
+ * later ✓ reaches `::notice` instead of `::error` is behaviour, and a `toMatch`
+ * on the shell source is satisfied by a condition that is present and
+ * unreachable. The teeth have to be on the emitted annotations. The step's own
+ * `run:` block is lifted verbatim, `${{ matrix.shard }}` substituted, and the
+ * result run under `bash -e` — GitHub's default for a `run:` step with no
+ * `shell:` of its own. There is no second copy of the logic to drift.
+ */
+describe('a red shard still tells a recovered flake from a failure', () => {
+    /** One `list`-reporter line. `marker` is U+2718 or U+2713. */
+    const attempt = (marker: string, n: number, spec: string, line: number, title: string) =>
+        `  ${marker}  ${n} [chromium] › tests/e2e/${spec}:${line}:9 › a suite › ${title}`;
+
+    /** A real ledger entry, read from disk — never a hardcoded title, which a
+     *  prune at review would turn into a test about nothing. */
+    const ledgered = (() => {
+        const l = JSON.parse(read('tests/e2e/known-flakes.json')) as {
+            flakes: { spec: string; title: string }[];
+        };
+        expect(Array.isArray(l.flakes)).toBe(true);
+        expect(l.flakes.length).toBeGreaterThan(0);
+        return l.flakes[0];
+    })();
+
+    interface Result {
+        code: number;
+        out: string;
+        summary: string;
+    }
+
+    function runNamer(outcome: string, logLines: string[]): Result {
+        const script = (stepNamed(NAME_STEP)?.run ?? '').replace(
+            /\$\{\{([^{}]*)\}\}/g,
+            (_whole, expr: string) => {
+                if (expr.trim() !== 'matrix.shard') {
+                    // A harness failure, not a workflow failure. Say so rather
+                    // than substituting nothing and testing a script that
+                    // cannot behave like the real one.
+                    throw new Error(
+                        `the harness cannot substitute \${{ ${expr.trim()} }} — ` +
+                            `extend the scenario model before trusting these results`,
+                    );
+                }
+                return '2';
+            },
+        );
+        // An extraction that silently emptied would make every assertion below
+        // pass for the wrong reason: `bash -e ''` exits 0 and emits nothing.
+        expect(script.trim().length).toBeGreaterThan(0);
+        expect(script).not.toContain('${{');
+
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agri-1529-namer-'));
+        try {
+            fs.writeFileSync(path.join(dir, 'e2e-shard-2.log'), `${logLines.join('\n')}\n`);
+            const outFile = path.join(dir, 'gh-output');
+            const sumFile = path.join(dir, 'gh-summary');
+            fs.writeFileSync(outFile, '');
+            fs.writeFileSync(sumFile, '');
+            const file = path.join(dir, 'step.sh');
+            fs.writeFileSync(file, script);
+            // `cwd: ROOT` so the step's own relative `tests/e2e/known-flakes.json`
+            // resolves to the real ledger, as it does on a runner.
+            const r = spawnSync('bash', ['-e', file], {
+                encoding: 'utf8',
+                cwd: ROOT,
+                env: {
+                    ...process.env,
+                    RUNNER_TEMP: dir,
+                    E2E_OUTCOME: outcome,
+                    GITHUB_OUTPUT: outFile,
+                    GITHUB_STEP_SUMMARY: sumFile,
+                },
+            });
+            // A spawn that never ran leaves status null, and `null !== 0` would
+            // read as a failing gate rather than as a broken harness.
+            expect(typeof r.status).toBe('number');
+            return {
+                code: r.status as number,
+                out: `${r.stdout ?? ''}${r.stderr ?? ''}`,
+                summary: fs.readFileSync(sumFile, 'utf8'),
+            };
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    }
+
+    const errors = (out: string) =>
+        out
+            .split('\n')
+            .filter((l) => l.startsWith('::error::'))
+            .join('\n');
+
+    it('errors on the spec that never recovered, and ONLY on that one', () => {
+        const r = runNamer('failure', [
+            // Never recovered: ✘ with no later ✓ for the same spec:line.
+            attempt('✘', 15, 'hard-failure.spec.ts', 10, 'never passed on any attempt'),
+            // Recovered, and in the ledger.
+            attempt('✘', 20, ledgered.spec, 20, ledgered.title),
+            attempt('✓', 21, ledgered.spec, 20, ledgered.title),
+            // Recovered, and NOT in the ledger — the case that went unreported.
+            attempt('✘', 30, 'brand-new-flake.spec.ts', 30, 'nobody ledgered this one'),
+            attempt('✓', 31, 'brand-new-flake.spec.ts', 30, 'nobody ledgered this one'),
+            '',
+            '  1 failed',
+            '  2 flaky',
+        ]);
+
+        expect(r.code).toBe(0);
+        expect(errors(r.out)).toContain('hard-failure.spec.ts');
+        // The whole point: neither recovered spec is announced as a failure.
+        expect(errors(r.out)).not.toContain('brand-new-flake.spec.ts');
+        expect(errors(r.out)).not.toContain(ledgered.spec);
+        expect(errors(r.out).split('\n').filter(Boolean)).toHaveLength(1);
+    });
+
+    it('runs the LEDGER check on a red shard, so a new flake still shouts', () => {
+        // What #1529 was filed for. Before the fix this branch never ran on a
+        // red shard, and an unledgered flake was indistinguishable from the
+        // failure that reddened it.
+        const r = runNamer('failure', [
+            attempt('✘', 15, 'hard-failure.spec.ts', 10, 'never passed on any attempt'),
+            attempt('✘', 20, ledgered.spec, 20, ledgered.title),
+            attempt('✓', 21, ledgered.spec, 20, ledgered.title),
+            attempt('✘', 30, 'brand-new-flake.spec.ts', 30, 'nobody ledgered this one'),
+            attempt('✓', 31, 'brand-new-flake.spec.ts', 30, 'nobody ledgered this one'),
+        ]);
+
+        // A known flake stays the notice it already was...
+        expect(r.out).toMatch(/::notice::flaky \(known/);
+        expect(r.out).toContain(ledgered.title);
+        // ...and a new one earns a warning that names the ledger.
+        expect(r.out).toMatch(/::warning::NEW flake/);
+        const newFlakeLine = r.out
+            .split('\n')
+            .find((l) => l.startsWith('::warning::NEW flake'));
+        expect(newFlakeLine).toContain('brand-new-flake.spec.ts');
+        // And the real failure is not reclassified as a flake in either basket.
+        expect(newFlakeLine).not.toContain('hard-failure.spec.ts');
+    });
+
+    it('counts a line it cannot key as FAILED, never as recovered', () => {
+        // The fail-loud direction. If the reporter's format drifts so the
+        // `tests/e2e/<spec>:<line>:<col>` key stops matching, this must
+        // over-report failures rather than silently reclassify every ✘ as a
+        // flake — which would be the #1076 silence again, reached from the
+        // other side.
+        const r = runNamer('failure', [
+            '  ✘  15 [chromium] › a line in some future format with no keyable path',
+            '  ✓  16 [chromium] › a line in some future format with no keyable path',
+        ]);
+
+        expect(r.code).toBe(0);
+        expect(errors(r.out)).toContain('no keyable path');
+    });
+
+    it('a GREEN shard is unchanged — no errors, everything classified', () => {
+        // The reverted-error experiment (run 35427726541) is still right: a
+        // step that cries wolf on clean runs gets ignored. This fix must not
+        // reintroduce that by routing green-shard lines through the red branch.
+        const r = runNamer('success', [
+            attempt('✘', 20, ledgered.spec, 20, ledgered.title),
+            attempt('✓', 21, ledgered.spec, 20, ledgered.title),
+        ]);
+
+        expect(r.code).toBe(0);
+        expect(errors(r.out)).toBe('');
+        expect(r.out).toMatch(/::notice::flaky \(known/);
+    });
+
+    it('still shouts when a red shard produced no ✘ at all', () => {
+        // The empty case this step was written for — "found no failures" and
+        // "my pattern no longer matches" are the same output. Moving it ahead
+        // of the new partition must not have dropped it.
+        const r = runNamer('failure', ['  some log with no failure markers at all']);
+
+        expect(r.code).toBe(0);
+        expect(r.out).toMatch(/::warning::E2E shard 2 did not succeed/);
+        expect(r.out).toMatch(/no '✘' line was found/);
     });
 });
