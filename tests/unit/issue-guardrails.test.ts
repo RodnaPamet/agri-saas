@@ -3,6 +3,21 @@
  *
  * These tests scan the codebase to ensure that legacy Issue model references
  * do not creep back in. They enforce "Tasks are the only work item."
+ *
+ * #1479 finished the migration these guardrails were written during. The
+ * `/issues/**` route surface, `usecases/issue.ts`, `policies/issue.policies.ts`
+ * and both deprecated repositories are gone, so `ALLOWED_LEGACY_FILES` shrank
+ * from five entries to one.
+ *
+ * The route assertion changed SHAPE at the same time, and that is the
+ * load-bearing part. It read:
+ *
+ *     if (!fs.existsSync(issueRoutesDir)) return; // routes already removed
+ *
+ * — so the moment the retirement it was anticipating actually happened, the
+ * test would pass by not running, and nothing would stop the surface coming
+ * back. It asserts the directory's ABSENCE now. An early return that
+ * anticipates a future deletion becomes a silent pass on the day of it.
  */
 import fs from 'fs';
 import path from 'path';
@@ -34,10 +49,11 @@ function grepFiles(pattern: RegExp, dir: string, extensions: string[]): { file: 
 
 // Allowed files that contain legacy Issue references as shims/compatibility wrappers
 const ALLOWED_LEGACY_FILES = [
-    'repositories/IssueRepository.ts',     // thin re-export
-    'repositories/EvidenceBundleRepository.ts', // stubbed
-    'usecases/issue.ts',                   // delegation wrapper
-    'policies/issue.policies.ts',          // policy stubs
+    // The other four entries (`repositories/IssueRepository.ts`,
+    // `repositories/EvidenceBundleRepository.ts`, `usecases/issue.ts`,
+    // `policies/issue.policies.ts`) were deleted by #1479. This list is
+    // SHRINK-ONLY: an addition means a new file carrying legacy Issue
+    // references, which is the thing these guardrails exist to prevent.
     'events/audit.ts',                     // event names
 ];
 
@@ -76,13 +92,34 @@ describe('Issue → Task Migration Guardrails', () => {
         expect(models).toBeNull();
     });
 
-    test('Issue API routes only delegate to Task usecases (no standalone logic)', () => {
+    test('the /issues API surface is GONE and does not come back', () => {
+        // Was: `if (!existsSync(dir)) return;` — which turned into a silent
+        // pass the day #1479 removed the directory, leaving nothing to stop a
+        // reinstatement. The absence is the assertion now.
+        //
+        // 15 routes wrote `Task` rows through a usecase layer that never
+        // invalidated the task cache and stamped its audit rows
+        // `entityType: 'Issue'` — a model the schema does not have. Three of
+        // them served a stubbed `EvidenceBundleRepository` whose list methods
+        // returned `[]`, so a client was told an issue had no evidence bundles
+        // rather than that bundles do not exist.
         const issueRoutesDir = path.join(SRC_DIR, 'app/api/t/[tenantSlug]/issues');
-        if (!fs.existsSync(issueRoutesDir)) return; // routes already removed
+        expect(fs.existsSync(issueRoutesDir)).toBe(false);
+    });
 
-        const hits = grepFiles(/from\s+['"].*repositories.*Issue/i, issueRoutesDir, ['.ts'])
-            .filter(h => !h.content.includes('@/app-layer/usecases/issue'));
-        expect(hits.length).toBe(0);
+    test('no module re-exports the retired Issue usecase, policy or repositories', () => {
+        // The deletion's own ratchet. Each of these was a live file until
+        // #1479, and each is the kind a future reader could recreate as a
+        // "compatibility shim" without knowing the surface was retired
+        // deliberately.
+        for (const gone of [
+            'app-layer/usecases/issue.ts',
+            'app-layer/policies/issue.policies.ts',
+            'app-layer/repositories/IssueRepository.ts',
+            'app-layer/repositories/EvidenceBundleRepository.ts',
+        ]) {
+            expect(fs.existsSync(path.join(SRC_DIR, gone))).toBe(false);
+        }
     });
 
     test('Tasks are the only work item: no model creates Issue-based entities', () => {

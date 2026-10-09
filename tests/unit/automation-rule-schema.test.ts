@@ -77,7 +77,7 @@ describe('CreateAutomationRuleSchema', () => {
     it('accepts a valid WEBHOOK rule with method + headers', () => {
         const res = CreateAutomationRuleSchema.safeParse({
             name: 'Slack push',
-            triggerEvent: 'ISSUE_CREATED',
+            triggerEvent: 'TASK_CREATED',
             actionType: 'WEBHOOK',
             actionConfig: {
                 url: 'https://hooks.slack.com/x',

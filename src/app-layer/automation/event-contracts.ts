@@ -83,18 +83,6 @@ export interface TaskStatusChangedData {
     resolution: string | null;
 }
 
-export interface IssueCreatedData {
-    /** Ticket key; null for legacy issues that predate keying. */
-    key: string | null;
-    title: string;
-    severity: string;
-    status: string;
-    assigneeUserId: string | null;
-}
-export interface IssueStatusChangedData {
-    fromStatus: string;
-    toStatus: string;
-}
 
 // ─── Ag field workflows ────────────────────────────────────────────────
 export interface SprayJobStartedData {
@@ -159,8 +147,6 @@ export type AutomationDomainEvent =
     | (AutomationEventMetadata & { event: 'ONBOARDING_RESTARTED'; data: OnboardingRestartedData })
     | (AutomationEventMetadata & { event: 'TASK_CREATED'; data: TaskCreatedData })
     | (AutomationEventMetadata & { event: 'TASK_STATUS_CHANGED'; data: TaskStatusChangedData })
-    | (AutomationEventMetadata & { event: 'ISSUE_CREATED'; data: IssueCreatedData })
-    | (AutomationEventMetadata & { event: 'ISSUE_STATUS_CHANGED'; data: IssueStatusChangedData })
     | (AutomationEventMetadata & { event: 'SPRAY_JOB_STARTED'; data: SprayJobStartedData })
     | (AutomationEventMetadata & { event: 'OPERATION_PARCEL_MARKED'; data: OperationParcelMarkedData })
     | (AutomationEventMetadata & { event: 'HARVEST_YIELD_RECORDED'; data: HarvestYieldRecordedData });

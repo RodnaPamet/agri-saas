@@ -29,13 +29,6 @@ export interface EventLabel {
     filterFields: ReadonlyArray<FilterFieldDef>;
 }
 
-const SEVERITY_OPTS = [
-    { value: 'LOW', label: 'Low' },
-    { value: 'MEDIUM', label: 'Medium' },
-    { value: 'HIGH', label: 'High' },
-    { value: 'CRITICAL', label: 'Critical' },
-] as const;
-
 export const EVENT_LABELS: Record<AutomationEventName, EventLabel> = {
     [AUTOMATION_EVENTS.SCHEDULE]: {
         name: AUTOMATION_EVENTS.SCHEDULE,
@@ -117,22 +110,6 @@ export const EVENT_LABELS: Record<AutomationEventName, EventLabel> = {
         label: 'Task status changed',
         description: 'A task moves between states.',
         domain: 'Task',
-        filterFields: [{ field: 'toStatus', label: 'New status', type: 'string' }],
-    },
-    [AUTOMATION_EVENTS.ISSUE_CREATED]: {
-        name: AUTOMATION_EVENTS.ISSUE_CREATED,
-        label: 'Issue created',
-        description: 'An issue is opened.',
-        domain: 'Issue',
-        filterFields: [
-            { field: 'severity', label: 'Severity', type: 'enum', options: SEVERITY_OPTS },
-        ],
-    },
-    [AUTOMATION_EVENTS.ISSUE_STATUS_CHANGED]: {
-        name: AUTOMATION_EVENTS.ISSUE_STATUS_CHANGED,
-        label: 'Issue status changed',
-        description: 'An issue moves between states.',
-        domain: 'Issue',
         filterFields: [{ field: 'toStatus', label: 'New status', type: 'string' }],
     },
     [AUTOMATION_EVENTS.SPRAY_JOB_STARTED]: {

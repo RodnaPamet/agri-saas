@@ -6,7 +6,7 @@
  * 
  * Tests updated to reflect the new unified CreateTaskSchema (aliased as CreateIssueSchema).
  */
-import { CreateIssueSchema, UpdateIssueSchema, SetIssueStatusSchema, CreateBundleSchema, AddBundleItemSchema } from '../../src/lib/schemas';
+import { CreateIssueSchema, UpdateIssueSchema, SetIssueStatusSchema } from '../../src/lib/schemas';
 
 describe('Audit Issue Schemas', () => {
     describe('CreateIssueSchema audit fields', () => {
@@ -118,49 +118,5 @@ describe('Audit Issue Schemas', () => {
         });
     });
 
-    describe('CreateBundleSchema', () => {
-        it('validates valid bundle name', () => {
-            expect(CreateBundleSchema.safeParse({ name: 'Q1 2025 Audit' }).success).toBe(true);
-        });
 
-        it('rejects empty name', () => {
-            expect(CreateBundleSchema.safeParse({ name: '' }).success).toBe(false);
-        });
-
-        it('rejects name over 200 chars', () => {
-            expect(CreateBundleSchema.safeParse({ name: 'x'.repeat(201) }).success).toBe(false);
-        });
-
-        it('strips unknown fields', () => {
-            const result = CreateBundleSchema.parse({ name: 'Test', extra: 'field' });
-            expect(result).not.toHaveProperty('extra');
-        });
-    });
-
-    describe('AddBundleItemSchema', () => {
-        it('validates FILE entity', () => {
-            const result = AddBundleItemSchema.safeParse({ entityType: 'FILE', entityId: 'file-1' });
-            expect(result.success).toBe(true);
-        });
-
-        it('validates EVIDENCE entity with label', () => {
-            const result = AddBundleItemSchema.safeParse({
-                entityType: 'EVIDENCE', entityId: 'ev-1', label: 'SOC2 Report',
-            });
-            expect(result.success).toBe(true);
-        });
-
-        it('validates INTEGRATION entity', () => {
-            const result = AddBundleItemSchema.safeParse({ entityType: 'INTEGRATION', entityId: 'int-1' });
-            expect(result.success).toBe(true);
-        });
-
-        it('rejects invalid entityType', () => {
-            expect(AddBundleItemSchema.safeParse({ entityType: 'INVALID', entityId: 'x' }).success).toBe(false);
-        });
-
-        it('rejects empty entityId', () => {
-            expect(AddBundleItemSchema.safeParse({ entityType: 'FILE', entityId: '' }).success).toBe(false);
-        });
-    });
 });

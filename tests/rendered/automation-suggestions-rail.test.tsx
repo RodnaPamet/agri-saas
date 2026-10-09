@@ -35,9 +35,9 @@ const SUGGESTIONS = [
     {
         id: 's2',
         rank: 2,
-        title: 'Turn new issues into tracked tasks',
-        rationale: 'Track remediation to closure.',
-        triggerEvent: 'ISSUE_CREATED',
+        title: 'Create a follow-up task when a yield is recorded',
+        rationale: 'Track the reconciliation to closure.',
+        triggerEvent: 'HARVEST_YIELD_RECORDED',
         actionType: 'CREATE_TASK' as const,
         confidenceScore: 0.7,
     },
@@ -49,7 +49,9 @@ describe('AutomationSuggestionsRail', () => {
         render(<AutomationSuggestionsRail />);
         expect(screen.getByTestId('automation-suggestions-rail')).toBeInTheDocument();
         expect(screen.getByText('Notify the agronomist when a spray job starts')).toBeInTheDocument();
-        expect(screen.getByText('Turn new issues into tracked tasks')).toBeInTheDocument();
+        expect(
+            screen.getByText('Create a follow-up task when a yield is recorded'),
+        ).toBeInTheDocument();
         // human-readable trigger badge
         expect(screen.getByText('Spray Job Started')).toBeInTheDocument();
     });

@@ -70,7 +70,6 @@ export const API_KEY_SCOPE_FAMILIES: readonly string[] = [
     'insurance',
     'integrations',
     'inventory',
-    'issues',
     'items',
     'journal',
     'knowledge',
