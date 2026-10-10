@@ -35,6 +35,8 @@ import * as path from 'node:path';
 
 import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const LEDGER_REL = 'tests/e2e/known-flakes.json';
 const WORKFLOW_REL = '.github/workflows/ci.yml';
 
@@ -111,6 +113,15 @@ function isLedgeredByJq(line: string, ledgerJson: string): boolean {
     }
     return r.status === 0;
 }
+
+/**
+ * `describe.configure({ retries: 0 })`, in CODE.
+ *
+ * Deliberately anchored on `describe.configure` and not on `retries: 0` alone:
+ * the latter appears in prose explaining a removal, and a guard that fired on
+ * its own fix's comment would be answered by deleting the comment.
+ */
+const NO_RETRY = /describe\s*\.\s*configure\s*\(\s*\{[^}]*retries\s*:\s*0/;
 
 const E2E_SPECS = collectSourceFiles({
     roots: ['tests/e2e'],
@@ -192,6 +203,68 @@ describe('the known-flake ledger', () => {
             }
         }
         expect(orphaned).toEqual([]);
+    });
+
+    it('no ledgered test sits in a NO-RETRY block — the ledger cannot absorb one', () => {
+        // #1570. The ledger's mechanism is that a retry absorbs the flake and
+        // `ci.yml` downgrades the RECOVERED attempt to a `::notice`. A test in a
+        // `describe.configure({ retries: 0 })` block has no recovered attempt
+        // to classify, so the failure is terminal — spec, shard, `E2E`, main
+        // red — and its ledger entry does nothing but change an annotation on a
+        // run that already went red.
+        //
+        // Measured before this existed: `theme-first-paint.spec.ts` was
+        // ledgered under #1329 AND opted out of retries, and reddened main on
+        // `9267966bc` with 1 failed / 89 passed and zero retry attempts. Its
+        // own entry even reads "attempt 1 red, attempt 2 green on the IDENTICAL
+        // commit", which cannot have been two attempts under `retries: 0` — it
+        // was two RUNS, and that wording is part of why the gap went unseen.
+        //
+        // The failure here is a CHOICE, not a bug to route around: either the
+        // test can be retried (give it retries back and say why they stay on)
+        // or it cannot (a retry would leave something half-done — then the
+        // ledger is the wrong tool and the flake needs fixing).
+        const offenders: string[] = [];
+        for (const f of ledger.flakes) {
+            const file = E2E_SPECS.find((p) => path.basename(p) === f.spec);
+            if (!file) continue; // covered above
+            const code = blankNonCode(fs.readFileSync(file, 'utf8'));
+            const at = code.indexOf(f.title);
+            if (at < 0) continue; // covered by the orphaned-title test above
+            if (NO_RETRY.test(code.slice(0, at))) offenders.push(`${f.spec} :: "${f.title}"`);
+        }
+
+        expect(offenders).toEqual([]);
+    });
+
+    it('the no-retry detector has teeth, and reads CODE not comments', () => {
+        // Comments are removed by `blankNonCode`, the shared state-aware
+        // scanner — not a local regex pair. My first version here was a local
+        // stripper running BLOCK comments before LINE ones, and
+        // `comment-stripper-order` (#1442/#1497) failed it, correctly: that
+        // order lets a line comment CONTAINING a block-open swallow every real
+        // line to the next close marker. I had the justification exactly
+        // inverted in a comment defending it. `blankNonCode` also preserves
+        // character positions, which the index arithmetic below relies on.
+        // Four cases, because three of them are ways to pass for the wrong
+        // reason. The comment case is not hypothetical: the fix for #1570
+        // left the words `retries: 0` in a comment EXPLAINING the removal, so
+        // a detector matching raw source would fail on the very change that
+        // fixed it — and the obvious response would be to delete the
+        // explanation.
+        const WITH = `test.describe('x', () => {\n  test.describe.configure({ retries: 0 });\n  test('the title', () => {});\n});`;
+        const WITHOUT = `test.describe('x', () => {\n  test('the title', () => {});\n});`;
+        const COMMENTED = `test.describe('x', () => {\n  // we removed test.describe.configure({ retries: 0 }) here\n  test('the title', () => {});\n});`;
+        const BLOCK_COMMENTED = `/* retries: 0 */\ntest.describe('x', () => {\n  test('the title', () => {});\n});`;
+        const before = (src: string) => {
+            const code = blankNonCode(src);
+            return NO_RETRY.test(code.slice(0, code.indexOf('the title')));
+        };
+
+        expect(before(WITH)).toBe(true);
+        expect(before(WITHOUT)).toBe(false);
+        expect(before(COMMENTED)).toBe(false);
+        expect(before(BLOCK_COMMENTED)).toBe(false);
     });
 
     it('a title matches ONLY its own test, not a sibling in the same file', () => {

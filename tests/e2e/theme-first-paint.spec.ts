@@ -156,7 +156,30 @@ async function readLog(page: Page): Promise<ThemeLog> {
 }
 
 test.describe('theme reaches the first paint', () => {
-    test.describe.configure({ retries: 0 });
+    // RETRIES ARE ON, deliberately, and this comment is why — the opposite of
+    // what used to be here (#1570).
+    //
+    // `test.describe.configure({ retries: 0 })` sat here with no explanation.
+    // The three tests below load a page and read `PerformanceObserver` paint
+    // entries: no writes, no outbox, no fixtures (note the import is
+    // `@playwright/test`, not `./fixtures`). So a retry cannot leave anything
+    // half-done, which is the only reason the offline and mobile specs turn
+    // retries off — a retry after a delivered outbox item cannot restore the
+    // pre-delivery state, and would hide a real exactly-once defect.
+    //
+    // What the opt-out actually did: the first test below is in
+    // `tests/e2e/known-flakes.json` (#1329) because the paint instrument
+    // sometimes reports no FCP at all. The ledger's whole mechanism is that a
+    // retry absorbs the flake and `ci.yml` downgrades the recovered flake to a
+    // `::notice`. With retries off there is no recovered attempt to classify,
+    // so the failure was terminal: spec → shard → `E2E` → **main red**, which
+    // is exactly what happened on `9267966bc` (1 failed, 89 passed, zero retry
+    // attempts).
+    //
+    // A flaky instrument on a read-only measurement is the textbook case for a
+    // retry. Do not turn these off again without saying what a retry would
+    // leave behind; `known-flake-ledger.test.ts` now fails if a ledgered test
+    // sits in a no-retry block, so the combination cannot come back silently.
 
     test('a returning user: the SERVER paints their theme, zero corrections', async ({
         page,
