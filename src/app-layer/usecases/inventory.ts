@@ -873,6 +873,16 @@ export async function recordHarvestLot(
         lotCode,
         unitId: item.defaultUnitId,
         locationId: input.locationId ?? null,
+        // Guarded at the DOOR, not here. The only caller is `journal.ts:325`,
+        // which passes `data.harvest.expiresAt` from `HarvestLotPayloadSchema`
+        // — `instantTimestamp()` since #1559 — so an unparseable value cannot
+        // reach this line today. `yield-record.ts` discusses this function but
+        // does not call it (grep: 0 call sites).
+        //
+        // That makes this safe and FRAGILE in the way #1557 was: a second
+        // caller with its own schema would bypass the check, exactly as
+        // `/farm-tasks` bypassed the one protecting `/tasks` on a shared write
+        // site. If one is added, validate at that door too.
         expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
         receivedAt: new Date(),
         ...(input.parcelId ? { attributesJson: { harvestedFromParcelId: input.parcelId } } : {}),
