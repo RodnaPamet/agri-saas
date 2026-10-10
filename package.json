@@ -80,7 +80,8 @@
         "prod:up": "docker compose -f docker-compose.prod.yml up -d --build",
         "prod:down": "docker compose -f docker-compose.prod.yml down",
         "lint:raw": "cross-env ESLINT_USE_FLAT_CONFIG=true eslint .",
-        "lint:fix": "cross-env ESLINT_USE_FLAT_CONFIG=true eslint . --fix"
+        "lint:fix": "cross-env ESLINT_USE_FLAT_CONFIG=true eslint . --fix",
+        "merge:main": "bash scripts/merge-main-regenerating.sh"
     },
     "dependencies": {
         "@anthropic-ai/sdk": "^0.131.0",
