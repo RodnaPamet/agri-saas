@@ -76,6 +76,25 @@ const rel = (f: string): string => path.relative(ROOT, f);
 const codeOf = (f: string): string => blankNonCode(fs.readFileSync(f, 'utf8'));
 
 describe('every person-scoped route uses getUserCtx', () => {
+    it('rel() actually names the file — the failure message has teeth', () => {
+        // `selector-teeth` found `rel()` dead and it was right: on the green
+        // path `offenders` is empty, so `.map(rel)` is `[]` whatever `rel`
+        // returns. Every assertion below would pass with `rel = () => ''`,
+        // and a real failure would then list empty strings — naming nothing,
+        // which is the one property these tests exist to provide.
+        //
+        // So `rel` is exercised directly on a known file. Not baselined as a
+        // known-dead selector: the diagnostic IS the deliverable here, and
+        // suppressing the finding would leave a guard that cannot tell you
+        // which route broke.
+        const sample = personRouteFiles()[0];
+
+        expect(sample).toBeTruthy();
+        expect(rel(sample)).toMatch(/^src\/app\/api\/(me|account|social)\//);
+        expect(rel(sample)).not.toContain(ROOT);
+        expect(rel(sample).endsWith('route.ts')).toBe(true);
+    });
+
     it('reports the population it covers', () => {
         const files = personRouteFiles();
         const handlers = files.flatMap((f) =>
