@@ -36,6 +36,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { ENCRYPTED_FIELDS } from '@/lib/security/encrypted-fields';
+import { collectSourceFiles } from '../helpers/collect-files';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 
@@ -356,29 +357,31 @@ const fileExists = (rel: string) => fs.existsSync(path.join(REPO_ROOT, rel));
 const readFile = (rel: string) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
 
 /**
- * Files under `root` that mention `needle`. Used to tell a KNOWN_UNCOVERED
- * entry with a live writer from one whose table nothing touches yet.
+ * Source files that mention `needle`. Used to tell a KNOWN_UNCOVERED entry
+ * with a live writer from one whose table nothing touches yet.
  *
- * A plain substring search on the Prisma accessor (`.contentReport`), which is
- * deliberately broad: a false POSITIVE here costs someone a look at a guard
+ * Collection goes through `collectSourceFiles` rather than a local directory
+ * walk, which `file-collection-is-not-silently-empty` requires and which CI
+ * caught me skipping: a hand-rolled collector can be gutted to return `[]`
+ * with every assertion built on it still green. The `floor` is the part that
+ * matters here — an empty corpus would report every entry as having no writer,
+ * which is the exact direction this check must not fail in.
+ *
+ * A plain substring search on the Prisma accessor (`.contentReport`),
+ * deliberately broad: a false POSITIVE costs someone a look at a guard
  * failure, while a false negative would let a live unsanitised write path hide
  * inside the raised cap.
  */
-function sourceFilesReferencing(root: string, needle: string): string[] {
-    const hits: string[] = [];
-    const walk = (dir: string) => {
-        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-            const full = path.join(dir, entry.name);
-            if (entry.isDirectory()) {
-                if (entry.name === 'generated' || entry.name === 'node_modules') continue;
-                walk(full);
-            } else if (/\.tsx?$/.test(entry.name)) {
-                if (fs.readFileSync(full, 'utf8').includes(needle)) hits.push(full);
-            }
-        }
-    };
-    walk(root);
-    return hits;
+function sourceFilesReferencing(needle: string): string[] {
+    const files = collectSourceFiles({
+        roots: ['src'],
+        extensions: ['.ts', '.tsx'],
+        exclude: (rel) => rel.startsWith('src/generated/'),
+        // ~2100 at the time of writing; a floor well below it separates
+        // "nothing references this" from "nothing was examined".
+        floor: 1500,
+    });
+    return files.filter((full) => fs.readFileSync(full, 'utf8').includes(needle));
 }
 
 describe('rich-text sanitiser coverage — structural completeness', () => {
@@ -470,10 +473,9 @@ describe('rich-text sanitiser coverage — structural completeness', () => {
         // live count becomes 2 and this fails until the entry moves to
         // RICH_TEXT_COVERAGE with its sanitiser. Which is exactly when that
         // work should be forced.
-        const SRC = path.resolve(__dirname, '../../src');
         const withLiveWriter = Object.keys(KNOWN_UNCOVERED).filter((model) => {
             const accessor = model.charAt(0).toLowerCase() + model.slice(1);
-            return sourceFilesReferencing(SRC, `.${accessor}`).length > 0;
+            return sourceFilesReferencing(`.${accessor}`).length > 0;
         });
 
         // A positive control, because an empty result here would otherwise be
