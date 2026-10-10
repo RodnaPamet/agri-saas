@@ -103,6 +103,39 @@ describe('asset + evidence dates reject unparseable input (#1558)', () => {
         );
     });
 
+    describe('the EMPTY STRING is "no date", not a malformed one', () => {
+        // The regression E2E caught on the first version of this change.
+        // `asset-form.ts:65` defaults `purchaseDate` to `''` and clearing the
+        // picker sets `''` back (`EditAssetFields.tsx:182`), so "no purchase
+        // date" goes over the wire as an empty string. `new Date('')` is an
+        // Invalid Date, so a bare `requestTimestamp()` refused it and every
+        // asset without a purchase date became unsaveable —
+        // `asset-edit-modal.spec.ts:82` failed 3/3.
+        //
+        // It is already the contract at both consumers (`if (!value) return
+        // null` / `data.x ? new Date(data.x) : null`), so three inputs are
+        // distinct and meaningful here and only a FOURTH was ever the defect.
+        it.each(CASES.map((c) => [c.label, c] as const))('%s accepts ""', (_l, c) => {
+            expect(c.schema.safeParse({ ...c.valid, [c.field]: '' }).success).toBe(true);
+        });
+
+        it('"" is genuinely unparseable — so accepting it is a decision, not an oversight', () => {
+            expect(Number.isNaN(new Date('').getTime())).toBe(true);
+        });
+
+        it('but a non-empty unparseable value is still refused', () => {
+            // The line between "no date" and "a broken date". Without this,
+            // accepting `''` could have been widened to accept anything falsy
+            // or anything short.
+            for (const bad of [' ', '  ', 'x', 'abcd']) {
+                expect(
+                    CreateAssetSchema.safeParse({ name: 'T', type: 'MACHINE', purchaseDate: bad })
+                        .success,
+                ).toBe(false);
+            }
+        });
+    });
+
     it('those inputs really were Invalid Dates — the premise', () => {
         for (const bad of ['abcd', 'not-a-date', '2026-13-45', 'next week']) {
             expect(new Date(bad).getTime()).toBeNaN();
