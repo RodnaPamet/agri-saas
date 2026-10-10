@@ -6822,7 +6822,8 @@ exports[`API contract — per-schema snapshots schema: IngestReadings 1`] = `
         "type": "object",
         "properties": {
           "recordedAt": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "value": {
             "type": "number"

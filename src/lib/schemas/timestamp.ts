@@ -70,3 +70,69 @@ export function requestTimestamp() {
         message: 'Expected a parseable date string',
     });
 }
+
+/**
+ * A timestamp a MACHINE sends: a real RFC 3339 instant, offset permitted.
+ *
+ * ## Why this is stricter than `requestTimestamp()`
+ *
+ * `requestTimestamp()` only asks for parseability, because the fields it
+ * guards sit behind a date picker and a human — rejecting `2026-10-08` there
+ * would break a working UI, so its docblock records the ambiguity as a
+ * deliberate survival.
+ *
+ * `POST /api/agro/data-streams/{streamId}/ingest` has no human and no picker.
+ * It is token-gated and device-facing, which is the same carve-out
+ * `agri-event.schemas.ts` already states for the other key-gated API:
+ *
+ * > this is a machine-facing key-gated API with no date picker in front of it,
+ * > so an unparseable date should fail at the boundary, not persist as an
+ * > Invalid Date
+ *
+ * Two shapes `requestTimestamp()` tolerates are real bugs for a device feed:
+ *
+ *   - `'2026-10-08 14:00:00'` — no `T`, no offset, so `new Date` reads it in
+ *     the SERVER's timezone. The same payload stores a different instant
+ *     depending on where the server runs. For a sensor feed, where the whole
+ *     value of a reading is *when* it was taken, that is silent corruption.
+ *   - `'2026-10-08'` — becomes midnight UTC, i.e. a reading attributed to an
+ *     instant nobody measured.
+ *
+ * ## `offset: true` is not a loosening, it is what the format MEANS
+ *
+ * Zod's bare `.datetime()` refuses an offset and accepts only `Z`. OpenAPI's
+ * `format: date-time` is RFC 3339, which permits `+03:00`. So bare
+ * `.datetime()` publishes a contract WIDER than it enforces — the response
+ * schema at `agro.paths.ts:216` does exactly that, harmlessly, because
+ * response schemas are registration-only and never `.parse()`d.
+ *
+ * `{ offset: true }` is the precise Zod expression of the rendered format, so
+ * the published `format: date-time` and the executing check describe the same
+ * set of strings. A device on Bulgarian local time may send `+03:00` and be
+ * believed.
+ *
+ * ## The parsed type stays `string`, and that is load-bearing
+ *
+ * `IngestReading.recordedAt` is declared `string`, and `data-stream.ts:241`
+ * does `new Date(r.recordedAt)`. A `z.coerce.date()` here would change the
+ * parsed type and break that boundary — which is not a prediction: it is what
+ * #1540 did to six route handlers before CI caught it. `.datetime()` is a
+ * check, not a transform, so nothing downstream moves.
+ *
+ * ## Safe to tighten because there is nothing to break — measured
+ *
+ * The route's first act is `if (env.AGRO_DATASTREAMS_ENABLED !== '1') → 503`.
+ * On production that key is ABSENT from `/opt/agrent/.env` and empty in the
+ * running container, and `DataStream` / `DataStreamReading` hold 0 and 0 rows
+ * (counted as `postgres` with `rolsuper=t`, because `app_user` reads zero
+ * under RLS and exits 0). Every caller gets a 503 today and no reading has
+ * ever been ingested, so no device encoding exists to break.
+ *
+ * Exported for the spec as well as the route: `agro.paths.ts` imports this
+ * same function, so the published `IngestReadings` and the executing schema
+ * cannot disagree about this field. That sharing is the point — two
+ * hand-written declarations of one request body is #1555.
+ */
+export function instantTimestamp() {
+    return z.string().datetime({ offset: true });
+}

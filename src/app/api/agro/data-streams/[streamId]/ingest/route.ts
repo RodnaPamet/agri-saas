@@ -10,6 +10,16 @@
  *     readings: [{ recordedAt, value, unit? }]   // max ~1000
  *   }
  *
+ * `recordedAt` must be a real RFC 3339 instant — `Z` or an explicit offset
+ * such as `+03:00`. A date-only value or a space-separated datetime is
+ * REFUSED with a 400, because without a zone the consumer's `new Date` reads
+ * it in the server's timezone and the same payload would store a different
+ * instant depending on where the server runs. For a sensor feed that is
+ * silent corruption, so this endpoint is stricter than the tenant-UI schemas
+ * (#1539). The check is `instantTimestamp()`, shared with this route's
+ * declaration in `src/lib/openapi/paths/agro.paths.ts` so the published
+ * `format: date-time` and the executing check cannot drift apart.
+ *
  * Gating:
  *   • Feature flag — AGRO_DATASTREAMS_ENABLED must be '1', else 503
  *     `{ error: 'feature_disabled' }` (operator opts in before exposing).
@@ -26,6 +36,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { env } from '@/env';
 import { ingestReadings, DataStreamAccessDenied } from '@/app-layer/usecases/data-stream';
+import { instantTimestamp } from '@/lib/schemas/timestamp';
 
 const IngestBodySchema = z
     .object({
@@ -33,7 +44,7 @@ const IngestBodySchema = z
         readings: z
             .array(
                 z.object({
-                    recordedAt: z.string().min(4).max(40),
+                    recordedAt: instantTimestamp(),
                     value: z.number().finite(),
                     unit: z.string().max(32).nullable().optional(),
                 }),

@@ -49,6 +49,7 @@
  */
 import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
+import { instantTimestamp } from '@/lib/schemas/timestamp';
 import { op } from './helpers';
 
 const TenantParams = z.object({
@@ -246,7 +247,7 @@ export function registerAgroPaths(registry: OpenAPIRegistry): void {
                 token: z.string().min(16).max(512),
                 readings: z.array(
                     z.object({
-                        recordedAt: z.string(),
+                        recordedAt: instantTimestamp(),
                         value: z.number(),
                         unit: z.string().max(32).nullable().optional(),
                     }),
