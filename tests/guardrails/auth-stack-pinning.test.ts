@@ -16,6 +16,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 
@@ -86,9 +87,7 @@ describe('GAP-04 ratchet — auth-critical type safety', () => {
             // migration commit deliberately mentions "as any" in
             // historical comments; what we forbid is a real cast in
             // executable code.
-            const stripped = src
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/.*$/gm, '');
+            const stripped = blankNonCode(src);
             // Regression: a TS-trick PR that adds `(token as any).newField`
             // would re-introduce the v5-beta-era type instability the
             // audit flagged. The augmentation in auth.ts declares every

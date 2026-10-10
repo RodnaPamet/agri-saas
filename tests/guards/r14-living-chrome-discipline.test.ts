@@ -48,6 +48,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 const NAV_BAR_SRC = fs.readFileSync(
@@ -204,9 +205,7 @@ describe('Roadmap-14 PR-10 — Living chrome visual parity', () => {
         it('NAV_BAR_SURFACE does NOT carry the R14-PR2 `border-b`', () => {
             // Strip comments first — the doc-comment legitimately
             // references the retired form by name.
-            const stripped = NAV_BAR_SRC
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+            const stripped = blankNonCode(NAV_BAR_SRC);
             const surfaceMatch = stripped.match(
                 /export\s+const\s+NAV_BAR_SURFACE\s*=\s*['"]([^'"]+)['"]/,
             );

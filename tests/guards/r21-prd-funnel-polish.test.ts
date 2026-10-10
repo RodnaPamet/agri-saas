@@ -18,6 +18,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 const FUNNEL = fs.readFileSync(
@@ -33,8 +34,7 @@ describe('R21-PR-D — Funnel polish', () => {
             );
         });
         it('no longer imports the legacy curveBasis', () => {
-            const stripped = FUNNEL.replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+            const stripped = blankNonCode(FUNNEL);
             expect(stripped).not.toMatch(/curveBasis/);
         });
         it('the Area component receives curveCatmullRom as its curve prop', () => {
@@ -131,8 +131,7 @@ describe('R21-PR-D — Funnel polish', () => {
             // Token-themed surface drives dark/light parity. The
             // legacy bg-white literal must NOT be present in the
             // tooltip render path.
-            const stripped = FUNNEL.replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+            const stripped = blankNonCode(FUNNEL);
             expect(stripped).not.toMatch(/border-neutral-200\s+bg-white/);
         });
 

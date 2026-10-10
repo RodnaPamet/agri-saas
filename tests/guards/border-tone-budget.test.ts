@@ -55,6 +55,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -127,9 +128,7 @@ function countMatches(re: RegExp): number {
             }
             if (!/\.tsx$/.test(e.name)) continue;
             const src = fs.readFileSync(full, 'utf-8');
-            const stripped = src
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+            const stripped = blankNonCode(src);
             const matches = stripped.match(re);
             if (matches) total += matches.length;
         }

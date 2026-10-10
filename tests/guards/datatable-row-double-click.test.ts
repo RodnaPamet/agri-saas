@@ -22,6 +22,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -118,10 +119,7 @@ describe('DataTable — row-click semantics (R13-PR2)', () => {
         // block + line comments first so the inline doc-comments
         // that mention the old pattern (for context) don't trip
         // the regression check.
-        const stripComments = (src: string) =>
-            src
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/^[ \t]*\/\/.*$/gm, '');
+        const stripComments = (src: string) => blankNonCode(src);
         const oldRowRe =
             /\bhover:shadow-\[inset_2px_0_0_0?_var\(--brand-default\)\]/g;
         expect(stripComments(TABLE_TSX).match(oldRowRe)).toBeNull();

@@ -15,6 +15,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const MEMBERS = path.join(REPO_ROOT, 'src/app/t/[tenantSlug]/(app)/admin/members/page.tsx');
@@ -50,7 +51,7 @@ describe('admin/members — DataTable migration', () => {
         // un-migrated admin list page. Strip block comments
         // first — the migration doc comment intentionally
         // mentions the legacy form for context.
-        const stripped = src.replace(/\/\*[\s\S]*?\*\//g, '');
+        const stripped = blankNonCode(src);
         expect(stripped).not.toMatch(/<table\s+className="data-table"/);
     });
 
@@ -155,7 +156,7 @@ describe('admin/roles — DataTable migration', () => {
         // table. Match `colSpan=` followed by `{6}` in JSX form;
         // ignore comment mentions (which aren't JSX attributes).
         // Strip block comments first, then assert.
-        const stripped = src.replace(/\/\*[\s\S]*?\*\//g, '');
+        const stripped = blankNonCode(src);
         expect(stripped).not.toMatch(/colSpan=\{6\}/);
     });
 

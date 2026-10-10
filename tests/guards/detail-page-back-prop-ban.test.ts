@@ -22,6 +22,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 const APP_ROOT = path.resolve(ROOT, 'src/app');
@@ -42,9 +43,7 @@ function walk(dir: string, results: string[] = []): string[] {
 }
 
 function stripComments(src: string): string {
-    return src
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/\/\/[^\n]*/g, '');
+    return blankNonCode(src);
 }
 
 // Capture EntityDetailLayout / PageHeader JSX blocks, then check for a
@@ -183,15 +182,24 @@ describe('detail-page STATIC back prop ban (R10-PR9, smart-nav revision)', () =>
         // that the stripper leaves the PRODUCT intact enough to scan.
         let originalBytes = 0;
         let strippedBytes = 0;
-        let shrank = 0;
+        let changed = 0;
+        let codeSurvives = 0;
         let backPropSites = 0;
+        let fileCount = 0;
 
         for (const file of walk(APP_ROOT)) {
+            fileCount += 1;
             const source = fs.readFileSync(file, 'utf-8');
             const stripped = stripComments(source);
             originalBytes += source.length;
             strippedBytes += stripped.length;
-            if (stripped.length < source.length) shrank += 1;
+            // CHANGED, not shrunk. `blankNonCode` overwrites comment
+            // characters with spaces, so a file it stripped is the same
+            // length as before (#1497) — the old counter compared lengths
+            // and would read 0 for every file, including ones gutted to
+            // whitespace.
+            if (stripped !== source) changed += 1;
+            if (stripped.trim().length > 0) codeSurvives += 1;
             // Derived from the product, never hardcoded to a path: whatever
             // call sites pass a `back` prop today must still carry it AFTER
             // stripping. Measured on main: 1 (the sanctioned
@@ -201,10 +209,19 @@ describe('detail-page STATIC back prop ban (R10-PR9, smart-nav revision)', () =>
             if (/\sback=\{/.test(stripped)) backPropSites += 1;
         }
 
-        // It really strips: measured, 211 of 214 files shrink.
-        expect(shrank).toBeGreaterThan(100);
-        // It does not strip the corpus away: measured ratio 0.831.
-        expect(strippedBytes).toBeGreaterThan(originalBytes * 0.5);
+        // It really strips: measured, 211 of 214 files change.
+        expect(changed).toBeGreaterThan(100);
+        // It does not strip the corpus away. Byte EQUALITY is the strong form
+        // of the old ">50% survives" ratio: blanking cannot delete a single
+        // character, so a regression to a deleting stripper fails here, and
+        // every line number this guard reports is the real one.
+        expect(strippedBytes).toBe(originalBytes);
+        // Equal bytes alone would also be satisfied two useless ways: by
+        // returning the input untouched, and by blanking every file to pure
+        // whitespace. `changed` above rules out the first; this rules out the
+        // second, against the file count rather than against itself.
+        expect(codeSurvives).toBe(fileCount);
+        expect(fileCount).toBeGreaterThan(100);
         // And the exact shape this guard reads survives the stripper.
         expect(backPropSites).toBeGreaterThan(0);
     });

@@ -38,6 +38,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 const PRIMITIVE = 'src/components/ui/card.tsx';
@@ -85,9 +86,7 @@ describe('Card-primitive eradication of glass-card (Roadmap-5 PR-1)', () => {
                 const raw = fs.readFileSync(full, 'utf-8');
                 // Strip block + line comments first so JSDoc / inline
                 // // comments referencing glass-card don't trip.
-                const stripped = raw
-                    .replace(/\/\*[\s\S]*?\*\//g, '')
-                    .replace(/\/\/[^\n]*/g, '');
+                const stripped = blankNonCode(raw);
                 const lines = stripped.split('\n');
                 lines.forEach((line, i) => {
                     if (/\bglass-card\b/.test(line)) {

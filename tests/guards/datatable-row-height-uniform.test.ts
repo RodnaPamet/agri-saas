@@ -23,6 +23,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -68,10 +69,7 @@ describe('DataTable uniform row height (R12-PR2)', () => {
         // Anti-pattern: title cell renders `</Link>...<p` (a `<p>` block
         // following the title `<Link>` in the same cell). Stripped of
         // comments first so doc-block examples don't false-positive.
-        const stripComments = (s: string) =>
-            s
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+        const stripComments = (s: string) => blankNonCode(s);
         const ANTI_PATTERN = /<\/Link>[\s\S]{0,200}<p\b/;
         for (const rel of titleCellPages) {
             const abs = path.join(ROOT, rel);

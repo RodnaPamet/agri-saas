@@ -40,6 +40,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 const NAV_BAR_SRC = fs.readFileSync(
@@ -205,9 +206,7 @@ describe('Roadmap-14 PR-3 — NavBar brand mark discipline', () => {
             // Strip comments before scanning so the doc-comment's
             // explanatory mention of `<h1>` doesn't trip the
             // structural detector.
-            const stripped = NAV_BAR_SRC
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+            const stripped = blankNonCode(NAV_BAR_SRC);
             expect(stripped).not.toMatch(/<h1\b/);
         });
     });

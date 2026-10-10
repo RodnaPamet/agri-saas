@@ -42,6 +42,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 const NAV_ITEM_SRC = fs.readFileSync(
@@ -102,9 +103,7 @@ describe('Roadmap-13 PR-8 — press feedback (the one allowed transform)', () =>
         // executable code. Doc-comments routinely mention banned
         // patterns ("a future hover:scale-110 PR would …") and
         // shouldn't trip the structural scan.
-        const stripped = NAV_ITEM_SRC
-            .replace(/\/\*[\s\S]*?\*\//g, '')
-            .replace(/\/\/[^\n]*/g, '');
+        const stripped = blankNonCode(NAV_ITEM_SRC);
 
         it('no `hover:translate-*` in nav-item.tsx executable code', () => {
             // The R12 ban on hover-translate stays in place even

@@ -46,6 +46,7 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, "../..");
 const TOKENS = fs.readFileSync(
@@ -116,7 +117,7 @@ function objectBody(source: string, marker: RegExp): string {
  * `xs` instead of the entry named `xs`.
  */
 function stripComments(source: string): string {
-    return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    return blankNonCode(source);
 }
 
 /**

@@ -28,6 +28,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -60,9 +61,7 @@ describe('R24-PR-C — Slim radius re-tune', () => {
                 // button-variants.ts ("R22-PR-A radius calibration —
                 // R19 shipped rounded-lg (12px); R22 dropped to
                 // rounded-[10px]") doesn't false-positive.
-                const stripped = src
-                    .replace(/\/\*[\s\S]*?\*\//g, '')
-                    .replace(/\/\/[^\n]*/g, '');
+                const stripped = blankNonCode(src);
                 expect(stripped).not.toMatch(/rounded-\[10px\]/);
             });
         });

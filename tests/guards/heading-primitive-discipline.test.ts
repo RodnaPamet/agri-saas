@@ -41,6 +41,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -94,9 +95,7 @@ describe('Heading-primitive discipline (Roadmap-4 PR-8)', () => {
                 const src = fs.readFileSync(full, 'utf-8');
                 // Strip block + line comments first so JSDoc usage
                 // examples ("`<h1>Risks</h1>`") don't false-positive.
-                const stripped = src
-                    .replace(/\/\*[\s\S]*?\*\//g, '')
-                    .replace(/\/\/[^\n]*/g, '');
+                const stripped = blankNonCode(src);
                 if (RAW_HEADING_RE.test(stripped)) {
                     offenders.push(rel);
                 }

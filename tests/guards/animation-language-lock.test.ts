@@ -24,6 +24,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -73,9 +74,7 @@ function walk(dir: string, results: string[] = []): string[] {
 }
 
 function stripComments(src: string): string {
-    return src
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/\/\/[^\n]*/g, '');
+    return blankNonCode(src);
 }
 
 describe('Animation language lock (R11-PR5)', () => {

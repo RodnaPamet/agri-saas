@@ -60,6 +60,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -87,9 +88,7 @@ describe('Animation vocabulary discipline (Roadmap-6 PR-1)', () => {
                 // Strip line comments + block comments first so the
                 // documentation note in globals.css explaining the
                 // retirement doesn't trip the scanner.
-                const stripped = raw
-                    .replace(/\/\*[\s\S]*?\*\//g, '')
-                    .replace(/\/\/[^\n]*/g, '');
+                const stripped = blankNonCode(raw);
                 const lines = stripped.split('\n');
                 lines.forEach((line, i) => {
                     if (/\banimate-slideIn\b/.test(line)) {

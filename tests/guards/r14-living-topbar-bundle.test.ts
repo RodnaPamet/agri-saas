@@ -28,6 +28,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -149,9 +150,7 @@ describe('Roadmap-14 PR-13 — Living Top-Bar capstone bundle', () => {
             // Strip comments before scanning so the doc-comment's
             // explanatory mention of `<SearchAnchor>` doesn't trip
             // the structural detector.
-            const stripped = TOP_CHROME_SRC
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+            const stripped = blankNonCode(TOP_CHROME_SRC);
             expect(stripped).not.toMatch(/<SearchAnchor\b/);
             expect(stripped).not.toMatch(
                 /from\s+['"]\.\/search-anchor['"]/,

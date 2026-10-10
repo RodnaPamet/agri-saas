@@ -21,6 +21,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 const APP_ROOT = path.resolve(ROOT, 'src/app/t/[tenantSlug]/(app)');
@@ -41,10 +42,7 @@ describe('DataTable fillBody coverage on list pages (R12-PR3)', () => {
     test('every page mounting <ListPageShell.Body> + <DataTable> passes fillBody', () => {
         // Strip JS/TS comments so doc-block references to `<DataTable>`
         // don't trip the scanner.
-        const stripComments = (s: string) =>
-            s
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+        const stripComments = (s: string) => blankNonCode(s);
         const offenders: string[] = [];
         for (const file of walk(APP_ROOT)) {
             const content = stripComments(fs.readFileSync(file, 'utf-8'));

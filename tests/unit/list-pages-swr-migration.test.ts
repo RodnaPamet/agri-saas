@@ -30,6 +30,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -66,9 +67,7 @@ function read(p: string): string {
  *  React Query symbols (in migration docstrings) don't trip the
  *  negative assertions. */
 function stripComments(src: string): string {
-    return src
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/^\s*\/\/.*$/gm, '');
+    return blankNonCode(src);
 }
 
 describe.each(LIST_PAGES)(

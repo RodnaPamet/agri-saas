@@ -20,6 +20,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) =>
@@ -92,9 +93,7 @@ describe('B1 — bug-fix bundle', () => {
                 ui.indexOf('export function useTenantMembers'),
                 ui.indexOf('// ─── Option projection'),
             );
-            const stripped = fetchBlock
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/.*$/gm, '');
+            const stripped = blankNonCode(fetchBlock);
             expect(stripped).not.toMatch(/\/admin\/members/);
         });
     });

@@ -25,6 +25,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -55,9 +56,7 @@ function walk(dir: string, results: string[] = []): string[] {
 }
 
 function stripComments(src: string): string {
-    return src
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/\/\/[^\n]*/g, '');
+    return blankNonCode(src);
 }
 
 describe('StatusBadge brand-orange ban (R10-PR10)', () => {
@@ -157,7 +156,14 @@ describe('StatusBadge brand-orange ban (R10-PR10)', () => {
 
         // Both halves, or the control is worthless.
         expect(stripped.length).toBeGreaterThan(0);
-        expect(stripped.length).toBeLessThan(raw.length);
+        // Length is PRESERVED, not reduced: `blankNonCode` overwrites comment
+        // characters with spaces rather than deleting them (#1497). The old
+        // assertion here was `toBeLessThan`, which measured deletion as the
+        // proof it worked — so it had to fail on a stripper that blanks. The
+        // substantive checks are the two pairs below; this one now pins the
+        // property that makes every `file:line` this guard reports accurate.
+        expect(stripped.length).toBe(raw.length);
+        expect(stripped.split('\n')).toHaveLength(raw.split('\n').length);
 
         // The code survives...
         expect(stripped).toContain('const a = 1;');

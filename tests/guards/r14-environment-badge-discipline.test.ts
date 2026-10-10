@@ -31,6 +31,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 const BADGE_SRC = fs.readFileSync(
@@ -92,9 +93,7 @@ describe('Roadmap-14 PR-9 — EnvironmentBadge discipline', () => {
             //
             // Strip comments so doc-comments mentioning brand
             // don't trip the structural detector.
-            const stripped = BADGE_SRC
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+            const stripped = blankNonCode(BADGE_SRC);
             expect(stripped).not.toMatch(
                 /bg-\[var\(--brand-(default|emphasis|muted)\)\]/,
             );

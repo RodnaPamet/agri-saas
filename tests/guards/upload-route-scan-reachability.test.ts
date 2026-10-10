@@ -37,6 +37,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 const SRC = path.join(ROOT, 'src');
@@ -90,7 +91,7 @@ function walk(dir: string, out: string[] = []): string[] {
 
 /** Source with block and line comments removed. */
 function stripComments(src: string): string {
-    return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+    return blankNonCode(src);
 }
 
 /** First-party import specifiers (`@/…` and relative), resolved to files. */

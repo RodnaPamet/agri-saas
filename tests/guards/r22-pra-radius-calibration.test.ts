@@ -22,6 +22,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 const BUTTON_VARIANTS = fs.readFileSync(
@@ -50,9 +51,7 @@ describe('R22-PR-A — Radius calibration (post-B3 pill canonicalisation)', () =
         it('uses `rounded-full`, not `rounded-lg`', () => {
             const base =
                 BUTTON_VARIANTS.match(/cva\(\s*\[([\s\S]*?)\]\s*,/)?.[1] ?? '';
-            const stripped = base
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+            const stripped = blankNonCode(base);
             // B3 — pill base, set explicitly on the cva root.
             expect(stripped).toMatch(/rounded-full/);
             expect(stripped).not.toMatch(/\brounded-lg\b/);
@@ -72,9 +71,7 @@ describe('R22-PR-A — Radius calibration (post-B3 pill canonicalisation)', () =
                 BUTTON_VARIANTS.indexOf('xs: "'),
                 BUTTON_VARIANTS.indexOf('sm: "'),
             );
-            const strippedBlock = block
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+            const strippedBlock = blankNonCode(block);
             expect(strippedBlock).not.toMatch(/rounded-md/);
             expect(strippedBlock).not.toMatch(/rounded-\[/);
         });
@@ -85,32 +82,28 @@ describe('R22-PR-A — Radius calibration (post-B3 pill canonicalisation)', () =
             // Hand-rolled className branches must move in lockstep with
             // the cva. B3 swept these too — both fallbacks read as
             // pill buttons.
-            const stripped = BUTTON_TSX.replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+            const stripped = blankNonCode(BUTTON_TSX);
             expect(stripped).toMatch(
                 /"rounded-full border border-border-subtle bg-bg-subtle text-sm text-content-subtle"/,
             );
         });
 
         it('loading/disabled branch follows the pill canonical', () => {
-            const stripped = BUTTON_TSX.replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+            const stripped = blankNonCode(BUTTON_TSX);
             expect(stripped).toMatch(
                 /"rounded-full border border-border-subtle bg-bg-subtle text-content-subtle"/,
             );
         });
 
         it('no `rounded-lg` literal remains in button.tsx', () => {
-            const stripped = BUTTON_TSX.replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+            const stripped = blankNonCode(BUTTON_TSX);
             expect(stripped).not.toMatch(/\brounded-lg\b/);
         });
     });
 
     describe('control-variants.ts mirror', () => {
         it('uses `rounded-[10px]` not `rounded-lg`', () => {
-            const stripped = CONTROL_VARIANTS.replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+            const stripped = blankNonCode(CONTROL_VARIANTS);
             expect(stripped).toMatch(/rounded-\[8px\]/);
             expect(stripped).not.toMatch(/\brounded-lg\b/);
         });
@@ -122,15 +115,13 @@ describe('R22-PR-A — Radius calibration (post-B3 pill canonicalisation)', () =
         // literal. R22-PR-A keeps them in lockstep with the cva
         // base.
         it('input.tsx uses `rounded-[10px]`', () => {
-            const stripped = INPUT_TSX.replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+            const stripped = blankNonCode(INPUT_TSX);
             expect(stripped).toMatch(/rounded-\[8px\]/);
             expect(stripped).not.toMatch(/\brounded-lg\b/);
         });
 
         it('date-picker/trigger.tsx uses `rounded-[10px]`', () => {
-            const stripped = DATE_TRIGGER.replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+            const stripped = blankNonCode(DATE_TRIGGER);
             expect(stripped).toMatch(/rounded-\[8px\]/);
             expect(stripped).not.toMatch(/\brounded-lg\b/);
         });
@@ -148,9 +139,7 @@ describe('R22-PR-A — Radius calibration (post-B3 pill canonicalisation)', () =
                 DATE_TRIGGER,
                 BUTTON_TSX,
             ]) {
-                const stripped = src
-                    .replace(/\/\*[\s\S]*?\*\//g, '')
-                    .replace(/\/\/[^\n]*/g, '');
+                const stripped = blankNonCode(src);
                 expect(stripped).not.toMatch(/\brounded-lg\b/);
             }
         });

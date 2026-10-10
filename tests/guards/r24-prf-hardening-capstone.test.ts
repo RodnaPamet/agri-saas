@@ -13,6 +13,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -79,9 +80,7 @@ describe('R24-PR-F — Hardening + capstone', () => {
             expect(BUTTON_VARIANTS).toMatch(/rounded-\[8px\]/);
             // Comments stripped to allow the historical references
             // ("R22-PR-A took it from rounded-lg to rounded-[10px]").
-            const stripped = BUTTON_VARIANTS
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+            const stripped = blankNonCode(BUTTON_VARIANTS);
             expect(stripped).not.toMatch(/rounded-\[10px\]/);
             expect(stripped).not.toMatch(/\brounded-lg\b/);
         });

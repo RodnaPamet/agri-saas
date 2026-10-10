@@ -25,6 +25,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -87,10 +88,7 @@ describe('TableTitleCell adoption (R13-PR1)', () => {
         // Caught reliably enough by looking for the literal
         // className triplet inside a 600-char window after the
         // `accessorKey: 'title'|'name'|'code'` declaration.
-        const stripComments = (s: string) =>
-            s
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+        const stripComments = (s: string) => blankNonCode(s);
         const offenders: string[] = [];
         for (const rel of ADOPTED_PAGES) {
             const src = stripComments(

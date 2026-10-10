@@ -49,6 +49,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 const VARIANTS = fs.readFileSync(
@@ -72,9 +73,7 @@ const UI_BUTTONS_DOC = fs.readFileSync(
  * count as a violation).
  */
 function stripComments(src: string): string {
-    return src
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/\/\/[^\n]*/g, '');
+    return blankNonCode(src);
 }
 function recipeBlock(name: string): string {
     const re = new RegExp(`const\\s+${name}\\s*=\\s*\\[([\\s\\S]*?)\\];`);

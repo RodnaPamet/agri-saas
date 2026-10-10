@@ -38,6 +38,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 const NAV_BAR_SRC = fs.readFileSync(
@@ -159,9 +160,7 @@ describe('Roadmap-14 PR-1 — NavBar primitive extraction discipline', () => {
                 // Strip comments before scanning so doc-comments
                 // mentioning `<header role="banner">` don't trip
                 // the structural detector.
-                const stripped = content
-                    .replace(/\/\*[\s\S]*?\*\//g, '')
-                    .replace(/\/\/[^\n]*/g, '');
+                const stripped = blankNonCode(content);
                 if (
                     /<header\b[^>]*role="banner"/.test(stripped) ||
                     /<header[\s\S]{0,80}role="banner"/.test(stripped)

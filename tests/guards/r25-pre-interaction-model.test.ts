@@ -25,6 +25,7 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, "../..");
 const EDGE_PATH = "src/components/processes/ProcessEdge.tsx";
@@ -93,10 +94,7 @@ describe("R25-PR-E — interaction model", () => {
             // The constrained model: practice labels are not edited
             // inline. Adding an <input> here would expand scope
             // into label editing semantics — explicitly out.
-            const stripped = SRC.replace(/\/\*[\s\S]*?\*\//g, "").replace(
-                /\/\/[^\n]*/g,
-                "",
-            );
+            const stripped = blankNonCode(SRC);
             expect(stripped).not.toMatch(/<input\b/);
         });
     });

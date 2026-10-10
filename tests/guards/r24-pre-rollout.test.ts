@@ -27,6 +27,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -60,9 +61,7 @@ describe('R24-PR-E — Icon-button shape rollout', () => {
             });
 
             it('the gear button no longer uses `rounded-lg` (legacy 12px outlier)', () => {
-                const stripped = src
-                    .replace(/\/\*[\s\S]*?\*\//g, '')
-                    .replace(/\/\/[^\n]*/g, '');
+                const stripped = blankNonCode(src);
                 expect(stripped).not.toMatch(/\brounded-lg\b/);
             });
 
