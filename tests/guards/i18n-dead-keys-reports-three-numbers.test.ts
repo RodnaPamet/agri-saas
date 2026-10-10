@@ -147,6 +147,39 @@ describe('the i18n dead-key detector (#1534)', () => {
         });
     });
 
+    describe('a member-expression key is resolved too', () => {
+        // `backNav` came back 37 of 38 unreferenced — the third
+        // too-high-to-believe ratio in this namespace list, and the second
+        // caused by the detector rather than the catalogue.
+        //
+        //     // BackAffordance.tsx:123
+        //     t.has(destination.label) ? t(destination.label) : destination.label
+        //
+        // The bare-identifier matcher's character class excluded `.`, so it
+        // stopped at the dot, required `,` or `)`, and matched nothing. Nine
+        // such call sites exist and each silently cost its namespace.
+        //
+        // The idiom matters: `t.has(k) ? t(k) : k` is the CORRECT way to call
+        // a possibly-missing key, so the most carefully written call sites
+        // were the ones most likely to be misreported.
+        it('the namespace of a member-expression call is undecidable', () => {
+            expect(report.undecidablePrefixes).toContain('backNav');
+        });
+
+        it('and NO backNav key is left in the dead set', () => {
+            const dead = report.unreferencedKeys.filter((k) => k.startsWith('backNav.'));
+            expect(dead).toEqual([]);
+        });
+
+        it('the whole-namespace count rose to match — 19 sites were invisible', () => {
+            // The number that proves the matcher widened rather than the
+            // catalogue shrinking. Before the fix this was 19; the nine
+            // member-expression sites (some firing more than once) take it to
+            // 38. A regression here means the dot left the character class.
+            expect(report.wholeNamespaceDynamic).toBeGreaterThanOrEqual(30);
+        });
+    });
+
     it('says how much it could not decide, and distinguishes the two reasons', () => {
         // A bare "N dead keys" repeats the mistake #1534 is about — a correct
         // number answering a question nobody asked. `undecidable` must be

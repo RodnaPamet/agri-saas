@@ -183,10 +183,27 @@ for (const file of files) {
             undecidablePrefixes.add(cut === -1 ? ns : `${ns}.${head.slice(0, cut)}`);
             dynamicCalls += 1;
         }
-        // <var>(identifier) — nothing static at all, so the whole namespace is
-        // unresolvable. Kept separate from the template case because it is a
-        // genuinely weaker position, and the counts should not conflate them.
-        for (const _ of code.matchAll(new RegExp(`\\b${esc}\\(\\s*[A-Za-z_$][\\w$]*\\s*[,)]`, 'g'))) {
+        // <var>(identifier) or <var>(obj.prop) — nothing static at all, so the
+        // whole namespace is unresolvable. Kept separate from the template case
+        // because it is a genuinely weaker position, and the counts should not
+        // conflate them.
+        //
+        // The character class admits DOTS, and that is not cosmetic. Without
+        // them the pattern stopped at the `.` and then required `,` or `)`,
+        // so a member-expression key matched nothing:
+        //
+        //     // BackAffordance.tsx:123
+        //     t.has(destination.label) ? t(destination.label) : destination.label
+        //
+        // `backNav` was reported 37 of 38 dead as a result — every key reached
+        // through that line. Nine such call sites exist (`step.labelKey`,
+        // `section.key`, `cls.destination.labelKey`, …), each silently costing
+        // its namespace.
+        //
+        // Worth noting WHICH call sites these are: `t.has(k) ? t(k) : k` is the
+        // correct way to call a possibly-missing key, so the most carefully
+        // written sites were the ones most likely to be misreported.
+        for (const _ of code.matchAll(new RegExp(`\\b${esc}\\(\\s*[A-Za-z_$][\\w$.]*\\s*[,)]`, 'g'))) {
             undecidablePrefixes.add(ns);
             dynamicCalls += 1;
             wholeNamespaceDynamic += 1;
