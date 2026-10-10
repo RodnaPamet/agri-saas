@@ -22,6 +22,7 @@ import {
     LOCATION_LIST_ITEM_FIELDS,
     toLocationListItemDTO,
 } from '@/lib/dto/location.dto';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 /** A repository row: everything Prisma returns, documented or not. */
 const RAW_ROW = {
@@ -104,9 +105,10 @@ const ROUTES = [
 
 /** Comment-masked source: a call surviving only in a comment must not count. */
 function codeOf(src: string): string {
-    return src
-        .replace(/\/\*[\s\S]*?\*\//g, ' ')
-        .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+    // `blankNonCode` is state-aware, so the `(^|[^:])` carve-out that spared
+    // `https://` is unnecessary: a `//` inside a string literal was never a
+    // comment to begin with (#1605).
+    return blankNonCode(src);
 }
 
 describe('Location response projection — applied at every boundary', () => {

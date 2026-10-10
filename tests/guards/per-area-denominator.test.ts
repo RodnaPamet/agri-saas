@@ -26,6 +26,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const FILES = [
     'src/lib/grain/per-area.ts',
@@ -55,9 +56,7 @@ describe('per-dca denominators', () => {
         // that cannot tell a warning from the thing it warns about fails the
         // build for explaining itself — the trap two other guards in this
         // repo already document.
-        const code = src
-            .replace(/\/\*[\s\S]*?\*\//g, '')
-            .replace(/(^|[^:])\/\/.*$/gm, '$1');
+        const code = blankNonCode(src);
 
         for (const pattern of FORBIDDEN) {
             expect({ file: rel, matched: pattern.test(code) }).toEqual({

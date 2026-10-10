@@ -63,6 +63,7 @@
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const REPO_ROOT = process.cwd();
 const SPEC = JSON.parse(readFileSync(join(REPO_ROOT, 'src/generated/openapi.json'), 'utf8'));
@@ -90,9 +91,7 @@ function routeFiles(dir: string): string[] {
 
 /** Comments stripped — a file DISCUSSING the shape is not a file returning it. */
 function codeOf(file: string): string {
-    return readFileSync(file, 'utf8')
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/\/\/[^\n]*/g, '');
+    return blankNonCode(readFileSync(file, 'utf8'));
 }
 
 /** `src/app/api/t/[tenantSlug]/x/[id]/route.ts` → `/api/t/{tenantSlug}/x/{id}` */

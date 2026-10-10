@@ -67,6 +67,7 @@ import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
  * no Next route module pulled into a guard.
  */
 import { FLAG_KEY_PATTERN, FLAG_KEY_MAX_LENGTH } from '../../src/lib/feature-flags';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 /**
  * Where a social API route may live. A path containing a `social` segment
@@ -123,7 +124,7 @@ const GATE_CALLEES = ['assertFeatureEnabled', 'isFeatureEnabled'] as const;
 
 /** Mask comments so a gate named only in prose cannot satisfy the guard. */
 function codeOf(source: string): string {
-    return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+    return blankNonCode(source);
 }
 
 /** The flag keys a source gates on, from literal arguments only. */
