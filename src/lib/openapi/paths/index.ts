@@ -37,6 +37,7 @@ import { registerFarmProfilePaths } from './farm-profile.paths';
 import { registerMeFarmsPaths } from './me-farms.paths';
 import { registerMeNewsPreferencesPaths } from './me-news-preferences.paths';
 import { registerTrustSafetyPaths } from './trust-safety.paths';
+import { registerModerationPaths } from './moderation.paths';
 import { registerAdminMembersPaths } from './admin-members.paths';
 
 export function registerAllPaths(registry: OpenAPIRegistry): void {
@@ -74,5 +75,6 @@ export function registerAllPaths(registry: OpenAPIRegistry): void {
     registerMeFarmsPaths(registry);
     registerMeNewsPreferencesPaths(registry);
     registerTrustSafetyPaths(registry);
+    registerModerationPaths(registry);
     registerAdminMembersPaths(registry);
 }

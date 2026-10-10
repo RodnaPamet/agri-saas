@@ -49,7 +49,12 @@ export class PlatformAdminError extends Error {
  * key length, so we pad with a dummy comparison instead of returning
  * early.
  */
-export function verifyPlatformApiKey(req: NextRequest): void {
+/** Which key authorised a request. Not a person — see the return comment. */
+export type PlatformKeyGeneration = 'current' | 'previous';
+
+export function verifyPlatformApiKey(
+    req: NextRequest,
+): { readonly generation: PlatformKeyGeneration } {
     if (!env.PLATFORM_ADMIN_API_KEY) {
         throw new PlatformAdminError(503, 'Platform admin API not configured');
     }
@@ -70,6 +75,24 @@ export function verifyPlatformApiKey(req: NextRequest): void {
     if (!currentMatch && !previousMatch) {
         throw new PlatformAdminError(401, 'Unauthorized');
     }
+
+    // WHICH key generation authorised this, for attribution (P5.4, #1595).
+    //
+    // Additive: the function returned `void` and all 17 call sites ignore the
+    // result, so nothing changes for them.
+    //
+    // No timing change either, and that is the part worth stating: both
+    // comparisons have ALREADY run by this line — deliberately, because
+    // "timing equality across keys must hold" per the rotation comment above.
+    // Reporting which one matched reads a boolean that exists; it does not
+    // short-circuit anything.
+    //
+    // What this is NOT: a person. There is ONE `PLATFORM_ADMIN_API_KEY` for
+    // every operator, so the most precise attribution available is a key
+    // GENERATION — which still narrows a compromise window to one side of a
+    // rotation, and is strictly more than a constant. Per-moderator
+    // attribution needs per-moderator credentials, which is P5.8's subject.
+    return { generation: currentMatch ? 'current' : 'previous' } as const;
 }
 
 /**

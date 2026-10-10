@@ -1994,6 +1994,51 @@ be an empty body indistinguishable from a capture failure.
 the option label ("the grade, quantity, origin or certification is wrong")
 because it is the agricultural case a generic category list would miss.
 
+### P5.4a — the moderation console, and what `moderatorRef` can honestly hold
+
+`/api/admin/moderation/notices` (queue + act) and `/api/admin/moderation/statements`
+(queue a statement + the undelivered view), behind `verifyPlatformApiKey` (#1595).
+Usecases in `src/app-layer/usecases/moderation.ts`.
+
+**`moderatorRef` records a key GENERATION, not a person.** There is one
+`PLATFORM_ADMIN_API_KEY` for every operator, and `verifyPlatformApiKey`
+returned `void` — no identity at all. It now reports which generation
+authorised the request (additive; 17 call sites ignored the return, and no
+timing change because both comparisons already run by that line *deliberately*).
+`platform-key:current` narrows a compromise window to one side of a rotation
+and is strictly more than a constant — but a regulator asking "who decided
+this" still gets "somebody holding the key". **P5.8 owns the credential model
+that would make it a person**, and until then the trail is honest about its
+limit.
+
+**`StatementOfReasons` IS the outbox.** `NotificationOutbox` is tenant-scoped
+with a non-nullable `tenantId`, and an Art 17 statement goes to a PERSON who
+may have no farm or several — resolving one would invent a tenant for a
+person-scoped obligation. P5.1 already shaped `deliveredAt` as "NULL until the
+push succeeds", so a queued row is the queue and the `GET` is the drain view.
+
+**Surfacing undelivered statements is part of the duty, not an operational
+nicety.** A statement that never went out is a compliance failure whose danger
+is that nothing else shows it: the action is recorded, the notice reads
+ACTIONED, and the recipient simply never heard.
+
+**The triage queue never returns `reporterUserId`** — only `anonymous:
+boolean`. A moderator decides on the CONTENT; knowing who reported it invites
+deciding on the reporter, and it is why Art 16 notices are answerable without
+the notifier being identifiable at all.
+
+**Acting is ONE transaction.** A notice marked ACTIONED with no action row, or
+an action beside a notice still RECEIVED, are states a queue cannot tell from a
+crash. `actionKind: NONE` is a decision (→ REJECTED), not a no-op: "looked and
+did nothing" must be distinguishable from "never looked".
+
+**`/api/admin/moderation/` needed a `PUBLIC_PATH_PREFIXES` entry**, and
+`public-routes-self-authenticate` caught its absence within minutes. The Edge
+401s an `x-platform-admin-key` request before any handler runs, so both routes
+would have been unreachable while looking perfectly implemented — the seventh
+instance of that shape in this repo. Every `admin/*` platform route is
+enumerated there individually for the same reason.
+
 ## Failing tests
 
 A failing test on a branch is a failing test, full stop. "Pre-existing on

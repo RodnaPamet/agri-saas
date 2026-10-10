@@ -1135,3 +1135,52 @@ export const PersonBlockSchema = z.object({
         'The person to block or unblock. The blocker is the authenticated '
         + 'caller and cannot be supplied.',
 });
+
+// ─── Moderation console (P5.4a, #1595) ───
+//
+// Platform-admin bodies. Note what they do NOT accept: `moderatorRef`,
+// `subjectKind` and `subjectId`. The attribution comes from the verified key
+// generation, and the subject is denormalised from the notice — a
+// caller-supplied subject would let an action be recorded against content it
+// was not about.
+
+export const MODERATION_ACTION_KINDS = [
+    'NONE',
+    'CONTENT_REMOVED',
+    'CONTENT_DEMOTED',
+    'ACCOUNT_SUSPENDED',
+    'ACCOUNT_TERMINATED',
+] as const;
+
+/** Rationale ceiling. Generous for a decision, bounded so one is not a payload. */
+export const MODERATION_RATIONALE_MAX = 8000;
+
+export const ActOnNoticeSchema = z.object({
+    reportId: z.string().min(1).max(200),
+    actionKind: z.enum(MODERATION_ACTION_KINDS),
+    /**
+     * REQUIRED, unlike a notice's `detail`. A notice may be filed without
+     * prose because Art 16 does not let us refuse one for want of it; a
+     * DECISION without a reason is the thing Art 17 exists to prevent, and it
+     * is the text the statement is built from.
+     */
+    rationale: z.string().min(1, 'rationale is required').max(MODERATION_RATIONALE_MAX),
+}).strip().openapi('ActOnNotice', {
+    description:
+        'A moderation decision on a notice. The moderator is taken from the '
+        + 'verified platform key and is never read from this body; the subject '
+        + 'is denormalised from the notice.',
+});
+
+export const QueueStatementSchema = z.object({
+    actionId: z.string().min(1).max(200),
+    recipientUserId: z.string().min(1).max(200),
+    /** Resolved at SEND time by P5.4b; accepted here so a console can pin one. */
+    locale: z.string().min(2).max(10).optional(),
+    bodyRendered: z.string().min(1).max(MODERATION_RATIONALE_MAX),
+}).strip().openapi('QueueStatement', {
+    description:
+        'A DSA Art 17 statement of reasons, queued for delivery. Stored '
+        + 'rendered because what was sent is a fact, and re-rendering later '
+        + 'from a changed template would answer a different question.',
+});
