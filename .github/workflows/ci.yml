@@ -678,6 +678,10 @@ jobs:
       # never collide across shards. The intra-shard run stays
       # `--runInBand` for the "one DB per worker" invariant.
       - name: "Run tests: unit + integration (shard)"
+        # `id` so the step below can read `outcome` and tell "jest
+        # produced no coverage because it never ran" from "jest ran and
+        # wrote none" — two causes with one symptom.
+        id: shard_tests
         env:
           # The guards run in THIS sharded pass too, so the ratchet delta
           # check (#914) needs its base here as well as in the shard-1 step.
@@ -709,6 +713,46 @@ jobs:
       # even when its own tests failed. A shard that dies without uploading
       # becomes a `--expect` refusal downstream — the correct outcome, but a
       # confusing one to debug from a missing artifact.
+      # The upload below carries `if-no-files-found: error`, and that STAYS:
+      # istanbul's merge UNIONS the file set, so a dropped shard does not
+      # depress coverage — it leaves the DENOMINATOR and the percentages RISE.
+      # Measured at 3 of 315 files dropped from ./src/lib/: statements
+      # 84.96 -> 85.06. A silently missing shard is the dangerous case, which
+      # is exactly what that setting and `--expect N` exist for.
+      #
+      # But `always()` means the upload also runs when the shard died BEFORE
+      # jest, and then its error is the LAST one in the log — so GitHub
+      # surfaces "No files were found with the provided path:
+      # coverage-shard-N/coverage-final.json", which reads as a coverage or
+      # artifact problem. Observed 2026-10-09 across all six shards at once:
+      # the real cause was `docker pull postgres:16-trixie` being refused,
+      # ~100 lines earlier and buried under a `##[group]`. Two agents nearly
+      # started on the coverage machinery (#1546).
+      #
+      # So: name the cause first. This step NEVER fails the job — the upload
+      # owns that verdict — it only makes the log say which of the two
+      # happened.
+      - name: Explain a missing coverage report before the upload errors on it
+        if: always()
+        env:
+          TESTS_OUTCOME: ${{ steps.shard_tests.outcome }}
+        run: |
+          FILE="coverage-shard-${{ matrix.shard }}/coverage-final.json"
+          if [ -f "$FILE" ]; then
+            exit 0
+          fi
+
+          if [ "${TESTS_OUTCOME}" = "success" ]; then
+            # The dangerous one, and NOT what the outage looked like: jest
+            # reported success and wrote no coverage. The merge would then
+            # score a smaller denominator and read HIGHER.
+            echo "::error::jest reported ${TESTS_OUTCOME} for shard ${{ matrix.shard }} but wrote no ${FILE}. This is the case if-no-files-found:error exists for — a missing shard RAISES merged coverage rather than lowering it, so do not retry past it. Check the jest --coverage flags and coverageDirectory."
+            exit 0
+          fi
+
+          echo "::warning::No ${FILE} because the test step did not succeed (outcome=${TESTS_OUTCOME}) — jest produced no coverage to upload."
+          echo "::warning::The upload error below is a CONSEQUENCE, not the cause. Read the \"Run tests\" step above: a refused service-container pull, a failed migration, or a crash before the first suite all land here. Do NOT start on the coverage machinery."
+
       - name: Upload shard coverage
         if: always()
         uses: actions/upload-artifact@v7
