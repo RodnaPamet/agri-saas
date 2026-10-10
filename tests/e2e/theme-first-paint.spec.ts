@@ -144,8 +144,41 @@ async function recordFirstPaint(page: Page) {
     });
 }
 
-/** Read the recorder, plus the palette the attributes actually selected. */
+/**
+ * Read the recorder, plus the palette the attributes actually selected.
+ *
+ * WAITS for the paint observer to have reported before reading (#1329). The
+ * recorder installs a `PerformanceObserver` and this read used to take
+ * whatever `log.fcp` held at the moment it ran — but an observer callback is a
+ * TASK, so even with `buffered: true` delivering an already-recorded entry,
+ * the read can beat the callback. `log.fcp` was then `null` and
+ * `expect(log.fcp).not.toBeNull()` failed on a page that had painted
+ * perfectly well.
+ *
+ * That is the whole of #1329, and it is a race in the TEST, not slowness in
+ * the product. The ledger entry called it "FIRST PAINT never reported", which
+ * is what losing the race looks like from the assertion's side.
+ *
+ * #1570 gave the spec its retries back on the reasoning that a retry absorbs
+ * a flaky instrument. That was right as far as it went — the ledger can now
+ * classify it — but it treated the symptom: on #1604 the spec lost the race
+ * three times in a row and took the shard down anyway, which a retry cannot
+ * fix because each attempt runs the same race.
+ *
+ * Waiting is the actual remedy: it converts "read once and hope the callback
+ * has run" into "read once the instrument has reported". A page that genuinely
+ * never paints now fails on the wait with a message saying so, rather than on
+ * a null three screens later.
+ */
 async function readLog(page: Page): Promise<ThemeLog> {
+    // Bounded, so a page that truly never paints fails loudly rather than
+    // hanging to the suite timeout. 10s is far longer than a first paint takes
+    // and far shorter than the spec's own budget.
+    await page.waitForFunction(
+        () => (window as unknown as { __themeLog?: ThemeLog }).__themeLog?.fcp != null,
+        undefined,
+        { timeout: 10_000 },
+    );
     return page.evaluate(() => {
         const log = (window as unknown as { __themeLog: ThemeLog }).__themeLog;
         log.bgPage = getComputedStyle(document.documentElement)
