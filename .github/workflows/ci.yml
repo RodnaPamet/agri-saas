@@ -365,6 +365,22 @@ jobs:
         # the no-new-hardcoded-string ratchet runs in the Jest test job.
         run: node scripts/i18n-diff.mjs --check
 
+      # Printed immediately after the four numbers above, and that placement is
+      # the point (#1534). `missing=0 orphan=0 drift=0 untranslated=0` all range
+      # over two JSON catalogues agreeing with each other — `i18n-diff.mjs`
+      # never reads `src/` — so a reader who takes `orphan=0` as "no dead keys"
+      # has read a correct number as the answer to a different question. These
+      # three say what the four cannot: whether anything can still REACH a key.
+      #
+      # Advisory, and it must stay that way. At least one real key is reachable
+      # only through a runtime value (`t(`sprayReason.${r.code}`)`), so a gate
+      # failing on unreferenced keys would demand deleting keys the app renders.
+      # `tests/guards/i18n-dead-keys-reports-three-numbers.test.ts` pins that,
+      # along with the partition identity and the namespace-resolution control.
+      - name: "i18n: keys no call site can reach (advisory)"
+        continue-on-error: true
+        run: node scripts/i18n-dead-keys.mjs
+
   # ═══════════════════════════════════════════════════════════════
   #  Job 2: Typecheck — TypeScript strict compilation
   #  Fast, no DB needed. Catches type errors early.
