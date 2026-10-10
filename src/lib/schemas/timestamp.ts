@@ -1,8 +1,15 @@
 import { z } from 'zod';
 
 /**
- * A DAY-typed value a client sends: any parseable date string, refused only
- * when it cannot be parsed at all.
+ * A DAY-typed value a client sends — every parseable date string is
+ * accepted, and only an unparseable one is refused.
+ *
+ * (Worded without the two-character sequence that `no-explicit-any-ratchet`
+ * matches: it counts RAW TEXT across `src/`, comments included, so a docblock
+ * describing a loose type trips the same cap as a loose type. Measured — the
+ * first draft of this sentence pushed the count to 132 against a cap of 131
+ * and reddened two CI shards, with nothing in the diff that was actually a
+ * loose type.)
  *
  * ## Its seven original call sites have moved — read this before reusing it
  *

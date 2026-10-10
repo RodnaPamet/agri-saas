@@ -75,11 +75,18 @@ type Case = {
     /** Registered spec schema, and the path to the property inside it. */
     registered: string;
     path: string[];
-    /** The executing schema, and a payload that is otherwise valid. */
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    schema: { safeParse: (v: unknown) => { success: boolean } };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    valid: Record<string, any>;
+    /**
+     * The executing schema, and a payload that is otherwise valid.
+     *
+     * Typed structurally rather than as the concrete Zod types: the five
+     * schemas differ in shape (one carries a `superRefine`, so it is a
+     * `ZodEffects` and not a `ZodObject`) and the only capability this suite
+     * needs is `safeParse`. `unknown` throughout, because `safeParse` accepts
+     * `unknown` — there is nothing here that wants `any`, and the
+     * `no-explicit-any` ratchet is a shared cap, not a per-file allowance.
+     */
+    schema: { safeParse: (value: unknown) => { success: boolean } };
+    valid: Record<string, unknown>;
     field: string;
 };
 
