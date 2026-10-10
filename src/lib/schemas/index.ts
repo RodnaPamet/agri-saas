@@ -1119,3 +1119,19 @@ export const FileReportSchema = z.object({
         + 'signed-in report route; the reporter is taken from the session (or '
         + 'left NULL when anonymous) and is never read from this body.',
 });
+
+// ─── Person-to-person blocks (P5.2b, #1593) ───
+//
+// `blockedUserId` only. The BLOCKER is always the session user and is never
+// accepted from a body — and here that is enforced by Postgres as well as by
+// the route: `UserBlock`'s INSERT policy has
+// `WITH CHECK (blockerUserId = current_setting('app.user_id'))`, so a forged
+// blocker is refused with 42501 rather than honoured.
+
+export const PersonBlockSchema = z.object({
+    blockedUserId: z.string().min(1, 'blockedUserId is required').max(200),
+}).strip().openapi('PersonBlock', {
+    description:
+        'The person to block or unblock. The blocker is the authenticated '
+        + 'caller and cannot be supplied.',
+});

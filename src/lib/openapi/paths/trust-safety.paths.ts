@@ -15,7 +15,7 @@
 import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 
-import { FileReportSchema } from '@/lib/schemas';
+import { FileReportSchema, PersonBlockSchema } from '@/lib/schemas';
 import { op } from './helpers';
 
 const FiledReceiptSchema = z
@@ -57,6 +57,26 @@ const OwnReportSchema = z
     .openapi('OwnReport', {
         description:
             'A notice as its own reporter may read it back. Every column of the stored row is here, because the policy that admits the reporter is ROW-level and cannot return a subset — which is why nothing may be added to that table without deciding it is reporter-safe.',
+    });
+
+const BlockResultSchema = z
+    .object({
+        blocked: z.literal(true),
+        alreadyBlocked: z.boolean().openapi({
+            description:
+                'Whether a block already existed. The action is idempotent — pressing it twice is one row, not an error — so this is how a client tells "nothing changed" from "newly blocked" without a 201/200 split that would confuse a cache.',
+        }),
+    })
+    .openapi('BlockResult', { description: 'The state of the block after the call.' });
+
+const OwnBlockSchema = z
+    .object({
+        blockedUserId: z.string(),
+        createdAt: z.string().datetime({ offset: true }),
+    })
+    .openapi('OwnBlock', {
+        description:
+            'A block the caller MADE. Blocks made AGAINST the caller are never returned, even though the database policy admits both sides of the row — it must, because enforcement runs in the blocked party\'s context and a row they cannot see cannot refuse them. Hiding them here is what makes a block silent.',
     });
 
 export function registerTrustSafetyPaths(registry: OpenAPIRegistry): void {
@@ -111,6 +131,76 @@ export function registerTrustSafetyPaths(registry: OpenAPIRegistry): void {
             status: 200,
             description: 'The caller’s own notices.',
             schema: z.object({ reports: z.array(OwnReportSchema) }),
+        },
+    });
+
+    const BLOCK_TAGS = ['Trust & safety'];
+    const GATED =
+        '\n\n**Gated on `social.person-blocks`** and 404s while that flag is off. '
+        + 'Unlike the notice routes above, which are a legal duty and cannot be '
+        + 'dark-launched, blocking is a product feature (and an Apple 1.2 requirement).';
+    const BODY_NOT_PATH =
+        '\n\nThe person id travels in the BODY, including on `DELETE`. That is unusual '
+        + 'and deliberate: iOS logs the full request URL including the path, '
+        + 'unsuppressably, so a third party\'s user id in a path would end up in a '
+        + 'device log — the exact disclosure this phase exists to prevent.';
+
+    op(registry, {
+        method: 'post',
+        path: '/api/social/blocks',
+        operationId: 'blockPerson',
+        summary: 'Block a person',
+        description:
+            'Refuses further contact from that person, person-to-person. ADDITIONAL to the '
+            + 'exchange block, which is a farm refusing a person; collapsing the two would '
+            + 'silently un-block everyone already blocked on the exchange.'
+            + '\n\nThe effect is SILENT on the enforcement side: the blocked person is never '
+            + 'told. An exchange conversation between the two disappears from THEIR view — '
+            + 'read, list and send all answer the same not-found a genuinely missing thread '
+            + 'does — while the blocker keeps full history. Blocking yourself is refused with '
+            + '`BLOCK_SELF`.'
+            + '\n\nIdempotent: blocking twice is one row and answers 200 with '
+            + '`alreadyBlocked: true`.'
+            + GATED + BODY_NOT_PATH,
+        tags: BLOCK_TAGS,
+        body: PersonBlockSchema,
+        success: { status: 200, description: 'The block is in place.', schema: BlockResultSchema },
+    });
+
+    op(registry, {
+        method: 'delete',
+        path: '/api/social/blocks',
+        operationId: 'unblockPerson',
+        summary: 'Lift a block',
+        description:
+            'Removes the caller\'s own block. '
+            + '\n\n**404 when there is no such block OF YOURS**, and the two reasons are '
+            + 'deliberately indistinguishable: it never existed, or it is somebody else\'s row '
+            + 'that the delete policy refused. Telling them apart would reveal that one person '
+            + 'has blocked another to anyone able to guess the pair. '
+            + '\n\nThe 404 is computed from a row COUNT, not from an absent error: under '
+            + 'row-level security a delete whose policy is unsatisfied affects zero rows and '
+            + 'returns normally, so "it did not throw" is not evidence it worked.'
+            + '\n\nThe 404 carries `code: "BLOCK_NOT_FOUND"`.'
+            + GATED + BODY_NOT_PATH,
+        tags: BLOCK_TAGS,
+        body: PersonBlockSchema,
+        success: { status: 200, description: 'The block is gone.', schema: z.object({ blocked: z.literal(false) }) },
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/social/blocks',
+        operationId: 'listMyBlocks',
+        summary: 'The people you have blocked',
+        description:
+            'Blocks the caller MADE, newest first, capped at 500. Blocks made AGAINST the '
+            + 'caller are never included.' + GATED,
+        tags: BLOCK_TAGS,
+        success: {
+            status: 200,
+            description: 'The caller\'s own blocks.',
+            schema: z.object({ blocks: z.array(OwnBlockSchema) }),
         },
     });
 }
