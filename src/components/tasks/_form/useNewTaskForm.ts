@@ -24,6 +24,7 @@ import { useState } from 'react';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { useFormTelemetry } from '@/lib/telemetry/form-telemetry';
 import { useZodForm } from '@/lib/hooks/use-zod-form';
+import { ymdToInstant } from '@/components/ui/date-picker/date-utils';
 import {
     NewTaskFormSchema,
     type NewTaskFormValues,
@@ -135,7 +136,7 @@ export function useNewTaskForm({
                     severity: payload.severity,
                     priority: payload.priority,
                     description: payload.description || undefined,
-                    dueAt: payload.dueAt || undefined,
+                    dueAt: ymdToInstant(payload.dueAt) ?? undefined,
                     assigneeUserId: payload.assigneeUserId || undefined,
                 };
                 const res = await fetch(apiUrl('/tasks'), {

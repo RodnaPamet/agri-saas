@@ -6026,7 +6026,8 @@ exports[`API contract — per-schema snapshots schema: FieldOperationCreateReque
       "type": [
         "string",
         "null"
-      ]
+      ],
+      "format": "date-time"
     },
     "applicationTechnique": {
       "type": [
@@ -8238,7 +8239,8 @@ exports[`API contract — per-schema snapshots schema: LogEntryCreateRequest 1`]
       "type": [
         "string",
         "null"
-      ]
+      ],
+      "format": "date-time"
     },
     "title": {
       "type": "string",
@@ -8362,7 +8364,8 @@ exports[`API contract — per-schema snapshots schema: LogEntryCreateRequest 1`]
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "format": "date-time"
         },
         "parcelId": {
           "type": [
@@ -8491,7 +8494,8 @@ exports[`API contract — per-schema snapshots schema: LogEntryUpdateRequest 1`]
       "type": [
         "string",
         "null"
-      ]
+      ],
+      "format": "date-time"
     },
     "title": {
       "type": "string",
@@ -12286,7 +12290,8 @@ exports[`API contract — per-schema snapshots schema: TaskCreateRequest 1`] = `
       "type": [
         "string",
         "null"
-      ]
+      ],
+      "format": "date-time"
     },
     "assigneeUserId": {
       "type": [
@@ -12910,7 +12915,8 @@ exports[`API contract — per-schema snapshots schema: TaskUpdateRequest 1`] = `
       "type": [
         "string",
         "null"
-      ]
+      ],
+      "format": "date-time"
     },
     "reviewerUserId": {
       "type": [

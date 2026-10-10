@@ -35,6 +35,7 @@ import { FormField } from '@/components/ui/form-field';
 import { Modal } from '@/components/ui/modal';
 import {
     parseYMD,
+    ymdToInstant,
     startOfUtcDay,
     toYMD,
 } from '@/components/ui/date-picker/date-utils';
@@ -97,7 +98,7 @@ export function LinkedTaskCreateModal({
                 body: JSON.stringify({
                     title,
                     description: description || undefined,
-                    dueAt: dueAt || undefined,
+                    dueAt: ymdToInstant(dueAt) ?? undefined,
                 }),
             });
             if (!createRes.ok) {

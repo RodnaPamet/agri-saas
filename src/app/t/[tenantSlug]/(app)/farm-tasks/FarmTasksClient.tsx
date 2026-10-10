@@ -46,7 +46,7 @@ import { Input } from '@/components/ui/input';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { UserCombobox } from '@/components/ui/user-combobox';
 import { DatePicker } from '@/components/ui/date-picker';
-import { parseYMD, toYMD, startOfUtcDay } from '@/components/ui/date-picker/date-utils';
+import { parseYMD, toYMD, startOfUtcDay, ymdToInstant } from '@/components/ui/date-picker/date-utils';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { TERMINAL_WORK_ITEM_STATUSES } from '@/app-layer/domain/work-item-status';
@@ -332,7 +332,7 @@ function FarmTasksInner({ tenantSlug, currentUserId }: { tenantSlug: string; cur
             } else if (bulkAction === 'status') {
                 await apiPost(buildUrl('/tasks/bulk/status'), { taskIds: ids, status: bulkValue });
             } else if (bulkAction === 'due') {
-                await apiPost(buildUrl('/tasks/bulk/due'), { taskIds: ids, dueAt: bulkValue || null });
+                await apiPost(buildUrl('/tasks/bulk/due'), { taskIds: ids, dueAt: ymdToInstant(bulkValue) });
             }
         } finally {
             setBulkBusy(false);

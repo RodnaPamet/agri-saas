@@ -1,8 +1,30 @@
 import { z } from 'zod';
 
 /**
- * A timestamp a client SENDS: the same string as before, refused when it is
- * not a parseable date.
+ * A DAY-typed value a client sends: any parseable date string, refused only
+ * when it cannot be parsed at all.
+ *
+ * ## Its seven original call sites have moved — read this before reusing it
+ *
+ * This was written for #1443's seven request-side timestamps, on the reasoning
+ * preserved below. Those seven now use `instantTimestamp()`: the owner's
+ * ruling on 2026-10-10 was to convert the three web handlers that posted a
+ * bare `YYYY-MM-DD` and declare `format: date-time` across all seven, rather
+ * than publish a looser format or none.
+ *
+ * It is retained — deliberately, with no call sites for the moment — because
+ * it is the correct validator for the **day-typed** fields, which are a real
+ * and separate category: `incurredOn`, `from`/`to`, `startDate`/`endDate`,
+ * `paidAt`. agrent-ios sends those as days on purpose ("days in the books
+ * rather than instants"), and `calendar.schemas.ts` says so in its own error
+ * message. `instantTimestamp()` would refuse them.
+ *
+ * 24 such fields are still unvalidated, and one of them silently records
+ * TODAY rather than failing (`lease-payment.ts:42`). That is #1558, and this
+ * function is what it should apply. If #1558 is closed some other way, delete
+ * this rather than leave it.
+ *
+ * ## What it was written for (unchanged, and still the argument)
  *
  * ## What this is instead of
  *
@@ -53,17 +75,23 @@ import { z } from 'zod';
  * `'2026-10-08 14:00:00'` — no `T`, no offset — is parsed by the consumer in
  * the SERVER's timezone, so the same payload stores a different instant
  * depending on where the server runs (this box and the production VM are both
- * `Europe/Sofia`). That is a real correctness bug and it survives untouched,
- * because rejecting the form is a contract decision: agrent-ios confirmed it
- * emits that shape nowhere, but the web wizard has not been measured.
+ * `Europe/Sofia`). This function still ACCEPTS that, and a date-only value
+ * likewise still means midnight UTC downstream.
  *
- * A date-only value likewise still means midnight UTC downstream. Both are
- * tracked on #1443, and neither is made worse here.
+ * Both are correct for a day field and wrong for an instant, which is the
+ * whole reason there are two functions in this file. If a field cannot
+ * tolerate either shape, it wants `instantTimestamp()`, not a stricter version
+ * of this.
  *
- * It also declares NO format in the spec. `format: date-time` would publish a
- * contract this does not keep — the exact defect #1539 reports one endpoint
- * over — so the documentation half of #1391's timestamp item stays open and
- * still needs the behaviour decision above.
+ * The web client was unmeasured when that was first written; it is measured
+ * now (#1443, 2026-10-10). It sent the space-separated form NOWHERE, and
+ * date-only on two fields only — both since converted at the client.
+ *
+ * It declares NO format in the spec, and must not be made to. `format:
+ * date-time` on a check this loose publishes a contract it does not keep —
+ * which is exactly the defect #1539 turned out to be, one endpoint over. A day
+ * field wanting a declared format wants `format: date`, which is a different
+ * decision and belongs on #1558.
  */
 export function requestTimestamp() {
     return z.string().refine((value) => !Number.isNaN(new Date(value).getTime()), {
@@ -76,10 +104,18 @@ export function requestTimestamp() {
  *
  * ## Why this is stricter than `requestTimestamp()`
  *
- * `requestTimestamp()` only asks for parseability, because the fields it
- * guards sit behind a date picker and a human — rejecting `2026-10-08` there
- * would break a working UI, so its docblock records the ambiguity as a
- * deliberate survival.
+ * `requestTimestamp()` only asks for parseability. It was written for #1443's
+ * seven fields on the reasoning that they sit behind a date picker, so
+ * rejecting `2026-10-08` would break a working UI.
+ *
+ * That reasoning was correct about the UI and wrong about the fix. Measured,
+ * the web client sent date-only on exactly **two** of the seven, and only
+ * because three submit handlers posted the picker's `toYMD()` state raw while
+ * every other handler called `.toISOString()` first. It was a missing
+ * conversion in three places, not a day-granularity contract — so the owner's
+ * ruling on 2026-10-10 was to fix the three handlers (`ymdToInstant`, in
+ * `date-picker/date-utils.ts`) and let all seven declare and enforce
+ * `format: date-time`. Those seven now call THIS function.
  *
  * `POST /api/agro/data-streams/{streamId}/ingest` has no human and no picker.
  * It is token-gated and device-facing, which is the same carve-out
@@ -119,14 +155,28 @@ export function requestTimestamp() {
  * #1540 did to six route handlers before CI caught it. `.datetime()` is a
  * check, not a transform, so nothing downstream moves.
  *
- * ## Safe to tighten because there is nothing to break — measured
+ * ## Safe to tighten because there is nothing to break — measured, per group
  *
- * The route's first act is `if (env.AGRO_DATASTREAMS_ENABLED !== '1') → 503`.
- * On production that key is ABSENT from `/opt/agrent/.env` and empty in the
- * running container, and `DataStream` / `DataStreamReading` hold 0 and 0 rows
- * (counted as `postgres` with `rolsuper=t`, because `app_user` reads zero
- * under RLS and exits 0). Every caller gets a 503 today and no reading has
- * ever been ingested, so no device encoding exists to break.
+ * **The ingest route (#1539).** Its first act is
+ * `if (env.AGRO_DATASTREAMS_ENABLED !== '1') → 503`. On production that key is
+ * ABSENT from `/opt/agrent/.env` and empty in the running container, and
+ * `DataStream` / `DataStreamReading` hold 0 and 0 rows. Every caller gets a
+ * 503 today and no reading has ever been ingested, so no device encoding
+ * exists to break.
+ *
+ * **The seven task / journal fields (#1443).** Every web send site was traced
+ * to the endpoint it posts to: five already sent `.toISOString()`, two sent a
+ * bare day and are now converted at the client, and two had no sender at all
+ * (`UpdateTaskSchema.dueAt`, and `CreateFieldOperationSchema.dueAt` — both of
+ * `POST /locations/{id}/operations`'s callers send no due date, matching what
+ * agrent-ios reported). agrent-ios sends `occurredAt` as a UTC instant and
+ * sends `dueAt` and `recordedAt` nowhere. And no third party can be sending
+ * anything: production holds 6 `TenantApiKey` rows and **0** un-revoked, with
+ * 15 tasks of which **0** carry a `dueAt`.
+ *
+ * Both row counts were taken as `postgres` with `rolsuper=t` printed beside
+ * them, because `app_user` returns zero rows for a populated table under RLS
+ * and exits 0 — a silent zero is the failure mode this kind of claim rests on.
  *
  * Exported for the spec as well as the route: `agro.paths.ts` imports this
  * same function, so the published `IngestReadings` and the executing schema
