@@ -92,13 +92,16 @@ import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { op } from './helpers';
 import {
+    InviteMemberSchema,
+    UpdateAdminMemberSchema,
+    UpdateMemberCertificatesSchema,
+    CreateAdminInviteSchema,
     BulkRemoveMembershipsSchema,
     BulkDeactivateMembershipsSchema,
     BulkRevokeInvitesSchema,
 } from '@/lib/schemas';
 
 /** The six tenant roles assignable by hand. */
-const TenantRole = z.enum(['OWNER', 'ADMIN', 'EDITOR', 'AUDITOR', 'READER', 'MECHANISATOR']);
 
 const TenantParams = z.object({
     tenantSlug: z.string().openapi({ param: { name: 'tenantSlug', in: 'path' }, example: 'acme' }),
@@ -269,12 +272,7 @@ export function registerAdminMembersPaths(registry: OpenAPIRegistry): void {
             'run may assign. Do not infer the provisionable set from this enum; the two disagree by design.',
         tags: ['Admin'],
         params: TenantParams,
-        body: z
-            .object({
-                email: z.string().email(),
-                role: TenantRole,
-            })
-            .openapi('InviteMemberRequest'),
+        body: InviteMemberSchema,
         success: {
             status: 201,
             description: 'The invite exists. Check `emailSent` before telling the admin the person was notified.',
@@ -303,14 +301,7 @@ export function registerAdminMembersPaths(registry: OpenAPIRegistry): void {
             'the role from the last active OWNER/ADMIN. A farm must never become unadministrable.',
         tags: ['Admin'],
         params: MembershipParams,
-        body: z
-            .object({
-                role: TenantRole.optional(),
-                customRoleId: z.string().nullable().optional().openapi({
-                    description: '`null` UNASSIGNS the custom role. Omitting the field leaves it unchanged — the two are different.',
-                }),
-            })
-            .openapi('UpdateAdminMemberRequest'),
+        body: UpdateAdminMemberSchema,
         success: { status: 200, description: 'The updated membership.', schema: AdminMemberSchema },
     });
 
@@ -375,13 +366,7 @@ export function registerAdminMembersPaths(registry: OpenAPIRegistry): void {
             '\n\nA `PUT` rather than a `PATCH` despite the merge semantics; the method is what it is.',
         tags: ['Admin'],
         params: MembershipParams,
-        body: z
-            .object({
-                applicatorCertNo: z.string().max(120).nullable().optional(),
-                agronomistCertNo: z.string().max(120).nullable().optional(),
-                agronomistName: z.string().max(200).nullable().optional(),
-            })
-            .openapi('UpdateMemberCertificatesRequest'),
+        body: UpdateMemberCertificatesSchema,
         success: { status: 200, description: 'The updated membership.', schema: AdminMemberSchema },
     });
 
@@ -475,9 +460,7 @@ export function registerAdminMembersPaths(registry: OpenAPIRegistry): void {
             'it; that mints a second invite.',
         tags: ['Admin'],
         params: TenantParams,
-        body: z
-            .object({ email: z.string().email(), role: TenantRole })
-            .openapi('CreateAdminInviteRequest'),
+        body: CreateAdminInviteSchema,
         success: {
             status: 201,
             description: 'The invite exists. Check `emailSent` before reporting the person was notified.',

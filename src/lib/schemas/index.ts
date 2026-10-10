@@ -306,6 +306,84 @@ export const BulkTaskDueDateSchema = z.object({
     dueAt: instantTimestamp().nullable(),
 }).strip();
 
+// ─── Admin members / invites / field-op review (#1555 batch 2) ───
+//
+// Five more bodies that were declared twice. Unlike batch 1 these carried
+// published DESCRIPTIONS on the spec side and none on the route side, so the
+// move has to bring the prose with it or the contract silently loses
+// documentation — which is the opposite of the intended effect.
+//
+// Checked for drift before moving, and there was NONE: all five pairs matched
+// shape for shape. That is worth stating plainly, because "they agree today"
+// is the argument FOR removing the duplication rather than against it. They
+// agree by diligence, and nothing keeps them agreeing.
+//
+// The role enum is written inline rather than reaching for the paths files'
+// `TenantRole` const: that const is unnamed (the generated spec renders the
+// enum inline, not as a `$ref`), and importing a schema from the openapi layer
+// into a route would drag the registry into the request path.
+
+const TENANT_ROLE_VALUES = [
+    'OWNER',
+    'ADMIN',
+    'EDITOR',
+    'AUDITOR',
+    'READER',
+    'MECHANISATOR',
+] as const;
+
+/** `POST /admin/members` — invite a member at a built-in role. */
+export const InviteMemberSchema = z
+    .object({
+        email: z.string().email('Valid email required'),
+        role: z.enum(TENANT_ROLE_VALUES),
+    })
+    .openapi('InviteMemberRequest');
+
+/** `PATCH /admin/members/{membershipId}` — change role and/or custom role. */
+export const UpdateAdminMemberSchema = z
+    .object({
+        role: z.enum(TENANT_ROLE_VALUES).optional(),
+        customRoleId: z.string().nullable().optional().openapi({
+            description:
+                '`null` UNASSIGNS the custom role. Omitting the field leaves it unchanged — the two are different.',
+        }),
+    })
+    .openapi('UpdateAdminMemberRequest');
+
+/** `PUT /admin/members/{membershipId}/certificates` — ПРЗ / agronomist details. */
+export const UpdateMemberCertificatesSchema = z
+    .object({
+        applicatorCertNo: z.string().max(120).nullable().optional(),
+        agronomistCertNo: z.string().max(120).nullable().optional(),
+        agronomistName: z.string().max(200).nullable().optional(),
+    })
+    .openapi('UpdateMemberCertificatesRequest');
+
+/** `POST /admin/invites` — invite by email at a built-in role. */
+export const CreateAdminInviteSchema = z
+    .object({
+        email: z.string().email('Valid email required'),
+        role: z.enum(TENANT_ROLE_VALUES),
+    })
+    .openapi('CreateAdminInviteRequest');
+
+/** `POST /field-operations/{taskId}/review` — reviewer decision. */
+export const FieldOperationReviewSchema = z
+    .object({
+        action: z.enum(['APPROVE', 'REQUEST_CHANGES']),
+        comment: z.string().max(2000).nullable().optional().openapi({
+            description:
+                'Sanitised server-side, then reused three ways — Task.resolution (APPROVE only), ' +
+                'the audit detail, and the operator notification.',
+        }),
+    })
+    .openapi('FieldOperationReviewRequest', {
+        description:
+            'Reviewer decision on a completed field operation. ADMIN-gated, and deliberately ' +
+            'separate from evidence review: this finalises the Task.',
+    });
+
 // ─── Bulk membership / invite / location ids (#1555) ───
 //
 // These four were declared TWICE — once inside the route handler and once in
