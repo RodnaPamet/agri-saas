@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "10.18.0",
+    "version": "10.19.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -1170,6 +1170,26 @@
           "attributes"
         ],
         "description": "The blend’s outcome. mergeLinks is how many genealogy edges were written, which is what makes the result traceable back to its sources."
+      },
+      "BlockResult": {
+        "type": "object",
+        "properties": {
+          "blocked": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "alreadyBlocked": {
+            "type": "boolean",
+            "description": "Whether a block already existed. The action is idempotent — pressing it twice is one row, not an error — so this is how a client tells \"nothing changed\" from \"newly blocked\" without a 201/200 split that would confuse a cache."
+          }
+        },
+        "required": [
+          "blocked",
+          "alreadyBlocked"
+        ],
+        "description": "The state of the block after the call."
       },
       "BottomTabOrder": {
         "type": [
@@ -9195,6 +9215,23 @@
         ],
         "description": "Operator updates one per-parcel prescription line. The job auto-resolves when every line is DONE or SKIPPED."
       },
+      "OwnBlock": {
+        "type": "object",
+        "properties": {
+          "blockedUserId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "blockedUserId",
+          "createdAt"
+        ],
+        "description": "A block the caller MADE. Blocks made AGAINST the caller are never returned, even though the database policy admits both sides of the row — it must, because enforcement runs in the blocked party's context and a row they cannot see cannot refuse them. Hiding them here is what makes a block silent."
+      },
       "OwnReport": {
         "type": "object",
         "properties": {
@@ -10461,6 +10498,20 @@
           "invitedBy"
         ],
         "description": "A pending invite. Deliberately carries NO acceptance token: the token is a bearer credential and belongs only in the `url` the create response returns (#1450)."
+      },
+      "PersonBlock": {
+        "type": "object",
+        "properties": {
+          "blockedUserId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "blockedUserId"
+        ],
+        "description": "The person to block or unblock. The blocker is the authenticated caller and cannot be supplied."
       },
       "PlanningAck": {
         "type": "object",
@@ -31333,7 +31384,7 @@
       "post": {
         "operationId": "sendExchangeMessage",
         "summary": "Борса — send a message",
-        "description": "The body is HTML-sanitised on write and then length-checked, in that order — so markup cannot pad a message past the limit.\n\nA CLOSED thread is not refused: sending REOPENS it and the response says so with `reopened: true`. (This previously returned 400 `THREAD_CLOSED`; that refusal is gone, because either party can close and a refusal would let one side mute the other permanently.)\n\nSend `Idempotency-Key` ALWAYS, minted BEFORE the first attempt and reused on every retry of the same logical send. The server maps it to `clientMutationId`, unique per SENDER, and a replay returns the ORIGINAL message with `replayed: true` rather than adding a duplicate line to the conversation. **`replayed` is explicit on purpose** — a replay indistinguishable from a create is a shape a client cannot branch on.\n\nThe replay check runs BEFORE the party, block and closed checks, so a retry of a message that was already accepted returns its original result even if the seller has since blocked the sender. Otherwise a flaky link turns \"delivered\" into a 403 for a message that IS in the thread.\n\nWithout a key the send is NOT idempotent — two taps make two messages.\n\n**Rate limit: 60 per minute, SHARED across the whole sending tenant** — not per user, not per device, and not per thread. Every conversation a tenant has draws on ONE budget, because the cost this bounds is the recipient's notification bell, which gets a row per message by design. Per-thread was rejected: a thread is per (listing, inquirer), so a per-thread ceiling would be multiplied by however many listings the RECIPIENT happens to have. Each party has their own budget, so one side can never exhaust the other's ability to reply.\n\nOn 429, HONOUR `Retry-After`. A client that retries on its own schedule spends the next window the moment it opens and stays blocked; the header says when the budget is actually free. A blocked sender consumes quota too — the limit runs before the block check, so the cost of being blocked falls on the blocked party. See #1161.\n\n**Two 400 codes are specific to this route and worth handling by name.**\n\n`MESSAGE_TOO_LONG` — the sanitised, trimmed body exceeds 4000 UTF-16 code units. AVOIDABLE rather than handleable: cap the composer at 4000 and it cannot occur, because sanitising only shortens.\n\n`MESSAGE_EMPTY` — the body sanitised to nothing. **Reachable from input the USER considers non-empty**: markup with no text (`<b></b>`), a lone tag, or pure whitespace all arrive as something the person typed and leave as nothing. Do not render it verbatim as \"you wrote nothing\" — the honest message is nearer \"that message has no text in it\".\n\nThe bound was documented as 8000 until now — exactly 2x the real limit — so a client trusting the spec sent 6000 characters and was refused with a code the spec did not list (#1391).",
+        "description": "The body is HTML-sanitised on write and then length-checked, in that order — so markup cannot pad a message past the limit.\n\nA CLOSED thread is not refused: sending REOPENS it and the response says so with `reopened: true`. (This previously returned 400 `THREAD_CLOSED`; that refusal is gone, because either party can close and a refusal would let one side mute the other permanently.)\n\nSend `Idempotency-Key` ALWAYS, minted BEFORE the first attempt and reused on every retry of the same logical send. The server maps it to `clientMutationId`, unique per SENDER, and a replay returns the ORIGINAL message with `replayed: true` rather than adding a duplicate line to the conversation. **`replayed` is explicit on purpose** — a replay indistinguishable from a create is a shape a client cannot branch on.\n\nThe replay check runs BEFORE the party, block and closed checks, so a retry of a message that was already accepted returns its original result even if the seller has since blocked the sender. Otherwise a flaky link turns \"delivered\" into a 403 for a message that IS in the thread.\n\nWithout a key the send is NOT idempotent — two taps make two messages.\n\n**Two different block refusals, and the difference is deliberate (P5.2b).** 403 `THREAD_BLOCKED` is the EXCHANGE block — a seller farm refusing a buyer — and it says so in words, because a commercial refusal is something a buyer is entitled to understand. 403 `THREAD_PERSON_BLOCKED` is the PERSON block and can only ever reach the BLOCKER: \"you have blocked this person\". The person being blocked never sees either code here, because a person block removes the thread from their view entirely — they get the same 404 a thread that does not exist returns. So a client should render `THREAD_PERSON_BLOCKED` with an unblock affordance and never treat it as the other party refusing them.\n\n**Rate limit: 60 per minute, SHARED across the whole sending tenant** — not per user, not per device, and not per thread. Every conversation a tenant has draws on ONE budget, because the cost this bounds is the recipient's notification bell, which gets a row per message by design. Per-thread was rejected: a thread is per (listing, inquirer), so a per-thread ceiling would be multiplied by however many listings the RECIPIENT happens to have. Each party has their own budget, so one side can never exhaust the other's ability to reply.\n\nOn 429, HONOUR `Retry-After`. A client that retries on its own schedule spends the next window the moment it opens and stays blocked; the header says when the budget is actually free. A blocked sender consumes quota too — the limit runs before the block check, so the cost of being blocked falls on the blocked party. See #1161.\n\n**Two 400 codes are specific to this route and worth handling by name.**\n\n`MESSAGE_TOO_LONG` — the sanitised, trimmed body exceeds 4000 UTF-16 code units. AVOIDABLE rather than handleable: cap the composer at 4000 and it cannot occur, because sanitising only shortens.\n\n`MESSAGE_EMPTY` — the body sanitised to nothing. **Reachable from input the USER considers non-empty**: markup with no text (`<b></b>`), a lone tag, or pure whitespace all arrive as something the person typed and leave as nothing. Do not render it verbatim as \"you wrote nothing\" — the honest message is nearer \"that message has no text in it\".\n\nThe bound was documented as 8000 until now — exactly 2x the real limit — so a client trusting the spec sent 6000 characters and was refused with a code the spec did not list (#1391).",
         "tags": [
           "Exchange messaging"
         ],
@@ -47032,6 +47083,423 @@
                   },
                   "required": [
                     "reports"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries an English `message` as a developer-facing fallback; it is NOT translated, so render your own copy keyed on `code`. Route-level 403s carry their own codes and are described on the operation that returns them.\n\nOne route-level code is described HERE rather than per-operation. MOST operations cannot return it — it is confined to the five capability families named below — but it means the same thing on each of them, and one of the five (`upload`) is gated at a choke point that many unrelated routes reach, so an exhaustive per-operation list would be the kind that is wrong by omission:\n\n- `PAST_DUE_RESTRICTED` — a payment on this tenant failed and the 14-day grace period has elapsed. It is NOT a quota or a plan ceiling: the plan is untouched and nothing was exceeded. The withheld capabilities are exactly `exchange`, `trends`, `task.create`, `upload` and `journal.create`; every other surface, including reading everything already recorded, is unaffected. The tenant's own ACTIVE exchange listings stay visible to other farms and inbound threads keep arriving — this is the unpaid tenant's own view closing, not a withdrawal.\n\n  The restriction is COMPUTED per request, with no sweep and nothing to settle, so a cleared balance lifts it on the very next request — a client can honestly tell the user to resolve it and refresh. This description deliberately names no remedy beyond that: App Store guideline 3.1.1 keeps the native client from pointing anyone to pay outside the app, so a prescribed destination would be unreachable for one of the two clients (#1490). What both clients CAN do is distinguish this from `plan_limit_exceeded:` and say which happened.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/social/blocks": {
+      "post": {
+        "operationId": "blockPerson",
+        "summary": "Block a person",
+        "description": "Refuses further contact from that person, person-to-person. ADDITIONAL to the exchange block, which is a farm refusing a person; collapsing the two would silently un-block everyone already blocked on the exchange.\n\nThe effect is SILENT on the enforcement side: the blocked person is never told. An exchange conversation between the two disappears from THEIR view — read, list and send all answer the same not-found a genuinely missing thread does — while the blocker keeps full history. Blocking yourself is refused with `BLOCK_SELF`.\n\nIdempotent: blocking twice is one row and answers 200 with `alreadyBlocked: true`.\n\n**Gated on `social.person-blocks`** and 404s while that flag is off. Unlike the notice routes above, which are a legal duty and cannot be dark-launched, blocking is a product feature (and an Apple 1.2 requirement).\n\nThe person id travels in the BODY, including on `DELETE`. That is unusual and deliberate: iOS logs the full request URL including the path, unsuppressably, so a third party's user id in a path would end up in a device log — the exact disclosure this phase exists to prevent.",
+        "tags": [
+          "Trust & safety"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonBlock"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The block is in place.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlockResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries an English `message` as a developer-facing fallback; it is NOT translated, so render your own copy keyed on `code`. Route-level 403s carry their own codes and are described on the operation that returns them.\n\nOne route-level code is described HERE rather than per-operation. MOST operations cannot return it — it is confined to the five capability families named below — but it means the same thing on each of them, and one of the five (`upload`) is gated at a choke point that many unrelated routes reach, so an exhaustive per-operation list would be the kind that is wrong by omission:\n\n- `PAST_DUE_RESTRICTED` — a payment on this tenant failed and the 14-day grace period has elapsed. It is NOT a quota or a plan ceiling: the plan is untouched and nothing was exceeded. The withheld capabilities are exactly `exchange`, `trends`, `task.create`, `upload` and `journal.create`; every other surface, including reading everything already recorded, is unaffected. The tenant's own ACTIVE exchange listings stay visible to other farms and inbound threads keep arriving — this is the unpaid tenant's own view closing, not a withdrawal.\n\n  The restriction is COMPUTED per request, with no sweep and nothing to settle, so a cleared balance lifts it on the very next request — a client can honestly tell the user to resolve it and refresh. This description deliberately names no remedy beyond that: App Store guideline 3.1.1 keeps the native client from pointing anyone to pay outside the app, so a prescribed destination would be unreachable for one of the two clients (#1490). What both clients CAN do is distinguish this from `plan_limit_exceeded:` and say which happened.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "unblockPerson",
+        "summary": "Lift a block",
+        "description": "Removes the caller's own block. \n\n**404 when there is no such block OF YOURS**, and the two reasons are deliberately indistinguishable: it never existed, or it is somebody else's row that the delete policy refused. Telling them apart would reveal that one person has blocked another to anyone able to guess the pair. \n\nThe 404 is computed from a row COUNT, not from an absent error: under row-level security a delete whose policy is unsatisfied affects zero rows and returns normally, so \"it did not throw\" is not evidence it worked.\n\nThe 404 carries `code: \"BLOCK_NOT_FOUND\"`.\n\n**Gated on `social.person-blocks`** and 404s while that flag is off. Unlike the notice routes above, which are a legal duty and cannot be dark-launched, blocking is a product feature (and an Apple 1.2 requirement).\n\nThe person id travels in the BODY, including on `DELETE`. That is unusual and deliberate: iOS logs the full request URL including the path, unsuppressably, so a third party's user id in a path would end up in a device log — the exact disclosure this phase exists to prevent.",
+        "tags": [
+          "Trust & safety"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonBlock"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The block is gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "blocked": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    }
+                  },
+                  "required": [
+                    "blocked"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries an English `message` as a developer-facing fallback; it is NOT translated, so render your own copy keyed on `code`. Route-level 403s carry their own codes and are described on the operation that returns them.\n\nOne route-level code is described HERE rather than per-operation. MOST operations cannot return it — it is confined to the five capability families named below — but it means the same thing on each of them, and one of the five (`upload`) is gated at a choke point that many unrelated routes reach, so an exhaustive per-operation list would be the kind that is wrong by omission:\n\n- `PAST_DUE_RESTRICTED` — a payment on this tenant failed and the 14-day grace period has elapsed. It is NOT a quota or a plan ceiling: the plan is untouched and nothing was exceeded. The withheld capabilities are exactly `exchange`, `trends`, `task.create`, `upload` and `journal.create`; every other surface, including reading everything already recorded, is unaffected. The tenant's own ACTIVE exchange listings stay visible to other farms and inbound threads keep arriving — this is the unpaid tenant's own view closing, not a withdrawal.\n\n  The restriction is COMPUTED per request, with no sweep and nothing to settle, so a cleared balance lifts it on the very next request — a client can honestly tell the user to resolve it and refresh. This description deliberately names no remedy beyond that: App Store guideline 3.1.1 keeps the native client from pointing anyone to pay outside the app, so a prescribed destination would be unreachable for one of the two clients (#1490). What both clients CAN do is distinguish this from `plan_limit_exceeded:` and say which happened.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "listMyBlocks",
+        "summary": "The people you have blocked",
+        "description": "Blocks the caller MADE, newest first, capped at 500. Blocks made AGAINST the caller are never included.\n\n**Gated on `social.person-blocks`** and 404s while that flag is off. Unlike the notice routes above, which are a legal duty and cannot be dark-launched, blocking is a product feature (and an Apple 1.2 requirement).",
+        "tags": [
+          "Trust & safety"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's own blocks.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "blocks": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/OwnBlock"
+                      }
+                    }
+                  },
+                  "required": [
+                    "blocks"
                   ]
                 }
               }

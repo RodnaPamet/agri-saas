@@ -289,6 +289,15 @@ export function registerExchangeMessagingPaths(registry: OpenAPIRegistry): void 
             'has since blocked the sender. Otherwise a flaky link turns "delivered" into a ' +
             '403 for a message that IS in the thread.\n\n' +
             'Without a key the send is NOT idempotent — two taps make two messages.\n\n' +
+            '**Two different block refusals, and the difference is deliberate (P5.2b).** ' +
+            '403 `THREAD_BLOCKED` is the EXCHANGE block — a seller farm refusing a buyer — ' +
+            'and it says so in words, because a commercial refusal is something a buyer is ' +
+            'entitled to understand. 403 `THREAD_PERSON_BLOCKED` is the PERSON block and can ' +
+            'only ever reach the BLOCKER: "you have blocked this person". The person being ' +
+            'blocked never sees either code here, because a person block removes the thread ' +
+            'from their view entirely — they get the same 404 a thread that does not exist ' +
+            'returns. So a client should render `THREAD_PERSON_BLOCKED` with an unblock ' +
+            'affordance and never treat it as the other party refusing them.\n\n' +
             '**Rate limit: 60 per minute, SHARED across the whole sending tenant** — ' +
             'not per user, not per device, and not per thread. Every conversation a ' +
             'tenant has draws on ONE budget, because the cost this bounds is the ' +

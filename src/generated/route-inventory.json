@@ -506,6 +506,11 @@
       "documented": false
     },
     {
+      "path": "/api/social/blocks",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/social/reports",
       "status": "live",
       "documented": true
