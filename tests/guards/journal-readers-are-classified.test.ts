@@ -28,14 +28,24 @@
  *
  * ## Not covered here, deliberately
  *
- * `reports/pdf/farm-record-diary.ts` queries `logEntry.findMany` DIRECTLY and
- * never reaches `JournalRepository`, so the ДНЕВНИК register keeps its
- * observation rows whatever this flag does. That is luck rather than design —
- * the register has its own copy of the journal read — and it is the reason the
- * owner's "the PDF stays on the Дневник" needed no code change. A guard
- * asserting the PDF is unaffected would be asserting something about a query
- * this file cannot see; `tests/integration/journal-location-filter.test.ts`
- * covers the behaviour that matters.
+ * `reports/pdf/farm-record-diary.ts` never reaches `JournalRepository`, so the
+ * ДНЕВНИК register keeps its rows whatever this flag does — and that is
+ * DESIGN, not luck. It takes its spray rows from `operationParcel.findMany`
+ * (:905) and reads `logEntry` only for cert snapshots and OBSERVATION rows,
+ * filtered by `type`. Its own comment says why:
+ *
+ *     Cert snapshots (frozen at completion) keyed by operationParcelId …
+ *     from OperationParcel REGARDLESS of the journal entry's lifecycle
+ *
+ * written before this ruling existed. So the register survives the entry being
+ * deleted outright, which is stronger than the hiding this flag does.
+ *
+ * Do not "make that explicit" by routing the PDF through this repository for
+ * consistency — that would create the coupling its author deliberately
+ * avoided. A guard here asserting the PDF is unaffected would also be
+ * asserting something about a query this file cannot see;
+ * `tests/integration/journal-location-filter.test.ts` covers the behaviour
+ * that matters.
  */
 import * as fs from 'fs';
 import * as path from 'path';
