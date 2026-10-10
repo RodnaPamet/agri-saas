@@ -7,6 +7,7 @@ import { getTenantCtx } from '@/app-layer/context';
 import { createFarmTask, listMyFarmTasks } from '@/app-layer/usecases/farm-task';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { withValidatedBody } from '@/lib/validation/route';
+import { instantTimestamp } from '@/lib/schemas/timestamp';
 import { jsonResponse } from '@/lib/api-response';
 import { jsonWithETag } from '@/lib/http/etag';
 
@@ -24,7 +25,7 @@ const CreateFarmTaskSchema = z
         farmTaskType: z.string().min(1, 'A task type is required'),
         description: z.string().max(5000).nullable().optional(),
         priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional(),
-        dueAt: z.string().nullable().optional(),
+        dueAt: instantTimestamp().nullable().optional(),
         assigneeUserId: z.string().nullable().optional(),
         locationIds: z.array(z.string().min(1)).max(100).optional(),
         parcelIds: z.array(z.string().min(1)).max(100).optional(),

@@ -1,9 +1,23 @@
 /**
- * `requestTimestamp()` — the request-side timestamp validator (#1443).
+ * `requestTimestamp()` — the DAY-typed request validator (#1443, #1558).
  *
  * Executing, not structural. The whole argument for the helper is that its
- * behaviour is strictly narrower than the bare `z.string()` these seven fields
- * carried — a claim about inputs, provable only by feeding it inputs.
+ * behaviour is strictly narrower than a bare `z.string()` — a claim about
+ * inputs, provable only by feeding it inputs.
+ *
+ * ## It no longer guards #1443's seven fields, and these tests still matter
+ *
+ * Those seven moved to `instantTimestamp()` when the owner ruled that the
+ * three web handlers posting a bare `YYYY-MM-DD` should be converted rather
+ * than the contract loosened. This function is retained for the **day-typed**
+ * fields — `incurredOn`, `from`/`to`, `startDate`/`endDate`, `paidAt` — where
+ * a day is what the client means to send and `instantTimestamp()` would be
+ * wrong. 24 of those are still unvalidated (#1558) and one records TODAY
+ * instead of failing, so this is the validator that issue applies.
+ *
+ * Which makes the behaviour pinned below the SPECIFICATION for that rollout
+ * rather than a record of a past change: accept a day, accept an instant,
+ * refuse only what cannot be parsed at all.
  *
  * It is a REFINEMENT and not a transform, and that is the shape CI corrected.
  * The first version piped into `z.coerce.date()`, which parses to a `Date` and
@@ -20,12 +34,13 @@ import { requestTimestamp } from '@/lib/schemas/timestamp';
 const Nullable = z.object({ at: requestTimestamp().nullable().optional() });
 const Required = z.object({ at: requestTimestamp() });
 
-describe('requestTimestamp() (#1443)', () => {
-    it('parses to a STRING, not a Date — six route handlers depend on it', () => {
-        // The regression CI caught. A `Date` here means
-        // `src/app/api/t/[tenantSlug]/{journal,tasks,locations}/**` stop
-        // compiling at the route-to-usecase boundary, because those usecase
-        // signatures take `string`.
+describe('requestTimestamp() (#1443, #1558)', () => {
+    it('parses to a STRING, not a Date — the property #1540 was broken by', () => {
+        // The regression CI caught when this piped into `z.coerce.date()`:
+        // six route handlers stopped compiling at the route-to-usecase
+        // boundary, because those usecase signatures take `string`. Still
+        // pinned because #1558's day fields have the same shape — their
+        // usecases take strings and call `new Date(...)` themselves.
         const { at } = Required.parse({ at: '2026-10-08T14:00:00Z' });
         expect(typeof at).toBe('string');
         expect(at).toBe('2026-10-08T14:00:00Z');
@@ -95,13 +110,20 @@ describe('requestTimestamp() (#1443)', () => {
         });
     });
 
-    describe('the known gaps, pinned so they are not mistaken for fixed', () => {
-        it('a space-separated value is still ACCEPTED and read as server-local', () => {
-            // No `T`, no offset. The consumer's `new Date` reads this as local
-            // time, so the stored instant depends on where the server runs —
-            // this box and the production VM are both Europe/Sofia. This
-            // helper does NOT reject it; rejecting the form is a contract
-            // decision tracked on #1443.
+    describe('what it accepts by DESIGN — not gaps, for a day-typed field', () => {
+        // These two were written as "known gaps" while this guarded #1443's
+        // instants, where they genuinely were gaps. For the day fields this
+        // now serves they are the requirement: a client sending `2026-10-08`
+        // for `incurredOn` means that day, and must not get a 400.
+        //
+        // A field that cannot tolerate either shape wants `instantTimestamp()`.
+        // That is the whole division of labour between the two helpers, and
+        // these assertions are what stop someone "fixing" this one into it.
+        it('a space-separated value is ACCEPTED, and is read as server-local', () => {
+            // No `T`, no offset, so the consumer's `new Date` applies the
+            // server's zone — this box and the production VM are both
+            // Europe/Sofia. Accepted here; refused by `instantTimestamp()`,
+            // which is where that ambiguity is a bug rather than a day.
             expect(Required.safeParse({ at: '2026-10-08 14:00:00' }).success).toBe(true);
             if (new Date().getTimezoneOffset() !== 0) {
                 expect(new Date('2026-10-08 14:00:00').toISOString()).not.toBe(
@@ -110,7 +132,7 @@ describe('requestTimestamp() (#1443)', () => {
             }
         });
 
-        it('a date-only value is still ACCEPTED and becomes midnight UTC downstream', () => {
+        it('a date-only value is ACCEPTED and becomes midnight UTC downstream', () => {
             expect(Required.safeParse({ at: '2026-10-08' }).success).toBe(true);
             expect(new Date('2026-10-08').toISOString()).toBe('2026-10-08T00:00:00.000Z');
         });
