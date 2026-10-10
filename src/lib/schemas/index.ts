@@ -16,7 +16,7 @@ import { z } from '@/lib/openapi/zod';
 import { httpsUrl } from '@/lib/schemas/url';
 import { normaliseTechnique } from '@/lib/agro/application-techniques';
 import { REGULATORY } from '@/app-layer/schemas/catalog.schemas';
-import { instantTimestamp, clearableTimestamp } from './timestamp';
+import { instantTimestamp, clearableTimestamp, requestTimestamp } from './timestamp';
 import { FARM_NAME_MAX } from './farm-limits';
 
 export const EmptyBodySchema = z.object({}).strip().openapi('EmptyBody', {
@@ -438,6 +438,46 @@ export const CreateDataStreamSchema = z
     })
     .strip()
     .openapi('CreateDataStream');
+
+// ─── БАБХ farm record (#1555 batch 4 — the last one) ───
+
+/**
+ * `POST /t/{tenantSlug}/locations/{id}/farm-record` — generate the ДНЕВНИК.
+ *
+ * The last of the fourteen. Its spec copy said so out loud, exactly as
+ * batch 1's bulk-delete did: "Mirrors the schema declared inside the
+ * farm-record route handler."
+ *
+ * Two halves came from opposite sides, which is the whole argument for sharing
+ * them:
+ *
+ *   - `from`/`to` take the ROUTE's `requestTimestamp()`. The spec's copy was a
+ *     bare `z.string().min(1)`, and that unvalidated pair was a 500 via a
+ *     Prisma date filter until #1577 fixed the route — the spec copy would
+ *     still be wrong today.
+ *   - `save`'s description comes from the SPEC. It is the media-type switch and
+ *     the route carries no note of it at all, so writing this from the route's
+ *     copy would have dropped the most important sentence in the schema.
+ *
+ * The period is day-typed (`BgDate.isoDay` from iOS), and `.min(1)` is kept
+ * after the refinement for the field-specific message.
+ */
+export const FarmRecordGenerateSchema = z
+    .object({
+        from: requestTimestamp().min(1, 'from is required'),
+        to: requestTimestamp().min(1, 'to is required'),
+        save: z.boolean().optional().default(false).openapi({
+            description:
+                'THE MEDIA TYPE SWITCH. Omitted or false → the response is `application/pdf` ' +
+                'bytes. True → it is `application/json` `{ fileRecordId, fileName }` and the PDF ' +
+                'is filed in the location’s Farm-records register instead of being returned.',
+        }),
+    })
+    .strip()
+    .openapi('FarmRecordGenerateRequest', {
+        description:
+            'Generate the БАБХ ДНЕВНИК for a location over a period. Declared once in `src/lib/schemas/index.ts` and imported by both the route handler and this spec entry, so the two cannot disagree (#1555).',
+    });
 
 // ─── Admin members / invites / field-op review (#1555 batch 2) ───
 //

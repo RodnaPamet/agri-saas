@@ -117,12 +117,18 @@ for (const full of routeFiles) {
  *     10  batch 1 — the four bulk-ids schemas
  *      5  batch 2 — admin members/invites/certificates and the field-op review
  *      1  batch 3 — ingest, me/farms, farm-tasks, agro/data-streams
+ *      0  batch 4 — locations/{id}/farm-record
  *
- * The one remaining is `locations/{id}/farm-record`, left out of batch 3 on
- * purpose: #1577 edits that route's `BodySchema` in place to fix an
- * unvalidated period (#1575), and converting it in the same window would have
- * been two changes fighting over one declaration. It converts once that lands,
- * taking this to 0.
+ * ZERO, and the cap stays there. Every request body with a published contract
+ * is now declared once and imported by both sides, so the class this guard
+ * detects cannot exist without the count moving off 0 — which is a much
+ * sharper signal than a floor with headroom.
+ *
+ * farm-record was held back from batch 3 on purpose: #1577 was editing that
+ * route's `BodySchema` in place to fix an unvalidated period (#1575), and
+ * converting it in the same window would have been two changes fighting over
+ * one declaration. It landed first, and its validated `from`/`to` came across
+ * with the schema.
  *
  * The drift assertion below is what forced this down each time: with the cap
  * left at 10 and five live, `MAX_DUAL - dual.length` was 5 and the suite
@@ -130,7 +136,7 @@ for (const full of routeFiles) {
  * regression to land unnoticed, which is the whole failure mode a ratchet
  * exists to prevent.
  */
-const MAX_DUAL = 1;
+const MAX_DUAL = 0;
 
 describe('a request body is declared once (#1555)', () => {
     it('the population is real — the denominator', () => {
@@ -181,11 +187,15 @@ describe('a request body is declared once (#1555)', () => {
             '/api/me/farms',
             '/api/t/{tenantSlug}/farm-tasks',
             '/api/t/{tenantSlug}/agro/data-streams',
+            // batch 4 — the last one. Its spec copy admitted the duplication
+            // in its own published description: "Mirrors the schema declared
+            // inside the farm-record route handler."
+            '/api/t/{tenantSlug}/locations/{id}/farm-record',
         ];
         for (const p of converted) {
             expect(dualPaths).not.toContain(p);
         }
-        expect(converted).toHaveLength(13);
+        expect(converted).toHaveLength(14);
     });
 
     it('no NEW route declares its body twice', () => {
