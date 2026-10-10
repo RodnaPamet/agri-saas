@@ -37,6 +37,18 @@ describe('jwt callback — membership refresh on update trigger', () => {
         findUnique.mockResolvedValue({
             id: 'user-1',
             sessionVersion: 3,
+            // P5.5a — `applyMembershipClaims` reads these two scalars for the
+            // slow-mode claims. The real query uses `include`, which returns
+            // every scalar column, so production always has them; a double
+            // that omits `createdAt` throws on `.getTime()`.
+            //
+            // Extending the DOUBLE rather than making the source defensive:
+            // an optional read there would leave the claim absent, which
+            // `isSlowModeAccount` reads as "pre-P5.5a session" — i.e. NOT
+            // slow. A security control must not fail open because a test
+            // fixture was thin.
+            createdAt: new Date('2026-01-01T00:00:00.000Z'),
+            emailVerified: new Date('2026-01-02T00:00:00.000Z'),
             tenantMemberships: [
                 {
                     tenantId: 't-new',

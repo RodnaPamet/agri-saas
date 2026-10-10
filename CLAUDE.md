@@ -2090,6 +2090,69 @@ is global and ordered oldest-first, so `mockRejectedValueOnce` lands on whicheve
 row the run reaches first — which may be one another suite left stuck. Aim a
 failure at a RECIPIENT, not at a call index.
 
+### P5.5a — slow mode, and the one route class it must never touch
+
+An account that is **unverified OR younger than 7 days** gets
+`SLOW_MODE_MUTATION_LIMIT` (15/min) in place of `API_MUTATION_LIMIT` (60/min).
+Owner ruling 2026-10-10 (#1596). Policy in `src/lib/security/slow-mode.ts`,
+applied at the `withApiErrorHandling` choke point.
+
+**The OR is the design, and each half alone is nearly free to defeat.** Age
+alone costs an attacker patience; verification alone lets a throwaway-but-
+confirmed mailbox reach the full budget in its first minute. Together, full
+speed costs a real mailbox AND a week.
+
+**A reduced BUDGET, never a cooldown.** A per-action minimum interval is
+stricter and worse: it makes a legitimate new farmer's first session feel
+broken, which is a retention cost paid against a speculative attack.
+
+**The claims are raw TIMESTAMPS, not a `slowMode` boolean.** `emailVerifiedAt`
+and `accountCreatedAt` go on the JWT and the verdict is computed per request.
+A baked boolean would keep an account throttled past the age threshold until
+its token happened to re-mint — a real user penalised for a caching decision.
+
+**`applyMembershipClaims` is the ONLY producer, and that is load-bearing.**
+Every hand-minted session (SSO, token refresh, native exchange, webview adopt,
+Apple) reaches `buildSessionClaims`, which calls it, so a credential cannot be
+minted without the claims. A second producer that forgot one would be a
+silently more permissive path — the same argument that keeps
+`POST /api/auth/token` re-encoding existing claims rather than rebuilding them.
+The `include` in that query returns every scalar, so both claims cost no query,
+exactly like `uiLanguage`.
+
+**An ABSENT claim reads as NOT slow.** Every session minted before this shipped
+carries neither timestamp, and reading absence as slow would throttle every
+logged-in user on deploy day. That is the `membershipsTruncated` precedent, and
+it is the one fail-OPEN direction in the feature — justified because the
+population is already-authenticated users and the window is one token lifetime.
+Only an explicit `null` means "never confirmed"; collapsing `null` and
+`undefined` would make every old session look unverified.
+
+**Slow mode narrows the DEFAULT tier ONLY**, and the exclusions are the
+existing semantics of those options rather than new exceptions:
+
+| | why it is excluded |
+|---|---|
+| a route with an explicit `config` | every such preset today is already tighter, so overriding would LOOSEN the route |
+| a `getBucket` route | the bucket REPLACES the per-caller key and caps a SHARED resource; narrowing it throttles everyone sharing it |
+| a `getUserId` override route | the id bounding that budget is the TARGET user, not the caller |
+| an anonymous or unreadable caller | slow mode is a statement about an ACCOUNT; applying it to a per-IP key punishes a whole CGNAT egress |
+
+**The way OUT of slow mode must never sit on the default tier.** An unverified
+account throttled on the route that verifies it cannot escape, and the tighter
+the tier the worse it gets. It holds today by construction — `verify-email` is
+an unwrapped GET, and `verify-email/resend` is unwrapped with its own per-email
+limiter because its response must be uniform whether or not the limit tripped
+(a 429 would leak whether an address is registered). A reasonable "wrap every
+route for consistent error handling" PR would break it silently, so
+`tests/guards/slow-mode-escape-is-not-throttled.test.ts` pins it, permits an
+explicit preset, and carries a mutation proof because all three routes are
+currently compliant.
+
+**The slow bucket is keyed separately** (`…-slow`), so the two populations'
+counters stay attributable rather than one tier's consumption appearing in the
+other's.
+
 ## Failing tests
 
 A failing test on a branch is a failing test, full stop. "Pre-existing on
