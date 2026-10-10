@@ -11,15 +11,12 @@ import { bulkDeleteLocation } from '@/app-layer/usecases/location';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { withValidatedBody } from '@/lib/validation/route';
 import { jsonResponse } from '@/lib/api-response';
-import { z } from 'zod';
+import { BulkDeleteLocationsSchema } from '@/lib/schemas';
 
-const BulkDeleteLocationSchema = z.object({
-    locationIds: z.array(z.string().min(1)).min(1).max(100),
-});
 
 export const POST = withApiErrorHandling(
     withValidatedBody(
-        BulkDeleteLocationSchema,
+        BulkDeleteLocationsSchema,
         async (
             req: NextRequest,
             { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> },

@@ -91,6 +91,11 @@
 import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { op } from './helpers';
+import {
+    BulkRemoveMembershipsSchema,
+    BulkDeactivateMembershipsSchema,
+    BulkRevokeInvitesSchema,
+} from '@/lib/schemas';
 
 /** The six tenant roles assignable by hand. */
 const TenantRole = z.enum(['OWNER', 'ADMIN', 'EDITOR', 'AUDITOR', 'READER', 'MECHANISATOR']);
@@ -394,9 +399,7 @@ export function registerAdminMembersPaths(registry: OpenAPIRegistry): void {
             'the response does not say WHICH ids were skipped — compare against the list if you need to know.',
         tags: ['Admin'],
         params: TenantParams,
-        body: z
-            .object({ membershipIds: z.array(z.string().min(1)).min(1).max(100) })
-            .openapi('BulkMembershipIdsRequest'),
+        body: BulkRemoveMembershipsSchema,
         success: {
             status: 200,
             description: 'How many were removed, and how many were left alone.',
@@ -420,9 +423,7 @@ export function registerAdminMembersPaths(registry: OpenAPIRegistry): void {
             '\n\n1–100 ids. Partial success is a 200; see `bulk/remove` for what `skipped` covers.',
         tags: ['Admin'],
         params: TenantParams,
-        body: z
-            .object({ membershipIds: z.array(z.string().min(1)).min(1).max(100) })
-            .openapi('BulkDeactivateRequest'),
+        body: BulkDeactivateMembershipsSchema,
         success: {
             status: 200,
             description: 'How many were DEACTIVATED, and how many were left alone.',
@@ -513,9 +514,7 @@ export function registerAdminMembersPaths(registry: OpenAPIRegistry): void {
             'the number of ids sent is not an error.',
         tags: ['Admin'],
         params: TenantParams,
-        body: z
-            .object({ inviteIds: z.array(z.string().min(1)).min(1).max(100) })
-            .openapi('BulkRevokeInvitesRequest'),
+        body: BulkRevokeInvitesSchema,
         success: {
             status: 200,
             description: 'How many invites were withdrawn.',
