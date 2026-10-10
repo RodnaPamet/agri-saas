@@ -98,6 +98,10 @@ export const PerAreaFiguresSchema = z
     .object({
         /** Display unit. Storage stays hectares; there is no second stored unit. */
         areaDca: z.number(),
+        costAreaDca: z.number().openapi({
+            description:
+                'Decares that `attributableCostPerDca` was divided by — the land the crop OCCUPIES. DIFFERENT from `areaDca`, which is the yield-covered area and is the denominator of the value and margin figures only. Display this one beside the cost rate: showing `areaDca` there contradicts it, and on a farm with no yield estimates `areaDca` is 0 while the cost rate is real.',
+        }),
         standingValuePerDca: z.number().nullable(),
         attributableCostPerDca: z.number().nullable(),
         /**

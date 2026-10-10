@@ -43,6 +43,8 @@ const base = {
     payrollAllocated: false,
 };
 
+const round2 = (n: number): number => Math.round(n * 100) / 100;
+
 describe('computePerArea', () => {
     it('divides by DECARES, the unit the farmer plans in', () => {
         const r = computePerArea(base);
@@ -93,6 +95,37 @@ describe('computePerArea', () => {
             // which is what the calculator's per-commodity list keys on.
             expect(r.marginPerDca).toBeNull();
             expect(r.refusalCode).toBe('NO_STANDING_CROP_AREA');
+        });
+
+        it('reports BOTH denominators, so nothing displayed can contradict them', () => {
+            // agrent-ios raised this against the first version of #1512 and was
+            // right: `perArea` exposed only `areaDca`, so a client showing the
+            // area beside the cost rate would have shown «Площ 0 дка» directly
+            // above «Разход / дка 12,50» on the owner's farm. The figures were
+            // correct and what a farmer read was a contradiction.
+            //
+            // Each figure's own denominator is named rather than left to be
+            // recomputed, so a client multiplying back up gets the number the
+            // server divided by, by construction.
+            const r = computePerArea({ ...base, standingCropAreaHa: 5, occupiedAreaHa: 20 });
+
+            expect(r.areaDca).toBe(50);
+            expect(r.costAreaDca).toBe(200);
+            // And the cost rate really is the second one's quotient, not the
+            // first's — the assertion that makes the pair meaningful.
+            expect(r.attributableCostPerDca).toBe(round2(base.attributableCost / 200));
+        });
+
+        it('reports costAreaDca even when the value figures are refused', () => {
+            // The case the contradiction appeared in: no yield-covered area at
+            // all, so `areaDca` is 0 and the value figures are withheld — but
+            // the cost rate is real and its denominator must travel with it.
+            const r = computePerArea({ ...base, standingCropAreaHa: 0, occupiedAreaHa: 20 });
+
+            expect(r.areaDca).toBe(0);
+            expect(r.costAreaDca).toBe(200);
+            expect(r.attributableCostPerDca).not.toBeNull();
+            expect(r.standingValuePerDca).toBeNull();
         });
 
         it('divides the cost by the OCCUPIED area, not the yield-covered one', () => {

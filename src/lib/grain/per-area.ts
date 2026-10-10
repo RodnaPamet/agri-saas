@@ -73,7 +73,28 @@ export interface PerAreaInput {
 
 export interface PerAreaFigures {
     /** Display unit. Storage stays hectares; there is no second stored unit. */
+    /**
+     * The denominator of `standingValuePerDca` and `marginPerDca` — the
+     * yield-covered area in decares.
+     *
+     * NOT the denominator of `attributableCostPerDca`. See `costAreaDca`.
+     */
     areaDca: number;
+    /**
+     * The denominator of `attributableCostPerDca`, in decares (#1512).
+     *
+     * Exposed because anything displayed beside a per-decare figure has to
+     * match it, and after #1512 the cost rate divides by a different area
+     * from the value figures. Without this a client would show the
+     * yield-covered area — 0 on a farm with no yield estimates — directly
+     * above a cost-per-decare computed from a real one, which is a
+     * contradiction a farmer reads in one glance.
+     *
+     * Each figure's own denominator is named rather than left for a client to
+     * recompute, so the two cannot drift: a client multiplying back up gets
+     * the number the server divided by, by construction.
+     */
+    costAreaDca: number;
     standingValuePerDca: number | null;
     attributableCostPerDca: number | null;
     /**
@@ -120,6 +141,7 @@ export function computePerArea(input: PerAreaInput): PerAreaFigures {
     if (refusalCode != null) {
         return {
             areaDca: Number.isFinite(areaDca) ? areaDca : 0,
+            costAreaDca: Number.isFinite(costAreaDca) ? costAreaDca : 0,
             // Both VALUE figures stay refused — the margin included, because
             // it subtracts a value that does not exist. `refusalCode` keeps
             // describing exactly that, which is what the calculator's
@@ -135,6 +157,7 @@ export function computePerArea(input: PerAreaInput): PerAreaFigures {
     const value = input.standingCropValue as number;
     return {
         areaDca,
+        costAreaDca,
         standingValuePerDca: round2(value / areaDca),
         attributableCostPerDca,
         marginPerDca: round2((value - input.attributableCost) / areaDca),
