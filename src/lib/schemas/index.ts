@@ -1060,3 +1060,62 @@ export const AttachLogEntryFileSchema = z.object({
 }).strip().openapi('LogEntryFileAttachRequest', {
     description: 'Attach an already-uploaded FileRecord (photo / document) to a journal entry. Upload the file first via /journal/{id}/files (multipart) or /evidence/uploads, then reference its id here.',
 });
+
+// ─── Trust & safety — DSA Art 16 notices and reports (P5.2, #1593) ───
+//
+// ONE schema for both the anonymous notice (`POST /api/public/notices`) and
+// the signed-in report (`POST /api/social/reports`), because the bodies are
+// identical. What differs is where `reporterUserId` comes from, and it never
+// comes from here: the anonymous route writes NULL, the signed-in route takes
+// it from the verified session.
+//
+// `.strip()` is load-bearing rather than conventional on this one. A client
+// sending `reporterUserId` has it DROPPED rather than rejected, so a caller
+// cannot attribute a notice to someone else and cannot learn from an error
+// whether the field exists. Same for `status` — the pipeline sets that.
+
+/** The surfaces a notice can name. Mirrors the `ReportSubjectKind` enum. */
+export const REPORT_SUBJECT_KINDS = ['LISTING', 'MESSAGE', 'PROFILE', 'THREAD'] as const;
+
+/**
+ * The reason categories. Mirrors `ReportReasonCode`, owner-confirmed
+ * 2026-10-10 (#1592).
+ *
+ * Duplicated from the Prisma enum deliberately rather than imported from the
+ * generated client: this is a REQUEST contract, and the generated enum is a
+ * database artefact that a migration can widen without anyone deciding the API
+ * should accept the new value. `tests/guards/role-zod-enums.test.ts` is the
+ * precedent for pinning an API enum by parse rather than by import.
+ */
+export const REPORT_REASON_CODES = [
+    'ILLEGAL_CONTENT',
+    'SCAM_OR_FRAUD',
+    'SPAM',
+    'HARASSMENT_OR_HATE',
+    'MISLEADING_LISTING',
+    'INTELLECTUAL_PROPERTY',
+    'PERSONAL_DATA',
+    'OTHER',
+] as const;
+
+/** Free-text ceiling on a notice. Generous for a description, bounded so a
+ *  single notice cannot be a payload. */
+export const REPORT_DETAIL_MAX = 4000;
+
+export const FileReportSchema = z.object({
+    subjectKind: z.enum(REPORT_SUBJECT_KINDS),
+    /** The id of the thing being reported. Opaque here; the server resolves it. */
+    subjectId: z.string().min(1, 'subjectId is required').max(200),
+    reasonCode: z.enum(REPORT_REASON_CODES),
+    /**
+     * The notifier's own words. OPTIONAL — Art 16 does not require a
+     * notifier to explain themselves, and refusing a notice for want of prose
+     * would be refusing a notice.
+     */
+    detail: z.string().max(REPORT_DETAIL_MAX).optional().nullable(),
+}).strip().openapi('FileReport', {
+    description:
+        'A DSA Art 16 notice. Used by both the anonymous public form and the '
+        + 'signed-in report route; the reporter is taken from the session (or '
+        + 'left NULL when anonymous) and is never read from this body.',
+});

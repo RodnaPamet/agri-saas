@@ -88,7 +88,35 @@ const SOCIAL_PAGE_ROOTS = ['src/app/social/', 'src/app/(social)/'] as const;
  * the legal duty that makes the flag inapplicable. See the docblock: this is
  * empty on purpose and entries land with their routes.
  */
-const FLAG_EXEMPT: Readonly<Record<string, string>> = {};
+const FLAG_EXEMPT: Readonly<Record<string, string>> = {
+    // The FIRST entry, and the key is a repo-relative FILE path — this map is
+    // checked against `routeFiles()` and against the declared social roots, so
+    // a URL-shaped key would be an exemption for a path the population never
+    // selects: cover that protects nothing and hides that the rule was never
+    // applied. (I wrote URLs first and this is what caught it.)
+    //
+    // DSA Art 16 requires a notice mechanism, and a legal duty cannot be
+    // dark-launched: a flag defaulting OFF means the obligation is unmet until
+    // someone remembers to flip it, and "it was behind a flag" is not an answer
+    // to a regulator. Art 16 applies to a notifier who happens to have an
+    // account as much as to one who does not, so gating this would gate the
+    // duty for exactly the people most likely to exercise it.
+    //
+    // The ANONYMOUS half of the same duty lives at
+    // `src/app/api/public/notices/route.ts` and is deliberately NOT listed: it
+    // has no `social` path segment, so this guard's population never selects
+    // it, and an entry here would be the stale cover described above. Its
+    // unauthenticated nature is exempted where that IS checked —
+    // `tests/guards/public-routes-self-authenticate.test.ts`.
+    //
+    // What is NOT exempt: the person BLOCK routes (P5.2b). Blocking is an
+    // Apple 1.2 requirement and a product feature, so it stays gated. That
+    // difference is the seam P5.2 is split along. P5.4's moderation console,
+    // which ACTS on a notice, is likewise a different question.
+    'src/app/api/social/reports/route.ts':
+        'DSA Art 16 — the signed-in half of the notice mechanism. A legal duty, '
+        + 'so it cannot default OFF. See the route docblock.',
+};
 
 /** The gate callees that count. Both resolve rule 1 (the kill switch) first. */
 const GATE_CALLEES = ['assertFeatureEnabled', 'isFeatureEnabled'] as const;

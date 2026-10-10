@@ -140,6 +140,20 @@ describe('credential-verifying routes are reachable, and public routes verify', 
                 'data), so what it discloses is bounded to legal entities. Rate-limited with ' +
                 'PUBLIC_READ_LIMIT, which is the control here because uniformity cannot be — ' +
                 'telling a typo from an unregistered company IS the feature.',
+            '/api/public/notices':
+                'P5.2 — anonymous by design, and by LEGAL DUTY. DSA Art 16 requires a '
+                + 'mechanism any person or entity can use to notify illegal content, so '
+                + 'requiring an account would be requiring an account to exercise a right. '
+                + 'It verifies no credential because it accepts a body from nobody. What it '
+                + 'discloses is nothing: the response is {id, status} and never says whether '
+                + 'the subject existed, because a form that told a real listing id from a '
+                + 'made-up one would be an enumeration oracle on an unauthenticated route — '
+                + 'SUBJECT_NOT_FOUND goes to the snapshot for the moderator instead. There is '
+                + 'no GET here, and an anonymous notice stores reporterUserId NULL, so the '
+                + 'reporter read arm (which matches app.user_id) can never return it. '
+                + 'Rate-limited with PUBLIC_NOTICE_LIMIT at 10/min per IP, tightened from the '
+                + '60/min default because a notice flood buries real notices in the triage '
+                + 'queue.',
         };
         // NOTE: /api/staging/seed and /api/integrations/webhooks/[provider]
         // are NOT exempt — they authenticate (an x-seed-token comparison
