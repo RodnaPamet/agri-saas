@@ -6,6 +6,8 @@
 
 Written before implementation deliberately. agrent-ios builds its half against this, and a contract that arrives after the code is a description rather than an agreement. Object to a line by commenting on the pull request that adds this file.
 
+**The tracker for this work is `agrent-ios#231`, in the iOS repo — not `#231`.** Write the qualified form in commits and comments here. A bare `#231` in agri-saas resolves to agri-saas#231, which is an unrelated merged notifications PR (`fix(notifications): absolute email links`), so the reference renders as a working link to the wrong thing — which is worse than a broken one, because there is nothing to notice. Five merged commits on this work already carry the bare form (#1584); they are not worth rewriting, but nothing new should. `#1444` below is a genuine in-repo citation and is correct as written — this file mixes both, which is exactly why it needs saying.
+
 ---
 
 ## 1. What exists today, measured
