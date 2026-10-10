@@ -26282,7 +26282,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The latest overhead figures, in a fixed category order so the form's fields do not reorder between visits. Empty when the farm has no overhead history. This schema describes the response when `commodity` is ABSENT; sending it returns `CropCostDefaults` instead, which is a registered component rather than a second 200 schema here because declaring a union would take `overheads` off the top level and break a generated client's typed read.",
+            "description": "The latest overhead figures, in a fixed category order so the form's fields do not reorder between visits. Empty when the farm has no overhead history. This schema describes the response when `commodity` is ABSENT; sending it returns `CropCostDefaults` instead — a registered component rather than a second 200 schema here, because declaring a union would take `overheads` off the top level and break a generated client's typed read (#1612).",
             "content": {
               "application/json": {
                 "schema": {
