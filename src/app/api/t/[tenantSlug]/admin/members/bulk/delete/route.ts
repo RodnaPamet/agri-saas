@@ -10,17 +10,14 @@ import { NextRequest } from 'next/server';
 import { requirePermission } from '@/lib/security/permission-middleware';
 import { bulkDeactivateTenantMember } from '@/app-layer/usecases/tenant-admin';
 import { withApiErrorHandling } from '@/lib/errors/api';
-import { z } from 'zod';
 import { jsonResponse } from '@/lib/api-response';
+import { BulkDeactivateMembershipsSchema } from '@/lib/schemas';
 
-const BulkDeactivateSchema = z.object({
-    membershipIds: z.array(z.string().min(1)).min(1).max(100),
-});
 
 export const POST = withApiErrorHandling(
     requirePermission('admin.members', async (req: NextRequest, _routeArgs, ctx) => {
         const body = await req.json();
-        const { membershipIds } = BulkDeactivateSchema.parse(body);
+        const { membershipIds } = BulkDeactivateMembershipsSchema.parse(body);
         const result = await bulkDeactivateTenantMember(ctx, { membershipIds });
         return jsonResponse(result);
     }),

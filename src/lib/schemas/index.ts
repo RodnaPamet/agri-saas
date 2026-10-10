@@ -306,6 +306,48 @@ export const BulkTaskDueDateSchema = z.object({
     dueAt: instantTimestamp().nullable(),
 }).strip();
 
+// ─── Bulk membership / invite / location ids (#1555) ───
+//
+// These four were declared TWICE — once inside the route handler and once in
+// `src/lib/openapi/paths/*.ts` as the spec's `body:` — with byte-identical
+// shapes and nothing comparing them. `locations.paths.ts` said so out loud:
+// its description read "Mirrors the schema declared inside the bulk-delete
+// route handler". A mirror nobody checks is the problem, not the solution.
+//
+// Now declared once here and imported by both, which is the pattern the five
+// routes that already got this right use (`CreateTaskSchema`,
+// `CreateLocationSchema`, …): the shared object carries its own `.openapi()`
+// registration and the paths file passes it straight to `body:`.
+//
+// The two membership schemas have IDENTICAL shapes and are deliberately NOT
+// collapsed into one. `BulkMembershipIdsRequest` and `BulkDeactivateRequest`
+// are both PUBLISHED component names, so merging them would rename a component
+// in the spec — a contract change, to tidy a duplicate that costs nothing.
+// Same shape, two names, one declaration each.
+
+/** `POST /admin/members/bulk/remove` — 1–100 membership ids. */
+export const BulkRemoveMembershipsSchema = z
+    .object({ membershipIds: z.array(z.string().min(1)).min(1).max(100) })
+    .openapi('BulkMembershipIdsRequest');
+
+/** `POST /admin/members/bulk/delete` — 1–100 membership ids to DEACTIVATE. */
+export const BulkDeactivateMembershipsSchema = z
+    .object({ membershipIds: z.array(z.string().min(1)).min(1).max(100) })
+    .openapi('BulkDeactivateRequest');
+
+/** `POST /admin/invites/bulk/delete` — 1–100 invite ids to withdraw. */
+export const BulkRevokeInvitesSchema = z
+    .object({ inviteIds: z.array(z.string().min(1)).min(1).max(100) })
+    .openapi('BulkRevokeInvitesRequest');
+
+/** `POST /locations/bulk/delete` — 1–100 location ids. */
+export const BulkDeleteLocationsSchema = z
+    .object({ locationIds: z.array(z.string().min(1)).min(1).max(100) })
+    .openapi('LocationBulkDeleteRequest', {
+        description:
+            'Declared once in `src/lib/schemas/index.ts` and imported by both the route handler and this spec entry, so the two cannot disagree (#1555).',
+    });
+
 // ─── Issue Compatibility Aliases (deprecated — use Task schemas) ───
 
 /** @deprecated Use CreateTaskSchema */ export const CreateIssueSchema = CreateTaskSchema;

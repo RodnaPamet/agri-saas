@@ -9,17 +9,14 @@ import { NextRequest } from 'next/server';
 import { requirePermission } from '@/lib/security/permission-middleware';
 import { bulkRevokeInvite } from '@/app-layer/usecases/tenant-invites';
 import { withApiErrorHandling } from '@/lib/errors/api';
-import { z } from 'zod';
 import { jsonResponse } from '@/lib/api-response';
+import { BulkRevokeInvitesSchema } from '@/lib/schemas';
 
-const BulkRevokeInviteSchema = z.object({
-    inviteIds: z.array(z.string().min(1)).min(1).max(100),
-});
 
 export const POST = withApiErrorHandling(
     requirePermission('admin.members', async (req: NextRequest, _routeArgs, ctx) => {
         const body = await req.json();
-        const { inviteIds } = BulkRevokeInviteSchema.parse(body);
+        const { inviteIds } = BulkRevokeInvitesSchema.parse(body);
         const result = await bulkRevokeInvite(ctx, { inviteIds });
         return jsonResponse(result);
     }),

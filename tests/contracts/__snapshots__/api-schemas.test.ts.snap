@@ -7635,7 +7635,7 @@ exports[`API contract — per-schema snapshots schema: LocationBulkDeleteRequest
   "required": [
     "locationIds"
   ],
-  "description": "Mirrors the schema declared inside the bulk-delete route handler."
+  "description": "Declared once in \`src/lib/schemas/index.ts\` and imported by both the route handler and this spec entry, so the two cannot disagree (#1555)."
 }"
 `;
 
