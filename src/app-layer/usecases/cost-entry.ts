@@ -179,6 +179,8 @@ export function assertAllocationBasis(input: {
     seasonId?: string | null;
     itemId?: string | null;
     leaseId?: string | null;
+    /** Required for `CROP`, refused for every other basis. */
+    commodityCanonical?: string | null;
 }): void {
     const basis = input.allocationBasis ?? 'TARGET';
     const chosen = input.allocationParcelIds ?? [];
@@ -186,10 +188,36 @@ export function assertAllocationBasis(input: {
     if (basis !== 'TARGET') {
         const spatial = COST_SPATIAL_LINKS.filter((k) => input[k] != null);
         if (spatial.length > 0) {
+            // CROP gets its own sentence. It does not spread across land at
+            // all — it is summed straight onto a commodity — so telling a
+            // farmer it "spreads across land of its own" would explain the
+            // refusal with something untrue, and the next person to read it
+            // would look for the spread.
             throw badRequest(
-                `A ${basis} cost entry spreads across land of its own, so it cannot also link to ${spatial.join(', ')}`,
+                basis === 'CROP'
+                    ? `A CROP cost entry belongs to a crop rather than to a place, so it cannot also link to ${spatial.join(', ')}`
+                    : `A ${basis} cost entry spreads across land of its own, so it cannot also link to ${spatial.join(', ')}`,
             );
         }
+    }
+
+    // The crop a CROP-basis cost is FOR. Both directions are load-bearing and
+    // they fail in opposite ways.
+    //
+    //   · CROP with no commodity has nothing to sum onto. It would be
+    //     accepted, listed, and absent from every figure — the #1530 defect
+    //     verbatim, one layer up from where it was found.
+    //   · Another basis WITH a commodity stores an instruction nothing reads.
+    //     That is the `allocationParcelIds` hazard below: harmless today and
+    //     instantly load-bearing the moment somebody switches the basis back
+    //     to CROP, at which point a crop nobody chose starts carrying the
+    //     cost.
+    if (basis === 'CROP') {
+        if (input.commodityCanonical == null) {
+            throw badRequest('A CROP cost entry must name the crop it belongs to');
+        }
+    } else if (input.commodityCanonical != null) {
+        throw badRequest('commodityCanonical may only be set on a CROP cost entry');
     }
 
     if (basis === 'PARCEL_SUBSET') {
@@ -262,6 +290,7 @@ export function toDto(row: {
     itemId: string | null;
     allocationBasis?: CostAllocationBasis;
     allocationParcels?: { parcelId: string }[];
+    commodityCanonical?: string | null;
     createdByUserId: string | null;
     description?: string | null;
     createdAt: Date;
@@ -300,6 +329,11 @@ export function toDto(row: {
         parcelId: row.parcelId,
         leaseId: row.leaseId,
         itemId: row.itemId,
+        // `?? null` for the same reason `amountPerDca` above takes it: the
+        // null is meaningful. It says "this cost is not scoped to one crop",
+        // which is every row written before #1530 and every row on the other
+        // three bases.
+        commodityCanonical: row.commodityCanonical ?? null,
         allocationBasis: row.allocationBasis ?? 'TARGET',
         // Flattened to ids: the join row's own id is bookkeeping, and the
         // form that prefills from this only ever means "which parcels".
@@ -501,6 +535,7 @@ async function createCostEntryImpl(
             parcelId: input.parcelId ?? null,
             leaseId: input.leaseId ?? null,
             amountPerDca: input.amountPerDca ?? null,
+            commodityCanonical: input.commodityCanonical ?? null,
             payrollHeadcount: input.payrollHeadcount ?? null,
             payrollAnnualPerPerson: input.payrollAnnualPerPerson ?? null,
             itemId: input.itemId ?? null,

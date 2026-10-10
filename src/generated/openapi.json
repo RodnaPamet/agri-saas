@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "10.7.2",
+    "version": "10.10.1",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -2864,7 +2864,8 @@
             "enum": [
               "TARGET",
               "HOLDING",
-              "PARCEL_SUBSET"
+              "PARCEL_SUBSET",
+              "CROP"
             ]
           },
           "allocationParcelIds": {
@@ -2872,6 +2873,12 @@
             "items": {
               "type": "string"
             }
+          },
+          "commodityCanonical": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "createdByUserId": {
             "type": [
@@ -3054,6 +3061,7 @@
           "itemId",
           "allocationBasis",
           "allocationParcelIds",
+          "commodityCanonical",
           "createdByUserId",
           "createdAt",
           "updatedAt",
@@ -3065,7 +3073,7 @@
           "invoiceFile"
         ],
         "additionalProperties": {},
-        "description": "One recorded cost against land, a planting, a season or an inventory item. amount is a JSON number (Decimal converted, absent reads as 0). allocationBasis says WHICH land the cost spreads across and allocationParcelIds is the PARCEL_SUBSET denominator, sorted. description is encrypted commercial free text returned only on a single read — it is ABSENT rather than null on list rows, which is a different claim from \"this entry has no description\"."
+        "description": "One recorded cost against land, a planting, a season or an inventory item. amount is a JSON number (Decimal converted, absent reads as 0). allocationBasis says WHICH land the cost spreads across and allocationParcelIds is the PARCEL_SUBSET denominator, sorted — except CROP, which spreads across no land at all and instead names its crop in commodityCanonical, superseding the consumption-derived cost for that crop and season. description is encrypted commercial free text returned only on a single read — it is ABSENT rather than null on list rows, which is a different claim from \"this entry has no description\"."
       },
       "CostEntryInvoiceUpload": {
         "type": "object",
@@ -20978,7 +20986,8 @@
                     "enum": [
                       "TARGET",
                       "HOLDING",
-                      "PARCEL_SUBSET"
+                      "PARCEL_SUBSET",
+                      "CROP"
                     ]
                   },
                   "allocationParcelIds": {
@@ -20988,6 +20997,14 @@
                       "minLength": 1
                     },
                     "maxItems": 200
+                  },
+                  "commodityCanonical": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1,
+                    "maxLength": 64
                   }
                 },
                 "required": [
@@ -21399,7 +21416,8 @@
                     "enum": [
                       "TARGET",
                       "HOLDING",
-                      "PARCEL_SUBSET"
+                      "PARCEL_SUBSET",
+                      "CROP"
                     ]
                   },
                   "allocationParcelIds": {
@@ -21409,6 +21427,14 @@
                       "minLength": 1
                     },
                     "maxItems": 200
+                  },
+                  "commodityCanonical": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1,
+                    "maxLength": 64
                   }
                 }
               }

@@ -79,6 +79,8 @@ export interface CostRow {
     allocationBasis?: string;
     /** The chosen parcels, present only on a PARCEL_SUBSET entry. */
     allocationParcelIds?: string[];
+    /** Canonical commodity, set only on a `CROP`-basis row (#1530). */
+    commodityCanonical?: string | null;
     planting?: { id: string; successionNumber: number; cropPlan?: { name: string | null } | null } | null;
     season?: { id: string; name: string } | null;
     location?: { id: string; name: string } | null;

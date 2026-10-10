@@ -91,6 +91,7 @@ const COST_LIST_SELECT = {
     leaseId: true,
     itemId: true,
     allocationBasis: true,
+    commodityCanonical: true,
     createdByUserId: true,
     createdAt: true,
     updatedAt: true,

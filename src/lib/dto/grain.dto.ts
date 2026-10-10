@@ -215,6 +215,15 @@ export const CostEntryDTOSchema = z
          * SORTED. Empty for every other basis.
          */
         allocationParcelIds: z.array(z.string()),
+        /**
+         * The crop a `CROP`-basis cost belongs to, CANONICAL (#1530).
+         *
+         * Null on every other basis and on every row written before #1530.
+         * Canonical rather than the picked spelling because the figure it
+         * feeds is keyed by commodity — a client rendering it needs a label
+         * lookup, not the string.
+         */
+        commodityCanonical: z.string().nullable(),
         createdByUserId: z.string().nullable(),
         /** Single-read only — see the note above. Absent ≠ null. */
         description: z.string().nullable().optional(),
@@ -241,7 +250,7 @@ export const CostEntryDTOSchema = z
     .passthrough()
     .openapi('CostEntry', {
         description:
-            'One recorded cost against land, a planting, a season or an inventory item. amount is a JSON number (Decimal converted, absent reads as 0). allocationBasis says WHICH land the cost spreads across and allocationParcelIds is the PARCEL_SUBSET denominator, sorted. description is encrypted commercial free text returned only on a single read — it is ABSENT rather than null on list rows, which is a different claim from "this entry has no description".',
+            'One recorded cost against land, a planting, a season or an inventory item. amount is a JSON number (Decimal converted, absent reads as 0). allocationBasis says WHICH land the cost spreads across and allocationParcelIds is the PARCEL_SUBSET denominator, sorted — except CROP, which spreads across no land at all and instead names its crop in commodityCanonical, superseding the consumption-derived cost for that crop and season. description is encrypted commercial free text returned only on a single read — it is ABSENT rather than null on list rows, which is a different claim from "this entry has no description".',
     });
 
 export type CostEntryDTO = z.infer<typeof CostEntryDTOSchema>;

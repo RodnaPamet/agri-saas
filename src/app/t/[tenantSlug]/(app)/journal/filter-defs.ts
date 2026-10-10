@@ -14,20 +14,31 @@ import {
 import type { FilterType } from '@/components/ui/filter';
 import type { useTranslations } from 'next-intl';
 import { CircleDot, Layers, Sprout } from 'lucide-react';
+import { CROP_PICKER_VALUES } from '@/lib/grain/crop-picker';
+import type { CropPickerValue } from '@/lib/grain/crop-picker';
 
 /**
  * Culture (crop) filter options — the values match `Parcel.cropType` (the
  * same catalogue the parcel crop picker uses). Inlined here so the journal
  * filter has no build-time coupling to the map crop-picker module.
  */
-export const CROP_FILTER_LABELS = {
-    Wheat: 'Wheat',
-    Barley: 'Barley',
-    Canola: 'Canola',
-    Maize: 'Maize',
-    Sunflower: 'Sunflower',
-    Peas: 'Peas',
-} as const;
+/**
+ * DERIVED from `CROP_PICKER_VALUES`, not restated.
+ *
+ * The cost entry form offers the same six crops for its `CROP` allocation
+ * basis (#1530), so this list had two consumers the moment that landed. A
+ * second literal copy is the shape `cost-categories-agree` and
+ * `allocation-bases-agree` were both written for — a list edited in N places
+ * becomes N-1 — so the values live in `@/lib/grain/crop-picker` and this is
+ * the `optionsFromEnum`-shaped view of them.
+ *
+ * Still a value-keyed map rather than a plain array, because `optionsFromEnum`
+ * takes one and `JournalClient` does `culture in CROP_FILTER_LABELS` as its
+ * membership test before localizing.
+ */
+export const CROP_FILTER_LABELS = Object.fromEntries(
+    CROP_PICKER_VALUES.map((v) => [v, v]),
+) as Record<CropPickerValue, CropPickerValue>;
 
 /**
  * FieldOperationType (Prisma enum) — the membership guard for localizing the

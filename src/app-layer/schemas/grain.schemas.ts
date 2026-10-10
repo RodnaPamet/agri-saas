@@ -15,6 +15,7 @@
  */
 import { z } from 'zod';
 import { MAX_PLAUSIBLE_MOISTURE_PCT } from '@/lib/grain/moisture';
+import { normalizeCommodity } from '@/lib/market/commodity-vocabulary';
 import {
     ContractType,
     ContractStatus,
@@ -311,7 +312,7 @@ export const CostCategorySchema = z.enum(COST_CATEGORIES);
  * `CostAllocationBasis` enum — spelled out rather than derived so the wire
  * contract is readable here and a schema change is a visible diff.
  */
-export const COST_ALLOCATION_BASES = ['TARGET', 'HOLDING', 'PARCEL_SUBSET'] as const;
+export const COST_ALLOCATION_BASES = ['TARGET', 'HOLDING', 'PARCEL_SUBSET', 'CROP'] as const;
 
 export const CostAllocationBasisSchema = z.enum(COST_ALLOCATION_BASES);
 
@@ -340,6 +341,39 @@ export const COST_SPATIAL_LINKS = ['plantingId', 'parcelId', 'locationId'] as co
  * denominator, which would move money with nothing to notice it.
  */
 export const MAX_ALLOCATION_PARCELS = 200;
+
+/**
+ * The crop a `CROP`-basis cost belongs to (#1530).
+ *
+ * A raw string on the wire, normalised and then REFUSED if it does not resolve
+ * — `normalizeCommodity` case-folds and carries `canola -> rapeseed`, so the
+ * phone and the web may each send whatever spelling their picker holds, but
+ * what is STORED is always canonical. That matters because the exclusivity
+ * rule is keyed on it: one typed figure per (commodity, season). Accepting raw
+ * text would let `Wheat` and `wheat` each carry a figure for the same crop in
+ * the same season, and the margin would then quietly use both.
+ *
+ * Refusing rather than storing null on a miss is the deliberate half. A CROP
+ * row whose commodity did not resolve has nothing to sum onto: it would be
+ * accepted, shown on the costs page, and contribute to no figure anywhere —
+ * which is exactly the defect #1530 was filed about, reintroduced one layer
+ * up.
+ */
+const CostCommodity = z
+    .string()
+    .min(1)
+    .max(64)
+    .transform((raw, ctx) => {
+        const canonical = normalizeCommodity(raw);
+        if (canonical == null) {
+            ctx.addIssue({
+                code: 'custom',
+                message: `"${raw}" is not a commodity this calculator can price - pick a crop from the list`,
+            });
+            return z.NEVER;
+        }
+        return canonical;
+    });
 
 const AllocationParcelIds = z
     .array(z.string().min(1))
@@ -396,6 +430,8 @@ export const CreateCostEntrySchema = z
         payrollAnnualPerPerson: z.coerce.number().positive().nullable().optional(),
         allocationBasis: CostAllocationBasisSchema.optional(),
         allocationParcelIds: AllocationParcelIds.optional(),
+        /** Required for `CROP`, refused otherwise — see `assertAllocationBasis`. */
+        commodityCanonical: CostCommodity.nullable().optional(),
     })
     .strip();
 
@@ -418,6 +454,8 @@ export const UpdateCostEntrySchema = z
         itemId: z.string().min(1).nullable().optional(),
         allocationBasis: CostAllocationBasisSchema.optional(),
         allocationParcelIds: AllocationParcelIds.optional(),
+        /** Required for `CROP`, refused otherwise — see `assertAllocationBasis`. */
+        commodityCanonical: CostCommodity.nullable().optional(),
     })
     .strip();
 
