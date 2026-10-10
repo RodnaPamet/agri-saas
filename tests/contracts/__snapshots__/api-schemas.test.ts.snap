@@ -5542,7 +5542,7 @@ exports[`API contract — per-schema snapshots schema: FarmRecordGenerateRequest
     "from",
     "to"
   ],
-  "description": "Mirrors the schema declared inside the farm-record route handler."
+  "description": "Generate the БАБХ ДНЕВНИК for a location over a period. Declared once in \`src/lib/schemas/index.ts\` and imported by both the route handler and this spec entry, so the two cannot disagree (#1555)."
 }"
 `;
 
@@ -6841,7 +6841,9 @@ exports[`API contract — per-schema snapshots schema: IngestReadings 1`] = `
           "recordedAt",
           "value"
         ]
-      }
+      },
+      "minItems": 1,
+      "maxItems": 1000
     }
   },
   "required": [

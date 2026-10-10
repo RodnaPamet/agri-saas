@@ -37,6 +37,7 @@ import {
     UpdateLocationSchema,
     CreateFieldOperationSchema,
     BulkDeleteLocationsSchema,
+    FarmRecordGenerateSchema,
 } from '@/lib/schemas';
 import {
     CreateParcelSchema,
@@ -495,20 +496,7 @@ const LocationSmartDefaults = z
 
 // ─── БАБХ farm records ──────────────────────────────────────────────
 
-const FarmRecordGenerateRequest = z
-    .object({
-        from: z.string().min(1),
-        to: z.string().min(1),
-        save: z.boolean().optional().default(false).openapi({
-            description:
-                'THE MEDIA TYPE SWITCH. Omitted or false → the response is `application/pdf` ' +
-                'bytes. True → it is `application/json` `{ fileRecordId, fileName }` and the PDF ' +
-                'is filed in the location’s Farm-records register instead of being returned.',
-        }),
-    })
-    .openapi('FarmRecordGenerateRequest', {
-        description: 'Mirrors the schema declared inside the farm-record route handler.',
-    });
+
 
 const FarmRecordSaved = z
     .object({ fileRecordId: z.string(), fileName: z.string() })
@@ -1103,7 +1091,7 @@ export function registerLocationPaths(registry: OpenAPIRegistry): void {
             'Node runtime with a 60s budget.',
         tags: ['Farm records'],
         params: LocationParams,
-        body: FarmRecordGenerateRequest,
+        body: FarmRecordGenerateSchema,
         success: {
             status: 200,
             description: 'The ДНЕВНИК as PDF bytes, or the saved file’s identity when `save` was true.',

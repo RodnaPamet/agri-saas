@@ -19,6 +19,7 @@ import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { TaskDTOSchema } from '@/lib/dto/task.dto';
 import { UserRefSchema } from '@/lib/dto/common';
 import { op } from './helpers';
+import { CreateFarmTaskSchema } from '@/lib/schemas';
 
 // A ZodObject, because that is what the generator reads to build inline
 // parameters — see the note on OperationInput.params.
@@ -127,31 +128,7 @@ const FarmTaskListItem = z
             'through `.passthrough()` rather than as a declared field.',
     });
 
-const FarmTaskCreateRequest = z
-    .object({
-        title: z.string().min(1).max(500),
-        farmTaskType: z.string().min(1).openapi({
-            description:
-                'A key from the LiteFarm-derived farm-task-type catalog ' +
-                '(`src/lib/agriculture/farm-task-types`). An unknown key is a 400 ' +
-                '`INVALID_FARM_TASK_TYPE`.',
-        }),
-        description: z.string().max(5000).nullable().optional(),
-        priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional(),
-        dueAt: z.string().datetime().nullable().optional(),
-        assigneeUserId: z.string().nullable().optional().openapi({
-            description: 'Assigning fires the existing TASK_ASSIGNED notification.',
-        }),
-        locationIds: z.array(z.string().min(1)).max(100).optional(),
-        parcelIds: z.array(z.string().min(1)).max(100).optional(),
-        equipmentIds: z.array(z.string().min(1)).max(100).optional(),
-    })
-    .openapi('FarmTaskCreateRequest', {
-        description:
-            'Create a FARM_TASK. Every id in locationIds/parcelIds/equipmentIds is checked for ' +
-            'tenant ownership BEFORE the task is written, so a bad link is a 400 `INVALID_LINK` ' +
-            'and never leaves an orphan task. Unknown properties are stripped.',
-    });
+
 
 export function registerFarmTaskPaths(registry: OpenAPIRegistry): void {
     op(registry, {
@@ -196,7 +173,7 @@ export function registerFarmTaskPaths(registry: OpenAPIRegistry): void {
             'notification, all of which would fire twice.',
         tags: ['Farm tasks'],
         params: TenantParams,
-        body: FarmTaskCreateRequest,
+        body: CreateFarmTaskSchema,
         success: {
             status: 201,
             description:
