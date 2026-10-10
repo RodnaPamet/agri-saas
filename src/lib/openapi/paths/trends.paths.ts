@@ -138,6 +138,11 @@ const NewsItemSchema = z
         imageUrl: z.string().nullable(),
         /** A full ISO instant. */
         publishedAt: z.string().datetime(),
+        tags: z.array(z.string()).openapi({
+            description:
+                'Stable ASCII slugs, possibly empty, order not significant. IGNORE a slug you do not recognise rather than erroring on it — the vocabulary grows on the server, and a client that threw would break on a deploy it knew nothing about. `GET /trends/news/tags` carries the labels.',
+            example: ['wheat', 'prices'],
+        }),
     })
     .openapi('NewsItem', {
         description:
@@ -148,11 +153,23 @@ const TrendNewsResponseSchema = z
     .object({
         /** Echoes the requested filter; `all` when unfiltered. */
         category: z.string(),
+        tags: z.array(z.string()).openapi({
+            description:
+                'The tags ACTUALLY APPLIED — sorted, de-duplicated, with unrecognised keys dropped. Compare it with what you sent: asking for two tags and getting one back is how you discover that a stored preference has been renamed away. An empty array means the feed is unfiltered.',
+            example: ['wheat'],
+        }),
+        q: z.string().nullable().openapi({
+            description: 'The search term applied, or null.',
+        }),
         items: z.array(NewsItemSchema),
+        nextCursor: z.string().nullable().openapi({
+            description:
+                'Pass back verbatim as `?cursor=` for the next page; null at the end of the feed. OPAQUE — do not parse or construct one. A cursor the server no longer recognises (the 60-day retention deleted its article) is IGNORED and you get the first page, never an error.',
+        }),
     })
     .openapi('TrendNewsResponse', {
         description:
-            'The aggregated news feed, newest first. category echoes the filter that produced it, so a client can tell a stale response from the one it asked for.',
+            'The aggregated news feed, newest first. category, tags and q each echo the filter that produced this payload, so a client holding a page can tell a stale response from the one it asked for — which matters more, not less, now that there are three filters to reconcile.',
     });
 
 export function registerTrendsPaths(registry: OpenAPIRegistry): void {
@@ -181,8 +198,11 @@ export function registerTrendsPaths(registry: OpenAPIRegistry): void {
         operationId: 'getTrendNews',
         summary: 'Тенденции — aggregated agri-news feed',
         description:
-            'The GLOBAL aggregated news feed, newest first, optionally filtered by category. Tenant-agnostic payload; the tenant in the path authenticates the caller. ' +
-            '\n\nCarries a weak ETag; send `If-None-Match` and handle **304**. Cached 1h server-side.',
+            'The GLOBAL aggregated news feed, newest first, optionally filtered by `category`, by `tags` (comma-separated, ANY-OF) and by a `q` search over title and summary, paged by an opaque `cursor`. Tenant-agnostic payload; the tenant in the path authenticates the caller. ' +
+            '\n\n**`tags` ignores keys it does not recognise rather than returning 400.** A client passes its stored preferences straight into this parameter, so a tag the server has since renamed would otherwise turn a saved preference into a broken feed. If every key is unrecognised the feed is UNFILTERED, not empty — read the `tags` echo in the response to tell that apart from a full feed. (`PUT /api/me/news-preferences` is deliberately the opposite and 400s on an unknown tag: there a person is choosing, and a typo is a client bug worth surfacing.) ' +
+            '\n\n**Preferences are not applied implicitly.** The payload is cached under a key shared by every reader, so filtering by the caller\u2019s own preferences would write one person\u2019s feed into the entry everybody else reads. Resolve your preferences client-side and pass `tags`. ' +
+            '\n\n`q` searches at most the last 60 days — `RETENTION_DAYS` deletes older rows on every pull — so finding nothing from last spring is correct behaviour, and an empty state should say so rather than read as a failure. Note that `q` travels in the query string, which iOS logs in full and unsuppressably; a crop name is low-sensitivity, but do not put anything stronger there. ' +
+            '\n\nCarries a weak ETag; send `If-None-Match` and handle **304**. Cached 1h server-side, except a `q` search, which is a live read every time (the key space of a free-text query is unbounded and would evict the shared feed) — the ETag still answers 304 for a repeated identical search.',
         tags: ['Trends'],
         params: TenantParams,
         query: TrendNewsQuerySchema,

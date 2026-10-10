@@ -346,6 +346,11 @@
       "documented": true
     },
     {
+      "path": "/api/me/news-preferences",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/metrics",
       "status": "live",
       "documented": false

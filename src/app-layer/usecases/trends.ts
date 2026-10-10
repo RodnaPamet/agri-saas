@@ -18,6 +18,7 @@ import { LOCALES, type Locale } from '@/lib/i18n/locales';
 import { getRedis } from '@/lib/redis';
 import { logger } from '@/lib/observability/logger';
 import type { MarketReference } from '@/lib/market/contract-benchmark';
+import { cursorWhere, decodeFeedCursor, encodeFeedCursor } from '@/lib/news/feed-cursor';
 import {
     RANGE_LOOKBACK_DAYS,
     type TrendCommodity,
@@ -277,22 +278,88 @@ export interface NewsItem {
     imageUrl: string | null;
     /** ISO-8601 publish time. */
     publishedAt: string;
+    /**
+     * Stable ASCII slugs, possibly empty, order not significant.
+     *
+     * A client must IGNORE a slug it does not recognise rather than error on
+     * it: the vocabulary grows on the server, and a client that threw would
+     * break on a deploy it knew nothing about. `GET …/trends/news/tags`
+     * carries the labels.
+     */
+    tags: string[];
 }
 
 export interface TrendNewsResponse {
-    /** The requested filter ('all' when unfiltered). */
+    /**
+     * The requested filter ('all' when unfiltered).
+     *
+     * KEPT, and not optional: the installed iOS build decodes it as a required
+     * String, so dropping it would break Новини on this deploy. Its purpose
+     * also survives the addition of more filters — it echoes what produced
+     * this payload so a client can tell a stale response from the one it
+     * asked for, which matters MORE once there are three filters to reconcile
+     * rather than one.
+     */
     category: NewsCategory | 'all';
+    /**
+     * The tags ACTUALLY APPLIED — sorted, de-duplicated, unknown keys dropped.
+     *
+     * This is how a client discovers that a stored preference has been
+     * renamed away: it asked for `['wheat', 'gone']` and got `['wheat']`.
+     * Without the echo it would have to infer that from a feed that looks
+     * wider than it expected.
+     */
+    tags: string[];
+    /** The search term applied, or null. Echoed for the same reason. */
+    q: string | null;
     items: NewsItem[];
+    /** Pass back as `?cursor=` for the next page. `null` at the end. */
+    nextCursor: string | null;
 }
 
 async function readNewsFromDb(
     category: NewsCategory | 'all',
     limit: number,
+    filters: { tags: readonly string[]; q: string | null; cursor: string | null },
 ): Promise<TrendNewsResponse> {
+    const take = Math.min(limit, MAX_NEWS);
+    const cursor = decodeFeedCursor(filters.cursor);
+
+    // AND-ed clauses, each omitted when its filter is absent. `tags` is
+    // ANY-OF within itself (`hasSome`) — opting into Пшеница and Субсидии
+    // means "either", which is what a feed filter means to a reader; all-of
+    // would make two choices narrower than one.
+    //
+    // An EMPTY tag list means unfiltered, never match-nothing. That is the
+    // every-key-unrecognised case, and `hasSome: []` matches no rows at all —
+    // so a client passing a renamed preference would get an empty feed rather
+    // than the full one the contract promises.
+    const and: Record<string, unknown>[] = [];
+    if (category !== 'all') and.push({ category });
+    if (filters.tags.length > 0) and.push({ tags: { hasSome: [...filters.tags] } });
+    if (filters.q) {
+        and.push({
+            OR: [
+                { title: { contains: filters.q, mode: 'insensitive' } },
+                { summary: { contains: filters.q, mode: 'insensitive' } },
+            ],
+        });
+    }
+    const cw = cursorWhere(cursor);
+    if (cw) and.push(cw);
+
+    // One past the page, so `nextCursor` is set from whether a further row
+    // EXISTS rather than from `rows.length === take` — which is wrong exactly
+    // once per feed, on the page that happens to end on the boundary, and
+    // hands the reader a cursor to an empty page.
     const rows = await prisma.marketNewsItem.findMany({
-        where: category === 'all' ? undefined : { category },
-        take: Math.min(limit, MAX_NEWS),
-        orderBy: { publishedAt: 'desc' },
+        where: and.length > 0 ? { AND: and } : undefined,
+        take: take + 1,
+        // `id` is the tie-break the cursor's tuple comparison depends on.
+        // Without it the sort is unstable across rows sharing a `publishedAt`
+        // — four feeds publish on the hour — and a page boundary inside that
+        // second would skip or repeat rows.
+        orderBy: [{ publishedAt: 'desc' }, { id: 'desc' }],
         select: {
             id: true,
             source: true,
@@ -302,10 +369,14 @@ async function readNewsFromDb(
             url: true,
             imageUrl: true,
             publishedAt: true,
+            tags: true,
         },
     });
 
-    const items: NewsItem[] = rows.map((r) => ({
+    const hasMore = rows.length > take;
+    const page = hasMore ? rows.slice(0, take) : rows;
+
+    const items: NewsItem[] = page.map((r) => ({
         id: r.id,
         source: r.source,
         category: r.category,
@@ -314,23 +385,68 @@ async function readNewsFromDb(
         url: r.url,
         imageUrl: r.imageUrl,
         publishedAt: r.publishedAt.toISOString(),
+        tags: r.tags,
     }));
 
-    return { category, items };
+    const last = page[page.length - 1];
+    return {
+        category,
+        tags: [...filters.tags],
+        q: filters.q,
+        items,
+        nextCursor: hasMore && last ? encodeFeedCursor(last) : null,
+    };
 }
 
 /**
- * Read the aggregated agri-news feed, optionally filtered by category, newest
- * first. Redis-cached per (category, limit) for 1h — the pull runs daily — and
- * degrades to a live DB read on any Redis miss/hiccup. Tenant-agnostic payload
- * (the MarketNewsItem cache carries no tenantId).
+ * Read the aggregated agri-news feed, newest first, optionally filtered by
+ * category, tags and a search term, and paged by an opaque cursor.
+ *
+ * Redis-cached for 1h — the pull runs daily — degrading to a live DB read on
+ * any miss or hiccup. Tenant-agnostic payload (`MarketNewsItem` carries no
+ * tenantId), which is what makes one cache entry serveable to every reader.
+ *
+ * ## EVERY filter is in the cache key
+ *
+ * This is the single most dangerous line in the Новини work and the contract
+ * says so: adding a parameter to the query WITHOUT adding it to the key
+ * serves the previous caller's filtered payload to the next one. It fails as
+ * a wrong answer, not as an error — reader B asks for all news and receives
+ * reader A's wheat-only feed, for up to an hour, with nothing logged.
+ *
+ * `tags` is sorted by the schema before it arrives, so `wheat,barley` and
+ * `barley,wheat` are one entry rather than two.
+ *
+ * ## `q` BYPASSES the cache
+ *
+ * The key space of a free-text search is unbounded, so caching per query
+ * would churn the cache for one-off searches and evict the hot unfiltered
+ * feed that every reader shares. A search is a database read every time. The
+ * ETag still applies — it is computed over the response — so a repeated
+ * identical search still answers 304 and costs no bytes.
+ *
+ * `q` is nonetheless part of the key. That is not redundancy: the key is the
+ * thing that must be right if the bypass is ever removed, and a key that
+ * silently omitted `q` would then serve one reader's search results to
+ * another. Cheaper to be correct now than to remember later.
  */
 export async function getMarketNews(
     category: NewsCategory | 'all',
     limit: number,
+    filters: {
+        tags?: readonly string[];
+        q?: string | null;
+        cursor?: string | null;
+    } = {},
 ): Promise<TrendNewsResponse> {
-    const cacheKey = `trends:news:v1:${category}:${limit}`;
-    const redis = getRedis();
+    const tags = filters.tags ?? [];
+    const q = filters.q ?? null;
+    const cursor = filters.cursor ?? null;
+
+    const cacheKey = `trends:news:v1:${category}:${tags.join(',')}:${q ?? ''}:${limit}:${cursor ?? ''}`;
+    // A search is never cached — see the docblock. Resolved to a nullable
+    // handle so the read and the write below cannot disagree about it.
+    const redis = q == null ? getRedis() : null;
 
     if (redis) {
         try {
@@ -341,7 +457,7 @@ export async function getMarketNews(
         }
     }
 
-    const payload = await readNewsFromDb(category, limit);
+    const payload = await readNewsFromDb(category, limit, { tags, q, cursor });
 
     if (redis) {
         try {
