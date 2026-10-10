@@ -32,6 +32,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 const VARIANTS = fs.readFileSync(path.join(ROOT, 'src/components/ui/button-variants.ts'), 'utf8');
@@ -47,7 +48,7 @@ const TOGGLE_GROUP = fs.readFileSync(path.join(ROOT, 'src/components/ui/toggle-g
  * longer anchor only moves the problem.
  */
 function codeOf(src: string): string {
-    return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    return blankNonCode(src);
 }
 
 /** The base class list — everything before the `variants:` block. */

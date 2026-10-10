@@ -16,6 +16,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
@@ -26,9 +27,7 @@ const SYNC = 'src/app-layer/services/canvas-rule-sync.ts';
 /** Strip block + line comments so the scan sees CODE only (comments
  * legitimately name the forbidden fields when documenting the invariant). */
 function code(src: string): string {
-    return src
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/(^|[^:])\/\/.*$/gm, '$1');
+    return blankNonCode(src);
 }
 
 describe('VR-3 — sync invariant', () => {

@@ -50,6 +50,7 @@ import {
     type FertilizeLineData,
     type ObservationData,
 } from '@/app-layer/reports/pdf/farm-record-diary';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const GENERATOR_PATH = path.resolve(
     __dirname,
@@ -237,9 +238,10 @@ describe('ДНЕВНИК columns — right data under the right header', () => {
  * assertion below reads through here instead.
  */
 function codeOf(src: string): string {
-    return src
-        .replace(/\/\*[\s\S]*?\*\//g, ' ')
-        .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+    // `blankNonCode` is state-aware, so the `(^|[^:])` carve-out that spared
+    // `https://` is unnecessary: a `//` inside a string literal was never a
+    // comment to begin with (#1605).
+    return blankNonCode(src);
 }
 
 /** Does the generator actually draw the strip for `labelArray`? */

@@ -19,6 +19,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const FUNNEL = fs.readFileSync(
     path.resolve(
@@ -32,10 +33,7 @@ describe('R21-PR-D hotfix — funnel hover flicker', () => {
     // Strip line-comments + block-comments so a comment containing
     // `<rect>` or `onPointerLeave` literally (this ratchet itself
     // referenced in the source explanation) can't poison the search.
-    const SRC = FUNNEL.replace(/\/\*[\s\S]*?\*\//g, '').replace(
-        /\/\/[^\n]*/g,
-        '',
-    );
+    const SRC = blankNonCode(FUNNEL);
 
     it('outer <svg> owns the leave-to-default behaviour', () => {
         // The leave-to-default handler — `setTooltip(default…)` — must

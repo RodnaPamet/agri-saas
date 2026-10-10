@@ -30,6 +30,7 @@
 import fs from 'fs';
 import path from 'path';
 import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 /** Prisma accessors for the tables whose NULL arm P1.4 scoped to one user. */
 const GUARDED_ACCESSORS = [
@@ -55,7 +56,7 @@ const ALLOWED: Readonly<Record<string, string>> = {};
 /** Mask comments — `refresh-tokens.ts` MENTIONS runInTenantContext in prose to
  * say it deliberately runs outside it, and a naive grep counted that as a use. */
 function codeOf(source: string): string {
-    return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+    return blankNonCode(source);
 }
 
 export function touchesGuardedTable(source: string): string[] {

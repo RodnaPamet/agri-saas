@@ -38,6 +38,7 @@ jest.mock('@/lib/security/sanitize', () => ({
 import { getFarmProfile, upsertFarmProfile } from '@/app-layer/usecases/farm-profile';
 import type { RequestContext } from '@/app-layer/types';
 import { getPermissionsForRole } from '@/lib/permissions';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 function makeCtx(): RequestContext {
     return {
@@ -58,7 +59,7 @@ import { staleData, toApiErrorResponse } from '@/lib/errors/types';
 
 /** Source with comments stripped — see the sentinel assertion below. */
 function codeOf(src: string): string {
-    return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    return blankNonCode(src);
 }
 
 const ROW = { id: 'fp-1', producerName: 'Иван', version: 4, grainProduced: [] };

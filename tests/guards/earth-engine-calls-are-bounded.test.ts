@@ -16,6 +16,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const REL = 'src/lib/agro/earth-engine.ts';
 const SRC = fs.readFileSync(path.resolve(__dirname, '../..', REL), 'utf8');
@@ -29,11 +30,10 @@ const SRC = fs.readFileSync(path.resolve(__dirname, '../..', REL), 'utf8');
  * describing it.
  */
 function code(src: string): string {
-    return src
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .split('\n')
-        .map((l) => l.replace(/\/\/.*$/, ''))
-        .join('\n');
+    // One state-aware pass replaces the block strip plus the per-line `//`
+    // strip. The flagless `/\/\/.*$/` was correct only because it ran inside
+    // a `.map` over lines — a detail a reader has to reconstruct (#1605).
+    return blankNonCode(src);
 }
 
 const CODE = code(SRC);
@@ -47,7 +47,17 @@ describe('every Earth Engine round-trip is bounded', () => {
         expect(CODE).toContain('export async function getIndexTileUrl');
         // ...and the comment stripper kept the code while dropping prose.
         expect(CODE).not.toContain('Load-bearing');
-        expect(CODE.length).toBeLessThan(SRC.length);
+        // Length is PRESERVED, not reduced: `blankNonCode` overwrites comment
+        // characters with spaces rather than deleting them (#1605). This read
+        // `toBeLessThan` and measured DELETION as the proof the stripper ran —
+        // the fourth control in this repo with that shape, and the reason
+        // #1588's conversion broke three others.
+        //
+        // The substantive check is the `not.toContain` above. This one now
+        // pins the property that makes every offset this guard reports line up
+        // with the real file.
+        expect(CODE.length).toBe(SRC.length);
+        expect(CODE).not.toBe(SRC);
     });
 
     it('`withEeDeadline` holds the ONLY `new Promise` in the module', () => {

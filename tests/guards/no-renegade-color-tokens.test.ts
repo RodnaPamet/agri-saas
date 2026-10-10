@@ -50,6 +50,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { collectSourceFiles } from '../helpers/collect-files';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -114,7 +115,7 @@ function sourceFiles(): string[] {
 
 /** Comments stripped; strings are NOT, because classes live in them. */
 function codeOf(raw: string): string {
-    return raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+    return blankNonCode(raw);
 }
 
 interface Offence {
