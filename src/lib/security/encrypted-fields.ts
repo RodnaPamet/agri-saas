@@ -340,6 +340,10 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     ContentReport: ['detail'],
     ModerationAction: ['rationale'],
     StatementOfReasons: ['bodyRendered'],
+    // P5.2 (#1593). The captured evidence of a notice. For a MESSAGE subject
+    // this is private conversation, which is the whole reason it lives on a
+    // platform-only table rather than as a reporter-readable column.
+    ReportSnapshot: ['body'],
 
 } as const;
 
