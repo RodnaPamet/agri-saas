@@ -71,8 +71,13 @@
  *
  * ── Areas ───────────────────────────────────────────────────────────
  *
- * Storage stays hectares (`standingCropAreaHa`); DISPLAY is decares via
- * `haToDca`, the unit Bulgarian farmers actually use.
+ * Storage stays hectares; DISPLAY is decares, the unit Bulgarian farmers
+ * actually use. This page no longer converts: it renders `perArea.areaDca` and
+ * `perArea.costAreaDca` as the SERVER computed them. There are TWO areas after
+ * #1512 — the yield-covered one under the value figures, the occupied one under
+ * the cost rate — and each figure names its own denominator so a client cannot
+ * pair a rate with the wrong area. Converting here again would reintroduce
+ * exactly that risk for no gain.
  */
 
 import { useCallback, useMemo, useState } from 'react';
@@ -98,7 +103,6 @@ import {
     COST_METRIC_LABEL_KEYS,
     UNKNOWN_RENT_CURRENCY,
 } from '@/lib/grain/cost-metrics';
-import { haToDca } from '@/lib/agro/rate-calc';
 import { formatDecimal } from '@/lib/number-format';
 import { useDateFormat } from '@/lib/i18n/use-date-format';
 import {
@@ -471,7 +475,16 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
         );
     }
 
-    const areaDca = haToDca(row.standingCropAreaHa);
+    // The SERVER's denominators, not recomputed from the hectare figures.
+    // After #1512 the cost rate divides by a DIFFERENT area from the value
+    // figures, and `perArea` names each figure's own — so a client that
+    // recomputes either can drift from the number the server actually divided
+    // by, and multiplying back up then fails to reconcile. Showing the
+    // yield-covered area beside a cost rate computed from the occupied one is
+    // the specific contradiction a farmer reads in a single glance, and on this
+    // farm `areaDca` is 0 while the cost rate is real.
+    const areaDca = row.perArea.areaDca;
+    const costAreaDca = row.perArea.costAreaDca;
     const expectedTonnes = row.standingCropExpectedKg / 1000;
 
     // `cashCostCurrencies` mixes real ISO codes with UNKNOWN_RENT_CURRENCY,
@@ -495,6 +508,24 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
     const marginPerDcaText = tc('marginPerDcaValue', {
         value: `${formatDecimal(row.perArea.marginPerDca ?? 0, 2)}${row.priceCurrency ? ` ${row.priceCurrency}` : ''}`,
     });
+    // The cost rate's own currency, which is NOT `priceCurrency`: a cost and a
+    // market price need not share one, and `perArea.costCurrency` exists
+    // because #1606 shipped the rate as a bare number. A code means "this
+    // literal currency" and gets the code printed, exactly as the margin does
+    // and for the same reason — `useExactMoneyFormatter` would stamp the
+    // tenant's sign on a figure that may not be in the tenant's currency. Null
+    // means no cost row recorded a currency, which by the server's documented
+    // convention IS the tenant's display currency, so the tenant formatter is
+    // the right one there and the only place it is correct.
+    const costPerDcaText =
+        row.perArea.attributableCostPerDca == null
+            ? null
+            : tc('costPerDcaValue', {
+                  value:
+                      row.perArea.costCurrency == null
+                          ? money(row.perArea.attributableCostPerDca)
+                          : `${formatDecimal(row.perArea.attributableCostPerDca, 2)} ${row.perArea.costCurrency}`,
+              });
     const refusalText = explainRefusal(
         row.netWorthUnavailableCode,
         // The params carry a canonical SLUG, not a display name — passed raw
@@ -768,6 +799,44 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
                             The qualifier rides the value, and a refusal
                             names WHICH denominator was missing rather than
                             printing a dash. */}
+                        {/* The COST rate, above the margin and before it
+                            (#1512). A farmer asks "what is this costing me per
+                            decare" before "what will I make", and the cost side
+                            is the half that is knowable without a market price
+                            — which is exactly why #1606 decoupled it.
+
+                            Its denominator is printed BENEATH it rather than
+                            left implied, because it is a different area from
+                            the one in the standing-crop line above and a reader
+                            given one area and two rates has no way to tell
+                            which belongs to which. Two areas was the owner's
+                            decision; showing each figure's own is what makes it
+                            legible rather than merely correct. */}
+                        <div className="flex flex-wrap items-baseline justify-between gap-tight pb-1 text-sm">
+                            <span className="text-content-muted">{tc('costPerDcaLabel')}</span>
+                            {costPerDcaText == null ? (
+                                <span className="text-xs text-content-attention">
+                                    {row.perArea.costRefusalCode === 'COST_CURRENCY_MIXED'
+                                        ? tc('costPerDcaMixedCurrency')
+                                        : row.perArea.costRefusalCode ===
+                                            'COST_CURRENCY_UNRECORDED'
+                                          ? tc('costPerDcaCurrencyUnrecorded')
+                                          : tc('costPerDcaNoArea')}
+                                </span>
+                            ) : (
+                                <span className="font-medium tabular-nums text-content-emphasis">
+                                    {costPerDcaText}
+                                </span>
+                            )}
+                        </div>
+                        {costPerDcaText != null && (
+                            <p className="pb-2 text-xs text-content-subtle">
+                                {tc('costPerDcaArea', {
+                                    value: formatDecimal(costAreaDca, 1),
+                                })}
+                            </p>
+                        )}
+                        <p className="pb-2 text-xs text-content-subtle">{tc('costPerDcaHint')}</p>
                         <div className="flex flex-wrap items-baseline justify-between gap-tight pb-2 text-sm">
                             <span className="text-content-muted">
                                 {tc('marginPerDcaLabel')}

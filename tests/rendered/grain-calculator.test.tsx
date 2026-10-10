@@ -42,6 +42,7 @@ import enMessages from '../../messages/en.json';
 import { formatDate, formatDateTime } from '@/lib/format-date';
 
 import { foldFarmTotals } from '@/lib/grain/farm-total';
+import { UNKNOWN_RENT_CURRENCY } from '@/lib/grain/cost-metrics';
 import { computePerArea } from '@/lib/grain/per-area';
 import { computeBreakEven } from '@/lib/grain/break-even';
 import { costUncertainty, netWorthUncertainty } from '@/lib/grain/uncertainty';
@@ -144,12 +145,24 @@ function withServerDerived(
             row.perArea ??
             computePerArea({
                 standingCropAreaHa: row.standingCropAreaHa,
-                // #1512: the cost rate's denominator. This harness has no
-                // occupied-area input of its own, so it reuses the standing
-                // area — which keeps every existing expectation in this file
-                // unchanged. The cases where the two DIFFER are unit-tested in
-                // `per-area.test.ts`, where the distinction is the subject.
-                occupiedAreaHa: row.standingCropAreaHa,
+                // RECOMBINED from the row's own two fields, because that is
+                // what the server splits apart: `cashCostCurrencies` mixes real
+                // ISO codes with the money-rent sentinel, and `page.tsx` splits
+                // them into `costCurrencyCodes` + `rentCurrencyUnknown` for
+                // display. Putting `[]` here instead would make every fixture
+                // claim "no currency recorded" — the one input that resolves
+                // rather than refuses — so a mixed-currency row would render a
+                // blended rate in the test and a refusal in production.
+                costCurrencies: [
+                    ...row.costCurrencyCodes,
+                    ...(row.rentCurrencyUnknown ? [UNKNOWN_RENT_CURRENCY] : []),
+                ],
+                // #1512: the cost rate's denominator, taken from the row's OWN
+                // field. It used to reuse `standingCropAreaHa`, which made the
+                // two areas identical in every fixture and left the divergence
+                // this page now renders untestable here — the exact case the
+                // feature exists for.
+                occupiedAreaHa: row.occupiedAreaHa,
                 standingCropValue: row.standingCropValue,
                 attributableCost: row.cashCostTotal,
                 standingCropExcludedCount: 0,
@@ -1660,5 +1673,108 @@ describe('grain calculator — beside the cost', () => {
             }),
         );
         expect(screen.getAllByText('€18,750').length).toBeGreaterThan(0);
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// The COST rate on screen (#1512). The owner's decision was "two areas,
+// surface cost-per-dca", and the second half is this: a figure the server
+// computes but no screen shows is not surfaced.
+//
+// Every expectation here is a SINGLE-row payload. With the default two rows
+// the list expands the top one by net worth, so a two-row fixture would be
+// asserting against whichever row happened to sort first — and `maizeRow`
+// carries a different `cashCostTotal`, so the number would be right for the
+// wrong reason or wrong for an invisible one.
+//
+// The numbers have no trailing zeros because `formatDecimal` trims them:
+// 44, not 44.00. Asserted as the exact rendered string rather than a loose
+// regex, so a formatting change is a visible failure instead of a silent pass.
+// ─────────────────────────────────────────────────────────────────────
+
+describe('cost per decare is rendered, with its own denominator (#1512)', () => {
+    it('shows the rate and the area it was divided by', () => {
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow()] }));
+
+        expect(screen.getByText(COPY.costPerDcaLabel)).toBeVisible();
+        // 5 500 over 12.5 ha = 125 dca → 44, labelled with the COST currency.
+        expect(screen.getByText('44 EUR / dca')).toBeVisible();
+        expect(screen.getByText(COPY.costPerDcaArea.replace('{value}', '125'))).toBeVisible();
+    });
+
+    it('divides by the OCCUPIED area, not the yield-covered one', () => {
+        // The defect in one test. The crop grows on 40 ha; only 12.5 of it has
+        // a yield estimate. The cost rate must use 400 dca, not 125 — a factor
+        // of 3.2, which is the difference between a figure a farmer can act on
+        // and one that says they are spending three times what they are.
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow({ standingCropAreaHa: 12.5, occupiedAreaHa: 40 })] }));
+
+        expect(screen.getByText('13.75 EUR / dca')).toBeVisible();
+        expect(screen.queryByText('44 EUR / dca')).toBeNull();
+        expect(screen.getByText(COPY.costPerDcaArea.replace('{value}', '400'))).toBeVisible();
+    });
+
+    it('shows the cost rate even when every VALUE figure is refused', () => {
+        // The scenario #1512 was filed about, and the one on the owner's own
+        // farm: no planting carries a yield estimate, so the value figures are
+        // withheld — but the farm knows exactly what it spent and the land it
+        // spent it on. Before #1606 this screen showed nothing at all here.
+        setViewport('mobile');
+        renderPage(
+            data({
+                rows: [
+                    wheatRow({
+                        standingCropAreaHa: 0,
+                        occupiedAreaHa: 40,
+                        standingCropExpectedKg: 0,
+                        standingCropValue: 0,
+                    }),
+                ],
+            }),
+        );
+
+        expect(screen.getByText('13.75 EUR / dca')).toBeVisible();
+        // And the margin names WHICH denominator was missing rather than
+        // borrowing the cost rate's. `getAllByText` because the sentence
+        // appears in BOTH places that quote a margin — the per-crop card and
+        // the detail block — and they must agree; `getByText` would fail on the
+        // multiplicity and say nothing about the agreement.
+        expect(screen.getAllByText(COPY.perAreaNoArea).length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('refuses the rate on MIXED currencies instead of blending them', () => {
+        setViewport('mobile');
+        renderPage(data({ rows: [wheatRow({ costCurrencyCodes: ['BGN', 'EUR'] })] }));
+
+        expect(screen.getByText(COPY.costPerDcaMixedCurrency)).toBeVisible();
+        // The blended figure that must NOT appear. 5 500 over 125 dca is 44
+        // whichever currency you pretend it is in, so naming the number is a
+        // sharper assertion than looking for a "/ dca" suffix — that suffix is
+        // also the MARGIN's, which still renders here and legitimately so.
+        expect(screen.queryByText('44 EUR / dca')).toBeNull();
+        expect(screen.queryByText('44 BGN / dca')).toBeNull();
+    });
+
+    it('labels the rate with the COST currency, not the price currency', () => {
+        // They need not be the same, and assuming they are is the
+        // 24 000 лв-shown-as-€24 000 error arrived at by arithmetic rather
+        // than by a missing field. Priced in EUR, spent in BGN.
+        setViewport('mobile');
+        renderPage(
+            data({ rows: [wheatRow({ priceCurrency: 'EUR', costCurrencyCodes: ['BGN'] })] }),
+        );
+
+        expect(screen.getByText('44 BGN / dca')).toBeVisible();
+    });
+
+    it('says the rent currency is unrecorded when that is the only cause', () => {
+        setViewport('mobile');
+        renderPage(
+            data({ rows: [wheatRow({ costCurrencyCodes: [], rentCurrencyUnknown: true })] }),
+        );
+
+        expect(screen.getByText(COPY.costPerDcaCurrencyUnrecorded)).toBeVisible();
     });
 });

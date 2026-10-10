@@ -39,10 +39,35 @@
  * @module lib/grain/per-area
  */
 import { DCA_PER_HA } from '@/lib/agro/rate-calc';
+// The money-rent sentinel, imported rather than re-spelled. `cost-rollup`
+// pushes it because `ParcelLease` has no currency column. It is a sibling lib
+// module, so there is no cycle and no second copy to drift — a local constant
+// here would make every money-rent farm's cost rate look like an ordinary
+// single-currency one the moment the two spellings diverged.
+import { UNKNOWN_RENT_CURRENCY } from './cost-metrics';
 import { UNCERTAINTY, costIsFloor, type UncertaintyState } from './uncertainty';
 
-/** Why a per-dca figure was withheld. Never a blank, never a NaN. */
+/** Why a per-dca VALUE figure was withheld. Never a blank, never a NaN. */
 export type PerAreaRefusalCode = 'NO_STANDING_CROP_AREA' | 'NO_STANDING_CROP_VALUE';
+
+/**
+ * Why the COST rate was withheld — a SEPARATE vocabulary, deliberately.
+ *
+ * `refusalCode` describes the value figures, and after #1512 the cost rate
+ * stands on its own: it can be present when they are refused and refused when
+ * they are present. One code for both would have to mean "something is missing
+ * somewhere", which is not a sentence a client can render.
+ *
+ * `COST_CURRENCY_MIXED` and `COST_CURRENCY_UNRECORDED` mirror
+ * `MIXED_COST_CURRENCY` / `RENT_CURRENCY_UNRECORDED` on net worth, for the same
+ * reason and with the same severity: no FX is ever invented, so costs that are
+ * not in ONE known currency are not a money figure and are withheld rather
+ * than blended.
+ */
+export type PerAreaCostRefusalCode =
+    | 'NO_OCCUPIED_AREA'
+    | 'COST_CURRENCY_MIXED'
+    | 'COST_CURRENCY_UNRECORDED';
 
 export interface PerAreaInput {
     /** INCLUDED-planting area. See the denominator trap above. */
@@ -62,6 +87,26 @@ export interface PerAreaInput {
     standingCropValue: number | null;
     /** `cashCostTotal` — the per-planting attributed cost. */
     attributableCost: number;
+    /**
+     * Every currency contributing to `attributableCost`, which is a MAGNITUDE
+     * sum taken regardless of mix — `cashCostTotal`'s own docblock says never to
+     * assume it shares a currency with the market price.
+     *
+     * So the cost rate cannot be labelled with `priceCurrency`, and #1606
+     * shipped it with no currency at all: a bare number a client had to guess
+     * the unit of. This closes that gap. May contain the `UNKNOWN_RENT_CURRENCY`
+     * sentinel, which `ParcelLease` forces because it has no currency column.
+     *
+     * EMPTY is not an error and not a refusal. It means no cost row recorded a
+     * currency anywhere — overwhelmingly the journal path, which never writes
+     * `costCurrency` — and the product already treats an unlabelled magnitude as
+     * the tenant's display currency wherever it PRINTS one (`/grain/costs`
+     * renders every cost under `Tenant.currencySymbol` regardless). Net worth
+     * makes the same assumption in the same situation and says so. Refusing here
+     * instead would withhold the rate on exactly the farms that have no
+     * structured cost data, which are the ones #1512 was filed about.
+     */
+    costCurrencies: readonly string[];
     /** Plantings of this commodity dropped for a missing yield estimate. */
     standingCropExcludedCount: number;
     unvaluedNoUnitCost: number;
@@ -105,6 +150,25 @@ export interface PerAreaFigures {
      * area — and the two must not be mistaken for each other.
      */
     marginPerDca: number | null;
+    /**
+     * The currency `attributableCostPerDca` is denominated in.
+     *
+     * `null` means NO cost row recorded one, and by the convention documented on
+     * `costCurrencies` the figure is then in the tenant's display currency —
+     * which the server does not know and the client does. So null is an
+     * INSTRUCTION ("use your tenant symbol"), not an absence. It is never null
+     * beside a non-null rate for any other reason: a cost that is not in one
+     * known currency is withheld, not labelled.
+     */
+    costCurrency: string | null;
+    /**
+     * Why `attributableCostPerDca` is null, when it is.
+     *
+     * Non-null exactly when `attributableCostPerDca` is null, which a test pins
+     * — the pair is the whole contract, and a refusal with no code is the dash
+     * this module exists to avoid.
+     */
+    costRefusalCode: PerAreaCostRefusalCode | null;
     uncertainty: UncertaintyState;
     refusalCode: PerAreaRefusalCode | null;
 }
@@ -123,14 +187,58 @@ export function computePerArea(input: PerAreaInput): PerAreaFigures {
     const divisible = Number.isFinite(areaDca) && areaDca > 0;
     const costDivisible = Number.isFinite(costAreaDca) && costAreaDca > 0;
 
+    // Guarded on BOTH return paths, which it was not. `costAreaDca` is
+    // REPORTED rather than left for a client to recompute, so a NaN here
+    // reaches `z.number()` — zod accepts NaN — and then serialises to JSON
+    // `null`, failing a non-nullable field on a path no test covers. The
+    // refusal path already guarded it; the success path returned it raw.
+    //
+    // `areaDca` needs no equivalent: the success path is reached only when
+    // `divisible` holds, which already requires it to be finite. The cost
+    // denominator has no such gate, because the cost rate is computed
+    // independently of whether the value figures resolve (#1512).
+    const reportedCostAreaDca = Number.isFinite(costAreaDca) ? costAreaDca : 0;
+
     // The COST rate stands on its own (#1512). It needs the occupied area and
     // the cost, and nothing else — not a market price, not a yield estimate.
     // Coupling it to `standingCropValue` was the defect: a farm that knows
     // exactly what it is spending got no cost-per-decare because nobody could
     // say what the crop was worth, which is a different question.
-    const attributableCostPerDca = costDivisible
-        ? round2(input.attributableCost / costAreaDca)
-        : null;
+    // The currency is a SECOND gate on the cost rate, and it is not optional.
+    // `attributableCost` is a magnitude sum taken across whatever currencies the
+    // rows carried, so dividing it by an area yields a number with no unit
+    // unless the mix resolves to one. Printing that beside a currency symbol is
+    // the 24 000 лв-shown-as-€24 000 class of error, arrived at by arithmetic
+    // instead of by a missing field.
+    const realCostCurrencies = [...new Set(input.costCurrencies)].filter(
+        (c) => c !== UNKNOWN_RENT_CURRENCY,
+    );
+    const hasUnknownCostCurrency = input.costCurrencies.includes(UNKNOWN_RENT_CURRENCY);
+
+    // Order encodes severity. A mix is reported as a MIX even when the unknown
+    // sentinel is among the mixture: "these are several currencies" is the more
+    // actionable sentence than "one of them is unrecorded", and the farmer's fix
+    // differs — reconcile the entries, versus record the lease.
+    const costCurrencyRefusal: PerAreaCostRefusalCode | null =
+        realCostCurrencies.length > 1 ||
+        (realCostCurrencies.length >= 1 && hasUnknownCostCurrency)
+            ? 'COST_CURRENCY_MIXED'
+            : hasUnknownCostCurrency
+              ? 'COST_CURRENCY_UNRECORDED'
+              : null;
+
+    // EMPTY resolves to null-meaning-tenant-currency, NOT to a refusal. See
+    // `costCurrencies`: net worth makes the same assumption in the same
+    // situation, and refusing would withhold the rate on precisely the farms
+    // #1512 was filed about.
+    const costCurrency = realCostCurrencies.length === 1 ? realCostCurrencies[0] : null;
+
+    const costRefusalCode: PerAreaCostRefusalCode | null = !costDivisible
+        ? 'NO_OCCUPIED_AREA'
+        : costCurrencyRefusal;
+
+    const attributableCostPerDca =
+        costRefusalCode == null ? round2(input.attributableCost / costAreaDca) : null;
 
     const refusalCode: PerAreaRefusalCode | null = !divisible
         ? 'NO_STANDING_CROP_AREA'
@@ -141,13 +249,18 @@ export function computePerArea(input: PerAreaInput): PerAreaFigures {
     if (refusalCode != null) {
         return {
             areaDca: Number.isFinite(areaDca) ? areaDca : 0,
-            costAreaDca: Number.isFinite(costAreaDca) ? costAreaDca : 0,
+            costAreaDca: reportedCostAreaDca,
             // Both VALUE figures stay refused — the margin included, because
             // it subtracts a value that does not exist. `refusalCode` keeps
             // describing exactly that, which is what the calculator's
             // per-commodity list keys on.
             standingValuePerDca: null,
             attributableCostPerDca,
+            // Carried on the refusal path too: the whole point of #1512 is that
+            // the cost rate survives a value refusal, so the fields that make it
+            // legible have to survive with it.
+            costCurrency: attributableCostPerDca == null ? null : costCurrency,
+            costRefusalCode,
             marginPerDca: null,
             uncertainty: UNCERTAINTY.REFUSED,
             refusalCode,
@@ -157,9 +270,11 @@ export function computePerArea(input: PerAreaInput): PerAreaFigures {
     const value = input.standingCropValue as number;
     return {
         areaDca,
-        costAreaDca,
+        costAreaDca: reportedCostAreaDca,
         standingValuePerDca: round2(value / areaDca),
         attributableCostPerDca,
+        costCurrency: attributableCostPerDca == null ? null : costCurrency,
+        costRefusalCode,
         marginPerDca: round2((value - input.attributableCost) / areaDca),
         uncertainty: perAreaUncertainty(input),
         refusalCode: null,

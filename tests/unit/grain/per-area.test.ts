@@ -36,6 +36,11 @@ const base = {
     occupiedAreaHa: 12.5,
     standingCropValue: 15_000 as number | null,
     attributableCost: 5_000,
+    // EMPTY is the owner's farm and the common case: the journal path never
+    // writes `costCurrency`. It resolves to `costCurrency: null`, meaning
+    // "the tenant's display currency", NOT a refusal — so every pre-existing
+    // expectation holds unchanged and the currency cases are new tests below.
+    costCurrencies: [] as readonly string[],
     standingCropExcludedCount: 0,
     unvaluedNoUnitCost: 0,
     unattributedCostEntries: 0,
@@ -256,5 +261,189 @@ describe('an unattributed cost makes the per-dca figures a ceiling (#1530)', () 
     it('and EXACT when nothing is unattributed — the control', () => {
         const r = computePerArea({ ...priced, unattributedCostEntries: 0 });
         expect(r.uncertainty).toBe(UNCERTAINTY.EXACT);
+    });
+});
+
+/**
+ * The cost rate's CURRENCY, which #1606 shipped without.
+ *
+ * `attributableCost` is `cashCostTotal`, a magnitude sum taken across whatever
+ * currencies the rows carried — its own docblock says never to assume it shares
+ * one with the market price. So `attributableCostPerDca` was a bare number a
+ * client had to guess the unit of, and the guess available to it was
+ * `priceCurrency`, which is the wrong one by construction. These cases pin the
+ * resolution and, more importantly, pin WHICH SIDE each ambiguity falls on.
+ *
+ * The asymmetry is the point and is not an oversight:
+ *
+ *   · an EMPTY currency set RESOLVES (null, meaning the tenant's display
+ *     currency) — net worth makes the same assumption in the same situation,
+ *     and refusing would withhold the rate on exactly the farms with no
+ *     structured cost data, which are the ones #1512 was filed about;
+ *   · a MIXED set REFUSES — no FX is ever invented, so a blend is not money.
+ *
+ * Getting those two backwards would be invisible on a green farm and wrong on
+ * every farm that matters.
+ */
+describe('the cost rate carries its own currency (#1512)', () => {
+    const UNKNOWN = 'UNKNOWN';
+
+    it('EMPTY resolves to the tenant currency, and does NOT refuse', () => {
+        const r = computePerArea({ ...base, costCurrencies: [] });
+
+        // The rate is produced. This is the owner's farm: the journal path
+        // never writes `costCurrency`, so an empty set is the common case and
+        // refusing it would have been the regression.
+        expect(r.attributableCostPerDca).toBe(round2(5_000 / 125));
+        expect(r.costCurrency).toBeNull();
+        expect(r.costRefusalCode).toBeNull();
+    });
+
+    it('ONE recorded currency labels the rate with it', () => {
+        const r = computePerArea({ ...base, costCurrencies: ['BGN'] });
+
+        expect(r.attributableCostPerDca).toBe(round2(5_000 / 125));
+        expect(r.costCurrency).toBe('BGN');
+        expect(r.costRefusalCode).toBeNull();
+    });
+
+    it('the SAME currency repeated is still one currency', () => {
+        // Deduplicated, because the usecase hands over a set-derived array and
+        // a future caller may not. Without the dedup this reads as a mix and
+        // withholds a perfectly good figure.
+        const r = computePerArea({ ...base, costCurrencies: ['EUR', 'EUR', 'EUR'] });
+
+        expect(r.costCurrency).toBe('EUR');
+        expect(r.costRefusalCode).toBeNull();
+        expect(r.attributableCostPerDca).not.toBeNull();
+    });
+
+    it('TWO currencies withhold the rate rather than blending them', () => {
+        const r = computePerArea({ ...base, costCurrencies: ['BGN', 'EUR'] });
+
+        expect(r.attributableCostPerDca).toBeNull();
+        expect(r.costRefusalCode).toBe('COST_CURRENCY_MIXED');
+        // And no label on a figure that is not there.
+        expect(r.costCurrency).toBeNull();
+    });
+
+    it('the UNKNOWN rent sentinel ALONE is reported as unrecorded', () => {
+        // `ParcelLease` has no currency column, so money rent arrives as a
+        // sentinel. The farmer's fix is to record the lease — a different
+        // sentence from "reconcile your entries", which is why this is its own
+        // code rather than folded into MIXED.
+        const r = computePerArea({ ...base, costCurrencies: [UNKNOWN] });
+
+        expect(r.attributableCostPerDca).toBeNull();
+        expect(r.costRefusalCode).toBe('COST_CURRENCY_UNRECORDED');
+    });
+
+    it('a real currency PLUS the sentinel is a MIX, not merely unrecorded', () => {
+        // Precedence, and it is deliberate: "these are several currencies" is
+        // the more actionable sentence, and the sentinel is one of them.
+        const r = computePerArea({ ...base, costCurrencies: ['EUR', UNKNOWN] });
+
+        expect(r.costRefusalCode).toBe('COST_CURRENCY_MIXED');
+    });
+
+    it('NO occupied area outranks any currency problem', () => {
+        // Both are wrong at once; the area is the one to say. A farmer told
+        // "your currencies disagree" would go and fix currencies on a figure
+        // that has no denominator either way.
+        const r = computePerArea({
+            ...base,
+            occupiedAreaHa: 0,
+            costCurrencies: ['BGN', 'EUR'],
+        });
+
+        expect(r.costRefusalCode).toBe('NO_OCCUPIED_AREA');
+        expect(r.attributableCostPerDca).toBeNull();
+    });
+
+    it('the pair is exhaustive: a refusal code iff the rate is null', () => {
+        // The whole contract in one assertion, over every shape above. A
+        // refusal with no code is the dash this module exists to avoid, and a
+        // code beside a real number would make a client hide a good figure.
+        const shapes: Array<Partial<typeof base>> = [
+            { costCurrencies: [] },
+            { costCurrencies: ['BGN'] },
+            { costCurrencies: ['BGN', 'EUR'] },
+            { costCurrencies: [UNKNOWN] },
+            { costCurrencies: ['EUR', UNKNOWN] },
+            { occupiedAreaHa: 0 },
+            { occupiedAreaHa: 0, costCurrencies: ['EUR'] },
+            { standingCropValue: null, costCurrencies: ['EUR'] },
+            { standingCropAreaHa: 0, costCurrencies: ['EUR'] },
+        ];
+
+        // A control on the control: an empty list here would make the loop
+        // below assert nothing at all, which is the failure mode of every
+        // table-driven test.
+        expect(shapes.length).toBeGreaterThanOrEqual(9);
+
+        for (const shape of shapes) {
+            const r = computePerArea({ ...base, ...shape });
+            expect({
+                shape,
+                codeSet: r.costRefusalCode != null,
+                rateNull: r.attributableCostPerDca == null,
+            }).toEqual({
+                shape,
+                codeSet: r.attributableCostPerDca == null,
+                rateNull: r.attributableCostPerDca == null,
+            });
+            // A currency is never stated for a figure that was withheld.
+            if (r.attributableCostPerDca == null) expect(r.costCurrency).toBeNull();
+        }
+    });
+
+    it('the cost currency does not touch the VALUE figures — the control', () => {
+        // The cost rate stands alone in BOTH directions. A currency refusal
+        // that silently withheld the margin would be #1606 in reverse.
+        const mixed = computePerArea({ ...base, costCurrencies: ['BGN', 'EUR'] });
+        const clean = computePerArea({ ...base, costCurrencies: ['BGN'] });
+
+        expect(mixed.marginPerDca).toBe(clean.marginPerDca);
+        expect(mixed.standingValuePerDca).toBe(clean.standingValuePerDca);
+        expect(mixed.refusalCode).toBe(clean.refusalCode);
+    });
+
+    it('a NON-FINITE occupied area reports 0 decares on BOTH return paths', () => {
+        // The success path returned `costAreaDca` raw while the refusal path
+        // guarded it. `z.number()` accepts a non-finite number and JSON
+        // serialises it to `null`, so the non-nullable DTO field would have
+        // failed on a path no test covered.
+        //
+        // INFINITY, not NaN, and that is the whole substance of this test. The
+        // computation is `round2((input.occupiedAreaHa || 0) * DCA_PER_HA)`, and
+        // `NaN` is FALSY — `NaN || 0` is `0` — so a NaN input never reaches the
+        // guard at all. A NaN case here passes whether the guard exists or not,
+        // which is the shape of an assertion that is green for the wrong reason:
+        // it would be asserting `|| 0`, not the thing it names. Infinity is
+        // truthy, survives the `||`, and `round2(Infinity)` is Infinity, so it
+        // is the only input that actually exercises the guard.
+        //
+        // Asserted on a priced row (success path) and an unpriced one (refusal
+        // path) because one of the two was already correct, and a test covering
+        // only that one would have passed before the fix.
+        const priced = computePerArea({ ...base, occupiedAreaHa: Number.POSITIVE_INFINITY });
+        const refused = computePerArea({
+            ...base,
+            occupiedAreaHa: Number.POSITIVE_INFINITY,
+            standingCropValue: null,
+        });
+
+        // The premise, stated so this cannot quietly stop testing the guard:
+        // a NaN input is neutralised upstream and proves nothing here.
+        expect(computePerArea({ ...base, occupiedAreaHa: Number.NaN }).costAreaDca).toBe(0);
+
+        expect(priced.refusalCode).toBeNull();
+        expect(refused.refusalCode).toBe('NO_STANDING_CROP_VALUE');
+        for (const r of [priced, refused]) {
+            expect(Number.isFinite(r.costAreaDca)).toBe(true);
+            expect(r.costAreaDca).toBe(0);
+            expect(r.attributableCostPerDca).toBeNull();
+            expect(r.costRefusalCode).toBe('NO_OCCUPIED_AREA');
+        }
     });
 });
