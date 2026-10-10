@@ -44,6 +44,18 @@ model MarketPriceSeries {
   unit      String
   /// ISO currency of `price`, e.g. 'EUR' | 'BGN' | 'RON' | 'USD'.
   currency  String
+  /// When a superuser CLEARED a platform price override (#1587). Null means
+  /// the override is live; non-null means the run ended and the feed is
+  /// authoritative again.
+  ///
+  /// Marked rather than deleted, per the #1587 contract 5(b): the typed history
+  /// survives and so does the audit trail of what was typed. The read path
+  /// excludes a cleared series, so "cleared" and "absent from the payload" are
+  /// the same thing to a client without the rows going anywhere.
+  ///
+  /// Only ever set on `source: 'platform'` rows. A feed's series is never
+  /// cleared — there is nobody to clear it and nothing it would mean.
+  clearedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -75,6 +87,22 @@ model MarketPricePoint {
   /// Structured provenance — e.g. `{ count }` for the k-anonymised
   /// listings index (distinct-tenant count, never ids). Never free text.
   meta      Json?
+  /// When the override RUN this point belonged to was cleared (#1587). Null
+  /// means the point is part of the current run and is published.
+  ///
+  /// This is on the POINT and not only on the series, and the reason is the
+  /// natural key. `(source, commodity, region, stage, currency, unit)` is
+  /// UNIQUE, so re-typing after a clear resolves to the SAME series row — and
+  /// un-clearing the series alone would republish every pre-clear point, which
+  /// is exactly the resurrection the contract rules out. Found by agrent-ios
+  /// before it shipped.
+  ///
+  /// A run-start date on the series was the alternative and it breaks on a
+  /// BACKDATED correction: clear on the 10th, correct the 5th, and everything
+  /// from the 6th to the 9th comes back. Stamping points means re-typing a date
+  /// replaces that one point and brings only it into the new run, while dates
+  /// nobody re-typed stay hidden.
+  clearedAt DateTime?
   createdAt DateTime          @default(now())
 
   /// Idempotent-upsert key.

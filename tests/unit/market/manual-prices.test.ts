@@ -17,12 +17,7 @@ import { makeRequestContext } from '../../helpers/make-context';
 
 // ── Seams ────────────────────────────────────────────────────────────
 
-const series = {
-    findFirst: jest.fn(),
-    create: jest.fn(),
-    findMany: jest.fn(),
-    deleteMany: jest.fn(),
-};
+const series = { findFirst: jest.fn(), create: jest.fn() };
 const point = { upsert: jest.fn() };
 const mockDb = { marketPriceSeries: series, marketPricePoint: point } as any;
 
@@ -38,13 +33,7 @@ jest.mock('@/lib/auth/platform-support', () => ({
     assertPlatformSupport: (...a: any[]) => assertPlatformSupport(...a),
 }));
 
-import {
-    upsertManualPriceSeries,
-    upsertPlatformPriceOverride,
-    clearPlatformPriceOverride,
-    MANUAL_SOURCE,
-    PLATFORM_OVERRIDE_SOURCE,
-} from '@/app-layer/usecases/market-manual-prices';
+import { upsertManualPriceSeries, MANUAL_SOURCE } from '@/app-layer/usecases/market-manual-prices';
 import { ManualPriceSeriesSchema } from '@/app-layer/schemas/market-manual.schemas';
 
 const ctx = makeRequestContext('ADMIN');
@@ -69,8 +58,6 @@ beforeEach(() => {
     series.findFirst.mockResolvedValue(null);
     series.create.mockResolvedValue({ id: 'ser1' });
     point.upsert.mockResolvedValue({});
-    series.findMany.mockResolvedValue([]);
-    series.deleteMany.mockResolvedValue({ count: 0 });
 });
 
 describe('the platform gate', () => {
@@ -281,230 +268,5 @@ describe('price storage', () => {
         const written = point.upsert.mock.calls[0][0].create.price;
         expect(written).toBeInstanceOf(Prisma.Decimal);
         expect(written.toString()).toBe('1420.57');
-    });
-});
-
-/**
- * The superuser price OVERRIDE (#1587).
- *
- * Owner ruling 2026-10-10: a typed price always wins over the API, for every
- * farm and every surface, until it is cleared. The override shares this
- * module's write path, so most of what makes that write safe is already
- * covered above — these cases pin what is DIFFERENT, and the differences are
- * the parts that would be invisible if they broke.
- */
-describe('the platform price override (#1587)', () => {
-    const SER = { id: 'ovr1' };
-
-    it('writes source "platform", not "manual"', async () => {
-        series.findFirst.mockResolvedValue(null);
-        series.create.mockResolvedValue(SER);
-
-        await upsertPlatformPriceOverride(ctx, input({ commodity: 'wheat' }));
-
-        expect(series.create).toHaveBeenCalledWith(
-            expect.objectContaining({
-                data: expect.objectContaining({ source: PLATFORM_OVERRIDE_SOURCE }),
-            }),
-        );
-        // The two sources must stay distinct. `manual` fills a gap and has no
-        // feed to outrank; `platform` overrides a live one. Reusing `manual`
-        // would retroactively turn every gap-fill row ever entered into an
-        // always-wins override.
-        expect(PLATFORM_OVERRIDE_SOURCE).not.toBe(MANUAL_SOURCE);
-    });
-
-    it('looks for an EXISTING series under its own source only', async () => {
-        // The lookup decides "append to the run in progress" vs "start one". If
-        // it searched `manual`, a commodity with a gap-fill history would have
-        // its override appended onto the gap-fill series — one row, two
-        // meanings, and the feed silently outranked by data nobody meant as an
-        // override.
-        await upsertPlatformPriceOverride(ctx, input({ commodity: 'wheat' }));
-
-        expect(series.findFirst).toHaveBeenCalledWith(
-            expect.objectContaining({
-                where: expect.objectContaining({ source: PLATFORM_OVERRIDE_SOURCE }),
-            }),
-        );
-    });
-
-    it('emits a DISTINCT audit action from a manual entry', async () => {
-        await upsertPlatformPriceOverride(ctx, input({ commodity: 'wheat' }));
-        const overrideAction = logEvent.mock.calls[0][2].action;
-
-        logEvent.mockClear();
-        await upsertManualPriceSeries(ctx, input());
-        const manualAction = logEvent.mock.calls[0][2].action;
-
-        // Two different events to anyone reading the trail later: one filled a
-        // gap, one overrode a live feed for every farm. A shared action name
-        // would make them indistinguishable in exactly the audit nobody runs
-        // until it matters.
-        expect(overrideAction).toBe('MARKET_PRICE_OVERRIDE_UPSERT');
-        expect(manualAction).toBe('MARKET_PRICE_MANUAL_UPSERT');
-        expect(overrideAction).not.toBe(manualAction);
-    });
-
-    it('still refuses a SECOND denomination for the same commodity', async () => {
-        // Inherited from the shared write path, asserted here because the
-        // inheritance is the claim. Diesel is typed in EUR/l and the rest in
-        // EUR/t, so a per-commodity denomination guard is the thing standing
-        // between a 1.95 and a 1950 — and a series that changes denomination
-        // mid-history renders as one continuous line and is a lie.
-        series.findFirst.mockResolvedValue({ id: 'ovr1', unit: 'EUR/l', currency: 'EUR' });
-
-        await expect(
-            upsertPlatformPriceOverride(
-                ctx,
-                input({ commodity: 'diesel', unit: 'EUR/t', currency: 'EUR' }),
-            ),
-        ).rejects.toThrow(/already recorded in EUR EUR\/l/);
-    });
-
-    it('is gated like the manual write — the gate is not re-implemented', async () => {
-        assertPlatformSupport.mockImplementation(() => {
-            throw new Error('not the platform tenant');
-        });
-
-        await expect(upsertPlatformPriceOverride(ctx, input())).rejects.toThrow(
-            'not the platform tenant',
-        );
-        await expect(clearPlatformPriceOverride(ctx, 'wheat')).rejects.toThrow(
-            'not the platform tenant',
-        );
-    });
-});
-
-describe('clearing the override (#1587)', () => {
-    it('returns cleared:false for an override that is not set — NOT an error', async () => {
-        series.findMany.mockResolvedValue([]);
-
-        const r = await clearPlatformPriceOverride(ctx, 'wheat');
-
-        expect(r).toEqual({ commodity: 'wheat', cleared: false, pointsRemoved: 0 });
-        // Nothing deleted and nothing logged: there was no event.
-        expect(series.deleteMany).not.toHaveBeenCalled();
-        expect(logEvent).not.toHaveBeenCalled();
-    });
-
-    it('deletes every region and stage for the commodity', async () => {
-        series.findMany.mockResolvedValue([
-            { id: 'a', region: 'BG', stage: null, unit: 'EUR/t', currency: 'EUR', points: [] },
-            { id: 'b', region: 'EU', stage: 'ex-works', unit: 'EUR/t', currency: 'EUR', points: [] },
-        ]);
-        series.deleteMany.mockResolvedValue({ count: 2 });
-
-        const r = await clearPlatformPriceOverride(ctx, 'wheat');
-
-        expect(r.cleared).toBe(true);
-        // Scoped by commodity, not by one region: a stray row left behind would
-        // keep overriding one surface while the superuser believed they had
-        // cleared it.
-        expect(series.deleteMany).toHaveBeenCalledWith({
-            where: { source: PLATFORM_OVERRIDE_SOURCE, commodity: 'wheat' },
-        });
-    });
-
-    it('records every typed point in the audit row BEFORE deleting', async () => {
-        series.findMany.mockResolvedValue([
-            {
-                id: 'a',
-                region: 'BG',
-                stage: null,
-                unit: 'EUR/t',
-                currency: 'EUR',
-                points: [
-                    { date: new Date('2026-07-01T00:00:00Z'), price: new Prisma.Decimal('210.5') },
-                    { date: new Date('2026-07-02T00:00:00Z'), price: new Prisma.Decimal('211') },
-                ],
-            },
-        ]);
-        series.deleteMany.mockResolvedValue({ count: 1 });
-
-        const r = await clearPlatformPriceOverride(ctx, 'wheat');
-
-        expect(r.pointsRemoved).toBe(2);
-        const before = logEvent.mock.calls[0][2].detailsJson.before;
-        // The whole reason deleting is acceptable. The read path has no source
-        // filter, so "absent from the payload" has to mean deleted — and the
-        // trail has to live somewhere.
-        expect(before.points).toEqual([
-            expect.objectContaining({ date: '2026-07-01', price: '210.5' }),
-            expect.objectContaining({ date: '2026-07-02', price: '211' }),
-        ]);
-        expect(before.pointsTruncated).toBe(0);
-    });
-
-    it('SAYS SO when the audit trail is truncated', async () => {
-        // 450 points against a 400 cap. A reader of a truncated trail must know
-        // it is truncated; a prefix presented as the whole history is worse than
-        // an explicit gap.
-        series.findMany.mockResolvedValue([
-            {
-                id: 'a',
-                region: 'BG',
-                stage: null,
-                unit: 'EUR/t',
-                currency: 'EUR',
-                points: Array.from({ length: 450 }, (_, i) => ({
-                    date: new Date(Date.UTC(2026, 0, 1 + i)),
-                    price: new Prisma.Decimal('200'),
-                })),
-            },
-        ]);
-        series.deleteMany.mockResolvedValue({ count: 1 });
-
-        await clearPlatformPriceOverride(ctx, 'wheat');
-        const before = logEvent.mock.calls[0][2].detailsJson.before;
-
-        expect(before.pointsRemoved).toBe(450);
-        expect(before.pointsRecorded).toBe(400);
-        expect(before.pointsTruncated).toBe(50);
-    });
-
-    it('THROWS when the delete removes a different number than it found', async () => {
-        // A delete that removed fewer rows than expected is a silent success —
-        // the shape that left a DB-backed guard permanently red elsewhere in
-        // this project. Assert the COUNT, never that the call returned.
-        series.findMany.mockResolvedValue([
-            { id: 'a', region: 'BG', stage: null, unit: 'EUR/t', currency: 'EUR', points: [] },
-            { id: 'b', region: 'EU', stage: null, unit: 'EUR/t', currency: 'EUR', points: [] },
-        ]);
-        series.deleteMany.mockResolvedValue({ count: 1 });
-
-        await expect(clearPlatformPriceOverride(ctx, 'wheat')).rejects.toThrow(
-            /Expected to clear 2 override series for wheat, deleted 1/,
-        );
-    });
-
-    it('refuses an unresolvable commodity rather than clearing nothing', async () => {
-        // "Cleared nothing" and "cleared a commodity you misspelled" must not
-        // look the same. A silent no-op on a typo would read as a fact about
-        // the platform's position.
-        // CODED, and asserted as such: a client must be able to tell "you
-        // misspelled it" from "there was no override", which is a 200 with
-        // `cleared: false`. The value is echoed back so the client can show
-        // what it sent.
-        await expect(clearPlatformPriceOverride(ctx, 'unobtainium')).rejects.toMatchObject({
-            code: 'UNKNOWN_COMMODITY',
-            params: { commodity: 'unobtainium' },
-        });
-        expect(series.deleteMany).not.toHaveBeenCalled();
-    });
-
-    it('normalises the spelling before it looks anything up', async () => {
-        series.findMany.mockResolvedValue([]);
-
-        const r = await clearPlatformPriceOverride(ctx, 'Canola');
-
-        // The canonical value is what the key is stored under, so a client
-        // sending any accepted spelling must hit the same rows.
-        expect(r.commodity).toBe('rapeseed');
-        expect(series.findMany).toHaveBeenCalledWith(
-            expect.objectContaining({
-                where: expect.objectContaining({ commodity: 'rapeseed' }),
-            }),
-        );
     });
 });

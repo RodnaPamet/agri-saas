@@ -67,3 +67,48 @@ export const ManualPriceSeriesSchema = z.object({
 });
 
 export type ManualPriceSeriesInput = z.infer<typeof ManualPriceSeriesSchema>;
+
+/**
+ * One commodity's typed price within a day — #1587 contract §5(d).
+ *
+ * No `unit` and no `currency`, deliberately. They are derived server-side from
+ * `price-override-denominations.ts` per commodity, because a caller that could
+ * choose the unit could put a per-tonne figure into the litre series and the
+ * six-column key would dutifully create it. Diesel is ~1.95 EUR/l against
+ * ~1950 EUR/t, so the field a client does not have is the one that would be
+ * wrong by a thousand.
+ */
+export const PriceOverrideEntrySchema = z.object({
+    /** Any accepted spelling; resolved and checked against the override list. */
+    commodity: z.string().min(1).max(120),
+    value: z.number().finite().nonnegative(),
+});
+
+/**
+ * A whole DAY of superuser price overrides, written all-or-nothing.
+ *
+ * `date` is a calendar day, not an instant: these are daily observations and the
+ * point key is `(seriesId, date)` with a `@db.Date` column. A client sending a
+ * timestamp would have its time silently dropped, so the shape says day.
+ */
+export const PriceOverrideDaySchema = z.object({
+    date: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD')
+        .openapi({ example: '2026-10-10' }),
+    /**
+     * Bounded at 10 — the owner's list is ten commodities (decision 3,
+     * 2026-10-10) and the bound is the list's length rather than a round
+     * number, so widening the list is the only way to widen the bound.
+     */
+    prices: z.array(PriceOverrideEntrySchema).min(1).max(10),
+    /**
+     * Recorded on the audit row for traceability. NOT what prevents a double
+     * write: the point upsert is on `(seriesId, date)`, so re-sending a day
+     * produces the identical state. See the usecase docblock — these are global
+     * tables with no `(tenantId, clientMutationId)` to dedupe on.
+     */
+    clientMutationId: z.string().min(1).max(200).nullish(),
+});
+
+export type PriceOverrideDayInput = z.infer<typeof PriceOverrideDaySchema>;
