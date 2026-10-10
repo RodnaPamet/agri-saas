@@ -3601,6 +3601,61 @@
         ],
         "description": "The create response. ingestToken is the raw credential and appears ONLY here — the server keeps a hash, so it cannot be shown again or recovered."
       },
+      "CropCostDefaults": {
+        "type": "object",
+        "properties": {
+          "commodity": {
+            "type": "string",
+            "description": "The CANONICAL commodity, echoed so you know what your spelling resolved to. Named `commodity`, NOT `commodityCanonical` — that is the storage column; this is the resolved value."
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "category": {
+                  "type": "string",
+                  "description": "The cost category as entered. Deliberately NOT narrowed to the overhead enum: a crop sheet books the categories a crop actually incurs."
+                },
+                "amountPerDca": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "description": "The per-decare rate AS TYPED. `null` means the farmer entered a TOTAL, not that the line is empty — show the row unfilled rather than dropping it, or you hide that the farm has such a cost at all."
+                },
+                "currency": {
+                  "type": "string",
+                  "description": "READ THIS; do not assume the form’s. Bulgaria moved to EUR in 2026 and older rows are BGN, so prefilling the number alone shows a 24 000 лв figure as €24 000 — wrong by the fixed 1.95583 and entirely plausible on screen."
+                },
+                "incurredOn": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "Show it, so a stale default looks like one. Every line of one sheet shares this instant — that is what makes them one sheet."
+                },
+                "description": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "The row’s NAME — what distinguishes ПРЗ from торове on one sheet. A departure worth stating: list rows elsewhere omit `description` because it is encrypted commercial free text. Returned here only because the rows are the CALLER’S OWN, bounded to one sheet, and without it the sheet comes back as several unlabelled amounts."
+                }
+              },
+              "required": [
+                "category",
+                "amountPerDca",
+                "currency",
+                "incurredOn",
+                "description"
+              ]
+            }
+          }
+        },
+        "required": [
+          "commodity",
+          "lines"
+        ]
+      },
       "CropPlan": {
         "type": "object",
         "properties": {
@@ -26213,11 +26268,21 @@
             "required": true,
             "name": "tenantSlug",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Any spelling the crop vocabulary resolves — `Canola`, `rapeseed`, «рапица». Send it and the 200 is the per-CROP sheet, component `CropCostDefaults`; omit it and the 200 is the overhead payload below, unchanged. The two shapes are DISJOINT, so branch on which key is present rather than on what you sent. A spelling the vocabulary does not cover is a 400 `UNKNOWN_COMMODITY`, never an empty sheet."
+            },
+            "required": false,
+            "description": "Any spelling the crop vocabulary resolves — `Canola`, `rapeseed`, «рапица». Send it and the 200 is the per-CROP sheet, component `CropCostDefaults`; omit it and the 200 is the overhead payload below, unchanged. The two shapes are DISJOINT, so branch on which key is present rather than on what you sent. A spelling the vocabulary does not cover is a 400 `UNKNOWN_COMMODITY`, never an empty sheet.",
+            "name": "commodity",
+            "in": "query"
           }
         ],
         "responses": {
           "200": {
-            "description": "The latest overhead figures, in a fixed category order so the form's fields do not reorder between visits. Empty when the farm has no overhead history.",
+            "description": "The latest overhead figures, in a fixed category order so the form's fields do not reorder between visits. Empty when the farm has no overhead history. This schema describes the response when `commodity` is ABSENT; sending it returns `CropCostDefaults` instead, which is a registered component rather than a second 200 schema here because declaring a union would take `overheads` off the top level and break a generated client's typed read.",
             "content": {
               "application/json": {
                 "schema": {
