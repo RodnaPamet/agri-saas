@@ -1211,6 +1211,11 @@
       "documented": true
     },
     {
+      "path": "/api/t/{tenantSlug}/grain/costs/batch",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/grain/costs/defaults",
       "status": "live",
       "documented": true

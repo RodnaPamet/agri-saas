@@ -3186,6 +3186,24 @@ exports[`API contract — per-schema snapshots schema: CostEntry 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: CostEntryBatchResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "lines": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/CostEntry"
+      }
+    }
+  },
+  "required": [
+    "lines"
+  ],
+  "description": "Every entry created by one cost sheet, in the order the lines were sent. On a replay of the same Idempotency-Key, the originally created rows — never a second booking."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: CostEntryInvoiceUpload 1`] = `
 "{
   "type": "object",
