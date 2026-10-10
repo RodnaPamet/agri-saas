@@ -30,6 +30,17 @@ const mockPrisma = {
     exchangeThreadRead: { updateMany: jest.fn(), create: jest.fn(), findFirst: jest.fn() },
     exchangeMessage: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), count: jest.fn() },
     exchangeBlock: { findFirst: jest.fn(), create: jest.fn(), deleteMany: jest.fn() },
+    // P5.2b — the PERSON block. Added here because this double must model
+    // every model the code touches: `requireParty` now consults `userBlock`,
+    // and an absent model threw `Cannot read properties of undefined` in 67
+    // tests at once rather than in the one that cares.
+    //
+    // Defaulted to "no block" in `beforeEach` below, which is the right
+    // default for a double: the code under test must not be able to pass
+    // because the check could not run. Making the SOURCE defensive
+    // (`db.userBlock?.findFirst`) was the alternative and would have been a
+    // security control failing OPEN whenever the model was missing.
+    userBlock: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), deleteMany: jest.fn() },
     // #1348 — `getExchangeThread` resolves a display name for every sender in
     // the page. Without this the whole suite throws on `user.findMany` of
     // undefined, which is a mock gap rather than a behaviour change.
@@ -191,6 +202,12 @@ beforeEach(() => {
     mockPrisma.exchangeMessage.count.mockResolvedValue(0);
     mockPrisma.exchangeBlock.findFirst.mockReset();
     mockPrisma.exchangeBlock.findFirst.mockResolvedValue(null);
+    // No PERSON block by default, so the existing exchange-block cases keep
+    // testing the exchange block alone.
+    mockPrisma.userBlock.findFirst.mockReset();
+    mockPrisma.userBlock.findFirst.mockResolvedValue(null);
+    mockPrisma.userBlock.findMany.mockReset();
+    mockPrisma.userBlock.findMany.mockResolvedValue([]);
     mockPrisma.exchangeBlock.create.mockResolvedValue({ id: 'blk1' });
     mockPrisma.exchangeBlock.deleteMany.mockResolvedValue({ count: 1 });
     translateFor.mockClear();
@@ -963,7 +980,19 @@ describe('pagination', () => {
         const [args] = mockPrisma.exchangeThread.findMany.mock.calls.at(-1) as [
             { where: unknown },
         ];
-        expect(args.where).toBeUndefined();
+        // Asserts the EFFECT, not the shape. This read `toBeUndefined()`
+        // until P5.2b, when the person-block filter made `where` an object
+        // that is `{}` with no cursor and no blockers — behaviourally
+        // identical to omitting it, since Prisma treats `where: {}` as no
+        // filter.
+        //
+        // The intent of this test is that a garbage cursor restarts the
+        // listing rather than filtering or 500ing, so `OR` — the only key
+        // `keysetBefore` produces — is the thing to look for. Asserting the
+        // argument was literally `undefined` was a proxy for that, and the
+        // proxy is what went stale while the property held.
+        expect(args.where).not.toHaveProperty('OR');
+        expect(Object.keys(args.where as object)).toEqual([]);
     });
 
     it('caps an absurd limit instead of honouring it', async () => {

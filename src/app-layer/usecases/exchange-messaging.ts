@@ -137,6 +137,35 @@ async function requireParty(db: PrismaTx, ctx: RequestContext, threadId: string)
         throw codedForbidden('THREAD_NOT_A_PARTY', 'You are not a party to that conversation.');
     }
 
+    // P5.2b — a PERSON block hides the conversation from the blocked party
+    // (owner ruling 2026-10-10). Placed here because `requireParty` is the
+    // choke point every read and write on a thread reaches — `get`, `send`,
+    // `close`, `markRead` and both exchange-block calls — so one check covers
+    // them instead of five that can drift apart.
+    //
+    // It throws the SAME `THREAD_NOT_FOUND` as the missing-thread case above,
+    // deliberately: identical code, message and status. That is what makes the
+    // block silent, and it is why the refusal is here rather than expressed as
+    // its own error — a distinguishable code would tell the blocked party
+    // exactly what a message would.
+    //
+    // ONE-directional, unlike the contact check: the blocked party loses
+    // sight of the thread, the BLOCKER keeps their history. The candidates are
+    // both named people on the thread, and `amIBlockedByAnyOf` drops the
+    // self-pair, so this runs without caring which side the caller is.
+    //
+    // A consequence worth knowing: a blocked seller also loses their
+    // `ExchangeBlock` controls on this thread, because those go through here
+    // too. That is consistent — the person who blocked them has already
+    // stopped contact — and the blocker can always lift their own UserBlock,
+    // which does not come through this function.
+    if (await amIBlockedByAnyOf(db, ctx.userId, [
+        thread.inquirerUserId,
+        thread.listing.sellerUserId,
+    ])) {
+        throw codedNotFound('THREAD_NOT_FOUND', 'That conversation was not found.');
+    }
+
     // #1298 — and WHICH PERSON. The principal opened it (buyer side) or
     // created the listing (seller side); an OWNER/ADMIN of that farm is in the
     // audience too, so the farm can still answer when the principal is away.
@@ -239,6 +268,98 @@ async function isBlocked(
 }
 
 /**
+ * `UserBlock` — the PERSON↔PERSON block (P5.2b, #1593). Two predicates, not
+ * one, because contact and visibility are deliberately NOT symmetric.
+ *
+ * `UserBlock` is additional to `ExchangeBlock`, never a replacement (#1553
+ * DECISION 2): a seller TENANT refusing a person is commercial, a person
+ * refusing a person is social, and collapsing them would silently un-block
+ * every person already blocked on the exchange.
+ *
+ * ── the person on each side of a thread ──
+ *
+ * The buyer is `thread.inquirerUserId`. The seller is
+ * `thread.listing.sellerUserId` — the member who LISTED it, which is not
+ * necessarily the member reading the thread, because `requireParty` decides
+ * the seller role by TENANT. So a colleague of a blocked lister can still
+ * write. That is the same evasion `ExchangeBlock.blockedUserId`'s docblock
+ * already records as a known, accepted cost of a person-level control: "a
+ * person-level block is evaded by asking a colleague to send instead. It stops
+ * a person, not a farm."
+ */
+
+/**
+ * Is there a block in EITHER direction between these two people?
+ *
+ * Governs CONTACT — opening a thread and sending a message. Either direction,
+ * because blocking somebody is mutual silence: a person who blocked you is not
+ * someone you should be able to write to either, and the alternative lets the
+ * blocker keep messaging into a conversation the other party cannot see.
+ */
+async function personBlockExists(
+    db: PrismaTx,
+    between: { aUserId: string; bUserId: string },
+): Promise<boolean> {
+    if (between.aUserId === between.bUserId) return false;
+    const row = await db.userBlock.findFirst({
+        where: {
+            OR: [
+                { blockerUserId: between.aUserId, blockedUserId: between.bUserId },
+                { blockerUserId: between.bUserId, blockedUserId: between.aUserId },
+            ],
+        },
+        select: { id: true },
+    });
+    return row !== null;
+}
+
+/**
+ * Have the people in `blockerUserIds` blocked ME, specifically?
+ *
+ * Governs VISIBILITY, and is ONE-directional on purpose: the blocked party
+ * loses sight of the conversation, the blocker keeps their history. Owner
+ * ruling 2026-10-10 — hiding it is what makes the block SILENT, because a
+ * thread that stays visible while its composer refuses tells the blocked party
+ * exactly as much as an error message would.
+ *
+ * Returns the set rather than a boolean so `listExchangeThreads` can put it in
+ * a `where` clause. Filtering the page AFTER the query would corrupt
+ * pagination: that query takes `limit + 1` rows to learn whether another page
+ * exists, so dropping rows afterwards shrinks the page and makes `hasMore`
+ * wrong.
+ */
+/**
+ * Has any of `candidates` blocked ME? One-directional, for VISIBILITY.
+ *
+ * Targeted rather than `whoHasBlockedMe(...).includes(...)` because a person
+ * with many blockers would have the whole set fetched to answer a two-element
+ * question. The self-pair is filtered out, so a caller may pass its own id
+ * among the candidates without knowing its own role yet — which is what lets
+ * this run in `requireParty` before the inquirer/seller split.
+ */
+async function amIBlockedByAnyOf(
+    db: PrismaTx,
+    meUserId: string,
+    candidates: readonly string[],
+): Promise<boolean> {
+    const others = candidates.filter((c) => c && c !== meUserId);
+    if (others.length === 0) return false;
+    const row = await db.userBlock.findFirst({
+        where: { blockedUserId: meUserId, blockerUserId: { in: others } },
+        select: { id: true },
+    });
+    return row !== null;
+}
+
+async function whoHasBlockedMe(db: PrismaTx, meUserId: string): Promise<string[]> {
+    const rows = await db.userBlock.findMany({
+        where: { blockedUserId: meUserId },
+        select: { blockerUserId: true },
+    });
+    return rows.map((r) => r.blockerUserId);
+}
+
+/**
  * Refuse further contact from the other party to this thread.
  *
  * SELLER ONLY — the listing owner decides who may keep writing to them. The
@@ -318,7 +439,10 @@ export async function openExchangeThread(ctx: RequestContext, listingId: string)
     return runInTenantContext(ctx, async (db) => {
         const listing = await db.exchangeListing.findFirst({
             where: { id: listingId },
-            select: { id: true, sellerTenantId: true },
+            // `sellerUserId` for the person-block check below — the member who
+            // LISTED it, which is the only person the seller side of a thread
+            // names.
+            select: { id: true, sellerTenantId: true, sellerUserId: true },
         });
         if (!listing) throw codedNotFound('LISTING_NOT_FOUND', 'That listing was not found.');
 
@@ -338,6 +462,27 @@ export async function openExchangeThread(ctx: RequestContext, listingId: string)
             blockedUserId: ctx.userId,
         })) {
             throw codedForbidden('THREAD_BLOCKED', 'That seller is not accepting messages from you.');
+        }
+
+        // P5.2b — the PERSON block, and it refuses SILENTLY (owner ruling
+        // 2026-10-10). Note the deliberate contrast with the two lines above:
+        // the exchange block TELLS the buyer, with its own code and a sentence,
+        // because that is a commercial refusal a buyer is entitled to
+        // understand. A social block must reveal nothing, so this reuses the
+        // genuine not-found above — same code, same message, same status.
+        //
+        // The two block tables therefore have OPPOSITE disclosure rules, which
+        // is the most confusable thing in this phase and the reason it is
+        // written here rather than left to the reader.
+        //
+        // Either direction refuses contact: blocking is mutual silence, and
+        // letting the blocker still open a thread would create a conversation
+        // the other party cannot see.
+        if (await personBlockExists(db, {
+            aUserId: ctx.userId,
+            bUserId: listing.sellerUserId,
+        })) {
+            throw codedNotFound('LISTING_NOT_FOUND', 'That listing was not found.');
         }
 
         // #1298 — one thread per (listing, inquirer PERSON). Two colleagues
@@ -905,6 +1050,31 @@ async function sendExchangeMessageImpl(
             })) {
             throw codedForbidden('THREAD_BLOCKED', 'That seller is not accepting messages from you.');
         }
+
+        // P5.2b — the PERSON block, and this arm is reached ONLY by the
+        // BLOCKER. The blocked party never gets here: `requireParty` above
+        // already answered THREAD_NOT_FOUND for them, because a person block
+        // hides the conversation from the person it refuses.
+        //
+        // So this refusal may be explicit, and should be: the blocker knows
+        // they blocked someone, concealing it from them would be concealing
+        // their own action, and "nothing happens when I press send" is the
+        // worst version of that. Nobody else can reach this code, so it is not
+        // a probe.
+        //
+        // Blocking is mutual silence — the alternative lets the blocker keep
+        // writing into a conversation the other party cannot see, which turns
+        // a block into a one-way megaphone.
+        if (await personBlockExists(db, {
+            aUserId: ctx.userId,
+            bUserId: role === 'inquirer' ? thread.listing.sellerUserId : thread.inquirerUserId,
+        })) {
+            throw codedForbidden(
+                'THREAD_PERSON_BLOCKED',
+                'You have blocked this person. Unblock them to continue the conversation.',
+            );
+        }
+
         // A closed thread does NOT refuse the message — sending REOPENS it.
         //
         // Closing is a soft "I'm done here" that clears the thread from the
@@ -1060,10 +1230,33 @@ export async function listExchangeThreads(
     const limit = Math.min(Math.max(requested, 1), DEFAULT_PAGE_SIZE);
     const cursor = decodeCursor(options.cursor);
     return runInTenantContext(ctx, async (db) => {
+        // P5.2b — threads whose other party has blocked this person are
+        // excluded IN THE QUERY, not filtered out of the page afterwards.
+        //
+        // That is not a style preference. This query takes `limit + 1` rows to
+        // learn whether another page exists without a second COUNT; dropping
+        // rows after the fact shrinks the page and makes `hasMore` wrong, so a
+        // post-filter would turn a block into a pagination bug.
+        //
+        // One indexed lookup (`UserBlock_blockedUserId_idx`). The empty case is
+        // the common one and costs nothing below — an empty `notIn` would
+        // match nothing at all in some engines, so the terms are added only
+        // when there is something to exclude.
+        const blockers = await whoHasBlockedMe(db, ctx.userId);
+        const hiddenByBlock = blockers.length > 0
+            ? {
+                inquirerUserId: { notIn: blockers },
+                listing: { sellerUserId: { notIn: blockers } },
+            }
+            : {};
+
         // RLS restricts this to threads the caller is a party to, from either
         // side — which is why there is no tenant filter here to write wrongly.
         const rows = await db.exchangeThread.findMany({
-            where: cursor ? keysetBefore(cursor, 'lastMessageAt') : undefined,
+            where: {
+                ...(cursor ? keysetBefore(cursor, 'lastMessageAt') : {}),
+                ...hiddenByBlock,
+            },
             // `id` is the tiebreak, and it is not decoration: ordering on
             // `lastMessageAt` alone is not a total order, so two threads
             // sharing a timestamp straddle the page boundary and one is
