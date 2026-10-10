@@ -19,10 +19,16 @@
  *
  * ## The control that matters
  *
- * `kpiOverdue` exists under TWO namespaces. `farmTasks.kpiOverdue` is rendered
+ * A leaf that exists under TWO namespaces, one referenced and one not, is the
+ * single assertion that proves the detector resolves by NAMESPACE rather than
+ * by leaf name. It is COMPUTED at runtime, not named.
+ *
+ * It used to name `kpiOverdue`: `farmTasks.kpiOverdue` was rendered
  * (`FarmTasksClient.tsx:129` binds `farmTasks`, `:452` calls `t('kpiOverdue')`)
- * and `tasks.dashboard.kpiOverdue` is not reachable from anywhere — nothing
- * binds `tasks` or `tasks.dashboard`.
+ * while `tasks.dashboard.kpiOverdue` was reachable from nowhere. That pair is
+ * gone — those 101 `tasks.*` keys were verified unreachable and DELETED, which
+ * is the cleanup this detector exists to enable. Naming a specific key made the
+ * guard break on its own success, so the pair is now searched for instead.
  *
  * The same leaf, opposite verdicts. That is the single assertion that proves
  * the detector resolves by NAMESPACE and not by leaf name, which is the failure
@@ -40,6 +46,7 @@
  * invariant has nobody checking the checker.
  */
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 interface Report {
@@ -56,6 +63,29 @@ interface Report {
 }
 
 const SCRIPT = join(process.cwd(), 'scripts/i18n-dead-keys.mjs');
+
+/** Every key in the shipped catalogue, flattened — the population the computed
+ *  discriminator below searches for a same-leaf pair. */
+function flattenCatalogue(): string[] {
+    const raw = JSON.parse(
+        readFileSync(join(process.cwd(), 'messages/en.json'), 'utf8'),
+    ) as Record<string, unknown>;
+    const out: string[] = [];
+    const walk = (node: Record<string, unknown>, prefix: string): void => {
+        for (const [k, v] of Object.entries(node)) {
+            const path = prefix ? `${prefix}.${k}` : k;
+            if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+                walk(v as Record<string, unknown>, path);
+            } else {
+                out.push(path);
+            }
+        }
+    };
+    walk(raw, '');
+    return out;
+}
+
+const catalogueKeys = flattenCatalogue();
 
 let report: Report;
 beforeAll(() => {
@@ -89,11 +119,48 @@ describe('the i18n dead-key detector (#1534)', () => {
     });
 
     it('the same leaf under two namespaces gets OPPOSITE verdicts', () => {
-        // The discriminator. A suffix-matching detector — #1534's own first
-        // method — calls both live, because the string 'kpiOverdue' appears in
-        // the tree. Resolution by namespace is what separates them.
-        expect(report.unreferencedKeys).not.toContain('farmTasks.kpiOverdue');
-        expect(report.unreferencedKeys).toContain('tasks.dashboard.kpiOverdue');
+        // The discriminator: a suffix-matching detector — #1534's own first
+        // method — calls both halves live, because the leaf string appears in
+        // the tree. Resolution by NAMESPACE is what separates them.
+        //
+        // COMPUTED, not named. This used to assert the specific pair
+        // `farmTasks.kpiOverdue` (live) against `tasks.dashboard.kpiOverdue`
+        // (dead), which coupled the guard to one catalogue key: deleting a
+        // verified-dead key broke the test that proves the detector works, so
+        // the cleanup this detector exists to enable was blocked by its own
+        // control. Finding a qualifying pair at runtime survives any deletion.
+        //
+        // If no such pair exists the test FAILS rather than passing vacuously,
+        // which is the honest outcome — with no leaf under both a referenced
+        // and an unreferenced parent, this property is untestable and nobody
+        // should be told otherwise.
+        const dead = new Set(report.unreferencedKeys);
+        const undecidable = (k: string): boolean =>
+            report.undecidablePrefixes.some((p) => k === p || k.startsWith(`${p}.`));
+
+        const byLeaf = new Map<string, string[]>();
+        for (const key of catalogueKeys) {
+            const leaf = key.slice(key.lastIndexOf('.') + 1);
+            if (!byLeaf.has(leaf)) byLeaf.set(leaf, []);
+            byLeaf.get(leaf)!.push(key);
+        }
+
+        const pairs: Array<{ leaf: string; live: string; dead: string }> = [];
+        for (const [leaf, keys] of byLeaf) {
+            if (keys.length < 2) continue;
+            const live = keys.find((k) => !dead.has(k) && !undecidable(k));
+            const gone = keys.find((k) => dead.has(k));
+            if (live && gone) pairs.push({ leaf, live, dead: gone });
+        }
+
+        // At least one, and the verdicts really are opposite for it.
+        expect(pairs.length).toBeGreaterThan(0);
+        const [sample] = pairs;
+        expect(dead.has(sample.live)).toBe(false);
+        expect(dead.has(sample.dead)).toBe(true);
+        expect(sample.live).not.toBe(sample.dead);
+        expect(sample.live.endsWith(`.${sample.leaf}`)).toBe(true);
+        expect(sample.dead.endsWith(`.${sample.leaf}`)).toBe(true);
     });
 
     it('a prefix-composed key resolves through its binding', () => {
@@ -203,15 +270,23 @@ describe('the i18n dead-key detector (#1534)', () => {
             expect(dead.length).toBeLessThan(20);
         });
 
-        it('while the sub-namespaces with NO binder stay dead', () => {
-            // The control for the assertion above: it must not pass by the
-            // detector having become permissive. Nothing binds `tasks.list`,
-            // `tasks.sheet`, `tasks.dashboard` or `tasks.editModal` — the UI
-            // moved to `farmTasks` — so those keys are genuinely unreachable
-            // and must still be reported.
-            for (const sub of ['tasks.list.', 'tasks.sheet.', 'tasks.dashboard.']) {
-                expect(report.unreferencedKeys.some((k) => k.startsWith(sub))).toBe(true);
-            }
+        it('and the detector has NOT just become permissive — the control', () => {
+            // The assertion above passes either because resolution improved or
+            // because the detector started calling everything live. This
+            // separates them.
+            //
+            // It used to name `tasks.list` / `tasks.sheet` / `tasks.dashboard`
+            // as namespaces that must stay dead. Those 101 keys were then
+            // VERIFIED unreachable and deleted (#1534), so naming them would
+            // have made this guard fail on the cleanup it enabled. Stated as a
+            // property instead: the dead set is non-empty, and the detector
+            // still resolves the large majority of the catalogue — a
+            // permissive detector shows up as the first number collapsing.
+            expect(report.unreferenced).toBeGreaterThan(0);
+            expect(report.referenced).toBeGreaterThan(3000);
+            expect(report.referenced + report.undecidable + report.unreferenced).toBe(
+                report.total,
+            );
         });
     });
 
