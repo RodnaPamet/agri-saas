@@ -24,6 +24,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { collectTrackedFiles } from '../helpers/collect-files';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 const ACCOUNT_DIR = path.join(ROOT, 'src/app/account');
@@ -119,7 +120,7 @@ describe('the /account area is reachable', () => {
         // `useNavSections()` — and reported the explanation as the violation.
         // A guard that reads prose is grading the wrong text.
         const code = (src: string) =>
-            src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+            blankNonCode(src);
 
         const offenders = sources
             .filter((r) => r.startsWith('src/app/account'))
@@ -135,7 +136,7 @@ describe('the /account area is reachable', () => {
         // The control for the case above: prove the strip actually removes a
         // mention, so "no offenders" cannot mean "the regex never fired".
         const code = (src: string) =>
-            src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+            blankNonCode(src);
         expect(code('/* useNavSections */ const a = 1;')).not.toMatch(/useNavSections/);
         expect(code('// tenantSlug\nconst b = 2;')).not.toMatch(/tenantSlug/);
         expect(code('const c = useNavSections();')).toMatch(/useNavSections/);

@@ -7,6 +7,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 const PRIMITIVE = fs.readFileSync(
@@ -38,10 +39,7 @@ describe('ChecklistGearButton — structural locks', () => {
     it('does NOT import or render a Tooltip (Popover.Trigger prop-swallow trap)', () => {
         // Strip comments first — the doc-comment legitimately MENTIONS
         // <Tooltip> to explain why the trigger avoids it.
-        const code = PRIMITIVE.replace(/\/\*[\s\S]*?\*\//g, '').replace(
-            /\/\/[^\n]*/g,
-            '',
-        );
+        const code = blankNonCode(PRIMITIVE);
         expect(code).not.toMatch(/import[^;]*\bTooltip\b[^;]*from/);
         expect(code).not.toMatch(/<Tooltip\b/);
     });

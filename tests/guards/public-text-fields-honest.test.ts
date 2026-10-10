@@ -30,6 +30,7 @@ import {
     PUBLIC_TEXT_FIELDS,
     PUBLIC_RESPONSE_FIELDS,
 } from '@/lib/security/public-text-fields';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 
@@ -44,21 +45,18 @@ const REPO_ROOT = path.resolve(__dirname, '../..');
  * the construct and mentioning it in the commit is enough.
  */
 function codeOf(source: string): string {
-    return source
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .split('\n')
-        .map((line) => {
-            // TRAILING comments too, not just whole-line ones. My first
-            // version stripped only `^\s*//`, and the mutation that slipped
-            // past was `return ...; // was: throw unauthorized(` — a trailing
-            // comment on a code line. Found by this file's own proof case.
-            //
-            // `(?<!:)` so a URL's `//` survives: `https://x` must not be cut
-            // at the slashes and leave `https:` looking like code.
-            const cut = line.search(/(?<!:)\/\//);
-            return cut === -1 ? line : line.slice(0, cut);
-        })
-        .join('\n');
+    // Was a hand-rolled line walk doing three things this helper does in one
+    // state-aware pass (#1605): block comments, TRAILING line comments, and a
+    // `(?<!:)` lookbehind so a URL's `//` survived.
+    //
+    // Both hard-won details are preserved rather than dropped. The trailing
+    // case is the one this file's own proof case caught — the mutation that
+    // slipped past an earlier `^\s*//` version was
+    // `return ...; // was: throw unauthorized(`, a trailing comment on a code
+    // line. And the URL carve-out is unnecessary now rather than removed: a
+    // `//` inside a string literal was never a comment to `blankNonCode`, so
+    // `https://x` is intact without a lookbehind to get right.
+    return blankNonCode(source);
 }
 
 /** The `Model.field` pairs the Prisma schema actually declares. */

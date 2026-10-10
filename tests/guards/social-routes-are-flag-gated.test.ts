@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 /**
  * Every social route is behind a runtime feature flag.
@@ -43,7 +44,7 @@ const GATE = /assertFeatureEnabled|isFeatureEnabled|requireFeature/;
 
 /** Source with comments stripped, so prose about the gate cannot satisfy it. */
 function codeOf(src: string): string {
-    return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    return blankNonCode(src);
 }
 
 /**

@@ -25,6 +25,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { collectSourceFiles } from '../helpers/collect-files';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = join(__dirname, '..', '..');
 const rel = (p: string) => p.slice(ROOT.length + 1).replace(/\\/g, '/');
@@ -42,9 +43,7 @@ const rel = (p: string) => p.slice(ROOT.length + 1).replace(/\\/g, '/');
  * A grep hit in a comment usually means the opposite of what it looks like.
  */
 function codeOnly(src: string): string {
-    return src
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/^\s*\/\/.*$/gm, '')
+    return blankNonCode(src)
         .replace(/\s\/\/.*$/gm, '');
 }
 

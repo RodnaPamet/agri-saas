@@ -1,3 +1,4 @@
+import { blankNonCode } from '../helpers/blank-non-code';
 export {};
 /**
  * Notification Pipeline — Performance & Regression Guards
@@ -276,11 +277,11 @@ describe('REGRESSION: digest-dispatcher does not query source-entity tables', ()
         // deleted — the guard fired on its own documentation rather
         // than on an import. The invariant is about the module graph,
         // so only code should be searched.
-        const code = source
-            .replace(/\/\*[\s\S]*?\*\//g, '')
-            .split('\n')
-            .filter((l: string) => !l.trim().startsWith("//"))
-            .join('\n');
+        // `blankNonCode` removes TRAILING comments too, which the
+        // `startsWith('//')` line filter could not — it only dropped
+        // whole-line comments, so a trailing one stayed in the corpus
+        // (#1605).
+        const code = blankNonCode(source);
 
         const monitorImports = [
             'deadline-monitor',

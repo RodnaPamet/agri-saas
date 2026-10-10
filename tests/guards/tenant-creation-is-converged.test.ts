@@ -22,6 +22,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { collectTrackedFiles } from '../helpers/collect-files';
 import { toSlug } from '@/lib/bg-transliterate';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -41,7 +42,7 @@ function sources(): string[] {
 
 /** Source with comments stripped — a docblock mentioning a symbol is not a use. */
 const code = (src: string) =>
-    src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    blankNonCode(src);
 
 describe('tenant creation is converged on one helper', () => {
     const files = sources();

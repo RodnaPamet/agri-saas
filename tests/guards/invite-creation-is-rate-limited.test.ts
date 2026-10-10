@@ -38,6 +38,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 /** Route files under the API tree. The floor guards against an empty sweep. */
 function apiRouteFiles(): string[] {
@@ -61,7 +62,7 @@ function inviteCallers(): Caller[] {
         const src = fs.readFileSync(abs, 'utf8');
         // Comments stripped: a file DISCUSSING the usecase is not a caller,
         // and this guard's own prose would otherwise match.
-        const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+        const code = blankNonCode(src);
         if (!/\bcreateInviteToken\s*\(/.test(code)) continue;
         const scope = /scope:\s*`([^`]+)`/.exec(code)?.[1] ?? null;
         out.push({
