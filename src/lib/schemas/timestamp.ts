@@ -190,6 +190,64 @@ export function requestTimestamp() {
  * cannot disagree about this field. That sharing is the point — two
  * hand-written declarations of one request body is #1555.
  */
+/**
+ * A day-typed value, OR the empty string — "no date", as a cleared date input
+ * sends it.
+ *
+ * ## Why this exists rather than `requestTimestamp().optional().nullable()`
+ *
+ * That is what #1574 shipped first, and E2E caught it: `asset-edit-modal`
+ * failed 3/3. The asset form's `purchaseDate` defaults to `''`
+ * (`asset-form.ts:65`) and clearing the picker sets `''` back
+ * (`EditAssetFields.tsx:182`: `toYMD(next) ?? ''`), so "no purchase date" goes
+ * over the wire as an EMPTY STRING. `new Date('')` is an Invalid Date, so
+ * `requestTimestamp()` refused it and every asset without a purchase date
+ * became unsaveable.
+ *
+ * The empty string is not a client quirk to be tolerated — it is already the
+ * contract at BOTH consumers, which is why the tightening had no business
+ * rejecting it:
+ *
+ *     // asset.ts:20-21
+ *     if (value === undefined) return undefined;   // omitted: leave unchanged
+ *     if (!value) return null;                     // '' or null: clear it
+ *
+ *     // evidence.ts:148
+ *     nextReviewDate: data.nextReviewDate ? new Date(data.nextReviewDate) : null,
+ *
+ * So `''`, `null` and omitted are three distinct, meaningful inputs here —
+ * clear it, clear it, leave it alone — and only a fourth category, an
+ * unparseable non-empty string, was ever the defect.
+ *
+ * ## What I got wrong, because it generalises
+ *
+ * I had read `asset-form.ts:65` while sweeping for #1558 and classified it
+ * "client-only, not request-side", so I excluded it. It is the SOURCE of the
+ * request payload. A form schema is not request-side validation, but it is
+ * authoritative about what the client sends — which is the question a
+ * tightening actually turns on.
+ *
+ * "Pure tightening" is a claim about inputs, and I made it without enumerating
+ * them.
+ *
+ * ## A refinement, not a union, and the spec is the reason
+ *
+ * `z.union([z.literal(''), requestTimestamp()])` is the obvious spelling and
+ * it changes the PUBLISHED contract. Measured: it rewrites a clean
+ *
+ *     "purchaseDate": { "type": ["string", "null"] }
+ *
+ * into a three-branch `anyOf` carrying an `enum: [""]` — 52 inserted lines
+ * across the four fields, for a schema a client reads as strictly worse. A
+ * refinement on `z.string()` renders exactly what was there before, so this
+ * fix costs the spec nothing.
+ */
+export function clearableTimestamp() {
+    return z.string().refine((value) => value === '' || !Number.isNaN(new Date(value).getTime()), {
+        message: 'Expected a parseable date string, or "" for no date',
+    });
+}
+
 export function instantTimestamp() {
     return z.string().datetime({ offset: true });
 }
