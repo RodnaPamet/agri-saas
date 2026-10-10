@@ -55,6 +55,30 @@ type Sanitizer = 'sanitizeRichTextHtml' | 'sanitizePlainText' | 'sanitizePolicyC
 const RICH_TEXT_COVERAGE: Readonly<
     Record<string, { usecases: readonly string[]; sanitizer: Sanitizer }>
 > = {
+    // P5.4a (#1595). `StatementOfReasons.bodyRendered` is the Art 17 text as
+    // DELIVERED, and `queueStatement` sanitises it on the way in.
+    //
+    // P5.1 put this in KNOWN_UNCOVERED arguing the honest fix was sanitising
+    // at the rationale write path, since the body merely EMBEDS the rationale
+    // — "until P5.4 does that, rendering cannot be trusted to be clean".
+    // P5.4a does both, in one module and one PR, so the transitive argument is
+    // moot: each is sanitised where it is written.
+    StatementOfReasons: {
+        usecases: ['src/app-layer/usecases/moderation.ts'],
+        sanitizer: 'sanitizePlainText',
+    },
+    // P5.4a (#1595). `ModerationAction.rationale` is moderator-authored free
+    // text about a person, and it is the SOURCE of the Art 17 statement sent
+    // to them — so an unsanitised value propagates into a delivered message
+    // rather than staying in a queue nobody reads.
+    //
+    // Moved out of KNOWN_UNCOVERED by this PR, which is what the live-writer
+    // assertion below demanded the moment `prisma.moderationAction` gained a
+    // writer. Second time that mechanism has fired on schedule.
+    ModerationAction: {
+        usecases: ['src/app-layer/usecases/moderation.ts'],
+        sanitizer: 'sanitizePlainText',
+    },
     // P5.2 (#1593). `ContentReport.detail` is the notifier's own words on a DSA
     // Art 16 notice, and it arrives from an ANONYMOUS public caller as well as
     // a signed-in one — the highest-risk free-text input in the product, since
@@ -244,20 +268,6 @@ const KNOWN_UNCOVERED: Readonly<Record<string, string>> = {
     // red on exactly that, and it is now in RICH_TEXT_COVERAGE. The mechanism
     // worked one PR after it was written, which is the only evidence that
     // kind of design ever gets.
-    ModerationAction:
-        'ModerationAction.rationale is moderator-authored free text about a ' +
-        'person, and it is the SOURCE of the Art 17 statement sent to them — ' +
-        'so an unsanitised value propagates into a delivered message. No ' +
-        'write path exists yet. Moves to RICH_TEXT_COVERAGE in P5.4, which ' +
-        'lands the platform-admin moderation surface.',
-    StatementOfReasons:
-        'StatementOfReasons.bodyRendered is stored RENDERED, so it is not ' +
-        'directly user input — but it EMBEDS ModerationAction.rationale, ' +
-        'which is. That transitive path is why this is a known gap rather ' +
-        'than a NON_RICH_TEXT_MODELS entry: the honest fix is sanitising at ' +
-        'the rationale write path, and until P5.4 does that, rendering ' +
-        'cannot be trusted to be clean. Moves with P5.4.',
-
     EvidenceReview:
         'EvidenceReview.comment (reviewer rationale) is encrypted at ' +
         'rest but its write path is not yet registered with a ' +
@@ -474,9 +484,11 @@ describe('rich-text sanitiser coverage — structural completeness', () => {
         // Not a hard cap — but a visible reminder. If this grows, the
         // diff is the conversation. Was 1 (EvidenceReview), 4 after P5.1
         // (#1553) added three tables with no write path, now 3: P5.2 moved
-        // ContentReport out. Lowered rather than left at 4, because slack a
-        // later regression can spend is the thing a ratchet exists to refuse.
-        expect(Object.keys(KNOWN_UNCOVERED).length).toBeLessThanOrEqual(3);
+        // ContentReport out, and 1 since P5.4a moved BOTH ModerationAction and
+        // StatementOfReasons — back to where it stood before P5.1. Lowered
+        // each time rather than left high, because slack a later regression
+        // can spend is the thing a ratchet exists to refuse.
+        expect(Object.keys(KNOWN_UNCOVERED).length).toBeLessThanOrEqual(1);
     });
 
     it('no KNOWN_UNCOVERED entry has a LIVE writer — the teeth the cap lost', () => {

@@ -127,6 +127,23 @@ const PUBLIC_PATH_PREFIXES = [
     // PUBLIC_PATH_EXACT below, so `startsWith('/api/admin/farm-claims')`
     // cannot also open a future `/api/admin/farm-claimsomething`.
     '/api/admin/farm-claims/',
+    // ── Moderation console (P5.4a, #1595) ──
+    //
+    // `/api/admin/moderation/notices` and `.../statements` verify
+    // `x-platform-admin-key` through `verifyPlatformApiKey`, and the Edge
+    // 401s an `x-platform-admin-key` request before any handler runs. Without
+    // this entry both would have been unreachable while looking perfectly
+    // implemented — the SEVENTH instance of the shape this file's guard was
+    // written for, and it caught mine within minutes of the routes existing.
+    //
+    // Trailing slash, because the children are the surface: there is no
+    // `/api/admin/moderation` route of its own, and the slash stops this
+    // opening a future `/api/admin/moderationsomething`.
+    //
+    // Assertion B of `public-routes-self-authenticate` is what keeps this from
+    // being a hole: a route behind a public prefix must authenticate itself,
+    // and these two do it first, before reading a body.
+    '/api/admin/moderation/',
     // ── Signed webhooks ──
     //
     // Each of these verifies its OWN credential — a Stripe signature, an
