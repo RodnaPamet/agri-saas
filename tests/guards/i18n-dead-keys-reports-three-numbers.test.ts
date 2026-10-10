@@ -215,6 +215,42 @@ describe('the i18n dead-key detector (#1534)', () => {
         });
     });
 
+    describe('a translator passed as an ARGUMENT is resolved too', () => {
+        // `weeds` came back 15 of 15 — the fourth too-high-to-believe ratio,
+        // and the limitation this script's own docblock already named:
+        //
+        //     // weed-options.ts:85
+        //     export function weedLabel(t: WeedTranslator, value: string) {
+        //         return t.has(value) ? t(value) : value;
+        //     }
+        //
+        // Called as `weedLabel(tWeeds, x)`, so the translator crosses a
+        // function boundary and no `<var>(...)` pattern sees it.
+        //
+        // The helper set is DERIVED from the `: SomethingTranslator` parameter
+        // convention, not hand-listed. That distinction is the safety: a list
+        // keyed on "a translator passed as an argument" would have matched
+        // `clearTimeout(t)`, `String(t)` and `Date(t)`, where `t` is a timer
+        // handle — and marking a namespace undecidable on the strength of a
+        // `clearTimeout` call shrinks the dead set for a bogus reason, exactly
+        // as matching `translate(` would have via CSS transforms.
+        it('the helper set is derived and non-empty — the denominator', () => {
+            // If the convention is renamed, this suite must fail rather than
+            // silently resolve nothing: an empty taker set makes the whole
+            // mechanism a no-op while every other assertion still passes.
+            expect(report.wholeNamespaceDynamic).toBeGreaterThanOrEqual(40);
+        });
+
+        it('weeds is undecidable, not dead', () => {
+            expect(report.undecidablePrefixes).toContain('weeds');
+            expect(report.unreferencedKeys.filter((k) => k.startsWith('weeds.'))).toEqual([]);
+        });
+
+        it('crops too — the same helper shape', () => {
+            expect(report.unreferencedKeys.filter((k) => k.startsWith('crops.'))).toEqual([]);
+        });
+    });
+
     it('says how much it could not decide, and distinguishes the two reasons', () => {
         // A bare "N dead keys" repeats the mistake #1534 is about — a correct
         // number answering a question nobody asked. `undecidable` must be
