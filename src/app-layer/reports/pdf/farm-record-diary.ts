@@ -308,8 +308,30 @@ export const MAX_OBSERVATION_ROWS = 500;
  */
 export const MAX_FIELD_SHEETS = 200;
 
-function fmtDate(d: Date | null | undefined): string {
+/**
+ * `dd.mm.yyyy`, or '' for no date — exported for its own test.
+ *
+ * Exported because the behaviour cannot be observed through the rendered PDF:
+ * PDFKit writes text as GLYPH INDICES once a Unicode font is embedded, so a
+ * buffer search for "NaN" finds nothing whether the guard is present or not.
+ * A test written that way passed with the guard removed — measured, and it is
+ * the reason this is exported rather than tested through `renderFarmRecordDiary`.
+ */
+export function fmtDate(d: Date | null | undefined): string {
     if (!d) return '';
+    // An Invalid Date renders as "NaN.NaN.NaN" without this, because
+    // `String(NaN).padStart(2, '0')` is the string "NaN" — measured, not
+    // assumed. `:695` puts this straight into the БАБХ ДНЕВНИК header, so a
+    // compliance document would be headed
+    // "Период: NaN.NaN.NaN – NaN.NaN.NaN" and returned with a 200.
+    //
+    // Unreachable as of #1575, which validates the period at the route — the
+    // Prisma query at `:910` throws first anyway. Defence in depth, because
+    // the hazard is ORDERING, not behaviour: if that query were removed,
+    // reordered or made lazy, the PDF would start rendering garbage silently.
+    // Blank is the rendering this function already gives a missing date, so a
+    // malformed one reads the same rather than inventing digits.
+    if (Number.isNaN(d.getTime())) return '';
     const dd = String(d.getUTCDate()).padStart(2, '0');
     const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
     return `${dd}.${mm}.${d.getUTCFullYear()}`;
