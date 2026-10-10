@@ -11,10 +11,11 @@ import {
     enforceRateLimit,
     isRateLimitBypassed,
     API_MUTATION_LIMIT,
+    SLOW_MODE_MUTATION_LIMIT,
     type RateLimitScope,
 } from '@/lib/security/rate-limit-middleware';
 import type { RateLimitConfig } from '@/lib/security/rate-limit';
-import { resolveRequestUserId } from '@/lib/security/rate-limit-identity';
+import { resolveRequestUserId, resolveRequestIdentity } from '@/lib/security/rate-limit-identity';
 import { API_VERSION, API_VERSION_HEADER } from '@/lib/api-version';
 
 // Depending on the Node.js / Edge runtime version, crypto.randomUUID() is natively available globally.
@@ -115,6 +116,14 @@ async function resolveRateLimitScope(
     // never broken — it was OPT-IN, and an invariant that holds only when 346
     // authors each remember it is not an invariant.
     let userId: string | null | undefined;
+    // P5.5a — slow mode narrows the DEFAULT tier only, and `usesDefaultTier`
+    // is how that is decided. A route passing an explicit `config` has had its
+    // budget chosen deliberately for that route, and in every case today that
+    // choice is already tighter than `SLOW_MODE_MUTATION_LIMIT` — overriding
+    // it would LOOSEN the route for a slow-mode account, which is backwards.
+    const usesDefaultTier = options?.config === undefined;
+    let effectiveConfig = config;
+
     if (bucket == null) {
         if (options?.getUserId) {
             try {
@@ -123,11 +132,33 @@ async function resolveRateLimitScope(
                 userId = null;
             }
         } else {
-            userId = await resolveRequestUserId(req);
+            // One decode for both answers — see `resolveRequestIdentity`.
+            const identity = await resolveRequestIdentity(req);
+            userId = identity.userId;
+            if (usesDefaultTier && identity.slowMode) {
+                effectiveConfig = SLOW_MODE_MUTATION_LIMIT;
+            }
         }
     }
+    // NOTE the two paths that deliberately do NOT get slow mode:
+    //
+    //   - a BUCKETED route (`getBucket`), because the bucket REPLACES the
+    //     per-caller key entirely — the budget there caps a shared resource,
+    //     and narrowing it for one caller would throttle everyone sharing it;
+    //   - a route with a `getUserId` OVERRIDE, which exists precisely because
+    //     the id bounding the budget is NOT the caller (a route acting on a
+    //     target user). The account state to apply would be the target's,
+    //     which is not a statement about who is making the request.
+    //
+    // Both are narrow and both are the existing semantics of those options
+    // rather than new exceptions.
 
-    return { scope, config, userId: userId ?? null, bucket: bucket ?? undefined };
+    return {
+        scope: effectiveConfig === config ? scope : `${scope}-slow`,
+        config: effectiveConfig,
+        userId: userId ?? null,
+        bucket: bucket ?? undefined,
+    };
 }
 
 /**

@@ -193,6 +193,30 @@ export const API_MUTATION_LIMIT: RateLimitConfig = {
 };
 
 /**
+ * The same tier for an account in SLOW MODE: 15 per minute (P5.5a, #1596).
+ *
+ * Applied in place of `API_MUTATION_LIMIT` — and ONLY in place of it — when
+ * `resolveRequestIdentity` says the caller is unverified or less than a week
+ * old. A route carrying an EXPLICIT preset keeps it, because that preset was
+ * a deliberate choice about that route and is in every case already tighter
+ * than this.
+ *
+ * 15 rather than 60 reads against the parent's own yardstick: "a user filling
+ * a detail form might submit 2-3 writes per minute". 15 leaves a new farmer
+ * five times that headroom while removing three quarters of the throughput a
+ * script gets, which is the trade the owner chose over a per-action cooldown —
+ * a cooldown makes a legitimate first session feel broken.
+ *
+ * Not lower, for the `PUBLIC_NOTICE_LIMIT` reason: this is a mobile-first
+ * product on carrier networks, and an onboarding burst (create the farm, add
+ * three parcels, upload a document) is what a real first session looks like.
+ */
+export const SLOW_MODE_MUTATION_LIMIT: RateLimitConfig = {
+    maxAttempts: 15,
+    windowMs: 60 * 1000,
+};
+
+/**
  * General read API: 120 requests per minute per (IP, userId, tenantSlug).
  *
  * GAP-17. Applied at the Edge middleware to GET requests on

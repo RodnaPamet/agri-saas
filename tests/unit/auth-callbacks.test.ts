@@ -289,6 +289,15 @@ describe('jwt callback — membership claims are bounded', () => {
         // signs the user out. The existing guardrail only greps for the
         // cap in source; this executes it.
         userFindUnique.mockResolvedValue({
+            // P5.5a — `applyMembershipClaims` reads these two scalars for the
+            // slow-mode claims. The real query uses `include`, so production
+            // always has them; the double must too. Extending the FIXTURE
+            // rather than making the source defensive: an optional read there
+            // would leave the claim absent, which reads as "pre-P5.5a
+            // session" — i.e. NOT slow. A security control must not fail open
+            // because a fixture was thin.
+            createdAt: new Date('2026-01-01T00:00:00.000Z'),
+            emailVerified: new Date('2026-01-02T00:00:00.000Z'),
             id: 'u-1',
             sessionVersion: 1,
             uiLanguage: 'bg',
@@ -311,6 +320,8 @@ describe('jwt callback — membership claims are bounded', () => {
     it('caps org memberships independently of tenant memberships', async () => {
         // Break: applying the cap to only one of the two arrays.
         userFindUnique.mockResolvedValue({
+            createdAt: new Date('2026-01-01T00:00:00.000Z'),
+            emailVerified: new Date('2026-01-02T00:00:00.000Z'),
             id: 'u-1',
             sessionVersion: 1,
             uiLanguage: 'en',
@@ -334,6 +345,8 @@ describe('jwt callback — membership claims are bounded', () => {
         // Break: leaving a stale tenantId/role on the token would let
         // the Edge gate authorize a tenant the user was removed from.
         userFindUnique.mockResolvedValue({
+            createdAt: new Date('2026-01-01T00:00:00.000Z'),
+            emailVerified: new Date('2026-01-02T00:00:00.000Z'),
             id: 'u-1',
             sessionVersion: 4,
             uiLanguage: null,
@@ -643,6 +656,8 @@ describe('jwt callback — MFA enforcement at sign-in', () => {
 
     beforeEach(() => {
         userFindUnique.mockResolvedValue({
+            createdAt: new Date('2026-01-01T00:00:00.000Z'),
+            emailVerified: new Date('2026-01-02T00:00:00.000Z'),
             id: 'u-1',
             sessionVersion: 1,
             uiLanguage: 'bg',
