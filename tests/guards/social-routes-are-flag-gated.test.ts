@@ -130,6 +130,35 @@ function handlerSpans(src: string): Array<[string, string]> {
  * waived rather than fixed. Same style as `ALLOWED_API_DIRS` and `KNOWN_EMPTY`.
  */
 const UNGATED_SOCIAL_HANDLERS: Readonly<Record<string, string>> = {
+    // ── P5.2a — DSA Art 16, a LEGAL DUTY rather than a judgement call (#1593) ──
+    //
+    // Both handlers, and both for one reason: a flag defaulting OFF means the
+    // obligation is unmet until somebody remembers to flip it, and "it was
+    // behind a flag" is not an answer to a regulator. Art 16 applies to a
+    // notifier who happens to have an account as much as to one who does not,
+    // so gating these would gate the duty for exactly the people most likely
+    // to exercise it.
+    //
+    // This is a different claim from the entries below, which argue that
+    // gating a LIVE feature's half would degrade worse than leaving it on.
+    // Here the feature is not live and gating it would still be wrong.
+    //
+    // Note there are TWO guards with nearly the same name and both must be
+    // satisfied: `social-routes-flag-gated` keys on the route FILE, this one
+    // on `file#METHOD`. I registered the first and missed this one, and the
+    // full guard sweep is what caught it.
+    //
+    // The anonymous half lives at `src/app/api/public/notices/route.ts` and is
+    // outside both populations — it has no `social` path segment. Its
+    // unauthenticated nature is exempted in
+    // `tests/guards/public-routes-self-authenticate.test.ts` instead.
+    //
+    // NOT exempt: the person BLOCK handlers (P5.2b). Blocking is an Apple 1.2
+    // requirement and a product feature, so it stays gated.
+    'src/app/api/social/reports/route.ts#POST':
+        'DSA Art 16 — filing a notice is a legal duty and cannot be dark-launched. A flag defaulting OFF would mean the obligation is unmet until someone flips it. The reporter is taken from the verified session and the body is sanitised, so the blast radius a switch would contain is one row on a platform-read table.',
+    'src/app/api/social/reports/route.ts#GET':
+        'DSA Art 16 entitles a notifier to the OUTCOME of their notice, which is what this returns. Gating the read while the write stayed open would be the worse half of the pair — notices accepted and un-answerable — and gating both would withhold the duty entirely. It discloses only the caller\'s own rows, enforced by the `content_report_reporter_read` policy arm rather than by a query filter.',
     'src/app/api/me/farms/route.ts#GET':
         'Switching between farms you already hold must keep working while ADDING one is switched off. Agreed with agrent-ios: being unable to reach a farm you are a member of is a worse failure than being unable to create one. The POST on this route IS gated on social.farm-registration.',
     'src/app/api/me/news-preferences/route.ts#GET':

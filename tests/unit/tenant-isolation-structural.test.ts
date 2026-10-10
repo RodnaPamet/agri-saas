@@ -226,6 +226,29 @@ describe('Structural Guard: Tenant Isolation Conventions', () => {
             //
             // A route that needs a tenant does NOT belong here.
             'me',
+            // P5.2a (#1593) — the person-scoped SOCIAL surface, starting with
+            // `reports` (file a DSA Art 16 notice, read your own back).
+            // AUTHENTICATED like `me`, and with no tenant for a stronger
+            // reason than `me` has: a notice is about a PERSON's conduct and
+            // carries no `tenantId` at all, so there is nothing to scope to
+            // rather than nothing yet.
+            //
+            // A tenant-scoped path would in fact BREAK this surface, not
+            // merely misfile it: `content_report_reporter_read` matches on
+            // `app.user_id`, which `runInTenantContext` deliberately does not
+            // set, so a reader under a tenant context sees ZERO ROWS WITH NO
+            // ERROR — indistinguishable from having filed nothing.
+            //
+            // What stands in for tenant scoping is the same thing as under
+            // `me`, plus a database policy: the subject is always the SESSION
+            // USER (never an id in the body — `FileReportSchema.strip()` drops
+            // a client-supplied `reporterUserId`), and the read is filtered by
+            // RLS rather than by a query clause.
+            //
+            // Unlike `me`, routes here are ALSO operator-blocked
+            // (`isOperatorBlockedPersonPath`), which is why a reporting
+            // surface belongs under this prefix rather than that one.
+            'social',
             // Epic O-1/O-2 — hub-and-spoke organization layer. Org
             // routes resolve `OrgContext` (NOT `RequestContext`) and
             // operate above the tenant scope. The cross-tenant drill-

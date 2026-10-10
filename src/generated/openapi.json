@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "10.17.0",
+    "version": "10.18.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -5964,6 +5964,73 @@
         ],
         "description": "The Task status the review moved the job to."
       },
+      "FileReport": {
+        "type": "object",
+        "properties": {
+          "subjectKind": {
+            "type": "string",
+            "enum": [
+              "LISTING",
+              "MESSAGE",
+              "PROFILE",
+              "THREAD"
+            ]
+          },
+          "subjectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "reasonCode": {
+            "type": "string",
+            "enum": [
+              "ILLEGAL_CONTENT",
+              "SCAM_OR_FRAUD",
+              "SPAM",
+              "HARASSMENT_OR_HATE",
+              "MISLEADING_LISTING",
+              "INTELLECTUAL_PROPERTY",
+              "PERSONAL_DATA",
+              "OTHER"
+            ]
+          },
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 4000
+          }
+        },
+        "required": [
+          "subjectKind",
+          "subjectId",
+          "reasonCode"
+        ],
+        "description": "A DSA Art 16 notice. Used by both the anonymous public form and the signed-in report route; the reporter is taken from the session (or left NULL when anonymous) and is never read from this body."
+      },
+      "FiledReport": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "A reference for the notice. Returned because Art 16 wants a notifier able to refer to what they filed. It discloses nothing and is not readable back on the public route — there is no GET there, and an anonymous notice stores no reporter, so the reporter read policy can never match it.",
+            "example": "cr-9f1c7a2e-5d3b-4e8a-9c21-7b6f0e4d8a11"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "RECEIVED"
+            ],
+            "description": "Always `RECEIVED`. The pipeline sets every later state; a client cannot propose one, and this field exists so a notifier sees that the notice was accepted rather than inferring it from the HTTP code alone."
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ],
+        "description": "Acknowledgement of a filed notice. Deliberately minimal: it does NOT say whether the reported subject exists. A response that distinguished a real id from a made-up one would be an enumeration oracle on an unauthenticated endpoint, so a missing subject is recorded against the moderator-only snapshot instead."
+      },
       "GddDay": {
         "type": "object",
         "properties": {
@@ -9127,6 +9194,55 @@
           "status"
         ],
         "description": "Operator updates one per-parcel prescription line. The job auto-resolves when every line is DONE or SKIPPED."
+      },
+      "OwnReport": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "subjectKind": {
+            "type": "string",
+            "enum": [
+              "LISTING",
+              "MESSAGE",
+              "PROFILE",
+              "THREAD"
+            ]
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "reasonCode": {
+            "type": "string",
+            "description": "The category the notifier chose. A string rather than an enum in THIS response on purpose: the accepted request values are a closed set, but a notice filed before a category was renamed must still be readable back, and a codegen client that threw on an unknown value here would break on history."
+          },
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The notifier’s own words, sanitised on the write path. `null` when they wrote nothing — or wrote only markup, which sanitises to nothing and is the same fact to a reader."
+          },
+          "status": {
+            "type": "string",
+            "description": "Where the notice is in the pipeline: RECEIVED, TRIAGED, ACTIONED or REJECTED. This is the field the whole reporter-read policy arm exists to deliver — Art 16 entitles a notifier to the outcome. It carries no moderator identity, no rationale and no timing beyond its own row; all of that lives on tables no tenant session can read."
+          }
+        },
+        "required": [
+          "id",
+          "createdAt",
+          "subjectKind",
+          "subjectId",
+          "reasonCode",
+          "detail",
+          "status"
+        ],
+        "description": "A notice as its own reporter may read it back. Every column of the stored row is here, because the policy that admits the reporter is ROW-level and cannot return a subset — which is why nothing may be added to that table without deciding it is reporter-safe."
       },
       "Parcel": {
         "type": "object",
@@ -46509,6 +46625,414 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NewsPreferencesStored"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries an English `message` as a developer-facing fallback; it is NOT translated, so render your own copy keyed on `code`. Route-level 403s carry their own codes and are described on the operation that returns them.\n\nOne route-level code is described HERE rather than per-operation. MOST operations cannot return it — it is confined to the five capability families named below — but it means the same thing on each of them, and one of the five (`upload`) is gated at a choke point that many unrelated routes reach, so an exhaustive per-operation list would be the kind that is wrong by omission:\n\n- `PAST_DUE_RESTRICTED` — a payment on this tenant failed and the 14-day grace period has elapsed. It is NOT a quota or a plan ceiling: the plan is untouched and nothing was exceeded. The withheld capabilities are exactly `exchange`, `trends`, `task.create`, `upload` and `journal.create`; every other surface, including reading everything already recorded, is unaffected. The tenant's own ACTIVE exchange listings stay visible to other farms and inbound threads keep arriving — this is the unpaid tenant's own view closing, not a withdrawal.\n\n  The restriction is COMPUTED per request, with no sweep and nothing to settle, so a cleared balance lifts it on the very next request — a client can honestly tell the user to resolve it and refresh. This description deliberately names no remedy beyond that: App Store guideline 3.1.1 keeps the native client from pointing anyone to pay outside the app, so a prescribed destination would be unreachable for one of the two clients (#1490). What both clients CAN do is distinguish this from `plan_limit_exceeded:` and say which happened.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/notices": {
+      "post": {
+        "operationId": "fileAnonymousNotice",
+        "summary": "DSA Art 16 — file a notice without an account",
+        "description": "The anonymous notice mechanism. Art 16 requires a way for **any** person or entity to notify illegal content, so requiring an account would be requiring an account to exercise a right — this is the one write path in the product that accepts a body from nobody. \n\n**It is not behind a feature flag**, and that is a duty rather than an oversight: a legal obligation cannot be dark-launched, because a flag defaulting OFF means the obligation is unmet until someone remembers to flip it. \n\n**Nothing identifying is stored.** No IP, no hash of one, no surrogate. Rate limiting is the control instead, at 10/min per IP — tightened from the 60/min a public mutation gets by default, because the harm here is a flood that buries real notices in the triage queue rather than database load. The limiter sees the IP; the row never does. \n\nSend `reporterUserId` and it is silently dropped, not rejected: a caller can neither attribute a notice to someone else nor learn from an error whether the field exists.",
+        "tags": [
+          "Trust & safety"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileReport"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The notice was accepted. Says nothing about the subject.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FiledReport"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries an English `message` as a developer-facing fallback; it is NOT translated, so render your own copy keyed on `code`. Route-level 403s carry their own codes and are described on the operation that returns them.\n\nOne route-level code is described HERE rather than per-operation. MOST operations cannot return it — it is confined to the five capability families named below — but it means the same thing on each of them, and one of the five (`upload`) is gated at a choke point that many unrelated routes reach, so an exhaustive per-operation list would be the kind that is wrong by omission:\n\n- `PAST_DUE_RESTRICTED` — a payment on this tenant failed and the 14-day grace period has elapsed. It is NOT a quota or a plan ceiling: the plan is untouched and nothing was exceeded. The withheld capabilities are exactly `exchange`, `trends`, `task.create`, `upload` and `journal.create`; every other surface, including reading everything already recorded, is unaffected. The tenant's own ACTIVE exchange listings stay visible to other farms and inbound threads keep arriving — this is the unpaid tenant's own view closing, not a withdrawal.\n\n  The restriction is COMPUTED per request, with no sweep and nothing to settle, so a cleared balance lifts it on the very next request — a client can honestly tell the user to resolve it and refresh. This description deliberately names no remedy beyond that: App Store guideline 3.1.1 keeps the native client from pointing anyone to pay outside the app, so a prescribed destination would be unreachable for one of the two clients (#1490). What both clients CAN do is distinguish this from `plan_limit_exceeded:` and say which happened.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/social/reports": {
+      "post": {
+        "operationId": "fileReport",
+        "summary": "DSA Art 16 — file a notice as the signed-in user",
+        "description": "The same duty and the same body as the anonymous route; the difference is that the notice is attributable, which is what makes it readable back via `GET`. \n\nThe reporter is taken from the **verified session** and never from the body. \n\nAlso unflagged, for the same reason: Art 16 applies to a notifier who happens to have an account as much as to one who does not, so gating this would gate the duty for exactly the people most likely to exercise it. The person BLOCK routes are a product feature and ARE gated — that difference is deliberate.",
+        "tags": [
+          "Trust & safety"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileReport"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The notice was accepted and is attributable to the caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FiledReport"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries an English `message` as a developer-facing fallback; it is NOT translated, so render your own copy keyed on `code`. Route-level 403s carry their own codes and are described on the operation that returns them.\n\nOne route-level code is described HERE rather than per-operation. MOST operations cannot return it — it is confined to the five capability families named below — but it means the same thing on each of them, and one of the five (`upload`) is gated at a choke point that many unrelated routes reach, so an exhaustive per-operation list would be the kind that is wrong by omission:\n\n- `PAST_DUE_RESTRICTED` — a payment on this tenant failed and the 14-day grace period has elapsed. It is NOT a quota or a plan ceiling: the plan is untouched and nothing was exceeded. The withheld capabilities are exactly `exchange`, `trends`, `task.create`, `upload` and `journal.create`; every other surface, including reading everything already recorded, is unaffected. The tenant's own ACTIVE exchange listings stay visible to other farms and inbound threads keep arriving — this is the unpaid tenant's own view closing, not a withdrawal.\n\n  The restriction is COMPUTED per request, with no sweep and nothing to settle, so a cleared balance lifts it on the very next request — a client can honestly tell the user to resolve it and refresh. This description deliberately names no remedy beyond that: App Store guideline 3.1.1 keeps the native client from pointing anyone to pay outside the app, so a prescribed destination would be unreachable for one of the two clients (#1490). What both clients CAN do is distinguish this from `plan_limit_exceeded:` and say which happened.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "listMyReports",
+        "summary": "DSA Art 16 — the notices you filed, and what became of them",
+        "description": "Newest first, capped at 100. Account-level with no `{tenantSlug}`: a notice is a property of the PERSON and carries no tenant, and a tenant-scoped route could not serve this at all — the policy that admits a reporter matches a session variable only the person-scoped runner sets, so under a tenant context it would return zero rows with no error, indistinguishable from having filed none. \n\nAn anonymous notice is never here, by construction rather than by a filter: it stores no reporter, and in SQL `NULL = NULL` is NULL. \n\nAn empty list is a real answer — a person who has filed nothing sees `[]`.",
+        "tags": [
+          "Trust & safety"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller’s own notices.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "reports": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/OwnReport"
+                      }
+                    }
+                  },
+                  "required": [
+                    "reports"
+                  ]
                 }
               }
             }

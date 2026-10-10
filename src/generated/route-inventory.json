@@ -466,6 +466,11 @@
       "documented": true
     },
     {
+      "path": "/api/public/notices",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/readyz",
       "status": "live",
       "documented": false
@@ -499,6 +504,11 @@
       "path": "/api/security/csp-report",
       "status": "live",
       "documented": false
+    },
+    {
+      "path": "/api/social/reports",
+      "status": "live",
+      "documented": true
     },
     {
       "path": "/api/sso",

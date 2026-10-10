@@ -217,6 +217,11 @@ const PLATFORM_ONLY_RLS_MODELS: ReadonlyMap<string, readonly string[]> = new Map
     // recipient arm would be row-level, exposing `actionId` and through it the
     // moderation rationale.
     ['StatementOfReasons', ['superuser_bypass']],
+    // Also bypass-only, and the one where the EQUALITY check earns its keep:
+    // this table is WRITTEN while serving a reporter's request (P5.2), so the
+    // temptation to give `app_user` an insert arm is real. The capture runs on
+    // the privileged path instead, as the moderation write does.
+    ['ReportSnapshot', ['superuser_bypass']],
 ]);
 
 // Models that are GLOBAL BY DESIGN — deliberately readable across every

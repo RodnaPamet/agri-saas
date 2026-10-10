@@ -6228,6 +6228,79 @@ exports[`API contract — per-schema snapshots schema: FieldOperationReviewResul
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: FileReport 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "subjectKind": {
+      "type": "string",
+      "enum": [
+        "LISTING",
+        "MESSAGE",
+        "PROFILE",
+        "THREAD"
+      ]
+    },
+    "subjectId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "reasonCode": {
+      "type": "string",
+      "enum": [
+        "ILLEGAL_CONTENT",
+        "SCAM_OR_FRAUD",
+        "SPAM",
+        "HARASSMENT_OR_HATE",
+        "MISLEADING_LISTING",
+        "INTELLECTUAL_PROPERTY",
+        "PERSONAL_DATA",
+        "OTHER"
+      ]
+    },
+    "detail": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 4000
+    }
+  },
+  "required": [
+    "subjectKind",
+    "subjectId",
+    "reasonCode"
+  ],
+  "description": "A DSA Art 16 notice. Used by both the anonymous public form and the signed-in report route; the reporter is taken from the session (or left NULL when anonymous) and is never read from this body."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: FiledReport 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "A reference for the notice. Returned because Art 16 wants a notifier able to refer to what they filed. It discloses nothing and is not readable back on the public route — there is no GET there, and an anonymous notice stores no reporter, so the reporter read policy can never match it.",
+      "example": "cr-9f1c7a2e-5d3b-4e8a-9c21-7b6f0e4d8a11"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "RECEIVED"
+      ],
+      "description": "Always \`RECEIVED\`. The pipeline sets every later state; a client cannot propose one, and this field exists so a notifier sees that the notice was accepted rather than inferring it from the HTTP code alone."
+    }
+  },
+  "required": [
+    "id",
+    "status"
+  ],
+  "description": "Acknowledgement of a filed notice. Deliberately minimal: it does NOT say whether the reported subject exists. A response that distinguished a real id from a made-up one would be an enumeration oracle on an unauthenticated endpoint, so a missing subject is recorded against the moderator-only snapshot instead."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: GddDay 1`] = `
 "{
   "type": "object",
@@ -9581,6 +9654,58 @@ exports[`API contract — per-schema snapshots schema: OperationParcelUpdateRequ
     "status"
   ],
   "description": "Operator updates one per-parcel prescription line. The job auto-resolves when every line is DONE or SKIPPED."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: OwnReport 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "subjectKind": {
+      "type": "string",
+      "enum": [
+        "LISTING",
+        "MESSAGE",
+        "PROFILE",
+        "THREAD"
+      ]
+    },
+    "subjectId": {
+      "type": "string"
+    },
+    "reasonCode": {
+      "type": "string",
+      "description": "The category the notifier chose. A string rather than an enum in THIS response on purpose: the accepted request values are a closed set, but a notice filed before a category was renamed must still be readable back, and a codegen client that threw on an unknown value here would break on history."
+    },
+    "detail": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The notifier’s own words, sanitised on the write path. \`null\` when they wrote nothing — or wrote only markup, which sanitises to nothing and is the same fact to a reader."
+    },
+    "status": {
+      "type": "string",
+      "description": "Where the notice is in the pipeline: RECEIVED, TRIAGED, ACTIONED or REJECTED. This is the field the whole reporter-read policy arm exists to deliver — Art 16 entitles a notifier to the outcome. It carries no moderator identity, no rationale and no timing beyond its own row; all of that lives on tables no tenant session can read."
+    }
+  },
+  "required": [
+    "id",
+    "createdAt",
+    "subjectKind",
+    "subjectId",
+    "reasonCode",
+    "detail",
+    "status"
+  ],
+  "description": "A notice as its own reporter may read it back. Every column of the stored row is here, because the policy that admits the reporter is ROW-level and cannot return a subset — which is why nothing may be added to that table without deciding it is reporter-safe."
 }"
 `;
 

@@ -193,23 +193,32 @@ model ContentReport {
   /// owner-confirmed).
   ///
   /// DECISION 5's safety argument is that abuse is handled by rate limiting at
-  /// the Edge rather than by storing an identifier, so no identifier is
-  /// needed. **That argument currently rests on a tier that does not exist.**
-  /// Checked while building: `src/lib/security/rate-limit.ts` has exactly one
-  /// public limiter, `PUBLIC_READ_LIMIT` (60/min), and the one public route
-  /// (`/api/public/eik-check`) is a GET that uses it. There is no public
-  /// MUTATION tier.
+  /// the Edge rather than by storing an identifier. **That argument holds, and
+  /// an earlier revision of this docblock was wrong twice about why.**
   ///
-  /// Nothing can write this table yet, so the gap is not live — but it is a
-  /// PRECONDITION of P5.2, not a detail of it: `POST /api/public/notices` is
-  /// an unauthenticated writer, and without a mutation tier the only thing
-  /// between it and a flood is the absence of the route. Tracked on the P5.2
-  /// issue.
+  /// It first claimed the limiting came from an "existing public mutation
+  /// tier". It then claimed no such tier existed and that P5.2 had to build
+  /// one. Both were inferences from a constant's NAME rather than reads of the
+  /// code. Verified:
   ///
-  /// The nullability also makes the reporter arm fail closed for anonymous
-  /// rows without a special case: in SQL `NULL = NULL` is NULL, not true, so
-  /// an anonymous row matches no reporter — including a session whose own
-  /// `app.user_id` is unset.
+  ///   * `withApiErrorHandling` applies `options?.config ?? API_MUTATION_LIMIT`
+  ///     to every method in `MUTATION_METHODS` (`src/lib/errors/api.ts:89`), so
+  ///     a POST gets 60/min by DEFAULT without asking.
+  ///   * The key is `(IP, userId)`, and `resolveRequestUserId` returns `null`
+  ///     for an unauthenticated caller — "anon is a tighter bucket, not a
+  ///     looser one" (`src/lib/security/rate-limit-identity.ts:71`). So an
+  ///     anonymous notice is bucketed by IP, which is exactly what is wanted.
+  ///   * `/api/public/eik-check` is the precedent and it is a **POST**, not the
+  ///     GET the earlier revision called it. It overrides the config to
+  ///     `PUBLIC_READ_LIMIT` with a per-route `scope`, so buckets do not pool
+  ///     across public routes.
+  ///
+  /// What remains is a TUNING question, not a missing mechanism: 60 notices per
+  /// minute per IP is generous, and carrier-grade NAT puts a whole village
+  /// behind one IPv4 (`PUBLIC_READ_LIMIT`'s own docblock reasons about this).
+  /// P5.2 picks the number; nothing is unprotected meanwhile, and nothing can
+  /// write this table yet regardless.
+
   reporterUserId String?
 
   subjectKind ReportSubjectKind
@@ -337,4 +346,71 @@ model UserBlock {
   @@unique([blockerUserId, blockedUserId])
   /// "Who has blocked me", which is the enforcement read.
   @@index([blockedUserId])
+}
+
+/// The evidence a notice is ABOUT, captured server-side at report time
+/// (P5.2, #1593; owner decision 2026-10-10 on #1553 DECISION 4).
+///
+/// ── why this is its own table and not a column on `ContentReport` ──
+///
+/// The decision was "snapshot column". The substance of it is here — a notice's
+/// evidence is captured when it is filed, because "the content was removed
+/// before a moderator looked" is the normal case for a notice about something
+/// real, and DSA Art 16 still requires an answer. What changed is WHERE.
+///
+/// `content_report_reporter_read` is a ROW-level policy, so a column on
+/// `ContentReport` would be **reporter-readable**. Mostly that is harmless —
+/// you can only report what you could see. The case that is not harmless is
+/// RETENTION: a reporter who files against a private message would keep a
+/// durable, decryptable copy of it through their own report, after its author
+/// deleted it. That is a new capability, not a receipt.
+///
+/// So this follows the rule DECISION 3 already established: content a reporter
+/// must not retain lives on a table that denies `app_user` outright.
+///
+/// ── it is NOT a foreign key to `ContentReport`, for P5.1's reason ──
+///
+/// `reportId` is a plain `String`, as every person and subject reference in
+/// this domain is. An FK would force an `onDelete`, and a snapshot must outlive
+/// the pseudonymisation of its reporter (P5.6) — a `Cascade` here would delete
+/// the evidence of a resolved case along with the person who reported it.
+model ReportSnapshot {
+  id         String   @id @default(cuid())
+  /// When the content was captured — NOT when the notice was filed. The two
+  /// differ if capture is retried, and a regulator asking "what did you see
+  /// and when" wants this one.
+  capturedAt DateTime @default(now())
+
+  /// The notice this is evidence for. Not an FK; see the docblock.
+  reportId String
+
+  /// Denormalised from the report deliberately. A snapshot has to be
+  /// interpretable on its own — a moderator reading the queue needs to know
+  /// what KIND of thing this text was without a join, and the pair is also
+  /// what makes the index below useful for "everything ever captured about
+  /// this subject".
+  subjectKind ReportSubjectKind
+  subjectId   String
+
+  /// The captured content. ENCRYPTED, and the reason this table exists: for a
+  /// `MESSAGE` subject this is private conversation, which is why no reporter
+  /// may read it back.
+  ///
+  /// Stored as text rather than structured JSON because what a regulator and a
+  /// moderator both need is what the content SAID. A structured capture would
+  /// invite schema drift against four subject kinds whose shapes are unrelated.
+  body String
+
+  /// NULL when capture succeeded. Set when it could not — a listing deleted
+  /// between the client's read and the server's capture, a message the
+  /// reporter could see and the capture path could not.
+  ///
+  /// Nullable rather than a boolean because the REASON is the operational
+  /// signal: a notice whose evidence is missing still has to be answered under
+  /// Art 16, and the answer differs by cause.
+  captureError String?
+
+  @@index([reportId])
+  @@index([subjectKind, subjectId])
+  @@index([capturedAt])
 }
