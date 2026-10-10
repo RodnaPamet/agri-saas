@@ -114,6 +114,39 @@ describe('the i18n dead-key detector (#1534)', () => {
         );
     });
 
+    describe('the server-side email mechanism is resolved too', () => {
+        // `notificationEmail` came back 99 of 106 unreferenced, which is the
+        // same shape as the `tasks` number — too high to believe without
+        // checking. It was the detector, not the catalogue: email templates do
+        // not use `useTranslations` at all. They call
+        // `translateFor(locale, key)` (`lib/i18n/server-messages.ts:69`),
+        // which takes the FULL key path and binds no namespace, and 19 of
+        // those call sites build the key from a template.
+        //
+        // So 127 keys were reported dead while being rendered in production
+        // email. These two assertions are what stops that recurring — the
+        // first names the mechanism, the second names the consequence.
+        it('a translateFor template head is registered as an undecidable prefix', () => {
+            const emailPrefixes = report.undecidablePrefixes.filter((p) =>
+                p.startsWith('notificationEmail.'),
+            );
+            expect(emailPrefixes.length).toBeGreaterThanOrEqual(10);
+            expect(emailPrefixes).toContain('notificationEmail.taskAssigned');
+        });
+
+        it('and NO notificationEmail key is left in the dead set', () => {
+            // Every key in that namespace is reached either by a full-literal
+            // `translateFor` (the backstop) or by a template (the prefixes
+            // above). A non-zero count here means a third email mechanism has
+            // appeared, which is worth knowing about rather than reviewing 99
+            // false candidates.
+            const dead = report.unreferencedKeys.filter((k) =>
+                k.startsWith('notificationEmail.'),
+            );
+            expect(dead).toEqual([]);
+        });
+    });
+
     it('says how much it could not decide, and distinguishes the two reasons', () => {
         // A bare "N dead keys" repeats the mistake #1534 is about — a correct
         // number answering a question nobody asked. `undecidable` must be

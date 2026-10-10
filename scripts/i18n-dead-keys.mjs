@@ -53,6 +53,13 @@
  *  - A translator passed as a prop or returned from a helper is not tracked.
  *    The full-literal sweep below is the backstop: any quoted string anywhere
  *    in `src/` that EXACTLY equals a full key path counts as referenced.
+ *    `explainRefusal` (`lib/grain/uncertainty.ts:270`) takes its translator as
+ *    a PARAMETER and builds `` `refusal.${code}` `` from it, so those keys
+ *    resolve against whatever namespace the caller bound and are invisible
+ *    here.
+ *  - `translate(` is deliberately NOT matched. Most occurrences in this tree
+ *    are CSS transforms (`translate(${x}px, ${y}px)`) inside style strings,
+ *    and matching the name would file those as undecidable key prefixes.
  *  - Comments are blanked (line comments first — a `//` line containing `/*`
  *    otherwise opens a block that eats real code, #1497). A key mentioned only
  *    in a comment is dead, and counting the mention as a reference would hide
@@ -184,6 +191,36 @@ for (const file of files) {
             dynamicCalls += 1;
             wholeNamespaceDynamic += 1;
         }
+    }
+}
+
+// ── Server-side emails use a DIFFERENT mechanism (#1534 follow-up) ──
+//
+// `translateFor(locale, key, params?)` (`lib/i18n/server-messages.ts:69`)
+// takes the FULL key path as its second argument and never binds a namespace,
+// so none of the `useTranslations` resolution above sees it. Measured when
+// `notificationEmail` came back 99-of-106 unreferenced: nothing binds that
+// namespace, because the email templates do not use a translator object at
+// all.
+//
+// The literal form is already covered by the backstop below — a full key path
+// in quotes is a full key path wherever it appears. The TEMPLATE form is not,
+// and that was the false-positive class: 19 call sites build keys like
+// `` `notificationEmail.taskAssigned.${key}` ``, whose static head is exactly
+// the undecidable prefix the template logic above computes for a bound
+// translator.
+//
+// Sibling helper `translate(` is NOT matched, on purpose: most occurrences
+// here are CSS transforms in style strings, and the name collision would file
+// those as key prefixes.
+for (const file of files) {
+    const code = blankComments(readFileSync(file, 'utf8'));
+    for (const m of code.matchAll(/translateFor\(\s*[^,]+,\s*`([^`]*?)\$\{/g)) {
+        const head = m[1];
+        const cut = head.lastIndexOf('.');
+        if (cut === -1) continue; // no dotted head: nothing resolvable to name
+        undecidablePrefixes.add(head.slice(0, cut));
+        dynamicCalls += 1;
     }
 }
 
