@@ -193,23 +193,32 @@ model ContentReport {
   /// owner-confirmed).
   ///
   /// DECISION 5's safety argument is that abuse is handled by rate limiting at
-  /// the Edge rather than by storing an identifier, so no identifier is
-  /// needed. **That argument currently rests on a tier that does not exist.**
-  /// Checked while building: `src/lib/security/rate-limit.ts` has exactly one
-  /// public limiter, `PUBLIC_READ_LIMIT` (60/min), and the one public route
-  /// (`/api/public/eik-check`) is a GET that uses it. There is no public
-  /// MUTATION tier.
+  /// the Edge rather than by storing an identifier. **That argument holds, and
+  /// an earlier revision of this docblock was wrong twice about why.**
   ///
-  /// Nothing can write this table yet, so the gap is not live — but it is a
-  /// PRECONDITION of P5.2, not a detail of it: `POST /api/public/notices` is
-  /// an unauthenticated writer, and without a mutation tier the only thing
-  /// between it and a flood is the absence of the route. Tracked on the P5.2
-  /// issue.
+  /// It first claimed the limiting came from an "existing public mutation
+  /// tier". It then claimed no such tier existed and that P5.2 had to build
+  /// one. Both were inferences from a constant's NAME rather than reads of the
+  /// code. Verified:
   ///
-  /// The nullability also makes the reporter arm fail closed for anonymous
-  /// rows without a special case: in SQL `NULL = NULL` is NULL, not true, so
-  /// an anonymous row matches no reporter — including a session whose own
-  /// `app.user_id` is unset.
+  ///   * `withApiErrorHandling` applies `options?.config ?? API_MUTATION_LIMIT`
+  ///     to every method in `MUTATION_METHODS` (`src/lib/errors/api.ts:89`), so
+  ///     a POST gets 60/min by DEFAULT without asking.
+  ///   * The key is `(IP, userId)`, and `resolveRequestUserId` returns `null`
+  ///     for an unauthenticated caller — "anon is a tighter bucket, not a
+  ///     looser one" (`src/lib/security/rate-limit-identity.ts:71`). So an
+  ///     anonymous notice is bucketed by IP, which is exactly what is wanted.
+  ///   * `/api/public/eik-check` is the precedent and it is a **POST**, not the
+  ///     GET the earlier revision called it. It overrides the config to
+  ///     `PUBLIC_READ_LIMIT` with a per-route `scope`, so buckets do not pool
+  ///     across public routes.
+  ///
+  /// What remains is a TUNING question, not a missing mechanism: 60 notices per
+  /// minute per IP is generous, and carrier-grade NAT puts a whole village
+  /// behind one IPv4 (`PUBLIC_READ_LIMIT`'s own docblock reasons about this).
+  /// P5.2 picks the number; nothing is unprotected meanwhile, and nothing can
+  /// write this table yet regardless.
+
   reporterUserId String?
 
   subjectKind ReportSubjectKind
