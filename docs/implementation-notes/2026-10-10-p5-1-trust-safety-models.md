@@ -115,6 +115,22 @@ erases their account is the open GDPR question in P5.6
 here. `Cascade` in particular would destroy the moderation record of a resolved
 case, which is the opposite of what a DSA audit trail is for.
 
+## One premise of DECISION 5 was not true
+
+DECISION 5 — an anonymous notice stores no identifier — is justified by abuse
+being handled at the Edge instead. Checked while building:
+`src/lib/security/rate-limit.ts` has exactly ONE public limiter,
+`PUBLIC_READ_LIMIT` (60/min), and the only public route
+(`/api/public/eik-check`) is a GET that uses it. **There is no public mutation
+tier.**
+
+The decision still stands — collecting identifiers you did not need is not
+undoable, and adding a column later is a migration — but its safety argument
+has a missing term. Nothing writes the table yet, so the gap is not live; it is
+a PRECONDITION of P5.2 rather than a detail of it, because
+`POST /api/public/notices` is an unauthenticated writer and without a mutation
+tier the only thing between it and a flood is the absence of the route.
+
 ## Still open on #1553
 
 - **DECISION 6** — the `ReportReasonCode` category list. An enum rather than

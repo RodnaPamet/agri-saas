@@ -190,8 +190,21 @@ model ContentReport {
 
   /// NULL for an anonymous Art 16 notice, and an anonymous notice stores NO
   /// identifier at all — not an IP, not a hash of one (#1553 DECISION 5,
-  /// owner-confirmed). Rate limiting is the existing public mutation tier,
-  /// keyed on IP at the Edge, which never reaches the row.
+  /// owner-confirmed).
+  ///
+  /// DECISION 5's safety argument is that abuse is handled by rate limiting at
+  /// the Edge rather than by storing an identifier, so no identifier is
+  /// needed. **That argument currently rests on a tier that does not exist.**
+  /// Checked while building: `src/lib/security/rate-limit.ts` has exactly one
+  /// public limiter, `PUBLIC_READ_LIMIT` (60/min), and the one public route
+  /// (`/api/public/eik-check`) is a GET that uses it. There is no public
+  /// MUTATION tier.
+  ///
+  /// Nothing can write this table yet, so the gap is not live — but it is a
+  /// PRECONDITION of P5.2, not a detail of it: `POST /api/public/notices` is
+  /// an unauthenticated writer, and without a mutation tier the only thing
+  /// between it and a flood is the absence of the route. Tracked on the P5.2
+  /// issue.
   ///
   /// The nullability also makes the reporter arm fail closed for anonymous
   /// rows without a special case: in SQL `NULL = NULL` is NULL, not true, so
