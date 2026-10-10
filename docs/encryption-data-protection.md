@@ -235,7 +235,8 @@ docker compose -f docker-compose.prod.yml exec app \
 
 | Key | Rotation procedure |
 |---|---|
-| `DATA_ENCRYPTION_KEY` | 1. Set new key, 2. Run `scripts/backfill-encryption.ts` to re-encrypt, 3. Remove old key |
+| `DATA_ENCRYPTION_KEY` | 1. Set the new key and keep the old as `DATA_ENCRYPTION_KEY_PREVIOUS`, 2. `POST /api/admin/key-rotation` until `GET` reports `previousKeyRetirable: true`, 3. Remove `_PREVIOUS`. Platform-admin-key gated. |
+| `LOOKUP_HMAC_KEY` | A SEPARATE rotation — it moves lookup hashes, not ciphertext. 1. Set the new key, keep the old as `LOOKUP_HMAC_KEY_PREVIOUS`, 2. `POST /api/admin/lookup-rehash` until `GET` reports it retirable, 3. Remove `_PREVIOUS`. |
 | `AUTH_SECRET` / `JWT_SECRET` | Set new value — existing sessions are invalidated |
 | `POSTGRES_PASSWORD` | Update in both Docker env and `.env.production` |
 
@@ -394,8 +395,18 @@ All 12 critical entity models are intercepted by `SOFT_DELETE_MODELS` in the sof
 
 ### Key rotation caveats
 
-1. **DATA_ENCRYPTION_KEY rotation** requires running `scripts/backfill-encryption.ts` after setting the new key — all existing encrypted values must be re-encrypted under the new key
-2. During rotation, there is a brief window where new writes use the new key but old reads may fail if the backfill hasn't completed — the middleware's `decryptField` catch block falls back to the plaintext column during this window
+1. **DATA_ENCRYPTION_KEY rotation** runs through `POST /api/admin/key-rotation`, repeated until `GET` reports
+   `previousKeyRetirable: true`. That flag is the condition for removing `_PREVIOUS`, and it is deliberately
+   never true for a filtered (`?only=`) report — "these columns are done" is not "the deployment is done".
+   The old `scripts/backfill-encryption.ts` this used to name was dead and is deleted; the route replaced it.
+2. **LOOKUP_HMAC_KEY rotation is a different event** and needs `POST /api/admin/lookup-rehash`. A KEK rotation
+   moves ciphertext and leaves hashes alone; a lookup rotation moves hashes and leaves ciphertext alone.
+   Rotating one when you meant the other is the mistake the two separate routes exist to make harder.
+3. During either rotation the previous key must stay set. **There is no plaintext fallback** — this document
+   previously said the middleware's `decryptField` catch falls back to the plaintext column, which is
+   backwards. For a `@map`'d field the plaintext column does not exist, and the catch replaces the value with
+   **null** on purpose, so a renderer shows an empty field rather than `v1:base64…` as if it were a name
+   (`pii-middleware.ts:143`). A row whose key is gone reads as absent, not as ciphertext, and not as plaintext.
 3. **AUTH_SECRET** and **JWT_SECRET** rotation invalidates all existing sessions immediately — users must re-authenticate
 
 ### Future work (non-blocking)
