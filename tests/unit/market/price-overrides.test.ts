@@ -28,18 +28,30 @@ const series = {
     updateMany: jest.fn(),
 };
 const point = { upsert: jest.fn(), updateMany: jest.fn() };
-const mockDb = { marketPriceSeries: series, marketPricePoint: point } as any;
+/**
+ * `unknown` rather than `any` throughout, which is not style policing: the
+ * repo's lint ceiling counts every warning and `no-explicit-any` is by far the
+ * largest category, so six casual `any`s here would have taken the whole gate
+ * over. Silencing them with `eslint-disable` would not have helped — the
+ * ceiling counts suppressions too, deliberately, so that muting is never the
+ * cheapest fix. The sibling `manual-prices.test.ts` predates that and is left
+ * alone rather than widened.
+ */
+const mockDb = { marketPriceSeries: series, marketPricePoint: point };
+type MockDb = typeof mockDb;
 
 jest.mock('@/lib/db-context', () => ({
-    runInTenantContext: (_ctx: any, fn: any) => fn(mockDb),
+    runInTenantContext: (_ctx: unknown, fn: (db: MockDb) => unknown) => fn(mockDb),
 }));
 
 const logEvent = jest.fn();
-jest.mock('@/app-layer/events/audit', () => ({ logEvent: (...a: any[]) => logEvent(...a) }));
+jest.mock('@/app-layer/events/audit', () => ({
+    logEvent: (...a: unknown[]) => logEvent(...a),
+}));
 
 const assertPlatformSupport = jest.fn();
 jest.mock('@/lib/auth/platform-support', () => ({
-    assertPlatformSupport: (...a: any[]) => assertPlatformSupport(...a),
+    assertPlatformSupport: (...a: unknown[]) => assertPlatformSupport(...a),
     isPlatformTenant: () => true,
 }));
 
@@ -228,7 +240,10 @@ describe('§5(b) — clearing MARKS, and a re-type starts a fresh run', () => {
         expect(point.updateMany).toHaveBeenCalledWith(
             expect.objectContaining({ data: expect.objectContaining({ clearedAt: expect.any(Date) }) }),
         );
-        expect((mockDb.marketPriceSeries as any).deleteMany).toBeUndefined();
+        // The mock has no `deleteMany` at all, which is the assertion: if the
+        // usecase ever reached for one the call would throw rather than quietly
+        // deleting. Stronger than checking it was not called.
+        expect('deleteMany' in mockDb.marketPriceSeries).toBe(false);
     });
 
     it('returns cleared:false for an override that is not live — NOT an error', async () => {
