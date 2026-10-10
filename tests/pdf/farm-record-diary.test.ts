@@ -10,6 +10,7 @@ import * as path from 'path';
 import { createPdfDocument } from '@/lib/pdf/pdfKitFactory';
 import {
     renderFarmRecordDiary,
+    fmtDate,
     buildChemicalRows,
     buildFertilizerRows,
     buildObservationRows,
@@ -241,6 +242,25 @@ describe('farm-record-diary — render smoke', () => {
         expect(pdf.includes(Buffer.from('DejaVu'))).toBe(true);
     });
 
+    test('an unparseable period does not throw the render (#1575)', async () => {
+        // A smoke test only, and labelled as such: PDFKit writes text as GLYPH
+        // INDICES once a Unicode font is embedded, so searching the buffer for
+        // "NaN" finds nothing whether `fmtDate` guards or not. A version of
+        // this test did exactly that and passed with the guard REMOVED.
+        //
+        // The guard's real test is on `fmtDate` directly, below.
+        const doc = createPdfDocument({
+            tenantName: 'Северна нива',
+            reportTitle: 'Дневник',
+            generatedAt: new Date(0).toISOString(),
+            fontFamily: 'unicode',
+        });
+        const broken: FarmRecordData = { ...fixture(PROFILE), from: 'abcd', to: 'not-a-date' };
+        expect(() => renderFarmRecordDiary(doc, broken, BG_LABELS)).not.toThrow();
+        const pdf = await collect(doc);
+        expect(pdf.slice(0, 5).toString()).toBe('%PDF-');
+    });
+
     test('tolerates an all-blank FarmProfile (dotted lines, no throw)', async () => {
         const blank: FarmProfileData = {
             producerName: null,
@@ -391,5 +411,43 @@ describe('ДНЕВНИК per-field register — no treatment disappears from a l
         const second = groups.find((g) => g.field?.parcelId === 'parcel-2');
         expect(first?.lines).toEqual([SPRAY[0]]);
         expect(second?.lines).toEqual([SPRAY[1]]);
+    });
+});
+
+describe('fmtDate — an Invalid Date must not render digits (#1575)', () => {
+    // `fmtDate` builds its string from `getUTCDate()` / `getUTCMonth()` /
+    // `getUTCFullYear()`, and `String(NaN).padStart(2, '0')` is the string
+    // "NaN". So without a guard an Invalid Date rendered "NaN.NaN.NaN" into
+    // the ДНЕВНИК header at `:695` — a compliance document headed
+    // "Период: NaN.NaN.NaN – NaN.NaN.NaN", returned with a 200.
+    //
+    // Unreachable in production since #1575 validates the period at the route,
+    // and the Prisma query at `:910` throws before the header renders anyway.
+    // This is defence in depth: the hazard is ORDERING, not behaviour.
+
+    it('renders a valid date normally — the positive control', () => {
+        expect(fmtDate(new Date('2026-10-08T00:00:00Z'))).toBe('08.10.2026');
+    });
+
+    it('renders BLANK for an Invalid Date, not "NaN.NaN.NaN"', () => {
+        // Blank is deliberate rather than a throw: it is what this function
+        // already gives a MISSING date, so a malformed one reads the same
+        // instead of inventing digits.
+        expect(fmtDate(new Date('abcd'))).toBe('');
+        expect(fmtDate(new Date('2026-13-45'))).toBe('');
+    });
+
+    it('the un-guarded arithmetic really did produce "NaN.NaN.NaN" — the premise', () => {
+        // Asserted rather than described, so the reason the guard exists
+        // survives somebody deciding it looks redundant.
+        const d = new Date('abcd');
+        const dd = String(d.getUTCDate()).padStart(2, '0');
+        const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+        expect(`${dd}.${mm}.${d.getUTCFullYear()}`).toBe('NaN.NaN.NaN');
+    });
+
+    it('still renders blank for null and undefined', () => {
+        expect(fmtDate(null)).toBe('');
+        expect(fmtDate(undefined)).toBe('');
     });
 });
