@@ -282,6 +282,18 @@ export interface EvidenceExpiryMonitorPayload {
 }
 
 /** Notification dispatch — monitor → grouped digest → outbox pipeline */
+/**
+ * DSA Art 17 statement dispatch (P5.4b, #1595).
+ *
+ * `StatementOfReasons` rows with `deliveredAt` NULL are the queue —
+ * `NotificationOutbox` cannot carry these because it is tenant-scoped and a
+ * statement is addressed to a person who may hold no farm.
+ */
+export interface StatementDispatchPayload {
+    /** Cap for this run. Defaults to 50. */
+    limit?: number;
+}
+
 export interface NotificationDispatchPayload {
     tenantId?: string;
     /** Which categories to dispatch. Default: all */
@@ -801,6 +813,7 @@ export interface JobPayloadMap {
     'evidence-expiry-monitor': EvidenceExpiryMonitorPayload;
     'evidence-stale-review-sweep': EvidenceStaleReviewSweepPayload;
     'notification-dispatch': NotificationDispatchPayload;
+    'statement-dispatch': StatementDispatchPayload;
     'sync-pull': SyncPullPayload;
     'compliance-snapshot': ComplianceSnapshotPayload;
     'sla-monitor': SlaMonitorPayload;
@@ -1109,6 +1122,25 @@ export const JOB_DEFAULTS: Record<JobName, {
     },
     'notification-dispatch': {
         attempts: 2,
+        backoff: { type: 'exponential', delay: 10000 },
+        removeOnComplete: 200,
+        removeOnFail: 500,
+    },
+    // P5.4b — ONE attempt, deliberately, which is the opposite of every
+    // other entry here.
+    //
+    // The job sends email and stamps `deliveredAt` only after a send
+    // resolves, so a retry of the RUN would re-send every statement that
+    // already went out in the failed batch. A per-row failure is already
+    // handled inside the job: it is caught, counted as skipped, and the row
+    // stays undelivered for the next scheduled run — which is a retry with
+    // the right granularity.
+    'statement-dispatch': {
+        attempts: 1,
+        // INERT, and present only because the type requires it. With
+        // `attempts: 1` there is no second try for it to delay, so the values
+        // are the neighbours' rather than a considered choice — stated so the
+        // next reader does not infer a retry policy that cannot fire.
         backoff: { type: 'exponential', delay: 10000 },
         removeOnComplete: 200,
         removeOnFail: 500,

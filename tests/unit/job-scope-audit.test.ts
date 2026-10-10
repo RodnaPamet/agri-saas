@@ -106,7 +106,13 @@ describe('Executor Registry — tenantId propagation audit', () => {
             // has NO farm — that absence is the selection criterion itself. A
             // tenantId here would be contradictory, not merely unused, since
             // any account holding a tenant is explicitly spared.
-            if (['health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction', 'support-scheme-extraction', 'promotion-lead-retention', 'process-outbox', 'zero-success-route-check', 'unverified-account-sweep', 'mail-canary'].includes(jobName)) continue;
+            // statement-dispatch (P5.4b) delivers DSA Art 17 statements, which are
+            // addressed to a PERSON and not to a farm. `StatementOfReasons` carries
+            // no tenantId by design — that is why `NotificationOutbox`, whose
+            // tenantId is non-nullable, could not be the outbox for it — and the
+            // recipient may hold no farm or several, so resolving one would invent
+            // a tenant for a person-scoped legal obligation.
+            if (['health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction', 'support-scheme-extraction', 'promotion-lead-retention', 'process-outbox', 'zero-success-route-check', 'unverified-account-sweep', 'mail-canary', 'statement-dispatch'].includes(jobName)) continue;
 
             // If the parameter is named _payload, it means tenantId is being ignored
             if (paramName.startsWith('_')) {

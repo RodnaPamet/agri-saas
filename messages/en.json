@@ -6543,5 +6543,18 @@
             "unblocked": "Unblocked",
             "failed": "That could not be changed. Please try again."
         }
+    },
+    "statementOfReasons": {
+        "subject": "A decision about your content on Agrent",
+        "intro": "We are writing because we took a decision about something you posted on Agrent. This notice sets out what we did and why, as required by Article 17 of the EU Digital Services Act.",
+        "reasonLabel": "Why:",
+        "redress": "If you believe this decision is wrong, reply to this message and a person will look at it again. You may also take the matter to an out-of-court dispute settlement body, or to a court.",
+        "action": {
+            "NONE": "We looked at a report about your content and decided to take no action. Your content stays as it is.",
+            "CONTENT_REMOVED": "We removed the content.",
+            "CONTENT_DEMOTED": "We left the content in place but reduced how widely it is shown.",
+            "ACCOUNT_SUSPENDED": "We suspended your account. You cannot post or send messages while the suspension lasts.",
+            "ACCOUNT_TERMINATED": "We closed your account."
+        }
     }
 }

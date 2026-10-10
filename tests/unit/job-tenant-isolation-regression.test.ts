@@ -178,6 +178,14 @@ describe('Executor Registry — structural tenant-scope guards', () => {
         // is monitoring the platform's own transport, and a tenantId on this
         // payload would be meaningless in the same way it is for health-check.
         'mail-canary',
+        // statement-dispatch (P5.4b) delivers a DSA Art 17 statement of reasons,
+        // which is addressed to a PERSON rather than to a farm.
+        // `StatementOfReasons` carries no tenantId at all — that absence is the
+        // documented reason `NotificationOutbox`, whose tenantId is
+        // non-nullable, could not serve as its outbox — and the recipient may
+        // hold no farm or several. A tenantId here would be an invented answer
+        // to a question the obligation does not ask.
+        'statement-dispatch',
         // PromotionLead is CROSS-tenant (inquirerTenantId, not tenantId) and is
         // swept globally in one pass — see job-scope-audit for the full reason.
         'promotion-lead-retention',
@@ -273,6 +281,9 @@ describe('Payload Type Contract — tenantId field audit', () => {
         // Drains the whole outbox; each ROW carries the tenantId, so a
         // payload-level tenantId would be a narrower claim than the job makes.
         'ProcessOutboxPayload',
+        // Person-scoped legal obligation: `StatementOfReasons` has no tenantId
+        // and the recipient may hold no farm. See 'statement-dispatch' above.
+        'StatementDispatchPayload',
         // Calendar roadmap PR 3 — same GLOBAL shape as MarketNewsPullPayload
         // above; NewsDerivedEvent/MarketNewsItem carry no tenantId.
         'NewsEventExtractionPayload',
