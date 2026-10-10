@@ -111,10 +111,18 @@ for (const full of routeFiles) {
 }
 
 /**
- * Live count at the time of writing, after #1555's first batch converted the
- * four bulk-ids schemas. LOWER this when a route is converted; never raise it.
+ * Live count. LOWER this when a route is converted; never raise it.
+ *
+ *     14  before #1555
+ *     10  batch 1 — the four bulk-ids schemas
+ *      5  batch 2 — admin members/invites/certificates and the field-op review
+ *
+ * The drift assertion below is what forced this down: with the cap left at 10
+ * and five live, `MAX_DUAL - dual.length` was 5 and the suite failed. A cap
+ * that silently kept its old headroom would have left room for a regression to
+ * land unnoticed, which is the whole failure mode a ratchet exists to prevent.
  */
-const MAX_DUAL = 10;
+const MAX_DUAL = 5;
 
 describe('a request body is declared once (#1555)', () => {
     it('the population is real — the denominator', () => {
@@ -137,18 +145,31 @@ describe('a request body is declared once (#1555)', () => {
         expect(paths).toContain('/api/t/{tenantSlug}/journal');
     });
 
-    it('the four converted in #1555 batch 1 are NOT dual any more', () => {
-        // Pins this PR's own work, so re-inlining any of them fails here with
-        // the reason rather than only moving a number.
+    it('every route converted so far is NOT dual any more', () => {
+        // Pins the conversions, so re-inlining any one fails here with the
+        // reason rather than only moving a number. Grouped by batch because
+        // the batches had different hazards: batch 1 was byte-identical
+        // duplicates, batch 2 carried published DESCRIPTIONS on the spec side
+        // and none on the route side, so the move had to bring the prose with
+        // it or the contract would have silently lost documentation.
         const dualPaths = dual.map((d) => d.path);
-        for (const p of [
+        const converted = [
+            // batch 1 — bulk id lists
             '/api/t/{tenantSlug}/admin/members/bulk/remove',
             '/api/t/{tenantSlug}/admin/members/bulk/delete',
             '/api/t/{tenantSlug}/admin/invites/bulk/delete',
             '/api/t/{tenantSlug}/locations/bulk/delete',
-        ]) {
+            // batch 2 — admin members / invites / field-op review
+            '/api/t/{tenantSlug}/admin/members',
+            '/api/t/{tenantSlug}/admin/members/{membershipId}',
+            '/api/t/{tenantSlug}/admin/members/{membershipId}/certificates',
+            '/api/t/{tenantSlug}/admin/invites',
+            '/api/t/{tenantSlug}/field-operations/{taskId}/review',
+        ];
+        for (const p of converted) {
             expect(dualPaths).not.toContain(p);
         }
+        expect(converted).toHaveLength(9);
     });
 
     it('no NEW route declares its body twice', () => {

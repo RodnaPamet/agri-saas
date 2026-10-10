@@ -14,15 +14,11 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { TENANT_INVITE_CREATE_LIMIT } from '@/lib/security/rate-limit';
 import { enforceRateLimit, getClientIp } from '@/lib/security/rate-limit-middleware';
 import { isRateLimitBypassed } from '@/lib/security/rate-limit-middleware';
-import { z } from 'zod';
 import { jsonResponse } from '@/lib/api-response';
 import { resolvePublicOrigin } from '@/lib/http/request-origin';
 import { sendInviteEmail } from '@/lib/email/invite-email';
+import { CreateAdminInviteSchema } from '@/lib/schemas';
 
-const CreateInviteSchema = z.object({
-    email: z.string().email('Valid email required'),
-    role: z.enum(['OWNER', 'ADMIN', 'EDITOR', 'AUDITOR', 'READER', 'MECHANISATOR']),
-});
 
 const TENANT_ROLE_LABEL: Record<string, string> = {
     OWNER: 'Owner',
@@ -56,7 +52,7 @@ export const POST = withApiErrorHandling(
         }
 
         const body = await req.json();
-        const input = CreateInviteSchema.parse(body);
+        const input = CreateAdminInviteSchema.parse(body);
         const result = await createInviteToken(ctx, input);
 
         // Email the acceptance link to the recipient. Best-effort: the
