@@ -1718,6 +1718,13 @@ function finalizeRow(
             occupiedAreaHa: a.occupiedAreaHa,
             standingCropValue,
             attributableCost: cashCostTotal,
+            // The cost rate's UNIT, and it cannot be `priceCurrency`:
+            // `cashCostTotal` is a magnitude sum taken across whatever the rows
+            // carried, and its own docblock says never to assume it shares a
+            // currency with the market price. #1606 shipped the rate with no
+            // currency at all; this is the same set net worth decides on, handed
+            // to the figure that needs it.
+            costCurrencies: [...cashCostCurrencies],
             standingCropExcludedCount: a.standingCropExcludedCount,
             unvaluedNoUnitCost: a.unvaluedNoUnitCost,
             unvaluedUnitMismatch: a.unvaluedUnitMismatch,

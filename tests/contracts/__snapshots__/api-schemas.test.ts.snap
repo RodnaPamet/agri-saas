@@ -1966,6 +1966,26 @@ exports[`API contract — per-schema snapshots schema: CalculatorPerAreaFigures 
         "null"
       ]
     },
+    "costCurrency": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The currency \`attributableCostPerDca\` is in. \`null\` means NO cost row recorded one — render it in the tenant’s display currency, which is what the product already does wherever it prints a cost. Null is an INSTRUCTION, not an absence: a cost that is not in one known currency is withheld rather than labelled, so this is never null beside a non-null rate for any other reason. Do NOT fall back to the market price currency — \`attributableCostPerDca\` and the market price need not share one, and that is the whole reason this field exists."
+    },
+    "costRefusalCode": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "NO_OCCUPIED_AREA",
+        "COST_CURRENCY_MIXED",
+        "COST_CURRENCY_UNRECORDED",
+        null
+      ],
+      "description": "Why \`attributableCostPerDca\` is null. Non-null exactly when it is null. A SEPARATE vocabulary from \`refusalCode\`, which describes the value figures: after #1512 the cost rate can be present when they are refused and refused when they are present."
+    },
     "uncertainty": {
       "type": "string",
       "enum": [
@@ -1995,6 +2015,8 @@ exports[`API contract — per-schema snapshots schema: CalculatorPerAreaFigures 
     "standingValuePerDca",
     "attributableCostPerDca",
     "marginPerDca",
+    "costCurrency",
+    "costRefusalCode",
     "uncertainty",
     "refusalCode"
   ],
