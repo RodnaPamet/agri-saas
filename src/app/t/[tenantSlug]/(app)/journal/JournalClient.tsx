@@ -32,8 +32,6 @@ import {
     buildJournalFilters,
     JOURNAL_FILTER_KEYS,
     LOG_ENTRY_TYPE_LABELS,
-    FIELD_OPERATION_TYPES,
-    CROP_FILTER_LABELS,
 } from './filter-defs';
 import { JournalEntryModal, type OptimisticJournalEntry } from './JournalEntryModal';
 
@@ -244,56 +242,57 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
                     ),
                     meta: { disableTruncate: true, mobileCard: { slot: 'meta', label: t('colDate') } },
                 },
-                // Parcel / Culture — the field + its crop. Doubles as the
-                // keyboard-accessible link to the entry detail. Falls back to
-                // the logged location name for free-hand entries.
+                // Title — what the entry IS, and the only route to its
+                // detail page.
+                //
+                // This column WAS deleted by the first pass of this change,
+                // because it was named `parcelCulture` and the owner's list
+                // said to drop parcel and culture. Its accessor was
+                // `parcel.name ?? location.name ?? title`, so the task-fed
+                // half was only the FIRST branch: deleting it took the
+                // entry's own title, the row's link, and — since it held
+                // `mobileCard: { slot: 'title' }` — the phone card's heading,
+                // leaving a journal of untitled rows nobody could open.
+                //
+                // `journal-offline-create.spec.ts` caught it on both mobile
+                // projects, 3 of 3 attempts, asserting the optimistic row
+                // shows its title. The lesson is in the naming: a column's
+                // ID described its first branch, and classifying by that name
+                // instead of by what it RENDERED dropped three things the
+                // ruling never mentioned.
+                //
+                // What the ruling asked for is honoured — no parcel name and
+                // no `cropType` suffix. `LogEntry.title` is `String`, not
+                // nullable, so there is nothing to fall back to.
                 {
-                    id: 'parcelCulture',
-                    header: t('colParcelCulture'),
-                    accessorFn: (e) =>
-                        e.operationParcel?.parcel?.name ??
-                        e.locations?.[0]?.location?.name ??
-                        e.title,
-                    cell: ({ row, getValue }) => {
-                        const culture = row.original.operationParcel?.parcel?.cropType;
-                        const cultureLabel = culture
-                            ? culture in CROP_FILTER_LABELS
-                                ? te(`crop.${culture}`)
-                                : culture
-                            : null;
-                        return (
-                            <TableTitleCell
-                                href={tenantHref(`/journal/${row.original.id}`)}
-                                id={`journal-link-${row.original.id}`}
-                            >
-                                <span>{getValue() as string}</span>
-                                {cultureLabel ? (
-                                    <span className="ml-1 text-xs text-content-muted">· {cultureLabel}</span>
-                                ) : null}
-                            </TableTitleCell>
-                        );
-                    },
+                    id: 'entryTitle',
+                    header: t('colTitle'),
+                    accessorFn: (e) => e.title,
+                    cell: ({ row, getValue }) => (
+                        <TableTitleCell
+                            href={tenantHref(`/journal/${row.original.id}`)}
+                            id={`journal-link-${row.original.id}`}
+                        >
+                            <span>{getValue() as string}</span>
+                        </TableTitleCell>
+                    ),
                     meta: { mobileCard: { slot: 'title' } },
                 },
-                // Operation — the БАБХ operation type when present, else the
-                // journal entry kind.
+                // Type — the journal's OWN vocabulary (Наблюдение, Третиране).
+                //
+                // The deleted `operation` column preferred
+                // `operationParcel.task.operationType` and fell back to
+                // `e.type`; only the first branch was task-fed. Kept as the
+                // entry kind alone, because it is the phone card's `subtitle`
+                // slot and a list whose rows do not say what kind of entry
+                // they are is harder to scan rather than tidier.
                 {
-                    id: 'operation',
-                    header: t('colOperation'),
-                    // The primary branch is the FieldOperationType enum
-                    // (SPRAY/FERTILIZE/SEED/OTHER) — localized like the
-                    // fallback rather than printed raw.
-                    accessorFn: (e) => {
-                        const op = e.operationParcel?.task?.operationType;
-                        if (op) {
-                            return op in FIELD_OPERATION_TYPES
-                                ? te(`operationType.${op}`)
-                                : String(op).replace(/_/g, ' ');
-                        }
-                        return e.type in LOG_ENTRY_TYPE_LABELS
+                    id: 'entryType',
+                    header: t('colType'),
+                    accessorFn: (e) =>
+                        e.type in LOG_ENTRY_TYPE_LABELS
                             ? te(`logType.${e.type}`)
-                            : String(e.type).replace(/_/g, ' ');
-                    },
+                            : String(e.type).replace(/_/g, ' '),
                     cell: ({ getValue }) => (
                         <StatusBadge variant="info" size="sm">
                             {String(getValue()).replace(/_/g, ' ')}
@@ -301,66 +300,21 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
                     ),
                     meta: { mobileCard: { slot: 'subtitle' } },
                 },
-                // Product + active ingredient.
-                {
-                    id: 'product',
-                    header: t('colProduct'),
-                    accessorFn: (e) => e.operationParcel?.product?.name ?? '',
-                    cell: ({ row, getValue }) => {
-                        const ai = row.original.operationParcel?.product?.activeIngredient;
-                        const name = getValue() as string;
-                        if (!name) return <span className="text-content-subtle">—</span>;
-                        return (
-                            <span className="text-sm">
-                                {name}
-                                {ai ? <span className="block text-xs text-content-muted">{ai}</span> : null}
-                            </span>
-                        );
-                    },
-                    meta: { mobileCard: { slot: 'meta', label: t('colProduct') } },
-                },
-                // Dose / rate.
-                {
-                    id: 'dose',
-                    header: t('colDose'),
-                    accessorFn: (e) => {
-                        const op = e.operationParcel;
-                        if (op?.doseValue == null) return '—';
-                        return `${Number(op.doseValue)}${op.doseUnit?.symbol ? ` ${op.doseUnit.symbol}` : ''}`;
-                    },
-                    cell: ({ getValue }) => (
-                        <span className="text-xs tabular-nums text-content-muted">{getValue() as string}</span>
-                    ),
-                    meta: { mobileCard: { slot: 'meta', label: t('colDose') } },
-                },
-                // Treated area — Parcel.areaHa in decares (дка = ha × 10), the
-                // regulated Bulgarian unit.
-                {
-                    id: 'areaDka',
-                    header: t('colTreatedArea'),
-                    accessorFn: (e) => {
-                        const ha = e.operationParcel?.parcel?.areaHa;
-                        if (ha == null) return '—';
-                        return (Number(ha) * 10).toFixed(1);
-                    },
-                    cell: ({ getValue }) => (
-                        <span className="text-xs tabular-nums text-content-muted">{getValue() as string}</span>
-                    ),
-                    meta: { mobileCard: { slot: 'meta', label: t('colTreatedArea') } },
-                },
-                // PHI — pre-harvest interval (карантинен срок), days.
-                {
-                    id: 'phi',
-                    header: t('colPhi'),
-                    accessorFn: (e) => {
-                        const d = e.operationParcel?.product?.quarantinePeriodDays;
-                        return d == null ? '—' : String(d);
-                    },
-                    cell: ({ getValue }) => (
-                        <span className="text-xs tabular-nums text-content-muted">{getValue() as string}</span>
-                    ),
-                    meta: { mobileCard: { slot: 'meta', label: t('colPhi') } },
-                },
+                // The six task-fed columns — parcel, culture, product (with
+                // its active ingredient), dose, treated area and PHI — were
+                // REMOVED here (owner ruling 2026-10-10).
+                //
+                // Every one read through `e.operationParcel`, and the journal
+                // no longer lists entries that have one (#1562), so each would
+                // render an em dash on every row for ever. That spray data
+                // lives under tasks and in the ДНЕВНИК PDF, which reads the
+                // operation lines directly rather than through this list.
+                //
+                // The columns that REMAIN read the entry itself — title, type,
+                // occurredAt, operator (`conditionsJson.agronomistName`),
+                // status and notes — which is why `operator` survives a
+                // "drop the task columns" sweep that looks like it should
+                // take it too.
                 // Operator — the applicator / agronomist captured on completion.
                 {
                     id: 'operator',
