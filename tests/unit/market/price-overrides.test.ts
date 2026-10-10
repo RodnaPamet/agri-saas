@@ -119,11 +119,40 @@ describe('§3 — the denomination is the SERVER’s, never the caller’s', () 
         }
     });
 
+    it('a CLEARED series in another denomination does not block a new run', async () => {
+        // The guard is about a LIVE override, not a historical one. A cleared
+        // EUR/t diesel run must not refuse a fresh EUR/l one forever — that
+        // would make a denomination change unrecoverable without a manual
+        // delete, which is the opposite of what marking-rather-than-deleting
+        // was for.
+        series.findMany.mockResolvedValue([
+            {
+                id: 'old',
+                commodity: 'diesel',
+                unit: 'EUR/t',
+                currency: 'EUR',
+                clearedAt: new Date('2026-10-09'),
+            },
+        ]);
+        series.create.mockResolvedValue({ id: 'new' });
+
+        await expect(
+            upsertOverrideDay(ctx, { date: DAY, prices: [{ commodity: 'diesel', value: 1.95 }] }),
+        ).resolves.toEqual(expect.objectContaining({ written: 1 }));
+        // A new series, because the key differs by unit.
+        expect(series.create).toHaveBeenCalled();
+    });
+
     it('refuses a live override recorded in a DIFFERENT denomination', async () => {
         // If `OVERRIDE_ENTRY` ever changes, the new key would mint a SECOND
         // series while the old stayed live, and two live overrides for one
         // commodity is an ambiguity no consumer can resolve.
-        series.findMany.mockResolvedValue([{ id: 'old', unit: 'EUR/t', currency: 'EUR' }]);
+        // One pre-loop read now returns every platform series for the day's
+        // commodities, so the fixture carries `commodity` and `clearedAt` —
+        // the usecase partitions in memory rather than querying per commodity.
+        series.findMany.mockResolvedValue([
+            { id: 'old', commodity: 'diesel', unit: 'EUR/t', currency: 'EUR', clearedAt: null },
+        ]);
 
         await expect(
             upsertOverrideDay(ctx, { date: DAY, prices: [{ commodity: 'diesel', value: 1.95 }] }),
@@ -272,7 +301,15 @@ describe('§5(b) — clearing MARKS, and a re-type starts a fresh run', () => {
         // unique — so the write must un-clear the SERIES while leaving the old
         // run's points stamped, and set `clearedAt: null` on the point it
         // touches so a re-typed date rejoins the current run.
-        series.findFirst.mockResolvedValue({ id: 'ovr1', clearedAt: new Date('2026-10-09') });
+        series.findMany.mockResolvedValue([
+            {
+                id: 'ovr1',
+                commodity: 'wheat',
+                unit: 'EUR/t',
+                currency: 'EUR',
+                clearedAt: new Date('2026-10-09'),
+            },
+        ]);
 
         await upsertOverrideDay(ctx, { date: DAY, prices: [{ commodity: 'wheat', value: 215 }] });
 

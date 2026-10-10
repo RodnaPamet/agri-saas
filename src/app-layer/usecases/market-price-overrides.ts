@@ -174,8 +174,30 @@ export async function upsertOverrideDay(
     return runInTenantContext(ctx, async (db) => {
         const series: OverrideDayResult['series'] = [];
 
+        // ONE read for every commodity in the day, before the loop.
+        //
+        // This used to be two queries per commodity inside it — a `findMany`
+        // for the denomination guard and a `findFirst` for the exact key — so a
+        // ten-commodity day issued twenty reads and tripped the N+1 guardrail
+        // (query-shape Layer D1). The guardrail is right: the population is
+        // bounded at ten, so the old shape was not a scaling hazard, but it was
+        // twenty round trips inside an open transaction, which is the thing
+        // that holds locks.
+        //
+        // The point upsert and the series create stay in the loop. They are
+        // WRITES, which that rule does not cover, and each needs the id the
+        // previous step produced.
+        const existingAll = await db.marketPriceSeries.findMany({
+            where: {
+                source: PLATFORM_OVERRIDE_SOURCE,
+                commodity: { in: resolved.map((r) => r.commodity) },
+            },
+            select: { id: true, commodity: true, unit: true, currency: true, clearedAt: true },
+        });
+
         for (const r of resolved) {
             const { unit, currency } = r.entry;
+            const mine = existingAll.filter((sx) => sx.commodity === r.commodity);
 
             // The six-column natural key, with OUR denomination in it. A series
             // per (source, commodity, region, stage, currency, unit).
@@ -189,16 +211,8 @@ export async function upsertOverrideDay(
             // live overrides for one commodity is an ambiguity no consumer can
             // resolve. Refusing names the fix; silently minting would leave the
             // old figure winning on whichever surface happened to pick it.
-            const liveAny = await db.marketPriceSeries.findMany({
-                where: {
-                    source: PLATFORM_OVERRIDE_SOURCE,
-                    commodity: r.commodity,
-                    clearedAt: null,
-                },
-                select: { id: true, unit: true, currency: true },
-            });
-            const wrongDenomination = liveAny.find(
-                (sx) => sx.unit !== unit || sx.currency !== currency,
+            const wrongDenomination = mine.find(
+                (sx) => sx.clearedAt == null && (sx.unit !== unit || sx.currency !== currency),
             );
             if (wrongDenomination) {
                 throw codedBadRequest(
@@ -212,17 +226,10 @@ export async function upsertOverrideDay(
                 );
             }
 
-            const existing = await db.marketPriceSeries.findFirst({
-                where: {
-                    source: PLATFORM_OVERRIDE_SOURCE,
-                    commodity: r.commodity,
-                    region: OVERRIDE_REGION,
-                    stage: null,
-                    currency,
-                    unit,
-                },
-                select: { id: true, clearedAt: true },
-            });
+            // The exact natural key, matched in memory. `region`/`stage` are
+            // constants for an override, so unit+currency identify it within
+            // the commodity.
+            const existing = mine.find((sx) => sx.unit === unit && sx.currency === currency);
 
             const seriesId =
                 existing?.id ??
