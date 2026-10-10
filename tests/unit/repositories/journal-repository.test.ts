@@ -363,6 +363,54 @@ describe('JournalRepository — filter translation', () => {
         });
     });
 
+    it('excludes task-written entries by DEFAULT', async () => {
+        // Owner ruling 2026-10-10: «journal should be entered manually only».
+        // `operationParcelId` is the only thing separating an entry the spray
+        // flow wrote from one a person typed, so this is the whole rule.
+        await JournalRepository.list(asTx(db), ctx, {});
+
+        expect(whereOf(db.logEntry.findMany).operationParcelId).toBeNull();
+    });
+
+    it('omits the rule entirely when a caller opts in', async () => {
+        // `satellite-briefing` is the one caller that does — a briefing blind
+        // to spraying is less useful rather than tidier. Asserted as ABSENT,
+        // not as `{ not: null }`: the opt-in must widen to everything, not
+        // invert into task-written-only.
+        await JournalRepository.list(asTx(db), ctx, { includeTaskWritten: true });
+
+        expect(whereOf(db.logEntry.findMany)).not.toHaveProperty('operationParcelId');
+    });
+
+    it('a FALSE opt-in still excludes — only `true` widens', async () => {
+        // `!== true` rather than a falsy check, so an explicit `false` and an
+        // absent flag behave identically. A truthiness test would also widen
+        // for any non-boolean a route might coerce.
+        await JournalRepository.list(asTx(db), ctx, { includeTaskWritten: false });
+
+        expect(whereOf(db.logEntry.findMany).operationParcelId).toBeNull();
+    });
+
+    it('the rule coexists with the other filters rather than replacing them', async () => {
+        await JournalRepository.list(asTx(db), ctx, { locationId: 'loc-1', q: 'пшеница' });
+
+        const where = whereOf(db.logEntry.findMany);
+        expect(where.operationParcelId).toBeNull();
+        expect(where.AND).toHaveLength(1);
+        expect(where.OR).toHaveLength(2);
+        expect(where.tenantId).toBe('tenant-1');
+        expect(where.deletedAt).toBeNull();
+    });
+
+    it('applies to the paginated read too, not just the flat one', async () => {
+        // The web journal page uses `listPaginated`. A rule on `list` alone
+        // would leave the page showing task-written entries while the API did
+        // not — two surfaces disagreeing about what the journal contains.
+        await JournalRepository.listPaginated(asTx(db), ctx, { limit: 10 });
+
+        expect(whereOf(db.logEntry.findMany).operationParcelId).toBeNull();
+    });
+
     it('adds no location clause at all when the filter is absent', async () => {
         // The cleared-facet direction. An `AND: [{ OR: [...] }]` emitted with
         // an undefined id would match nothing and blank the journal.

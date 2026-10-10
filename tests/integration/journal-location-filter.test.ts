@@ -211,60 +211,96 @@ afterAll(async () => {
     await globalPrisma.$disconnect();
 });
 
-describeFn('journal ?locationId= reaches operation-line entries (DB)', () => {
+describeFn('journal ?locationId= and the manual-only rule (DB)', () => {
+    // TWO regimes, and both matter.
+    //
+    // #1545 widened `?locationId=` to reach entries whose only link is an
+    // operation line, because the spray records were missing from a block
+    // filter. The owner then ruled (2026-10-10) that the journal shows what a
+    // person typed — so those same entries are now hidden from it BY INTENT.
+    //
+    // That is a supersession, not a contradiction, and the distinction is
+    // testable: the two-path clause is still intact underneath. Hiding happens
+    // because the entry is excluded, not because the clause was removed. The
+    // satellite briefing opts in and still gets both paths, which is the only
+    // reason #1545's fix still has a consumer.
+
     it('control: the fixture is there, so an empty result cannot read as a pass', async () => {
-        // Without this, every assertion below is satisfied by a tenant whose
-        // rows failed to insert — four empty sets agree with four wrong ones.
-        const all = await runInTenantContext(ctx(), (db) => JournalRepository.list(db, ctx(), {}));
+        const all = await runInTenantContext(ctx(), (db) =>
+            JournalRepository.list(db, ctx(), { includeTaskWritten: true }),
+        );
         expect(idsOf(all)).toEqual([sprayInA, handLinkedToA, sprayInB, freeHand].sort());
     });
 
-    it('returns the SPRAY record whose only link is an operation line', async () => {
-        // The defect, in one assertion. Before the fix this returned
-        // [handLinkedToA] and the spray record — the bulk of a ДНЕВНИК — was
-        // simply absent, with nothing to say so.
-        const rows = await listByLocation(locA);
-        expect(idsOf(rows)).toContain(sprayInA);
+    describe('by default — manual entries only', () => {
+        it('hides every task-written entry from an unfiltered list', async () => {
+            const rows = await runInTenantContext(ctx(), (db) =>
+                JournalRepository.list(db, ctx(), {}),
+            );
+            // The two a person typed; neither spray record.
+            expect(idsOf(rows)).toEqual([handLinkedToA, freeHand].sort());
+        });
+
+        it('returns only the hand-linked entry for a block', async () => {
+            // Before the ruling this returned the spray record too. It is
+            // excluded now because the entry is task-written, NOT because the
+            // operationParcel path was taken out — the next describe proves
+            // the clause still works.
+            expect(idsOf(await listByLocation(locA))).toEqual([handLinkedToA]);
+        });
+
+        it('returns NOTHING for a block whose only entry is a spray record', async () => {
+            // Block B has exactly one entry and it is task-written. An empty
+            // result here is the rule working, and it is the case a farmer
+            // would misread as "no records" — which is why the ДНЕВНИК PDF
+            // keeps reading operation lines directly.
+            expect(idsOf(await listByLocation(locB))).toEqual([]);
+        });
+
+        it('still applies the free-text search, over manual entries only', async () => {
+            // `Пръскане` matches only the spray titles, which are hidden.
+            expect(idsOf(await listByLocation(locA, { q: 'Пръскане' }))).toEqual([]);
+            // ...and the manual entry is reachable by its own text.
+            expect(idsOf(await listByLocation(locA, { q: 'Ръчна' }))).toEqual([handLinkedToA]);
+        });
     });
 
-    it('returns BOTH paths for one block, and nothing else', async () => {
-        const rows = await listByLocation(locA);
-        expect(idsOf(rows)).toEqual([sprayInA, handLinkedToA].sort());
-    });
+    describe('with includeTaskWritten — what the satellite briefing sees', () => {
+        it('reaches the SPRAY record whose only link is an operation line', async () => {
+            // #1545's fix, still live. This is the assertion that would fail
+            // if someone "simplified" the two-path OR away now that the
+            // journal no longer shows these entries.
+            const rows = await listByLocation(locA, { includeTaskWritten: true });
+            expect(idsOf(rows)).toContain(sprayInA);
+        });
 
-    it('does NOT return an operation-line entry from a different block', async () => {
-        // The negative control. A clause that matched any entry with ANY
-        // operation line would satisfy both assertions above and be useless.
-        const rows = await listByLocation(locA);
-        expect(idsOf(rows)).not.toContain(sprayInB);
+        it('returns BOTH paths for one block, and nothing else', async () => {
+            const rows = await listByLocation(locA, { includeTaskWritten: true });
+            expect(idsOf(rows)).toEqual([sprayInA, handLinkedToA].sort());
+        });
 
-        // ...and the other block returns its own, which proves the filter
-        // discriminates rather than merely excluding.
-        const other = await listByLocation(locB);
-        expect(idsOf(other)).toEqual([sprayInB]);
-    });
+        it('still discriminates by block rather than returning everything', async () => {
+            // The negative control. With the rule lifted, a clause that matched
+            // any entry with ANY operation line would satisfy both assertions
+            // above and be useless.
+            const a = await listByLocation(locA, { includeTaskWritten: true });
+            expect(idsOf(a)).not.toContain(sprayInB);
+            expect(idsOf(a)).not.toContain(freeHand);
 
-    it('does NOT return a free-hand entry with no link at all', async () => {
-        // There is no path from such an entry to a block, so it must stay out.
-        // Reaching it would mean the OR had collapsed to "match everything".
-        const rows = await listByLocation(locA);
-        expect(idsOf(rows)).not.toContain(freeHand);
-    });
+            const b = await listByLocation(locB, { includeTaskWritten: true });
+            expect(idsOf(b)).toEqual([sprayInB]);
+        });
 
-    it('still applies the free-text search alongside the block filter', async () => {
-        // Why the clause is AND-wrapped. `where.OR` belongs to `q`; assigning
-        // `OR` for the location would discard the search and return the whole
-        // block — a filter that WIDENS when you add a term to it. Executed
-        // against real Prisma, because the unit test can only show the shape.
-        const rows = await listByLocation(locA, { q: 'Пръскане' });
-        expect(idsOf(rows)).toEqual([sprayInA]);
+        it('keeps the free-text search working alongside the block filter', async () => {
+            const rows = await listByLocation(locA, { q: 'Пръскане', includeTaskWritten: true });
+            expect(idsOf(rows)).toEqual([sprayInA]);
+        });
     });
 
     it('intersects with the crop filter rather than overwriting it', async () => {
-        // Both reach through `operationParcel`, so the hazard is one clobbering
-        // the other. Parcel A has no cropType, so a crop filter must exclude
-        // the spray record even though the block matches it.
-        const rows = await listByLocation(locA, { crop: ['wheat'] });
+        // Both reach through `operationParcel`. Parcel A has no cropType, so a
+        // crop filter excludes the spray record even with the rule lifted.
+        const rows = await listByLocation(locA, { crop: ['wheat'], includeTaskWritten: true });
         expect(idsOf(rows)).toEqual([]);
     });
 });
