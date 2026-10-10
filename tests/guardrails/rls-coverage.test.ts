@@ -173,6 +173,50 @@ const PARTY_SCOPED_MODELS: ReadonlyMap<string, readonly string[]> = new Map([
         ['exchange_block_select', 'exchange_block_insert',
          'exchange_block_update', 'exchange_block_delete'],
     ],
+    // P5.1 (#1553). The same asymmetry for the same reason, one level down:
+    // person↔person rather than tenant↔person. The blocked PERSON must be able
+    // to SELECT the row that refuses them — the refusal is enforced in their
+    // own context — and must not be able to DELETE it. Keyed on `app.user_id`
+    // (set by `runInUserContext`) rather than `app.actor_user_id`, because a
+    // social block is person-scoped and has no tenant.
+    [
+        'UserBlock',
+        ['user_block_select', 'user_block_insert',
+         'user_block_update', 'user_block_delete'],
+    ],
+]);
+
+// Models reached ONLY through a platform-admin surface, with RLS that no
+// `app_user` session satisfies (P5.1, #1553).
+//
+// Distinct from `NO_RLS_NOT_APP_USER_MODELS` above, and the difference is the
+// point: those have no RLS because no code path reaches them under `app_user`.
+// These DO have RLS, forced, and their protection is the absence of a
+// permissive policy per command rather than the absence of a caller. The
+// distinction matters because `ALTER DEFAULT PRIVILEGES` (migration
+// 20260323180000) grants `app_user` SELECT/INSERT/UPDATE/DELETE on every new
+// table in `public` automatically — so a new tenantless table is reachable by
+// `app_user` the moment it exists, and only RLS refuses.
+//
+// The value is the EXACT set of policies the table may carry. Set equality,
+// not containment: a containment check would pass a table that had gained a
+// permissive `app_user` arm, which is the one regression this needs to catch.
+const PLATFORM_ONLY_RLS_MODELS: ReadonlyMap<string, readonly string[]> = new Map([
+    // The reporter self-read arm is the owner's decision of 2026-10-10 on
+    // DECISION 3, and it is SELECT-only: a reporter may read their own notice
+    // back, and may not write one directly (an Art 16 notice is submitted
+    // through the P5.2 platform surface, which sanitises it; a direct INSERT
+    // could forge `reporterUserId` or set any `status`).
+    ['ContentReport', ['content_report_reporter_read', 'superuser_bypass']],
+    // No arm but the bypass. Moderation internals: the decision, the
+    // rationale, `moderatorRef`.
+    ['ModerationAction', ['superuser_bypass']],
+    // Also bypass-only, and deliberately NOT recipient-readable. DSA Art 17
+    // gives the recipient a right to the statement, satisfied by DELIVERY (a
+    // push, in their language per P5.4) rather than by read access — and a
+    // recipient arm would be row-level, exposing `actionId` and through it the
+    // moderation rationale.
+    ['StatementOfReasons', ['superuser_bypass']],
 ]);
 
 // Models that are GLOBAL BY DESIGN — deliberately readable across every
@@ -284,6 +328,7 @@ const CLASSIFIED: ReadonlyMap<string, string> = new Map([
     ...[...ORG_SCOPED_MODELS.keys()].map((m) => [m, 'org-scoped'] as const),
     ...[...CROSS_TENANT_SCOPED_MODELS.keys()].map((m) => [m, 'cross-tenant-fk'] as const),
     ...[...PARTY_SCOPED_MODELS.keys()].map((m) => [m, 'party-scoped'] as const),
+    ...[...PLATFORM_ONLY_RLS_MODELS.keys()].map((m) => [m, 'platform-only-rls'] as const),
     ...[...GLOBAL_BY_DESIGN_MODELS.keys()].map((m) => [m, 'global-by-design'] as const),
     ...[...NO_RLS_NOT_APP_USER_MODELS.keys()].map((m) => [m, 'no-rls-not-app-user'] as const),
 ]);
@@ -322,6 +367,7 @@ describe('Guardrail: every model is classified (no database required)', () => {
         for (const m of ORG_SCOPED_MODELS.keys()) add(m, 'org-scoped');
         for (const m of CROSS_TENANT_SCOPED_MODELS.keys()) add(m, 'cross-tenant-fk');
         for (const m of PARTY_SCOPED_MODELS.keys()) add(m, 'party-scoped');
+        for (const m of PLATFORM_ONLY_RLS_MODELS.keys()) add(m, 'platform-only-rls');
         for (const m of GLOBAL_BY_DESIGN_MODELS.keys()) add(m, 'global-by-design');
         for (const m of NO_RLS_NOT_APP_USER_MODELS.keys()) add(m, 'no-rls-not-app-user');
         const dupes = [...seen].filter(([, v]) => v.length > 1);
@@ -838,6 +884,54 @@ describeFn(DB_SUITE_NAME, () => {
                     `conversation is unprotected, or has lost the per-command ` +
                     `asymmetry that stops a blocked tenant unblocking itself:\n  ` +
                     problems.join('\n  '),
+            );
+        }
+    });
+
+    test('platform-only models carry EXACTLY the policies they are allowed', () => {
+        // Set EQUALITY, not containment — and that is the whole value of this
+        // test over the party-scoped one above.
+        //
+        // These tables are protected by the ABSENCE of a permissive policy for
+        // a command, not by the presence of a restrictive one. A containment
+        // check ("the policies I expect are present") therefore cannot see the
+        // regression that matters: someone adding a permissive `app_user` arm
+        // leaves every expected policy in place and passes. Equality fails.
+        //
+        // The reason the absence is the mechanism is `ALTER DEFAULT
+        // PRIVILEGES` in migration 20260323180000 — `app_user` is granted
+        // SELECT/INSERT/UPDATE/DELETE on every new table in `public`
+        // automatically, so a tenantless table is reachable the moment it is
+        // created and RLS is the only refusal.
+        const problems: string[] = [];
+        for (const [model, allowed] of PLATFORM_ONLY_RLS_MODELS) {
+            const names = policiesFor(model).sort();
+            const want = [...allowed].sort();
+            if (names.join('|') !== want.join('|')) {
+                problems.push(
+                    `${model} → policies [${names.join(', ')}], allowed [${want.join(', ')}]`,
+                );
+            }
+            if (!names.includes('superuser_bypass')) {
+                problems.push(`${model} → missing 'superuser_bypass'`);
+            }
+            if (!forcedTables.has(model)) {
+                problems.push(`${model} → FORCE ROW LEVEL SECURITY not enabled`);
+            }
+        }
+        if (problems.length > 0) {
+            throw new Error(
+                `Platform-only RLS drift (P5.1, #1553):\n  ` +
+                    problems.join('\n  ') +
+                    `\n\nThese tables are reached ONLY through a platform-admin-key ` +
+                    `surface. Every role in the enum is tenant-scoped, so a tenant ` +
+                    `permission would let an ADMIN of any one farm read every other ` +
+                    `farm's reports.\n\nAn EXTRA policy is the failure to look for: it ` +
+                    `is how an app_user arm gets added without any expected policy ` +
+                    `going missing. If a new arm is genuinely wanted, add it to ` +
+                    `PLATFORM_ONLY_RLS_MODELS in the same diff as the migration, with ` +
+                    `the reason — and for ContentReport note that RLS is ROW-level, so ` +
+                    `a new arm exposes every column of the matched row.`,
             );
         }
     });

@@ -1767,6 +1767,67 @@ character, so a naive literal matcher read a computed key as a static one.
 This is the SERVER half. The iOS flags store (P0.9) is the client half, and
 neither subsumes the other.
 
+### P5.1 — trust & safety tables, and the one policy arm that constrains a schema
+
+Four tenantless tables (#1553): `ContentReport`, `ModerationAction`,
+`StatementOfReasons`, `UserBlock`. Schema only — P5's rule ships tables one
+release before the code that writes them, so no route, UI or flag lands with
+them.
+
+**Three of them deny `app_user` outright, and the fourth is the exception that
+shapes the schema.** `ContentReport` carries
+`content_report_reporter_read` — `FOR SELECT USING ("reporterUserId" =
+current_setting('app.user_id', true))` — so a reporter can read their own
+notice back and "my reports" needs no second read path.
+
+**Postgres RLS is ROW-level, not column-level.** That arm exposes EVERY column
+of the reporter's own row, so the three-table split is load-bearing rather than
+tidy: the decision, the rationale and `moderatorRef` live on
+`ModerationAction`, which denies `app_user` entirely. Anything added to
+`ContentReport` is by construction reporter-visible, and
+`tests/guards/content-report-columns-are-reporter-safe.test.ts` refuses a new
+column without a written note saying why that is acceptable.
+
+**`app.user_id`, not `app.actor_user_id`.** Two different variables set by two
+different runners, and picking the wrong one fails SILENTLY — the unset one
+yields NULL and the arm matches nothing. `runInUserContext` sets `app.user_id`
+and no tenant (person-scoped); `runInTenantContext` sets `app.actor_user_id`
+alongside a tenant. Reports and person↔person blocks have no tenant, so they
+are person-scoped. `ExchangeBlock` uses the other one because the exchange runs
+in a tenant context — the two block tables look alike and are keyed
+differently.
+
+**`UserBlock` is ADDITIONAL to `ExchangeBlock`, never a replacement.** Person↔person
+and social, versus tenant↔person and commercial. Collapsing them would silently
+un-block every person already blocked on the exchange. Its policies are SPLIT
+per command for `ExchangeBlock`'s reason: the blocked party must be able to
+SELECT the row that refuses them, and a single `USING` clause would govern
+DELETE too and let them unblock themselves. This is deliberately the opposite
+of `UserSession`'s one-policy rule, which exists to stop an UPDATE rewriting
+`tenantId` — a column these tables do not have.
+
+**A refused UPDATE or DELETE does not raise; a refused INSERT does.** With no
+permissive policy for the command, the rows to change are selected by a
+USING clause that is effectively false, so the statement affects ZERO rows and
+returns normally. A `WITH CHECK` violation on INSERT raises `42501`. So every
+negative in `tests/integration/p5-1-trust-safety-rls.test.ts` asserts a row
+COUNT or a code, never that a call returned — and every positive asserts a
+NON-ZERO count, because a silently-unset session variable also produces zero.
+
+**All three encrypted columns are in `GLOBAL_KEK_MODELS`.** `detail`,
+`rationale` and `bodyRendered` are tenantless and encrypted, which
+`global-kek-models-covers-tenantless` requires — and here the global KEK is the
+only correct key rather than a compromise: every reader is either a platform
+admin with no tenant context or, for `ContentReport.detail`, the reporter
+reading through `runInUserContext`, which sets no tenant either. This is not
+the `PromotionLead` case, which is tenantless and deliberately on a per-tenant
+DEK because exactly one farm reads it.
+
+`ReportReasonCode` is PROVISIONAL — an enum rather than free text so a count by
+reason needs nobody to read a `detail` field (DECISION 6), but the category
+list itself is a product and legal choice still open on #1553. Adding a value
+is a trivial migration.
+
 ## Failing tests
 
 A failing test on a branch is a failing test, full stop. "Pre-existing on

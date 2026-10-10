@@ -205,6 +205,19 @@ export const GLOBAL_KEK_MODELS: ReadonlySet<string> = new Set([
     // already under. Declaring it keeps that row readable through the fan-out
     // narrowing, which stops the middleware decrypting undeclared models.
     'FeatureFlag',
+    // P5.1 (#1553). Tenantless and encrypted, so the rule above applies — and
+    // the reason is the same one FeatureFlag gives: every reader is a platform
+    // admin, reached through an API-key surface with no tenant context to
+    // resolve a DEK from.
+    //
+    // `ContentReport` additionally has a NON-platform reader — the reporter,
+    // through the `content_report_reporter_read` policy arm — and that reader
+    // reinforces rather than weakens the case. A reporter reads their own row
+    // in a PERSON context (`runInUserContext`), which sets `app.user_id` and
+    // deliberately NO `app.tenant_id`, so there is no tenant key there either.
+    'ContentReport',
+    'ModerationAction',
+    'StatementOfReasons',
 ]);
 
 /**
