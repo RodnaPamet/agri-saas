@@ -67,6 +67,40 @@ exports[`API contract — per-schema snapshots schema: AcceptTermsResult 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: ActOnNotice 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "reportId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "actionKind": {
+      "type": "string",
+      "enum": [
+        "NONE",
+        "CONTENT_REMOVED",
+        "CONTENT_DEMOTED",
+        "ACCOUNT_SUSPENDED",
+        "ACCOUNT_TERMINATED"
+      ]
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8000
+    }
+  },
+  "required": [
+    "reportId",
+    "actionKind",
+    "rationale"
+  ],
+  "description": "A moderation decision on a notice. The moderator is taken from the verified platform key and is never read from this body; the subject is denormalised from the notice."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: AdminMember 1`] = `
 "{
   "type": "object",
@@ -11690,6 +11724,119 @@ exports[`API contract — per-schema snapshots schema: PracticeCreateRequest 1`]
   ],
   "deprecated": true,
   "description": "Payload for creating a practice. Status defaults to NOT_STARTED. \`code\` carries the framework reference where one applies (e.g. ISO 27001:2022 A.5.1) and is minted as \`CTL-N\` for custom practices. Custom practices (isCustom=true) are tenant-specific."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: QueueStatement 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "actionId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "recipientUserId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "locale": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 10
+    },
+    "bodyRendered": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8000
+    }
+  },
+  "required": [
+    "actionId",
+    "recipientUserId",
+    "bodyRendered"
+  ],
+  "description": "A DSA Art 17 statement of reasons, queued for delivery. Stored rendered because what was sent is a fact, and re-rendering later from a changed template would answer a different question."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: QueuedNotice 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "subjectKind": {
+      "type": "string",
+      "enum": [
+        "LISTING",
+        "MESSAGE",
+        "PROFILE",
+        "THREAD"
+      ]
+    },
+    "subjectId": {
+      "type": "string"
+    },
+    "reasonCode": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "anonymous": {
+      "type": "boolean",
+      "description": "Whether the notifier gave an id. **Never which one** — \`reporterUserId\` is not returned. A moderator decides on the CONTENT, and knowing who reported it invites deciding on the reporter. This flag is returned because it changes whether there is anyone to answer to."
+    },
+    "detail": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The notifier’s own words, sanitised on the write path. \`null\` when they wrote nothing, or wrote only markup."
+    },
+    "snapshot": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "capturedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "captureError": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "capturedAt",
+        "captureError"
+      ],
+      "description": "Whether evidence was captured and, if not, why. \`SUBJECT_NOT_FOUND\` means the content was gone before the capture ran — the normal case for a notice about something real — and \`SUBJECT_KIND_NOT_CAPTURABLE\` means that surface has no capture path yet. The two are distinct so a deleted listing is not confused with a gap in our own code."
+    }
+  },
+  "required": [
+    "id",
+    "createdAt",
+    "subjectKind",
+    "subjectId",
+    "reasonCode",
+    "status",
+    "anonymous",
+    "detail",
+    "snapshot"
+  ],
+  "description": "A notice as the triage queue shows it."
 }"
 `;
 

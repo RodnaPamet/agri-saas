@@ -106,6 +106,21 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
         // The anonymous path has no session at all, which is the Art 16 duty
         // and the reason a tenant- or person-bound client cannot serve it.
         'trust-safety.ts',
+        // P5.4a (#1595) — the moderation console. Every table it touches
+        // denies `app_user` for every command (`ModerationAction`,
+        // `StatementOfReasons`) or admits only a reporter reading their own
+        // row (`ContentReport`), so there is no tenant or person context that
+        // COULD serve this surface: the caller is a platform admin holding an
+        // API key, with no `User` in scope at all.
+        //
+        // The global handle is therefore not a shortcut here, it is the only
+        // client the policies permit. What stands in for RLS is the route gate
+        // (`verifyPlatformApiKey`), and the defect this exemption could hide
+        // is a function here taking a tenant or user id from a request body —
+        // which is the thing to check in review. Today it takes neither:
+        // `moderatorRef` comes from the verified key generation and the
+        // subject is denormalised from the notice.
+        'moderation.ts',
         // #15 — `AgriEvent` is a GLOBAL catalogue (no tenantId / no RLS, like
         // `Unit` / `Promotion` / `Framework`). The tenant-facing READ still goes
         // through `runInTenantContext`; the global handle is used by exactly two
