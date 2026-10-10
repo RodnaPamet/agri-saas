@@ -30,11 +30,18 @@
  *
  * `reports/pdf/farm-record-diary.ts` queries `logEntry.findMany` DIRECTLY and
  * never reaches `JournalRepository`, so the ДНЕВНИК register keeps its
- * observation rows whatever this flag does. That is luck rather than design —
- * the register has its own copy of the journal read — and it is the reason the
- * owner's "the PDF stays on the Дневник" needed no code change. A guard
- * asserting the PDF is unaffected would be asserting something about a query
- * this file cannot see; `tests/integration/journal-location-filter.test.ts`
+ * observation rows whatever this flag does — which is why the owner's "the PDF
+ * stays on the Дневник" needed no code change.
+ *
+ * An earlier version of this docblock called that "luck rather than design".
+ * It is not: the register reads `operationParcel.findMany` and its own comment
+ * says the certificate snapshots come from `OperationParcel` "regardless of the
+ * journal entry's lifecycle". The independence is deliberate, and the
+ * correction matters because "we got lucky" invites somebody to tidy the
+ * duplicate read away.
+ *
+ * A guard asserting the PDF is unaffected would still be asserting something
+ * about a query this file cannot see; `tests/integration/journal-location-filter.test.ts`
  * covers the behaviour that matters.
  */
 import * as fs from 'fs';
