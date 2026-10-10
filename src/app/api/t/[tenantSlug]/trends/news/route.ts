@@ -7,13 +7,26 @@ import { getMarketNews } from '@/app-layer/usecases/trends';
 import { TrendNewsQuerySchema } from '@/app-layer/schemas/trends.schemas';
 
 /**
- * GET /api/t/[tenantSlug]/trends/news?category=&limit=
+ * GET /api/t/[tenantSlug]/trends/news?category=&limit=&tags=&q=&cursor=
  *
- * Returns the GLOBAL aggregated agri-news feed (Trends → News tab), optionally
- * filtered by category ('market' | 'policy' | 'general' | 'all'), newest first.
- * Tenant-authed (getTenantCtx) — read-tier rate limiting applies at the edge.
- * The response is Redis-cached (1h) inside the usecase; the payload is
- * tenant-agnostic.
+ * Returns the GLOBAL aggregated agri-news feed (Trends → News tab), newest
+ * first, optionally filtered by category ('market' | 'policy' | 'general' |
+ * 'all'), by `tags` (comma-separated, ANY-OF) and by a `q` search over title +
+ * summary, paged by an opaque `cursor`. Tenant-authed (getTenantCtx) —
+ * read-tier rate limiting applies at the edge. Redis-cached (1h) inside the
+ * usecase except for searches; the payload is tenant-agnostic.
+ *
+ * The response ECHOES `category`, `tags` and `q` — every filter actually
+ * applied. `category` in particular is not optional: the installed iOS build
+ * decodes it as a required String. The echo is how a client tells a stale
+ * payload from the one it asked for, and how it discovers that a stored tag
+ * preference has been renamed away (it asked for two tags and got one back).
+ *
+ * The preferences stored at `/api/me/news-preferences` are NOT applied here
+ * implicitly, and that is load-bearing rather than lazy: this payload is
+ * cached under a key shared by every reader, so filtering by the caller's own
+ * preferences would write one person's feed into the entry everybody else
+ * reads. Clients resolve their preferences and pass `tags` explicitly.
  */
 export const GET = withApiErrorHandling(
     async (
@@ -38,7 +51,11 @@ export const GET = withApiErrorHandling(
         const query = TrendNewsQuerySchema.parse(
             Object.fromEntries(req.nextUrl.searchParams.entries()),
         );
-        const payload = await getMarketNews(query.category, query.limit);
+        const payload = await getMarketNews(query.category, query.limit, {
+            tags: query.tags,
+            q: query.q ?? null,
+            cursor: query.cursor ?? null,
+        });
         // Weak ETag + If-None-Match → 304. Both trends GETs are hot
         // list-reads on a mobile-first product over rural LTE, which is
         // exactly the cold-start data-cost convention's target.

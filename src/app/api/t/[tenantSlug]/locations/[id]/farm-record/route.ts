@@ -20,11 +20,30 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { z } from 'zod';
 import { contentDisposition } from '@/lib/http/content-disposition';
+import { requestTimestamp } from '@/lib/schemas/timestamp';
 
+/**
+ * The period is DAY-typed and must be parseable (#1575).
+ *
+ * `from`/`to` were a bare `z.string().min(1)`, and
+ * `farm-record-diary.ts:871-872` converts them unchecked into two Prisma date
+ * filters (`:910`, `:1036`). Verified behaviourally: an Invalid Date in a
+ * `gte` filter throws `PrismaClientValidationError`, so `{"from":"abcd"}` was
+ * a 500 where the contract says 400. `grep -c isNaN` over the whole generator
+ * returns 0.
+ *
+ * `requestTimestamp()` rather than `instantTimestamp()`: a farm-record period
+ * is days in a register, and agrent-ios sends these as `BgDate.isoDay`. Both a
+ * day and an instant must keep working.
+ *
+ * `.min(1)` is kept after the refinement — it carries the field-specific
+ * message the API already returns, and the refinement alone would accept a
+ * short-but-parseable value like `'2026'`.
+ */
 const BodySchema = z
     .object({
-        from: z.string().min(1, 'from is required'),
-        to: z.string().min(1, 'to is required'),
+        from: requestTimestamp().min(1, 'from is required'),
+        to: requestTimestamp().min(1, 'to is required'),
         save: z.boolean().optional().default(false),
     })
     .strip();

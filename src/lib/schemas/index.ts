@@ -16,7 +16,7 @@ import { z } from '@/lib/openapi/zod';
 import { httpsUrl } from '@/lib/schemas/url';
 import { normaliseTechnique } from '@/lib/agro/application-techniques';
 import { REGULATORY } from '@/app-layer/schemas/catalog.schemas';
-import { instantTimestamp } from './timestamp';
+import { instantTimestamp, clearableTimestamp } from './timestamp';
 
 export const EmptyBodySchema = z.object({}).strip().openapi('EmptyBody', {
     description: 'Empty request body. Used by mutation endpoints whose semantics live entirely in the URL (e.g. POST /restore on a soft-deleted resource).',
@@ -39,7 +39,7 @@ export const CreateAssetSchema = z.object({
     model: z.string().optional().nullable(),
     serialNumber: z.string().optional().nullable(),
     year: z.coerce.number().int().min(1900).max(2100).optional().nullable(),
-    purchaseDate: z.string().optional().nullable(),
+    purchaseDate: clearableTimestamp().optional().nullable(),
     purchaseCost: z.coerce.number().min(0).optional().nullable(),
 }).strip().openapi('AssetCreateRequest', {
     description: 'Payload for creating a tenant agricultural asset (machine, building, equipment). Manufacturer / model / serial / location are free-text; criticality is LOW/MEDIUM/HIGH.',
@@ -60,7 +60,7 @@ export const UpdateAssetSchema = z.object({
     model: z.string().optional().nullable(),
     serialNumber: z.string().optional().nullable(),
     year: z.coerce.number().int().min(1900).max(2100).optional().nullable(),
-    purchaseDate: z.string().optional().nullable(),
+    purchaseDate: clearableTimestamp().optional().nullable(),
     purchaseCost: z.coerce.number().min(0).optional().nullable(),
 }).strip().openapi('AssetUpdateRequest', {
     description: 'Partial update for an agricultural asset. Every field is optional; only provided fields are persisted.',
@@ -137,7 +137,7 @@ const _CreateEvidenceBase = z.object({
     owner: z.string().optional().nullable(),          // Legacy free-text
     ownerUserId: z.string().optional().nullable(),    // Real user reference (preferred)
     reviewCycle: z.string().optional().nullable(),
-    nextReviewDate: z.string().optional().nullable(),
+    nextReviewDate: clearableTimestamp().optional().nullable(),
 });
 
 export const CreateEvidenceSchema = _CreateEvidenceBase.strip().openapi('EvidenceCreateRequest', {
@@ -160,7 +160,7 @@ export const UpdateEvidenceSchema = z.object({
     owner: z.string().optional().nullable(),          // Legacy free-text
     ownerUserId: z.string().optional().nullable(),    // Real user reference (preferred)
     reviewCycle: z.string().optional().nullable(),
-    nextReviewDate: z.string().optional().nullable(),
+    nextReviewDate: clearableTimestamp().optional().nullable(),
 }).strip().openapi('EvidenceUpdateRequest', {
     description: 'Partial update for an evidence record (metadata only — file content is immutable post-upload).',
 });
