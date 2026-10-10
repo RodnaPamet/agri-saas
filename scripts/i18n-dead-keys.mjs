@@ -149,7 +149,16 @@ for (const file of files) {
     if (vars.size === 0) continue;
 
     for (const [name, ns] of vars) {
-        const esc = name.replace(/\$/g, '\\$');
+        // Escape EVERY regex metacharacter, backslash included. The first
+        // version escaped only `$` — CodeQL flagged it high-severity
+        // ("Incomplete string escaping or encoding: this does not escape
+        // backslash characters in the input") on #1564, and it was right about
+        // the pattern even though a JS identifier cannot contain a backslash:
+        // the binding name comes from a regex capture over source text, so the
+        // safety argument rests on the OTHER pattern staying narrow rather
+        // than on this line being correct. Same idiom as
+        // `tests/guards/optional-deps-do-not-gate-typecheck.test.ts:90`.
+        const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         // <var>('key') / <var>("key")
         for (const m of code.matchAll(new RegExp(`\\b${esc}\\(\\s*['"]([^'"]+)['"]`, 'g'))) {
             referenced.add(`${ns}.${m[1]}`);
