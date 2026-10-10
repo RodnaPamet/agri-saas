@@ -255,6 +255,28 @@ export const CostEntryDTOSchema = z
 
 export type CostEntryDTO = z.infer<typeof CostEntryDTOSchema>;
 
+/**
+ * The response to a cost SHEET (#1524).
+ *
+ * `{ lines: [...] }` rather than a bare array, so the envelope can gain a
+ * field later without breaking a client that decoded a top-level list — the
+ * same reasoning the list reads already use.
+ *
+ * Lines come back in the order they were SENT, including on a replay. That is
+ * worth stating in the contract because it is not free: the per-line
+ * idempotency keys sort lexicographically, so the database's own order puts
+ * `:10` between `:1` and `:2` and a client pairing rows positionally would
+ * show a figure against the wrong line.
+ */
+export const CostEntryBatchResponseSchema = z
+    .object({ lines: z.array(CostEntryDTOSchema) })
+    .openapi('CostEntryBatchResponse', {
+        description:
+            'Every entry created by one cost sheet, in the order the lines were sent. On a replay of the same Idempotency-Key, the originally created rows — never a second booking.',
+    });
+
+export type CostEntryBatchResponse = z.infer<typeof CostEntryBatchResponseSchema>;
+
 // ─── GrainBin ───
 // BinDto (grain-bin.ts). A BIN/STORAGE Location with computed fill.
 
