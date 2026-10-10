@@ -219,7 +219,7 @@ const ROOT = path.resolve(__dirname, '../..');
 // possible ЕГН in a URL that iOS CFNetwork logs), a valid-looking ЕГН blocks
 // the step rather than warning, and step 6 never implies the ЕИК was
 // ACCEPTED because `pending_review` is returned unconditionally.
-const RENDERED_TEST_FLOOR = 248;
+const RENDERED_TEST_FLOOR = 249;
 // Raised 246 -> 247 for `field-operation-panel-if-match.test.tsx` (#1370):
 // the online map panel marked prescription lines with no `If-Match`, a
 // silent last-write-wins on a row that stamps a regulatory date. Raised to

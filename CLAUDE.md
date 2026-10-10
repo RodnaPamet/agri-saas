@@ -1943,6 +1943,57 @@ literals only, so an operator can find the flag by reading the route. And
 unsuppressably, and a third party's user id in a device log is the disclosure
 this phase exists to prevent.
 
+### P5.3 — «Сигнализирай» and «Блокирай», two controls that must not read alike
+
+One `ReportDialog` for every subject kind, three thin `ReportButton` triggers
+(listing, message, thread), and a `BlockPersonButton` (#1594). All under
+`src/components/trust-safety/`.
+
+**The report control is NOT gated; the block control is.** Filing a DSA Art 16
+notice is a legal duty and cannot default OFF, so `ReportButton` takes no
+`enabled` prop at all — if one is ever added, the rendered test is where it
+shows. `BlockPersonButton` gates on `social.person-blocks`, resolved on the
+SERVER page and passed down: there is no client-side flags hook in this
+codebase, and adding one would be a second source of truth for a kill switch.
+With the flag off it renders **nothing** — not a disabled button, which would
+advertise a feature that does not exist.
+
+**Both block controls sit on the same thread header with opposite disclosure
+rules.** The copy carries the distinction, because nothing else can:
+
+| | exchange block | person block |
+|---|---|---|
+| label | «Блокирай купувача» | «Блокирай потребителя» |
+| who presses it | the seller only | either person |
+| the other party | **is told** — sees «Този продавач не приема съобщения от Вас.» | told **nothing**; the thread disappears from their side |
+
+`blockPerson.notTold` says so to the BLOCKER, the only person who can read it —
+concealing a person's own action from themselves would be the wrong kind of
+silence. `blockPerson.distinctFromExchange` is the other half, for a seller who
+has both controls.
+
+**Paths are literal, not `useTenantApiUrl()`.** Every other call in the
+exchange code builds `/api/t/{tenantSlug}/…`, so reaching for that helper here
+is the natural mistake — and these routes are deliberately person-scoped
+because the reporter-read and block policies key on `app.user_id`, which only
+`runInUserContext` sets. A tenant route would read zero rows with no error.
+
+**The person-block control appears only once the other party has written.** The
+thread payload names people only on messages, so the counterparty is the sender
+of the first message that is not `mine`. That matches `blockExchangeParty`'s own
+standing rule — "you can only block someone who has already written to you" —
+rather than being a limitation to work around.
+
+**«Сигнализирай» is not offered on your own messages or on a deleted one.**
+`remove` is the control for your own; offering both would read as a choice
+between them. A deleted message has nothing to capture, and its snapshot would
+be an empty body indistinguishable from a capture failure.
+
+**The reason list is a `Combobox`** — `epic55-native-select-ratchet` caps native
+`<select>` and may only go down. `MISLEADING_LISTING` carries its hint inside
+the option label ("the grade, quantity, origin or certification is wrong")
+because it is the agricultural case a generic category list would miss.
+
 ## Failing tests
 
 A failing test on a branch is a failing test, full stop. "Pre-existing on

@@ -6498,5 +6498,50 @@
             },
             "goToBilling": "Billing"
         }
+    },
+    "trustSafety": {
+        "report": {
+            "trigger": "Report",
+            "triggerAria": "Report this content",
+            "title": "Report content",
+            "intro": "Tell us what is wrong and we will look at it. You can report without giving a reason in your own words.",
+            "reasonLabel": "What is the problem?",
+            "reasonPlaceholder": "Choose a reason",
+            "detailLabel": "Anything you want to add (optional)",
+            "detailPlaceholder": "What should we look at?",
+            "detailHint": "Do not include anyone's personal data that is not already in the content you are reporting.",
+            "submit": "Send report",
+            "cancel": "Cancel",
+            "close": "Close",
+            "sending": "Sending…",
+            "sent": "Report sent",
+            "sentBody": "We have it. You can see what came of it under your reports.",
+            "myReports": "My reports",
+            "failed": "The report could not be sent. Please try again.",
+            "reason": {
+                "ILLEGAL_CONTENT": "Against the law",
+                "SCAM_OR_FRAUD": "A scam or fraud",
+                "SPAM": "Spam or repeated posting",
+                "HARASSMENT_OR_HATE": "Harassment or hate speech",
+                "MISLEADING_LISTING": "The listing is not what it claims",
+                "MISLEADING_LISTING_HINT": "The grade, quantity, origin or certification is wrong",
+                "INTELLECTUAL_PROPERTY": "Copyright or trade mark",
+                "PERSONAL_DATA": "Someone's personal data",
+                "OTHER": "Something else"
+            }
+        },
+        "blockPerson": {
+            "trigger": "Block this person",
+            "unblockTrigger": "Unblock this person",
+            "title": "Block this person?",
+            "body": "They will not be able to start a conversation with you or write in one you already share. Your conversation with them disappears from their side.",
+            "notTold": "They are not told that you blocked them.",
+            "distinctFromExchange": "This is separate from refusing a buyer on one of your listings.",
+            "confirm": "Block",
+            "cancel": "Cancel",
+            "blocked": "Blocked",
+            "unblocked": "Unblocked",
+            "failed": "That could not be changed. Please try again."
+        }
     }
 }

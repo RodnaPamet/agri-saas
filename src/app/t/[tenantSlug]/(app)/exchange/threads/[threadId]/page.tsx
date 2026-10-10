@@ -1,4 +1,5 @@
 import { getTenantCtx } from '@/app-layer/context';
+import { isFeatureEnabled } from '@/lib/feature-flags';
 import { requireModule } from '@/lib/security/require-module';
 import { ThreadClient } from './ThreadClient';
 
@@ -19,5 +20,10 @@ export default async function ExchangeThreadPage({
     const { tenantSlug, threadId } = await params;
     const ctx = await getTenantCtx({ tenantSlug });
     await requireModule(ctx, 'EXCHANGE');
-    return <ThreadClient threadId={threadId} />;
+    // P5.3 — the person-block control is gated; the report control is not,
+    // because filing a DSA Art 16 notice is a legal duty. Resolved HERE
+    // because there is no client-side flags hook, and the route gates again
+    // independently: a client that kept the button still gets a 404.
+    const personBlocksEnabled = await isFeatureEnabled('social.person-blocks', ctx.userId);
+    return <ThreadClient threadId={threadId} personBlocksEnabled={personBlocksEnabled} />;
 }
