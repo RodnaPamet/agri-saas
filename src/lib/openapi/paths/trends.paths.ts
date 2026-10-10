@@ -54,7 +54,7 @@ import {
 } from '@/app-layer/schemas/trends.schemas';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { op } from './helpers';
-import { ManualPriceSeriesSchema } from '@/app-layer/schemas/market-manual.schemas';
+import { PriceOverrideDaySchema } from '@/app-layer/schemas/market-manual.schemas';
 
 const TenantParams = z.object({
     tenantSlug: z.string().openapi({ param: { name: 'tenantSlug', in: 'path' }, example: 'acme' }),
@@ -179,25 +179,87 @@ const OverrideParams = z.object({
     commodity: z.string().openapi({
         param: { name: 'commodity', in: 'path' },
         description:
-            'Any spelling the vocabulary resolves — `Canola`, `rapeseed`, \u00abрапица\u00bb, `diesel`. ' +
-            'One it does not cover is a 400 naming the value, never a silent no-op: ' +
-            '"cleared nothing" and "cleared a commodity you misspelled" must not look the same.',
+            'Any spelling the vocabulary resolves \u2014 `Canola`, `rapeseed`, \u00abрапица\u00bb, `diesel`. ' +
+            'A spelling it does not cover is a coded 400, and a commodity it knows but the owner ' +
+            'has not opened to overrides is a DIFFERENT coded 400: a typo and a scope decision ' +
+            'are different things to fix. Never a silent no-op \u2014 "cleared nothing" and "cleared ' +
+            'a commodity you misspelled" must not look the same.',
         example: 'wheat',
     }),
 });
 
+const PriceOverrideRow = z
+    .object({
+        commodity: z.string(),
+        entryUnit: z.string().openapi({
+            description:
+                'What to TYPE in, and what the POST will store the value under \u2014 `EUR/t` for the ' +
+                'nine crops and fertilisers, `EUR/l` for diesel. Surfaced so a client does NOT ' +
+                'hold its own copy of that split: the thing being duplicated is a UNIT, and a ' +
+                'cross-repo copy has no guard that can see both sides. When two copies disagree ' +
+                'the failure is not an error, it is a price wrong by 1000\u00d7 that renders as a number.',
+        }),
+        entryCurrency: z.string(),
+        typed: z
+            .object({
+                value: z.number(),
+                currency: z.string(),
+                unit: z.string(),
+                date: z.string(),
+            })
+            .nullable()
+            .openapi({
+                description:
+                    'The CURRENT run only. `null` after a clear, even though the typed history is ' +
+                    'kept and the audit row for the clear carries it.',
+            }),
+        api: z
+            .object({
+                value: z.number(),
+                currency: z.string(),
+                unit: z.string(),
+                date: z.string(),
+                source: z.string(),
+            })
+            .nullable()
+            .openapi({
+                description:
+                    'The feed\u2019s current price, so the form can show what the override is replacing. ' +
+                    'A hand-entered `manual` price is NOT reported here: it is a typed price too, and ' +
+                    'presenting it as the API\u2019s would say the override is replacing a feed when it is ' +
+                    'replacing somebody\u2019s typing.',
+            }),
+        apiFeed: z
+            .enum(['ec-agrifood', 'world-bank', 'oil-bulletin', 'none'])
+            .openapi({
+                description:
+                    'A DIFFERENT claim from `api`, and both are needed. `none` means no feed exists ' +
+                    'for this commodity EVER \u2014 so a typed price is the only source and clearing it ' +
+                    'leaves nothing, which a client should say before confirming. `api: null` with a ' +
+                    'real feed means the feed exists but has no current point. One empty column for ' +
+                    'both would tell the owner their override is replacing something when it is ' +
+                    'replacing nothing, and would read as a broken feed.',
+            }),
+    })
+    .openapi('PriceOverrideRow');
+
+const PriceOverrideForm = z
+    .object({ commodities: z.array(PriceOverrideRow) })
+    .openapi('PriceOverrideForm');
+
 const PriceOverrideWriteResult = z
     .object({
-        seriesId: z.string(),
-        commodity: z.string().openapi({
-            description: 'The CANONICAL commodity the spelling you sent resolved to.',
+        written: z.number().int().openapi({
+            description: 'Points written. Equal to `prices.length` on success, by construction.',
         }),
-        pointsUpserted: z.number().int(),
-        created: z.boolean().openapi({
-            description:
-                'True when this write created the override series rather than adding points to a ' +
-                'run already in progress.',
-        }),
+        series: z.array(
+            z.object({
+                commodity: z.string(),
+                seriesId: z.string(),
+                unit: z.string(),
+                currency: z.string(),
+            }),
+        ),
     })
     .openapi('PriceOverrideWriteResult');
 
@@ -206,15 +268,15 @@ const PriceOverrideClearResult = z
         commodity: z.string(),
         cleared: z.boolean().openapi({
             description:
-                'FALSE when there was nothing to clear, which is a 200 and not an error. A ' +
-                'superuser clearing an override that was never set has the outcome they wanted; a ' +
-                '404 would make an idempotent retry look like a failure.',
+                'FALSE when there was no live override, which is a 200 and not an error. A ' +
+                'superuser clearing an override that was never set has the outcome they wanted, and ' +
+                'a client retrying a clear is the normal case.',
         }),
-        pointsRemoved: z.number().int().openapi({
+        pointsWithdrawn: z.number().int().openapi({
             description:
-                'Points removed from publication. They are NOT lost — the audit row for the clear ' +
-                'carries every point\u2019s date and price, up to a stated cap, because the read path ' +
-                'has no source filter and so "absent from the payload" has to mean deleted.',
+                'Points withdrawn from publication. They are NOT deleted \u2014 the series and its ' +
+                'points are MARKED, so the typed history and the audit trail of what was typed both ' +
+                'survive.',
         }),
     })
     .openapi('PriceOverrideClearResult');
@@ -315,46 +377,70 @@ export function registerTrendsPaths(registry: OpenAPIRegistry): void {
     // ── The superuser price override (#1587) ─────────────────────────────
 
     op(registry, {
-        method: 'post',
-        path: '/api/t/{tenantSlug}/admin/price-overrides',
-        operationId: 'upsertPlatformPriceOverride',
-        summary: 'Type a price that wins for every farm',
+        method: 'get',
+        path: '/api/t/{tenantSlug}/admin/market-prices/overrides',
+        operationId: 'readPriceOverrideForm',
+        summary: '\u00ab\u0426\u0435\u043d\u0438\u00bb \u2014 what is typed, and what the feed says',
         description:
-            'Owner ruling 2026-10-10: a typed price **always wins** over the API, on every surface and for every farm, until a superuser CLEARS it. A manual override, not a stale-only fallback \u2014 chosen over "API unless missing or stale" and over "newest wins".' +
-            '\n\n**The override is published as its own series**, with a fixed `source: "platform"`, `region: "BG"`, `stage: null`, and the unit it was typed in. It appears in the same market-prices payload \u0422\u0435\u043d\u0434\u0435\u043d\u0446\u0438\u0438 and \u0422\u0430\u0431\u043b\u043e already read, beside the API series \u2014 no new endpoint and no second fetch. The six-column natural key `(source, commodity, region, stage, currency, unit)` is what makes that safe: a `platform` series cannot collide or blend with a feed\u2019s.' +
-            '\n\n**A client must prefer a marked override ACROSS unit groups, not within one.** This is the part that is easy to get wrong and silently lose. Ranking normally happens inside a `(unit, currency)` group, and the diesel bulletin is published in `EUR/1000l` while a typed diesel price is `EUR/l` \u2014 so an override in a different group is never compared against the feed and is never chosen. Marking the series is necessary and not sufficient.' +
-            '\n\n**It carries every typed day of the current run**, not only the latest, so it draws as a real line rather than a single point and a farmer can see what the platform has been setting. `lastObservedAt` is the latest typed date.' +
-            '\n\n**Units: the nine crops and fertilisers are `EUR/t`; diesel alone is `EUR/l`.** Asked of the owner directly after this issue had recorded "EUR per tonne, diesel included" via a relay. Diesel is ~1.95 EUR/l or ~1950 EUR/t, so the two are a factor of a thousand apart and a daily-typed field is where habit beats attention. The server does not special-case diesel; it REFUSES a second denomination for a commodity that already has one, because a series that changes denomination mid-history renders as one continuous line and is a lie.' +
-            '\n\n**`source: "platform"` is distinct from `"manual"` and must stay so.** `manual` fills a gap \u2014 no free feed publishes MAP at all, and the Pink Sheet carries neither MAP nor ammonium nitrate \u2014 so it has no feed to outrank. Reusing it would retroactively convert every gap-fill row ever entered into an always-wins override, with no migration and no diff that looks like a behaviour change.' +
-            '\n\n**Duplicate observation dates in one payload are refused**, naming the date. The feeds average genuine duplicate observations; two different prices typed for one day is a typo, and averaging a typo produces a number nobody entered.' +
-            '\n\nGated on `admin.manage` **inside** `PLATFORM_TENANT_SLUG`. Both halves are load-bearing: `admin.manage` is held by the OWNER of EVERY tenant, so alone it would hand any farm\u2019s owner the global price cache. The gate FAILS CLOSED \u2014 unset slug means `404` for everyone, the owner included \u2014 so this route can exist before the platform farm does, and does nothing until it exists.',
+            'One row for EVERY commodity a superuser may override, not only those with an override: the form is a list of fields rather than a list of existing entries, so a commodity with neither a typed nor a feed price is a row with both null, which is a true statement about it.' +
+            '\n\nEach row carries `entryUnit`, the denomination the POST will store the value under. Read it rather than holding a copy: the nine crops and fertilisers are `EUR/t` and diesel alone is `EUR/l`, and a client with its own copy of that split is a second source of truth whose disagreement is not an error but a price wrong by a factor of a thousand.' +
+            '\n\n`apiFeed: "none"` and `api: null` are different claims and both matter \u2014 see the field descriptions. Three of the ten commodities have no free feed anywhere, so for those a typed price is not an override at all, it is the only source.',
         tags: ['Trends'],
         params: TenantParams,
-        body: ManualPriceSeriesSchema,
         success: {
-            status: 201,
-            description: 'The override series, and how many points the write touched.',
+            status: 200,
+            description: 'A row per overridable commodity, in a fixed order.',
+            schema: PriceOverrideForm,
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/admin/market-prices/overrides',
+        operationId: 'upsertPriceOverrideDay',
+        summary: 'Type a day of prices that win for every farm',
+        description:
+            'Owner ruling 2026-10-10: a typed price **always wins** over the API, on every surface and for every farm, until a superuser CLEARS it. A manual override, not a stale-only fallback \u2014 chosen over "API unless missing or stale" and over "newest wins".' +
+            '\n\n**One DAY, all or nothing.** Up to ten commodities in one transaction, so a refusal on the tenth rolls back the first nine. A day that half-commits is worse than one that failed, because the superuser cannot tell which prices are live \u2014 and these move every farm\u2019s calculator.' +
+            '\n\n**Unit and currency are NOT accepted from you.** They are derived server-side per commodity, and that is deliberate: a caller that could choose the unit could put a per-tonne figure into the litre series, and the six-column natural key `(source, commodity, region, stage, currency, unit)` would dutifully create it. `entryUnit` on the GET tells you what will be used, as a label and a sanity check \u2014 never as an input.' +
+            '\n\n**The override is published as its own series** with a fixed `source: "platform"`, region `BG`, in the derived unit. It appears in the same market-prices payload \u0422\u0435\u043d\u0434\u0435\u043d\u0446\u0438\u0438 and \u0422\u0430\u0431\u043b\u043e already read, beside the feed\u2019s series. For the calculator\u2019s reference price it SUPPRESSES every feed series for that commodity \u2014 suppressed, not averaged and not offered as comparable, because consumers group by currency or refuse and never blend.' +
+            '\n\n**A client must prefer a marked override ACROSS unit groups, not within one.** Ranking normally happens inside a `(unit, currency)` group, and the diesel bulletin is published in `EUR/1000l` while a typed diesel price is `EUR/l` \u2014 so an override in a different group is never compared against the feed and is never chosen. Marking the series is necessary and not sufficient.' +
+            '\n\n**The 400s this raises, by `error.code`, so a client can switch on them rather than show a generic message:**' +
+            '\n\n- `DUPLICATE_COMMODITY` \u2014 the same commodity appears twice in one day, with it named in `params.commodity`. The feeds average genuine duplicate observations; two prices typed for one commodity on one day is a typo, and averaging a typo produces a number nobody entered while taking the last silently discards the first.' +
+            '\n- `UNKNOWN_COMMODITY` \u2014 a spelling the vocabulary does not resolve, echoed in `params.commodity`.' +
+            '\n- `COMMODITY_NOT_OVERRIDABLE` \u2014 a commodity the vocabulary KNOWS but the owner has not opened to overrides. A different thing to fix from a typo: `oats` has no feed either and is a plausible thing to try, but widening the list is a decision rather than a retry.' +
+            '\n- `OVERRIDE_DENOMINATION_CHANGED` \u2014 a live override for that commodity is recorded in a different unit or currency from the one the server now derives, with both in `params` as `stored` and `expected`. Clear it before typing a new one: two live overrides for one commodity in different denominations is an ambiguity no consumer can resolve, so this refuses rather than minting a second series.' +
+            '\n\nAny of them refuses the WHOLE day, before anything is written.' +
+            '\n\n**`clientMutationId` is recorded, not relied on.** Send it in the body or as `Idempotency-Key` \u2014 both are honoured, so you need not discover which. But idempotency here comes from the point upsert on `(seriesId, date)`: re-sending a day produces the identical state. These are GLOBAL tables with no `tenantId`, so the `(tenantId, clientMutationId)` convention used by the cost batch is not available and is not needed \u2014 a cost sheet accumulates, a price day does not.' +
+            '\n\nGated on `admin.manage` **inside** `PLATFORM_TENANT_SLUG`. Both halves are load-bearing: `admin.manage` is held by the OWNER of EVERY tenant, so alone it would hand any farm\u2019s owner the global price cache. The gate FAILS CLOSED \u2014 unset slug means 404 for everyone, the owner included.',
+        tags: ['Trends'],
+        params: TenantParams,
+        body: PriceOverrideDaySchema,
+        success: {
+            status: 200,
+            description: 'How many points were written, and the series they landed in.',
             schema: PriceOverrideWriteResult,
         },
     });
 
     op(registry, {
         method: 'delete',
-        path: '/api/t/{tenantSlug}/admin/price-overrides/{commodity}',
-        operationId: 'clearPlatformPriceOverride',
+        path: '/api/t/{tenantSlug}/admin/market-prices/overrides/{commodity}',
+        operationId: 'clearPriceOverride',
         summary: 'Clear the override, handing authority back to the feed',
         description:
-            'Removes the platform override for one commodity, across every region and stage. The feed\u2019s price becomes authoritative again and the `platform` series is **absent from the payload entirely** \u2014 "no platform position" is a different claim from "a platform position of nothing".' +
-            '\n\n**Clearing nothing is a 200 with `cleared: false`, not a 404.** A superuser clearing an override that was never set, or was already cleared, has exactly the outcome they wanted, and a client retrying a clear is the normal case.' +
-            '\n\n**Re-typing after a clear starts a FRESH run.** Points from before the clear are not republished. A clear is an affirmative withdrawal, not a mute: if clearing hid points that reappeared on the next type, a superuser who cleared a wrong price would see it resurrected by an unrelated later entry.' +
-            '\n\n**The typed history is not lost.** The audit row for the clear carries every point\u2019s date, price, unit and currency, up to a stated cap, and says how many it truncated. The rows themselves are deleted because the read path has NO source filter \u2014 which is why a `platform` series needs no read-side change to appear, and equally why anything left in the table would stay visible.' +
-            '\n\nSame gate as the write, and it fails closed the same way.',
+            'Ends the override run for one commodity, across every region and stage. The feed becomes authoritative again and the `platform` series is **absent from the payload entirely** \u2014 "no platform position" is a different claim from "a platform position of nothing".' +
+            '\n\n**It MARKS; it does not delete.** The series and its points are stamped, so the typed history survives and so does the audit trail of what was typed. The read path excludes a cleared series and its stamped points, which is what makes "cleared" and "absent" the same thing to a client without the rows going anywhere.' +
+            '\n\n**Re-typing after a clear starts a FRESH run.** Points from before the clear are never republished. A clear is an affirmative withdrawal, not a mute: if clearing hid points that reappeared on the next type, a superuser who cleared a wrong price would see it resurrected by an unrelated later entry. This is why the stamp is on the POINT as well as the series \u2014 the natural key is unique, so a re-type resolves to the same series row, and un-clearing that row alone would bring the whole previous run back.' +
+            '\n\n**Clearing nothing is a 200 with `cleared: false`**, not a 404. A client retrying a clear is the normal case rather than the odd one.' +
+            '\n\nFor a commodity whose `apiFeed` is `"none"`, clearing leaves the calculator with NO price for that crop \u2014 a client should say so before confirming, because it will look like data loss otherwise. A request body is ignored.' +
+            '\n\nSame gate as the write, failing closed the same way.',
         tags: ['Trends'],
         params: OverrideParams,
         success: {
             status: 200,
             description:
-                'What was cleared. `cleared: false` with `pointsRemoved: 0` when there was no override.',
+                'What was cleared. `cleared: false` with `pointsWithdrawn: 0` when there was no live override.',
             schema: PriceOverrideClearResult,
         },
     });

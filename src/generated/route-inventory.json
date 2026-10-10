@@ -663,12 +663,12 @@
     {
       "path": "/api/t/{tenantSlug}/admin/market-prices/overrides",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/admin/market-prices/overrides/{commodity}",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/admin/members",
@@ -709,16 +709,6 @@
       "path": "/api/t/{tenantSlug}/admin/modules",
       "status": "live",
       "documented": false
-    },
-    {
-      "path": "/api/t/{tenantSlug}/admin/price-overrides",
-      "status": "live",
-      "documented": true
-    },
-    {
-      "path": "/api/t/{tenantSlug}/admin/price-overrides/{commodity}",
-      "status": "live",
-      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/admin/promotions",

@@ -11,7 +11,7 @@
  * through becomes indistinguishable from a quote at the point where it
  * matters — someone deciding when to buy a lorry of urea.
  */
-import { z } from 'zod';
+import { z } from '@/lib/openapi/zod';
 
 /** Day-granular observation date, as `YYYY-MM-DD`. */
 const ObservationDate = z
