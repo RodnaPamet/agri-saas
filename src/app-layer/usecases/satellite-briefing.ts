@@ -197,7 +197,12 @@ export async function getFieldBriefing(ctx: RequestContext): Promise<FieldBriefi
     const season = await getSeasonRecap(ctx).catch(() => null);
     const [tasks, journal] = await Promise.all([
         listMyFarmTasks(ctx).catch(() => []),
-        listLogEntries(ctx).catch(() => []),
+        // `includeTaskWritten` — the briefing is the ONE journal reader that
+        // keeps seeing task-written entries. Its job is to summarise what
+        // happened on the farm, and a briefing blind to spraying is less
+        // useful rather than tidier (owner ruling 2026-10-10, the same one
+        // that made the journal itself manual-only).
+        listLogEntries(ctx, { includeTaskWritten: true }).catch(() => []),
     ]);
 
     // Pin the briefing's output language to the operator's UI locale (bg → Bulgarian).

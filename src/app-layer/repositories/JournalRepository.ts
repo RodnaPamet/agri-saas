@@ -88,6 +88,30 @@ export interface UpdateLogEntryInput {
 }
 
 export interface LogEntryFilters {
+    /**
+     * Include entries the TASK flow wrote, not just what a person typed.
+     *
+     * Owner ruling 2026-10-10: «journal should be entered manually only and
+     * tasks list should appear only in tasks». The journal, its API and the
+     * dashboard strip therefore show MANUAL entries only, and this flag
+     * defaults to the journal's own semantics rather than to the old
+     * behaviour — a new caller inherits "what a person typed", which is what
+     * the journal now means.
+     *
+     * The ONE caller that opts in is `satellite-briefing`: its job is to
+     * summarise what happened on the farm, and a briefing blind to spraying is
+     * less useful rather than tidier (owner, same ruling — "keep the briefing
+     * fed"). The dashboard strip does NOT opt in, so it cannot disagree with
+     * the journal page beside it about what the journal contains.
+     *
+     * It is a READ rule and nothing is deleted. `recordInputApplication` keeps
+     * writing the row, so the ДНЕВНИК PDF, the task lines and `cost-rollup`'s
+     * join through `CONSUMPTION.logEntryId` are all untouched — and flipping
+     * this flag restores every hidden entry. The PDF is unaffected for a
+     * second reason worth knowing: `reports/pdf/farm-record-diary.ts` queries
+     * `logEntry.findMany` DIRECTLY and never reaches this builder.
+     */
+    includeTaskWritten?: boolean;
     // ARRAYS — multiple:true facets, parsed at the route.
     type?: LogEntryType[];
     status?: LogEntryStatus[];
@@ -214,6 +238,19 @@ export class JournalRepository {
 
     private static _buildWhere(ctx: RequestContext, filters?: LogEntryFilters): Prisma.LogEntryWhereInput {
         const where: Prisma.LogEntryWhereInput = { tenantId: ctx.tenantId, deletedAt: null };
+
+        // MANUAL ENTRIES ONLY, unless a caller explicitly asks otherwise.
+        //
+        // `recordInputApplication` sets `operationParcelId` on the
+        // INPUT_APPLICATION entry it writes for a completed spray line, and
+        // that column is the only thing distinguishing a task-written entry
+        // from one a person typed. Owner ruling 2026-10-10.
+        //
+        // `null`, not `{ not: null }` inverted later: a journal entry created
+        // by hand never carries an operation line, so this is the whole test.
+        if (filters?.includeTaskWritten !== true) {
+            where.operationParcelId = null;
+        }
 
         // Guarded on `.length`: a CLEARED facet must OMIT the filter —
         // `{ in: [] }` matches nothing and would blank the table.
