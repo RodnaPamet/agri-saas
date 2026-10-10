@@ -35,6 +35,7 @@ import { FilterToolbar } from '@/components/filters/FilterToolbar';
 import { ListPageShell } from '@/components/layout/ListPageShell';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { Button } from '@/components/ui/button';
+import { ReportButton } from '@/components/trust-safety/ReportButton';
 import { Plus } from '@/components/ui/icons/nucleo';
 import { Fab } from '@/components/ui/fab';
 import { PullToRefresh, useCursorPagination } from '@/components/ui/hooks';
@@ -653,6 +654,24 @@ function ExchangeInner() {
                                     {openThreadFailed && (
                                         <p className="text-xs text-content-error">{tMsg('openFailed')}</p>
                                     )}
+                                    {/* «Сигнализирай» on a LISTING — the third
+                                        subject kind, and the one an anonymous
+                                        public notice will also name once P5.2's
+                                        public form has a page.
+
+                                        Not flag-gated: a DSA Art 16 notice is
+                                        a legal duty. Deliberately NOT beside a
+                                        person-block control here — a listing
+                                        names a farm, and the person to block is
+                                        only identifiable once someone has
+                                        written to you, which is the exchange
+                                        block's own standing rule. */}
+                                    <ReportButton
+                                        subjectKind="LISTING"
+                                        subjectId={selectedOffer.id}
+                                        variant="ghost"
+                                        size="sm"
+                                    />
                                 </div>
                             )}
                         </div>

@@ -17,7 +17,7 @@
  * backwards — so two tabs, or a slow response overtaking a fast one, cannot
  * rewind it. That is why this component coordinates with nothing.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { Button } from '@/components/ui/button';
@@ -26,6 +26,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { useEnterSubmit } from '@/components/ui/hooks';
 import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { apiDelete, apiGet, apiPost } from '@/lib/api-client';
+import { ReportButton } from '@/components/trust-safety/ReportButton';
+import { BlockPersonButton } from '@/components/trust-safety/BlockPersonButton';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 
@@ -33,6 +35,15 @@ import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 interface ThreadMessage {
     id: string;
     senderTenantId: string;
+    /**
+     * Who sent it, as a person. Already in the payload and in the published
+     * contract — this local type simply did not declare it, so P5.3 adds the
+     * declaration rather than the field.
+     *
+     * It is what gives the person-block control a target: the counterparty is
+     * the sender of the first message that is not `mine`.
+     */
+    senderUserId: string;
     mine: boolean;
     body: string | null;
     deleted: boolean;
@@ -51,7 +62,18 @@ interface ThreadDetail {
     messages: ThreadMessage[];
 }
 
-export function ThreadClient({ threadId }: { threadId: string }) {
+export function ThreadClient({
+    threadId,
+    personBlocksEnabled = false,
+}: {
+    threadId: string;
+    /**
+     * `social.person-blocks`, resolved on the server. There is no client-side
+     * flags hook in this codebase and inventing one would be a second source
+     * of truth for a kill switch.
+     */
+    personBlocksEnabled?: boolean;
+}) {
     const { formatDateTime } = useDateFormat();
     const t = useTranslations('exchange.messaging');
     const tenantHref = useTenantHref();
@@ -149,6 +171,19 @@ export function ThreadClient({ threadId }: { threadId: string }) {
         [buildApiUrl, mutate],
     );
 
+    // The other person on this thread, for the person-block control.
+    //
+    // Taken from the first message that is not `mine` rather than from a
+    // dedicated field, because the payload names people only on messages. The
+    // consequence is deliberate and matches the exchange block's own standing
+    // rule — "you can only block someone who has already written to you"
+    // (`blockExchangeParty`): until they have written, there is nobody to
+    // name and the control does not appear.
+    const counterpartyUserId = useMemo(
+        () => data?.messages.find((m) => !m.mine)?.senderUserId ?? null,
+        [data],
+    );
+
     const olderCursor = walkedCursor === undefined ? (data?.olderCursor ?? null) : walkedCursor;
 
     const loadOlder = useCallback(async () => {
@@ -199,6 +234,27 @@ export function ThreadClient({ threadId }: { threadId: string }) {
             actions={
                 data ? (
                     <div className="flex items-center gap-tight">
+                        {/* «Сигнализирай» — the THREAD as a whole. Not
+                            flag-gated: filing a DSA Art 16 notice is a legal
+                            duty. Per-message triggers sit on the rows. */}
+                        <ReportButton subjectKind="THREAD" subjectId={data.id} />
+
+                        {/* «Блокирай потребителя» — the PERSON block, and it
+                            sits deliberately next to the exchange block below
+                            so the difference is visible in one place.
+                            Opposite disclosure rules: the exchange block TELLS
+                            the buyer, this one reveals nothing. Gated; the
+                            exchange block is not. */}
+                        {counterpartyUserId ? (
+                            <BlockPersonButton
+                                blockedUserId={counterpartyUserId}
+                                enabled={personBlocksEnabled}
+                                // SWR revalidate, the same refresh the
+                                // exchange block uses.
+                                onChanged={() => { void mutate(); }}
+                            />
+                        ) : null}
+
                         {/* Seller only — the buyer has no mirror control. */}
                         {data.role === 'seller' ? (
                             <Button
@@ -257,6 +313,28 @@ export function ThreadClient({ threadId }: { threadId: string }) {
                                         >
                                             {t('remove')}
                                         </Button>
+                                    ) : null}
+                                    {/* «Сигнализирай» on the OTHER party's
+                                        messages only. Reporting your own is
+                                        not a thing, and `remove` above is the
+                                        control for it — offering both on the
+                                        same row would read as a choice
+                                        between them.
+
+                                        Also not on a deleted message: there
+                                        is nothing left to capture, and the
+                                        snapshot would record an empty body
+                                        with no way to tell that from a
+                                        capture failure. */}
+                                    {!m.mine && !m.deleted ? (
+                                        <span className="ml-auto">
+                                            <ReportButton
+                                                subjectKind="MESSAGE"
+                                                subjectId={m.id}
+                                                variant="ghost"
+                                                size="sm"
+                                            />
+                                        </span>
                                     ) : null}
                                 </div>
                                 {/*
