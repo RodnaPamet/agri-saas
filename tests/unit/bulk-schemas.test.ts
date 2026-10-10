@@ -53,8 +53,23 @@ describe('Bulk Schemas', () => {
 
     describe('BulkDueDateSchema', () => {
         it('validates valid due date payload', () => {
-            const result = BulkDueDateSchema.safeParse({ taskIds: ['id1'], dueAt: '2025-12-31' });
+            const result = BulkDueDateSchema.safeParse({
+                taskIds: ['id1'],
+                dueAt: '2025-12-31T00:00:00.000Z',
+            });
             expect(result.success).toBe(true);
+        });
+
+        it('refuses a bare day — the field declares format: date-time (#1443)', () => {
+            // This fixture WAS `'2025-12-31'` and passed. It no longer does,
+            // and that is the change: the bulk-due handler sends
+            // `ymdToInstant(bulkValue)` now, so the server enforces the format
+            // the spec publishes instead of accepting two shapes for one
+            // field. Kept as an explicit rejection rather than just converted,
+            // so the narrowing cannot be undone without this failing.
+            expect(BulkDueDateSchema.safeParse({ taskIds: ['id1'], dueAt: '2025-12-31' }).success).toBe(
+                false,
+            );
         });
 
         it('allows null dueAt to clear due date', () => {

@@ -32,7 +32,12 @@
  */
 import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
-import { CreateLocationSchema, UpdateLocationSchema, CreateFieldOperationSchema } from '@/lib/schemas';
+import {
+    CreateLocationSchema,
+    UpdateLocationSchema,
+    CreateFieldOperationSchema,
+    BulkDeleteLocationsSchema,
+} from '@/lib/schemas';
 import {
     CreateParcelSchema,
     UpdateParcelSchema,
@@ -235,11 +240,7 @@ const LocationUpdated = z
             'Location row with no wrapper.',
     });
 
-const LocationBulkDeleteRequest = z
-    .object({ locationIds: z.array(z.string().min(1)).min(1).max(100) })
-    .openapi('LocationBulkDeleteRequest', {
-        description: 'Mirrors the schema declared inside the bulk-delete route handler.',
-    });
+
 
 const LocationBulkDeleteResult = z
     .object({ deleted: z.number().int() })
@@ -819,7 +820,7 @@ export function registerLocationPaths(registry: OpenAPIRegistry): void {
             'roll back anyway.',
         tags: ['Locations'],
         params: TenantParams,
-        body: LocationBulkDeleteRequest,
+        body: BulkDeleteLocationsSchema,
         success: { status: 200, description: 'How many were deleted.', schema: LocationBulkDeleteResult },
     });
 

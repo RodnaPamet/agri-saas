@@ -15,6 +15,8 @@
  */
 import { z } from 'zod';
 
+import { requestTimestamp } from '@/lib/schemas/timestamp';
+
 export const LotQuerySchema = z
     .object({
         itemId: z.string().optional(),
@@ -28,8 +30,23 @@ export const CreateLotSchema = z
         itemId: z.string().min(1),
         lotCode: z.string().min(1).max(120),
         locationId: z.string().nullable().optional(),
-        expiresAt: z.string().nullable().optional(),
-        receivedAt: z.string().nullable().optional(),
+        /**
+         * Both validated rather than bare `z.string()` (#1558). They reached
+         * `inventory.ts:208-209` as
+         * `input.expiresAt ? new Date(input.expiresAt) : null` with no
+         * `isNaN` check on the path, so `expiresAt: "abcd"` became an
+         * `Invalid Date`, Prisma refused it, and the route answered **500**
+         * where the contract says 400.
+         *
+         * `requestTimestamp()` and not `instantTimestamp()`: an expiry or
+         * receipt is as plausibly a day as an instant, and the web client
+         * sends `expiresAt` as a full instant while sending `receivedAt` not
+         * at all — so accepting both shapes costs nothing and refusing a day
+         * would be a contract decision nobody has asked for. The only inputs
+         * newly rejected are the ones that used to 500.
+         */
+        expiresAt: requestTimestamp().nullable().optional(),
+        receivedAt: requestTimestamp().nullable().optional(),
         unitCostAmount: z.number().nonnegative().nullable().optional(),
         unitCostCurrency: z.string().max(8).nullable().optional(),
         initialQuantity: z.number().nonnegative().nullable().optional(),

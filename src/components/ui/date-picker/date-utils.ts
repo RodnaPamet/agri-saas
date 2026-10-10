@@ -80,6 +80,30 @@ export function parseYMD(input: string | null | undefined): Date | null {
  * when handing a Date to a component that treats "the same day" as
  * equality.
  */
+/**
+ * A `YYYY-MM-DD` day as the RFC 3339 instant the API expects.
+ *
+ * Every date input in the app is the same `DatePicker`, and its `onChange`
+ * stores `toYMD(next)` — a bare day. Some submit handlers then posted that
+ * string raw while others called `.toISOString()` first, so one request field
+ * received two different shapes depending on which form you used (#1443).
+ *
+ * The request schemas now declare and ENFORCE `format: date-time`, so the
+ * conversion has to happen on the way out. This composes it from `parseYMD`
+ * rather than `new Date(input)` on purpose: `parseYMD` rejects a rolled-over
+ * date like `2026-02-30`, which `new Date` would silently accept as March 2nd,
+ * and it already returns UTC midnight — the instant the server has been
+ * storing for these values all along. So this changes the wire format without
+ * changing any stored value.
+ *
+ * Returns `null` for empty or malformed input so callers can pass an optional
+ * field straight through.
+ */
+export function ymdToInstant(input: string | null | undefined): string | null {
+    const day = parseYMD(input);
+    return day ? day.toISOString() : null;
+}
+
 export function startOfUtcDay(date: Date): Date {
     return new Date(
         Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),

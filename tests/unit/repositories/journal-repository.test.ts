@@ -274,14 +274,62 @@ describe('JournalRepository — filter translation', () => {
         ]);
     });
 
-    it('accepts a comma-separated multi-select of crops, trimming each', async () => {
-        // Break: not trimming makes ' maize' miss every row, so a
-        // multi-select silently returns nothing for all but the first.
+    it('matches a crop through the operation line OR the linked blocks', async () => {
+        // TWO paths since the journal went manual-only (#1560). Path 1 reaches
+        // only task-written entries, which just the `includeTaskWritten`
+        // opt-in sees — it is not dead, `satellite-briefing` filters by crop
+        // over exactly those. Path 2 is how a MANUAL entry matches at all:
+        // a live parcel of a linked block grows the crop.
+        //
+        // Asserted as the whole clause rather than "contains path 2", so
+        // dropping path 1 as apparently-dead code fails here.
         await JournalRepository.list(asTx(db), ctx, { crop: ['wheat', 'maize', 'barley'] });
 
-        expect(whereOf(db.logEntry.findMany).operationParcel).toEqual({
-            is: { parcel: { is: { cropType: { in: ['wheat', 'maize', 'barley'] } } } },
-        });
+        const crops = { in: ['wheat', 'maize', 'barley'] };
+        expect(whereOf(db.logEntry.findMany).AND).toEqual([
+            {
+                OR: [
+                    { operationParcel: { is: { parcel: { is: { cropType: crops } } } } },
+                    {
+                        locations: {
+                            some: {
+                                location: {
+                                    is: {
+                                        parcels: {
+                                            some: { cropType: crops, deletedAt: null },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                ],
+            },
+        ]);
+    });
+
+    it('requires the matching parcel to be LIVE', async () => {
+        // The owner's word was "a live parcel of X". A soft-deleted parcel
+        // keeps its last `cropType`, so without this a block matches a crop it
+        // stopped growing — and the filter looks right while answering with
+        // history.
+        await JournalRepository.list(asTx(db), ctx, { crop: ['wheat'] });
+
+        const clause = JSON.stringify(whereOf(db.logEntry.findMany).AND);
+        expect(clause).toContain('"deletedAt":null');
+    });
+
+    it('compares cropType RAW, not normalised', async () => {
+        // `Parcel.cropType` holds the picker's capitalised values and the phone
+        // sends every stored spelling under one label (`Wheat,wheat`). A
+        // lower-casing implementation would match neither, and would look
+        // correct.
+        await JournalRepository.list(asTx(db), ctx, { crop: ['Wheat', 'Canola'] });
+
+        const clause = JSON.stringify(whereOf(db.logEntry.findMany).AND);
+        expect(clause).toContain('"Wheat"');
+        expect(clause).toContain('"Canola"');
+        expect(clause).not.toContain('"wheat"');
     });
 
     it('adds no crop filter when the value is only separators', async () => {
@@ -333,11 +381,13 @@ describe('JournalRepository — filter translation', () => {
         // two, which is the intended "this crop, in this block".
         await JournalRepository.list(asTx(db), ctx, { locationId: 'loc-1', crop: ['wheat'] });
 
+        // BOTH clauses append now rather than one assigning. Before the
+        // appending helper, whichever filter ran second silently dropped the
+        // first — a filter that WIDENS when combined with another.
         const where = whereOf(db.logEntry.findMany);
-        expect(where.operationParcel).toEqual({
-            is: { parcel: { is: { cropType: { in: ['wheat'] } } } },
-        });
-        expect(where.AND).toHaveLength(1);
+        expect(where.AND).toHaveLength(2);
+        expect(JSON.stringify(where.AND)).toContain('cropType');
+        expect(JSON.stringify(where.AND)).toContain('locationId');
     });
 
     it('a paginated read keeps the location clause alongside the cursor', async () => {

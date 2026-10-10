@@ -51,11 +51,18 @@ let sprayInA = ''; // operationParcel → parcel in A, NO LogLocation
 let handLinkedToA = ''; // LogLocation → A, no operation line
 let sprayInB = ''; // operationParcel → parcel in B
 let freeHand = ''; // no link of any kind
+/** The crop-through-blocks path (#1560): a MANUAL entry whose block grows wheat. */
+let locC = '';
+let handLinkedToC = '';
 
 const ctx = () => makeRequestContext('OWNER', { userId, tenantId, tenantSlug: `${TAG}-t` });
 
 const listByLocation = (locationId: string, extra: Record<string, unknown> = {}) =>
     runInTenantContext(ctx(), (db) => JournalRepository.list(db, ctx(), { locationId, ...extra }));
+
+/** Crop with NO block — the filter a farmer actually types on the journal. */
+const listByCrop = (crop: string[], extra: Record<string, unknown> = {}) =>
+    runInTenantContext(ctx(), (db) => JournalRepository.list(db, ctx(), { crop, ...extra }));
 
 const idsOf = (rows: unknown[]): string[] => (rows as { id: string }[]).map((r) => r.id).sort();
 
@@ -90,8 +97,29 @@ beforeAll(async () => {
     const parcelA = await globalPrisma.parcel.create({
         data: { tenantId, locationId: locA, name: `PA ${TAG}`, areaHa: 4 },
     });
+    // Parcel B carries a crop so PATH 1 stays provable. Parcel A deliberately
+    // does NOT — the pre-existing intersection test below rests on it.
     const parcelB = await globalPrisma.parcel.create({
-        data: { tenantId, locationId: locB, name: `PB ${TAG}`, areaHa: 4 },
+        data: { tenantId, locationId: locB, name: `PB ${TAG}`, areaHa: 4, cropType: 'Maize' },
+    });
+
+    // A third block for the crop-through-blocks path (#1560). One LIVE parcel
+    // growing wheat and one SOFT-DELETED parcel growing rapeseed, so the same
+    // fixture answers both questions: does a crop reach a hand-linked entry,
+    // and does a crop the block STOPPED growing still match it.
+    locC = (await globalPrisma.location.create({ data: { tenantId, name: `Block C ${TAG}` } })).id;
+    await globalPrisma.parcel.create({
+        data: { tenantId, locationId: locC, name: `PC live ${TAG}`, areaHa: 3, cropType: 'Wheat' },
+    });
+    await globalPrisma.parcel.create({
+        data: {
+            tenantId,
+            locationId: locC,
+            name: `PC retired ${TAG}`,
+            areaHa: 3,
+            cropType: 'Rapeseed',
+            deletedAt: new Date('2026-04-01T00:00:00Z'),
+        },
     });
 
     const item = await globalPrisma.item.create({
@@ -159,6 +187,17 @@ beforeAll(async () => {
     // be setting the same column the payload names.
     await globalPrisma.logLocation.create({
         data: { tenantId, logEntryId: handLinkedToA, locationId: locA },
+    });
+
+    // The entry #1560 is about: typed by a person, linked to a block, and
+    // reachable by crop ONLY through that block's parcels.
+    handLinkedToC = (
+        await globalPrisma.logEntry.create({
+            data: { tenantId, type: 'OBSERVATION', occurredAt, title: `Ръчна бележка C ${TAG}` },
+        })
+    ).id;
+    await globalPrisma.logLocation.create({
+        data: { tenantId, logEntryId: handLinkedToC, locationId: locC },
     });
 
     sprayInB = (
@@ -229,7 +268,9 @@ describeFn('journal ?locationId= and the manual-only rule (DB)', () => {
         const all = await runInTenantContext(ctx(), (db) =>
             JournalRepository.list(db, ctx(), { includeTaskWritten: true }),
         );
-        expect(idsOf(all)).toEqual([sprayInA, handLinkedToA, sprayInB, freeHand].sort());
+        expect(idsOf(all)).toEqual(
+            [sprayInA, handLinkedToA, handLinkedToC, sprayInB, freeHand].sort(),
+        );
     });
 
     describe('by default — manual entries only', () => {
@@ -237,8 +278,8 @@ describeFn('journal ?locationId= and the manual-only rule (DB)', () => {
             const rows = await runInTenantContext(ctx(), (db) =>
                 JournalRepository.list(db, ctx(), {}),
             );
-            // The two a person typed; neither spray record.
-            expect(idsOf(rows)).toEqual([handLinkedToA, freeHand].sort());
+            // The three a person typed; neither spray record.
+            expect(idsOf(rows)).toEqual([handLinkedToA, handLinkedToC, freeHand].sort());
         });
 
         it('returns only the hand-linked entry for a block', async () => {
@@ -294,6 +335,73 @@ describeFn('journal ?locationId= and the manual-only rule (DB)', () => {
         it('keeps the free-text search working alongside the block filter', async () => {
             const rows = await listByLocation(locA, { q: 'Пръскане', includeTaskWritten: true });
             expect(idsOf(rows)).toEqual([sprayInA]);
+        });
+    });
+
+    describe('crop reaches a MANUAL entry through its blocks (#1560)', () => {
+        // The owner's ask was «журналът да се филтрира по парцел/блок/култура»
+        // on a journal that now shows only what a person typed. `?crop=`
+        // matched `operationParcel` alone — the one link a manual entry never
+        // has — so crop filtering returned NOTHING for every crop, on every
+        // farm, and looked like a working filter over an empty result.
+
+        it('matches a hand-linked entry whose block grows the crop', async () => {
+            const rows = await listByCrop(['Wheat']);
+
+            expect(idsOf(rows)).toEqual([handLinkedToC]);
+        });
+
+        it('does NOT match a crop only a SOFT-DELETED parcel grows', async () => {
+            // `deletedAt: null` is the owner's word "live" doing work. A
+            // retired parcel keeps its last `cropType`, so without that term
+            // a block matches crops it stopped growing — a filter answering
+            // with history while looking current. Block C's rapeseed parcel
+            // is deleted, and the wheat assertion above proves the block
+            // itself is reachable, so an empty result here is the term
+            // working rather than the join failing.
+            const rows = await listByCrop(['Rapeseed']);
+
+            expect(idsOf(rows)).toEqual([]);
+        });
+
+        it('negative control: a crop nobody grows returns nothing', async () => {
+            // Without this, a clause that matched EVERY entry would satisfy
+            // the positive assertion above.
+            const rows = await listByCrop(['Barley']);
+
+            expect(idsOf(rows)).toEqual([]);
+        });
+
+        it('matches RAW — the picker\'s capitalisation, not a slug', async () => {
+            // `Parcel.cropType` stores `'Wheat'`; the market vocabulary is
+            // lowercase slugs. A normalising implementation would match
+            // NEITHER side here and read as "no entries for this crop".
+            expect(idsOf(await listByCrop(['wheat']))).toEqual([]);
+            expect(idsOf(await listByCrop(['Wheat']))).toEqual([handLinkedToC]);
+        });
+
+        it('keeps PATH 1 alive for the briefing', async () => {
+            // Parcel B grows maize and its only entry is a spray record with
+            // no `LogLocation` — reachable through the operation line alone.
+            // This is why path 1 is not dead code to be tidied away: hidden
+            // by default, and the single thing `satellite-briefing` opts in
+            // for.
+            expect(idsOf(await listByCrop(['Maize']))).toEqual([]);
+            expect(idsOf(await listByCrop(['Maize'], { includeTaskWritten: true }))).toEqual([
+                sprayInB,
+            ]);
+        });
+
+        it('intersects with a block filter rather than replacing it', async () => {
+            // Both filters APPEND to `where.AND` now. Before the appending
+            // helper, `locationId` assigned it and crop would have been a
+            // second assigner — whichever ran last silently dropped the
+            // other, giving a filter that WIDENS as you narrow it.
+            expect(idsOf(await listByLocation(locC, { crop: ['Wheat'] }))).toEqual([
+                handLinkedToC,
+            ]);
+            // Right crop, wrong block.
+            expect(idsOf(await listByLocation(locA, { crop: ['Wheat'] }))).toEqual([]);
         });
     });
 

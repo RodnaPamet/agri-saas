@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "10.7.1",
+    "version": "10.7.2",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -5779,7 +5779,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "applicationTechnique": {
             "type": [
@@ -7285,7 +7286,7 @@
         "required": [
           "locationIds"
         ],
-        "description": "Mirrors the schema declared inside the bulk-delete route handler."
+        "description": "Declared once in `src/lib/schemas/index.ts` and imported by both the route handler and this spec entry, so the two cannot disagree (#1555)."
       },
       "LocationBulkDeleteResult": {
         "type": "object",
@@ -7853,7 +7854,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "title": {
             "type": "string",
@@ -7977,7 +7979,8 @@
                 "type": [
                   "string",
                   "null"
-                ]
+                ],
+                "format": "date-time"
               },
               "parcelId": {
                 "type": [
@@ -8100,7 +8103,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "title": {
             "type": "string",
@@ -11697,7 +11701,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "assigneeUserId": {
             "type": [
@@ -12294,7 +12299,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "format": "date-time"
           },
           "reviewerUserId": {
             "type": [

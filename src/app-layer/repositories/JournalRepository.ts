@@ -87,6 +87,29 @@ export interface UpdateLogEntryInput {
     equipmentIds?: string[];
 }
 
+/**
+ * Append an AND clause instead of assigning one.
+ *
+ * TWO filters write `where.AND` now — `crop` and `locationId` — and
+ * `listPaginated` adds its cursor predicate on top of whatever they left. An
+ * assignment silently drops whichever ran first, and the symptom is a filter
+ * that WIDENS when you combine it with another: exactly the shape that made
+ * `where.OR` unusable for the location clause.
+ *
+ * The cursor code already appends defensively for this reason. This keeps the
+ * builder honest at its own level rather than relying on which filters a
+ * caller happens to send together.
+ */
+function andClause(
+    where: Prisma.LogEntryWhereInput,
+    clause: Prisma.LogEntryWhereInput,
+): void {
+    const existing = where.AND;
+    if (Array.isArray(existing)) existing.push(clause);
+    else if (existing) where.AND = [existing, clause];
+    else where.AND = [clause];
+}
+
 export interface LogEntryFilters {
     /**
      * Include entries the TASK flow wrote, not just what a person typed.
@@ -276,7 +299,55 @@ export class JournalRepository {
         // happens at the route like every other facet, so the repository
         // only ever sees a validated array.
         if (filters?.crop?.length) {
-            where.operationParcel = { is: { parcel: { is: { cropType: { in: filters.crop } } } } };
+            andClause(where, {
+                OR: [
+                    // Path 1 — the entry's own operation line. Only the
+                    // `includeTaskWritten` opt-in reaches these now, which is
+                    // why this arm is NOT dead: `satellite-briefing` filters
+                    // by crop over task-written entries.
+                    {
+                        operationParcel: {
+                            is: { parcel: { is: { cropType: { in: filters.crop } } } },
+                        },
+                    },
+                    // Path 2 — the crops of the blocks the entry is linked to.
+                    //
+                    // Owner ruling 2026-10-10: a manual entry linked to block X
+                    // matches crop Y when a LIVE parcel of X grows Y. Without
+                    // this, `?crop=` returns NOTHING on a manual-only journal,
+                    // because every entry path 1 can match is hidden — so the
+                    // filter would look functional and answer empty.
+                    //
+                    // `deletedAt: null` is the owner's word "live" doing work:
+                    // a soft-deleted parcel keeps its last `cropType`, so
+                    // omitting it would match a block on a crop it stopped
+                    // growing.
+                    //
+                    // Compared RAW, not normalised. `Parcel.cropType` holds the
+                    // picker's capitalised values (`'Wheat'`, `'Canola'`) while
+                    // the market vocabulary is lowercase slugs, and the phone
+                    // already sends every stored spelling under one label
+                    // («Пшеница» -> `Wheat,wheat`) built from the farm's own
+                    // parcels. Raw keeps that contract working with no client
+                    // release; normalising is a later pure widening.
+                    {
+                        locations: {
+                            some: {
+                                location: {
+                                    is: {
+                                        parcels: {
+                                            some: {
+                                                cropType: { in: filters.crop },
+                                                deletedAt: null,
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                ],
+            });
         }
         // Location — a «блок» in the owner's words: "a collection of parcels,
         // the one uploaded in the shape files". TWO paths reach one, and only
@@ -313,18 +384,16 @@ export class JournalRepository {
         // assignment, or the second page of a block-filtered journal becomes
         // the second page of the WHOLE journal.
         if (filters?.locationId) {
-            where.AND = [
-                {
-                    OR: [
-                        { locations: { some: { locationId: filters.locationId } } },
-                        {
-                            operationParcel: {
-                                is: { parcel: { is: { locationId: filters.locationId } } },
-                            },
+            andClause(where, {
+                OR: [
+                    { locations: { some: { locationId: filters.locationId } } },
+                    {
+                        operationParcel: {
+                            is: { parcel: { is: { locationId: filters.locationId } } },
                         },
-                    ],
-                },
-            ];
+                    },
+                ],
+            });
         }
         // Crop plan — entries linked (LogPlanting) to a planting of this plan.
         // LogEntry → plantings (LogPlanting[]) → planting (Planting).cropPlanId.
