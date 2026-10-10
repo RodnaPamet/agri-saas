@@ -36,31 +36,10 @@
 import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { op } from './helpers';
+import { CreateFarmSchema } from '@/lib/schemas';
 
 export function registerMeFarmsPaths(registry: OpenAPIRegistry): void {
-    const CreateFarmRequest = z
-        .object({
-            name: z.string().trim().min(1).max(120).openapi({
-                description:
-                    'The farm name as the farmer writes it, Cyrillic included. The web address is derived from it by transliteration and is NOT this value — read `farm.slug` from the response rather than deriving one.',
-                example: 'ЗК ПОБЕДА',
-            }),
-            eik: z
-                .string()
-                .trim()
-                .max(13)
-                .nullable()
-                .optional()
-                .openapi({
-                    description:
-                        'The farm\'s ЕИК, 9 or 13 digits. OMIT it for «Земеделски стопанин — физическо лице», who has none. Two refusals are specific and worth handling in the form: `EIK_LOOKS_LIKE_EGN` (a personal identity number was typed — say so, do not say "invalid") and `EIK_INVALID` (checksum). Both are decided before the value is hashed or stored, so a number that cannot exist leaves no trace.',
-                    example: '831641791',
-                }),
-        })
-        .openapi('CreateFarmRequest', {
-            description:
-                'Create a farm owned by the caller. The owner is taken from the session and can never be named in the body.',
-        });
+    
 
     op(registry, {
         method: 'get',
@@ -114,7 +93,7 @@ export function registerMeFarmsPaths(registry: OpenAPIRegistry): void {
             '\n\n**A second farm is not a conflict.** One person may hold several; expect no 409 on the second call.' +
             '\n\nDark-launched behind the `social.farm-registration` feature flag, which 404s while off — so a 404 here means "not enabled", not "wrong URL".',
         tags: ['Account'],
-        body: CreateFarmRequest,
+        body: CreateFarmSchema,
         success: {
             status: 201,
             description:

@@ -49,7 +49,7 @@
  */
 import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
-import { instantTimestamp } from '@/lib/schemas/timestamp';
+import { IngestReadingsSchema, CreateDataStreamSchema } from '@/lib/schemas';
 import { op } from './helpers';
 
 const TenantParams = z.object({
@@ -163,23 +163,7 @@ export function registerAgroPaths(registry: OpenAPIRegistry): void {
             '\n\nThat token is what a device sends to the public ingest route; treat it as a credential, not as an identifier.',
         tags: ['Agro'],
         params: TenantParams,
-        body: z
-            .object({
-                key: z.string().min(1).max(120),
-                name: z.string().min(1).max(200),
-                kind: z.enum([
-                    'TEMPERATURE',
-                    'SOIL_MOISTURE',
-                    'HUMIDITY',
-                    'RAINFALL',
-                    'WIND',
-                    'LEAF_WETNESS',
-                    'CUSTOM',
-                ]),
-                unit: z.string().max(32).nullable().optional(),
-                locationId: z.string().nullable().optional(),
-            })
-            .openapi('CreateDataStream'),
+        body: CreateDataStreamSchema,
         success: {
             status: 201,
             description: 'The created stream AND its raw ingest token, returned once.',
@@ -242,21 +226,7 @@ export function registerAgroPaths(registry: OpenAPIRegistry): void {
         params: z.object({
             streamId: z.string().openapi({ param: { name: 'streamId', in: 'path' } }),
         }),
-        body: z
-            .object({
-                token: z.string().min(16).max(512),
-                readings: z.array(
-                    z.object({
-                        recordedAt: instantTimestamp(),
-                        value: z.number(),
-                        unit: z.string().max(32).nullable().optional(),
-                    }),
-                ),
-            })
-            .openapi('IngestReadings', {
-                description:
-                    'A batch of readings plus the stream’s raw ingest token. The batch is bounded server-side (~1000).',
-            }),
+        body: IngestReadingsSchema,
         success: {
             status: 200,
             description: 'Accepted. `inserted` is how many rows landed.',

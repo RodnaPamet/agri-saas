@@ -17,6 +17,7 @@ import { httpsUrl } from '@/lib/schemas/url';
 import { normaliseTechnique } from '@/lib/agro/application-techniques';
 import { REGULATORY } from '@/app-layer/schemas/catalog.schemas';
 import { instantTimestamp, clearableTimestamp } from './timestamp';
+import { FARM_NAME_MAX } from './farm-limits';
 
 export const EmptyBodySchema = z.object({}).strip().openapi('EmptyBody', {
     description: 'Empty request body. Used by mutation endpoints whose semantics live entirely in the URL (e.g. POST /restore on a soft-deleted resource).',
@@ -305,6 +306,138 @@ export const BulkTaskDueDateSchema = z.object({
     taskIds: z.array(z.string().min(1)).min(1).max(100),
     dueAt: instantTimestamp().nullable(),
 }).strip();
+
+// ─── Agro streams / farms / farm-tasks (#1555 batch 3) ───
+//
+// Four more bodies declared twice. Unlike batches 1 and 2, one pair had ACTIVE
+// drift rather than latent — the first in this issue's population:
+//
+//     readings   route .min(1).max(1000)   spec: no bounds published at all
+//     value      route .finite()           spec: z.number()
+//
+// The route's "~1000" limit lived only in the spec's PROSE, so a client reading
+// the schema could not discover it and learned the bound from a 400. Sharing
+// the declaration publishes it.
+//
+// Where the two disagreed the ROUTE is taken as the truth: it is what executes.
+// The spec's descriptions are documentation and are carried over verbatim.
+
+/** `POST /agro/data-streams/{streamId}/ingest` — a device batch plus its token. */
+export const IngestReadingsSchema = z
+    .object({
+        token: z.string().min(16).max(512),
+        readings: z
+            .array(
+                z.object({
+                    recordedAt: instantTimestamp(),
+                    value: z.number().finite(),
+                    unit: z.string().max(32).nullable().optional(),
+                }),
+            )
+            .min(1)
+            .max(1000),
+    })
+    .strip()
+    .openapi('IngestReadings', {
+        description:
+            'A batch of readings plus the stream’s raw ingest token. The batch is bounded server-side (~1000).',
+    });
+
+/**
+ * `POST /me/farms` — create a farm owned by the caller.
+ *
+ * Every description and example below is carried over VERBATIM from the spec's
+ * former declaration. The first version of this schema was written from the
+ * ROUTE's copy, which had none of them, and the regenerated spec silently lost
+ * two field descriptions and both examples — a documentation regression inside
+ * a change whose purpose is to make the contract more reliable. The diff is
+ * what caught it.
+ *
+ * `name` takes the spec's `.trim()`, which the route's copy lacked. That is
+ * behaviourally equivalent — `farm-creation.ts:106` trims anyway — but it
+ * moves the rejection of an all-whitespace name to the boundary, where the
+ * other refusals already are.
+ */
+export const CreateFarmSchema = z
+    .object({
+        name: z.string().trim().min(1).max(FARM_NAME_MAX).openapi({
+            description:
+                'The farm name as the farmer writes it, Cyrillic included. The web address is derived from it by transliteration and is NOT this value — read `farm.slug` from the response rather than deriving one.',
+            example: 'ЗК ПОБЕДА',
+        }),
+        eik: z
+            .string()
+            .trim()
+            .max(13)
+            .nullable()
+            .optional()
+            .openapi({
+                description:
+                    'The farm\'s ЕИК, 9 or 13 digits. OMIT it for «Земеделски стопанин — физическо лице», who has none. Two refusals are specific and worth handling in the form: `EIK_LOOKS_LIKE_EGN` (a personal identity number was typed — say so, do not say "invalid") and `EIK_INVALID` (checksum). Both are decided before the value is hashed or stored, so a number that cannot exist leaves no trace.',
+                example: '831641791',
+            }),
+    })
+    .strip()
+    .openapi('CreateFarmRequest', {
+        description:
+            'Create a farm owned by the caller. The owner is taken from the session and can never be named in the body.',
+    });
+
+/**
+ * `POST /t/{tenantSlug}/farm-tasks` — create a FARM_TASK.
+ *
+ * `dueAt` takes the ROUTE's `instantTimestamp()` and not the spec's former
+ * `z.string().datetime()`. Both render `format: date-time`, but Zod's bare
+ * `.datetime()` refuses an offset while RFC 3339 — which is what that format
+ * MEANS — permits one. Same reading as #1556: the spec's Zod was stricter than
+ * the format it published, so the route was already the correct one.
+ */
+export const CreateFarmTaskSchema = z
+    .object({
+        title: z.string().min(1, 'Title is required').max(500),
+        farmTaskType: z.string().min(1, 'A task type is required').openapi({
+            description:
+                'A key from the LiteFarm-derived farm-task-type catalog ' +
+                '(`src/lib/agriculture/farm-task-types`). An unknown key is a 400 ' +
+                '`INVALID_FARM_TASK_TYPE`.',
+        }),
+        description: z.string().max(5000).nullable().optional(),
+        priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional(),
+        dueAt: instantTimestamp().nullable().optional(),
+        assigneeUserId: z.string().nullable().optional().openapi({
+            description: 'Assigning fires the existing TASK_ASSIGNED notification.',
+        }),
+        locationIds: z.array(z.string().min(1)).max(100).optional(),
+        parcelIds: z.array(z.string().min(1)).max(100).optional(),
+        equipmentIds: z.array(z.string().min(1)).max(100).optional(),
+    })
+    .strip()
+    .openapi('FarmTaskCreateRequest', {
+        description:
+            'Create a FARM_TASK. Every id in locationIds/parcelIds/equipmentIds is checked for ' +
+            'tenant ownership BEFORE the task is written, so a bad link is a 400 `INVALID_LINK` ' +
+            'and never leaves an orphan task. Unknown properties are stripped.',
+    });
+
+/** `POST /t/{tenantSlug}/agro/data-streams` — register a device stream. */
+export const CreateDataStreamSchema = z
+    .object({
+        key: z.string().min(1).max(120),
+        name: z.string().min(1).max(200),
+        kind: z.enum([
+            'TEMPERATURE',
+            'SOIL_MOISTURE',
+            'HUMIDITY',
+            'RAINFALL',
+            'WIND',
+            'LEAF_WETNESS',
+            'CUSTOM',
+        ]),
+        unit: z.string().max(32).nullable().optional(),
+        locationId: z.string().nullable().optional(),
+    })
+    .strip()
+    .openapi('CreateDataStream');
 
 // ─── Admin members / invites / field-op review (#1555 batch 2) ───
 //

@@ -33,7 +33,6 @@
  * what actually bounds abuse here.
  */
 import type { NextRequest } from 'next/server';
-import { z } from 'zod';
 
 import { auth } from '@/auth';
 import { withApiErrorHandling } from '@/lib/errors/api';
@@ -41,22 +40,11 @@ import { jsonResponse } from '@/lib/api-response';
 import { unauthorized, codedBadRequest } from '@/lib/errors/types';
 import { getRequestContext } from '@/lib/observability/context';
 import { assertFeatureEnabled } from '@/lib/feature-flags';
-import { createFarmForUser, FARM_NAME_MAX } from '@/app-layer/usecases/farm-creation';
+import { createFarmForUser } from '@/app-layer/usecases/farm-creation';
 import { listMyFarms } from '@/app-layer/usecases/my-farms';
+import { CreateFarmSchema } from '@/lib/schemas';
 
-const CreateFarmSchema = z.object({
-    name: z.string().min(1).max(FARM_NAME_MAX),
-    /**
-     * Optional. «Стопанство с ЕИК» supplies one; «Земеделски стопанин —
-     * физическо лице» does not.
-     *
-     * Bounded at 13 because an ЕИК is 9 or 13 digits — the checksum and the
-     * ЕГН refusal both live in the usecase, which is the only place that may
-     * decide what happens to the value. Length is all that is enforced here,
-     * so the route cannot develop a second, drifting opinion about validity.
-     */
-    eik: z.string().trim().max(13).optional().nullable(),
-});
+
 
 /**
  * The dark-launch rail. `src/app/api/me/**` is classified SOCIAL by

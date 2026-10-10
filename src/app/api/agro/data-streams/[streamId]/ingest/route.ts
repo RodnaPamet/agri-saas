@@ -16,9 +16,11 @@
  * it in the server's timezone and the same payload would store a different
  * instant depending on where the server runs. For a sensor feed that is
  * silent corruption, so this endpoint is stricter than the tenant-UI schemas
- * (#1539). The check is `instantTimestamp()`, shared with this route's
- * declaration in `src/lib/openapi/paths/agro.paths.ts` so the published
- * `format: date-time` and the executing check cannot drift apart.
+ * (#1539). The check is `instantTimestamp()`, and since #1555 batch 3 the
+ * whole body is declared ONCE as `IngestReadingsSchema` in
+ * `src/lib/schemas/index.ts` — imported by both this route and
+ * `agro.paths.ts`, so the published contract and the executing check are the
+ * same object rather than two that happen to agree.
  *
  * Gating:
  *   • Feature flag — AGRO_DATASTREAMS_ENABLED must be '1', else 503
@@ -36,23 +38,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { env } from '@/env';
 import { ingestReadings, DataStreamAccessDenied } from '@/app-layer/usecases/data-stream';
-import { instantTimestamp } from '@/lib/schemas/timestamp';
+import { IngestReadingsSchema } from '@/lib/schemas';
 
-const IngestBodySchema = z
-    .object({
-        token: z.string().min(16).max(512),
-        readings: z
-            .array(
-                z.object({
-                    recordedAt: instantTimestamp(),
-                    value: z.number().finite(),
-                    unit: z.string().max(32).nullable().optional(),
-                }),
-            )
-            .min(1)
-            .max(1000),
-    })
-    .strip();
+
 
 export async function POST(
     req: NextRequest,
@@ -65,9 +53,9 @@ export async function POST(
 
     const params = await paramsPromise;
 
-    let body: z.infer<typeof IngestBodySchema>;
+    let body: z.infer<typeof IngestReadingsSchema>;
     try {
-        body = IngestBodySchema.parse(await req.json());
+        body = IngestReadingsSchema.parse(await req.json());
     } catch (err) {
         return NextResponse.json(
             { error: 'invalid_body', issues: (err as { issues?: unknown }).issues },

@@ -116,13 +116,21 @@ for (const full of routeFiles) {
  *     14  before #1555
  *     10  batch 1 — the four bulk-ids schemas
  *      5  batch 2 — admin members/invites/certificates and the field-op review
+ *      1  batch 3 — ingest, me/farms, farm-tasks, agro/data-streams
  *
- * The drift assertion below is what forced this down: with the cap left at 10
- * and five live, `MAX_DUAL - dual.length` was 5 and the suite failed. A cap
- * that silently kept its old headroom would have left room for a regression to
- * land unnoticed, which is the whole failure mode a ratchet exists to prevent.
+ * The one remaining is `locations/{id}/farm-record`, left out of batch 3 on
+ * purpose: #1577 edits that route's `BodySchema` in place to fix an
+ * unvalidated period (#1575), and converting it in the same window would have
+ * been two changes fighting over one declaration. It converts once that lands,
+ * taking this to 0.
+ *
+ * The drift assertion below is what forced this down each time: with the cap
+ * left at 10 and five live, `MAX_DUAL - dual.length` was 5 and the suite
+ * failed. A cap that silently kept its old headroom would have left room for a
+ * regression to land unnoticed, which is the whole failure mode a ratchet
+ * exists to prevent.
  */
-const MAX_DUAL = 5;
+const MAX_DUAL = 1;
 
 describe('a request body is declared once (#1555)', () => {
     it('the population is real — the denominator', () => {
@@ -165,11 +173,19 @@ describe('a request body is declared once (#1555)', () => {
             '/api/t/{tenantSlug}/admin/members/{membershipId}/certificates',
             '/api/t/{tenantSlug}/admin/invites',
             '/api/t/{tenantSlug}/field-operations/{taskId}/review',
+            // batch 3 — the agro / farm bodies. The ingest one had ACTIVE
+            // drift rather than latent: the route enforced
+            // `.min(1).max(1000)` on `readings` and the spec published no
+            // bounds at all, so the limit existed only in its prose.
+            '/api/agro/data-streams/{streamId}/ingest',
+            '/api/me/farms',
+            '/api/t/{tenantSlug}/farm-tasks',
+            '/api/t/{tenantSlug}/agro/data-streams',
         ];
         for (const p of converted) {
             expect(dualPaths).not.toContain(p);
         }
-        expect(converted).toHaveLength(9);
+        expect(converted).toHaveLength(13);
     });
 
     it('no NEW route declares its body twice', () => {

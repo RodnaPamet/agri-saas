@@ -29,10 +29,23 @@ import { hashForLookup } from '@/lib/security/encryption';
 import { runInTenantContext } from '@/lib/db-context';
 import { codedBadRequest } from '@/lib/errors/types';
 import { getPermissionsForRole } from '@/lib/permissions';
+import { FARM_NAME_MAX } from '@/lib/schemas/farm-limits';
 import { logger } from '@/lib/observability/logger';
 import type { RequestContext } from '@/app-layer/types';
 
-export const FARM_NAME_MAX = 120;
+/**
+ * Re-exported from `lib/schemas/farm-limits` since #1555 batch 3, so the schema
+ * barrel can use the bound without importing this module — which pulls in the
+ * db context, the encryption stack and `node:crypto`, and would reach a client
+ * bundle through `NewTaskFields.tsx`. One definition, in the leaf.
+ *
+ * `export { X }` and not `export { X } from '…'`: the second re-exports WITHOUT
+ * binding the name locally, so line 134's own `name.length > FARM_NAME_MAX`
+ * became an undefined identifier and every refusal in this module came back
+ * `INTERNAL` instead of its code. `tests/unit/farm-creation-error-codes.test.ts`
+ * caught it — 5 failures, all reporting `INTERNAL`.
+ */
+export { FARM_NAME_MAX };
 
 /**
  * The caller, who has NO tenant.

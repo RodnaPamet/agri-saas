@@ -6546,7 +6546,9 @@
                 "recordedAt",
                 "value"
               ]
-            }
+            },
+            "minItems": 1,
+            "maxItems": 1000
           }
         },
         "required": [
