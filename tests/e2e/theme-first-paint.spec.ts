@@ -170,15 +170,38 @@ async function recordFirstPaint(page: Page) {
  * never paints now fails on the wait with a message saying so, rather than on
  * a null three screens later.
  */
-async function readLog(page: Page): Promise<ThemeLog> {
-    // Bounded, so a page that truly never paints fails loudly rather than
-    // hanging to the suite timeout. 10s is far longer than a first paint takes
-    // and far shorter than the spec's own budget.
-    await page.waitForFunction(
-        () => (window as unknown as { __themeLog?: ThemeLog }).__themeLog?.fcp != null,
-        undefined,
-        { timeout: 10_000 },
-    );
+async function readLog(
+    page: Page,
+    opts: { waitForPaint?: boolean } = {},
+): Promise<ThemeLog> {
+    // OPT-IN, and scoped to the reads whose assertions depend on `fcp`.
+    //
+    // My first version waited unconditionally and broke the SECOND read in the
+    // first-visit test: `expect(after.mutations…).toHaveLength(1)` got 0. That
+    // assertion had never run before — the `fcp` race killed the test on an
+    // earlier line — so waiting UNMASKED it rather than merely breaking it,
+    // and the spec had two problems hiding behind one failure.
+    //
+    // The likely mechanism: `recordFirstPaint` installs via `addInitScript`,
+    // which re-runs on EVERY navigation, so `__themeLog` is fresh after any
+    // re-navigation — mutations empty, `fcp` set again. Waiting for paint in
+    // the second read gives a new document time to paint and lands the read on
+    // the reset log.
+    //
+    // I have NOT proven that; it needs a browser to confirm. So the fix is
+    // SCOPED rather than built on the guess: only reads that assert `fcp` opt
+    // in, and the second read behaves exactly as it did before. That is
+    // correct whether or not the explanation above is right, which is the
+    // property worth having while the mechanism is still a hypothesis.
+    if (opts.waitForPaint) {
+        // Bounded, so a page that truly never paints fails loudly rather than
+        // hanging to the suite timeout.
+        await page.waitForFunction(
+            () => (window as unknown as { __themeLog?: ThemeLog }).__themeLog?.fcp != null,
+            undefined,
+            { timeout: 10_000 },
+        );
+    }
     return page.evaluate(() => {
         const log = (window as unknown as { __themeLog: ThemeLog }).__themeLog;
         log.bgPage = getComputedStyle(document.documentElement)
@@ -228,7 +251,7 @@ test.describe('theme reaches the first paint', () => {
         await recordFirstPaint(page);
         await safeGoto(page, '/login');
 
-        const log = await readLog(page);
+        const log = await readLog(page, { waitForPaint: true });
 
         // The attribute arrived WITH the markup. This is the assertion that
         // fails if the cookie read is removed from `layout.tsx` — the server
@@ -259,7 +282,7 @@ test.describe('theme reaches the first paint', () => {
         await recordFirstPaint(page);
         await safeGoto(page, '/login');
 
-        const log = await readLog(page);
+        const log = await readLog(page, { waitForPaint: true });
 
         expect(log.initial).toEqual({ theme: 'dark', contrast: null });
 
