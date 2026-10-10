@@ -129,7 +129,16 @@ describe('Infrastructure Regression Guards', () => {
             // exhausted quota. Since P3.5b, email verification stands between
             // a farmer and their farm, so a dead send path is a dead front
             // door and six-hourly is how we hear about it.
-            expect(SCHEDULED_JOBS).toHaveLength(26);
+            // 26 → 27 (P5.4b): `statement-dispatch`. P5.4a wrote DSA Art 17
+            // statements into `StatementOfReasons` with `deliveredAt` NULL and
+            // surfaced the undelivered queue; nothing drained it. An
+            // undrained queue is the compliance failure that shows nowhere
+            // else — the action is recorded, the notice reads ACTIONED, and
+            // the recipient simply never heard. Ten-minutely because P5's
+            // exit criterion is a median handling time measured from
+            // `createdAt` to `deliveredAt`, so delivery lag is the number
+            // being reported.
+            expect(SCHEDULED_JOBS).toHaveLength(27);
         });
 
         test('scheduled job names match expected set', () => {
@@ -223,6 +232,10 @@ describe('Infrastructure Regression Guards', () => {
                 // Automation Epic 5 — every-5-min SLA breach sweep over
                 // RUNNING automation executions.
                 'sla-monitor',
+                // P5.4b — every 10 minutes, delivers queued DSA Art 17
+                // statements of reasons in the RECIPIENT's language, resolved
+                // at send time because that is the only moment it is knowable.
+                'statement-dispatch',
                 // In-app TASK_DUE notifications fired one week, one
                 // day, and on the day a task's dueAt falls.
                 'task-due-notification',
