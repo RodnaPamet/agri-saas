@@ -30,6 +30,10 @@ import { UNCERTAINTY } from '@/lib/grain/uncertainty';
 const base = {
     // 12.5 ha = 125 dca
     standingCropAreaHa: 12.5,
+    // #1512: the COST rate's denominator. Equal to the yield-covered area in
+    // this base fixture, so every pre-existing expectation holds unchanged —
+    // the cases where they DIFFER are new tests below.
+    occupiedAreaHa: 12.5,
     standingCropValue: 15_000 as number | null,
     attributableCost: 5_000,
     standingCropExcludedCount: 0,
@@ -38,6 +42,8 @@ const base = {
     unvaluedUnitMismatch: 0,
     payrollAllocated: false,
 };
+
+const round2 = (n: number): number => Math.round(n * 100) / 100;
 
 describe('computePerArea', () => {
     it('divides by DECARES, the unit the farmer plans in', () => {
@@ -53,16 +59,94 @@ describe('computePerArea', () => {
     });
 
     describe('the division is guarded', () => {
-        it('refuses on zero area rather than returning Infinity', () => {
-            // A commodity that is only in store has no standing-crop area,
-            // and so does one whose every planting was dropped for a
-            // missing yield estimate.
-            const r = computePerArea({ ...base, standingCropAreaHa: 0 });
+        it('refuses EVERYTHING for a commodity that is only in store', () => {
+            // No growing crop at all: no standing-crop area AND no occupied
+            // land. Both denominators are zero, so all three figures are
+            // withheld rather than returning Infinity.
+            //
+            // This case and the one below used to be ONE test, which is what
+            // #1512 was about: with a single denominator they were
+            // indistinguishable, so a farm that knew its costs exactly got no
+            // cost-per-decare because nobody could price the crop.
+            const r = computePerArea({ ...base, standingCropAreaHa: 0, occupiedAreaHa: 0 });
+
             expect(r.marginPerDca).toBeNull();
             expect(r.standingValuePerDca).toBeNull();
             expect(r.attributableCostPerDca).toBeNull();
             expect(r.uncertainty).toBe(UNCERTAINTY.REFUSED);
             expect(r.refusalCode).toBe('NO_STANDING_CROP_AREA');
+        });
+
+        it('still gives a COST rate when the crop is growing but unforecast', () => {
+            // Every planting dropped for a missing yield estimate, so the
+            // yield-covered area is 0 — but the crop is on 12.5 ha and that
+            // land costs money. The cost rate is knowable and is given; the
+            // value and margin are not and are withheld.
+            //
+            // This is the figure #1512 exists to deliver, and the farm it
+            // matters for is the owner's: 1 real planting against 4 parcels
+            // carrying 1386.8 дка.
+            const r = computePerArea({ ...base, standingCropAreaHa: 0 });
+
+            expect(r.attributableCostPerDca).not.toBeNull();
+            expect(r.standingValuePerDca).toBeNull();
+            // The margin subtracts a value that does not exist, so it stays
+            // refused — and `refusalCode` keeps describing exactly that,
+            // which is what the calculator's per-commodity list keys on.
+            expect(r.marginPerDca).toBeNull();
+            expect(r.refusalCode).toBe('NO_STANDING_CROP_AREA');
+        });
+
+        it('reports BOTH denominators, so nothing displayed can contradict them', () => {
+            // agrent-ios raised this against the first version of #1512 and was
+            // right: `perArea` exposed only `areaDca`, so a client showing the
+            // area beside the cost rate would have shown «Площ 0 дка» directly
+            // above «Разход / дка 12,50» on the owner's farm. The figures were
+            // correct and what a farmer read was a contradiction.
+            //
+            // Each figure's own denominator is named rather than left to be
+            // recomputed, so a client multiplying back up gets the number the
+            // server divided by, by construction.
+            const r = computePerArea({ ...base, standingCropAreaHa: 5, occupiedAreaHa: 20 });
+
+            expect(r.areaDca).toBe(50);
+            expect(r.costAreaDca).toBe(200);
+            // And the cost rate really is the second one's quotient, not the
+            // first's — the assertion that makes the pair meaningful.
+            expect(r.attributableCostPerDca).toBe(round2(base.attributableCost / 200));
+        });
+
+        it('reports costAreaDca even when the value figures are refused', () => {
+            // The case the contradiction appeared in: no yield-covered area at
+            // all, so `areaDca` is 0 and the value figures are withheld — but
+            // the cost rate is real and its denominator must travel with it.
+            const r = computePerArea({ ...base, standingCropAreaHa: 0, occupiedAreaHa: 20 });
+
+            expect(r.areaDca).toBe(0);
+            expect(r.costAreaDca).toBe(200);
+            expect(r.attributableCostPerDca).not.toBeNull();
+            expect(r.standingValuePerDca).toBeNull();
+        });
+
+        it('divides the cost by the OCCUPIED area, not the yield-covered one', () => {
+            // The arithmetic, with the two areas deliberately different. A
+            // cost divided by the smaller yield-covered area would come back
+            // larger — plausible, and overstating what the farm spends per
+            // decare by exactly the land it cannot forecast.
+            const r = computePerArea({
+                ...base,
+                standingCropAreaHa: 5,
+                occupiedAreaHa: 20,
+                standingCropValue: 1000,
+                attributableCost: 400,
+            });
+
+            // 20 ha = 200 дка, so 400 / 200 = 2.
+            expect(r.attributableCostPerDca).toBe(2);
+            // And the VALUE still uses the yield-covered area: 5 ha = 50 дка,
+            // 1000 / 50 = 20. The two figures use different denominators on
+            // purpose, which is the whole of #1512.
+            expect(r.standingValuePerDca).toBe(20);
         });
 
         it('never produces Infinity or NaN for any degenerate input', () => {

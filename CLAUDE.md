@@ -1880,6 +1880,69 @@ in the triage queue; not lower, because carrier-grade NAT puts a village behind
 one IPv4 and a genuine burst about one bad listing is what an incident looks
 like.
 
+### P5.2b — person blocks, and two block tables with OPPOSITE disclosure rules
+
+`UserBlock` enforcement plus `POST`/`DELETE`/`GET /api/social/blocks`
+(#1593). **This is the most confusable thing in P5**, so:
+
+| | `ExchangeBlock` | `UserBlock` |
+|---|---|---|
+| who refuses whom | a seller FARM refuses a person | a PERSON refuses a person |
+| disclosure | **tells** the buyer — `THREAD_BLOCKED` plus a sentence | reveals **nothing** |
+| session variable | `app.actor_user_id` (tenant context) | `app.user_id` (person context) |
+| direction enforced | the inquirer only | whichever party is blocked |
+
+Both are correct. The exchange is commercial, where "this seller will not deal
+with you" is information a buyer is entitled to; a social block must be silent
+(owner ruling 2026-10-10). `UserBlock` is ADDITIONAL, never a replacement —
+collapsing them would silently un-block everyone already blocked on the
+exchange.
+
+**Silence is achieved by reusing the genuine not-found, not by a new code.** A
+person-blocked caller gets `LISTING_NOT_FOUND` on open and `THREAD_NOT_FOUND`
+on read/list/send — the same code, message and status a missing subject
+returns. `tests/unit/person-block-is-silent.test.ts` asserts this as a
+COMPARISON (run the call twice, blocked and innocent, require every observable
+to match) because "it was refused" is not the property.
+
+**Hiding the thread is what makes it silent.** Refusing the write alone would
+leave a visible conversation whose composer fails, and that inconsistency is
+itself the signal. So read, list and send all answer not-found for the blocked
+party, while the blocker keeps full history. The cost is real: a buyer blocking
+a seller makes a deal in progress vanish from the seller's view, with no
+explanation.
+
+**Two predicates, because contact and visibility are not symmetric.**
+`personBlockExists` is bidirectional and governs contact (blocking is mutual
+silence). `amIBlockedByAnyOf` is one-directional and governs visibility (the
+blocked party loses sight, the blocker does not). Both live beside `isBlocked`
+in `exchange-messaging.ts`, and the visibility check sits in `requireParty` —
+the choke point every thread read and write reaches — so one check covers five
+paths instead of five that drift.
+
+**The thread list filters IN THE QUERY, not after.** That query takes
+`limit + 1` rows to learn whether another page exists, so a post-filter would
+shrink the page and make `hasMore` wrong — turning a block into a pagination
+bug.
+
+**`listOwnBlocks` filters to blocks you MADE, and that `where` is
+load-bearing.** The SELECT policy admits both sides of a row — it must, since
+enforcement runs in the blocked party's context and a row they cannot see
+cannot refuse them — so the API is what withholds it. Removing that clause
+would leak every block against the caller.
+
+**What is NOT claimed: timing.** A person block costs an extra indexed lookup
+and the listing stays visible in the marketplace while one person gets a
+not-found. A determined blocked user can infer a block.
+
+**The routes are GATED on `social.person-blocks`**, unlike the notice routes
+next door — blocking is a product feature, filing a notice is a legal duty.
+The key is a string LITERAL at each call site because the guard extracts
+literals only, so an operator can find the flag by reading the route. And
+`DELETE` takes a body rather than a path parameter: iOS logs the full URL
+unsuppressably, and a third party's user id in a device log is the disclosure
+this phase exists to prevent.
+
 ## Failing tests
 
 A failing test on a branch is a failing test, full stop. "Pre-existing on

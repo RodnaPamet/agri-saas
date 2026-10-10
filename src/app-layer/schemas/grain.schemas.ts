@@ -437,6 +437,33 @@ export const CreateCostEntrySchema = z
 
 export type CreateCostEntryInput = z.infer<typeof CreateCostEntrySchema>;
 
+/**
+ * Upper bound on one cost SHEET (#1524).
+ *
+ * agrent-ios' sheet is "up to about 10 lines", so 25 is generous without being
+ * unbounded. The bound is not politeness: the batch is ONE interactive
+ * transaction, and an arbitrary N of `CostEntryRepository.create` plus an
+ * encrypting `logEvent` per line is what exhausts Prisma's 5s interactive
+ * default — the failure `createFieldOperation` documents for its parcel loop.
+ * An unbounded batch is a transaction whose size the CLIENT chooses.
+ */
+export const MAX_COST_BATCH_LINES = 25;
+
+/**
+ * A cost sheet: several lines, all-or-nothing, under one `Idempotency-Key`.
+ *
+ * `.min(1)` is deliberate. An empty batch is a client bug, not a no-op to
+ * absorb — a 201 for a write that did nothing is exactly what makes an outbox
+ * believe it has synced and drop the sheet.
+ */
+export const CreateCostEntryBatchSchema = z
+    .object({
+        lines: z.array(CreateCostEntrySchema).min(1).max(MAX_COST_BATCH_LINES),
+    })
+    .strip();
+
+export type CreateCostEntryBatchInput = z.infer<typeof CreateCostEntryBatchSchema>;
+
 export const UpdateCostEntrySchema = z
     .object({
         category: z.enum(COST_CATEGORIES).optional(),

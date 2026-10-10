@@ -31,6 +31,7 @@
  */
 import * as fs from "fs";
 import * as path from "path";
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, "../..");
 const SCAN_DIRS = ["src/app", "src/components"];
@@ -164,9 +165,7 @@ describe("<Card> primitive contract", () => {
     // executable code only — the primitive's docstring legitimately
     // mentions `glass-card p-5` / `p-8` as historical patterns it
     // replaces, and we don't want those to trip the structural check.
-    const code = src
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/^\s*\/\/.*$/gm, "");
+    const code = blankNonCode(src);
     expect(code).toMatch(/comfortable\s*:\s*["']p-6["']/);
     expect(code).toMatch(/compact\s*:\s*["']p-4["']/);
     expect(code).toMatch(/none\s*:\s*["']["']/);

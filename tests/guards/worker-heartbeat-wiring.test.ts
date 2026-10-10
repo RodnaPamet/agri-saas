@@ -39,6 +39,7 @@ import {
     WORKER_HEARTBEAT_KEY,
     WORKER_HEARTBEAT_TTL_SECONDS,
 } from '../../src/app-layer/jobs/worker-heartbeat';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string): string => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -52,9 +53,7 @@ const read = (rel: string): string => fs.readFileSync(path.join(ROOT, rel), 'utf
  * tell a mention from a use.
  */
 const code = (rel: string): string =>
-    read(rel)
-        .replace(/\/\*[\s\S]*?\*\//g, ' ')
-        .replace(/(^|[^:])\/\/.*$/gm, '$1');
+    blankNonCode(read(rel));
 
 interface ComposeFile {
     services?: Record<string, { healthcheck?: { test?: string[]; interval?: string; start_period?: string } }>;

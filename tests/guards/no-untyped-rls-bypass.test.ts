@@ -25,10 +25,11 @@
 import fs from 'fs';
 import path from 'path';
 import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 /** Mask comments so a name discussed in prose is not counted as a call. */
 function codeOf(source: string): string {
-    return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+    return blankNonCode(source);
 }
 
 const FILES = collectSourceFiles({

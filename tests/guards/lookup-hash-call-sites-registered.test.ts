@@ -37,6 +37,7 @@
 import fs from 'fs';
 import path from 'path';
 import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 /**
  * Modules exempt because they ARE the mechanism, not consumers of it.
@@ -162,7 +163,7 @@ const REGISTERED: Readonly<Record<string, Registration>> = {
 
 /** Mask comments so a site named only in prose does not register as code. */
 function codeOf(source: string): string {
-    return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+    return blankNonCode(source);
 }
 
 /** Does this source CALL `hashForLookup` (not merely import or mention it)? */

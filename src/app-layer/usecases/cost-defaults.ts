@@ -45,7 +45,7 @@ import { RequestContext } from '../types';
 import { assertCanRead } from '../policies/common';
 import { runInTenantContext } from '@/lib/db-context';
 import { Prisma, type CostCategory } from '@prisma/client';
-import { badRequest } from '@/lib/errors/types';
+import { codedBadRequest } from '@/lib/errors/types';
 import { normalizeCommodity } from '@/lib/market/commodity-vocabulary';
 
 /**
@@ -180,8 +180,15 @@ export async function getCropCostDefaults(
     // as a fact about the farm.
     const commodity = normalizeCommodity(commodityRaw);
     if (commodity == null) {
-        throw badRequest(
-            `"${commodityRaw}" is not a crop this calculator can price - pick a crop from the list`,
+        // CODED, not prose — `no-server-authored-user-copy` holds thrown
+        // English on a downward ratchet, and a code is the half a client can
+        // translate. The raw value rides in `params` so a client bug is
+        // diagnosable; it is a crop name the caller just sent, never personal
+        // data.
+        throw codedBadRequest(
+            'UNKNOWN_COMMODITY',
+            'That crop is not one this calculator can price.',
+            { commodity: commodityRaw },
         );
     }
 

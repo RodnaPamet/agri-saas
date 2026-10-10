@@ -24,6 +24,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -38,9 +39,7 @@ describe('Gear button — hover hint via Popover triggerTooltip, no hand-rolled 
         describe(rel, () => {
             const src = read(rel);
             // Strip comments — the doc-comment legitimately mentions <Tooltip>.
-            const code = src
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+            const code = blankNonCode(src);
 
             it('does NOT import or render the Tooltip primitive directly', () => {
                 // The composition lives in the Popover (triggerTooltip); the gear

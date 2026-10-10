@@ -11,7 +11,11 @@ import { CostEntryRepository, type CostEntryFilters } from '../repositories/Cost
 import { FileRepository } from '../repositories/FileRepository';
 import { ingestUploadedFile } from '@/lib/upload/ingest';
 import { COST_DOMAIN_LINKS, COST_SPATIAL_LINKS } from '../schemas/grain.schemas';
-import type { CreateCostEntryInput, UpdateCostEntryInput } from '../schemas/grain.schemas';
+import type {
+    CreateCostEntryBatchInput,
+    CreateCostEntryInput,
+    UpdateCostEntryInput,
+} from '../schemas/grain.schemas';
 
 /**
  * Cost entries — the register behind `/grain/costs` (enterprise-grain,
@@ -529,86 +533,253 @@ async function createCostEntryImpl(
         if (existing) return toDto(existing);
     }
 
-    assertSingleDomainLink(input);
-    assertAllocationBasis(input);
-    const supplier = input.supplier != null ? sanitizePlainText(input.supplier) : null;
-    const description = input.description != null ? sanitizePlainText(input.description) : null;
-    const incurredOn = parseRequiredDate(input.incurredOn, 'Incurred-on date');
-    const currency = input.currency.trim().toUpperCase();
+    const prepared = prepareCostEntry(input);
 
-    const row = await runInTenantContext(ctx, async (db) => {
-        await assertFksBelongToTenant(db, ctx, input);
-        if (input.invoiceFileId) await assertUsableInvoice(db, ctx, input.invoiceFileId);
-
-        const record = await CostEntryRepository.create(db, ctx, {
-            category: input.category,
-            amount: input.amount,
-            currency,
-            incurredOn,
-            supplier,
-            description,
-            invoiceFileId: input.invoiceFileId ?? null,
-            plantingId: input.plantingId ?? null,
-            seasonId: input.seasonId ?? null,
-            locationId: input.locationId ?? null,
-            parcelId: input.parcelId ?? null,
-            leaseId: input.leaseId ?? null,
-            amountPerDca: input.amountPerDca ?? null,
-            commodityCanonical: input.commodityCanonical ?? null,
-            payrollHeadcount: input.payrollHeadcount ?? null,
-            payrollAnnualPerPerson: input.payrollAnnualPerPerson ?? null,
-            itemId: input.itemId ?? null,
-            allocationBasis: input.allocationBasis ?? 'TARGET',
-            createdByUserId: ctx.userId ?? null,
-            clientMutationId: idempotencyKey ?? null,
-        });
-
-        // Inside the same transaction as the entry: a subset written after
-        // a committed row could fail and leave a PARCEL_SUBSET entry with
-        // no denominator, which the calculator would report unattributed.
-        if (input.allocationParcelIds?.length) {
-            await CostEntryRepository.replaceAllocationParcels(
-                db,
-                ctx,
-                record.id,
-                [...new Set(input.allocationParcelIds)],
-            );
-        }
-
-        await logEvent(db, ctx, {
-            action: 'CREATE',
-            entityType: 'CostEntry',
-            entityId: record.id,
-            details: `Recorded ${input.category} cost: ${input.amount} ${currency}`,
-            detailsJson: {
-                category: 'entity_lifecycle',
-                entityName: 'CostEntry',
-                operation: 'created',
-                after: {
-                    costCategory: input.category,
-                    amount: input.amount,
-                    currency,
-                    hasInvoice: input.invoiceFileId != null,
-                    // WHERE a cost spreads decides which crop carries it,
-                    // so a change of basis is a change of money and
-                    // belongs in the trail beside the amount.
-                    allocationBasis: input.allocationBasis ?? 'TARGET',
-                    allocationParcelCount: input.allocationParcelIds?.length ?? 0,
-                },
-                summary: `Recorded a ${input.category} cost of ${input.amount} ${currency}`,
-            },
-        });
-
-        // The create's own `include` ran before the subset rows existed,
-        // so the response would claim an empty denominator. One extra
-        // read, on the subset path only.
-        if (input.allocationParcelIds?.length) {
-            return (await CostEntryRepository.getById(db, ctx, record.id)) ?? record;
-        }
-        return record;
-    });
+    const row = await runInTenantContext(ctx, (db) =>
+        writeCostEntryOn(db, ctx, input, prepared, idempotencyKey ?? null),
+    );
 
     return toDto(row);
+}
+
+/**
+ * Everything a create validates and normalises BEFORE any transaction opens.
+ *
+ * Split out for #1524: a batch holds one transaction open for up to
+ * `MAX_COST_BATCH_LINES` rows, and doing this work inside it would spend that
+ * budget on string handling and date parsing. It also means a malformed line
+ * is refused before a single row is written, so the batch cannot half-commit
+ * and then discover line 7 is invalid.
+ *
+ * Pure: no I/O, so both callers can run it over every line up front.
+ */
+function prepareCostEntry(input: CreateCostEntryInput) {
+    assertSingleDomainLink(input);
+    assertAllocationBasis(input);
+    return {
+        supplier: input.supplier != null ? sanitizePlainText(input.supplier) : null,
+        description: input.description != null ? sanitizePlainText(input.description) : null,
+        incurredOn: parseRequiredDate(input.incurredOn, 'Incurred-on date'),
+        currency: input.currency.trim().toUpperCase(),
+    };
+}
+
+type PreparedCostEntry = ReturnType<typeof prepareCostEntry>;
+
+/**
+ * The write itself, on a transaction the CALLER owns.
+ *
+ * Extracted so the single create and the batch cannot drift. The field list
+ * below, the subset write, the audit `detailsJson` and the subset re-read are
+ * each easy to add to one path and forget on the other — and nothing would
+ * fail: the batch would simply stop recording a field, or stop auditing
+ * `allocationBasis`, while both paths stayed green. That is the whole reason
+ * this is one function rather than two similar ones.
+ *
+ * Takes `db` rather than opening its own context, which is what lets a batch
+ * put every line in ONE transaction. `createCostEntryImpl` used to open the
+ * context here, so a batch could not have nested it.
+ */
+async function writeCostEntryOn(
+    db: PrismaTx,
+    ctx: RequestContext,
+    input: CreateCostEntryInput,
+    prepared: PreparedCostEntry,
+    clientMutationId: string | null,
+) {
+    const { supplier, description, incurredOn, currency } = prepared;
+
+    await assertFksBelongToTenant(db, ctx, input);
+    if (input.invoiceFileId) await assertUsableInvoice(db, ctx, input.invoiceFileId);
+
+    const record = await CostEntryRepository.create(db, ctx, {
+        category: input.category,
+        amount: input.amount,
+        currency,
+        incurredOn,
+        supplier,
+        description,
+        invoiceFileId: input.invoiceFileId ?? null,
+        plantingId: input.plantingId ?? null,
+        seasonId: input.seasonId ?? null,
+        locationId: input.locationId ?? null,
+        parcelId: input.parcelId ?? null,
+        leaseId: input.leaseId ?? null,
+        amountPerDca: input.amountPerDca ?? null,
+        commodityCanonical: input.commodityCanonical ?? null,
+        payrollHeadcount: input.payrollHeadcount ?? null,
+        payrollAnnualPerPerson: input.payrollAnnualPerPerson ?? null,
+        itemId: input.itemId ?? null,
+        allocationBasis: input.allocationBasis ?? 'TARGET',
+        createdByUserId: ctx.userId ?? null,
+        clientMutationId,
+    });
+
+    // Inside the same transaction as the entry: a subset written after a
+    // committed row could fail and leave a PARCEL_SUBSET entry with no
+    // denominator, which the calculator would report unattributed.
+    if (input.allocationParcelIds?.length) {
+        await CostEntryRepository.replaceAllocationParcels(db, ctx, record.id, [
+            ...new Set(input.allocationParcelIds),
+        ]);
+    }
+
+    await logEvent(db, ctx, {
+        action: 'CREATE',
+        entityType: 'CostEntry',
+        entityId: record.id,
+        details: `Recorded ${input.category} cost: ${input.amount} ${currency}`,
+        detailsJson: {
+            category: 'entity_lifecycle',
+            entityName: 'CostEntry',
+            operation: 'created',
+            after: {
+                costCategory: input.category,
+                amount: input.amount,
+                currency,
+                hasInvoice: input.invoiceFileId != null,
+                // WHERE a cost spreads decides which crop carries it, so a
+                // change of basis is a change of money and belongs in the
+                // trail beside the amount.
+                allocationBasis: input.allocationBasis ?? 'TARGET',
+                allocationParcelCount: input.allocationParcelIds?.length ?? 0,
+            },
+            summary: `Recorded a ${input.category} cost of ${input.amount} ${currency}`,
+        },
+    });
+
+    // The create's own `include` ran before the subset rows existed, so the
+    // response would claim an empty denominator. One extra read, on the
+    // subset path only.
+    if (input.allocationParcelIds?.length) {
+        return (await CostEntryRepository.getById(db, ctx, record.id)) ?? record;
+    }
+    return record;
+}
+
+/**
+ * Create a whole cost SHEET, all-or-nothing, at most once per batch key.
+ *
+ * agrent-ios' ask: "one sheet is up to about 10 lines, all-or-nothing, under
+ * one `Idempotency-Key`. A half-saved sheet in the books is the failure to
+ * avoid." Ten sequential POSTs over rural LTE is ten chances to leave the
+ * books half-written, and a half-saved sheet is worse than one that failed —
+ * the farmer cannot tell which lines landed.
+ *
+ * ## Ten lines CANNOT share one key, and that shapes everything
+ *
+ * `CostEntry` carries `@@unique([tenantId, clientMutationId])`, so the second
+ * line of a batch sharing the batch key hits the index. "All-or-nothing under
+ * one key" is precisely what that constraint forbids at row level.
+ *
+ * So each line gets a DERIVED key, `` `${batchKey}:${index}` ``: every row
+ * keeps its own row-level idempotency, and the batch key remains the thing the
+ * client holds.
+ *
+ * ## One transaction, so line 0 proves the whole sheet
+ *
+ * Every line commits together, which makes the replay check a single cheap
+ * read: if line 0's derived key exists, the whole batch committed.
+ *
+ * Worth contrasting with `createFieldOperation`, which needs `parcelCount > 0`
+ * as its discriminator for the OPPOSITE reason — it commits in TWO
+ * transactions, so a Task can exist with no lines and must not be reported as
+ * synced. The reasoning there does not transfer here, and the reasoning here
+ * would be wrong there.
+ *
+ * ## Prepared before the transaction opens
+ *
+ * `prepareCostEntry` runs over every line FIRST. A malformed line is refused
+ * before a single row is written, so the batch cannot write six rows and then
+ * discover line 7 carries a contradictory allocation basis — and the
+ * transaction's budget is not spent on string handling and date parsing.
+ *
+ * ## The P2002 catch is OUTSIDE the transaction
+ *
+ * A unique violation poisons an interactive Postgres transaction: every later
+ * statement in it fails. A catch that re-read inside would be recovering in a
+ * dead transaction. `createCostEntry` already has this structure and this
+ * mirrors it rather than inventing one.
+ */
+export async function createCostEntryBatch(
+    ctx: RequestContext,
+    input: CreateCostEntryBatchInput,
+    idempotencyKey?: string | null,
+) {
+    assertCanWrite(ctx);
+
+    // Derived per line, and recomputed on the replay path from the SAME
+    // payload — never read back by prefix. A `startsWith` lookup makes batch
+    // key `abc` match the lines of batch key `abc:1`, and outbox item ids
+    // routinely share a prefix, so that collision would appear exactly for the
+    // clients this dedupe exists to serve.
+    const derivedKeys = idempotencyKey
+        ? input.lines.map((_line: CreateCostEntryInput, i: number) => `${idempotencyKey}:${i}`)
+        : null;
+
+    if (derivedKeys) {
+        const replay = await replayBatch(ctx, derivedKeys);
+        if (replay) return replay;
+    }
+
+    // Every line validated and normalised before anything is written.
+    const prepared = input.lines.map((line: CreateCostEntryInput) => prepareCostEntry(line));
+
+    try {
+        const rows = await runInTenantContext(ctx, async (db) => {
+            const written = [];
+            for (const [i, line] of input.lines.entries()) {
+                // Sequential, not `Promise.all`: these share one transaction,
+                // and a parallel fan-out on one connection interleaves
+                // statements on it. The bound above is what keeps this cheap.
+                written.push(
+                    await writeCostEntryOn(db, ctx, line, prepared[i], derivedKeys?.[i] ?? null),
+                );
+            }
+            return written;
+        });
+        return { lines: rows.map(toDto) };
+    } catch (err) {
+        // Race backstop, mirroring the single create: two replays of the same
+        // queued sheet arrive together, both miss the pre-check, and the loser
+        // hits the unique index. Its answer is the winner's rows, not a 500.
+        if (derivedKeys && isUniqueViolation(err)) {
+            const replay = await replayBatch(ctx, derivedKeys);
+            if (replay) return replay;
+        }
+        throw err;
+    }
+}
+
+/**
+ * The committed sheet for these derived keys, or null if it is not there.
+ *
+ * Requires EVERY key to be present, not just line 0. Line 0 alone is the
+ * documented discriminator and would be sound on its own — one transaction
+ * means all or none — but asserting the full set costs nothing on a read that
+ * is already fetching them and makes the function honest about what it
+ * returned. A partial match means something wrote these keys that was not this
+ * batch, and answering a client with half a sheet is the failure the whole
+ * endpoint exists to avoid.
+ *
+ * Rows are ordered by the CALLER's key array, not by the query: derived keys
+ * sort lexicographically, so `:10` falls between `:1` and `:2` and the
+ * database's order is not line order for a ten-line sheet.
+ */
+async function replayBatch(ctx: RequestContext, derivedKeys: readonly string[]) {
+    const found = await runInTenantContext(ctx, (db) =>
+        CostEntryRepository.findByClientMutationIds(db, ctx, derivedKeys),
+    );
+    if (found.length !== derivedKeys.length) return null;
+
+    const byKey = new Map(found.map((r) => [r.clientMutationId, r]));
+    const ordered = derivedKeys.map((k) => byKey.get(k));
+    if (ordered.some((r) => r == null)) return null;
+
+    // `toDto`, not the bare rows: it converts `amount` from a Prisma Decimal to
+    // a number, so returning rows raw would answer a retry with STRINGS where
+    // the first attempt sent numbers.
+    return { lines: ordered.map((r) => toDto(r!)) };
 }
 
 export async function updateCostEntry(

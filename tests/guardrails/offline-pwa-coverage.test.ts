@@ -14,6 +14,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
@@ -315,10 +316,7 @@ describe('outbox replay carries the idempotency handle', () => {
         // explanation to be reworded to suit a regex — the tail wagging the
         // dog, and the mirror image of the trailing-comment trick that has
         // defeated text guards in this repo before.
-        const code = src
-            .slice(start, end)
-            .replace(/\/\*[\s\S]*?\*\//g, '')
-            .replace(/\/\/.*$/gm, '');
+        const code = blankNonCode(src.slice(start, end));
         expect(code).not.toMatch(/return '(sent|queued|conflict)'/);
         // Positive control: the stripper must not have eaten the code too.
         expect(code).toMatch(/return settle\('queued'\)/);

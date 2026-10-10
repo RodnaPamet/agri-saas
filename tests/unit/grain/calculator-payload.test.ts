@@ -51,11 +51,14 @@ function row(over: Partial<CommodityNetWorthRow> = {}): CommodityNetWorthRow {
         priceObservedAt: '2026-09-01',
         priceSource: 'market',
         standingCropAreaHa: 12,
+        // #1512: land the crop OCCUPIES — the cost rate's denominator.
+        occupiedAreaHa: 12,
         standingCropExpectedKg: 60_000,
         standingCropPlantingIds: ['p1'],
         standingCropValue: 25_200,
         perArea: {
             areaDca: 120,
+            costAreaDca: 120,
             standingValuePerDca: 210,
             attributableCostPerDca: 90,
             marginPerDca: 120,

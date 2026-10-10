@@ -23,6 +23,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
@@ -186,7 +187,7 @@ describe('Epic O-4 — new-tenant page structural contract', () => {
         // picker is gone, so a whole-file `not.toContain` fails on the very
         // explanation it is meant to protect. (It did: that is this
         // assertion's own first red.)
-        const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+        const code = blankNonCode(src);
         expect(code).toMatch(/router\.push/); // the strip did not eat everything
         expect(code).not.toContain('/frameworks');
     });

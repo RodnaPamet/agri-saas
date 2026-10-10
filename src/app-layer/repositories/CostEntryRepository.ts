@@ -253,6 +253,45 @@ export class CostEntryRepository {
             include: COST_INCLUDE,
         });
     }
+    /**
+     * Replay lookup for a BATCH, by EXACT derived keys (#1524).
+     *
+     * `in`, never `startsWith`. A prefix lookup makes batch key `abc` match the
+     * lines of batch key `abc:1` — and outbox item ids routinely share a
+     * prefix, so the collision appears precisely for the clients this dedupe
+     * exists to serve. The caller recomputes the derived keys from the payload
+     * and passes them, so the read can be exact.
+     *
+     * The order is NOT line order and the caller must not treat it as such.
+     * Derived keys end `:0`, `:1`, … `:10`, which sort LEXICOGRAPHICALLY — so
+     * `:10` lands between `:1` and `:2`. I wrote `orderBy: clientMutationId`
+     * here first and claimed it gave line order; it does for nine lines and
+     * silently does not for ten, which is the batch size the phone actually
+     * sends. A client pairing rows positionally would then show a figure
+     * against the wrong line.
+     *
+     * `orderBy` is kept only for DETERMINISM — a `take`-bounded read with no
+     * order is the planner's choice and can differ between calls. The caller
+     * holds the authoritative order (it computed the keys) and maps by key.
+     */
+    static async findByClientMutationIds(
+        db: PrismaTx,
+        ctx: RequestContext,
+        clientMutationIds: readonly string[],
+    ) {
+        if (clientMutationIds.length === 0) return [];
+        return db.costEntry.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                clientMutationId: { in: [...clientMutationIds] },
+                deletedAt: null,
+            },
+            include: COST_INCLUDE,
+            orderBy: { clientMutationId: 'asc' },
+            take: clientMutationIds.length,
+        });
+    }
+
     static async create(
         db: PrismaTx,
         ctx: RequestContext,

@@ -98,6 +98,10 @@ export const PerAreaFiguresSchema = z
     .object({
         /** Display unit. Storage stays hectares; there is no second stored unit. */
         areaDca: z.number(),
+        costAreaDca: z.number().openapi({
+            description:
+                'Decares that `attributableCostPerDca` was divided by — the land the crop OCCUPIES. DIFFERENT from `areaDca`, which is the yield-covered area and is the denominator of the value and margin figures only. Display this one beside the cost rate: showing `areaDca` there contradicts it, and on a farm with no yield estimates `areaDca` is 0 while the cost rate is real.',
+        }),
         standingValuePerDca: z.number().nullable(),
         attributableCostPerDca: z.number().nullable(),
         /**
@@ -227,6 +231,14 @@ export const CalculatorRowSchema = z
         priceSource: z.string().nullable(),
 
         standingCropAreaHa: z.number(),
+
+        occupiedAreaHa: z.number().openapi({
+
+            description:
+
+                'Hectares the crop OCCUPIES — every parcel it is on (its plantings if a parcel has any, else the parcel itself). NOT `standingCropAreaHa`, which is the area whose expected YIELD is counted and is the denominator for value figures only. Multiply a typed per-decare cost rate by THIS: the other is 0 on a farm with no yield estimates, so the product would be 0.',
+
+        }),
         standingCropExpectedKg: z.number(),
         standingCropValue: z.number().nullable(),
         perArea: PerAreaFiguresSchema,

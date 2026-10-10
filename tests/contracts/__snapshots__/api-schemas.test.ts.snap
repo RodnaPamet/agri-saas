@@ -1183,6 +1183,29 @@ exports[`API contract — per-schema snapshots schema: BlendLotsResult 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: BlockResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "blocked": {
+      "type": "boolean",
+      "enum": [
+        true
+      ]
+    },
+    "alreadyBlocked": {
+      "type": "boolean",
+      "description": "Whether a block already existed. The action is idempotent — pressing it twice is one row, not an error — so this is how a client tells \\"nothing changed\\" from \\"newly blocked\\" without a 201/200 split that would confuse a cache."
+    }
+  },
+  "required": [
+    "blocked",
+    "alreadyBlocked"
+  ],
+  "description": "The state of the block after the call."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: BottomTabOrder 1`] = `
 "{
   "type": [
@@ -1887,6 +1910,10 @@ exports[`API contract — per-schema snapshots schema: CalculatorPerAreaFigures 
     "areaDca": {
       "type": "number"
     },
+    "costAreaDca": {
+      "type": "number",
+      "description": "Decares that \`attributableCostPerDca\` was divided by — the land the crop OCCUPIES. DIFFERENT from \`areaDca\`, which is the yield-covered area and is the denominator of the value and margin figures only. Display this one beside the cost rate: showing \`areaDca\` there contradicts it, and on a farm with no yield estimates \`areaDca\` is 0 while the cost rate is real."
+    },
     "standingValuePerDca": {
       "type": [
         "number",
@@ -1930,6 +1957,7 @@ exports[`API contract — per-schema snapshots schema: CalculatorPerAreaFigures 
   },
   "required": [
     "areaDca",
+    "costAreaDca",
     "standingValuePerDca",
     "attributableCostPerDca",
     "marginPerDca",
@@ -1986,6 +2014,10 @@ exports[`API contract — per-schema snapshots schema: CalculatorRow 1`] = `
     },
     "standingCropAreaHa": {
       "type": "number"
+    },
+    "occupiedAreaHa": {
+      "type": "number",
+      "description": "Hectares the crop OCCUPIES — every parcel it is on (its plantings if a parcel has any, else the parcel itself). NOT \`standingCropAreaHa\`, which is the area whose expected YIELD is counted and is the denominator for value figures only. Multiply a typed per-decare cost rate by THIS: the other is 0 on a farm with no yield estimates, so the product would be 0."
     },
     "standingCropExpectedKg": {
       "type": "number"
@@ -2111,6 +2143,7 @@ exports[`API contract — per-schema snapshots schema: CalculatorRow 1`] = `
     "priceObservedAt",
     "priceSource",
     "standingCropAreaHa",
+    "occupiedAreaHa",
     "standingCropExpectedKg",
     "standingCropValue",
     "perArea",
@@ -3183,6 +3216,24 @@ exports[`API contract — per-schema snapshots schema: CostEntry 1`] = `
   ],
   "additionalProperties": {},
   "description": "One recorded cost against land, a planting, a season or an inventory item. amount is a JSON number (Decimal converted, absent reads as 0). allocationBasis says WHICH land the cost spreads across and allocationParcelIds is the PARCEL_SUBSET denominator, sorted — except CROP, which spreads across no land at all and instead names its crop in commodityCanonical, superseding the consumption-derived cost for that crop and season. description is encrypted commercial free text returned only on a single read — it is ABSENT rather than null on list rows, which is a different claim from \\"this entry has no description\\"."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: CostEntryBatchResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "lines": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/CostEntry"
+      }
+    }
+  },
+  "required": [
+    "lines"
+  ],
+  "description": "Every entry created by one cost sheet, in the order the lines were sent. On a replay of the same Idempotency-Key, the originally created rows — never a second booking."
 }"
 `;
 
@@ -9639,6 +9690,26 @@ exports[`API contract — per-schema snapshots schema: OperationParcelUpdateRequ
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: OwnBlock 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "blockedUserId": {
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "blockedUserId",
+    "createdAt"
+  ],
+  "description": "A block the caller MADE. Blocks made AGAINST the caller are never returned, even though the database policy admits both sides of the row — it must, because enforcement runs in the blocked party's context and a row they cannot see cannot refuse them. Hiding them here is what makes a block silent."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: OwnReport 1`] = `
 "{
   "type": "object",
@@ -10966,6 +11037,23 @@ exports[`API contract — per-schema snapshots schema: PendingInvite 1`] = `
     "invitedBy"
   ],
   "description": "A pending invite. Deliberately carries NO acceptance token: the token is a bearer credential and belongs only in the \`url\` the create response returns (#1450)."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: PersonBlock 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "blockedUserId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    }
+  },
+  "required": [
+    "blockedUserId"
+  ],
+  "description": "The person to block or unblock. The blocker is the authenticated caller and cannot be supplied."
 }"
 `;
 

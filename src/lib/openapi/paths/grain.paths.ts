@@ -68,6 +68,7 @@
  */
 import { z } from '@/lib/openapi/zod';
 import {
+    CreateCostEntryBatchSchema,
     CreateBinSchema,
     UpdateBinSchema,
     BlendLotsSchema,
@@ -80,6 +81,7 @@ import {
     CreateContractSchema,
 } from '@/app-layer/schemas/grain.schemas';
 import {
+    CostEntryBatchResponseSchema,
     CostEntryDTOSchema,
     CostEntryListSchema,
     YieldRecordDTOSchema,
@@ -218,6 +220,28 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         params: TenantParams,
         body: CreateCostEntrySchema,
         success: { status: 201, description: 'The created cost entry.', schema: CostEntryDTOSchema },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/grain/costs/batch',
+        operationId: 'createCostEntryBatch',
+        summary: 'Record a whole cost sheet, all-or-nothing',
+        description:
+            'Creates up to 25 cost entries in ONE transaction. Either every line is booked or none is \u2014 a half-saved sheet is worse than one that failed, because the farmer cannot tell which lines landed. Each line is exactly the `POST /grain/costs` body, so every rule documented there applies per line, including the `CROP` basis refusals and the salary breakdown.' +
+            '\n\n**`lines` must contain at least one entry.** An empty batch is refused rather than absorbed as a no-op: a 201 for a write that did nothing is what makes an offline outbox believe it has synced and drop the sheet.' +
+            '\n\n**A line that violates any rule refuses the WHOLE sheet, before anything is written.** Every line is validated up front, so the batch cannot book six rows and then discover line 7 carries a contradictory allocation basis.' +
+            '\n\n**Honours `Idempotency-Key`, and it is the SHEET\u2019s key.** Send one minted before the first attempt and reused on every retry of the same sheet. Note the server derives a per-line key from it internally \u2014 `CostEntry` carries a unique index on `(tenantId, clientMutationId)`, so the lines cannot literally share your key \u2014 and a replay returns the ORIGINAL rows, in the order you sent them, rather than booking the sheet twice. Do not construct or depend on the derived form; it is an implementation detail and is deliberately not read back by prefix.' +
+            '\n\nThe 25-line bound is not politeness: the sheet is one interactive transaction, and an unbounded batch is a transaction whose size the client chooses.',
+        tags: ['Grain'],
+        params: TenantParams,
+        body: CreateCostEntryBatchSchema,
+        success: {
+            status: 201,
+            description:
+                'Every created entry, in the order the lines were sent. On a replay, the originally created rows.',
+            schema: CostEntryBatchResponseSchema,
+        },
     });
 
     op(registry, {
@@ -738,7 +762,7 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
             '\n\n**Yearly overheads only** — `PAYROLL`, `CREDIT`, `DEPRECIATION`, `OTHER`. `RENT` is deliberately absent: it is a per-decare crop line in the owner\'s split, not an overhead, however fixed it is.' +
             '\n\n**`payrollHeadcount` / `payrollAnnualPerPerson` are `null`, never `0`, when a plain total was entered.** Zero people earning a salary is a different claim from "they typed a total", and a prefill that wrote zeros over that distinction would overwrite real figures with a number nobody typed.' +
             '\n\n**`incurredOn` is returned so a STALE default is visible.** Last year\'s salary figure prefilled silently is worse than one shown with its date beside it.' +
-            '\n\n**`?commodity=<any spelling>` returns the per-CROP sheet instead** — the farm\'s last «Култура» lines for that crop, as `{ commodity, lines: [{ category, amountPerDca, currency, incurredOn, description }] }`. Send no `commodity` and you get the overhead payload above, unchanged. The spelling is normalised, so `Canola` resolves to `rapeseed`, and the canonical value is echoed back so you know what was looked up. A commodity the vocabulary does not cover is a **400**, not an empty sheet: an empty answer is indistinguishable from "this crop has no history", so a typo would read as a fact about the farm.' +
+            '\n\n**`?commodity=<any spelling>` returns the per-CROP sheet instead** — the farm\'s last «Култура» lines for that crop, as `{ commodity, lines: [{ category, amountPerDca, currency, incurredOn, description }] }`. Send no `commodity` and you get the overhead payload above, unchanged. The spelling is normalised, so `Canola` resolves to `rapeseed`, and the canonical value is echoed back so you know what was looked up. A commodity the vocabulary does not cover is a **400** carrying `code: \"UNKNOWN_COMMODITY\"` and the value you sent in `params.commodity`, not an empty sheet: an empty answer is indistinguishable from "this crop has no history", so a typo would read as a fact about the farm.' +
             '\n\n**It returns the latest SET, not the latest line.** A sheet is several lines entered together — ПРЗ, торове, seed — so every row sharing the most recent `incurredOn` for that crop comes back, each with its own `description` as the row\'s name. Prefilling only the newest line would collapse a sheet into one and the farmer would retype the rest without noticing.' +
             '\n\n**`amountPerDca: null` means the farmer entered a TOTAL, not that the line is empty.** The line is returned rather than dropped, so a client can show the row unfilled instead of implying the farm never recorded that cost.' +
             '\n\n**Read each line\'s `currency`; do not assume the form\'s.** Bulgaria moved to EUR in 2026 and older rows are stored in BGN, so prefilling the NUMBER alone shows a 24 000 лв figure as €24 000 — wrong by the fixed 1.95583, and entirely plausible on screen. Convert, or leave a foreign-currency line out and say so.' +

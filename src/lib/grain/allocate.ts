@@ -231,3 +231,59 @@ export function spreadOverParcels(
         unallocatedAreaHa: Math.round(unallocatedAreaHa * 1000) / 1000,
     };
 }
+
+/**
+ * How much LAND each target occupies, under the same partition
+ * `spreadOverParcels` uses (#1512).
+ *
+ * The cost side and the value side need DIFFERENT denominators, which is the
+ * finding this exists for. `standingCropAreaHa` in `grain-net-worth` is the
+ * area whose expected YIELD is counted — plantings carrying a
+ * `plannedYieldKgPerHa`, and no others — because it is set from the same
+ * `summarizePlannedYield` call as `standingCropExpectedKg`, and
+ * `standingValuePerDca` is only meaningful because the two match.
+ *
+ * A COST rate has no such constraint: a parcel growing wheat with no yield
+ * estimate still costs money and still occupies land. Dividing a cost by the
+ * yield-covered area under-states the rate by exactly the land the farm cannot
+ * forecast — and on a farm with no real plantings that area is 0, so the rate
+ * is a division by zero dressed up as a refusal.
+ *
+ * ## The partition MUST match `spreadOverParcels` above
+ *
+ * Owner ruling 2026-10-09: per parcel, the plantings on it if it has any, else
+ * the parcel itself. PER PARCEL and not per farm — a farm-level fallback would
+ * count a parcel that has both a planting and an `areaHa` twice.
+ *
+ * This is a second traversal of the same rule rather than a shared helper,
+ * because `spreadOverParcels` is a MONEY path doing cent-exact
+ * `allocateByWeights` rounding and areas want neither. The duplication is
+ * deliberate and bounded to the one predicate `targets.length === 0`, and
+ * `tests/unit/grain/allocate-occupied-area.test.ts` asserts the two functions
+ * agree on WHICH parcels fall back — so the copies cannot drift silently,
+ * which is the only thing that makes a second copy acceptable.
+ */
+export function occupiedAreaHaByTarget(
+    parcels: readonly SpreadParcel[],
+    targetsByParcel: ReadonlyMap<string, readonly SpreadTarget[]>,
+): { byTarget: Map<string, number>; byParcel: Map<string, number> } {
+    const byTarget = new Map<string, number>();
+    const byParcel = new Map<string, number>();
+
+    for (const parcel of parcels) {
+        const targets = targetsByParcel.get(parcel.id) ?? [];
+        if (targets.length === 0) {
+            // `+=`, not `set`, for the reason `unallocatedByParcel` gives: a
+            // duplicate parcel id would otherwise keep only its last area.
+            const area = parcel.areaHa > 0 ? parcel.areaHa : 0;
+            if (area > 0) byParcel.set(parcel.id, (byParcel.get(parcel.id) ?? 0) + area);
+            continue;
+        }
+        for (const target of targets) {
+            const area = target.areaHa > 0 ? target.areaHa : 0;
+            if (area > 0) byTarget.set(target.id, (byTarget.get(target.id) ?? 0) + area);
+        }
+    }
+
+    return { byTarget, byParcel };
+}

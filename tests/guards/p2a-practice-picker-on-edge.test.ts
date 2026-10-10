@@ -15,6 +15,7 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
@@ -28,11 +29,11 @@ describe("Epic P2-PR-A — practice picker on edge", () => {
             // the hook was removed and why, and a bare negative match hits
             // that note rather than an import. Third time in this teardown
             // a guard has fired on its own documentation.
-            const code = src
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .split('\n')
-                .filter((l: string) => !l.trim().startsWith('//'))
-                .join('\n');
+            // `blankNonCode` removes TRAILING comments too, which the
+            // `startsWith('//')` line filter could not — it only dropped
+            // whole-line comments, so a trailing one stayed in the corpus
+            // (#1605).
+            const code = blankNonCode(src);
             expect(code).not.toMatch(/use-tenant-practices/);
             expect(code).not.toMatch(/useTenantPractices/);
         });

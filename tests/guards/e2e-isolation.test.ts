@@ -41,6 +41,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const E2E_DIR = path.resolve(__dirname, '..', 'e2e');
 
@@ -67,19 +68,17 @@ function specFiles(): string[] {
  * Crude but sufficient for the structural question being asked.
  */
 function stripNoise(src: string): string {
-    return src
-        // block comments
-        .replace(/\/\*[\s\S]*?\*\//g, ' ')
-        // line comments
-        .replace(/\/\/[^\n]*/g, ' ')
-        // template literals (keep `${}` interpolations would be ideal,
-        // but for this guard treating the whole literal as blank is
-        // safe — we only care about top-level `let` identifiers, which
-        // never live inside a template literal)
-        .replace(/`(?:[^`\\]|\\.)*`/g, '``')
-        // double / single quoted strings
-        .replace(/"(?:[^"\\]|\\.)*"/g, '""')
-        .replace(/'(?:[^'\\]|\\.)*'/g, "''");
+    // Comments AND all three string forms, which is exactly what
+    // `blankNonCode`'s `strings` option does — and it does it in ONE state-aware
+    // pass rather than six regexes applied in sequence (#1605).
+    //
+    // The sequence mattered and was fragile: the template-literal regex ran
+    // AFTER the comment ones, so a backtick inside a comment could terminate a
+    // literal that the comment pass had already half-eaten. The original
+    // comment here explains the trade-off it accepted — "treating the whole
+    // literal as blank is safe" — which the state-aware pass gives without the
+    // trade-off, since it tracks which construct it is inside.
+    return blankNonCode(src, { strings: true });
 }
 
 /**
