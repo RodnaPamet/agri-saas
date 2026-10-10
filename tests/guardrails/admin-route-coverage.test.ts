@@ -46,6 +46,13 @@ const ADMIN_ONLY_ROUTES = [
     // Trends chart, so it is curation of a global catalogue rather than
     // tenant work — same shape as companies/promotions above.
     'admin/market-prices/route.ts',
+    // The superuser price OVERRIDE (#1587). Same two gates as its sibling
+    // above, and the one that most needs them: a price typed here does not
+    // merely fill a gap the feeds leave, it SUPPRESSES the feed for every
+    // tenant's calculator and net worth. `admin.manage` alone would hand that
+    // to the owner of any farm, since every tenant owner holds it.
+    'admin/market-prices/overrides/route.ts',
+    'admin/market-prices/overrides/[commodity]/route.ts',
     // /admin/* routes
     'admin/members/route.ts',
     'admin/members/[membershipId]/route.ts',

@@ -661,6 +661,16 @@
       "documented": false
     },
     {
+      "path": "/api/t/{tenantSlug}/admin/market-prices/overrides",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/market-prices/overrides/{commodity}",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/admin/members",
       "status": "live",
       "documented": true

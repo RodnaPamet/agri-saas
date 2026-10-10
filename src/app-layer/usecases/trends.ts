@@ -14,6 +14,7 @@
  */
 import prisma from '@/lib/prisma';
 import { localiseSeriesLabel } from '@/lib/market/series-labels';
+import { PLATFORM_OVERRIDE_SOURCE as OVERRIDE_SOURCE } from './market-price-overrides';
 import { LOCALES, type Locale } from '@/lib/i18n/locales';
 import { getRedis } from '@/lib/redis';
 import { logger } from '@/lib/observability/logger';
@@ -139,12 +140,24 @@ async function readFromDb(
 ): Promise<TrendPricesResponse> {
     const cutoff = cutoffFor(range);
     const series = await prisma.marketPriceSeries.findMany({
-        where: { commodity },
+        // `clearedAt: null` excludes a withdrawn platform override (#1587). A
+        // feed series is never cleared — there is nobody to clear it and nothing
+        // it would mean — so this filter is a no-op for every source but one,
+        // and it is what makes "cleared" and "absent from the payload" the same
+        // thing without the rows going anywhere.
+        where: { commodity, clearedAt: null },
         take: MAX_SERIES,
         orderBy: [{ source: 'asc' }, { region: 'asc' }, { stage: 'asc' }],
         include: {
             points: {
-                where: cutoff ? { date: { gte: cutoff } } : undefined,
+                // Points carry their OWN `clearedAt`, and the series filter
+                // above is not sufficient for them. Re-typing after a clear
+                // resolves to the same series row by the natural key, so a
+                // re-typed series is live again while its previous run's points
+                // must stay hidden. Only the point flag can express that.
+                where: cutoff
+                    ? { date: { gte: cutoff }, clearedAt: null }
+                    : { clearedAt: null },
                 // NEWEST first, then reversed below. Ascending + `take` hands
                 // back the OLDEST 1000 points, so on range='all' a series with
                 // a long history had its headline frozen in the past — the
@@ -156,6 +169,41 @@ async function readFromDb(
             },
         },
     });
+
+    // ── The override must never be the row the cap drops (#1587) ─────────
+    //
+    // `take: MAX_SERIES` with `orderBy: source asc` is a position in the
+    // alphabet, not a guarantee. `'platform'` sorts between `'manual'` and
+    // `'sofia-exchange'`, so a commodity carrying 100 series could truncate the
+    // one series whose entire purpose is to outrank the others — and the
+    // symptom would be a price silently reverting to the feed, with no error
+    // anywhere and nothing in the payload to say a row was dropped.
+    //
+    // The cap has bitten here before: see the note further down, where 110
+    // eligible series against MAX_SERIES = 100 dropped ten arbitrarily and a
+    // whole commodity could vanish. That query is farm-wide; this one is scoped
+    // to a single commodity, so 100 is generous and this branch should never
+    // run in practice. It is written for the case where that stops being true,
+    // and it costs ONE extra query only when the result is actually at the cap.
+    if (series.length === MAX_SERIES && !series.some((sx) => sx.source === OVERRIDE_SOURCE)) {
+        const override = await prisma.marketPriceSeries.findFirst({
+            where: { commodity, source: OVERRIDE_SOURCE, clearedAt: null },
+            orderBy: [{ region: 'asc' }, { stage: 'asc' }],
+            include: {
+                points: {
+                    where: cutoff
+                        ? { date: { gte: cutoff }, clearedAt: null }
+                        : { clearedAt: null },
+                    orderBy: { date: 'desc' },
+                    take: MAX_POINTS_PER_SERIES,
+                    select: { date: true, price: true, meta: true },
+                },
+            },
+        });
+        // Displace the LAST row rather than appending past the cap, so the
+        // response size stays bounded by the same constant it always was.
+        if (override) series.splice(MAX_SERIES - 1, 1, override);
+    }
 
     // Newest observation per series REGARDLESS of the range window. It cannot
     // ride along on the `points` include — that relation is already filtered to
@@ -653,5 +701,74 @@ export async function getMarketReferences(
             ranked.set(s.commodity, { stage: rank, observedAt: latest.date });
         }
     }
+
+    // ── The superuser override SUPPRESSES the feed (#1587 contract §4) ────
+    //
+    // Owner ruling 2026-10-10: a typed price always wins, for every farm and
+    // every surface, until it is cleared. Applied as a post-pass rather than by
+    // folding `'platform'` into the admit-list above, and that is deliberate:
+    // the ranking in that loop encodes #1072's fix — an `isBetter` that never
+    // fired because EC quotes every series for a week on the same date, so the
+    // winner across a 178-250 EUR/t spread was whichever row Postgres returned
+    // first. An override does not compete on that axis at all; it replaces the
+    // result. Mixing it into the comparison would put a hard-won total order at
+    // risk to express a rule that has nothing to do with it.
+    //
+    // SUPPRESSED, not averaged and not offered alongside as comparable. The
+    // house rule is that consumers group by currency or refuse, never blend —
+    // and urea against the Pink Sheet's USD/mt makes that concrete: preferring
+    // one series needs no conversion, combining them needs a rate nobody has.
+    const overrides = await prisma.marketPriceSeries.findMany({
+        where: {
+            commodity: { in: wanted },
+            source: OVERRIDE_SOURCE,
+            // A withdrawn override is not an override. The points of its run are
+            // stamped too, so this filter and the point filter below agree.
+            clearedAt: null,
+        },
+        // Deterministic for the same reason as the query above: without a total
+        // order, two live override rows for one commodity would resolve to
+        // whatever the planner returned. The write path refuses to create that
+        // state, so this is a belt on top of a brace rather than the only guard.
+        orderBy: [{ commodity: 'asc' }, { id: 'asc' }],
+        take: MAX_SERIES,
+        select: {
+            commodity: true,
+            source: true,
+            currency: true,
+            unit: true,
+            points: {
+                where: { clearedAt: null },
+                // LATEST by observation DATE, not by write time: a superuser
+                // correcting yesterday's figure today must not have the
+                // correction beat today's price.
+                orderBy: { date: 'desc' },
+                take: 1,
+                select: { date: true, price: true },
+            },
+        },
+    });
+
+    for (const o of overrides) {
+        const latest = o.points[0];
+        if (!latest) continue;
+        // Per-tonne only, exactly as above. Diesel's override is EUR/l and is
+        // excluded here by design — `getMarketReferences` answers "what is a
+        // tonne of this crop worth", and the pull job's comment says the same
+        // filter is why diesel can never reach it.
+        if (!/\/t$/i.test(o.unit)) continue;
+
+        byCommodity.set(o.commodity, {
+            commodity: o.commodity as MarketReference['commodity'],
+            pricePerTonne: Number(latest.price),
+            currency: o.currency,
+            observedAt: latest.date.toISOString().slice(0, 10),
+            // The DTO carries the override's own source, non-negotiably. An
+            // overridden price that looks like a market price is worse than no
+            // override — a farmer is entitled to know which they are seeing.
+            source: o.source,
+        });
+    }
+
     return byCommodity;
 }
