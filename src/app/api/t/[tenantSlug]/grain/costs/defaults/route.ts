@@ -1,35 +1,40 @@
 import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
 import { assertModuleEnabled } from '@/app-layer/usecases/modules';
-import { getCostDefaults } from '@/app-layer/usecases/cost-defaults';
+import { getCostDefaults, getCropCostDefaults } from '@/app-layer/usecases/cost-defaults';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonWithETag } from '@/lib/http/etag';
 
 /**
- * GET /api/t/[tenantSlug]/grain/costs/defaults
+ * GET /api/t/[tenantSlug]/grain/costs/defaults?commodity=
  *
  * What the farm last entered for each overhead, so «Нов разход» opens prefilled
  * instead of empty. The owner's decision was explicit that these are the farm's
  * OWN last values and that there is no Agrent-wide table — so a farm with no
  * history gets an empty array, never somebody else's numbers.
  *
- * ## No `commodity` parameter yet, and that is deliberate
+ * ## `?commodity=` — the per-crop half, added by agrent-ios#245
  *
- * agrent-ios' proposal had `?commodity=…` for the per-crop half. It is absent
- * because the read path for it does not exist: `CostEntry` has no commodity
- * column, and all four live cost entries on the owner's farm carry NO domain
- * link at all — `parcelId`, `seasonId`, `plantingId`, `locationId`, `itemId`
- * and `leaseId` are each set on zero of them (measured by agrent-ios on
- * production, read-only counts).
+ * This docblock used to explain at length why the parameter was ABSENT, and
+ * the explanation was right at the time: `CostEntry` had no commodity column,
+ * and all four live cost entries on the owner's farm carry no domain link at
+ * all — `parcelId`, `seasonId`, `plantingId`, `locationId`, `itemId` and
+ * `leaseId` each set on zero of them (measured by agrent-ios on production,
+ * read-only counts). So `CostEntry.parcelId → Parcel.cropType` resolved
+ * nothing and the parameter would have been a filter that always returned
+ * empty.
  *
- * So `CostEntry.parcelId → Parcel.cropType` resolves nothing, and shipping the
- * parameter would add a filter that always returns empty. It also would have
- * prejudged #1512: per-crop «last values» can only come from entries the new
- * form creates, which will carry whatever crop target that issue settles on, so
- * the read must key on that field rather than on a path chosen first.
+ * #1583 added `commodityCanonical`, so the read now has a key that the crop
+ * form actually populates — and the old reasoning's own conclusion was that
+ * the read "must key on that field rather than on a path chosen first", which
+ * is what `getCropCostDefaults` does.
  *
- * Adding the parameter later is additive — a client that does not send it keeps
- * the behaviour it has.
+ * It is additive, as that note predicted: a client that sends no `commodity`
+ * gets exactly the overhead payload it got before.
+ *
+ * An UNRESOLVABLE commodity is refused rather than answered with an empty
+ * sheet — an empty answer would be indistinguishable from "this crop has no
+ * history", so a typo would read as a fact about the farm.
  *
  * ## Gated and cached like its siblings
  *
