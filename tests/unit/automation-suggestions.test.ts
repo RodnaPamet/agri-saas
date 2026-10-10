@@ -45,21 +45,42 @@ describe('rankRuleSuggestions', () => {
      * the worse one: it reads as a pass. See #1525.
      */
     /**
-     * Two separate claims, deliberately not one test.
+     * Two separate claims, deliberately not one test — and the forcing
+     * function this used to be WORKED.
      *
-     * The CATALOGUE is empty (#1479 took its only candidate, which triggered
-     * on the retired `ISSUE_CREATED`). The RANKING still works and is now
-     * testable against injected candidates (#1525) — before that seam existed
-     * the list was a local const, so with it empty the three properties below
-     * had no subject and the only honest assertion left was `toEqual([])`.
+     * It previously asserted `RULE_SUGGESTION_CANDIDATES` was empty, with a
+     * comment saying that adding a candidate would fail exactly this test so
+     * that whoever added one had to deal with the ranking coverage in the same
+     * diff. When the rail was pointed at `AUTOMATION_TEMPLATES` (#1525), one
+     * test failed: this one. Nothing else moved, because the ranking tests
+     * below range over INJECTED fixtures and never depended on the catalogue.
      *
-     * Keeping them apart means adding a real candidate fails exactly one test
-     * — the catalogue one — rather than silently changing what the ranking
-     * tests range over.
+     * Recording that because the alternative at the time was a conditional
+     * skip, and a skip would have let this change land with the rail silently
+     * unexercised.
      */
-    it('the shipped catalogue is empty — see #1525 before adding one', () => {
-        expect(RULE_SUGGESTION_CANDIDATES).toEqual([]);
-        expect(rankRuleSuggestions({ coveredEvents: new Set() })).toEqual([]);
+    it('the catalogue is DERIVED from the templates, and is no longer empty', () => {
+        // The rail rendered nothing from #1479 until #1525. Asserting
+        // non-empty means a regression to a blank rail fails loudly rather
+        // than looking like a tenant with no suggestions.
+        expect(RULE_SUGGESTION_CANDIDATES.length).toBeGreaterThan(0);
+
+        // And the DEFAULT path — no injected candidates — now returns them,
+        // which is what the component actually calls. Ranking the real
+        // catalogue was unreachable while the list was empty.
+        const out = rankRuleSuggestions({ coveredEvents: new Set() });
+        expect(out.length).toBe(RULE_SUGGESTION_CANDIDATES.length);
+        expect(out.map((s) => s.rank)).toEqual(
+            RULE_SUGGESTION_CANDIDATES.map((_, i) => i + 1),
+        );
+    });
+
+    it('a covered event is excluded from the DEFAULT path too', () => {
+        // The exclusion was only ever exercised against injected fixtures.
+        // With a real catalogue it can be exercised against the shipped list,
+        // which is the path the rail uses.
+        const covered = new Set(RULE_SUGGESTION_CANDIDATES.map((c) => c.triggerEvent));
+        expect(rankRuleSuggestions({ coveredEvents: covered })).toEqual([]);
     });
 
     /** Injected candidates on LIVE events, so nothing here depends on the

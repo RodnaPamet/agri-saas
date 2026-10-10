@@ -3,21 +3,17 @@ import { requirePermission } from '@/lib/security/permission-middleware';
 import { updateTenantMemberRole, removeTenantMember } from '@/app-layer/usecases/tenant-admin';
 import { assignCustomRole } from '@/app-layer/usecases/custom-roles';
 import { withApiErrorHandling } from '@/lib/errors/api';
-import { z } from 'zod';
 import { jsonResponse } from '@/lib/api-response';
 import { codedBadRequest } from '@/lib/errors/types';
+import { UpdateAdminMemberSchema } from '@/lib/schemas';
 
-const UpdateMemberSchema = z.object({
-    role: z.enum(['OWNER', 'ADMIN', 'EDITOR', 'AUDITOR', 'READER', 'MECHANISATOR']).optional(),
-    customRoleId: z.string().nullable().optional(),
-});
 
 export const PATCH = withApiErrorHandling(
     requirePermission<{ tenantSlug: string; membershipId: string }>(
         'admin.members',
         async (req: NextRequest, { params }, ctx) => {
             const body = await req.json();
-            const input = UpdateMemberSchema.parse(body);
+            const input = UpdateAdminMemberSchema.parse(body);
 
             let result;
 

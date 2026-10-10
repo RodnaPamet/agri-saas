@@ -24,6 +24,7 @@ import { OperationParcelDTOSchema } from '@/lib/dto/operation-parcel.dto';
 import { TaskDTOSchema } from '@/lib/dto/task.dto';
 import { ApiErrorResponseSchema } from '@/lib/dto/common';
 import { op } from './helpers';
+import { FieldOperationReviewSchema } from '@/lib/schemas';
 
 // ZodObjects, because that is what the generator reads to build inline
 // parameters — see the note on OperationInput.params.
@@ -92,21 +93,6 @@ const FieldOperationDetail = z
         description:
             'One spray job: the Task, its per-parcel prescription lines, the linked location ' +
             'with all of its parcels for the map, and a derived progress counter.',
-    });
-
-const FieldOperationReviewRequest = z
-    .object({
-        action: z.enum(['APPROVE', 'REQUEST_CHANGES']),
-        comment: z.string().max(2000).nullable().optional().openapi({
-            description:
-                'Sanitised server-side, then reused three ways — Task.resolution (APPROVE only), ' +
-                'the audit detail, and the operator notification.',
-        }),
-    })
-    .openapi('FieldOperationReviewRequest', {
-        description:
-            'Reviewer decision on a completed field operation. ADMIN-gated, and deliberately ' +
-            'separate from evidence review: this finalises the Task.',
     });
 
 const FieldOperationReviewResult = z
@@ -266,7 +252,7 @@ export function registerFieldOperationPaths(registry: OpenAPIRegistry): void {
             'operator when there is one.',
         tags: ['Field operations'],
         params: TaskParams,
-        body: FieldOperationReviewRequest,
+        body: FieldOperationReviewSchema,
         success: {
             status: 200,
             description: 'The review was applied.',

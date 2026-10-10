@@ -4,17 +4,13 @@ import { requirePermission } from '@/lib/security/permission-middleware';
 import { listTenantMembers } from '@/app-layer/usecases/tenant-admin';
 import { createInviteToken, listPendingInvites } from '@/app-layer/usecases/tenant-invites';
 import { withApiErrorHandling } from '@/lib/errors/api';
-import { z } from 'zod';
 import { jsonResponse } from '@/lib/api-response';
 import { resolvePublicOrigin } from '@/lib/http/request-origin';
 import { sendInviteEmail } from '@/lib/email/invite-email';
 import { enforceRateLimit, getClientIp, isRateLimitBypassed } from '@/lib/security/rate-limit-middleware';
 import { TENANT_INVITE_CREATE_LIMIT } from '@/lib/security/rate-limit';
+import { InviteMemberSchema } from '@/lib/schemas';
 
-const InviteMemberSchema = z.object({
-    email: z.string().email('Valid email required'),
-    role: z.enum(['OWNER', 'ADMIN', 'EDITOR', 'AUDITOR', 'READER', 'MECHANISATOR'] as const),
-});
 
 const TENANT_ROLE_LABEL: Record<string, string> = {
     OWNER: 'Owner',
