@@ -144,6 +144,12 @@ function withServerDerived(
             row.perArea ??
             computePerArea({
                 standingCropAreaHa: row.standingCropAreaHa,
+                // #1512: the cost rate's denominator. This harness has no
+                // occupied-area input of its own, so it reuses the standing
+                // area — which keeps every existing expectation in this file
+                // unchanged. The cases where the two DIFFER are unit-tested in
+                // `per-area.test.ts`, where the distinction is the subject.
+                occupiedAreaHa: row.standingCropAreaHa,
                 standingCropValue: row.standingCropValue,
                 attributableCost: row.cashCostTotal,
                 standingCropExcludedCount: 0,
@@ -200,6 +206,7 @@ function wheatRow(over: Partial<CalculatorRow> = {}): CalculatorRow {
         priceSource: 'sofia-exchange',
 
         standingCropAreaHa: 12.5,
+        occupiedAreaHa: 12.5,
         standingCropExpectedKg: 60_000,
         standingCropValue: 15_000,
 
@@ -243,6 +250,7 @@ function maizeRow(over: Partial<CalculatorRow> = {}): CalculatorRow {
         priceSource: null,
 
         standingCropAreaHa: 8,
+        occupiedAreaHa: 8,
         standingCropExpectedKg: 32_000,
         standingCropValue: null,
 

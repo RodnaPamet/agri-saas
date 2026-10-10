@@ -227,6 +227,14 @@ export const CalculatorRowSchema = z
         priceSource: z.string().nullable(),
 
         standingCropAreaHa: z.number(),
+
+        occupiedAreaHa: z.number().openapi({
+
+            description:
+
+                'Hectares the crop OCCUPIES — every parcel it is on (its plantings if a parcel has any, else the parcel itself). NOT `standingCropAreaHa`, which is the area whose expected YIELD is counted and is the denominator for value figures only. Multiply a typed per-decare cost rate by THIS: the other is 0 on a farm with no yield estimates, so the product would be 0.',
+
+        }),
         standingCropExpectedKg: z.number(),
         standingCropValue: z.number().nullable(),
         perArea: PerAreaFiguresSchema,

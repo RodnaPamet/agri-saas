@@ -1987,6 +1987,10 @@ exports[`API contract — per-schema snapshots schema: CalculatorRow 1`] = `
     "standingCropAreaHa": {
       "type": "number"
     },
+    "occupiedAreaHa": {
+      "type": "number",
+      "description": "Hectares the crop OCCUPIES — every parcel it is on (its plantings if a parcel has any, else the parcel itself). NOT \`standingCropAreaHa\`, which is the area whose expected YIELD is counted and is the denominator for value figures only. Multiply a typed per-decare cost rate by THIS: the other is 0 on a farm with no yield estimates, so the product would be 0."
+    },
     "standingCropExpectedKg": {
       "type": "number"
     },
@@ -2111,6 +2115,7 @@ exports[`API contract — per-schema snapshots schema: CalculatorRow 1`] = `
     "priceObservedAt",
     "priceSource",
     "standingCropAreaHa",
+    "occupiedAreaHa",
     "standingCropExpectedKg",
     "standingCropValue",
     "perArea",

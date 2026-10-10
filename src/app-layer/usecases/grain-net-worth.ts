@@ -1,4 +1,9 @@
-import { allocateByWeights, computeAreaWeights, spreadOverParcels } from '@/lib/grain/allocate';
+import {
+    allocateByWeights,
+    computeAreaWeights,
+    occupiedAreaHaByTarget,
+    spreadOverParcels,
+} from '@/lib/grain/allocate';
 import type { RequestContext } from '../types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { assertCanRead } from '../policies/common';
@@ -294,6 +299,18 @@ export interface CommodityNetWorthRow {
 
     // ── 1. Standing crop (expected) ──
     standingCropAreaHa: number;
+    /**
+     * Land this commodity OCCUPIES, hectares — NOT `standingCropAreaHa` (#1512).
+     *
+     * `standingCropAreaHa` is the area whose expected YIELD is counted, and is
+     * the right denominator for a VALUE figure. This is every parcel the crop
+     * is on, and is the right denominator for a COST rate.
+     *
+     * A client multiplying a per-decare rate by an area wants THIS one: the
+     * other is 0 on a farm with no yield estimates, so the product would be 0
+     * and a typed rate would book nothing.
+     */
+    occupiedAreaHa: number;
     standingCropExpectedKg: number;
     standingCropPlantingIds: string[];
     /** `standingCropExpectedKg / 1000 × pricePerTonne`; null with no price. */
@@ -629,6 +646,23 @@ interface CommodityAcc {
      * side. The count is what lets that figure say it is incomplete.
      */
     standingCropExcludedCount: number;
+    /**
+     * Land this commodity OCCUPIES — a different area from
+     * `standingCropAreaHa` above, and the distinction is the whole of #1512.
+     *
+     * `standingCropAreaHa` is the area whose expected YIELD is counted; it is
+     * set from the same `summarizePlannedYield` call as
+     * `standingCropExpectedKg`, so the pair match and `standingValuePerDca` is
+     * meaningful. This one is every parcel the crop is on — owner's rule: the
+     * plantings on a parcel if it has any, else the parcel itself.
+     *
+     * A COST rate divides by THIS. A parcel growing wheat with no yield
+     * estimate still costs money and still occupies land, so dividing a cost
+     * by the yield-covered area under-states the rate by exactly the land the
+     * farm cannot forecast — and on a farm with no real plantings that area is
+     * 0, which turns a real rate into a refusal.
+     */
+    occupiedAreaHa: number;
     grainOnHandTonnes: number;
     grainOnHandLotIds: string[];
     attributedCropCost: number;
@@ -705,6 +739,7 @@ function newAcc(): CommodityAcc {
     return {
         standingCropExpectedKg: 0,
         standingCropAreaHa: 0,
+        occupiedAreaHa: 0,
         standingCropPlantingIds: [],
         standingCropExcludedCount: 0,
         grainOnHandTonnes: 0,
@@ -1629,6 +1664,7 @@ function finalizeRow(
         priceSource: reference?.source ?? null,
 
         standingCropAreaHa: a.standingCropAreaHa,
+        occupiedAreaHa: round3(a.occupiedAreaHa),
         standingCropExpectedKg: a.standingCropExpectedKg,
         standingCropPlantingIds: a.standingCropPlantingIds,
         standingCropValue,
@@ -1675,6 +1711,11 @@ function finalizeRow(
         // all, and farm-wide overhead.
         perArea: computePerArea({
             standingCropAreaHa: a.standingCropAreaHa,
+            // The cost rate's own denominator (#1512). A parcel growing this
+            // crop with no yield estimate still costs money and still occupies
+            // land, so the cost side cannot honestly divide by the
+            // yield-covered area.
+            occupiedAreaHa: a.occupiedAreaHa,
             standingCropValue,
             attributableCost: cashCostTotal,
             standingCropExcludedCount: a.standingCropExcludedCount,
@@ -2004,6 +2045,28 @@ export async function getGrainNetWorth(
         knownPlantingsByParcel,
         subsetByEntry,
     };
+
+    // ── The OCCUPIED area, per commodity (#1512) ──
+    //
+    // Under the same partition the spread uses: a parcel's plantings if it has
+    // any, else the parcel itself. Computed from rows already in memory — no
+    // I/O — and deliberately NOT folded into `standingCropAreaHa`, which is
+    // the yield-covered area and must stay matched to `standingCropExpectedKg`
+    // or `standingValuePerDca` stops meaning anything.
+    const occupied = occupiedAreaHaByTarget(parcelInfos, knownPlantingsByParcel);
+    for (const [plantingId, areaHa] of occupied.byTarget) {
+        const info = plantingInfo.get(plantingId);
+        if (info?.commodity == null) continue; // known-commodity by construction.
+        ensureAcc(acc, info.commodity).occupiedAreaHa += areaHa;
+    }
+    for (const [parcelId, areaHa] of occupied.byParcel) {
+        const commodity = land.parcelById.get(parcelId)?.commodity;
+        // A fallback parcel whose own `cropType` names no commodity occupies
+        // land for NO crop. It belongs in no row, and adding it to one would
+        // inflate that crop's denominator and depress its rate.
+        if (commodity == null) continue;
+        ensureAcc(acc, commodity).occupiedAreaHa += areaHa;
+    }
 
     computePayroll(
         payrollEntries,

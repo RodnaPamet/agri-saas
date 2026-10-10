@@ -47,6 +47,18 @@ export type PerAreaRefusalCode = 'NO_STANDING_CROP_AREA' | 'NO_STANDING_CROP_VAL
 export interface PerAreaInput {
     /** INCLUDED-planting area. See the denominator trap above. */
     standingCropAreaHa: number;
+    /**
+     * Land the crop OCCUPIES — the COST rate's denominator (#1512).
+     *
+     * A different area from `standingCropAreaHa`, and the distinction is the
+     * point. That one is the area whose expected YIELD is counted, so it is
+     * the only honest denominator for a value figure. A parcel growing this
+     * crop with no yield estimate still costs money and still occupies land,
+     * so dividing a cost by the yield-covered area understates the rate by
+     * exactly the land the farm cannot forecast — and on a farm with no real
+     * plantings it is 0, which turned a knowable rate into a refusal.
+     */
+    occupiedAreaHa: number;
     standingCropValue: number | null;
     /** `cashCostTotal` — the per-planting attributed cost. */
     attributableCost: number;
@@ -82,11 +94,23 @@ function round2(n: number): number {
 
 export function computePerArea(input: PerAreaInput): PerAreaFigures {
     const areaDca = round2((input.standingCropAreaHa || 0) * DCA_PER_HA);
+    const costAreaDca = round2((input.occupiedAreaHa || 0) * DCA_PER_HA);
 
     // `> 0` and not `!== 0`: this also rejects NaN and negatives, either of
     // which would otherwise reach the division and come back out as a
     // confident figure nobody can reconcile.
     const divisible = Number.isFinite(areaDca) && areaDca > 0;
+    const costDivisible = Number.isFinite(costAreaDca) && costAreaDca > 0;
+
+    // The COST rate stands on its own (#1512). It needs the occupied area and
+    // the cost, and nothing else — not a market price, not a yield estimate.
+    // Coupling it to `standingCropValue` was the defect: a farm that knows
+    // exactly what it is spending got no cost-per-decare because nobody could
+    // say what the crop was worth, which is a different question.
+    const attributableCostPerDca = costDivisible
+        ? round2(input.attributableCost / costAreaDca)
+        : null;
+
     const refusalCode: PerAreaRefusalCode | null = !divisible
         ? 'NO_STANDING_CROP_AREA'
         : input.standingCropValue == null
@@ -96,8 +120,12 @@ export function computePerArea(input: PerAreaInput): PerAreaFigures {
     if (refusalCode != null) {
         return {
             areaDca: Number.isFinite(areaDca) ? areaDca : 0,
+            // Both VALUE figures stay refused — the margin included, because
+            // it subtracts a value that does not exist. `refusalCode` keeps
+            // describing exactly that, which is what the calculator's
+            // per-commodity list keys on.
             standingValuePerDca: null,
-            attributableCostPerDca: null,
+            attributableCostPerDca,
             marginPerDca: null,
             uncertainty: UNCERTAINTY.REFUSED,
             refusalCode,
@@ -108,7 +136,7 @@ export function computePerArea(input: PerAreaInput): PerAreaFigures {
     return {
         areaDca,
         standingValuePerDca: round2(value / areaDca),
-        attributableCostPerDca: round2(input.attributableCost / areaDca),
+        attributableCostPerDca,
         marginPerDca: round2((value - input.attributableCost) / areaDca),
         uncertainty: perAreaUncertainty(input),
         refusalCode: null,
