@@ -180,6 +180,41 @@ describe('the i18n dead-key detector (#1534)', () => {
         });
     });
 
+    describe('a translator name rebound in one file resolves to BOTH namespaces', () => {
+        // `FarmTaskDetailClient.tsx` binds `t` twice, in two component scopes:
+        //
+        //     :105   const t = useTranslations('tasks.detail');
+        //     :1060  const t = useTranslations('tasks.detail.links');
+        //
+        // A `Map<name, string>` keeps only the last, so all 87 `t(...)` calls
+        // in that file resolved against `tasks.detail.links` and every real
+        // `tasks.detail.*` key read as dead — 76 of them, the largest single
+        // distortion this detector had.
+        //
+        // Resolving against every namespace the name is bound to over-marks
+        // `referenced`, which is the SAFE direction for a dead-key report: it
+        // under-reports dead keys rather than proposing a live one for
+        // deletion. Exactly 1 file of 315 rebinds a name, so the over-marking
+        // is bounded.
+        it('tasks.detail is almost entirely referenced, not dead', () => {
+            const dead = report.unreferencedKeys.filter((k) => k.startsWith('tasks.detail.'));
+            // 76 before the multimap, 8 after. A regression to the single-value
+            // Map takes this straight back over 70.
+            expect(dead.length).toBeLessThan(20);
+        });
+
+        it('while the sub-namespaces with NO binder stay dead', () => {
+            // The control for the assertion above: it must not pass by the
+            // detector having become permissive. Nothing binds `tasks.list`,
+            // `tasks.sheet`, `tasks.dashboard` or `tasks.editModal` — the UI
+            // moved to `farmTasks` — so those keys are genuinely unreachable
+            // and must still be reported.
+            for (const sub of ['tasks.list.', 'tasks.sheet.', 'tasks.dashboard.']) {
+                expect(report.unreferencedKeys.some((k) => k.startsWith(sub))).toBe(true);
+            }
+        });
+    });
+
     it('says how much it could not decide, and distinguishes the two reasons', () => {
         // A bare "N dead keys" repeats the mistake #1534 is about — a correct
         // number answering a question nobody asked. `undecidable` must be
