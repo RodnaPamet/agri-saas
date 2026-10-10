@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "10.23.0",
+    "version": "10.24.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -11146,6 +11146,52 @@
         ],
         "deprecated": true,
         "description": "Payload for creating a practice. Status defaults to NOT_STARTED. `code` carries the framework reference where one applies (e.g. ISO 27001:2022 A.5.1) and is minted as `CTL-N` for custom practices. Custom practices (isCustom=true) are tenant-specific."
+      },
+      "PriceOverrideClearResult": {
+        "type": "object",
+        "properties": {
+          "commodity": {
+            "type": "string"
+          },
+          "cleared": {
+            "type": "boolean",
+            "description": "FALSE when there was nothing to clear, which is a 200 and not an error. A superuser clearing an override that was never set has the outcome they wanted; a 404 would make an idempotent retry look like a failure."
+          },
+          "pointsRemoved": {
+            "type": "integer",
+            "description": "Points removed from publication. They are NOT lost — the audit row for the clear carries every point’s date and price, up to a stated cap, because the read path has no source filter and so \"absent from the payload\" has to mean deleted."
+          }
+        },
+        "required": [
+          "commodity",
+          "cleared",
+          "pointsRemoved"
+        ]
+      },
+      "PriceOverrideWriteResult": {
+        "type": "object",
+        "properties": {
+          "seriesId": {
+            "type": "string"
+          },
+          "commodity": {
+            "type": "string",
+            "description": "The CANONICAL commodity the spelling you sent resolved to."
+          },
+          "pointsUpserted": {
+            "type": "integer"
+          },
+          "created": {
+            "type": "boolean",
+            "description": "True when this write created the override series rather than adding points to a run already in progress."
+          }
+        },
+        "required": [
+          "seriesId",
+          "commodity",
+          "pointsUpserted",
+          "created"
+        ]
       },
       "QueueStatement": {
         "type": "object",
@@ -32974,6 +33020,368 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NewsTagCatalogue"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries an English `message` as a developer-facing fallback; it is NOT translated, so render your own copy keyed on `code`. Route-level 403s carry their own codes and are described on the operation that returns them.\n\nOne route-level code is described HERE rather than per-operation. MOST operations cannot return it — it is confined to the five capability families named below — but it means the same thing on each of them, and one of the five (`upload`) is gated at a choke point that many unrelated routes reach, so an exhaustive per-operation list would be the kind that is wrong by omission:\n\n- `PAST_DUE_RESTRICTED` — a payment on this tenant failed and the 14-day grace period has elapsed. It is NOT a quota or a plan ceiling: the plan is untouched and nothing was exceeded. The withheld capabilities are exactly `exchange`, `trends`, `task.create`, `upload` and `journal.create`; every other surface, including reading everything already recorded, is unaffected. The tenant's own ACTIVE exchange listings stay visible to other farms and inbound threads keep arriving — this is the unpaid tenant's own view closing, not a withdrawal.\n\n  The restriction is COMPUTED per request, with no sweep and nothing to settle, so a cleared balance lifts it on the very next request — a client can honestly tell the user to resolve it and refresh. This description deliberately names no remedy beyond that: App Store guideline 3.1.1 keeps the native client from pointing anyone to pay outside the app, so a prescribed destination would be unreachable for one of the two clients (#1490). What both clients CAN do is distinguish this from `plan_limit_exceeded:` and say which happened.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/admin/price-overrides": {
+      "post": {
+        "operationId": "upsertPlatformPriceOverride",
+        "summary": "Type a price that wins for every farm",
+        "description": "Owner ruling 2026-10-10: a typed price **always wins** over the API, on every surface and for every farm, until a superuser CLEARS it. A manual override, not a stale-only fallback — chosen over \"API unless missing or stale\" and over \"newest wins\".\n\n**The override is published as its own series**, with a fixed `source: \"platform\"`, `region: \"BG\"`, `stage: null`, and the unit it was typed in. It appears in the same market-prices payload Тенденции and Табло already read, beside the API series — no new endpoint and no second fetch. The six-column natural key `(source, commodity, region, stage, currency, unit)` is what makes that safe: a `platform` series cannot collide or blend with a feed’s.\n\n**A client must prefer a marked override ACROSS unit groups, not within one.** This is the part that is easy to get wrong and silently lose. Ranking normally happens inside a `(unit, currency)` group, and the diesel bulletin is published in `EUR/1000l` while a typed diesel price is `EUR/l` — so an override in a different group is never compared against the feed and is never chosen. Marking the series is necessary and not sufficient.\n\n**It carries every typed day of the current run**, not only the latest, so it draws as a real line rather than a single point and a farmer can see what the platform has been setting. `lastObservedAt` is the latest typed date.\n\n**Units: the nine crops and fertilisers are `EUR/t`; diesel alone is `EUR/l`.** Asked of the owner directly after this issue had recorded \"EUR per tonne, diesel included\" via a relay. Diesel is ~1.95 EUR/l or ~1950 EUR/t, so the two are a factor of a thousand apart and a daily-typed field is where habit beats attention. The server does not special-case diesel; it REFUSES a second denomination for a commodity that already has one, because a series that changes denomination mid-history renders as one continuous line and is a lie.\n\n**`source: \"platform\"` is distinct from `\"manual\"` and must stay so.** `manual` fills a gap — no free feed publishes MAP at all, and the Pink Sheet carries neither MAP nor ammonium nitrate — so it has no feed to outrank. Reusing it would retroactively convert every gap-fill row ever entered into an always-wins override, with no migration and no diff that looks like a behaviour change.\n\n**Duplicate observation dates in one payload are refused**, naming the date. The feeds average genuine duplicate observations; two different prices typed for one day is a typo, and averaging a typo produces a number nobody entered.\n\nGated on `admin.manage` **inside** `PLATFORM_TENANT_SLUG`. Both halves are load-bearing: `admin.manage` is held by the OWNER of EVERY tenant, so alone it would hand any farm’s owner the global price cache. The gate FAILS CLOSED — unset slug means `404` for everyone, the owner included — so this route can exist before the platform farm does, and does nothing until it exists.",
+        "tags": [
+          "Trends"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "commodity": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "region": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32,
+                    "default": "BG"
+                  },
+                  "stage": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "label": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "unit": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32
+                  },
+                  "currency": {
+                    "type": "string",
+                    "pattern": "^[A-Z]{3}$"
+                  },
+                  "points": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "date": {
+                          "type": "string",
+                          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                        },
+                        "price": {
+                          "type": "number",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "date",
+                        "price"
+                      ]
+                    },
+                    "minItems": 1,
+                    "maxItems": 500
+                  }
+                },
+                "required": [
+                  "commodity",
+                  "unit",
+                  "currency",
+                  "points"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The override series, and how many points the write touched.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceOverrideWriteResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries an English `message` as a developer-facing fallback; it is NOT translated, so render your own copy keyed on `code`. Route-level 403s carry their own codes and are described on the operation that returns them.\n\nOne route-level code is described HERE rather than per-operation. MOST operations cannot return it — it is confined to the five capability families named below — but it means the same thing on each of them, and one of the five (`upload`) is gated at a choke point that many unrelated routes reach, so an exhaustive per-operation list would be the kind that is wrong by omission:\n\n- `PAST_DUE_RESTRICTED` — a payment on this tenant failed and the 14-day grace period has elapsed. It is NOT a quota or a plan ceiling: the plan is untouched and nothing was exceeded. The withheld capabilities are exactly `exchange`, `trends`, `task.create`, `upload` and `journal.create`; every other surface, including reading everything already recorded, is unaffected. The tenant's own ACTIVE exchange listings stay visible to other farms and inbound threads keep arriving — this is the unpaid tenant's own view closing, not a withdrawal.\n\n  The restriction is COMPUTED per request, with no sweep and nothing to settle, so a cleared balance lifts it on the very next request — a client can honestly tell the user to resolve it and refresh. This description deliberately names no remedy beyond that: App Store guideline 3.1.1 keeps the native client from pointing anyone to pay outside the app, so a prescribed destination would be unreachable for one of the two clients (#1490). What both clients CAN do is distinguish this from `plan_limit_exceeded:` and say which happened.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/admin/price-overrides/{commodity}": {
+      "delete": {
+        "operationId": "clearPlatformPriceOverride",
+        "summary": "Clear the override, handing authority back to the feed",
+        "description": "Removes the platform override for one commodity, across every region and stage. The feed’s price becomes authoritative again and the `platform` series is **absent from the payload entirely** — \"no platform position\" is a different claim from \"a platform position of nothing\".\n\n**Clearing nothing is a 200 with `cleared: false`, not a 404.** A superuser clearing an override that was never set, or was already cleared, has exactly the outcome they wanted, and a client retrying a clear is the normal case.\n\n**Re-typing after a clear starts a FRESH run.** Points from before the clear are not republished. A clear is an affirmative withdrawal, not a mute: if clearing hid points that reappeared on the next type, a superuser who cleared a wrong price would see it resurrected by an unrelated later entry.\n\n**The typed history is not lost.** The audit row for the clear carries every point’s date, price, unit and currency, up to a stated cap, and says how many it truncated. The rows themselves are deleted because the read path has NO source filter — which is why a `platform` series needs no read-side change to appear, and equally why anything left in the table would stay visible.\n\nSame gate as the write, and it fails closed the same way.",
+        "tags": [
+          "Trends"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Any spelling the vocabulary resolves — `Canola`, `rapeseed`, «рапица», `diesel`. One it does not cover is a 400 naming the value, never a silent no-op: \"cleared nothing\" and \"cleared a commodity you misspelled\" must not look the same.",
+              "example": "wheat"
+            },
+            "required": true,
+            "description": "Any spelling the vocabulary resolves — `Canola`, `rapeseed`, «рапица», `diesel`. One it does not cover is a 400 naming the value, never a silent no-op: \"cleared nothing\" and \"cleared a commodity you misspelled\" must not look the same.",
+            "name": "commodity",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What was cleared. `cleared: false` with `pointsRemoved: 0` when there was no override.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceOverrideClearResult"
                 }
               }
             }

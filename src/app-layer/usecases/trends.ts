@@ -14,6 +14,7 @@
  */
 import prisma from '@/lib/prisma';
 import { localiseSeriesLabel } from '@/lib/market/series-labels';
+import { PLATFORM_OVERRIDE_SOURCE as OVERRIDE_SOURCE } from './market-manual-prices';
 import { LOCALES, type Locale } from '@/lib/i18n/locales';
 import { getRedis } from '@/lib/redis';
 import { logger } from '@/lib/observability/logger';
@@ -156,6 +157,39 @@ async function readFromDb(
             },
         },
     });
+
+    // ── The override must never be the row the cap drops (#1587) ─────────
+    //
+    // `take: MAX_SERIES` with `orderBy: source asc` is a position in the
+    // alphabet, not a guarantee. `'platform'` sorts between `'manual'` and
+    // `'sofia-exchange'`, so a commodity carrying 100 series could truncate the
+    // one series whose entire purpose is to outrank the others — and the
+    // symptom would be a price silently reverting to the feed, with no error
+    // anywhere and nothing in the payload to say a row was dropped.
+    //
+    // The cap has bitten here before: see the note further down, where 110
+    // eligible series against MAX_SERIES = 100 dropped ten arbitrarily and a
+    // whole commodity could vanish. That query is farm-wide; this one is scoped
+    // to a single commodity, so 100 is generous and this branch should never
+    // run in practice. It is written for the case where that stops being true,
+    // and it costs ONE extra query only when the result is actually at the cap.
+    if (series.length === MAX_SERIES && !series.some((sx) => sx.source === OVERRIDE_SOURCE)) {
+        const override = await prisma.marketPriceSeries.findFirst({
+            where: { commodity, source: OVERRIDE_SOURCE },
+            orderBy: [{ region: 'asc' }, { stage: 'asc' }],
+            include: {
+                points: {
+                    where: cutoff ? { date: { gte: cutoff } } : undefined,
+                    orderBy: { date: 'desc' },
+                    take: MAX_POINTS_PER_SERIES,
+                    select: { date: true, price: true, meta: true },
+                },
+            },
+        });
+        // Displace the LAST row rather than appending past the cap, so the
+        // response size stays bounded by the same constant it always was.
+        if (override) series.splice(MAX_SERIES - 1, 1, override);
+    }
 
     // Newest observation per series REGARDLESS of the range window. It cannot
     // ride along on the `points` include — that relation is already filtered to

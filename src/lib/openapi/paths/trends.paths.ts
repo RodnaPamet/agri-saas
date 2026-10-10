@@ -54,6 +54,7 @@ import {
 } from '@/app-layer/schemas/trends.schemas';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { op } from './helpers';
+import { ManualPriceSeriesSchema } from '@/app-layer/schemas/market-manual.schemas';
 
 const TenantParams = z.object({
     tenantSlug: z.string().openapi({ param: { name: 'tenantSlug', in: 'path' }, example: 'acme' }),
@@ -172,6 +173,52 @@ const TrendNewsResponseSchema = z
             'The aggregated news feed, newest first. category, tags and q each echo the filter that produced this payload, so a client holding a page can tell a stale response from the one it asked for — which matters more, not less, now that there are three filters to reconcile.',
     });
 
+/** `{tenantSlug}` plus the commodity whose override is being cleared. */
+const OverrideParams = z.object({
+    tenantSlug: z.string().openapi({ param: { name: 'tenantSlug', in: 'path' }, example: 'acme' }),
+    commodity: z.string().openapi({
+        param: { name: 'commodity', in: 'path' },
+        description:
+            'Any spelling the vocabulary resolves — `Canola`, `rapeseed`, \u00abрапица\u00bb, `diesel`. ' +
+            'One it does not cover is a 400 naming the value, never a silent no-op: ' +
+            '"cleared nothing" and "cleared a commodity you misspelled" must not look the same.',
+        example: 'wheat',
+    }),
+});
+
+const PriceOverrideWriteResult = z
+    .object({
+        seriesId: z.string(),
+        commodity: z.string().openapi({
+            description: 'The CANONICAL commodity the spelling you sent resolved to.',
+        }),
+        pointsUpserted: z.number().int(),
+        created: z.boolean().openapi({
+            description:
+                'True when this write created the override series rather than adding points to a ' +
+                'run already in progress.',
+        }),
+    })
+    .openapi('PriceOverrideWriteResult');
+
+const PriceOverrideClearResult = z
+    .object({
+        commodity: z.string(),
+        cleared: z.boolean().openapi({
+            description:
+                'FALSE when there was nothing to clear, which is a 200 and not an error. A ' +
+                'superuser clearing an override that was never set has the outcome they wanted; a ' +
+                '404 would make an idempotent retry look like a failure.',
+        }),
+        pointsRemoved: z.number().int().openapi({
+            description:
+                'Points removed from publication. They are NOT lost — the audit row for the clear ' +
+                'carries every point\u2019s date and price, up to a stated cap, because the read path ' +
+                'has no source filter and so "absent from the payload" has to mean deleted.',
+        }),
+    })
+    .openapi('PriceOverrideClearResult');
+
 export function registerTrendsPaths(registry: OpenAPIRegistry): void {
     op(registry, {
         method: 'get',
@@ -262,6 +309,53 @@ export function registerTrendsPaths(registry: OpenAPIRegistry): void {
                     ),
                 })
                 .openapi('NewsTagCatalogue'),
+        },
+    });
+
+    // ── The superuser price override (#1587) ─────────────────────────────
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/admin/price-overrides',
+        operationId: 'upsertPlatformPriceOverride',
+        summary: 'Type a price that wins for every farm',
+        description:
+            'Owner ruling 2026-10-10: a typed price **always wins** over the API, on every surface and for every farm, until a superuser CLEARS it. A manual override, not a stale-only fallback \u2014 chosen over "API unless missing or stale" and over "newest wins".' +
+            '\n\n**The override is published as its own series**, with a fixed `source: "platform"`, `region: "BG"`, `stage: null`, and the unit it was typed in. It appears in the same market-prices payload \u0422\u0435\u043d\u0434\u0435\u043d\u0446\u0438\u0438 and \u0422\u0430\u0431\u043b\u043e already read, beside the API series \u2014 no new endpoint and no second fetch. The six-column natural key `(source, commodity, region, stage, currency, unit)` is what makes that safe: a `platform` series cannot collide or blend with a feed\u2019s.' +
+            '\n\n**A client must prefer a marked override ACROSS unit groups, not within one.** This is the part that is easy to get wrong and silently lose. Ranking normally happens inside a `(unit, currency)` group, and the diesel bulletin is published in `EUR/1000l` while a typed diesel price is `EUR/l` \u2014 so an override in a different group is never compared against the feed and is never chosen. Marking the series is necessary and not sufficient.' +
+            '\n\n**It carries every typed day of the current run**, not only the latest, so it draws as a real line rather than a single point and a farmer can see what the platform has been setting. `lastObservedAt` is the latest typed date.' +
+            '\n\n**Units: the nine crops and fertilisers are `EUR/t`; diesel alone is `EUR/l`.** Asked of the owner directly after this issue had recorded "EUR per tonne, diesel included" via a relay. Diesel is ~1.95 EUR/l or ~1950 EUR/t, so the two are a factor of a thousand apart and a daily-typed field is where habit beats attention. The server does not special-case diesel; it REFUSES a second denomination for a commodity that already has one, because a series that changes denomination mid-history renders as one continuous line and is a lie.' +
+            '\n\n**`source: "platform"` is distinct from `"manual"` and must stay so.** `manual` fills a gap \u2014 no free feed publishes MAP at all, and the Pink Sheet carries neither MAP nor ammonium nitrate \u2014 so it has no feed to outrank. Reusing it would retroactively convert every gap-fill row ever entered into an always-wins override, with no migration and no diff that looks like a behaviour change.' +
+            '\n\n**Duplicate observation dates in one payload are refused**, naming the date. The feeds average genuine duplicate observations; two different prices typed for one day is a typo, and averaging a typo produces a number nobody entered.' +
+            '\n\nGated on `admin.manage` **inside** `PLATFORM_TENANT_SLUG`. Both halves are load-bearing: `admin.manage` is held by the OWNER of EVERY tenant, so alone it would hand any farm\u2019s owner the global price cache. The gate FAILS CLOSED \u2014 unset slug means `404` for everyone, the owner included \u2014 so this route can exist before the platform farm does, and does nothing until it exists.',
+        tags: ['Trends'],
+        params: TenantParams,
+        body: ManualPriceSeriesSchema,
+        success: {
+            status: 201,
+            description: 'The override series, and how many points the write touched.',
+            schema: PriceOverrideWriteResult,
+        },
+    });
+
+    op(registry, {
+        method: 'delete',
+        path: '/api/t/{tenantSlug}/admin/price-overrides/{commodity}',
+        operationId: 'clearPlatformPriceOverride',
+        summary: 'Clear the override, handing authority back to the feed',
+        description:
+            'Removes the platform override for one commodity, across every region and stage. The feed\u2019s price becomes authoritative again and the `platform` series is **absent from the payload entirely** \u2014 "no platform position" is a different claim from "a platform position of nothing".' +
+            '\n\n**Clearing nothing is a 200 with `cleared: false`, not a 404.** A superuser clearing an override that was never set, or was already cleared, has exactly the outcome they wanted, and a client retrying a clear is the normal case.' +
+            '\n\n**Re-typing after a clear starts a FRESH run.** Points from before the clear are not republished. A clear is an affirmative withdrawal, not a mute: if clearing hid points that reappeared on the next type, a superuser who cleared a wrong price would see it resurrected by an unrelated later entry.' +
+            '\n\n**The typed history is not lost.** The audit row for the clear carries every point\u2019s date, price, unit and currency, up to a stated cap, and says how many it truncated. The rows themselves are deleted because the read path has NO source filter \u2014 which is why a `platform` series needs no read-side change to appear, and equally why anything left in the table would stay visible.' +
+            '\n\nSame gate as the write, and it fails closed the same way.',
+        tags: ['Trends'],
+        params: OverrideParams,
+        success: {
+            status: 200,
+            description:
+                'What was cleared. `cleared: false` with `pointsRemoved: 0` when there was no override.',
+            schema: PriceOverrideClearResult,
         },
     });
 }

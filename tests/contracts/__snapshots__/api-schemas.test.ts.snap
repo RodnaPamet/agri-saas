@@ -11705,6 +11705,58 @@ exports[`API contract — per-schema snapshots schema: PracticeCreateRequest 1`]
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: PriceOverrideClearResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "commodity": {
+      "type": "string"
+    },
+    "cleared": {
+      "type": "boolean",
+      "description": "FALSE when there was nothing to clear, which is a 200 and not an error. A superuser clearing an override that was never set has the outcome they wanted; a 404 would make an idempotent retry look like a failure."
+    },
+    "pointsRemoved": {
+      "type": "integer",
+      "description": "Points removed from publication. They are NOT lost — the audit row for the clear carries every point’s date and price, up to a stated cap, because the read path has no source filter and so \\"absent from the payload\\" has to mean deleted."
+    }
+  },
+  "required": [
+    "commodity",
+    "cleared",
+    "pointsRemoved"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: PriceOverrideWriteResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "seriesId": {
+      "type": "string"
+    },
+    "commodity": {
+      "type": "string",
+      "description": "The CANONICAL commodity the spelling you sent resolved to."
+    },
+    "pointsUpserted": {
+      "type": "integer"
+    },
+    "created": {
+      "type": "boolean",
+      "description": "True when this write created the override series rather than adding points to a run already in progress."
+    }
+  },
+  "required": [
+    "seriesId",
+    "commodity",
+    "pointsUpserted",
+    "created"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: QueueStatement 1`] = `
 "{
   "type": "object",
