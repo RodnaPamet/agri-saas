@@ -43,27 +43,51 @@ function round2(n: number): number {
  */
 export function assertNetWorthInvariants(rows: readonly CommodityNetWorthRow[]): void {
     for (const row of rows) {
-        // ── cashCostTotal IS its three named parts ──────────────────
+        // ── cashCostTotal IS its four named parts ───────────────────
         //
         // Asserted for every row, refused or not, because this clause is
         // about the COST side and a row can be refused for want of a
         // price while its cost is perfectly well known.
         //
         // The gap this closes: the identity below is written in terms of
-        // `cashCostTotal`, so a fourth term added to the sum flows through
-        // it and stays green. `COST_METRICS` forbids that widening in
-        // writing — twice, in two files — and until now nothing executed
-        // the rule. An imputed land charge, a purchase folded into crop
-        // cost, anything that is not one of these three: the sum stops
-        // matching its own printed slices, which is the #556 defect in
-        // the opposite direction.
+        // `cashCostTotal`, so a term added to the sum flows through it and
+        // stays green. An imputed land charge, a purchase folded into crop
+        // cost, anything not named here: the sum stops matching its own
+        // printed slices, which is the #556 defect in the opposite
+        // direction.
+        //
+        // ── why this list grew to four, and what did NOT change ─────
+        //
+        // #1530 added `typedCropCost` — the farmer's own per-crop figure —
+        // and this assertion caught it, which is the whole point of having
+        // written it. The rule was never "there are exactly three terms";
+        // it is **every term in the sum is printed beside the total**, so a
+        // new term is admissible precisely when it is also a row field a
+        // surface can show. `typedCropCost` is one, so it joins the list.
+        //
+        // The teeth are unchanged. A FIFTH term that is not added here
+        // still fails, and an imputed or otherwise non-cash term still has
+        // no business in the sum whether or not it is printed — see
+        // `COST_METRICS.IMPUTED_LAND_CHARGE`, which is reported beside
+        // these and deliberately not among them.
+        //
+        // Note `attributedCropCost` and `typedCropCost` are MUTUALLY
+        // EXCLUSIVE per (commodity, season) rather than per commodity, so
+        // both being non-zero on one row is correct for a farm that typed a
+        // figure for one season and recorded consumption in another. This
+        // assertion is about the SUM and deliberately does not police that
+        // exclusivity — `grain-net-worth.test.ts` does, where the seasons
+        // are visible.
         expect({
             commodity: row.commodity,
             cashCostTotal: row.cashCostTotal,
         }).toEqual({
             commodity: row.commodity,
             cashCostTotal: round2(
-                row.attributedCropCost + row.rentCostMoneyAmount + row.payrollCost,
+                row.attributedCropCost +
+                    row.rentCostMoneyAmount +
+                    row.payrollCost +
+                    row.typedCropCost,
             ),
         });
 

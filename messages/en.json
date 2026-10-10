@@ -4562,7 +4562,8 @@
             "imputedLandChargeRefused": "Not stated",
             "imputedLandChargeRefusedWhy": "You own land, but none of your leases sets a money rent to price it at. Record a lease in лв/дка and this figure appears.",
             "unallocatedToCropLabel": "On land with no crop",
-            "unallocatedToCropNote": "Spread cost and rent that landed on land with no crop — {count, plural, one {# parcel} other {# parcels}}, {area} ha in total. Not charged to any crop, so the cost above is short by exactly this."
+            "unallocatedToCropNote": "Spread cost and rent that landed on land with no crop — {count, plural, one {# parcel} other {# parcels}}, {area} ha in total. Not charged to any crop, so the cost above is short by exactly this.",
+            "costTypedCropLabel": "Typed per crop"
         },
         "nav": {
             "ariaLabel": "Grain sections",

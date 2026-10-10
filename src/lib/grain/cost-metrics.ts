@@ -109,14 +109,20 @@ export const COST_METRICS = {
      * instead of letting it.
      *
      * A SIXTH metric rather than a term inside `GRAIN_NET_WORTH`'s cost
-     * side, for one reason: no lev leaves the bank. `cashCostTotal` is
-     * named for what it is, its docblock defines it as exactly
-     * `attributedCropCost + rentCostMoneyAmount + payrollCost`, and every
-     * surface that prints it prints those three slices beside it. Adding a
-     * fourth term would leave the printed slices short of the printed
-     * total — two figures four inches apart contradicting each other,
-     * which is the defect #556 was written about, in the opposite
-     * direction.
+     * side, for one reason: **no lev leaves the bank.** `cashCostTotal` is
+     * named for what it is.
+     *
+     * This argument used to rest on a COUNT — the docblock defined the total
+     * as exactly `attributedCropCost + rentCostMoneyAmount + payrollCost`,
+     * and "adding a fourth term would leave the printed slices short of the
+     * printed total". #1530 added a fourth (`typedCropCost`, the farmer's own
+     * per-crop figure) so the count is obsolete, but what it rested on is
+     * not: every surface that prints the total prints the slices beside it,
+     * so each slice must be real cash and the slices must sum to the total.
+     * That is why a PAID cost may join and an IMPUTED one may not — two
+     * figures four inches apart contradicting each other is the defect #556
+     * was written about, and an imputed term inside a cash total is exactly
+     * that.
      *
      * It is not a rent ACCRUAL either. `resolveRentBasis` prices a real
      * contractual obligation the farmer owes whether or not it is paid

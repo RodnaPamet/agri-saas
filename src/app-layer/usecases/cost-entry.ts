@@ -188,15 +188,27 @@ export function assertAllocationBasis(input: {
     if (basis !== 'TARGET') {
         const spatial = COST_SPATIAL_LINKS.filter((k) => input[k] != null);
         if (spatial.length > 0) {
-            // CROP gets its own sentence. It does not spread across land at
-            // all — it is summed straight onto a commodity — so telling a
-            // farmer it "spreads across land of its own" would explain the
-            // refusal with something untrue, and the next person to read it
-            // would look for the spread.
+            // CROP gets its own sentence, and a CODE. It does not spread
+            // across land at all — it is summed straight onto a commodity —
+            // so telling a farmer it "spreads across land of its own" would
+            // explain the refusal with something untrue, and the next reader
+            // would go looking for the spread.
+            //
+            // Coded for the reason `assertPayrollBreakdown` gives above: the
+            // uncoded `badRequest`s around it are the #1391 gap, and adding
+            // more of them would widen it. The existing non-CROP branch is
+            // left exactly as it was — converting it would be a behaviour
+            // change to an error shape clients already handle, which is not
+            // this change's business.
+            if (basis === 'CROP') {
+                throw codedBadRequest(
+                    'CROP_COST_HAS_SPATIAL_LINK',
+                    'A cost entry scoped to one crop belongs to that crop rather than to a place, so it cannot also link to a planting, parcel or location.',
+                    { links: spatial.join(',') },
+                );
+            }
             throw badRequest(
-                basis === 'CROP'
-                    ? `A CROP cost entry belongs to a crop rather than to a place, so it cannot also link to ${spatial.join(', ')}`
-                    : `A ${basis} cost entry spreads across land of its own, so it cannot also link to ${spatial.join(', ')}`,
+                `A ${basis} cost entry spreads across land of its own, so it cannot also link to ${spatial.join(', ')}`,
             );
         }
     }
@@ -214,10 +226,17 @@ export function assertAllocationBasis(input: {
     //     cost.
     if (basis === 'CROP') {
         if (input.commodityCanonical == null) {
-            throw badRequest('A CROP cost entry must name the crop it belongs to');
+            throw codedBadRequest(
+                'CROP_COST_NEEDS_COMMODITY',
+                'A cost entry scoped to one crop must name the crop it belongs to.',
+            );
         }
     } else if (input.commodityCanonical != null) {
-        throw badRequest('commodityCanonical may only be set on a CROP cost entry');
+        throw codedBadRequest(
+            'COMMODITY_NOT_APPLICABLE',
+            'A crop may only be named on a cost entry whose allocation basis is CROP.',
+            { basis: String(basis) },
+        );
     }
 
     if (basis === 'PARCEL_SUBSET') {
