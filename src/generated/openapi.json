@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "10.19.1",
+    "version": "10.20.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -3600,6 +3600,61 @@
           "ingestToken"
         ],
         "description": "The create response. ingestToken is the raw credential and appears ONLY here — the server keeps a hash, so it cannot be shown again or recovered."
+      },
+      "CropCostDefaults": {
+        "type": "object",
+        "properties": {
+          "commodity": {
+            "type": "string",
+            "description": "The CANONICAL commodity, echoed so you know what your spelling resolved to. Named `commodity`, NOT `commodityCanonical` — that is the storage column; this is the resolved value."
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "category": {
+                  "type": "string",
+                  "description": "The cost category as entered. Deliberately NOT narrowed to the overhead enum: a crop sheet books the categories a crop actually incurs."
+                },
+                "amountPerDca": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "description": "The per-decare rate AS TYPED. `null` means the farmer entered a TOTAL, not that the line is empty — show the row unfilled rather than dropping it, or you hide that the farm has such a cost at all."
+                },
+                "currency": {
+                  "type": "string",
+                  "description": "READ THIS; do not assume the form’s. Bulgaria moved to EUR in 2026 and older rows are BGN, so prefilling the number alone shows a 24 000 лв figure as €24 000 — wrong by the fixed 1.95583 and entirely plausible on screen."
+                },
+                "incurredOn": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "Show it, so a stale default looks like one. Every line of one sheet shares this instant — that is what makes them one sheet."
+                },
+                "description": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "The row’s NAME — what distinguishes ПРЗ from торове on one sheet. A departure worth stating: list rows elsewhere omit `description` because it is encrypted commercial free text. Returned here only because the rows are the CALLER’S OWN, bounded to one sheet, and without it the sheet comes back as several unlabelled amounts."
+                }
+              },
+              "required": [
+                "category",
+                "amountPerDca",
+                "currency",
+                "incurredOn",
+                "description"
+              ]
+            }
+          }
+        },
+        "required": [
+          "commodity",
+          "lines"
+        ]
       },
       "CropPlan": {
         "type": "object",
@@ -26192,7 +26247,7 @@
       "get": {
         "operationId": "getCostDefaults",
         "summary": "«Последни стойности» — what the farm last entered",
-        "description": "The farm's own last value for each OVERHEAD category, so «Нов разход» opens prefilled rather than empty.\n\n**The farm's own history, never a benchmark.** There is no Agrent-wide table behind this — the owner's decision was explicit. A farm with no history gets an empty `overheads` array, and that is the correct first-run state rather than an error.\n\n**Yearly overheads only** — `PAYROLL`, `CREDIT`, `DEPRECIATION`, `OTHER`. `RENT` is deliberately absent: it is a per-decare crop line in the owner's split, not an overhead, however fixed it is.\n\n**`payrollHeadcount` / `payrollAnnualPerPerson` are `null`, never `0`, when a plain total was entered.** Zero people earning a salary is a different claim from \"they typed a total\", and a prefill that wrote zeros over that distinction would overwrite real figures with a number nobody typed.\n\n**`incurredOn` is returned so a STALE default is visible.** Last year's salary figure prefilled silently is worse than one shown with its date beside it.\n\n**No `commodity` parameter yet.** The per-crop half needs a commodity→cost path that does not exist: `CostEntry` has no commodity column, and all four live cost entries on the owner's farm carry no domain link at all (`parcelId`, `seasonId`, `plantingId`, `locationId`, `itemId`, `leaseId` each set on zero). Adding it later is additive — a client that does not send it keeps this behaviour.\n\nCarries a weak ETag; send `If-None-Match` and handle **304**.",
+        "description": "The farm's own last value for each OVERHEAD category, so «Нов разход» opens prefilled rather than empty.\n\n**The farm's own history, never a benchmark.** There is no Agrent-wide table behind this — the owner's decision was explicit. A farm with no history gets an empty `overheads` array, and that is the correct first-run state rather than an error.\n\n**Yearly overheads only** — `PAYROLL`, `CREDIT`, `DEPRECIATION`, `OTHER`. `RENT` is deliberately absent: it is a per-decare crop line in the owner's split, not an overhead, however fixed it is.\n\n**`payrollHeadcount` / `payrollAnnualPerPerson` are `null`, never `0`, when a plain total was entered.** Zero people earning a salary is a different claim from \"they typed a total\", and a prefill that wrote zeros over that distinction would overwrite real figures with a number nobody typed.\n\n**`incurredOn` is returned so a STALE default is visible.** Last year's salary figure prefilled silently is worse than one shown with its date beside it.\n\n**`?commodity=<any spelling>` returns the per-CROP sheet instead** — the farm's last «Култура» lines for that crop, as `{ commodity, lines: [{ category, amountPerDca, currency, incurredOn, description }] }`. Send no `commodity` and you get the overhead payload above, unchanged. The spelling is normalised, so `Canola` resolves to `rapeseed`, and the canonical value is echoed back so you know what was looked up. A commodity the vocabulary does not cover is a **400** carrying `code: \"UNKNOWN_COMMODITY\"` and the value you sent in `params.commodity`, not an empty sheet: an empty answer is indistinguishable from \"this crop has no history\", so a typo would read as a fact about the farm.\n\n**It returns the latest SET, not the latest line.** A sheet is several lines entered together — ПРЗ, торове, seed — so every row sharing the most recent `incurredOn` for that crop comes back, each with its own `description` as the row's name. Prefilling only the newest line would collapse a sheet into one and the farmer would retype the rest without noticing.\n\n**`amountPerDca: null` means the farmer entered a TOTAL, not that the line is empty.** The line is returned rather than dropped, so a client can show the row unfilled instead of implying the farm never recorded that cost.\n\n**Read each line's `currency`; do not assume the form's.** Bulgaria moved to EUR in 2026 and older rows are stored in BGN, so prefilling the NUMBER alone shows a 24 000 лв figure as €24 000 — wrong by the fixed 1.95583, and entirely plausible on screen. Convert, or leave a foreign-currency line out and say so.\n\nCarries a weak ETag; send `If-None-Match` and handle **304**.",
         "tags": [
           "Grain"
         ],
@@ -26213,11 +26268,21 @@
             "required": true,
             "name": "tenantSlug",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Any spelling the crop vocabulary resolves — `Canola`, `rapeseed`, «рапица». Send it and the 200 is the per-CROP sheet, component `CropCostDefaults`; omit it and the 200 is the overhead payload below, unchanged. The two shapes are DISJOINT, so branch on which key is present rather than on what you sent. A spelling the vocabulary does not cover is a 400 `UNKNOWN_COMMODITY`, never an empty sheet."
+            },
+            "required": false,
+            "description": "Any spelling the crop vocabulary resolves — `Canola`, `rapeseed`, «рапица». Send it and the 200 is the per-CROP sheet, component `CropCostDefaults`; omit it and the 200 is the overhead payload below, unchanged. The two shapes are DISJOINT, so branch on which key is present rather than on what you sent. A spelling the vocabulary does not cover is a 400 `UNKNOWN_COMMODITY`, never an empty sheet.",
+            "name": "commodity",
+            "in": "query"
           }
         ],
         "responses": {
           "200": {
-            "description": "The latest overhead figures, in a fixed category order so the form's fields do not reorder between visits. Empty when the farm has no overhead history.",
+            "description": "The latest overhead figures, in a fixed category order so the form's fields do not reorder between visits. Empty when the farm has no overhead history. This schema describes the response when `commodity` is ABSENT; sending it returns `CropCostDefaults` instead — a registered component rather than a second 200 schema here, because declaring a union would take `overheads` off the top level and break a generated client's typed read (#1612).",
             "content": {
               "application/json": {
                 "schema": {

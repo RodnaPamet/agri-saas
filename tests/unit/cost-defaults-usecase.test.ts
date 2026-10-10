@@ -6,21 +6,24 @@
  * farm gets an empty answer — a benchmark leaking in would be a product
  * decision reversed, not a bug.
  *
- * ## What is NOT here, and why it is not an omission
+ * ## The per-crop half, which this file used to say was absent
  *
- * There is no per-crop half. `CostEntry` has no commodity column, and
- * agrent-ios measured the only read path that exists on production: all four
- * live cost entries on the owner's farm carry NO domain link at all —
- * `parcelId`, `seasonId`, `plantingId`, `locationId`, `itemId` and `leaseId`
- * each set on zero of them.
+ * It said: "There is no per-crop half. `CostEntry` has no commodity column",
+ * and that was true and well-reasoned — all four live cost entries on the
+ * owner's farm carry no domain link at all, so
+ * `CostEntry.parcelId → Parcel.cropType` resolved nothing and per-crop
+ * defaults would have been a second always-empty surface. The note's own
+ * conclusion was that the read must key on whatever crop field the new form
+ * writes, rather than on a path chosen first.
  *
- * So `CostEntry.parcelId → Parcel.cropType` resolves nothing, and per-crop
- * defaults would be a second surface that is always empty. The read path also
- * has to key on whatever crop target #1512 settles on, since per-crop values
- * can only come from entries the new form creates — choosing `parcelId` now
- * would prejudge that with no data behind it.
+ * #1583 settled that: `commodityCanonical`, written only on a `CROP`-basis
+ * row. `getCropCostDefaults` keys on that pair, and its cases are below.
  */
-import { getCostDefaults, OVERHEAD_CATEGORIES } from '@/app-layer/usecases/cost-defaults';
+import {
+    getCostDefaults,
+    getCropCostDefaults,
+    OVERHEAD_CATEGORIES,
+} from '@/app-layer/usecases/cost-defaults';
 import { makeRequestContext } from '../helpers/make-context';
 
 const mockDb = {
@@ -160,5 +163,97 @@ describe('getCostDefaults', () => {
         await getCostDefaults(ctx());
 
         expect(mockDb.costEntry.findMany.mock.calls[0][0].take).toBeGreaterThan(0);
+    });
+});
+
+describe('getCropCostDefaults — the «Култура» sheet prefill', () => {
+    const line = (over: Record<string, unknown> = {}) => ({
+        category: 'FERTILIZER',
+        amountPerDca: 12.5,
+        currency: 'EUR',
+        incurredOn: new Date('2026-03-01T09:00:00.000Z'),
+        description: 'торове',
+        ...over,
+    });
+
+    beforeEach(() => mockDb.costEntry.findMany.mockReset());
+
+    it('returns the latest SET, not just the latest row', async () => {
+        // A sheet is several lines entered together. Prefilling only the newest
+        // would collapse ПРЗ + торове + seed into one line, and the farmer
+        // would re-type the rest without noticing they had been dropped.
+        mockDb.costEntry.findMany.mockResolvedValue([
+            line({ description: 'торове' }),
+            line({ description: 'ПРЗ', category: 'PESTICIDE' }),
+            // An OLDER sheet — same crop, different day. Must not come back.
+            line({ description: 'старо', incurredOn: new Date('2025-03-01T09:00:00.000Z') }),
+        ]);
+
+        const r = await getCropCostDefaults(ctx(), 'Wheat');
+
+        expect(r.lines.map((l) => l.description)).toEqual(['торове', 'ПРЗ']);
+    });
+
+    it('normalises the spelling and echoes the CANONICAL commodity', async () => {
+        // `Canola` resolves to `rapeseed` — a rename, not a case fold. The echo
+        // is how a client knows what the server actually looked up.
+        mockDb.costEntry.findMany.mockResolvedValue([]);
+
+        const r = await getCropCostDefaults(ctx(), 'Canola');
+
+        expect(r.commodity).toBe('rapeseed');
+        expect(mockDb.costEntry.findMany.mock.calls[0][0].where.commodityCanonical).toBe('rapeseed');
+    });
+
+    it('REFUSES a commodity that does not resolve', async () => {
+        // Not an empty sheet: an empty answer is indistinguishable from "this
+        // crop has no history", so a typo would read as a fact about the farm.
+        await expect(getCropCostDefaults(ctx(), 'lavender')).rejects.toThrow();
+        expect(mockDb.costEntry.findMany).not.toHaveBeenCalled();
+    });
+
+    it('keys on CROP basis AND the commodity, and excludes soft-deleted', async () => {
+        mockDb.costEntry.findMany.mockResolvedValue([]);
+
+        await getCropCostDefaults(ctx(), 'Wheat');
+
+        const where = mockDb.costEntry.findMany.mock.calls[0][0].where;
+        expect(where.allocationBasis).toBe('CROP');
+        expect(where.commodityCanonical).toBe('wheat');
+        expect(where.deletedAt).toBeNull();
+    });
+
+    it('no history means an EMPTY sheet, not an error', async () => {
+        mockDb.costEntry.findMany.mockResolvedValue([]);
+
+        const r = await getCropCostDefaults(ctx(), 'Wheat');
+
+        expect(r).toEqual({ commodity: 'wheat', lines: [] });
+    });
+
+    it('keeps a line whose rate is NULL rather than dropping it', async () => {
+        // Null means the farmer entered a total. Dropping the line would hide
+        // that the farm has such a cost at all; null lets the client show the
+        // row unfilled.
+        mockDb.costEntry.findMany.mockResolvedValue([line({ amountPerDca: null })]);
+
+        const r = await getCropCostDefaults(ctx(), 'Wheat');
+
+        expect(r.lines).toHaveLength(1);
+        expect(r.lines[0].amountPerDca).toBeNull();
+    });
+
+    it('carries each line\'s OWN currency', async () => {
+        // Bulgaria moved to EUR in 2026 and older rows are in BGN. A client
+        // prefilling the number without reading the currency shows a 24 000 лв
+        // salary as €24 000 — wrong by 1.95583, and perfectly plausible.
+        mockDb.costEntry.findMany.mockResolvedValue([
+            line({ currency: 'BGN', description: 'старо' }),
+            line({ currency: 'EUR', description: 'ново' }),
+        ]);
+
+        const r = await getCropCostDefaults(ctx(), 'Wheat');
+
+        expect(r.lines.map((l) => l.currency)).toEqual(['BGN', 'EUR']);
     });
 });

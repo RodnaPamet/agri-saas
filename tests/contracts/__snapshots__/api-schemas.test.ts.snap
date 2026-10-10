@@ -3757,6 +3757,64 @@ exports[`API contract — per-schema snapshots schema: CreatedDataStream 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: CropCostDefaults 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "commodity": {
+      "type": "string",
+      "description": "The CANONICAL commodity, echoed so you know what your spelling resolved to. Named \`commodity\`, NOT \`commodityCanonical\` — that is the storage column; this is the resolved value."
+    },
+    "lines": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "The cost category as entered. Deliberately NOT narrowed to the overhead enum: a crop sheet books the categories a crop actually incurs."
+          },
+          "amountPerDca": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "The per-decare rate AS TYPED. \`null\` means the farmer entered a TOTAL, not that the line is empty — show the row unfilled rather than dropping it, or you hide that the farm has such a cost at all."
+          },
+          "currency": {
+            "type": "string",
+            "description": "READ THIS; do not assume the form’s. Bulgaria moved to EUR in 2026 and older rows are BGN, so prefilling the number alone shows a 24 000 лв figure as €24 000 — wrong by the fixed 1.95583 and entirely plausible on screen."
+          },
+          "incurredOn": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Show it, so a stale default looks like one. Every line of one sheet shares this instant — that is what makes them one sheet."
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The row’s NAME — what distinguishes ПРЗ from торове on one sheet. A departure worth stating: list rows elsewhere omit \`description\` because it is encrypted commercial free text. Returned here only because the rows are the CALLER’S OWN, bounded to one sheet, and without it the sheet comes back as several unlabelled amounts."
+          }
+        },
+        "required": [
+          "category",
+          "amountPerDca",
+          "currency",
+          "incurredOn",
+          "description"
+        ]
+      }
+    }
+  },
+  "required": [
+    "commodity",
+    "lines"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: CropPlan 1`] = `
 "{
   "type": "object",
