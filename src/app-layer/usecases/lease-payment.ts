@@ -38,10 +38,21 @@ const PAYMENT_SELECT = {
     createdAt: true,
 } satisfies Prisma.LeasePaymentSelect;
 
+/**
+ * When a payment settled — now, if the caller did not say.
+ *
+ * Defaulting an ABSENT `paidAt` to now is intended: the panel records a
+ * payment as it happens. Defaulting an UNPARSEABLE one to now was not, and
+ * that is what this used to do — the same branch served both, so a typo
+ * booked the payment as settled TODAY, returned 200, and nobody found out.
+ * In a rent ledger the settlement date is the point of the row.
+ *
+ * `LeasePaymentSchema` now refuses an unparseable value at the boundary
+ * (`requestTimestamp()`), so the only remaining case is the deliberate one
+ * (#1558).
+ */
 function toDate(v?: string | null): Date {
-    if (!v) return new Date();
-    const d = new Date(v);
-    return Number.isNaN(d.getTime()) ? new Date() : d;
+    return v ? new Date(v) : new Date();
 }
 
 /** Every (non-deleted) payment on a lease, newest settlement first. */

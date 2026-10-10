@@ -45,10 +45,22 @@ const LEASE_SELECT = {
     updatedAt: true,
 } satisfies Prisma.ParcelLeaseSelect;
 
+/**
+ * A recorded lease bound, or `null` when there genuinely is not one.
+ *
+ * The NaN fallback this used to carry is gone. It mapped an unparseable
+ * string to `null` — and `null` is a legitimate value here, meaning "no end
+ * date recorded" (`calendar.ts` says so). So a typo and an omission produced
+ * the same row, with a 200, and `grain-net-worth.ts:1542`
+ * (`OR: [{ endDate: null }, { endDate: { gte: new Date() } }]`) then counted
+ * the lease as an active obligation indefinitely.
+ *
+ * `ParcelLeaseSchema` now refuses an unparseable bound at the boundary
+ * (`requestTimestamp()`), so this function only ever sees an absent value or
+ * a parseable one. `null` here now means exactly one thing (#1558).
+ */
 function toDate(v?: string | null): Date | null {
-    if (!v) return null;
-    const d = new Date(v);
-    return Number.isNaN(d.getTime()) ? null : d;
+    return v ? new Date(v) : null;
 }
 
 /** Build the persist payload from validated input — sanitises every free text. */
