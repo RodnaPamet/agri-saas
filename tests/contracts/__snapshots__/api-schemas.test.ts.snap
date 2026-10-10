@@ -9010,6 +9010,29 @@ exports[`API contract — per-schema snapshots schema: NewsPreferences 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: NewsPreferencesStored 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Tag keys from \`GET /api/t/{tenantSlug}/trends/news/tags\`. Order is the reader’s own and is not significant.",
+      "example": [
+        "wheat",
+        "subsidies"
+      ]
+    }
+  },
+  "required": [
+    "tags"
+  ],
+  "description": "The list as persisted. Never null — a PUT has just written an array, so the \\"never chose\\" state of the GET response is not reachable here."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: NewsPreferencesUpdate 1`] = `
 "{
   "type": "object",

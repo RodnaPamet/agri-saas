@@ -32,6 +32,22 @@ const NewsPreferencesSchema = z
             'One person’s Новини tag opt-ins. Stored on the server so the same choices apply on web and on every phone, but NEVER applied to the feed implicitly — read them, then pass them to `GET /trends/news?tags=` yourself. The feed is cached under a key shared by every reader, so a server that filtered by the caller’s own preferences would serve one person’s feed to everybody else.',
     });
 
+/**
+ * The PUT response, where `tags` is NOT nullable.
+ *
+ * The contract spells the two responses differently on purpose — `GET` is
+ * `string[] | null`, `PUT` is `string[]` — and that is accurate rather than
+ * sloppy: a PUT has just written an array, so there is no "never chose" state
+ * left to report. Sharing one nullable schema would have been simpler and
+ * would have told a codegen client to handle a null that cannot occur.
+ */
+const NewsPreferencesStoredSchema = z
+    .object({ tags: TagList })
+    .openapi('NewsPreferencesStored', {
+        description:
+            'The list as persisted. Never null — a PUT has just written an array, so the "never chose" state of the GET response is not reachable here.',
+    });
+
 const NewsPreferencesBody = z
     .object({ tags: TagList })
     .openapi('NewsPreferencesUpdate', {
@@ -70,8 +86,8 @@ export function registerMeNewsPreferencesPaths(registry: OpenAPIRegistry): void 
         body: NewsPreferencesBody,
         success: {
             status: 200,
-            description: 'The stored list, as persisted.',
-            schema: NewsPreferencesSchema,
+            description: 'The stored list, as persisted. `tags` is never null here.',
+            schema: NewsPreferencesStoredSchema,
         },
     });
 }

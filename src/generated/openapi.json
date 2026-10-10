@@ -8587,6 +8587,26 @@
         ],
         "description": "One person’s Новини tag opt-ins. Stored on the server so the same choices apply on web and on every phone, but NEVER applied to the feed implicitly — read them, then pass them to `GET /trends/news?tags=` yourself. The feed is cached under a key shared by every reader, so a server that filtered by the caller’s own preferences would serve one person’s feed to everybody else."
       },
+      "NewsPreferencesStored": {
+        "type": "object",
+        "properties": {
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tag keys from `GET /api/t/{tenantSlug}/trends/news/tags`. Order is the reader’s own and is not significant.",
+            "example": [
+              "wheat",
+              "subsidies"
+            ]
+          }
+        },
+        "required": [
+          "tags"
+        ],
+        "description": "The list as persisted. Never null — a PUT has just written an array, so the \"never chose\" state of the GET response is not reachable here."
+      },
       "NewsPreferencesUpdate": {
         "type": "object",
         "properties": {
@@ -46127,11 +46147,11 @@
         },
         "responses": {
           "200": {
-            "description": "The stored list, as persisted.",
+            "description": "The stored list, as persisted. `tags` is never null here.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NewsPreferences"
+                  "$ref": "#/components/schemas/NewsPreferencesStored"
                 }
               }
             }
