@@ -8956,6 +8956,17 @@ exports[`API contract — per-schema snapshots schema: NewsItem 1`] = `
     "publishedAt": {
       "type": "string",
       "format": "date-time"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Stable ASCII slugs, possibly empty, order not significant. IGNORE a slug you do not recognise rather than erroring on it — the vocabulary grows on the server, and a client that threw would break on a deploy it knew nothing about. \`GET /trends/news/tags\` carries the labels.",
+      "example": [
+        "wheat",
+        "prices"
+      ]
     }
   },
   "required": [
@@ -8966,9 +8977,59 @@ exports[`API contract — per-schema snapshots schema: NewsItem 1`] = `
     "summary",
     "url",
     "imageUrl",
-    "publishedAt"
+    "publishedAt",
+    "tags"
   ],
   "description": "One aggregated agri-news article. summary and imageUrl are genuinely nullable — many feeds carry neither — so a client must render a headline-only item rather than treating it as malformed."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: NewsPreferences 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "tags": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      },
+      "description": "\`null\` means the reader has NEVER CHOSEN; \`[]\` means they chose nothing. Both show the full feed, so the difference does not affect filtering — it tells a client whether it may prompt. Do not collapse them: a brand-new reader and one who deliberately cleared their choices want opposite treatment.",
+      "example": [
+        "wheat",
+        "subsidies"
+      ]
+    }
+  },
+  "required": [
+    "tags"
+  ],
+  "description": "One person’s Новини tag opt-ins. Stored on the server so the same choices apply on web and on every phone, but NEVER applied to the feed implicitly — read them, then pass them to \`GET /trends/news?tags=\` yourself. The feed is cached under a key shared by every reader, so a server that filtered by the caller’s own preferences would serve one person’s feed to everybody else."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: NewsPreferencesUpdate 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Tag keys from \`GET /api/t/{tenantSlug}/trends/news/tags\`. Order is the reader’s own and is not significant.",
+      "example": [
+        "wheat",
+        "subsidies"
+      ]
+    }
+  },
+  "required": [
+    "tags"
+  ],
+  "description": "Replaces the stored list wholesale. Send \`[]\` to clear — that is a choice and is stored as one. Duplicates are collapsed."
 }"
 `;
 
@@ -13176,18 +13237,45 @@ exports[`API contract — per-schema snapshots schema: TrendNewsResponse 1`] = `
     "category": {
       "type": "string"
     },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "The tags ACTUALLY APPLIED — sorted, de-duplicated, with unrecognised keys dropped. Compare it with what you sent: asking for two tags and getting one back is how you discover that a stored preference has been renamed away. An empty array means the feed is unfiltered.",
+      "example": [
+        "wheat"
+      ]
+    },
+    "q": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The search term applied, or null."
+    },
     "items": {
       "type": "array",
       "items": {
         "$ref": "#/components/schemas/NewsItem"
       }
+    },
+    "nextCursor": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Pass back verbatim as \`?cursor=\` for the next page; null at the end of the feed. OPAQUE — do not parse or construct one. A cursor the server no longer recognises (the 60-day retention deleted its article) is IGNORED and you get the first page, never an error."
     }
   },
   "required": [
     "category",
-    "items"
+    "tags",
+    "q",
+    "items",
+    "nextCursor"
   ],
-  "description": "The aggregated news feed, newest first. category echoes the filter that produced it, so a client can tell a stale response from the one it asked for."
+  "description": "The aggregated news feed, newest first. category, tags and q each echo the filter that produced this payload, so a client holding a page can tell a stale response from the one it asked for — which matters more, not less, now that there are three filters to reconcile."
 }"
 `;
 

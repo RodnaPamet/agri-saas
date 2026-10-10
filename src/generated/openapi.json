@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "10.7.2",
+    "version": "10.10.1",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -8538,6 +8538,17 @@
           "publishedAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Stable ASCII slugs, possibly empty, order not significant. IGNORE a slug you do not recognise rather than erroring on it — the vocabulary grows on the server, and a client that threw would break on a deploy it knew nothing about. `GET /trends/news/tags` carries the labels.",
+            "example": [
+              "wheat",
+              "prices"
+            ]
           }
         },
         "required": [
@@ -8548,9 +8559,53 @@
           "summary",
           "url",
           "imageUrl",
-          "publishedAt"
+          "publishedAt",
+          "tags"
         ],
         "description": "One aggregated agri-news article. summary and imageUrl are genuinely nullable — many feeds carry neither — so a client must render a headline-only item rather than treating it as malformed."
+      },
+      "NewsPreferences": {
+        "type": "object",
+        "properties": {
+          "tags": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "`null` means the reader has NEVER CHOSEN; `[]` means they chose nothing. Both show the full feed, so the difference does not affect filtering — it tells a client whether it may prompt. Do not collapse them: a brand-new reader and one who deliberately cleared their choices want opposite treatment.",
+            "example": [
+              "wheat",
+              "subsidies"
+            ]
+          }
+        },
+        "required": [
+          "tags"
+        ],
+        "description": "One person’s Новини tag opt-ins. Stored on the server so the same choices apply on web and on every phone, but NEVER applied to the feed implicitly — read them, then pass them to `GET /trends/news?tags=` yourself. The feed is cached under a key shared by every reader, so a server that filtered by the caller’s own preferences would serve one person’s feed to everybody else."
+      },
+      "NewsPreferencesUpdate": {
+        "type": "object",
+        "properties": {
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tag keys from `GET /api/t/{tenantSlug}/trends/news/tags`. Order is the reader’s own and is not significant.",
+            "example": [
+              "wheat",
+              "subsidies"
+            ]
+          }
+        },
+        "required": [
+          "tags"
+        ],
+        "description": "Replaces the stored list wholesale. Send `[]` to clear — that is a choice and is stored as one. Duplicates are collapsed."
       },
       "NewsTagCatalogue": {
         "type": "object",
@@ -12542,18 +12597,45 @@
           "category": {
             "type": "string"
           },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The tags ACTUALLY APPLIED — sorted, de-duplicated, with unrecognised keys dropped. Compare it with what you sent: asking for two tags and getting one back is how you discover that a stored preference has been renamed away. An empty array means the feed is unfiltered.",
+            "example": [
+              "wheat"
+            ]
+          },
+          "q": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The search term applied, or null."
+          },
           "items": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/NewsItem"
             }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pass back verbatim as `?cursor=` for the next page; null at the end of the feed. OPAQUE — do not parse or construct one. A cursor the server no longer recognises (the 60-day retention deleted its article) is IGNORED and you get the first page, never an error."
           }
         },
         "required": [
           "category",
-          "items"
+          "tags",
+          "q",
+          "items",
+          "nextCursor"
         ],
-        "description": "The aggregated news feed, newest first. category echoes the filter that produced it, so a client can tell a stale response from the one it asked for."
+        "description": "The aggregated news feed, newest first. category, tags and q each echo the filter that produced this payload, so a client holding a page can tell a stale response from the one it asked for — which matters more, not less, now that there are three filters to reconcile."
       },
       "TrendPayload": {
         "type": "object",
@@ -31896,7 +31978,7 @@
       "get": {
         "operationId": "getTrendNews",
         "summary": "Тенденции — aggregated agri-news feed",
-        "description": "The GLOBAL aggregated news feed, newest first, optionally filtered by category. Tenant-agnostic payload; the tenant in the path authenticates the caller. \n\nCarries a weak ETag; send `If-None-Match` and handle **304**. Cached 1h server-side.",
+        "description": "The GLOBAL aggregated news feed, newest first, optionally filtered by `category`, by `tags` (comma-separated, ANY-OF) and by a `q` search over title and summary, paged by an opaque `cursor`. Tenant-agnostic payload; the tenant in the path authenticates the caller. \n\n**`tags` ignores keys it does not recognise rather than returning 400.** A client passes its stored preferences straight into this parameter, so a tag the server has since renamed would otherwise turn a saved preference into a broken feed. If every key is unrecognised the feed is UNFILTERED, not empty — read the `tags` echo in the response to tell that apart from a full feed. (`PUT /api/me/news-preferences` is deliberately the opposite and 400s on an unknown tag: there a person is choosing, and a typo is a client bug worth surfacing.) \n\n**Preferences are not applied implicitly.** The payload is cached under a key shared by every reader, so filtering by the caller’s own preferences would write one person’s feed into the entry everybody else reads. Resolve your preferences client-side and pass `tags`. \n\n`q` searches at most the last 60 days — `RETENTION_DAYS` deletes older rows on every pull — so finding nothing from last spring is correct behaviour, and an empty state should say so rather than read as a failure. Note that `q` travels in the query string, which iOS logs in full and unsuppressably; a crop name is low-sensitivity, but do not put anything stronger there. \n\nCarries a weak ETag; send `If-None-Match` and handle **304**. Cached 1h server-side, except a `q` search, which is a live read every time (the key space of a free-text query is unbounded and would evict the shared feed) — the ETag still answers 304 for a repeated identical search.",
         "tags": [
           "Trends"
         ],
@@ -31951,6 +32033,42 @@
             },
             "required": false,
             "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 400,
+              "description": "Comma-separated tag keys from `GET /trends/news/tags`, matched ANY-OF. Keys the server does not recognise are DROPPED, not rejected — read the `tags` echo in the response to see which were applied. All keys unrecognised means an UNFILTERED feed, not an empty one.",
+              "example": "wheat,subsidies"
+            },
+            "required": false,
+            "description": "Comma-separated tag keys from `GET /trends/news/tags`, matched ANY-OF. Keys the server does not recognise are DROPPED, not rejected — read the `tags` echo in the response to see which were applied. All keys unrecognised means an UNFILTERED feed, not an empty one.",
+            "name": "tags",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Case-insensitive search over title and summary, across at most the last 60 days of articles. Bypasses the server cache, so prefer the ETag.",
+              "example": "пшеница"
+            },
+            "required": false,
+            "description": "Case-insensitive search over title and summary, across at most the last 60 days of articles. Bypasses the server cache, so prefer the ETag.",
+            "name": "q",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "A `nextCursor` from a previous page, passed back verbatim. Opaque — do not parse or construct one. An unrecognised or stale cursor is ignored and you get the first page."
+            },
+            "required": false,
+            "description": "A `nextCursor` from a previous page, passed back verbatim. Opaque — do not parse or construct one. An unrecognised or stale cursor is ignored and you get the first page.",
+            "name": "cursor",
             "in": "query"
           }
         ],
@@ -45753,6 +45871,267 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CreateFarmResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries an English `message` as a developer-facing fallback; it is NOT translated, so render your own copy keyed on `code`. Route-level 403s carry their own codes and are described on the operation that returns them.\n\nOne route-level code is described HERE rather than per-operation. MOST operations cannot return it — it is confined to the five capability families named below — but it means the same thing on each of them, and one of the five (`upload`) is gated at a choke point that many unrelated routes reach, so an exhaustive per-operation list would be the kind that is wrong by omission:\n\n- `PAST_DUE_RESTRICTED` — a payment on this tenant failed and the 14-day grace period has elapsed. It is NOT a quota or a plan ceiling: the plan is untouched and nothing was exceeded. The withheld capabilities are exactly `exchange`, `trends`, `task.create`, `upload` and `journal.create`; every other surface, including reading everything already recorded, is unaffected. The tenant's own ACTIVE exchange listings stay visible to other farms and inbound threads keep arriving — this is the unpaid tenant's own view closing, not a withdrawal.\n\n  The restriction is COMPUTED per request, with no sweep and nothing to settle, so a cleared balance lifts it on the very next request — a client can honestly tell the user to resolve it and refresh. This description deliberately names no remedy beyond that: App Store guideline 3.1.1 keeps the native client from pointing anyone to pay outside the app, so a prescribed destination would be unreachable for one of the two clients (#1490). What both clients CAN do is distinguish this from `plan_limit_exceeded:` and say which happened.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/news-preferences": {
+      "get": {
+        "operationId": "getMyNewsPreferences",
+        "summary": "Новини — the signed-in reader’s own tag opt-ins",
+        "description": "Account-level, with no `{tenantSlug}`: a news preference is a property of the PERSON, not of a farm. The same person reading the same global feed from two farms wants the same tags, and scoping this to a tenant would invite exactly the bug where switching farms silently changes your feed. The subject is always the session user — there is no id parameter and no body — so one person can never read another’s. \n\nA tag the server no longer recognises is DROPPED from the response rather than returned or 400ed. Tags get renamed, and a stored list validated only when it was written would otherwise filter a feed down to nothing with no way for the reader to see why.",
+        "tags": [
+          "Trends"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The stored list. `tags: null` for a reader who has never chosen — distinct from `[]`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NewsPreferences"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries an English `message` as a developer-facing fallback; it is NOT translated, so render your own copy keyed on `code`. Route-level 403s carry their own codes and are described on the operation that returns them.\n\nOne route-level code is described HERE rather than per-operation. MOST operations cannot return it — it is confined to the five capability families named below — but it means the same thing on each of them, and one of the five (`upload`) is gated at a choke point that many unrelated routes reach, so an exhaustive per-operation list would be the kind that is wrong by omission:\n\n- `PAST_DUE_RESTRICTED` — a payment on this tenant failed and the 14-day grace period has elapsed. It is NOT a quota or a plan ceiling: the plan is untouched and nothing was exceeded. The withheld capabilities are exactly `exchange`, `trends`, `task.create`, `upload` and `journal.create`; every other surface, including reading everything already recorded, is unaffected. The tenant's own ACTIVE exchange listings stay visible to other farms and inbound threads keep arriving — this is the unpaid tenant's own view closing, not a withdrawal.\n\n  The restriction is COMPUTED per request, with no sweep and nothing to settle, so a cleared balance lifts it on the very next request — a client can honestly tell the user to resolve it and refresh. This description deliberately names no remedy beyond that: App Store guideline 3.1.1 keeps the native client from pointing anyone to pay outside the app, so a prescribed destination would be unreachable for one of the two clients (#1490). What both clients CAN do is distinguish this from `plan_limit_exceeded:` and say which happened.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "setMyNewsPreferences",
+        "summary": "Новини — replace the signed-in reader’s tag opt-ins",
+        "description": "Replaces the stored list for the session user. \n\n**400s on a tag outside the catalogue, naming it** — deliberately the OPPOSITE of `?tags=` on the feed, which ignores unknown keys. The two answer different questions about who chose the value: a `PUT` is a person choosing, where a typo is a client bug worth surfacing, while the feed parameter is a pass-through of state the server itself issued and may since have renamed. Reject unknown on write, ignore unknown on read. \n\nThe 400 carries `code: \"INVALID_NEWS_PREFERENCES\"`.",
+        "tags": [
+          "Trends"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewsPreferencesUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The stored list, as persisted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NewsPreferences"
                 }
               }
             }

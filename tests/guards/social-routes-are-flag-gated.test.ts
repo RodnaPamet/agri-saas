@@ -132,6 +132,10 @@ function handlerSpans(src: string): Array<[string, string]> {
 const UNGATED_SOCIAL_HANDLERS: Readonly<Record<string, string>> = {
     'src/app/api/me/farms/route.ts#GET':
         'Switching between farms you already hold must keep working while ADDING one is switched off. Agreed with agrent-ios: being unable to reach a farm you are a member of is a worse failure than being unable to create one. The POST on this route IS gated on social.farm-registration.',
+    'src/app/api/me/news-preferences/route.ts#GET':
+        'Новини is a LIVE, ungated feature (#231). This route is swept in by the `src/app/api/me` ROOT, not because a tag preference is social. The rest of the same feature ships ungated because it sits under /api/t/ — the tag catalogue and the feed\'s ?tags= filter are both live — so gating only this one would mean the filtering works while a reader\'s saved choices silently do not, which is worse than either end state. A failing GET also degrades safely: the client reads no preference and shows the full feed.',
+    'src/app/api/me/news-preferences/route.ts#PUT':
+        'Same reason as the GET above. There is no risk a switch would contain: this stores one short list of server-issued tag keys for the calling user and nothing else reads it server-side — the feed never applies preferences implicitly (that would poison a cache key shared by every reader), so clients resolve them and pass ?tags=. Gating the write would make a live feature\'s preference unsavable with no corresponding reduction in blast radius.',
 };
 
 describe('the detector has teeth before any social route exists', () => {
@@ -258,7 +262,7 @@ describe('every social route is flag-gated', () => {
     });
 
     it.each(social.length ? social : [['__none_yet__']].flat())(
-        '%s calls the feature gate',
+        '%s calls the feature gate, or every handler on it is exempt',
         (rel) => {
             if (rel === '__none_yet__') {
                 // No social routes exist yet. The detector and walk above are
@@ -266,7 +270,31 @@ describe('every social route is flag-gated', () => {
                 expect(social).toEqual([]);
                 return;
             }
-            expect(isGated(fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8'))).toBe(true);
+            const src = fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
+            if (isGated(src)) return;
+
+            // A file where EVERY handler is recorded as deliberately ungated
+            // passes here, because the per-HANDLER sweep below is strictly
+            // stronger and has already accounted for each one.
+            //
+            // Without this, a fully-ungated-on-purpose file is unrepresentable:
+            // the #1395 handler check says it is fine and this one says it is
+            // not, which is the state that gets a guard waived rather than
+            // fixed. `me/farms/route.ts` never hit it because its POST is
+            // gated, so the file mentions the gate and this check passes on a
+            // handler it is not actually about — the weakness its own docblock
+            // names above.
+            //
+            // The teeth are intact: this is not "any exemption excuses the
+            // file". A file with three handlers where two are exempt still
+            // fails, because `every` is over the handlers the file actually
+            // declares, and a file declaring NO handlers cannot pass vacuously
+            // either.
+            const methods = handlerSpans(src).map(([m]) => m);
+            expect(methods.length).toBeGreaterThan(0);
+            const unexempt = methods.filter((m) => !(`${rel}#${m}` in UNGATED_SOCIAL_HANDLERS));
+
+            expect(unexempt).toEqual([]);
         },
     );
 });

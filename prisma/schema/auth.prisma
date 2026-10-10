@@ -699,6 +699,31 @@ model User {
   /// write, and a list validated only when stored would then offer a
   /// MECHANISATOR a tab that 403s.
   bottomTabOrder                Json?
+  /// The reader's chosen Новини tags — a `string[]`, or null (#231 §7).
+  ///
+  /// A `Json?` column on `User` rather than a table, following
+  /// `bottomTabOrder` above. `UserNotificationPreference` is a table because
+  /// it has per-channel rows with their own lifecycle; a news opt-in is one
+  /// small list per person, read whole and written whole.
+  ///
+  /// `null` and `[]` stay DISTINCT. `null` means "never chose"; `[]` means
+  /// "chose nothing". Both show the full feed, so the difference does not
+  /// affect filtering — it decides whether the UI may prompt. Collapsing them
+  /// would make a new reader indistinguishable from one who cleared their
+  /// choices, and those two want opposite treatment.
+  ///
+  /// Like `bottomTabOrder` it is a PREFERENCE, not a grant: an unknown tag is
+  /// IGNORED on read, because tags get renamed and a list validated only when
+  /// it was written would otherwise filter a feed down to nothing with no way
+  /// for the reader to see why.
+  ///
+  /// UNLIKE `bottomTabOrder`, the WRITE validates against the catalogue. That
+  /// column validates shape only because a server-side allowlist would make
+  /// every new client tab wait on a deploy; here the server OWNS the
+  /// vocabulary by the owner's decision, so an unknown tag on PUT is a client
+  /// bug worth a 400. Reject unknown on write, ignore unknown on read — the
+  /// two rules answer different questions about who chose the value.
+  newsTagPreferences            Json?
   accounts                      Account[]
   ownedAssets                   Asset[]                      @relation("AssetOwner")
   auditLogs                     AuditLog[]
