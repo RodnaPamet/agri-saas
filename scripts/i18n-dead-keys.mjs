@@ -151,11 +151,36 @@ for (const file of files) {
     // every quoted string, for the full-path backstop
     for (const m of code.matchAll(/['"]([A-Za-z][\w.]*)['"]/g)) allStrings.add(m[1]);
 
+    // name -> SET of namespaces, not one. A variable can be bound more than
+    // once in a file, in different component scopes:
+    //
+    //     // FarmTaskDetailClient.tsx:105 and :1060
+    //     const t = useTranslations('tasks.detail');
+    //     …
+    //     const t = useTranslations('tasks.detail.links');
+    //
+    // A `Map<name, string>` keeps only the LAST binding, so all 87 `t(...)`
+    // calls in that file resolved against `tasks.detail.links` and every real
+    // `tasks.detail.*` key read as dead — 76 of them, the largest single
+    // distortion this detector had.
+    //
+    // Resolving against EVERY namespace the name is bound to over-marks
+    // `referenced`: a key is called live if any binding of that name could
+    // reach it. That is the safe direction for a dead-key report — it
+    // under-reports dead keys rather than proposing a live one for deletion —
+    // and a regex cannot do real scope analysis.
+    //
+    // Measured: exactly 1 file of 315 rebinds a translator name, so the
+    // over-marking is bounded to that file's namespaces.
     const vars = new Map();
-    for (const m of code.matchAll(BIND)) vars.set(m[1], m[2]);
+    for (const m of code.matchAll(BIND)) {
+        if (!vars.has(m[1])) vars.set(m[1], new Set());
+        vars.get(m[1]).add(m[2]);
+    }
     if (vars.size === 0) continue;
 
-    for (const [name, ns] of vars) {
+    for (const [name, namespaces] of vars) {
+      for (const ns of namespaces) {
         // Escape EVERY regex metacharacter, backslash included. The first
         // version escaped only `$` — CodeQL flagged it high-severity
         // ("Incomplete string escaping or encoding: this does not escape
@@ -183,14 +208,32 @@ for (const file of files) {
             undecidablePrefixes.add(cut === -1 ? ns : `${ns}.${head.slice(0, cut)}`);
             dynamicCalls += 1;
         }
-        // <var>(identifier) — nothing static at all, so the whole namespace is
-        // unresolvable. Kept separate from the template case because it is a
-        // genuinely weaker position, and the counts should not conflate them.
-        for (const _ of code.matchAll(new RegExp(`\\b${esc}\\(\\s*[A-Za-z_$][\\w$]*\\s*[,)]`, 'g'))) {
+        // <var>(identifier) or <var>(obj.prop) — nothing static at all, so the
+        // whole namespace is unresolvable. Kept separate from the template case
+        // because it is a genuinely weaker position, and the counts should not
+        // conflate them.
+        //
+        // The character class admits DOTS, and that is not cosmetic. Without
+        // them the pattern stopped at the `.` and then required `,` or `)`,
+        // so a member-expression key matched nothing:
+        //
+        //     // BackAffordance.tsx:123
+        //     t.has(destination.label) ? t(destination.label) : destination.label
+        //
+        // `backNav` was reported 37 of 38 dead as a result — every key reached
+        // through that line. Nine such call sites exist (`step.labelKey`,
+        // `section.key`, `cls.destination.labelKey`, …), each silently costing
+        // its namespace.
+        //
+        // Worth noting WHICH call sites these are: `t.has(k) ? t(k) : k` is the
+        // correct way to call a possibly-missing key, so the most carefully
+        // written sites were the ones most likely to be misreported.
+        for (const _ of code.matchAll(new RegExp(`\\b${esc}\\(\\s*[A-Za-z_$][\\w$.]*\\s*[,)]`, 'g'))) {
             undecidablePrefixes.add(ns);
             dynamicCalls += 1;
             wholeNamespaceDynamic += 1;
         }
+      }
     }
 }
 
