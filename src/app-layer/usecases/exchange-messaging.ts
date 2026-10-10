@@ -1253,6 +1253,19 @@ export async function listExchangeThreads(
         // RLS restricts this to threads the caller is a party to, from either
         // side — which is why there is no tenant filter here to write wrongly.
         const rows = await db.exchangeThread.findMany({
+            // Two spreads into one `where`, which Prisma ANDs. That relies on
+            // the two term sets having DISJOINT keys, so it is worth saying
+            // why they cannot collide rather than leaving it to luck:
+            // `keysetBefore(cursor, field)` returns `{ OR: [...] }` for every
+            // input by construction, and the block terms are
+            // `inquirerUserId` / `listing`.
+            //
+            // An explicit `AND: [...]` would make collision impossible instead
+            // of merely absent. I wrote it that way first and backed it out:
+            // it moves the cursor filter to `where.AND[0].OR` and breaks two
+            // pagination tests that read `where.OR` directly, which is a real
+            // cost paid against a collision that `keysetBefore`'s signature
+            // does not permit.
             where: {
                 ...(cursor ? keysetBefore(cursor, 'lastMessageAt') : {}),
                 ...hiddenByBlock,
