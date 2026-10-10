@@ -62,7 +62,34 @@ function creator() {
  * `looksLikeEgn` is excluded too: an ЕГН must be refused, so a fixture that
  * happened to be one would make a valid-ЕИК case fail for the wrong reason.
  */
-function validEik(seed: number): string {
+/**
+ * Per-run offset for every ЕИК this suite mints (#1561).
+ *
+ * `FarmIdentityClaim`'s uniqueness is `(eikHash) WHERE status = 'VERIFIED'` —
+ * GLOBAL, not tenant-scoped — so one verified claim per hash is all the
+ * database will ever hold. With a constant ЕИК the first run wrote that row,
+ * `afterAll` correctly declined to remove it (see its comment), and every
+ * later run on the same database died in the fixture before reaching an
+ * assertion. CI never saw it because each CI run migrates a fresh database, so
+ * run 1 was always the only run; a developer saw it from their second run on,
+ * where it looks like local breakage.
+ *
+ * Bounded deliberately. `RUN` is 8 hex characters, so `% 1000` gives 0–999 and
+ * `* 100` leaves room for the case seeds below without the search start
+ * exceeding the 9-digit space: the largest reachable start is
+ * `100000000 + 99978 * 7919 = 891725782`, with ~108M of headroom before the
+ * loop's own bound.
+ */
+const EIK_RUN_OFFSET = (parseInt(RUN, 16) % 1000) * 100;
+
+/**
+ * @param caseSeed distinguishes the ЕИКs WITHIN one run; the run offset
+ *                 distinguishes them BETWEEN runs. Both are needed — a shared
+ *                 case seed would make two cases fight over one hash, and a
+ *                 shared run offset is the defect above.
+ */
+function validEik(caseSeed: number): string {
+    const seed = EIK_RUN_OFFSET + caseSeed;
     for (let n = 100000000 + seed * 7919; n < 999999999; n += 1) {
         const s = String(n);
         if (isValidEik(s) && !looksLikeEgn(s)) return s;
@@ -96,9 +123,49 @@ describeFn('P3.6 createFarmForUser', () => {
         // Tenants and audit rows stay: `AuditLog` is immutable by trigger and
         // `AuditLog_tenantId_fkey` is ON DELETE RESTRICT, so a suite that
         // writes through the audited client cannot delete its own tenants. Same
-        // trade `audit-fail-closed-atomicity.test.ts` accepts; names carry a
-        // per-run id so nothing collides.
+        // trade `audit-fail-closed-atomicity.test.ts` accepts.
+        //
+        // This comment used to end "names carry a per-run id so nothing
+        // collides" (#1561). That was true of every field EXCEPT the one with a
+        // global constraint: `name` and `slug` carried `RUN`, `eikHash` did
+        // not — so the suite stated a correct collision-safety argument that
+        // did not cover the single column where a collision is fatal, and read
+        // as though it did. `EIK_RUN_OFFSET` is what makes the sentence true
+        // now.
+        //
+        // The claims ARE deleted, unlike the tenants. `FarmIdentityClaim` has
+        // no audit trigger and no FK to `Tenant` (a plain `tenantId` column),
+        // so nothing blocks it — and without this the table grows one leaked
+        // VERIFIED row per developer per checkout for ever. Scoped to
+        // `claimedByUserId`, which is per-run, so a concurrent run's rows are
+        // untouched; deleting by `eikHash` would be the wider blast radius.
+        await verifier.farmIdentityClaim
+            .deleteMany({ where: { claimedByUserId: CREATOR_ID } })
+            .catch(() => {
+                /* best effort: a failed cleanup must not fail a green suite */
+            });
         await verifier.$disconnect();
+    });
+
+    it('control: the fixture mints DISTINCT ЕИКs, and ones a rerun will not reuse', () => {
+        // The property the suite depended on and never checked. Two case seeds
+        // resolving to one ЕИК would make the "held elsewhere" case fight its
+        // own control for the single VERIFIED row the index permits — and the
+        // failure would look like the product leaking, not like a fixture bug.
+        const eiks = [validEik(31), validEik(77), validEik(78)];
+
+        expect(new Set(eiks).size).toBe(3);
+        // Every one is checksum-valid and not an ЕГН — asserted here rather
+        // than trusted, because `validEik` now composes two seeds and an
+        // off-by-one in that arithmetic would be invisible otherwise.
+        for (const e of eiks) {
+            expect(isValidEik(e)).toBe(true);
+            expect(looksLikeEgn(e)).toBe(false);
+        }
+        // And the run offset is actually applied: with it ignored, these would
+        // be the same three numbers on every run for ever, which is the defect.
+        expect(EIK_RUN_OFFSET).toBeGreaterThanOrEqual(0);
+        expect(eiks).not.toEqual([validEik(31 + 100), validEik(77 + 100), validEik(78 + 100)]);
     });
 
     // ── it works at all ──────────────────────────────────────────────
