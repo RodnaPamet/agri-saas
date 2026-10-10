@@ -44,12 +44,45 @@
  */
 import prisma from '@/lib/prisma';
 import type { Role } from '@prisma/client';
+import { isPlatformTenant } from '@/lib/auth/platform-support';
 
 export interface MyFarm {
     id: string;
     slug: string;
     name: string;
     role: Role;
+    /**
+     * Is this the designated platform farm? (#1587 contract v1.1 (e))
+     *
+     * A client offers Админ → «Цени» when the OPEN farm's row has
+     * `isPlatform: true` and its `role` is `OWNER` or `ADMIN`.
+     *
+     * ## Why the flag is here and not on `/api/auth/me`
+     *
+     * v1 of the contract put `isPlatformAdmin` on `/api/auth/me`, and agrent-ios
+     * caught that it would have been FALSE for the owner exactly when it
+     * mattered. `/api/auth/me` has no tenant in its path, so "the" tenant is
+     * resolved as `orderBy: { createdAt: 'asc' }, take: 1` — the user's OLDEST
+     * active membership. The flag would therefore have been evaluated against
+     * the owner's first farm while they had the new platform farm open. The web
+     * is unaffected because the slug is in the URL; the phone's open farm is
+     * local state that `/me` knows nothing about.
+     *
+     * So the flag goes on the FARM, where a multi-farm client already reads
+     * per-farm facts. A boolean on an endpoint with no tenant is the trap
+     * itself; if a `/me`-level field is ever wanted it must NAME the farm
+     * (`platformAdminOf: slug | null`).
+     *
+     * ## It decides what a client OFFERS, never what is allowed
+     *
+     * Every platform route still enforces `admin.manage` plus
+     * `assertPlatformSupport`, which 404s outside the platform tenant. A client
+     * that ignored this flag and called the routes anyway gets the same refusal
+     * it would have got before. False everywhere when
+     * `PLATFORM_TENANT_SLUG` is unset, matching `isPlatformTenant`'s fail-closed
+     * behaviour.
+     */
+    isPlatform: boolean;
 }
 
 /**
@@ -78,5 +111,10 @@ export async function listMyFarms(userId: string): Promise<MyFarm[]> {
         slug: m.tenant.slug,
         name: m.tenant.name,
         role: m.role,
+        // Computed per row from the env var rather than stored on the tenant:
+        // which farm is the platform one is DEPLOYMENT configuration, not a
+        // property of the farm, and a stored flag would survive a var change
+        // and disagree with every gate that reads the var.
+        isPlatform: isPlatformTenant(m.tenant.slug),
     }));
 }

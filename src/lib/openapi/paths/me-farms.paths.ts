@@ -69,6 +69,10 @@ export function registerMeFarmsPaths(registry: OpenAPIRegistry): void {
                                 example: 'zk-pobeda-9f3a1c20',
                             }),
                             name: z.string().openapi({ example: 'ЗК ПОБЕДА' }),
+                            isPlatform: z.boolean().openapi({
+                                description:
+                                    'Is this the designated platform farm? (#1587) Offer an admin price console when the OPEN farm\u2019s row has `isPlatform: true` AND its `role` is `OWNER` or `ADMIN`. False for every farm when the deployment names no platform farm, matching the server gate\u2019s fail-closed behaviour. It decides what a client OFFERS and never what is allowed \u2014 every platform route still enforces its own gate and 404s outside that farm, so a client that ignored this gets the same refusal it would have got anyway. Read it as optional: an older server omits it, and absent means false. It is deliberately NOT on `GET /api/auth/me` \u2014 that endpoint has no tenant in its path and resolves "the" tenant as the caller\u2019s OLDEST membership, so a boolean there would have been false for the owner exactly while they had the platform farm open.',
+                            }),
                             role: z.string().openapi({
                                 description:
                                     "The caller's role IN THAT FARM: `OWNER`, `ADMIN`, `EDITOR`, `READER`, `AUDITOR` or `MECHANISATOR`. A growing union — treat an unrecognised value as the least privilege rather than as an error.",
