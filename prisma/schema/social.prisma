@@ -26,8 +26,8 @@
 model FeatureFlag {
   /// Dotted key, e.g. `social.profiles`. The primary key, because the key IS
   /// the identity: two rows for one switch is the bug this prevents.
-  key         String   @id
-  enabled     Boolean  @default(false)
+  key         String  @id
+  enabled     Boolean @default(false)
   description String?
 
   /// When NON-EMPTY, `enabled` is necessary but not sufficient: only members
@@ -36,9 +36,9 @@ model FeatureFlag {
   /// So the two fields compose as AND, not OR. A flag enabled with cohorts
   /// set is a limited rollout, never a global one — getting that backwards
   /// would silently expose a surface to the whole deployment.
-  cohorts     String[]
+  cohorts String[]
 
-  updatedAt   DateTime @updatedAt
+  updatedAt       DateTime @updatedAt
   /// Who flipped it. Nullable for rows created by seed/migration rather than
   /// by a person.
   updatedByUserId String?
@@ -67,4 +67,261 @@ model FeatureFlagCohortMember {
   @@unique([cohortKey, userId])
   @@index([userId])
   @@index([cohortKey])
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  TRUST & SAFETY — P5.1 (#1553, expanded from #1196)
+// ═══════════════════════════════════════════════════════════════════
+//
+//  Schema only. P5's standing rule is that tables ship one release before
+//  the code that writes them, so no route, UI or flag lands with these.
+//
+//  ── why NONE of these carries a `tenantId`, and why that is the point ──
+//
+//  Moderation is a PLATFORM function, not a tenant one. Every role in the
+//  enum is tenant-scoped (OWNER, ADMIN, AGRONOMIST, ACCOUNTANT,
+//  MECHANISATOR), so `admin.manage` would let an ADMIN of any one farm read
+//  every other farm's reports. That is the same reasoning the feature-flag
+//  console above already uses, and it is why `ContentReport`,
+//  `ModerationAction` and `StatementOfReasons` are reached only through a
+//  platform-admin-key surface (P5.4) and never through a tenant session.
+//
+//  `UserBlock` is different: it is person↔person, so it is reached in a
+//  PERSON context (`runInUserContext`, `app.user_id`) rather than a platform
+//  one. See its own docblock.
+//
+//  ── no foreign keys to `User`, following `ExchangeBlock` ──
+//
+//  Every person-id column here is a plain `String`, exactly as
+//  `ExchangeBlock.blockedUserId` is. An FK would force an `onDelete` rule,
+//  and what should happen to a report when its reporter erases their account
+//  is the open GDPR question in P5.6 (delete-by-pseudonymisation) — not
+//  something to settle by picking a cascade here. A `Cascade` in particular
+//  would destroy the moderation record of a resolved case, which is the
+//  opposite of what a DSA audit trail is for.
+
+/// What a notice is ABOUT. Deliberately not an FK to any one table: a notice
+/// names a surface and an id, and the surfaces it can name do not share a
+/// parent.
+enum ReportSubjectKind {
+  LISTING
+  MESSAGE
+  PROFILE
+  THREAD
+}
+
+/// Why the notifier says the content is unlawful or violating.
+///
+/// An ENUM rather than free text (#1553 DECISION 6), so a count by reason is
+/// possible without anyone reading a `detail` field. DSA Art 16 wants
+/// categories a notifier can pick from.
+///
+/// PROVISIONAL, and flagged as such on #1553: the list is a product and legal
+/// choice I have drafted rather than been given. Adding a value is a trivial
+/// migration; the shape — that there IS an enum — is what this pins.
+enum ReportReasonCode {
+  /// Unlawful under Bulgarian or EU law, where no narrower code fits.
+  ILLEGAL_CONTENT
+  /// A deceptive offer, a non-existent product, an advance-fee attempt.
+  SCAM_OR_FRAUD
+  /// Bulk or repetitive unsolicited content.
+  SPAM
+  /// Directed at a person: abuse, threats, or hate speech.
+  HARASSMENT_OR_HATE
+  /// A listing whose stated grade, quantity, origin or certification is false.
+  /// The agricultural-marketplace case, and the reason a generic list is not
+  /// enough here.
+  MISLEADING_LISTING
+  /// Copyright, trade mark, or protected designation of origin.
+  INTELLECTUAL_PROPERTY
+  /// Someone's personal data published without a basis.
+  PERSONAL_DATA
+  /// None of the above. Kept deliberately: a notifier forced into a wrong
+  /// category produces a wrong statistic, and Art 16 does not let us refuse
+  /// a notice for want of a label.
+  OTHER
+}
+
+/// Where a notice is in the pipeline. `REJECTED` is a judgement, not a
+/// failure — a notice correctly found to need no action still has to be
+/// answerable under Art 16.
+enum ReportStatus {
+  RECEIVED
+  TRIAGED
+  ACTIONED
+  REJECTED
+}
+
+/// What a moderator did. `NONE` is a real outcome and the reason this is not
+/// nullable: "looked and did nothing" must be distinguishable from "never
+/// looked", and an absent row cannot express the first.
+enum ModerationActionKind {
+  NONE
+  CONTENT_REMOVED
+  CONTENT_DEMOTED
+  ACCOUNT_SUSPENDED
+  ACCOUNT_TERMINATED
+}
+
+/// A DSA Art 16 notice. Holds BOTH a signed-in user's report and an anonymous
+/// public notice.
+///
+/// ── the reporter can read their OWN row, and that is a fourth policy arm ──
+///
+/// Owner decision (2026-10-10) on #1553 DECISION 3. The other two moderation
+/// tables deny `app_user` outright; this one additionally admits the reporter
+/// to their own row, so "my reports" is possible without a second read path.
+///
+/// **That arm is only safe because of the three-table split, and the split is
+/// therefore load-bearing rather than tidiness.** Postgres RLS is ROW-level,
+/// not column-level: the arm exposes EVERY column of the reporter's own row.
+/// It is acceptable here only because the moderation internals — the decision,
+/// the rationale, `moderatorRef`, the action history — live on
+/// `ModerationAction` and `StatementOfReasons`. Had they lived here, this arm
+/// would have leaked all of it and the right answer would have been a separate
+/// receipt projection instead.
+///
+/// So: anything added to this model later is, BY CONSTRUCTION,
+/// reporter-visible. `tests/guards/content-report-columns-are-reporter-safe.test.ts`
+/// refuses a new column without a note saying so.
+model ContentReport {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  /// NULL for an anonymous Art 16 notice, and an anonymous notice stores NO
+  /// identifier at all — not an IP, not a hash of one (#1553 DECISION 5,
+  /// owner-confirmed). Rate limiting is the existing public mutation tier,
+  /// keyed on IP at the Edge, which never reaches the row.
+  ///
+  /// The nullability also makes the reporter arm fail closed for anonymous
+  /// rows without a special case: in SQL `NULL = NULL` is NULL, not true, so
+  /// an anonymous row matches no reporter — including a session whose own
+  /// `app.user_id` is unset.
+  reporterUserId String?
+
+  subjectKind ReportSubjectKind
+  subjectId   String
+
+  reasonCode ReportReasonCode
+
+  /// The notifier's own words. ENCRYPTED + sanitised: free text about a
+  /// person, written to be read by a third party.
+  detail String?
+
+  status ReportStatus @default(RECEIVED)
+
+  /// The triage queue's two access paths: "everything about this subject"
+  /// and "the oldest thing still in this state".
+  @@index([subjectKind, subjectId])
+  @@index([status, createdAt])
+  /// "My reports", which the reporter arm now makes reachable.
+  @@index([reporterUserId])
+}
+
+/// What a moderator did, and why. Platform-only: no `app_user` session can
+/// read or write a row here.
+model ModerationAction {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  /// Nullable because a PROACTIVE action has no notice behind it. Not an FK,
+  /// for the reason in this file's header.
+  reportId String?
+
+  /// Who acted — an opaque reference, NOT a `userId` (#1553 DECISION 7).
+  ///
+  /// A platform moderator may not be a `User` row at all: the credential is an
+  /// API key, so there is no user in scope. The feature-flag console already
+  /// writes `updatedByUserId: NULL` for exactly this reason. Accepting a
+  /// caller-supplied id here would put an unverified name in an attribution
+  /// field, which is worse than an opaque one.
+  moderatorRef String
+
+  actionKind ModerationActionKind
+
+  subjectKind ReportSubjectKind
+  subjectId   String
+
+  /// The reasoning. ENCRYPTED + sanitised — it is free text about a person and
+  /// it is the source of the Art 17 statement.
+  rationale String
+
+  @@index([reportId])
+  @@index([subjectKind, subjectId])
+  @@index([createdAt])
+}
+
+/// A DSA Art 17 statement of reasons, as SENT.
+///
+/// Platform-only storage, so delivery is a PUSH (email / notification) rather
+/// than a row the recipient queries. P5.4's "delivered in the recipient's
+/// language" implies exactly that, and the recipient's Art 17 right is
+/// satisfied by the delivery, not by read access to this table.
+///
+/// Stored RENDERED rather than as a template reference, following the
+/// `NotificationOutbox` precedent: what was sent is a fact, and re-rendering
+/// it later from a template that has since changed would answer a different
+/// question than "what did this person receive".
+model StatementOfReasons {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  /// The action this explains. Not an FK, per this file's header.
+  actionId String
+
+  recipientUserId String
+
+  /// Resolved at SEND time, not at read time — the locale that was actually
+  /// used. Timestamps inside `bodyRendered` are Europe/Sofia, as everywhere
+  /// user-facing in this codebase.
+  locale String
+
+  /// ENCRYPTED. The full text as delivered.
+  bodyRendered String
+
+  /// NULL until the push succeeds. The gap between `createdAt` and this is
+  /// the Art 17 delivery lag, which is a thing a regulator can ask about.
+  deliveredAt DateTime?
+
+  @@index([actionId])
+  @@index([recipientUserId])
+  @@index([deliveredAt])
+}
+
+/// One person refusing another. ADDITIONAL to `ExchangeBlock`, not a
+/// replacement for it (#1553 DECISION 2).
+///
+/// `ExchangeBlock` is a seller TENANT refusing a person — commercial, and
+/// tenant-scoped. This is person↔person and social. Collapsing them would
+/// silently un-block every person currently blocked on the exchange, which is
+/// what `ExchangeBlock.blockedUserId`'s own docblock exists to prevent. P5.2's
+/// "exchange blocking from both sides" therefore means teaching the exchange
+/// to ALSO honour this table, never migrating one into the other.
+///
+/// ── the policies are SPLIT per command, following `ExchangeBlock` ──
+///
+/// #1553 DECISION 1. P5.1's wording is "only the blocker can change it", and
+/// *change* includes DELETE. The blocked party must be able to SELECT the row
+/// — the refusal is enforced while running in THEIR context, so a row they
+/// cannot see cannot refuse them — but must not be able to DELETE it. A single
+/// `USING` clause governs DELETE too, and would let a blocked person unblock
+/// themselves.
+///
+/// This is the OPPOSITE of `UserSession`'s one-policy rule, deliberately.
+/// That rule exists because a permissive policy with no `WITH CHECK` implicitly
+/// grants `WITH CHECK (true)` on UPDATE for visible rows, which would let a
+/// session rewrite its own `tenantId`. This table has no `tenantId` to
+/// rewrite, so that threat does not apply and the DELETE threat does.
+model UserBlock {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  blockerUserId String
+  blockedUserId String
+
+  /// One block per direction. A double-press is a no-op, not two rows — and
+  /// the pair is directional: A blocking B says nothing about B blocking A.
+  @@unique([blockerUserId, blockedUserId])
+  /// "Who has blocked me", which is the enforcement read.
+  @@index([blockedUserId])
 }

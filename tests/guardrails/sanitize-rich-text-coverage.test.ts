@@ -202,6 +202,39 @@ const NON_RICH_TEXT_MODELS: Readonly<Record<string, string>> = {
  * place to silently park new rich-text surfaces.
  */
 const KNOWN_UNCOVERED: Readonly<Record<string, string>> = {
+    // ── P5.1 trust & safety (#1553) ──
+    //
+    // All three are UNCOVERED by construction rather than by oversight, and
+    // the distinction is the reason they are here rather than in
+    // NON_RICH_TEXT_MODELS: P5's standing rule ships these tables one release
+    // BEFORE the code that writes them, so there is no write usecase to name
+    // in RICH_TEXT_COVERAGE yet. Claiming coverage would be false; claiming
+    // "not user rich text" would be worse, because it would exempt them
+    // permanently and every one of these three IS user-authored free text.
+    //
+    // Each entry names the PR that must move it, so the gap closes with the
+    // first writer instead of outliving it.
+    ContentReport:
+        'ContentReport.detail is the notifier\'s own words on a DSA Art 16 ' +
+        'notice — user-supplied free text, and reachable by an ANONYMOUS ' +
+        'public caller, which makes it the highest-risk of the three. No ' +
+        'write path exists yet (P5.1 is schema-only). Moves to ' +
+        'RICH_TEXT_COVERAGE in P5.2, which lands POST /api/public/notices ' +
+        'and must wire sanitizePlainText into it.',
+    ModerationAction:
+        'ModerationAction.rationale is moderator-authored free text about a ' +
+        'person, and it is the SOURCE of the Art 17 statement sent to them — ' +
+        'so an unsanitised value propagates into a delivered message. No ' +
+        'write path exists yet. Moves to RICH_TEXT_COVERAGE in P5.4, which ' +
+        'lands the platform-admin moderation surface.',
+    StatementOfReasons:
+        'StatementOfReasons.bodyRendered is stored RENDERED, so it is not ' +
+        'directly user input — but it EMBEDS ModerationAction.rationale, ' +
+        'which is. That transitive path is why this is a known gap rather ' +
+        'than a NON_RICH_TEXT_MODELS entry: the honest fix is sanitising at ' +
+        'the rationale write path, and until P5.4 does that, rendering ' +
+        'cannot be trusted to be clean. Moves with P5.4.',
+
     EvidenceReview:
         'EvidenceReview.comment (reviewer rationale) is encrypted at ' +
         'rest but its write path is not yet registered with a ' +
@@ -322,6 +355,32 @@ function findFieldBinding(src: string, field: string): string | null {
 const fileExists = (rel: string) => fs.existsSync(path.join(REPO_ROOT, rel));
 const readFile = (rel: string) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
 
+/**
+ * Files under `root` that mention `needle`. Used to tell a KNOWN_UNCOVERED
+ * entry with a live writer from one whose table nothing touches yet.
+ *
+ * A plain substring search on the Prisma accessor (`.contentReport`), which is
+ * deliberately broad: a false POSITIVE here costs someone a look at a guard
+ * failure, while a false negative would let a live unsanitised write path hide
+ * inside the raised cap.
+ */
+function sourceFilesReferencing(root: string, needle: string): string[] {
+    const hits: string[] = [];
+    const walk = (dir: string) => {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+            const full = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+                if (entry.name === 'generated' || entry.name === 'node_modules') continue;
+                walk(full);
+            } else if (/\.tsx?$/.test(entry.name)) {
+                if (fs.readFileSync(full, 'utf8').includes(needle)) hits.push(full);
+            }
+        }
+    };
+    walk(root);
+    return hits;
+}
+
 describe('rich-text sanitiser coverage — structural completeness', () => {
     it('every encrypted-content model is classified (the completeness guarantee)', () => {
         // A new rich-text field forces its model into ENCRYPTED_FIELDS
@@ -388,8 +447,40 @@ describe('rich-text sanitiser coverage — structural completeness', () => {
 
     it('KNOWN_UNCOVERED is a ratchet — it should trend to zero', () => {
         // Not a hard cap — but a visible reminder. If this grows, the
-        // diff is the conversation. Today: 1 (EvidenceReview).
-        expect(Object.keys(KNOWN_UNCOVERED).length).toBeLessThanOrEqual(1);
+        // diff is the conversation. Was 1 (EvidenceReview); 4 since P5.1
+        // (#1553) added three tables whose write paths do not exist yet.
+        expect(Object.keys(KNOWN_UNCOVERED).length).toBeLessThanOrEqual(4);
+    });
+
+    it('no KNOWN_UNCOVERED entry has a LIVE writer — the teeth the cap lost', () => {
+        // Raising the cap from 1 to 4 would otherwise have bought slack a
+        // later regression could spend, so the teeth move here, onto the
+        // distinction that made the raise defensible in the first place.
+        //
+        // An unsanitised column nothing writes is not the same risk as one a
+        // route writes today. The three P5.1 entries are the former — P5's
+        // rule ships those tables one release BEFORE any writer, so there is
+        // no usecase to register in RICH_TEXT_COVERAGE and no way to reach
+        // the column. `EvidenceReview` is the latter, and it is the real gap
+        // the ratchet is about.
+        //
+        // This also makes the P5.1 entries SELF-EXPIRING rather than a
+        // promise in a comment: the moment P5.2 lands
+        // `POST /api/public/notices` and touches `prisma.contentReport`, the
+        // live count becomes 2 and this fails until the entry moves to
+        // RICH_TEXT_COVERAGE with its sanitiser. Which is exactly when that
+        // work should be forced.
+        const SRC = path.resolve(__dirname, '../../src');
+        const withLiveWriter = Object.keys(KNOWN_UNCOVERED).filter((model) => {
+            const accessor = model.charAt(0).toLowerCase() + model.slice(1);
+            return sourceFilesReferencing(SRC, `.${accessor}`).length > 0;
+        });
+
+        // A positive control, because an empty result here would otherwise be
+        // indistinguishable from a scanner that found nothing at all:
+        // `EvidenceReview` DOES have a live writer and must be detected.
+        expect(withLiveWriter).toContain('EvidenceReview');
+        expect(withLiveWriter).toHaveLength(1);
     });
 
 

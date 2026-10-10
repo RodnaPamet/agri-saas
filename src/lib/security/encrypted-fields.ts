@@ -320,6 +320,27 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     //  the KEK is not a compromise — it is the only correct key.
     FeatureFlag: ['description'],
 
+    //  ── P5.1 trust & safety (#1553) ──
+    //
+    //  Three free-text columns, all about a PERSON and all written to be read
+    //  by a third party. Per this manifest's own rule they are declared per
+    //  `(model, field)` and never reach the `'*'` fan-out by collision.
+    //
+    //  All three models are also in `GLOBAL_KEK_MODELS`, which
+    //  `global-kek-models-covers-tenantless` requires of a tenantless
+    //  encrypted model — and here it is the only correct key rather than a
+    //  compromise. Every reader is either a platform admin (no tenant context
+    //  exists; the credential is an API key) or, for `ContentReport.detail`,
+    //  the reporter reading their own row through `runInUserContext`, which
+    //  deliberately sets NO tenant. No single tenant's key can serve either.
+    //
+    //  This is NOT the `PromotionLead` case, which is tenantless, encrypted,
+    //  and deliberately left on a per-tenant DEK because exactly one farm
+    //  reads it. These have no such tenant to name.
+    ContentReport: ['detail'],
+    ModerationAction: ['rationale'],
+    StatementOfReasons: ['bodyRendered'],
+
 } as const;
 
 /** Set of model names with at least one encrypted field. Fast-path check. */
