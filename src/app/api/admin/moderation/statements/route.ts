@@ -11,7 +11,8 @@
  *
  * It does not need to. P5.1 shaped `StatementOfReasons.deliveredAt` as "NULL
  * until the push succeeds", so a row written here IS a queued statement, and
- * the `GET` is the drain queue. P5.4b does the sending.
+ * the `GET` is the drain queue. `src/app-layer/jobs/statement-dispatch.ts`
+ * drains it every 10 minutes (P5.4b).
  *
  * ## Why an undelivered VIEW is part of the duty, not an operational nicety
  *
@@ -42,7 +43,13 @@ import { queueStatement, listUndeliveredStatements } from '@/app-layer/usecases/
 
 export const runtime = 'nodejs';
 
-/** Default locale when the console pins none. P5.4b resolves it properly. */
+/**
+ * What goes in the column so it is never NULL at queue time. Dispatch
+ * OVERWRITES it with `resolveRecipientLocale(recipient.uiLanguage)`, so this is
+ * a placeholder rather than a decision about anyone's language — see
+ * `statement-dispatch.ts`. It stays `bg` because that is this deployment's
+ * `User.uiLanguage` default, so the placeholder and the usual answer agree.
+ */
 const FALLBACK_LOCALE = 'bg';
 
 function platformGate(req: NextRequest): NextResponse | null {
@@ -87,10 +94,10 @@ export const POST = withApiErrorHandling(
         const result = await queueStatement({
             actionId: parsed.data.actionId,
             recipientUserId: parsed.data.recipientUserId,
-            // `bg` when unpinned — this deployment's users are Bulgarian
-            // farmers. P5.4b replaces this with the recipient's own locale
-            // resolved at SEND time, recording which was used, because Art 17
-            // says "in the recipient's language" and a default is not that.
+            // A placeholder, not a language choice: dispatch resolves the
+            // recipient's own locale at SEND time and writes it back, because
+            // Art 17 says "in the recipient's language" and a console default
+            // is not that.
             locale: parsed.data.locale ?? FALLBACK_LOCALE,
             bodyRendered: parsed.data.bodyRendered,
         });

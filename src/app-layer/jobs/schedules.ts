@@ -96,6 +96,26 @@ export const ALL_SCHEDULES: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
+        /**
+         * P5.4b — drain the Art 17 statement queue.
+         *
+         * Every 10 minutes rather than daily, because the number this feeds
+         * is regulator-visible: P5's exit criterion is a median notice
+         * handling time, measured from a statement's `createdAt` to its
+         * `deliveredAt`. A nightly drain would add up to 24 hours of lag to
+         * every statement for no operational gain.
+         *
+         * Not every 2 minutes either. The queue is empty almost always — a
+         * moderation decision is a human act, not a stream — so a tighter
+         * beat buys nothing and spends a worker slot the free pool is short
+         * of.
+         */
+        name: 'statement-dispatch',
+        pattern: '*/10 * * * *',  // every 10 minutes
+        description: 'Deliver DSA Art 17 statements of reasons in the recipient\'s language (#1595)',
+        defaultPayload: {},
+    },
+    {
         name: 'promotion-lead-retention',
         pattern: '30 3 * * *',    // daily at 03:30 UTC
         description:

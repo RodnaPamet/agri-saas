@@ -4419,6 +4419,13 @@
             "perAreaNoArea": "No area with a yield forecast, so value and margin per decare are not calculated.",
             "perAreaNoValue": "No market price for the standing crop, so value and margin per decare are not calculated.",
             "perAreaPartial": "Cost here covers plantings whose yield could not be estimated, so this margin is understated.",
+            "costPerDcaLabel": "Attributed cost",
+            "costPerDcaValue": "{value} / dca",
+            "costPerDcaArea": "over {value} dca growing this crop",
+            "costPerDcaNoArea": "No parcel is recorded as growing this crop, so cost per decare is not calculated. Set the crop on the parcels it is on.",
+            "costPerDcaHint": "Divided by the land this crop OCCUPIES — not by the area with a yield forecast, which is what the figures above use. A parcel with no forecast still costs money and still takes up land, so the two areas can differ, and each figure is shown with its own.",
+            "costPerDcaMixedCurrency": "Costs for this crop were recorded in more than one currency, so cost per decare is not calculated — adding them would misstate it.",
+            "costPerDcaCurrencyUnrecorded": "The rent currency is not recorded on the lease, so cost per decare is not calculated.",
             "marginScaleTitle": "Margin per decare",
             "marginScaleVsCover": "Cover ranks crops by return on the money spent; this ranks them by return on the land used. They can disagree, and on a farm where land is the scarce input this is the ranking that decides what to plant.",
             "marginScaleAria": "Margin per decare by crop, in {currency}",
@@ -6542,6 +6549,19 @@
             "blocked": "Blocked",
             "unblocked": "Unblocked",
             "failed": "That could not be changed. Please try again."
+        }
+    },
+    "statementOfReasons": {
+        "subject": "A decision about your content on Agrent",
+        "intro": "We are writing because we took a decision about something you posted on Agrent. This notice sets out what we did and why, as required by Article 17 of the EU Digital Services Act.",
+        "reasonLabel": "Why:",
+        "redress": "If you believe this decision is wrong, reply to this message and a person will look at it again. You may also take the matter to an out-of-court dispute settlement body, or to a court.",
+        "action": {
+            "NONE": "We looked at a report about your content and decided to take no action. Your content stays as it is.",
+            "CONTENT_REMOVED": "We removed the content.",
+            "CONTENT_DEMOTED": "We left the content in place but reduced how widely it is shown.",
+            "ACCOUNT_SUSPENDED": "We suspended your account. You cannot post or send messages while the suspension lasts.",
+            "ACCOUNT_TERMINATED": "We closed your account."
         }
     }
 }

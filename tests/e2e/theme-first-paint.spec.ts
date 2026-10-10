@@ -202,13 +202,54 @@ async function readLog(
             { timeout: 10_000 },
         );
     }
-    return page.evaluate(() => {
-        const log = (window as unknown as { __themeLog: ThemeLog }).__themeLog;
-        log.bgPage = getComputedStyle(document.documentElement)
-            .getPropertyValue('--bg-page')
-            .trim();
-        return log;
-    });
+    // ── Surviving a navigation mid-read (#1329, second cause) ────────────
+    //
+    // `page.evaluate` throws `Execution context was destroyed, most likely
+    // because of a navigation` when the document goes away between the call and
+    // its execution. That took MAIN RED on `7de62829c`, failing all three
+    // attempts — so it is not the flake the ledger describes, which was
+    // `log.fcp` being null and which #1610 fixed. One cause was replaced by
+    // another and the ledger's reason went stale.
+    //
+    // A retry is sound HERE for two specific reasons, neither of which
+    // generalises:
+    //
+    //   1. this is a READ and nothing else — no click, no write, no outbox, so
+    //      a second attempt cannot leave anything half-done. The repo turns
+    //      retries OFF on the offline and mobile specs precisely because a
+    //      retry after a delivered outbox item cannot restore the pre-delivery
+    //      state;
+    //   2. the property under test is DOCUMENT-INDEPENDENT. `recordFirstPaint`
+    //      installs via `addInitScript`, which re-runs on every navigation, so
+    //      any `/login` document has its own fresh log in which the server sends
+    //      `dark` and the inline script corrects it exactly once. Reading the
+    //      post-navigation document answers the same question.
+    //
+    // What it must NOT do is swallow a different error. Anything that is not a
+    // destroyed context rethrows immediately, and a second destroyed context
+    // rethrows too rather than looping — a page navigating repeatedly is a real
+    // defect and must not be waited out.
+    const read = () =>
+        page.evaluate(() => {
+            const log = (window as unknown as { __themeLog: ThemeLog }).__themeLog;
+            log.bgPage = getComputedStyle(document.documentElement)
+                .getPropertyValue('--bg-page')
+                .trim();
+            return log;
+        });
+
+    try {
+        return await read();
+    } catch (err) {
+        if (!/Execution context was destroyed/i.test(String(err))) throw err;
+        // Let the navigation that destroyed the context finish, then read the
+        // document it produced. `load` and not `networkidle`: this page fetches
+        // `/api/auth/providers` and `/api/auth/ui-config` on mount, so idle is
+        // a different and later event that would make the wait depend on two
+        // requests this test is not about.
+        await page.waitForLoadState('load');
+        return read();
+    }
 }
 
 test.describe('theme reaches the first paint', () => {

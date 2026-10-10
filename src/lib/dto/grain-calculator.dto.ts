@@ -45,7 +45,11 @@ import { z } from '@/lib/openapi/zod';
 import { UNCERTAINTY, IMPUTED_LAND_CHARGE_REFUSAL_CODES } from '@/lib/grain/uncertainty';
 import { CANONICAL_COMMODITIES } from '@/lib/market/commodity-vocabulary';
 import type { UncertaintyState, ImputedLandChargeRefusalCode } from '@/lib/grain/uncertainty';
-import type { PerAreaFigures, PerAreaRefusalCode } from '@/lib/grain/per-area';
+import type {
+    PerAreaCostRefusalCode,
+    PerAreaFigures,
+    PerAreaRefusalCode,
+} from '@/lib/grain/per-area';
 import type { BreakEvenFigures, BreakEvenRefusalCode } from '@/lib/grain/break-even';
 import type { FarmNetWorthTotal } from '@/lib/grain/farm-total';
 import type { ExclusionEntry } from '@/lib/grain/exclusion-labels';
@@ -81,6 +85,17 @@ assertMirrors<Equals<z.infer<typeof ImputedLandChargeRefusalCodeSchema>, Imputed
 const PerAreaRefusalCodeSchema = z.enum(['NO_STANDING_CROP_AREA', 'NO_STANDING_CROP_VALUE']);
 assertMirrors<Equals<z.infer<typeof PerAreaRefusalCodeSchema>, PerAreaRefusalCode>>();
 
+// Mirrored the same way, and SEPARATE on purpose: the cost rate's refusals are a
+// different vocabulary from the value figures' (#1512). `assertMirrors` is what
+// makes adding a code to either one a compile error here rather than a silently
+// unpublished enum member.
+const PerAreaCostRefusalCodeSchema = z.enum([
+    'NO_OCCUPIED_AREA',
+    'COST_CURRENCY_MIXED',
+    'COST_CURRENCY_UNRECORDED',
+]);
+assertMirrors<Equals<z.infer<typeof PerAreaCostRefusalCodeSchema>, PerAreaCostRefusalCode>>();
+
 const BreakEvenRefusalCodeSchema = z.enum(['NO_EXPECTED_TONNAGE', 'NO_MARKET_PRICE']);
 assertMirrors<Equals<z.infer<typeof BreakEvenRefusalCodeSchema>, BreakEvenRefusalCode>>();
 
@@ -111,6 +126,17 @@ export const PerAreaFiguresSchema = z
          * mistaken for each other.
          */
         marginPerDca: z.number().nullable(),
+        costCurrency: z
+            .string()
+            .nullable()
+            .openapi({
+                description:
+                    'The currency `attributableCostPerDca` is in. `null` means NO cost row recorded one — render it in the tenant\u2019s display currency, which is what the product already does wherever it prints a cost. Null is an INSTRUCTION, not an absence: a cost that is not in one known currency is withheld rather than labelled, so this is never null beside a non-null rate for any other reason. Do NOT fall back to the market price currency — `attributableCostPerDca` and the market price need not share one, and that is the whole reason this field exists.',
+            }),
+        costRefusalCode: PerAreaCostRefusalCodeSchema.nullable().openapi({
+            description:
+                'Why `attributableCostPerDca` is null. Non-null exactly when it is null. A SEPARATE vocabulary from `refusalCode`, which describes the value figures: after #1512 the cost rate can be present when they are refused and refused when they are present.',
+        }),
         uncertainty: UncertaintyStateSchema,
         refusalCode: PerAreaRefusalCodeSchema.nullable(),
     })

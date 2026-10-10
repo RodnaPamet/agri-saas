@@ -1,6 +1,6 @@
 {
     "name": "inflect-compliance",
-    "version": "10.24.0",
+    "version": "10.25.0",
     "private": true,
     "engines": {
         "node": ">=22.0.0 <23.0.0",
@@ -80,7 +80,8 @@
         "prod:up": "docker compose -f docker-compose.prod.yml up -d --build",
         "prod:down": "docker compose -f docker-compose.prod.yml down",
         "lint:raw": "cross-env ESLINT_USE_FLAT_CONFIG=true eslint .",
-        "lint:fix": "cross-env ESLINT_USE_FLAT_CONFIG=true eslint . --fix"
+        "lint:fix": "cross-env ESLINT_USE_FLAT_CONFIG=true eslint . --fix",
+        "merge:main": "bash scripts/merge-main-regenerating.sh"
     },
     "dependencies": {
         "@anthropic-ai/sdk": "^0.131.0",

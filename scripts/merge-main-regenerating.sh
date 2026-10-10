@@ -181,6 +181,26 @@ npm run db:generate >/dev/null 2>&1 && echo "  prisma client regenerated"
 npm run openapi:generate >/dev/null 2>&1 && echo "  openapi.json regenerated"
 npm run routes:inventory 2>&1 | tail -1
 
+# The contract SNAPSHOT is on the take-main's-copy list above but had no
+# regeneration step, which made it the one artifact this script could leave
+# stale. If this branch added or renamed a component schema, main's snapshot
+# does not contain it, `git checkout --theirs` discards ours, and nothing here
+# put it back — so `api-schemas.test.ts` fails in CI with "New snapshot was not
+# written", which reads as a test problem rather than as a merge resolution.
+#
+# `-u` WRITES snapshots, so a non-zero exit is a real failure and not "the
+# snapshot differed". CI=1 because this file is a jest test and will migrate the
+# SHARED test database without it.
+if CI=1 npx jest tests/contracts/api-schemas.test.ts -u --silent >/dev/null 2>&1; then
+    echo "  api-schemas snapshots regenerated"
+else
+    echo "  !! the api-schemas snapshot could not be regenerated."
+    echo "     Main's copy is staged and may be missing this branch's schemas."
+    echo "     Nothing has been committed. Run it yourself and inspect:"
+    echo "         CI=1 npx jest tests/contracts/api-schemas.test.ts -u"
+    exit 1
+fi
+
 git add -A
 
 # ── Prove the "generated" claim rather than trusting the list ──
@@ -192,6 +212,7 @@ echo "verifying the resolved artifacts are reproducible..."
 npm run db:generate >/dev/null 2>&1 || true
 npm run openapi:generate >/dev/null 2>&1 || true
 npm run routes:inventory >/dev/null 2>&1 || true
+CI=1 npx jest tests/contracts/api-schemas.test.ts -u --silent >/dev/null 2>&1 || true
 MOVED=$(git diff --name-only || true)
 if [ -n "$MOVED" ]; then
     echo "  !! these moved on a SECOND generator pass, so they are not deterministically generated:"

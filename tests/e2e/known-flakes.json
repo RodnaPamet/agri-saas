@@ -52,7 +52,7 @@
             "issue": 1329,
             "firstSeen": "2026-10-06",
             "review": "2027-01-15",
-            "reason": "FIRST PAINT never reported: `expect(log.fcp).not.toBeNull()` at :220. Not a navigation timeout like its siblings here — the instrument itself produced no value, which is the same underlying slowness seen from the measurement side rather than the assertion side. Proven a flake on #1323 run 37456682187: attempt 1 red, attempt 2 green on the IDENTICAL commit 6784a0f44."
+            "reason": "TWO causes, in sequence, and the first is FIXED. (1) FIRST PAINT never reported: `expect(log.fcp).not.toBeNull()` — the instrument produced no value because an observer callback is a task and the read could beat it. Proven a flake on #1323 run 37456682187: attempt 1 red, attempt 2 green on the IDENTICAL commit 6784a0f44. Fixed in #1610 by WAITING for the observer instead of racing it, not by retrying. (2) `Execution context was destroyed, most likely because of a navigation` in the SECOND read, which then took main red on 7de62829c failing ALL THREE attempts — so a retry could never have absorbed it, and the entry was green-lit against a cause that no longer applied. Fixed by making the read survive a navigation and re-read the document it produced. The entry is KEPT because a residual instrument flake would still be worth classifying, not because either known cause is open; delete it if it stays green through the review date."
         },
         {
             "spec": "tooltip-and-copy.spec.ts",

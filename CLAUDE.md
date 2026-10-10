@@ -2039,6 +2039,57 @@ would have been unreachable while looking perfectly implemented — the seventh
 instance of that shape in this repo. Every `admin/*` platform route is
 enumerated there individually for the same reason.
 
+### P5.4b — statement dispatch, where the recipient's language is only knowable at send time
+
+`src/app-layer/jobs/statement-dispatch.ts`, every 10 minutes, draining
+`StatementOfReasons` rows with `deliveredAt` NULL oldest-first (#1595).
+
+**The stored body is composed AT SEND TIME, which makes the console's
+`bodyRendered` a draft.** Two P5 requirements pull apart here: P5.1 stores the
+body RENDERED because "what was sent is a fact, and re-rendering later from a
+since-changed template answers a different question", while Art 17 requires the
+recipient's own language — which is not knowable when a moderator queues the
+row. So dispatch resolves the locale, composes the final text, and writes
+`locale` + `bodyRendered` back BEFORE stamping `deliveredAt`. That keeps "stored
+rendered = as sent" literally true rather than nearly true.
+
+**The fallback is `bg`, and `en` would be a bug.** `resolveRecipientLocale`
+(`@/lib/email/recipient-locale`) falls back to `RECIPIENT_FALLBACK_LOCALE`,
+deliberately NOT `DEFAULT_LOCALE` — which is `en` and documented for
+UNAUTHENTICATED surfaces. A statement recipient is a known user whose
+`uiLanguage` column defaults to `bg`, so reaching for the unauthenticated
+constant would hand English to a Bulgarian farmer whose preference merely
+failed to load. This is the same rule as every other outbound email; the
+difference is only that the obligation is legal rather than courteous.
+
+**`attempts: 1`, which is the opposite of every other entry in `JOB_DEFAULTS`,
+and the retry lives per-ROW instead.** The job stamps `deliveredAt` only after a
+send resolves, so retrying the RUN would re-send every statement that already
+went out in the failed batch. A per-row failure is caught, counted as
+`itemsSkipped`, and left undelivered — which is a retry at the right
+granularity, because the queue IS `deliveredAt IS NULL` and the next scheduled
+run picks it up. The run therefore reports `success: true` with a non-zero skip
+count: the RUN worked, and the undelivered rows are the finding.
+
+**A failed send must leave the row undelivered**, and that is the assertion
+worth protecting. A row marked delivered on a failed send is the worst available
+outcome — it removes a compliance gap from the console's undelivered view, which
+is the one place it is visible, and the recipient still never heard.
+`tests/integration/p5-4b-statement-dispatch.test.ts` is mutation-proved against
+stamping before the send, rethrowing instead of skipping, and falling back to
+`en`.
+
+**Every 10 minutes, not nightly and not every 2.** P5's exit criterion is a
+median notice handling time measured from `createdAt` to `deliveredAt`, so a
+nightly drain would add up to 24 hours of regulator-visible lag for no
+operational gain. A tighter beat buys nothing: a moderation decision is a human
+act, not a stream, so the queue is empty almost always.
+
+**A test asserting on this queue must scope itself to its own rows.** The queue
+is global and ordered oldest-first, so `mockRejectedValueOnce` lands on whichever
+row the run reaches first — which may be one another suite left stuck. Aim a
+failure at a RECIPIENT, not at a call index.
+
 ## Failing tests
 
 A failing test on a branch is a failing test, full stop. "Pre-existing on
