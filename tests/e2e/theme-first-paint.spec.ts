@@ -144,8 +144,64 @@ async function recordFirstPaint(page: Page) {
     });
 }
 
-/** Read the recorder, plus the palette the attributes actually selected. */
-async function readLog(page: Page): Promise<ThemeLog> {
+/**
+ * Read the recorder, plus the palette the attributes actually selected.
+ *
+ * WAITS for the paint observer to have reported before reading (#1329). The
+ * recorder installs a `PerformanceObserver` and this read used to take
+ * whatever `log.fcp` held at the moment it ran — but an observer callback is a
+ * TASK, so even with `buffered: true` delivering an already-recorded entry,
+ * the read can beat the callback. `log.fcp` was then `null` and
+ * `expect(log.fcp).not.toBeNull()` failed on a page that had painted
+ * perfectly well.
+ *
+ * That is the whole of #1329, and it is a race in the TEST, not slowness in
+ * the product. The ledger entry called it "FIRST PAINT never reported", which
+ * is what losing the race looks like from the assertion's side.
+ *
+ * #1570 gave the spec its retries back on the reasoning that a retry absorbs
+ * a flaky instrument. That was right as far as it went — the ledger can now
+ * classify it — but it treated the symptom: on #1604 the spec lost the race
+ * three times in a row and took the shard down anyway, which a retry cannot
+ * fix because each attempt runs the same race.
+ *
+ * Waiting is the actual remedy: it converts "read once and hope the callback
+ * has run" into "read once the instrument has reported". A page that genuinely
+ * never paints now fails on the wait with a message saying so, rather than on
+ * a null three screens later.
+ */
+async function readLog(
+    page: Page,
+    opts: { waitForPaint?: boolean } = {},
+): Promise<ThemeLog> {
+    // OPT-IN, and scoped to the reads whose assertions depend on `fcp`.
+    //
+    // My first version waited unconditionally and broke the SECOND read in the
+    // first-visit test: `expect(after.mutations…).toHaveLength(1)` got 0. That
+    // assertion had never run before — the `fcp` race killed the test on an
+    // earlier line — so waiting UNMASKED it rather than merely breaking it,
+    // and the spec had two problems hiding behind one failure.
+    //
+    // The likely mechanism: `recordFirstPaint` installs via `addInitScript`,
+    // which re-runs on EVERY navigation, so `__themeLog` is fresh after any
+    // re-navigation — mutations empty, `fcp` set again. Waiting for paint in
+    // the second read gives a new document time to paint and lands the read on
+    // the reset log.
+    //
+    // I have NOT proven that; it needs a browser to confirm. So the fix is
+    // SCOPED rather than built on the guess: only reads that assert `fcp` opt
+    // in, and the second read behaves exactly as it did before. That is
+    // correct whether or not the explanation above is right, which is the
+    // property worth having while the mechanism is still a hypothesis.
+    if (opts.waitForPaint) {
+        // Bounded, so a page that truly never paints fails loudly rather than
+        // hanging to the suite timeout.
+        await page.waitForFunction(
+            () => (window as unknown as { __themeLog?: ThemeLog }).__themeLog?.fcp != null,
+            undefined,
+            { timeout: 10_000 },
+        );
+    }
     return page.evaluate(() => {
         const log = (window as unknown as { __themeLog: ThemeLog }).__themeLog;
         log.bgPage = getComputedStyle(document.documentElement)
@@ -195,7 +251,7 @@ test.describe('theme reaches the first paint', () => {
         await recordFirstPaint(page);
         await safeGoto(page, '/login');
 
-        const log = await readLog(page);
+        const log = await readLog(page, { waitForPaint: true });
 
         // The attribute arrived WITH the markup. This is the assertion that
         // fails if the cookie read is removed from `layout.tsx` — the server
@@ -226,7 +282,7 @@ test.describe('theme reaches the first paint', () => {
         await recordFirstPaint(page);
         await safeGoto(page, '/login');
 
-        const log = await readLog(page);
+        const log = await readLog(page, { waitForPaint: true });
 
         expect(log.initial).toEqual({ theme: 'dark', contrast: null });
 

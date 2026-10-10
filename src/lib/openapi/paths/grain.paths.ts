@@ -134,7 +134,81 @@ const GrainDeliverySchema = z
             'One delivery against a contract. tonnes is an exact decimal string. Deliveries are what `fulfilment` is derived from, so adding or removing one changes the contract’s position.',
     });
 
+/**
+ * The per-CROP response of `GET /grain/costs/defaults?commodity=` (#1611).
+ *
+ * Registered EXPLICITLY below rather than named inline on the 200, and the
+ * reason is a contract one. The 200 declares `CostDefaults`, whose top-level
+ * `overheads` an existing client reads directly. Expressing both shapes as a
+ * `z.union` is the more honest spec — the route really does return either — but
+ * it takes `overheads` off the top level, and `openapi-breaking-change.test.ts`
+ * correctly classifies that as `property-removed`: a generated client's
+ * `response.overheads` stops type-checking even though the bytes an existing
+ * caller receives are unchanged.
+ *
+ * That break may well be worth taking, but it is the OWNER's to authorise —
+ * `acknowledged-breaking-changes.ts` records approvals given on the PR that
+ * needs them, not ones an agent decided for itself. So this ships the half that
+ * needs no authorisation: the shape is PUBLISHED as a named component a client
+ * can generate a type from, and the operation's description says when you get
+ * it. Same pattern and same reason as `SpatialImportDetails` in
+ * `locations.paths.ts` — `.openapi()` alone only LABELS a schema, it does not
+ * emit one that no path reaches. Tracked as #1612.
+ *
+ * If the union lands later, DELETE the `register` call: the union would make
+ * this component reachable and leave two divergent copies of one shape.
+ */
+const CropCostDefaults = z
+    .object({
+        commodity: z.string().openapi({
+            description:
+                'The CANONICAL commodity, echoed so you know what your spelling resolved to. ' +
+                'Named `commodity`, NOT `commodityCanonical` \u2014 that is the storage column; this ' +
+                'is the resolved value.',
+        }),
+        lines: z.array(
+            z.object({
+                category: z.string().openapi({
+                    description:
+                        'The cost category as entered. Deliberately NOT narrowed to the overhead ' +
+                        'enum: a crop sheet books the categories a crop actually incurs.',
+                }),
+                amountPerDca: z.number().nullable().openapi({
+                    description:
+                        'The per-decare rate AS TYPED. `null` means the farmer entered a TOTAL, ' +
+                        'not that the line is empty \u2014 show the row unfilled rather than dropping ' +
+                        'it, or you hide that the farm has such a cost at all.',
+                }),
+                currency: z.string().openapi({
+                    description:
+                        'READ THIS; do not assume the form\u2019s. Bulgaria moved to EUR in 2026 and ' +
+                        'older rows are BGN, so prefilling the number alone shows a 24 000 \u043b\u0432 figure ' +
+                        'as \u20ac24 000 \u2014 wrong by the fixed 1.95583 and entirely plausible on screen.',
+                }),
+                incurredOn: z.string().datetime().openapi({
+                    description:
+                        'Show it, so a stale default looks like one. Every line of one sheet ' +
+                        'shares this instant \u2014 that is what makes them one sheet.',
+                }),
+                description: z.string().nullable().openapi({
+                    description:
+                        'The row\u2019s NAME \u2014 what distinguishes \u041f\u0420\u0417 from \u0442\u043e\u0440\u043e\u0432\u0435 on one sheet. A ' +
+                        'departure worth stating: list rows elsewhere omit `description` because ' +
+                        'it is encrypted commercial free text. Returned here only because the rows ' +
+                        'are the CALLER\u2019S OWN, bounded to one sheet, and without it the sheet comes ' +
+                        'back as several unlabelled amounts.',
+                }),
+            }),
+        ),
+    })
+    .openapi('CropCostDefaults');
+
 export function registerGrainPaths(registry: OpenAPIRegistry): void {
+    // Registered explicitly because nothing REFERENCES it \u2014 see the docblock
+    // above. A client needs a name to generate a type from, and a schema that no
+    // path reaches is not emitted at all.
+    registry.register('CropCostDefaults', CropCostDefaults);
+
     op(registry, {
         method: 'get',
         path: '/api/t/{tenantSlug}/grain/calculator',
@@ -762,14 +836,30 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
             '\n\n**Yearly overheads only** — `PAYROLL`, `CREDIT`, `DEPRECIATION`, `OTHER`. `RENT` is deliberately absent: it is a per-decare crop line in the owner\'s split, not an overhead, however fixed it is.' +
             '\n\n**`payrollHeadcount` / `payrollAnnualPerPerson` are `null`, never `0`, when a plain total was entered.** Zero people earning a salary is a different claim from "they typed a total", and a prefill that wrote zeros over that distinction would overwrite real figures with a number nobody typed.' +
             '\n\n**`incurredOn` is returned so a STALE default is visible.** Last year\'s salary figure prefilled silently is worse than one shown with its date beside it.' +
-            '\n\n**No `commodity` parameter yet.** The per-crop half needs a commodity→cost path that does not exist: `CostEntry` has no commodity column, and all four live cost entries on the owner\'s farm carry no domain link at all (`parcelId`, `seasonId`, `plantingId`, `locationId`, `itemId`, `leaseId` each set on zero). Adding it later is additive — a client that does not send it keeps this behaviour.' +
+            '\n\n**`?commodity=<any spelling>` returns the per-CROP sheet instead** — the farm\'s last «Култура» lines for that crop, as `{ commodity, lines: [{ category, amountPerDca, currency, incurredOn, description }] }`. Send no `commodity` and you get the overhead payload above, unchanged. The spelling is normalised, so `Canola` resolves to `rapeseed`, and the canonical value is echoed back so you know what was looked up. A commodity the vocabulary does not cover is a **400** carrying `code: \"UNKNOWN_COMMODITY\"` and the value you sent in `params.commodity`, not an empty sheet: an empty answer is indistinguishable from "this crop has no history", so a typo would read as a fact about the farm.' +
+            '\n\n**It returns the latest SET, not the latest line.** A sheet is several lines entered together — ПРЗ, торове, seed — so every row sharing the most recent `incurredOn` for that crop comes back, each with its own `description` as the row\'s name. Prefilling only the newest line would collapse a sheet into one and the farmer would retype the rest without noticing.' +
+            '\n\n**`amountPerDca: null` means the farmer entered a TOTAL, not that the line is empty.** The line is returned rather than dropped, so a client can show the row unfilled instead of implying the farm never recorded that cost.' +
+            '\n\n**Read each line\'s `currency`; do not assume the form\'s.** Bulgaria moved to EUR in 2026 and older rows are stored in BGN, so prefilling the NUMBER alone shows a 24 000 лв figure as €24 000 — wrong by the fixed 1.95583, and entirely plausible on screen. Convert, or leave a foreign-currency line out and say so.' +
             '\n\nCarries a weak ETag; send `If-None-Match` and handle **304**.',
         tags: ['Grain'],
         params: TenantParams,
+        query: z.object({
+            commodity: z.string().optional().openapi({
+                param: { name: 'commodity', in: 'query' },
+                description:
+                    'Any spelling the crop vocabulary resolves \u2014 `Canola`, `rapeseed`, \u00abрапица\u00bb. ' +
+                    'Send it and the 200 is the per-CROP sheet, component `CropCostDefaults`; omit ' +
+                    'it and the 200 is the overhead payload below, unchanged. The two shapes are ' +
+                    'DISJOINT, so branch on which key is present rather than on what you sent. A ' +
+                    'spelling the vocabulary does not cover is a 400 `UNKNOWN_COMMODITY`, never an ' +
+                    'empty sheet.',
+            }),
+        }),
         success: {
             status: 200,
             description:
-                'The latest overhead figures, in a fixed category order so the form\'s fields do not reorder between visits. Empty when the farm has no overhead history.',
+                'The latest overhead figures, in a fixed category order so the form\'s fields do not reorder between visits. Empty when the farm has no overhead history. ' +
+                'This schema describes the response when `commodity` is ABSENT; sending it returns `CropCostDefaults` instead \u2014 a registered component rather than a second 200 schema here, because declaring a union would take `overheads` off the top level and break a generated client\'s typed read (#1612).',
             schema: z
                 .object({
                     overheads: z.array(
