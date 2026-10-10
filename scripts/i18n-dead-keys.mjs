@@ -137,6 +137,36 @@ function walk(dir, out = []) {
 const keys = flatten(JSON.parse(readFileSync(CATALOGUE, 'utf8')));
 const files = ROOTS.flatMap((r) => walk(join(REPO, r)));
 
+/**
+ * Functions that TAKE a translator, derived from their parameter types.
+ *
+ * `weedLabel(t: WeedTranslator, value)` is called as `weedLabel(tWeeds, x)` —
+ * the translator crosses a function boundary, so no `<var>(...)` pattern sees
+ * it and the whole `weeds` namespace read as dead (15 of 15). Same for
+ * `crops`, and the docblock above already named this limitation.
+ *
+ * The set is DERIVED from the `: SomethingTranslator` convention rather than
+ * hand-listed, which is what makes it safe. A name list would have had to
+ * include `t` as an argument generally — and `clearTimeout(t)`, `String(t)`,
+ * `Date(t)` all match that shape with a `t` that is a timer handle, not a
+ * translator. Marking a namespace undecidable on the strength of a
+ * `clearTimeout` call is the same collision `translate(` has with CSS
+ * transforms, and it would have shrunk the dead set for a bogus reason.
+ *
+ * 8 such types exist (`WeedTranslator`, `CropTranslator`, `CommodityTranslator`,
+ * `AgTranslator`, `StatusTranslator`, `TaskEnumTranslator`, `FacetTranslator`,
+ * `CelebrationTranslator`) across 16 parameter declarations.
+ */
+const TRANSLATOR_TAKERS = new Set();
+for (const file of files) {
+    const code = blankComments(readFileSync(file, 'utf8'));
+    for (const m of code.matchAll(
+        /(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)/g,
+    )) {
+        if (/:\s*[A-Z]\w*Translator\b/.test(m[2])) TRANSLATOR_TAKERS.add(m[1]);
+    }
+}
+
 const BIND = /const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:await\s+)?(?:useTranslations|getTranslations)\(\s*['"]([^'"]+)['"]\s*\)/g;
 const referenced = new Set();
 const undecidablePrefixes = new Set();
@@ -207,6 +237,19 @@ for (const file of files) {
             // `sprayReason.${code}` -> `<ns>.sprayReason`; `${code}` -> `<ns>`
             undecidablePrefixes.add(cut === -1 ? ns : `${ns}.${head.slice(0, cut)}`);
             dynamicCalls += 1;
+        }
+        // <taker>(<var>, …) — the translator crosses a function boundary, so
+        // the key is built inside a helper this scan cannot follow. Resolved
+        // PER FILE: `t` is bound to ~200 different namespaces across the tree,
+        // so only the binding in THIS file can say which namespace a given
+        // `weedLabel(t, …)` reaches.
+        for (const taker of TRANSLATOR_TAKERS) {
+            const te = taker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            if (new RegExp(`\\b${te}\\(\\s*${esc}\\s*[,)]`).test(code)) {
+                undecidablePrefixes.add(ns);
+                dynamicCalls += 1;
+                wholeNamespaceDynamic += 1;
+            }
         }
         // <var>(identifier) or <var>(obj.prop) — nothing static at all, so the
         // whole namespace is unresolvable. Kept separate from the template case
