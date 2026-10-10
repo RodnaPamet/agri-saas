@@ -115,21 +115,41 @@ erases their account is the open GDPR question in P5.6
 here. `Cascade` in particular would destroy the moderation record of a resolved
 case, which is the opposite of what a DSA audit trail is for.
 
-## One premise of DECISION 5 was not true
+## I got DECISION 5's premise wrong twice, in opposite directions
 
-DECISION 5 — an anonymous notice stores no identifier — is justified by abuse
-being handled at the Edge instead. Checked while building:
-`src/lib/security/rate-limit.ts` has exactly ONE public limiter,
-`PUBLIC_READ_LIMIT` (60/min), and the only public route
-(`/api/public/eik-check`) is a GET that uses it. **There is no public mutation
-tier.**
+Worth recording as a method failure rather than a fact, because both errors had
+the same cause: I inferred from a constant's NAME instead of reading the code.
 
-The decision still stands — collecting identifiers you did not need is not
-undoable, and adding a column later is a migration — but its safety argument
-has a missing term. Nothing writes the table yet, so the gap is not live; it is
-a PRECONDITION of P5.2 rather than a detail of it, because
-`POST /api/public/notices` is an unauthenticated writer and without a mutation
-tier the only thing between it and a flood is the absence of the route.
+**First claim:** abuse is handled by "the existing public mutation tier". There
+is no constant by that name, so this read as confident and unfounded.
+
+**Second claim (the correction):** no public mutation tier exists at all, so
+DECISION 5's safety argument "has a missing term" and P5.2 must build one. Also
+wrong, and worse — it turned a non-problem into a precondition.
+
+**What is actually true**, each line checked:
+
+- `withApiErrorHandling` applies `options?.config ?? API_MUTATION_LIMIT` to
+  every method in `MUTATION_METHODS` — `src/lib/errors/api.ts:89`. A public
+  POST therefore gets 60/min by default, without asking for it.
+- The key is `(IP, userId)`, and `resolveRequestUserId` returns `null` for an
+  unauthenticated caller, with the comment "anon is a tighter bucket, not a
+  looser one" — `src/lib/security/rate-limit-identity.ts:71`. An anonymous
+  notice is bucketed by IP, which is the desired behaviour.
+- `/api/public/eik-check` is the precedent, and it is a **POST** — the second
+  claim called it a GET, inferring the method from `PUBLIC_READ_LIMIT`'s name.
+  It overrides the config with a per-route `scope`, so public routes do not
+  pool one bucket.
+
+So DECISION 5 stands on a mechanism that exists. What is left is choosing the
+NUMBER: 60 notices/min/IP is generous, and carrier-grade NAT puts a village
+behind one IPv4 — a cost `PUBLIC_READ_LIMIT`'s own docblock already reasons
+about. That belongs to P5.2.
+
+The transferable lesson: a rate-limit constant's name describes its INTENT, not
+where it is applied or what it is keyed on. Three reads were needed — the
+constant, the wrapper that applies it, and the identity resolver — and the
+first two each produced a confident wrong answer on their own.
 
 ## Still open on #1553
 
