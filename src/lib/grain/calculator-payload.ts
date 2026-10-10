@@ -95,6 +95,18 @@ export function toCalculatorRow(row: CommodityNetWorthRow): CalculatorRow {
         priceSource: row.priceSource,
 
         standingCropAreaHa: row.standingCropAreaHa,
+
+        // #1512: the land the crop OCCUPIES, which is NOT
+
+        // `standingCropAreaHa` (that is the yield-covered area). A client
+
+        // multiplying a typed per-decare rate by an area wants this one —
+
+        // the other is 0 on a farm with no yield estimates, so the product
+
+        // would be 0 and the sheet would book nothing.
+
+        occupiedAreaHa: row.occupiedAreaHa,
         standingCropExpectedKg: row.standingCropExpectedKg,
         standingCropValue: row.standingCropValue,
         perArea: row.perArea,
