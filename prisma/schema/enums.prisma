@@ -966,4 +966,18 @@ enum CostAllocationBasis {
   TARGET
   HOLDING
   PARCEL_SUBSET
+  /// The cost belongs to ONE CROP, as the farmer typed it (#1530).
+  ///
+  /// The other three answer "which LAND is this spread across". This one
+  /// answers a different question — "which crop is this FOR" — and that is
+  /// why it is a basis value rather than an inference from `amountPerDca` or
+  /// the category: owner decision 2026-10-10, "a dedicated marker on the cost
+  /// entry". An inferred discriminator would reclassify existing rows the
+  /// moment the rule changed.
+  ///
+  /// Requires `commodityCanonical`. Such a row does NOT spread across land at
+  /// all — it is summed straight onto its commodity, and it SUPERSEDES the
+  /// consumption-derived cost for that (commodity, season): the farmer's own
+  /// figure wins, per the owner's exclusivity ruling.
+  CROP
 }

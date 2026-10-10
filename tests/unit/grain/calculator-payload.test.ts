@@ -77,6 +77,10 @@ function row(over: Partial<CommodityNetWorthRow> = {}): CommodityNetWorthRow {
         attributedCropCost: 800,
         attributedCropCostCurrencies: ['BGN'],
         attributedCropCostCurrencyMixed: false,
+    // #1530's fourth cashCostTotal slice. Zero here: this fixture is about the
+    // payload shape, and a farm with no typed per-crop cost is the common case.
+    typedCropCost: 0,
+    typedCropCostCurrencies: [],
         rentCostMoneyAmount: 300,
         rentCostProduceKg: 0,
         rentCostProduceValue: null,
@@ -127,6 +131,8 @@ function result(rows: CommodityNetWorthRow[]): GrainNetWorthResult {
             leasesUnattributed: [],
             leasesProduceRentUnpriced: [],
             payrollUnattributable: [],
+    typedCostNoCommodity: [],
+    consumptionSupersededByTyped: [],
         },
         unvalued: { noUnitCost: 0, unitMismatch: 0 },
         cashOut: [],

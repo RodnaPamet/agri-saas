@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "10.10.1",
+    "version": "10.14.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -2864,7 +2864,8 @@
             "enum": [
               "TARGET",
               "HOLDING",
-              "PARCEL_SUBSET"
+              "PARCEL_SUBSET",
+              "CROP"
             ]
           },
           "allocationParcelIds": {
@@ -2872,6 +2873,12 @@
             "items": {
               "type": "string"
             }
+          },
+          "commodityCanonical": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "createdByUserId": {
             "type": [
@@ -3054,6 +3061,7 @@
           "itemId",
           "allocationBasis",
           "allocationParcelIds",
+          "commodityCanonical",
           "createdByUserId",
           "createdAt",
           "updatedAt",
@@ -3065,7 +3073,7 @@
           "invoiceFile"
         ],
         "additionalProperties": {},
-        "description": "One recorded cost against land, a planting, a season or an inventory item. amount is a JSON number (Decimal converted, absent reads as 0). allocationBasis says WHICH land the cost spreads across and allocationParcelIds is the PARCEL_SUBSET denominator, sorted. description is encrypted commercial free text returned only on a single read — it is ABSENT rather than null on list rows, which is a different claim from \"this entry has no description\"."
+        "description": "One recorded cost against land, a planting, a season or an inventory item. amount is a JSON number (Decimal converted, absent reads as 0). allocationBasis says WHICH land the cost spreads across and allocationParcelIds is the PARCEL_SUBSET denominator, sorted — except CROP, which spreads across no land at all and instead names its crop in commodityCanonical, superseding the consumption-derived cost for that crop and season. description is encrypted commercial free text returned only on a single read — it is ABSENT rather than null on list rows, which is a different claim from \"this entry has no description\"."
       },
       "CostEntryInvoiceUpload": {
         "type": "object",
@@ -20927,7 +20935,7 @@
       "post": {
         "operationId": "createCostEntry",
         "summary": "Record a cost",
-        "description": "Creates one cost entry. `allocationBasis` decides how it reaches a crop — read the enum's own docs before choosing, because the basis is what makes a cost attributable rather than stranded in `unallocatedToCrop` on the calculator.\n\n**Honours `Idempotency-Key`.** Send one, minted BEFORE the first attempt and reused on every retry of the same logical write. The server maps it to `clientMutationId` and a replay returns the ORIGINAL row rather than booking the figure twice. These are FINANCIAL records: an undeduped retry moves net worth with nothing erroring.\n\n**The salary breakdown is both-or-neither, and `PAYROLL` only.** `payrollHeadcount` and `payrollAnnualPerPerson` record how a salary figure was arrived at — «брой хора × годишна заплата» — so the form can show the breakdown and a defaults read can recall it. `amount` stays authoritative and is deliberately NOT cross-checked against the product: a farm whose third hire started in May will enter a total below `headcount × perPerson`, and refusing that would block a true figure to protect an identity nobody asked for. Sending one without the other is `PAYROLL_BREAKDOWN_INCOMPLETE`, with the absent field named in `params.missing`; sending either on a non-PAYROLL category is `PAYROLL_BREAKDOWN_NOT_APPLICABLE`.",
+        "description": "Creates one cost entry. `allocationBasis` decides how it reaches a crop — read the enum's own docs before choosing, because the basis is what makes a cost attributable rather than stranded in `unallocatedToCrop` on the calculator.\n\n**Honours `Idempotency-Key`.** Send one, minted BEFORE the first attempt and reused on every retry of the same logical write. The server maps it to `clientMutationId` and a replay returns the ORIGINAL row rather than booking the figure twice. These are FINANCIAL records: an undeduped retry moves net worth with nothing erroring.\n\n**The salary breakdown is both-or-neither, and `PAYROLL` only.** `payrollHeadcount` and `payrollAnnualPerPerson` record how a salary figure was arrived at — «брой хора × годишна заплата» — so the form can show the breakdown and a defaults read can recall it. `amount` stays authoritative and is deliberately NOT cross-checked against the product: a farm whose third hire started in May will enter a total below `headcount × perPerson`, and refusing that would block a true figure to protect an identity nobody asked for. Sending one without the other is `PAYROLL_BREAKDOWN_INCOMPLETE`, with the absent field named in `params.missing`; sending either on a non-PAYROLL category is `PAYROLL_BREAKDOWN_NOT_APPLICABLE`.\n\n**`allocationBasis: CROP` scopes the whole cost to ONE crop** (#1530) and is the farmer’s own per-crop figure rather than a spread across land. It requires `commodityCanonical` — any spelling the crop vocabulary resolves, stored canonical, so `Canola` is persisted as `rapeseed`. A commodity the vocabulary does not cover is REFUSED rather than stored as null: such a row has no commodity to sum onto and would be accepted, listed, and absent from every figure. \n\nThree refusals carry codes. `CROP_COST_NEEDS_COMMODITY` — basis `CROP` with no crop named. `COMMODITY_NOT_APPLICABLE` — a crop named on any other basis, with the basis in `params.basis`; refused rather than ignored because a crop left on a row whose basis later returns to `CROP` would start carrying the cost with nobody having chosen it. `CROP_COST_HAS_SPATIAL_LINK` — a `CROP` entry also linking a planting, parcel or location, with the offending fields in `params.links`; such an entry answers “which crop”, not “which land”, so a place link would store an instruction the allocator ignores. \n\nA `CROP` cost **supersedes** the consumption-derived cost for its (commodity, season) rather than adding to it — the farmer’s figure wins, and the season is the one containing `incurredOn`, else its calendar year. So it is a fourth slice of `cashCostTotal` on the calculator, never a second count of the same crop-year.",
         "tags": [
           "Grain"
         ],
@@ -21082,7 +21090,8 @@
                     "enum": [
                       "TARGET",
                       "HOLDING",
-                      "PARCEL_SUBSET"
+                      "PARCEL_SUBSET",
+                      "CROP"
                     ]
                   },
                   "allocationParcelIds": {
@@ -21092,6 +21101,14 @@
                       "minLength": 1
                     },
                     "maxItems": 200
+                  },
+                  "commodityCanonical": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1,
+                    "maxLength": 64
                   }
                 },
                 "required": [
@@ -21503,7 +21520,8 @@
                     "enum": [
                       "TARGET",
                       "HOLDING",
-                      "PARCEL_SUBSET"
+                      "PARCEL_SUBSET",
+                      "CROP"
                     ]
                   },
                   "allocationParcelIds": {
@@ -21513,6 +21531,14 @@
                       "minLength": 1
                     },
                     "maxItems": 200
+                  },
+                  "commodityCanonical": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1,
+                    "maxLength": 64
                   }
                 }
               }

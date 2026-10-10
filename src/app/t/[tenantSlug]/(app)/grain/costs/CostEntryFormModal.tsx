@@ -60,15 +60,21 @@ import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { currencyOptions } from '@/lib/grain/currencies';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { COST_CATEGORY_VALUES } from './filter-defs';
+import { CROP_PICKER_VALUES, cropPickerValueFor } from '@/lib/grain/crop-picker';
 import type { CostRow } from './CostsClient';
 
 /**
  * Mirrors `COST_ALLOCATION_BASES` in `grain.schemas.ts`, spelled out here
  * for the same reason `COST_CATEGORY_VALUES` is: that module imports
  * `@prisma/client`, and pulling the Prisma client into a browser bundle to
- * read three string literals is not a trade worth making.
+ * read four string literals is not a trade worth making.
+ *
+ * `tests/guards/allocation-bases-agree.test.ts` holds this against the enum
+ * and the wire validator, and against both label keys in both locales — it
+ * was written for #1530's fourth value precisely so the value could not land
+ * in three of the places and not the fourth.
  */
-const ALLOCATION_BASES = ['TARGET', 'HOLDING', 'PARCEL_SUBSET'] as const;
+const ALLOCATION_BASES = ['TARGET', 'HOLDING', 'PARCEL_SUBSET', 'CROP'] as const;
 type AllocationBasis = (typeof ALLOCATION_BASES)[number];
 
 interface PlantingOption {
@@ -161,6 +167,8 @@ type FormValues = {
     linkId?: string;
     allocationBasis: AllocationBasis;
     allocationParcelIds: string[];
+    /** The PICKED crop (`Wheat`), not the canonical slug — the wire normalises. */
+    commodityCrop: string;
 };
 
 const DEFAULT_VALUES: FormValues = {
@@ -176,6 +184,7 @@ const DEFAULT_VALUES: FormValues = {
     // silently re-spread every cost a farmer records from now on.
     allocationBasis: 'TARGET',
     allocationParcelIds: [],
+    commodityCrop: '',
 };
 
 export interface CostEntryFormModalProps {
@@ -197,6 +206,14 @@ export function CostEntryFormModal({
     const { formatDate } = useDateFormat();
     const t = useTranslations('grain.costs.form');
     const tEnums = useTranslations('grainEnums');
+    // `journalEnums`, not `grainEnums`, and deliberately: the six crop labels
+    // already live there for the journal's «Култура» filter, and translating
+    // the same nouns a second time under a grain key is how «Борса» and
+    // «Пазар» became two names for one destination. The namespace name is a
+    // misnomer now that two features read it — the alternative was renaming a
+    // namespace and every key in it, which is a bigger change than this
+    // comment. `crop-picker-resolves` pins the single source.
+    const tCrop = useTranslations('journalEnums');
     const apiUrl = useTenantApiUrl();
     const queryClient = useQueryClient();
     const isEdit = Boolean(record);
@@ -232,6 +249,7 @@ export function CostEntryFormModal({
                 linkId: z.string().optional(),
                 allocationBasis: z.enum(ALLOCATION_BASES),
                 allocationParcelIds: z.array(z.string()),
+                commodityCrop: z.string(),
             })
             .superRefine((v, ctx) => {
                 // A subset of one is a parcel link with extra steps, and a
@@ -243,6 +261,16 @@ export function CostEntryFormModal({
                         code: z.ZodIssueCode.custom,
                         path: ['allocationParcelIds'],
                         message: t('errSubsetTooSmall'),
+                    });
+                }
+                // Same reasoning as the subset rule above: the server refuses
+                // a CROP entry with no crop, and being refused after typing a
+                // whole cost is a worse experience than not being offered it.
+                if (v.allocationBasis === 'CROP' && !v.commodityCrop) {
+                    ctx.addIssue({
+                        code: z.ZodIssueCode.custom,
+                        path: ['commodityCrop'],
+                        message: t('errRequired'),
                     });
                 }
             }),
@@ -363,6 +391,11 @@ export function CostEntryFormModal({
         [tEnums],
     );
 
+    const cropOptions: ComboboxOption[] = useMemo(
+        () => CROP_PICKER_VALUES.map((v) => ({ value: v, label: tCrop(`crop.${v}`) })),
+        [tCrop],
+    );
+
     const allocationBasisOptions: ComboboxOption[] = useMemo(
         () =>
             ALLOCATION_BASES.map((value) => ({
@@ -449,6 +482,10 @@ export function CostEntryFormModal({
                 // what it has always meant.
                 allocationBasis: (record.allocationBasis as AllocationBasis) ?? 'TARGET',
                 allocationParcelIds: record.allocationParcelIds ?? [],
+                // Round-trips the CANONICAL slug into the picker, which is
+                // keyed by raw values — resolved below rather than assumed to
+                // match, because `rapeseed` is not `Canola`.
+                commodityCrop: cropPickerValueFor(record.commodityCanonical),
                 // Filled in by the effect below once the detail read lands.
                 description: '',
             });
@@ -504,6 +541,13 @@ export function CostEntryFormModal({
         if (watchedBasis !== 'PARCEL_SUBSET') {
             setValue('allocationParcelIds', []);
         }
+        // Same stale-instruction hazard as the subset above: a crop left on a
+        // row whose basis moved away from CROP is invisible on every screen
+        // and load-bearing again the instant somebody switches back, at which
+        // point a crop nobody chose starts carrying the cost.
+        if (watchedBasis !== 'CROP') {
+            setValue('commodityCrop', '');
+        }
     }, [watchedBasis, watchedLinkKind, open, setValue]);
 
     const onSubmit = async (values: FormValues) => {
@@ -534,6 +578,14 @@ export function CostEntryFormModal({
                 // "not part of this patch".
                 allocationParcelIds:
                     values.allocationBasis === 'PARCEL_SUBSET' ? values.allocationParcelIds : [],
+                // Always sent, null included, for the same reason as the
+                // array above: on an EDIT away from CROP the null is what
+                // clears the old crop. The RAW picked value goes on the wire
+                // and the server normalises it — `Canola` is stored as
+                // `rapeseed`, so normalising here too would be a second
+                // derivation that could disagree.
+                commodityCanonical:
+                    values.allocationBasis === 'CROP' ? values.commodityCrop : null,
                 ...links,
             };
             const res = await fetch(
@@ -751,6 +803,30 @@ export function CostEntryFormModal({
                                     )}
                                 />
                             </FormField>
+                            {watchedBasis === 'CROP' && (
+                                <FormField
+                                    label={t('allocationCropLabel')}
+                                    error={errors.commodityCrop?.message}
+                                >
+                                    <Controller
+                                        control={control}
+                                        name="commodityCrop"
+                                        render={({ field }) => (
+                                            <Combobox
+                                                id="cost-allocation-crop-input"
+                                                options={cropOptions}
+                                                selected={
+                                                    cropOptions.find(
+                                                        (o) => o.value === field.value,
+                                                    ) ?? null
+                                                }
+                                                setSelected={(o) => field.onChange(o?.value ?? '')}
+                                                placeholder={t('allocationCropPlaceholder')}
+                                            />
+                                        )}
+                                    />
+                                </FormField>
+                            )}
                             {watchedBasis === 'PARCEL_SUBSET' && (
                                 <FormField
                                     label={t('allocationParcelsLabel')}

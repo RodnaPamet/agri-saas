@@ -132,10 +132,30 @@ export function toCalculatorRow(row: CommodityNetWorthRow): CalculatorRow {
         // have.
         showProduceRent: row.rentCostProduceKg > 0,
 
+        // The PRINTED SLICES, and they must sum to the printed total — that
+        // is the #556 contradiction in the opposite direction, and
+        // `grain-net-worth-invariants` executes the rule.
+        //
+        // #1530's typed per-crop figure is CONDITIONAL, following the
+        // `showProduceRent` decision three lines up: a slice reading "− 0"
+        // states a term the farm does not have, and the overwhelming majority
+        // of farms have typed no per-crop cost. Omitting a zero keeps the
+        // slices summing to the total, so the condition costs nothing — which
+        // is not true of omitting a non-zero one.
         costBreakdown: [
             { id: 'field', labelKey: 'costFieldLabel', value: row.attributedCropCost, variant: 'brand' },
             { id: 'rent', labelKey: 'costRentLabel', value: row.rentCostMoneyAmount, variant: 'warning' },
             { id: 'payroll', labelKey: 'costPayrollLabel', value: row.payrollCost, variant: 'info' },
+            ...(row.typedCropCost > 0
+                ? [
+                      {
+                          id: 'typedCrop' as const,
+                          labelKey: 'costTypedCropLabel' as const,
+                          value: row.typedCropCost,
+                          variant: 'neutral' as const,
+                      },
+                  ]
+                : []),
         ],
     };
 }

@@ -400,6 +400,29 @@ model CostEntry {
   /// what lets a product page SHOW its purchases beside its consumption —
   /// not what merges them.
   itemId          String?
+  /// Canonical commodity slug — set ONLY when `allocationBasis = CROP`.
+  ///
+  /// Derived from the farmer's crop pick via `normalizeCommodity`
+  /// (src/lib/market/commodity-vocabulary.ts), the same derivation
+  /// `CropType.commodityCanonical` and `Contract.commodityCanonical` use.
+  /// Stored canonical rather than raw because the figure it feeds is keyed by
+  /// commodity: `Parcel.cropType` holds the picker's capitalised values and
+  /// `isCanonicalCommodity` is false for all seven of them, so storing raw
+  /// would let `Wheat` and `wheat` each carry a cost and make the exclusivity
+  /// rule — one typed figure per (commodity, season) — undefinable.
+  ///
+  /// Nullable because it is meaningless for the other three bases. The
+  /// validator requires it for CROP and refuses it otherwise; a CROP row
+  /// without one has no commodity to sum onto and would contribute nothing
+  /// while looking recorded.
+  ///
+  /// Deliberately NOT indexed, for the same reason as `allocationBasis`
+  /// below: the allocator reads it for every row of an already-bounded scan
+  /// and nothing filters on it. The three sibling `commodityCanonical`
+  /// columns ARE indexed because they join to the price series; this one does
+  /// not. Should it ever become a list facet, that is a `[tenantId,
+  /// commodityCanonical]` composite AND a `LIST_QUERY_INDEXES` entry.
+  commodityCanonical String?
   /// Which land this cost is spread across — see `CostAllocationBasis`.
   ///
   /// Defaults to TARGET so every row written before this column keeps its

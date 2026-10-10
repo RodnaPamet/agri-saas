@@ -21,6 +21,8 @@ const mockDb = {
     parcel: { findMany: jest.fn() },
     costEntry: { findMany: jest.fn() },
     costEntryAllocationParcel: { findMany: jest.fn() },
+    // #1530 — the season WINDOWS a typed per-crop cost resolves against.
+    season: { findMany: jest.fn() },
 } as any;
 
 jest.mock('@/lib/db-context', () => ({
@@ -82,6 +84,10 @@ function resetMocks() {
     mockDb.parcel.findMany.mockResolvedValue([]);
     mockDb.costEntry.findMany.mockResolvedValue([]);
     mockDb.costEntryAllocationParcel.findMany.mockResolvedValue([]);
+    // Empty by default: a farm with no seasons puts every typed cost on its
+    // calendar-year key, which is the owner's documented fallback and the
+    // right default for a test that is not about seasons.
+    mockDb.season.findMany.mockResolvedValue([]);
     mockGetCostRollupByPlanting.mockResolvedValue({ rows: [], truncated: false, unvalued: { noUnitCost: 0, unitMismatch: 0 } });
     mockGetMarketReferences.mockResolvedValue(new Map());
 }
@@ -720,9 +726,172 @@ function costEntry(over: Record<string, unknown> = {}) {
         currency: 'BGN',
         plantingId: null,
         seasonId: null,
+        // Both present because the REAL row always has them (#1530). The basis
+        // check short-circuits before anything reads `incurredOn`, so omitting
+        // it was safe — and a double that cannot produce the shape the code
+        // actually receives is a double that cannot catch the next change to it.
+        allocationBasis: 'TARGET',
+        commodityCanonical: null,
+        incurredOn: new Date('2026-03-01T00:00:00Z'),
         ...over,
     };
 }
+
+/** A farmer-typed per-crop cost — #1530's fourth `cashCostTotal` term. */
+function typedCropCost(over: Record<string, unknown> = {}) {
+    return costEntry({
+        id: 'ce-crop',
+        allocationBasis: 'CROP',
+        commodityCanonical: 'wheat',
+        amount: 48_000,
+        ...over,
+    });
+}
+
+const ROLLUP_WHEAT = {
+    rows: [
+        {
+            plantingId: 'p-1',
+            totalCost: 31_200,
+            currencies: ['BGN'],
+            currencyMixed: false,
+            unvaluedNoUnitCost: 0,
+            unvaluedUnitMismatch: 0,
+        },
+    ],
+    truncated: false,
+    unvalued: { noUnitCost: 0, unitMismatch: 0 },
+};
+
+describe('getGrainNetWorth — the farmer\'s own per-crop cost (#1530)', () => {
+    it('reaches cashCostTotal as its OWN slice, not folded into attributed', () => {
+        // The defect: `cashCostTotal` took CostEntry only for PAYROLL, so a
+        // лв/дка figure typed against wheat was stored, listed on the costs
+        // page, and absent from every per-commodity cost, margin and
+        // break-even figure. Reported as its own term because every surface
+        // printing the total prints the slices beside it.
+        mockDb.costEntry.findMany.mockResolvedValue([typedCropCost()]);
+
+        return netWorthResult(ctx).then((result) => {
+            const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
+            expect(wheat.typedCropCost).toBe(48_000);
+            expect(wheat.attributedCropCost).toBe(0);
+            expect(wheat.cashCostTotal).toBe(48_000);
+        });
+    });
+
+    it('SUPERSEDES the consumption cost for the same crop AND season', async () => {
+        // The owner's exclusivity ruling, with the typed figure winning. The
+        // sum of the two (79 200) is the number this must NOT produce.
+        mockDb.planting.findMany.mockResolvedValue([planting({ id: 'p-1' })]);
+        mockGetCostRollupByPlanting.mockResolvedValue(ROLLUP_WHEAT);
+        mockDb.costEntry.findMany.mockResolvedValue([typedCropCost({ seasonId: 's-1' })]);
+
+        const result = await netWorthResult(ctx);
+
+        const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
+        expect(wheat.typedCropCost).toBe(48_000);
+        expect(wheat.attributedCropCost).toBe(0);
+        expect(wheat.cashCostTotal).toBe(48_000);
+        // Reported, not silent: a total that quietly stopped counting measured
+        // consumption reads exactly like a farm that recorded none.
+        expect(result.exclusions.consumptionSupersededByTyped.map((e) => e.id)).toEqual(['p-1']);
+    });
+
+    it('does NOT supersede a DIFFERENT season', async () => {
+        // The reason the key carries the season. A typed 2026 figure must not
+        // silence 2025's measured consumption — that would be a cost total
+        // quietly dropping a whole year.
+        mockDb.planting.findMany.mockResolvedValue([planting({ id: 'p-1' })]);
+        mockGetCostRollupByPlanting.mockResolvedValue(ROLLUP_WHEAT);
+        mockDb.costEntry.findMany.mockResolvedValue([
+            typedCropCost({ seasonId: 's-OTHER' }),
+        ]);
+
+        const result = await netWorthResult(ctx);
+
+        const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
+        expect(wheat.attributedCropCost).toBe(31_200);
+        expect(wheat.typedCropCost).toBe(48_000);
+        expect(wheat.cashCostTotal).toBe(79_200);
+        expect(result.exclusions.consumptionSupersededByTyped).toEqual([]);
+    });
+
+    it('does NOT supersede a DIFFERENT crop', async () => {
+        mockDb.planting.findMany.mockResolvedValue([planting({ id: 'p-1' })]);
+        mockGetCostRollupByPlanting.mockResolvedValue(ROLLUP_WHEAT);
+        mockDb.costEntry.findMany.mockResolvedValue([
+            typedCropCost({ commodityCanonical: 'maize', seasonId: 's-1' }),
+        ]);
+
+        const result = await netWorthResult(ctx);
+
+        expect(result.rows.find((r) => r.commodity === 'wheat')!.attributedCropCost).toBe(31_200);
+        expect(result.rows.find((r) => r.commodity === 'maize')!.typedCropCost).toBe(48_000);
+    });
+
+    it('TWO typed figures for one crop+season SUM and supersede once', async () => {
+        // A farm that split one cost across two invoices. Treating the second
+        // as a conflict would refuse a shape farms really have.
+        mockDb.planting.findMany.mockResolvedValue([planting({ id: 'p-1' })]);
+        mockGetCostRollupByPlanting.mockResolvedValue(ROLLUP_WHEAT);
+        mockDb.costEntry.findMany.mockResolvedValue([
+            typedCropCost({ id: 'ce-a', amount: 20_000, seasonId: 's-1' }),
+            typedCropCost({ id: 'ce-b', amount: 28_000, seasonId: 's-1' }),
+        ]);
+
+        const result = await netWorthResult(ctx);
+
+        const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
+        expect(wheat.typedCropCost).toBe(48_000);
+        expect(wheat.attributedCropCost).toBe(0);
+        expect(result.exclusions.consumptionSupersededByTyped.map((e) => e.id)).toEqual(['p-1']);
+    });
+
+    it('NAMES a CROP entry whose commodity does not resolve', async () => {
+        // The wire refuses these, so such a row predates the validator or came
+        // from a script. Counted because it is money the farm recorded that
+        // reaches no figure — the #1530 defect itself.
+        mockDb.costEntry.findMany.mockResolvedValue([
+            typedCropCost({ commodityCanonical: 'lavender' }),
+            typedCropCost({ id: 'ce-null', commodityCanonical: null }),
+        ]);
+
+        const result = await netWorthResult(ctx);
+
+        expect(result.exclusions.typedCostNoCommodity.map((e) => e.id).sort()).toEqual([
+            'ce-crop',
+            'ce-null',
+        ]);
+    });
+
+    it('carries its CURRENCY into the mixed-currency decision', async () => {
+        // A farm whose only non-BGN cost is a typed one would otherwise read
+        // as single-currency and get a confident blended total.
+        mockDb.costEntry.findMany.mockResolvedValue([typedCropCost({ currency: 'EUR' })]);
+
+        const result = await netWorthResult(ctx);
+
+        const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
+        expect(wheat.typedCropCostCurrencies).toEqual(['EUR']);
+        expect(wheat.cashCostCurrencies).toContain('EUR');
+    });
+
+    it('does NOT spread across land — no unallocatedToCrop contribution', async () => {
+        // The other three bases answer "which land"; this one answers "which
+        // crop". A CROP entry reaching the spread would both double-count and
+        // leak onto fallow parcels.
+        mockDb.parcel.findMany.mockResolvedValue([
+            { id: 'pa-1', areaHa: 10, cropType: null },
+        ]);
+        mockDb.costEntry.findMany.mockResolvedValue([typedCropCost()]);
+
+        const result = await netWorthResult(ctx);
+
+        expect(result.unallocatedToCrop.amount).toBe(0);
+        expect(result.rows.find((r) => r.commodity === 'wheat')!.typedCropCost).toBe(48_000);
+    });
+});
 
 describe('getGrainNetWorth — purchases never enter crop cost', () => {
     it('a FERTILIZER entry AND a CONSUMPTION of the same fertiliser counts ONCE', async () => {

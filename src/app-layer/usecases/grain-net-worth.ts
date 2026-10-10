@@ -25,6 +25,13 @@ import { summarizePlannedYield, type PlannedYieldInputRow } from '@/lib/planning
 import { resolveRentBasis, type RentBasisLease } from '@/lib/grain/rent-basis';
 import { UNKNOWN_RENT_CURRENCY } from '@/lib/grain/cost-metrics';
 import { canConvert, convert } from '@/lib/units/unit-conversion';
+import type { CostAllocationBasis, Prisma } from '@prisma/client';
+import {
+    costSeasonKey,
+    cropSeasonKey,
+    plantingSeasonKey,
+    type SeasonWindow,
+} from '@/lib/grain/cost-season-key';
 
 /**
  * Grain net worth — COST_METRICS.GRAIN_NET_WORTH (src/lib/grain/cost-metrics.ts).
@@ -124,8 +131,8 @@ import { canConvert, convert } from '@/lib/units/unit-conversion';
  *  10. IMPUTED LAND CHARGE — `COST_METRICS.IMPUTED_LAND_CHARGE`. Rent
  *      priced onto land the farm OWNS, at the rate its own leases
  *      establish. It is NOT in `cashCostTotal` and NOT in `netWorth`: no
- *      lev leaves the bank, and `cashCostTotal` is exactly the three terms
- *      named below. Reported beside, refused (never zeroed) when the farm
+ *      lev leaves the bank, and `cashCostTotal` is exactly the FOUR cash
+ *      terms named below (the fourth is #1530's typed per-crop figure). Reported beside, refused (never zeroed) when the farm
  *      has no resolved money lease to take a rate from.
  *
  * `getCostRollupByPlanting` and `getMarketReferences` are called as SIBLING
@@ -142,6 +149,17 @@ const PLANTING_TAKE = 2000;
 const LOT_TAKE = 2000;
 const LEASE_TAKE = 2000;
 const PAYROLL_TAKE = 2000;
+/**
+ * Seasons read to resolve a typed cost's season (#1530).
+ *
+ * A farm's seasons are one row per crop year, so this is generous by two
+ * orders of magnitude; it exists because every read here is bounded, not
+ * because the number is in doubt. Truncation reaches the same `truncated`
+ * disclosure as every other capped read — a missing season would silently
+ * push a typed cost onto its calendar-year key, where it supersedes different
+ * plantings.
+ */
+const SEASON_TAKE = 500;
 const UNIT_TAKE = 200;
 /** Matches `listTenantParcelOptions` — the tenant's whole live land base. */
 const PARCEL_TAKE = 5000;
@@ -218,6 +236,26 @@ interface RawExclusions {
     /** Leases whose parcel has no in-scope planting with a known commodity
      *  to attribute the resolved rent to. */
     leasesUnattributed: string[];
+    /**
+     * `CROP`-basis cost entries naming no resolvable commodity (#1530).
+     *
+     * The wire validator refuses these, so a row here was written before that
+     * existed or by a script that bypassed it. Counted rather than dropped
+     * because such an entry has NO commodity to sum onto: it is money the farm
+     * recorded that reaches no figure, which is the defect #1530 was filed
+     * about, and a silent `continue` would reintroduce it.
+     */
+    typedCostNoCommodity: string[];
+    /**
+     * Plantings whose consumption-derived cost was SUPERSEDED by a typed
+     * figure for the same (commodity, season) (#1530).
+     *
+     * Not an error and not a loss — it is the owner's exclusivity ruling
+     * working, with the typed figure winning. It is reported because the
+     * alternative is a cost total that silently stopped including measured
+     * consumption, which reads exactly like a farm that recorded none.
+     */
+    consumptionSupersededByTyped: string[];
     /** Leases paying produce rent (кг/дка) whose commodity has no market
      *  price — the mass could not be valued, so it is excluded from cost
      *  rather than blended with money. */
@@ -236,6 +274,8 @@ function emptyExclusions(): RawExclusions {
         commoditiesWithNoPrice: [],
         leasesUnresolvedRent: [],
         leasesUnattributed: [],
+        typedCostNoCommodity: [],
+        consumptionSupersededByTyped: [],
         leasesProduceRentUnpriced: [],
         payrollUnattributable: [],
     };
@@ -279,6 +319,24 @@ export interface CommodityNetWorthRow {
      *  passed through, not re-derived. */
     attributedCropCostCurrencyMixed: boolean;
 
+    /**
+     * The farm's own typed per-crop cost (#1530) — the FOURTH slice of
+     * `cashCostTotal`.
+     *
+     * Reported as its own figure rather than folded into
+     * `attributedCropCost`, because every surface that prints the total
+     * prints the slices beside it: folding would leave the printed slices
+     * short of the printed total, which is the contradiction #556 exists to
+     * prevent.
+     *
+     * It and `attributedCropCost` are MUTUALLY EXCLUSIVE per (commodity,
+     * season), with the typed figure winning — owner ruling 2026-10-10. A
+     * commodity can carry both across DIFFERENT seasons, so neither being
+     * zero is not a bug.
+     */
+    typedCropCost: number;
+    typedCropCostCurrencies: string[];
+
     /** Money-denominated (лв/дка) rent attributed to this commodity's
      *  plantings. Currency is UNKNOWN — see `UNKNOWN_RENT_CURRENCY`. */
     rentCostMoneyAmount: number;
@@ -312,14 +370,24 @@ export interface CommodityNetWorthRow {
      * commodity occupies that the farm OWNS, at the rate the farm's own
      * money leases establish.
      *
-     * Deliberately NOT a fourth term in `cashCostTotal`, and NOT in
-     * `netWorth`. No lev leaves the bank, `cashCostTotal` is defined above
-     * as exactly three terms, and every surface that prints it prints
-     * those three slices beside it — a fourth term would leave the printed
-     * slices short of the printed total, which is the same contradiction
-     * #556 was written about, in the opposite direction. It is not a rent
-     * ACCRUAL either: `resolveRentBasis` prices an obligation the farmer
-     * really owes, this prices one that does not exist.
+     * Deliberately NOT a term in `cashCostTotal`, and NOT in `netWorth`:
+     * **no lev leaves the bank.** That is the whole test, and the only one.
+     *
+     * This paragraph used to argue the point by COUNTING — "cashCostTotal is
+     * exactly three terms, so a fourth would leave the printed slices short
+     * of the printed total". #1530 added a fourth term and the count is
+     * therefore gone, but the principle it was standing on is not: every
+     * surface that prints the total prints the slices beside it, so each
+     * slice must be a real cash term and all of them must sum to the total.
+     * A cash figure belongs inside and is printed; an imputed one does not
+     * belong at all. #1530's typed per-crop cost passes that test (the
+     * farmer paid it); this does not.
+     *
+     * Keeping the count in the argument would have made the next cash term
+     * look like a violation of the rule, which is the opposite of what the
+     * rule says. It is not a rent ACCRUAL either: `resolveRentBasis` prices
+     * an obligation the farmer really owes, this prices one that does not
+     * exist.
      *
      * Null — never zero — when the farm has no resolved money lease to
      * take a rate from; a zero would say owned land is free, which is the
@@ -432,6 +500,23 @@ export interface GrainNetWorthExclusions {
     leasesUnattributed: ExclusionEntry[];
     leasesProduceRentUnpriced: ExclusionEntry[];
     payrollUnattributable: ExclusionEntry[];
+    /**
+     * `CROP`-basis cost entries naming no resolvable commodity (#1530).
+     *
+     * Money the farm recorded against a crop that reaches no figure. The wire
+     * refuses these, so an entry here predates that validator or came from a
+     * script — which is exactly why it is counted rather than skipped.
+     */
+    typedCostNoCommodity: ExclusionEntry[];
+    /**
+     * Plantings whose consumption cost a typed figure replaced (#1530).
+     *
+     * NOT a loss and not an error — the owner's exclusivity ruling working,
+     * with the farmer's own figure winning. Reported because a cost total
+     * that quietly stopped counting measured consumption is indistinguishable
+     * from a farm that recorded none.
+     */
+    consumptionSupersededByTyped: ExclusionEntry[];
 }
 
 /**
@@ -554,6 +639,17 @@ interface CommodityAcc {
     produceRentLeaseIds: Set<string>;
     payrollCost: number;
     payrollCostCurrencies: Set<string>;
+    /**
+     * The farmer's own per-crop figure (#1530) — `cashCostTotal`'s FOURTH term.
+     *
+     * Kept apart from `attributedCropCost` rather than added into it, because
+     * the two answer different questions and every surface that prints the
+     * slices has to be able to print this one beside them. Folding it in
+     * would leave the printed slices short of the printed total, which is the
+     * contradiction #556 was written about.
+     */
+    typedCropCost: number;
+    typedCropCostCurrencies: Set<string>;
     payrollAllocated: boolean;
     /** Owned land under this commodity — the imputed charge's denominator. */
     ownedAreaHa: number;
@@ -621,6 +717,8 @@ function newAcc(): CommodityAcc {
         produceRentLeaseIds: new Set(),
         payrollCost: 0,
         payrollCostCurrencies: new Set(),
+        typedCropCost: 0,
+        typedCropCostCurrencies: new Set(),
         payrollAllocated: false,
         ownedAreaHa: 0,
         unvaluedNoUnitCost: 0,
@@ -823,6 +921,90 @@ function computeGrainOnHand(
  * 3a. ATTRIBUTED CROP COST — `getCostRollupByPlanting`'s own rows, summed
  * per commodity. Reused verbatim; never re-derives `costAmount`.
  */
+/**
+ * 3a-bis. THE FARMER'S OWN PER-CROP FIGURE — `cashCostTotal`'s fourth term.
+ *
+ * A `CROP`-basis cost entry is the farm saying "this money was for this crop".
+ * Before #1530 it reached nothing: `cashCostTotal` took `CostEntry` only for
+ * PAYROLL, and a parcel resolved to a commodity only through a Planting — so a
+ * farmer who typed a лв/дка figure for wheat had it recorded, listed on the
+ * costs page, and absent from every per-commodity cost, margin and break-even
+ * figure on the calculator.
+ *
+ * ## Why this is not filtered by category
+ *
+ * `computePayroll` takes PAYROLL only, and its comment gives the reason: every
+ * other category is a purchase or a cash settlement of an accrual, and both
+ * would double-count against consumption-based crop cost. That reasoning is
+ * about costs the farm did NOT scope to a crop. A CROP-basis entry is scoped
+ * by construction, and it does not double-count because it SUPERSEDES the
+ * consumption figure for its (commodity, season) rather than adding to it.
+ *
+ * ## The exclusivity rule, and which side wins
+ *
+ * Owner ruling 2026-10-10: a crop+season uses EITHER a typed figure or the
+ * consumption-derived one, never both — and the TYPED figure wins. The
+ * reasoning is that the typed figure exists precisely because entering
+ * consumption is too heavy, so typing one is a deliberate statement that it is
+ * the better number for that crop and season.
+ *
+ * The returned set is that decision, as keys. `computeAttributedCost` consumes
+ * it and skips the rollup rows it covers. Nothing else may read it: two
+ * consumers of an exclusivity set is how one of them ends up disagreeing about
+ * what was excluded.
+ *
+ * ## It does NOT spread across land
+ *
+ * The other three bases answer "which land". This one answers "which crop", so
+ * there is no area weighting and no `unallocatedToCrop` contribution — the
+ * whole amount lands on one commodity. `assertAllocationBasis` refuses a CROP
+ * entry that also carries a spatial link, so there is no land instruction here
+ * to ignore.
+ */
+function computeTypedCropCost(
+    entries: readonly {
+        id: string;
+        allocationBasis: CostAllocationBasis;
+        commodityCanonical: string | null;
+        amount: Prisma.Decimal | number;
+        currency: string;
+        seasonId: string | null;
+        incurredOn: Date;
+    }[],
+    seasons: readonly SeasonWindow[],
+    acc: Map<CanonicalCommodity, CommodityAcc>,
+    exclusions: RawExclusions,
+): ReadonlySet<string> {
+    const superseded = new Set<string>();
+
+    for (const row of entries) {
+        if (row.allocationBasis !== 'CROP') continue;
+
+        // Re-checked rather than trusted. The wire validator refuses an
+        // unresolvable commodity, but this column is also reachable from a
+        // script and from rows written before that validator existed, and the
+        // cost of being wrong is money attributed to a commodity key nothing
+        // prices.
+        const commodity = row.commodityCanonical;
+        if (commodity == null || !isCanonicalCommodity(commodity)) {
+            exclusions.typedCostNoCommodity.push(row.id);
+            continue;
+        }
+
+        const a = ensureAcc(acc, commodity);
+        a.typedCropCost = round2(a.typedCropCost + dec(row.amount));
+        a.typedCropCostCurrencies.add(row.currency);
+
+        // The key is recorded even when several entries share it: two typed
+        // figures for one crop+season SUM, and together they supersede that
+        // season's consumption once. Treating the second as a conflict would
+        // refuse a farm that split one cost across two invoices.
+        superseded.add(cropSeasonKey(commodity, costSeasonKey(row, seasons)));
+    }
+
+    return superseded;
+}
+
 function computeAttributedCost(
     rollupRows: readonly {
         plantingId: string;
@@ -835,12 +1017,33 @@ function computeAttributedCost(
     plantingInfo: Map<string, PlantingInfo>,
     acc: Map<CanonicalCommodity, CommodityAcc>,
     exclusions: RawExclusions,
+    /**
+     * (commodity, season) keys a TYPED figure already covers — see
+     * `computeTypedCropCost`. Required rather than optional: a caller that
+     * forgot it would double-count every superseded crop, and a default of
+     * "nothing is superseded" is exactly the wrong direction to fail in.
+     */
+    supersededByTyped: ReadonlySet<string>,
 ): void {
     for (const row of rollupRows) {
         const info = plantingInfo.get(row.plantingId);
         const commodity = info?.commodity ?? null;
         if (commodity == null) {
             exclusions.plantingsUnknownCommodity.push(row.plantingId);
+            continue;
+        }
+        // The exclusivity rule (#1530): the farmer's typed figure wins for
+        // this crop AND this season, so the consumption-derived cost is left
+        // out rather than added to it.
+        //
+        // Scoped per (commodity, season) and not per commodity, which is what
+        // keeps the rule narrow: a typed wheat figure for 2026 must not
+        // silence wheat's measured consumption in 2025. A planting with NO
+        // season keys to null and is superseded only by a typed cost that
+        // also resolved to no season.
+        const seasonKey = plantingSeasonKey(info?.seasonId);
+        if (seasonKey != null && supersededByTyped.has(cropSeasonKey(commodity, seasonKey))) {
+            exclusions.consumptionSupersededByTyped.push(row.plantingId);
             continue;
         }
         const a = ensureAcc(acc, commodity);
@@ -1320,7 +1523,14 @@ function finalizeRow(
         }
     }
 
-    const cashCostTotal = round2(a.attributedCropCost + a.rentCostMoneyAmount + a.payrollCost);
+    // FOUR terms since #1530. The fourth is the farmer's own per-crop figure,
+    // and it does not double-count: `computeTypedCropCost` returns the
+    // (commodity, season) keys it covers and `computeAttributedCost` leaves
+    // those rollup rows out, so for any one crop and season exactly one of
+    // `attributedCropCost` and `typedCropCost` contributes.
+    const cashCostTotal = round2(
+        a.attributedCropCost + a.rentCostMoneyAmount + a.payrollCost + a.typedCropCost,
+    );
 
     // BESIDE cashCostTotal, never inside it — see the field's docblock and
     // COST_METRICS.IMPUTED_LAND_CHARGE. No owned land under this crop is a
@@ -1337,6 +1547,9 @@ function finalizeRow(
     const cashCostCurrencies = new Set<string>([
         ...a.attributedCropCostCurrencies,
         ...a.payrollCostCurrencies,
+        // Included, or a farm whose ONLY non-BGN cost is a typed one reads as
+        // single-currency and gets a confident blended total.
+        ...a.typedCropCostCurrencies,
         ...(a.rentCostMoneyAmount > 0 ? [UNKNOWN_RENT_CURRENCY] : []),
     ]);
     const cashCostCurrencyMixed =
@@ -1427,6 +1640,9 @@ function finalizeRow(
         attributedCropCost: a.attributedCropCost,
         attributedCropCostCurrencies: [...a.attributedCropCostCurrencies].sort(),
         attributedCropCostCurrencyMixed: a.attributedCropCostCurrencyMixed,
+
+        typedCropCost: round2(a.typedCropCost),
+        typedCropCostCurrencies: [...a.typedCropCostCurrencies].sort(),
 
         rentCostMoneyAmount: round2(a.rentCostMoneyAmount),
         rentCostProduceKg: round2(a.rentCostProduceKg),
@@ -1608,9 +1824,11 @@ async function loadTenantRows(db: PrismaTx, ctx: RequestContext, seasonId: strin
             currency: true,
             plantingId: true,
             seasonId: true,
-            // Two columns on a query that already runs — the basis is read
-            // for every in-scope row, so it is never worth a second read.
+            // Three columns on a query that already runs — the basis and the
+            // commodity are read for every in-scope row, so neither is ever
+            // worth a second read.
             allocationBasis: true,
+            commodityCanonical: true,
             supplier: true,
             description: true,
             incurredOn: true,
@@ -1644,6 +1862,28 @@ async function loadTenantRows(db: PrismaTx, ctx: RequestContext, seasonId: strin
         ? allocationRows.slice(0, ALLOCATION_TAKE)
         : allocationRows;
 
+    // Season WINDOWS, for the owner's "the Season containing the date, else
+    // its calendar year" rule (#1530).
+    //
+    // Read unconditionally rather than only when a CROP entry exists: the
+    // alternative is a second query issued conditionally from inside the
+    // attribution loop, which is the N+1 shape D1 forbids, and this is one
+    // small indexed read on a query set that already runs five.
+    //
+    // NOT narrowed by `seasonId` even when the caller passed one. A typed cost
+    // with no `seasonId` of its own resolves through these windows, and a
+    // season-scoped run still has to know which window contains that date —
+    // filtering to one season would push every cost outside it onto a
+    // calendar-year key and change which plantings it supersedes.
+    const seasonRows = await db.season.findMany({
+        where: { tenantId: ctx.tenantId, deletedAt: null },
+        select: { id: true, startDate: true, endDate: true },
+        orderBy: [{ startDate: 'asc' }, { id: 'asc' }],
+        take: SEASON_TAKE + 1,
+    });
+    const seasonsTruncated = seasonRows.length > SEASON_TAKE;
+    const seasons = seasonsTruncated ? seasonRows.slice(0, SEASON_TAKE) : seasonRows;
+
     return {
         plantings,
         lots,
@@ -1652,6 +1892,7 @@ async function loadTenantRows(db: PrismaTx, ctx: RequestContext, seasonId: strin
         parcels,
         costEntries,
         allocationParcels,
+        seasons,
         // A truncated parcel page silently shrinks an allocation's
         // denominator, so it has to reach the same disclosure every other
         // capped read does rather than being dropped on the floor.
@@ -1661,7 +1902,8 @@ async function loadTenantRows(db: PrismaTx, ctx: RequestContext, seasonId: strin
             leasesTruncated ||
             parcelsTruncated ||
             costEntriesTruncated ||
-            allocationsTruncated,
+            allocationsTruncated ||
+            seasonsTruncated,
     };
 }
 
@@ -1692,8 +1934,21 @@ export async function getGrainNetWorth(
     const unitById = new Map(fetched.units.map((u) => [u.id, u]));
     computeGrainOnHand(fetched.lots, unitById, acc, exclusions);
 
+    // ── 3a-bis. The farmer's own per-crop figures, FIRST ──
+    //
+    // Before the rollup, because its result decides which rollup rows are
+    // superseded. Reversing the two would accumulate the consumption cost and
+    // then have nothing to remove it from — the skip has to happen as the
+    // rows are read, not afterwards.
+    const supersededByTyped = computeTypedCropCost(
+        fetched.costEntries,
+        fetched.seasons,
+        acc,
+        exclusions,
+    );
+
     // ── 3a. Attributed crop cost (reused from cost-rollup) ──
-    computeAttributedCost(costRollup.rows, plantingInfo, acc, exclusions);
+    computeAttributedCost(costRollup.rows, plantingInfo, acc, exclusions, supersededByTyped);
 
     // ── 3b. Rent, attributed parcel → planting ──
     const plantingsByParcel = new Map<string, PlantingInfo[]>();
@@ -1871,6 +2126,16 @@ export async function getGrainNetWorth(
             id,
             label: label.costEntry(id),
         })),
+        typedCostNoCommodity: exclusions.typedCostNoCommodity.map((id) => ({
+            id,
+            label: label.costEntry(id),
+        })),
+        // DEDUPED: one planting can appear once per rollup row, and the count
+        // is printed. A number that can double is a number somebody will
+        // eventually read as "two plantings".
+        consumptionSupersededByTyped: [...new Set(exclusions.consumptionSupersededByTyped)].map(
+            (id) => ({ id, label: label.planting(id) }),
+        ),
     };
 
     return {
