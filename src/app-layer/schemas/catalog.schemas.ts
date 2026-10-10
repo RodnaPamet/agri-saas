@@ -18,7 +18,15 @@
  * is the only spelling that cannot drift — add a category to the schema and
  * every reader gains it without an edit anyone has to remember.
  */
-import { z } from 'zod';
+// `@/lib/openapi/zod`, not bare `zod`: this file calls `.openapi()`, and that
+// method only exists after `extendZodWithOpenApi` has run (#1580). The spec
+// generator applies it, so generation always worked — and this module happened
+// to work on a direct import too, because something upstream in its import
+// graph pulled the extended `z` in first. That is the hazard rather than the
+// reassurance: it held for a reason nobody chose and nothing asserted, so an
+// unrelated import change in a dependency would turn a green suite into one
+// that cannot run, with an error naming zod instead of the import.
+import { z } from '@/lib/openapi/zod';
 import { ItemCategory } from '@prisma/client';
 
 import { normalizeQ } from '@/lib/filters/query-helpers';
