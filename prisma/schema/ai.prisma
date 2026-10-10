@@ -25,6 +25,60 @@
 //  Back-relation added elsewhere (Prisma needs both sides):
 //    • auth.prisma  Tenant: aiUsageEvents
 // ═══════════════════════════════════════════════════════════════════
+/// GLOBAL AI spend, with NO tenant — the platform's own jobs (#1423).
+///
+/// Three jobs talk to the Anthropic Messages API directly and deliberately
+/// bypass the router: `field-briefing`, `news-event-extractor` and
+/// `support-scheme-extractor`. The router needs a tenant `RequestContext` to
+/// resolve budget and model policy, and a platform job has none to supply, so
+/// their tokens appeared in NO ledger and had no ceiling of any kind. The
+/// operator's only lever was removing `ANTHROPIC_API_KEY`, which also disables
+/// every tenant's AI.
+///
+/// ── Why a separate table rather than a nullable `AiUsageEvent.tenantId` ──
+///
+/// #1423 offered both. `AiUsageEvent.tenantId` is NOT NULL with an FK to
+/// `Tenant` and a FORCE-RLS `tenant_isolation` policy comparing it to
+/// `app.tenant_id`. Making it nullable would weaken the invariant the
+/// PER-TENANT gate reads — "every row belongs to a real tenant" — to buy a
+/// bucket for rows that belong to none, and it would add a null arm to an
+/// RLS-governed table, which is a class this repo already has a guard for
+/// (`null-tenant-tables-not-read-as-app-user`).
+///
+/// A tenant-less table is also not novel here: `MarketPriceSeries` is one, for
+/// the same reason — the rows are the platform's, every tenant reads them.
+///
+/// ── No RLS tenant policy, deliberately ──
+///
+/// There is no `tenantId` to scope by. These rows are never read under
+/// `app_user`: the three writers use the global Prisma client because they have
+/// no tenant context to enter with. The cap read is platform-wide by definition.
+/// If a tenant-facing surface ever needs this, it needs an aggregate, not the
+/// rows.
+model PlatformAiUsageEvent {
+  id               String   @id @default(cuid())
+  /// Which platform job spent this — 'field-briefing' | 'news-event-extraction'
+  /// | 'support-scheme-extraction'. A plain string rather than an enum so a new
+  /// job is a code change and not a migration; the spend gate's guard is what
+  /// keeps the set honest.
+  job              String
+  /// Resolved model id the completion actually ran on.
+  model            String
+  promptTokens     Int
+  completionTokens Int
+  totalTokens      Int
+  /// Estimated cost in USD micro-dollars (1_000_000 = $1). 0 for un-priced
+  /// models, matching `AiUsageEvent`.
+  costMicros       Int      @default(0)
+  createdAt        DateTime @default(now())
+
+  /// The cap read is `SUM(totalTokens) WHERE createdAt >= monthStart`, so the
+  /// index leads with the column that bounds it. No `job` prefix: the cap is
+  /// platform-wide and per-job reporting is a scan over one month, not a hot
+  /// path.
+  @@index([createdAt])
+}
+
 model AiUsageEvent {
   id               String   @id @default(cuid())
   tenantId         String

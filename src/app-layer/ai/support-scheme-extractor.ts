@@ -60,6 +60,7 @@ import { env } from '@/env';
 import { logger } from '@/lib/observability/logger';
 import { sanitizeUntrusted } from './safety/sanitize-untrusted';
 import { withLocaleInstruction } from './locale-instruction';
+import { isPlatformAiSpendAllowed, recordPlatformAiUsage } from './platform-budget';
 import {
     SUPPORT_SCHEME_AUTHORITIES,
     SUPPORT_SCHEME_STATUSES,
@@ -367,6 +368,24 @@ export async function extractSupportSchemes(
     const apiKey = env.ANTHROPIC_API_KEY;
     if (!apiKey || items.length === 0) return EMPTY_RESULT;
 
+    // The PLATFORM budget (#1423). This job has no tenant — that is why it
+    // bypasses the router — so no per-tenant budget can cover it, and until
+    // this gate existed its spend had no ceiling of any kind.
+    //
+    // A boolean rather than a throw: the `catch` below returns EMPTY_RESULT on
+    // anything, so a thrown refusal would be indistinguishable from a provider
+    // outage and the cap would be invisible in the logs of the thing it
+    // refused. The empty result is the same either way; only the log differs,
+    // and that is the whole point.
+    if (!(await isPlatformAiSpendAllowed('support-scheme-extraction'))) {
+        logger.warn('support-scheme extraction skipped: the platform AI budget is exhausted', {
+            component: 'ai',
+            model: EXTRACTION_MODEL,
+            items: items.length,
+        });
+        return EMPTY_RESULT;
+    }
+
     const now = opts.now ?? new Date();
 
     try {
@@ -398,6 +417,18 @@ export async function extractSupportSchemes(
             completionTokens: response.usage?.output_tokens ?? 0,
             totalTokens: (response.usage?.input_tokens ?? 0) + (response.usage?.output_tokens ?? 0),
         };
+
+        // Recorded BEFORE the output is parsed, and unconditionally: the tokens
+        // were spent whether or not the tool block validates, and charging only
+        // successful parses would under-count exactly the calls worth noticing.
+        // `usage` is the object this function already returns, so the ledger and
+        // the caller cannot disagree about what was spent.
+        await recordPlatformAiUsage({
+            job: 'support-scheme-extraction',
+            model: EXTRACTION_MODEL,
+            promptTokens: usage.promptTokens,
+            completionTokens: usage.completionTokens,
+        });
 
         for (const block of response.content) {
             if (block.type === 'tool_use' && block.name === 'extract_support_schemes') {
