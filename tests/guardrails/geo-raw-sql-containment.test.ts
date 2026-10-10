@@ -15,6 +15,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { glob } from 'glob';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const SRC_DIR = path.resolve(__dirname, '../../src');
 const GEO_FILE = 'lib/db/geo.ts';
@@ -22,16 +23,11 @@ const ST_PATTERN = /\bST_[A-Za-z]/;
 
 /** Blank out block comments (newline-preserving) and trailing/line `//` comments. */
 function stripComments(src: string): string {
-    const noBlock = src.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
-    return noBlock
-        .split('\n')
-        .map((line) => {
-            const idx = line.indexOf('//');
-            // keep `https://`-style sequences (not a comment)
-            if (idx >= 0 && line[idx - 1] !== ':') return line.slice(0, idx);
-            return line;
-        })
-        .join('\n');
+    // Was a hand-rolled scanner that space-blanked block comments and spared
+    // `https://` by checking the character before `//`. `blankNonCode` is
+    // state-aware, so a `//` inside a string literal — which is where every
+    // URL in this tree lives — is not a comment to begin with (#1497).
+    return blankNonCode(src);
 }
 
 describe('Guardrail: PostGIS ST_* SQL is contained in src/lib/db/geo.ts', () => {
@@ -97,20 +93,28 @@ describe('Guardrail: PostGIS ST_* SQL is contained in src/lib/db/geo.ts', () => 
         const block = stripComments('/* mentions ST_Area in prose */');
         expect(ST_PATTERN.test(line)).toBe(false);
         expect(ST_PATTERN.test(block)).toBe(false);
-        // The `https://` carve-out, asserted as it BEHAVES rather than as I
-        // first assumed. `indexOf('//')` finds the one inside the URL, whose
-        // preceding character is ':', so the whole line is kept — including a
-        // real trailing comment after it.
+        // The `https://` case. The hand-rolled stripper this replaced found
+        // the `//` INSIDE the URL, saw ':' before it, and kept the whole line
+        // — including any real trailing comment. It over-scanned, which the
+        // previous revision pinned as a deliberate trade-off: over-reporting
+        // is a false alarm, under-reporting is the thing this file prevents,
+        // and a rewrite that flipped it to under-reporting had to fail here.
         //
-        // That is a limitation, not a hole, and the direction matters: the
-        // line is over-scanned, so an `ST_` mentioned after a URL would be
-        // reported as a violation rather than missed. A containment guard
-        // that occasionally over-reports is safe; one that under-reports is
-        // the thing this file exists to prevent. Pinned so the trade-off is
-        // recorded rather than rediscovered, and so a future rewrite that
-        // flips it to under-reporting fails here.
+        // #1497 replaced it with `blankNonCode`, and that trade-off no longer
+        // has to be made. The scanner is state-aware: the `//` in the URL is
+        // inside a string literal and was never a comment, so the real
+        // trailing comment is removed WITHOUT the line being over-scanned.
         const url = stripComments('const doc = "https://example.com"; // ST_Area');
         expect(url).toContain('https://example.com');
-        expect(ST_PATTERN.test(url)).toBe(true);
+        expect(ST_PATTERN.test(url)).toBe(false);
+
+        // Which is accuracy, not under-reporting — and that distinction is
+        // the assertion that matters. The case this guard EXISTS for is an
+        // `ST_` call in a raw-SQL string, and `blankNonCode` keeps string
+        // content, so it is still reported. Without this line the change
+        // above would read the same as going blind.
+        const inSql = stripComments('await prisma.$queryRaw`SELECT ST_Area(geom)`; // note');
+        expect(ST_PATTERN.test(inSql)).toBe(true);
+        expect(inSql).not.toContain('note');
     });
 });

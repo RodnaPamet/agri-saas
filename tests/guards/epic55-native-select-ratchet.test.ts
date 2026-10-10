@@ -35,6 +35,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const SRC_ROOT = path.resolve(__dirname, '../../src');
 const SCAN_ROOTS = [
@@ -48,9 +49,7 @@ const BASELINE_NATIVE_SELECTS = 0;
 
 /** Strip block + line comments so comment prose never counts as a select. */
 function stripComments(src: string): string {
-    return src
-        .replace(/\/\*[\s\S]*?\*\//g, ' ')
-        .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+    return blankNonCode(src);
 }
 
 function walk(dir: string, out: string[]): string[] {

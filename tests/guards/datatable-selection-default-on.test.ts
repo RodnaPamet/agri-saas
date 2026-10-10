@@ -30,6 +30,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -75,10 +76,7 @@ describe('DataTable selection default-on (R12-PR1)', () => {
         // written reason.
         const EXEMPTIONS: Record<string, string> = {
         };
-        const stripComments = (s: string) =>
-            s
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+        const stripComments = (s: string) => blankNonCode(s);
         const offenders: string[] = [];
         const walk = (dir: string) => {
             if (!fs.existsSync(dir)) {

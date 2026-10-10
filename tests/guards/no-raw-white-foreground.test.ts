@@ -23,6 +23,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 const COMPONENTS = path.join(ROOT, 'src/components');
@@ -67,10 +68,7 @@ describe('No raw text-white / text-black foreground in components', () => {
         for (const abs of walk(COMPONENTS)) {
             const rel = path.relative(ROOT, abs);
             if (ALLOWED.has(rel)) continue;
-            const stripped = fs
-                .readFileSync(abs, 'utf8')
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+            const stripped = blankNonCode(fs.readFileSync(abs, 'utf8'));
             stripped.split('\n').forEach((line, i) => {
                 if (RE.test(line)) {
                     offenders.push({

@@ -47,6 +47,7 @@ import { execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -194,7 +195,7 @@ function coveredFiles(options: { keepBarrelPatterns: boolean }): string[] {
  * code and the guard would fire on its own documentation.
  */
 function stripComments(src: string): string {
-    return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    return blankNonCode(src);
 }
 
 const EXECUTABLE = /(^|\s)(const|let|var|function|class|if|return|switch|for|while)\s|=>/;

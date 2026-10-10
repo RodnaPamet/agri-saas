@@ -27,6 +27,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 const APP_ROOT = path.resolve(ROOT, 'src/app/t/[tenantSlug]/(app)');
@@ -127,9 +128,7 @@ describe('Skeleton shimmer adoption (R11-PR2)', () => {
             if (EXEMPTIONS[rel]) continue;
             const src = fs.readFileSync(file, 'utf-8');
             // Strip comments so `// animate-pulse` mentions don't trip.
-            const stripped = src
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+            const stripped = blankNonCode(src);
             if (/\banimate-pulse\b/.test(stripped)) {
                 offenders.push(rel);
             }

@@ -51,6 +51,7 @@ import {
     synthSparkline,
     type ExampleMultiValues,
 } from '@/components/ui/charts/examples';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 // ─── Primitive point shapes ──────────────────────────────────────────
 
@@ -309,9 +310,7 @@ describe('Chart contracts carry zero domain semantics', () => {
             'utf-8',
         );
         // Strip comments so a harmless mention in JSDoc doesn't fail.
-        const stripped = src
-            .replace(/\/\*[\s\S]*?\*\//g, '')
-            .replace(/^\s*\/\/.*$/gm, '');
+        const stripped = blankNonCode(src);
         const forbidden = [
             /\bevidence[A-Z]/i,
             /\brisk[A-Z]/i,

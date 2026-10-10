@@ -25,6 +25,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { collectSourceFiles } from '../helpers/collect-files';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 const SCAN_DIRS = [
@@ -75,13 +76,10 @@ function collectScannedFiles(): string[] {
  * literally doesn't trip the regex.
  */
 function stripComments(src: string): string {
-    return src
-        // JSX block comments of the form `{` + `/` + `*` + ... + `*` + `/` + `}`
-        .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
-        // Regular block comments
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        // Line comments
-        .replace(/^\s*\/\/.*$/gm, '');
+    // `blankNonCode` handles all three forms this used to chain, including the
+    // JSX `{/* … */}` wrapper, and blanks rather than deletes — so the offsets
+    // below stay aligned with the original source (#1497).
+    return blankNonCode(src);
 }
 
 describe('Epic 58 — no native date inputs in app code', () => {

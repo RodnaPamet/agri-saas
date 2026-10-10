@@ -49,6 +49,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 const VARIANTS = fs.readFileSync(
@@ -103,9 +104,7 @@ describe('R20-PR-E — button font-weight (single rung since #776)', () => {
                 VARIANTS.match(/cva\(\s*\[([\s\S]*?)\]\s*,/)?.[1] ?? '';
             // Strip comments so the prose about the weight ladder
             // doesn't count as a violation.
-            const stripped = base
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+            const stripped = blankNonCode(base);
             expect(stripped.length).toBeGreaterThan(0);
             expect(stripped).not.toMatch(WEIGHT_RE);
         });

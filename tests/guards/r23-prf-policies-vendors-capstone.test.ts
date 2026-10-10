@@ -10,6 +10,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -97,9 +98,7 @@ describe('R23 capstone — meta-ratchet', () => {
         // kpi-filter-card.tsx from triggering a false positive when
         // the consumer page imports nothing of the kind.
         for (const consumer of ALL_R23_CONSUMERS) {
-            const stripped = read(consumer)
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+            const stripped = blankNonCode(read(consumer));
             expect(stripped).not.toMatch(/<KPIStat\b/);
         }
     });

@@ -33,6 +33,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const SCAN_DIRS = ['src/app', 'src/components'];
@@ -46,7 +47,7 @@ const PROSE = /^[A-Za-z][A-Za-z .,'’&%/…!?-]*$/;
 const LETTERS = /[A-Za-z]/g;
 
 function stripComments(src: string): string {
-    return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    return blankNonCode(src);
 }
 
 /** A user-facing prose string: a sentence/label, not code or an enum token. */

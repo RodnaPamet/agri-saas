@@ -34,6 +34,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 const USER_MENU_SRC = fs.readFileSync(
@@ -190,9 +191,7 @@ describe('Roadmap-14 PR-5 — UserMenu discipline', () => {
     describe('what the menu does NOT include (anti-misleading invariants)', () => {
         // Strip comments before scanning — the doc-comment mentions
         // these items by name when explaining why they're absent.
-        const stripped = USER_MENU_SRC
-            .replace(/\/\*[\s\S]*?\*\//g, '')
-            .replace(/\/\/[^\n]*/g, '');
+        const stripped = blankNonCode(USER_MENU_SRC);
 
         it('no Profile menu item (no `/profile` route exists)', () => {
             expect(stripped).not.toMatch(/href=['"]\/profile['"]/);

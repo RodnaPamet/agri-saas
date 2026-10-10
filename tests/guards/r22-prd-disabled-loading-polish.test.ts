@@ -28,6 +28,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 const VARIANTS = fs.readFileSync(
@@ -75,8 +76,7 @@ describe('R22-PR-D — Disabled + loading polish', () => {
         });
 
         it('no hardcoded `gray` background remains', () => {
-            const stripped = SPINNER.replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+            const stripped = blankNonCode(SPINNER);
             expect(stripped).not.toMatch(/background:\s*["']gray["']/);
         });
     });

@@ -33,6 +33,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const SRC_ROOT = path.resolve(__dirname, '../../src');
 const SCAN_ROOTS = [path.join(SRC_ROOT, 'app'), path.join(SRC_ROOT, 'components')];
@@ -68,7 +69,7 @@ function walk(dir: string, out: string[]): string[] {
  * doc example never counts as a real offender.
  */
 function stripComments(src: string): string {
-    return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    return blankNonCode(src);
 }
 
 // ── Detectors (pure — exported shape for the self-test) ─────────────

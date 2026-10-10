@@ -26,6 +26,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 const TOKENS = fs.readFileSync(
@@ -129,9 +130,7 @@ describe('R22-PR-B — Border tone + focus-ring refinement', () => {
         it('drops Tailwind ring-2 / ring-offset-2 / ring-ring', () => {
             const base =
                 BUTTON_VARIANTS.match(/cva\(\s*\[([\s\S]*?)\]\s*,/)?.[1] ?? '';
-            const stripped = base
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+            const stripped = blankNonCode(base);
             expect(stripped).not.toMatch(/focus-visible:ring-2/);
             expect(stripped).not.toMatch(/focus-visible:ring-offset/);
             expect(stripped).not.toMatch(/focus-visible:ring-ring/);

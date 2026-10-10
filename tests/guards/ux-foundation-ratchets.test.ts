@@ -23,6 +23,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const REPO = path.resolve(__dirname, '../..');
 const TENANT_APP = path.join(REPO, 'src/app/t/[tenantSlug]/(app)');
@@ -162,9 +163,7 @@ describe('Epic 64 — window.confirm() ceiling', () => {
         for (const file of walk(TENANT_APP)) {
             const src = read(file);
             // Strip comments first so doc-comment mentions don't count.
-            const stripped = src
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/.*$/gm, '');
+            const stripped = blankNonCode(src);
             // Match BOTH bare `confirm(` (the global) and `window.confirm(`
             // — the second is what people write when their linter complains
             // about implicit globals.

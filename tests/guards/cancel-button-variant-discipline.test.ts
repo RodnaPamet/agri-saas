@@ -43,6 +43,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -82,9 +83,7 @@ describe('Cancel button variant discipline (Roadmap-6 PR-8)', () => {
                 if (!/\.tsx$/.test(e.name)) continue;
                 const rel = path.relative(ROOT, full);
                 const raw = fs.readFileSync(full, 'utf-8');
-                const stripped = raw
-                    .replace(/\/\*[\s\S]*?\*\//g, '')
-                    .replace(/\/\/[^\n]*/g, '');
+                const stripped = blankNonCode(raw);
                 const lines = stripped.split('\n');
                 lines.forEach((line, i) => {
                     const m = line.match(CANCEL_BUTTON_RE);

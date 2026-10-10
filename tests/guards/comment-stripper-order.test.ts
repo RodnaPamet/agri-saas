@@ -4,7 +4,7 @@
  *
  * ## The defect
  *
- * A stripper shaped like this is wrong, and 61 files in `tests/` carry it:
+ * A stripper shaped like this is wrong, and 61 files in `tests/` carried it:
  *
  *     src.replace(BLOCK_RE, '').replace(LINE_RE, '')   // blocks FIRST
  *
@@ -23,17 +23,46 @@
  * state-aware scanner that cannot be fooled by either nesting and blanks
  * character-for-character so `^`-anchored patterns keep their positions.
  *
- * ## Why a RATCHET rather than a ban
+ * ## The ratchet reached its floor, and the floor is 2
  *
- * 61 is too many to convert in one change, and most are latent — the defect
- * only fires when a trigger lands in a file the guard scans. #1497 converted
- * the two that could reach one TODAY (`tooltip-touch-uniformity`,
- * `soft-delete-guardrails`), which is why they classify as NONE below.
+ * It began as a cap of 61 because that was too many to convert at once, and
+ * most were latent — the defect only fires when a trigger lands in a file the
+ * guard scans. All 61 are now converted, so the cap is 2.
  *
- * So this caps the count instead. A new stripper with the wrong order breaches
- * the cap and fails; converting one lowers it. The cap may only go down, and
- * the drift sentinel stops slack accumulating — the shape
- * `no-explicit-any-ratchet` and `lint-ceiling` already use.
+ * The residue is not work left undone. Those two strip comments from **CSS**
+ * (`globals.css` and the generated design tokens), where the block form is the
+ * only comment syntax and `blankNonCode` — a TS/JS scanner — is the wrong
+ * tool. `CSS_ONLY` names them, and the suite requires the set to be EXACTLY
+ * those two, so the effective cap for a TypeScript stripper is 0.
+ *
+ * ## What the conversion changed, which is not nothing
+ *
+ * `blankNonCode` is not equivalent to the strippers it replaced, and the
+ * differences run in BOTH directions. Measured over the 2106 files under
+ * `src/`, against the two dominant shapes:
+ *
+ *   - `/\/\/[^\n]*\/g`        differs on 405 files   (the `*` + `/` here is
+ *     escaped because an unescaped one TERMINATES this very docblock)
+ *   - `/^[ \t]*\/\/.*$/gm`   differs on 201 files
+ *
+ * Two causes, each a case of the local stripper being WRONG:
+ *
+ *   1. A TRAILING `// comment` on a code line. The line-anchored shape only
+ *      matches at line start, so it kept those; `blankNonCode` removes them.
+ *      Blanking therefore removes MORE, and an "offence" that was only ever
+ *      comment text stops being reported.
+ *   2. A comment-like sequence INSIDE a string. `src/app/api/docs/route.ts`
+ *      has a `/* … *\/` in a CSS block inside an HTML template literal; the
+ *      block regex ate it, `blankNonCode` correctly keeps string content.
+ *      Blanking therefore removes LESS, and such text becomes visible to a
+ *      scanner for the first time.
+ *
+ * Line numbers also move, and in the right direction: deleting a comment
+ * removes its newlines, so every line computed from the stripped text shifts
+ * EARLIER. Blanking preserves them. 22 of the 26 files in one guard's corpus
+ * were reporting a shifted line, worst −101 (`EntityDetailLayout.tsx`). The
+ * migration FIXES those pointers rather than disturbing them — the opposite of
+ * what the issue originally argued.
  *
  * ## The discriminator needed its own control, and that is the real lesson
  *
@@ -106,12 +135,36 @@ function firstMarker(src: string): 'BLOCK' | 'LINE' | null {
 }
 
 /**
- * 61 block-first strippers today. Measured by this suite on a clean tree.
+ * 2 block-first strippers today, down from 61. Measured by this suite on a
+ * clean tree.
  *
  * LOWER this when you convert one to `blankNonCode`; never raise it. A new
  * stripper with the wrong order is what the cap exists to refuse.
+ *
+ * It cannot reach 0, and the reason is a limit of the classifier rather than
+ * work left undone — see `CSS_ONLY` below.
  */
-const BLOCK_FIRST_CAP = 61;
+const BLOCK_FIRST_CAP = 2;
+
+/**
+ * The two survivors, and why converting them would be WRONG.
+ *
+ * Both strip comments from **CSS**, not TypeScript: `animation-vocabulary`
+ * reads `src/app/globals.css` and `r22-prb-border-and-focus` reads the
+ * generated design tokens. In CSS the block form is the ONLY comment syntax —
+ * `//` is not a comment at all — so there is no line pass to order wrongly,
+ * and `blankNonCode` is a TS/JS scanner that would mis-read a CSS file's
+ * strings and `url()` values.
+ *
+ * So the ratchet is pinned by IDENTITY as well as by count. A bare cap of 2
+ * would let a third block-first TS stripper land in the slack vacated by one
+ * of these; requiring the set to be exactly these two files refuses that,
+ * which makes the effective cap for a TypeScript stripper 0.
+ */
+const CSS_ONLY = [
+    'tests/guards/animation-vocabulary.test.ts',
+    'tests/guards/r22-prb-border-and-focus.test.ts',
+];
 
 /** A cap far above reality has stopped ratcheting. */
 const DRIFT_ALLOWANCE = 3;
@@ -147,13 +200,19 @@ describe('a local comment stripper strips LINE comments first (#1497)', () => {
     it('ranges over a real population — the denominator', () => {
         expect(files.length).toBeGreaterThan(600);
         expect(classified.length).toBeGreaterThan(50);
-        // Both known-answer files from #1497, one per polarity.
+        // A known answer per polarity, so a classifier that has gone blind in
+        // one direction fails here rather than reporting a clean tree.
         expect(
             classified.find((r) => r.file.endsWith('schemas-barrel-has-no-orphans.test.ts'))?.first,
         ).toBe('LINE');
+        // `date-input-rollout.test.ts` was the BLOCK example until #1497
+        // converted it. The anchor has to be a file that is STILL block-first,
+        // and the only ones left are the two CSS strippers in `CSS_ONLY` —
+        // which is also why this assertion and that list must not drift apart.
         expect(
-            classified.find((r) => r.file.endsWith('date-input-rollout.test.ts'))?.first,
+            classified.find((r) => r.file.endsWith('animation-vocabulary.test.ts'))?.first,
         ).toBe('BLOCK');
+        expect(CSS_ONLY).toContain('tests/guards/animation-vocabulary.test.ts');
     });
 
     it('prints what it found — all three numbers, not just the one that fails', () => {
@@ -177,6 +236,14 @@ describe('a local comment stripper strips LINE comments first (#1497)', () => {
                     `this cap to make a new stripper fit.`,
             );
         }
+    });
+
+    it('the only block-first strippers left are the two CSS ones', () => {
+        // The count alone is not enough. With a cap of 2 and no identity
+        // check, converting one of these and adding a block-first TypeScript
+        // stripper would both pass — so this pins WHICH files may be in the
+        // set, making the effective cap for a TS stripper 0.
+        expect(blockFirst.map((r) => r.file).sort()).toEqual([...CSS_ONLY].sort());
     });
 
     it('the cap tracks reality — no accumulated slack', () => {

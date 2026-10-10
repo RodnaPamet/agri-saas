@@ -17,6 +17,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const DASHBOARD_DIR = path.resolve(
     __dirname,
@@ -198,9 +199,7 @@ describe('Dashboard does not rely on router.refresh()', () => {
      * executable code.
      */
     function stripComments(src: string): string {
-        return src
-            .replace(/\/\*[\s\S]*?\*\//g, '')
-            .replace(/^\s*\/\/.*$/gm, '');
+        return blankNonCode(src);
     }
 
     test('neither page.tsx nor DashboardClient.tsx invokes router.refresh()', () => {

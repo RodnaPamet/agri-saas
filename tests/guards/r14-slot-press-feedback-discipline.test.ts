@@ -35,6 +35,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -173,9 +174,7 @@ describe('Roadmap-14 PR-11 — Slot press-feedback unification', () => {
         ];
 
         for (let i = 0; i < slotFiles.length; i++) {
-            const stripped = slotFiles[i]
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+            const stripped = blankNonCode(slotFiles[i]);
             it(`slot file #${i + 1} has no hover-translate in executable code`, () => {
                 expect(stripped).not.toMatch(/\bhover:translate-/);
                 expect(stripped).not.toMatch(/\bhover:-translate-/);
