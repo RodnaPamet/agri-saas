@@ -34,10 +34,10 @@
  */
 import type { NextRequest } from 'next/server';
 
-import { auth } from '@/auth';
+import { getUserCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
-import { unauthorized, codedBadRequest } from '@/lib/errors/types';
+import {codedBadRequest } from '@/lib/errors/types';
 import { getRequestContext } from '@/lib/observability/context';
 import { assertFeatureEnabled } from '@/lib/feature-flags';
 import { createFarmForUser } from '@/app-layer/usecases/farm-creation';
@@ -65,13 +65,20 @@ import { CreateFarmSchema } from '@/lib/schemas';
 const FARM_REGISTRATION_FLAG = 'social.farm-registration';
 
 export const POST = withApiErrorHandling(async (req: NextRequest) => {
-    const session = await auth();
-    if (!session?.user?.id) throw unauthorized();
-    await assertFeatureEnabled(FARM_REGISTRATION_FLAG, session.user.id);
+    // `getUserCtx`, not `auth()` (#1579). It refuses three callers this route
+    // used to answer: an `iflk_` API key presented as a person credential
+    // (which must not be served as the cookie's user), an MFA-pending session,
+    // and — on a social surface — the operator-only persona. This is an
+    // `account` surface, so a MECHANISATOR is correctly NOT refused.
+    const ctx = await getUserCtx(req);
+    await assertFeatureEnabled(FARM_REGISTRATION_FLAG, ctx.userId);
     // `createTenantWithOwner` resolves the OWNER by email, so a session with no
     // email cannot create a farm. Refused rather than defaulted: a placeholder
     // would mint a User row nobody can ever sign in as, and make it the owner.
-    if (!session.user.email) throw codedBadRequest('ACCOUNT_HAS_NO_EMAIL', 'Your account has no email address.');
+    // `getUserCtx` returns `''` for a principal with no email — a BEARER
+    // session deliberately carries none — and `''` is falsy, so this refusal
+    // behaves exactly as it did against `session.user.email`.
+    if (!ctx.email) throw codedBadRequest('ACCOUNT_HAS_NO_EMAIL', 'Your account has no email address.');
 
     const parsed = CreateFarmSchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) throw codedBadRequest('INVALID_FARM_PAYLOAD', 'Invalid farm payload.');
@@ -79,8 +86,8 @@ export const POST = withApiErrorHandling(async (req: NextRequest) => {
     const result = await createFarmForUser(
         {
             requestId: getRequestContext()?.requestId ?? crypto.randomUUID(),
-            userId: session.user.id,
-            userEmail: session.user.email,
+            userId: ctx.userId,
+            userEmail: ctx.email,
         },
         { name: parsed.data.name, eik: parsed.data.eik ?? null },
     );
@@ -114,10 +121,14 @@ export const POST = withApiErrorHandling(async (req: NextRequest) => {
  * it opens on a fresh install. That only holds because #1389 gave `/me` the
  * same `deletedAt` predicate.
  */
-export const GET = withApiErrorHandling(async () => {
-    const session = await auth();
-    if (!session?.user?.id) throw unauthorized();
+export const GET = withApiErrorHandling(async (req: NextRequest) => {
+    // `getUserCtx`, not `auth()` (#1579). It refuses three callers this route
+    // used to answer: an `iflk_` API key presented as a person credential
+    // (which must not be served as the cookie's user), an MFA-pending session,
+    // and — on a social surface — the operator-only persona. This is an
+    // `account` surface, so a MECHANISATOR is correctly NOT refused.
+    const ctx = await getUserCtx(req);
 
-    const farms = await listMyFarms(session.user.id);
+    const farms = await listMyFarms(ctx.userId);
     return jsonResponse({ farms }, { status: 200 });
 });

@@ -18,6 +18,7 @@
  * use a different (neutral) visual tone and are a deliberate,
  * separately-scoped follow-up.
  */
+import { blankNonCode } from '../helpers/blank-non-code';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -123,15 +124,24 @@ describe('Avatar upload flow (avatar roadmap P3)', () => {
         const src = read(UPLOAD_ROUTE);
         expect(src).toMatch(/export const POST =/);
         expect(src).toMatch(/export const DELETE =/);
-        // `auth()` — the wrapper in src/auth.ts, NOT next-auth's raw
-        // `getServerSession`. The wrapper adds the bearer fallback the
-        // native iOS client needs; pinning the raw helper here was
-        // enforcing a cookie-only route by accident. See
-        // tests/guards/native-bearer-auth-parity.test.ts.
-        expect(src).toMatch(/\bauth\(\)/);
-        // Acts on the session user id — never a caller-supplied id —
-        // so one user cannot write another's avatar.
-        expect(src).toMatch(/session\.user\.id/);
+        // `getUserCtx`, which SUPERSEDES the `auth()` this used to pin
+        // (#1579). Both carry the bearer fallback the native client needs —
+        // `getUserCtx` goes through `getSessionOrThrow` — and it adds three
+        // refusals `auth()` makes silently: an `iflk_` API key answered as the
+        // cookie's user, an MFA-pending session, and the operator-only
+        // persona on a social surface. A stronger pin, not a looser one.
+        //
+        // Read from CODE, not raw source. The route's own comment explains
+        // what it moved away FROM and therefore contains the words `auth()`,
+        // so a raw-source assertion for either spelling matches a comment and
+        // is green for the wrong reason — which is exactly what happened to
+        // the serve-route test below before this was fixed.
+        const code = blankNonCode(src);
+        expect(code).toMatch(/getUserCtx\(/);
+        expect(code).not.toMatch(/\bawait auth\(\)/);
+        // Acts on the CALLER's own id — never a caller-supplied one — so one
+        // user cannot write another's avatar.
+        expect(code).toMatch(/ctx\.userId/);
         // No `requirePermission(...)` call — self-service, not a
         // tenant-privileged route. (Matches the call, not the bare
         // word, so the rationale comment can still name it.)
@@ -141,12 +151,24 @@ describe('Avatar upload flow (avatar roadmap P3)', () => {
     it('the serve route streams a stored avatar behind auth', () => {
         const src = read(SERVE_ROUTE);
         expect(src).toMatch(/export const GET =/);
-        // `auth()` — the wrapper in src/auth.ts, NOT next-auth's raw
-        // `getServerSession`. The wrapper adds the bearer fallback the
-        // native iOS client needs; pinning the raw helper here was
-        // enforcing a cookie-only route by accident. See
-        // tests/guards/native-bearer-auth-parity.test.ts.
-        expect(src).toMatch(/\bauth\(\)/);
+        // `getUserCtx` (#1579) — a stronger pin than the `auth()` this used
+        // to assert, for the reasons on the upload route above.
+        //
+        // Read from CODE, and this test is why that matters. After the
+        // migration the raw `toMatch(/\bauth\(\)/)` that lived here still
+        // PASSED — satisfied by the route's own comment saying "`getUserCtx`,
+        // not `auth()`". Green, and asserting nothing about the code. The
+        // inverse of the usual scar-for-a-wound mistake: here the scar kept a
+        // stale assertion alive instead of raising a false alarm.
+        //
+        // No `ctx.userId` assertion, deliberately: this route's subject is the
+        // `userId` in the PATH and `getUserCtx`'s return is discarded, so
+        // asserting the caller's id would be asserting something false. The
+        // self-service pin belongs on the upload route, where the subject IS
+        // the caller.
+        const code = blankNonCode(src);
+        expect(code).toMatch(/getUserCtx\(/);
+        expect(code).not.toMatch(/\bawait auth\(\)/);
         // Async-params contract (Next 15+).
         expect(src).toMatch(/params:\s*Promise</);
         expect(src).toMatch(/getAvatarStream/);

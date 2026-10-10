@@ -16,10 +16,10 @@
  * one read path is easier to keep honest than two.
  */
 import type { NextRequest } from 'next/server';
-import { auth } from '@/auth';
+import { getUserCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
-import { unauthorized, codedBadRequest } from '@/lib/errors/types';
+import {codedBadRequest } from '@/lib/errors/types';
 import {
     BottomTabOrderSchema,
     updateOwnBottomTabOrder,
@@ -27,8 +27,12 @@ import {
 } from '@/lib/account/bottom-tabs';
 
 export const PUT = withApiErrorHandling(async (req: NextRequest) => {
-    const session = await auth();
-    if (!session?.user?.id) throw unauthorized();
+    // `getUserCtx`, not `auth()` (#1579). It refuses three callers this route
+    // used to answer: an `iflk_` API key presented as a person credential
+    // (which must not be served as the cookie's user), an MFA-pending session,
+    // and — on a social surface — the operator-only persona. This is an
+    // `account` surface, so a MECHANISATOR is correctly NOT refused.
+    const ctx = await getUserCtx(req);
 
     const body = await req.json().catch(() => null);
     // `{ order: null }` restores the default arrangement; `{ order: [] }` is a
@@ -47,6 +51,6 @@ export const PUT = withApiErrorHandling(async (req: NextRequest) => {
         );
     }
 
-    const result = await updateOwnBottomTabOrder(session.user.id, parsed.data);
+    const result = await updateOwnBottomTabOrder(ctx.userId, parsed.data);
     return jsonResponse(result, { status: 200 });
 });
