@@ -6,7 +6,15 @@
  * is a deterministic heuristic (no LLM dependency, so it works without AI keys
  * and is fully unit-testable); the pure `rankRuleSuggestions` core is exported
  * for tests, and takes its candidate list as an injectable parameter so the
- * ranking is testable even while `RULE_SUGGESTION_CANDIDATES` is empty.
+ * ranking is testable independently of whatever the catalogue contains.
+ *
+ * The candidates are DERIVED from `AUTOMATION_TEMPLATES` (owner ruling,
+ * 2026-10-10, #1525) rather than hand-authored here. The rail and the template
+ * library were two surfaces recommending the same thing, and only the library
+ * had content — so this was the empty one, not the authoritative one. One
+ * source of product content means a new template appears in both places
+ * without being written twice, which is the duplicate-declaration problem
+ * #1555 is about, one layer up.
  *
  * Each suggestion excludes any trigger event already covered by an ENABLED
  * rule, so the rail never proposes a duplicate of an automation the tenant
@@ -15,6 +23,7 @@
 import { RequestContext } from '../types';
 import { assertCanReadAutomation } from '../automation';
 import { runInTenantContext } from '@/lib/db-context';
+import { AUTOMATION_TEMPLATES } from '@/data/automation-templates';
 
 export type SuggestionActionType = 'NOTIFY_USER' | 'CREATE_TASK';
 
@@ -37,27 +46,63 @@ export interface SuggestionPosture {
 
 export interface Candidate extends Omit<RuleSuggestion, 'rank'> {}
 
+/** Action types the rail can offer. Narrower than Prisma's `AutomationActionType`. */
+const SUGGESTABLE_ACTIONS: ReadonlySet<string> = new Set<SuggestionActionType>([
+    'NOTIFY_USER',
+    'CREATE_TASK',
+]);
+
 /**
- * The suggestions this product offers. EMPTY as of #1479.
+ * Catalogue priority expressed as the 0–1 score the ranking function consumes.
  *
- * It held exactly one candidate, triggering on `ISSUE_CREATED`. That event
- * lost its only producer when the `/issues/**` surface was retired, so the
- * suggestion would have led a tenant to build a rule that could never fire —
- * the defect CLAUDE.md records against `TEST_PLAN_*`, where the rule builder
- * went on offering triggers for deleted models.
+ * `AUTOMATION_TEMPLATES` is an ORDERED list — the authors' preference order —
+ * and it carries no confidence figure, because nothing measured one. So this
+ * is a PROXY: position 0 scores highest and each later entry a step lower.
  *
- * A new entry must trigger on an event in `AUTOMATION_EVENTS` that has a live
- * PRODUCER. `tests/guards/automation-catalog-emitter-coverage.test.ts` holds
- * that property for the catalogue; it cannot see a suggestion naming a dead
- * one, so check it here by hand.
- *
- * Lifted out of `rankRuleSuggestions` for #1525 so the ranking below is
- * testable independently of what this list happens to contain. While it is
- * empty the ranking is unreachable through the default path, and a list that
- * decides whether logic can be tested at all should not be a local const
- * inside the function it disables.
+ * Two properties are deliberate. It never reaches 1.0, because a derived
+ * ordering is not evidence of certainty and the confidence bar should not
+ * claim it is. And every entry gets a DISTINCT score, so the descending sort
+ * has a total order — equal scores would leave `rankRuleSuggestions`'s strict
+ * comparison to break ties arbitrarily, which is the "collapse-to-one needs a
+ * total order" trap.
  */
-export const RULE_SUGGESTION_CANDIDATES: readonly Candidate[] = [];
+const CATALOGUE_TOP_CONFIDENCE = 0.8;
+const CATALOGUE_CONFIDENCE_STEP = 0.05;
+const CATALOGUE_MIN_CONFIDENCE = 0.1;
+
+/**
+ * The suggestions this product offers — derived from the template catalogue.
+ *
+ * It used to hold one hand-written candidate triggering on `ISSUE_CREATED`,
+ * which lost its only producer when `/issues/**` was retired (#1479). A
+ * suggestion naming a dead event leads a tenant to build a rule that can never
+ * fire — the defect CLAUDE.md records against `TEST_PLAN_*`.
+ *
+ * Deriving from the catalogue closes that by construction rather than by
+ * vigilance: `tests/guards/automation-template-triggers-are-live.test.ts`
+ * asserts every template's trigger is in `AUTOMATION_EVENTS`, and
+ * `automation-catalog-emitter-coverage` already asserts every catalogue event
+ * has an in-repo emitter (its `EXTERNALLY_EMITTED` exemption list is empty).
+ * So "this suggestion's event has a producer" is now transitive, where the old
+ * docblock asked for it to be checked by hand.
+ *
+ * Templates whose action the rail cannot offer are filtered out rather than
+ * coerced — `SuggestionActionType` is two of Prisma's action types, and a
+ * template using a third is a template, not a suggestion.
+ */
+export const RULE_SUGGESTION_CANDIDATES: readonly Candidate[] = AUTOMATION_TEMPLATES.filter(
+    (t) => SUGGESTABLE_ACTIONS.has(t.actionType),
+).map((t, index) => ({
+    id: t.id,
+    title: t.name,
+    rationale: t.description,
+    triggerEvent: t.trigger,
+    actionType: t.actionType as SuggestionActionType,
+    confidenceScore: Math.max(
+        CATALOGUE_MIN_CONFIDENCE,
+        CATALOGUE_TOP_CONFIDENCE - index * CATALOGUE_CONFIDENCE_STEP,
+    ),
+}));
 
 /**
  * Pure ranker. Drops any candidate whose trigger event is already covered,
