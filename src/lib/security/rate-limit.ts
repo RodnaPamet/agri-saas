@@ -245,6 +245,42 @@ export const PUBLIC_READ_LIMIT: RateLimitConfig = {
 };
 
 /**
+ * PUBLIC DSA Art 16 notices: 10 per minute per IP. P5.2 (#1593).
+ *
+ * `withApiErrorHandling` already defaults every mutation to
+ * `API_MUTATION_LIMIT` (60/min), keyed on `(IP, userId)` with the userId NULL
+ * for an anonymous caller — so this endpoint was never unprotected and this
+ * constant is a TUNING choice, not a missing control. Worth saying because an
+ * earlier revision of P5.1's schema docblock claimed both that such a tier
+ * existed by name and, correcting itself, that none existed at all. Neither
+ * was true; the default is what protects a public POST.
+ *
+ * 10 rather than 60 because the shapes differ. 60/min is sized for a person
+ * filling a form in a tab — several writes a minute is normal there. Filing
+ * ten notices in a minute is not normal for anybody acting in good faith, and
+ * the thing this defends against is a flood that buries real notices in the
+ * triage queue, where the cost is a regulator-visible handling time rather
+ * than database load.
+ *
+ * It does NOT go lower, and carrier-grade NAT is why. `PUBLIC_READ_LIMIT`'s
+ * docblock already reasons about it for this user base: many subscribers share
+ * one public IPv4, so a village behind one cell tower shares this budget.
+ * Below about ten, a genuine burst of notices about the same bad listing —
+ * which is what a real incident looks like — would start refusing the
+ * neighbours who are reporting it.
+ *
+ * Per-SUBJECT capping is deliberately not done here. It is the control that
+ * would actually catch brigading, and it has the wrong failure mode: the first
+ * few notices would suppress later legitimate ones about the same content.
+ * P5.2 records a per-subject count without enforcing it, so a threshold can be
+ * chosen from data.
+ */
+export const PUBLIC_NOTICE_LIMIT: RateLimitConfig = {
+    maxAttempts: 10,
+    windowMs: 60 * 1000,
+};
+
+/**
  * SCIM provisioning: 300/min per bearer, 600/min per IP.
  *
  * `/api/scim/` is in `PUBLIC_PATH_PREFIXES`, so these requests are NOT

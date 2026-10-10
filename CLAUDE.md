@@ -1828,6 +1828,58 @@ reason needs nobody to read a `detail` field (DECISION 6), but the category
 list itself is a product and legal choice still open on #1553. Adding a value
 is a trivial migration.
 
+### P5.2a — the notice routes, and three places the obvious shape is wrong
+
+Two routes (#1593): `POST /api/public/notices` (anonymous, Art 16) and
+`POST`/`GET /api/social/reports` (signed-in). `ReportSnapshot` holds the
+evidence. The block half is P5.2b.
+
+**`/api/t/[slug]/reports` cannot work, and would fail silently.** A tenant
+route runs `runInTenantContext`, which sets `app.actor_user_id` and
+deliberately NOT `app.user_id`. The reporter-read arm matches `app.user_id`, so
+under a tenant context it matches nothing and "my reports" returns **zero rows
+with no error** — indistinguishable from having filed none. Person-scoped
+surfaces go under `/api/social/` (which is what `isOperatorBlockedPersonPath`
+covers, so they get the operator-persona refusal) and authenticate with
+`getUserCtx`, not bare `auth()`.
+
+**The read and the write run in different contexts, on purpose.** Reading goes
+through `runInUserContext` because only that runner sets the variable the
+policy needs. Writing goes through the privileged client because there is
+deliberately no `app_user` INSERT arm — a reporter who could insert directly
+could forge `reporterUserId` or set any `status`. Nothing in
+`usecases/trust-safety.ts` may put a client value into `reporterUserId`: the
+anonymous path writes NULL, the signed-in path writes `ctx.userId`, and
+`FileReportSchema.strip()` drops a client-supplied one rather than rejecting it
+(so a caller cannot learn from an error that the field exists).
+
+**The snapshot is a table, not a column, and retention is why.** The
+reporter-read arm is ROW-level, so a snapshot column on `ContentReport` would
+hand a reporter a durable decryptable copy of a private message *after* its
+author deleted it. `ReportSnapshot` denies `app_user` outright.
+
+**The response discloses nothing about the subject.** `SUBJECT_NOT_FOUND` goes
+to the snapshot for the moderator, never to the notifier — a notice form that
+told a real id from a made-up one would be an enumeration oracle on an
+unauthenticated route. `tests/unit/trust-safety-routes.test.ts` pins the
+response to exactly `{id, status}`.
+
+**Neither reporting route is flag-gated**, and both exemptions are the same
+legal duty rather than two judgement calls: a flag defaulting OFF means an Art
+16 obligation is unmet until someone flips it. `FLAG_EXEMPT` keys are
+repo-relative FILE paths under a declared social root — a URL-shaped key is an
+exemption the population never selects. The public route has no `social`
+segment so it is not in that guard's population at all; its unauthenticated
+nature is exempted in `public-routes-self-authenticate` instead.
+
+**`PUBLIC_NOTICE_LIMIT` is 10/min per IP** — a tuning choice, not a new
+mechanism. `withApiErrorHandling` already defaults every mutation to
+`API_MUTATION_LIMIT` (60/min) keyed on `(IP, userId)` with the userId NULL when
+anonymous. 10 rather than 60 because the harm is a flood burying real notices
+in the triage queue; not lower, because carrier-grade NAT puts a village behind
+one IPv4 and a genuine burst about one bad listing is what an incident looks
+like.
+
 ## Failing tests
 
 A failing test on a branch is a failing test, full stop. "Pre-existing on

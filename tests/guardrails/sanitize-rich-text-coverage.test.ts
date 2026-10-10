@@ -55,6 +55,22 @@ type Sanitizer = 'sanitizeRichTextHtml' | 'sanitizePlainText' | 'sanitizePolicyC
 const RICH_TEXT_COVERAGE: Readonly<
     Record<string, { usecases: readonly string[]; sanitizer: Sanitizer }>
 > = {
+    // P5.2 (#1593). `ContentReport.detail` is the notifier's own words on a DSA
+    // Art 16 notice, and it arrives from an ANONYMOUS public caller as well as
+    // a signed-in one — the highest-risk free-text input in the product, since
+    // there is no account to hold accountable.
+    //
+    // ONE usecase, and it is the only write seam by construction rather than
+    // by belief: the table has no `app_user` INSERT policy arm, so nothing
+    // outside the privileged path can write it at all, and `fileNotice` is the
+    // only privileged writer. That is a stronger guarantee than the Task entry
+    // above has — but it is a guarantee about the DATABASE, so if a second
+    // privileged writer ever appears it must be added here. RLS does not stop
+    // a second `prisma.contentReport.create`.
+    ContentReport: {
+        usecases: ['src/app-layer/usecases/trust-safety.ts'],
+        sanitizer: 'sanitizePlainText',
+    },
     // `Task.description` / `Task.resolution` are written from FOUR places, not
     // one — field-operation
     // review writes `resolution` via `WorkItemRepository.setStatus` directly
@@ -190,6 +206,15 @@ const RICH_TEXT_COVERAGE: Readonly<
  * text — sanitisation does not apply. Each carries a written reason.
  */
 const NON_RICH_TEXT_MODELS: Readonly<Record<string, string>> = {
+    ReportSnapshot:
+        'ReportSnapshot.body is content the SERVER captured from its own ' +
+        'tables, not text a client sent — P5.2 ignores client-supplied ' +
+        'snapshot text entirely, which is what "the report snapshot is ' +
+        'captured server-side" means. It is sanitised where it was WRITTEN ' +
+        '(a listing description, an exchange message), so sanitising the ' +
+        'capture would double-escape content whose sanitiser already ran, ' +
+        'and would silently alter the evidence a regulator may ask about.',
+
     TenantSecuritySettings:
         'auditStreamSecretEncrypted is a system-generated HMAC secret, ' +
         'never user-supplied free text — there is nothing to sanitise.',
@@ -214,14 +239,11 @@ const KNOWN_UNCOVERED: Readonly<Record<string, string>> = {
     // permanently and every one of these three IS user-authored free text.
     //
     // Each entry names the PR that must move it, so the gap closes with the
-    // first writer instead of outliving it.
-    ContentReport:
-        'ContentReport.detail is the notifier\'s own words on a DSA Art 16 ' +
-        'notice — user-supplied free text, and reachable by an ANONYMOUS ' +
-        'public caller, which makes it the highest-risk of the three. No ' +
-        'write path exists yet (P5.1 is schema-only). Moves to ' +
-        'RICH_TEXT_COVERAGE in P5.2, which lands POST /api/public/notices ' +
-        'and must wire sanitizePlainText into it.',
+    // first writer instead of outliving it. ContentReport was the first to
+    // move: P5.2 made it a live writer, the live-writer assertion below went
+    // red on exactly that, and it is now in RICH_TEXT_COVERAGE. The mechanism
+    // worked one PR after it was written, which is the only evidence that
+    // kind of design ever gets.
     ModerationAction:
         'ModerationAction.rationale is moderator-authored free text about a ' +
         'person, and it is the SOURCE of the Art 17 statement sent to them — ' +
@@ -450,9 +472,11 @@ describe('rich-text sanitiser coverage — structural completeness', () => {
 
     it('KNOWN_UNCOVERED is a ratchet — it should trend to zero', () => {
         // Not a hard cap — but a visible reminder. If this grows, the
-        // diff is the conversation. Was 1 (EvidenceReview); 4 since P5.1
-        // (#1553) added three tables whose write paths do not exist yet.
-        expect(Object.keys(KNOWN_UNCOVERED).length).toBeLessThanOrEqual(4);
+        // diff is the conversation. Was 1 (EvidenceReview), 4 after P5.1
+        // (#1553) added three tables with no write path, now 3: P5.2 moved
+        // ContentReport out. Lowered rather than left at 4, because slack a
+        // later regression can spend is the thing a ratchet exists to refuse.
+        expect(Object.keys(KNOWN_UNCOVERED).length).toBeLessThanOrEqual(3);
     });
 
     it('no KNOWN_UNCOVERED entry has a LIVE writer — the teeth the cap lost', () => {

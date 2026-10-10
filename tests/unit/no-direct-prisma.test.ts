@@ -84,6 +84,28 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
         // directly for the identical reason; this is that query moved
         // somewhere an API route can reach.
         'my-farms.ts',
+        // P5.2a (#1593) — `trust-safety.ts` holds BOTH halves of the notice
+        // flow, and they use different clients ON PURPOSE:
+        //
+        //   * the READ (`listOwnReports`) goes through `runInUserContext`,
+        //     because `content_report_reporter_read` matches on `app.user_id`
+        //     and only that runner sets it. It is NOT the global handle.
+        //   * the WRITES (`fileNotice`, the snapshot capture) use the global
+        //     handle, because `ContentReport` has no `app_user` INSERT policy
+        //     arm and `ReportSnapshot` denies `app_user` for every command.
+        //     A write through `runInUserContext` would be refused by design.
+        //
+        // So this is the opposite of the usual shape of this exemption: there
+        // IS RLS, it is deliberately write-denying, and the global handle is
+        // how the privileged writer satisfies it. What stands in for tenant
+        // scoping is that `reporterUserId` comes from the verified session or
+        // is NULL, never from the request body — a write here that took a
+        // reporter id from a request would be the defect this exemption could
+        // hide, and it is the thing to check in review.
+        //
+        // The anonymous path has no session at all, which is the Art 16 duty
+        // and the reason a tenant- or person-bound client cannot serve it.
+        'trust-safety.ts',
         // #15 — `AgriEvent` is a GLOBAL catalogue (no tenantId / no RLS, like
         // `Unit` / `Promotion` / `Framework`). The tenant-facing READ still goes
         // through `runInTenantContext`; the global handle is used by exactly two

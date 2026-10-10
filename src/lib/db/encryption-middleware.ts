@@ -218,6 +218,10 @@ export const GLOBAL_KEK_MODELS: ReadonlySet<string> = new Set([
     'ContentReport',
     'ModerationAction',
     'StatementOfReasons',
+    // P5.2 (#1593). Tenantless and encrypted. Written on the privileged path
+    // while serving a reporter's request, read only by platform admins — so
+    // there is no tenant whose key could serve either side.
+    'ReportSnapshot',
 ]);
 
 /**

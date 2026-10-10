@@ -13,10 +13,10 @@
  */
 import type { NextRequest } from 'next/server';
 
-import { auth } from '@/auth';
+import { getUserCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
-import { unauthorized, badRequest } from '@/lib/errors/types';
+import {badRequest } from '@/lib/errors/types';
 import {
     uploadOwnAvatar,
     removeOwnAvatar,
@@ -24,8 +24,12 @@ import {
 } from '@/lib/account/avatar';
 
 export const POST = withApiErrorHandling(async (req: NextRequest) => {
-    const session = await auth();
-    if (!session?.user?.id) throw unauthorized();
+    // `getUserCtx`, not `auth()` (#1579). It refuses three callers this route
+    // used to answer: an `iflk_` API key presented as a person credential
+    // (which must not be served as the cookie's user), an MFA-pending session,
+    // and — on a social surface — the operator-only persona. This is an
+    // `account` surface, so a MECHANISATOR is correctly NOT refused.
+    const ctx = await getUserCtx(req);
 
     const formData = await req.formData();
     const file = formData.get('file');
@@ -40,14 +44,18 @@ export const POST = withApiErrorHandling(async (req: NextRequest) => {
     }
 
     const buf = Buffer.from(await file.arrayBuffer());
-    const result = await uploadOwnAvatar(session.user.id, buf);
+    const result = await uploadOwnAvatar(ctx.userId, buf);
     return jsonResponse(result, { status: 200 });
 });
 
-export const DELETE = withApiErrorHandling(async () => {
-    const session = await auth();
-    if (!session?.user?.id) throw unauthorized();
+export const DELETE = withApiErrorHandling(async (req: NextRequest) => {
+    // `getUserCtx`, not `auth()` (#1579). It refuses three callers this route
+    // used to answer: an `iflk_` API key presented as a person credential
+    // (which must not be served as the cookie's user), an MFA-pending session,
+    // and — on a social surface — the operator-only persona. This is an
+    // `account` surface, so a MECHANISATOR is correctly NOT refused.
+    const ctx = await getUserCtx(req);
 
-    await removeOwnAvatar(session.user.id);
+    await removeOwnAvatar(ctx.userId);
     return jsonResponse({ success: true });
 });
