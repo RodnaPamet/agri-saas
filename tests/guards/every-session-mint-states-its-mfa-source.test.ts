@@ -90,6 +90,25 @@ describe('every session mint states its MFA source', () => {
         expect(callers).toEqual(Object.keys(EXPECTED).sort());
     });
 
+    it('the Apple route refuses BEFORE it writes a session row', () => {
+        // Order, not presence. The first version of this gate sat inside the
+        // route's `buildClaims`, which runs AFTER `recordNewSession` — so a
+        // refused sign-in still created a `UserSession` row for a session
+        // never issued. `recordNewSession` enforces `maxConcurrentSessions`,
+        // so on a farm with that limit set, repeated refused attempts would
+        // evict the person's real sessions: a refusal that costs the user
+        // their other sessions is worse than the gate it enforces.
+        //
+        // A test asserting only that the refusal EXISTS passes either way,
+        // which is why this one is about position.
+        const src = read('src/app/api/auth/native/apple/route.ts');
+        const gate = src.indexOf('await assertMfaNotOwed(');
+        const write = src.indexOf('recordNewSession({');
+        expect(gate).toBeGreaterThan(-1);
+        expect(write).toBeGreaterThan(-1);
+        expect(gate).toBeLessThan(write);
+    });
+
     it('control: the scan FINDS a caller, so an empty result cannot pass', () => {
         const files = collectSourceFiles({ roots: ['src'], extensions: ['.ts'], floor: 500 });
         expect(files.length).toBeGreaterThan(500);
