@@ -521,7 +521,9 @@ Three tiers, each scoped to a different traffic class. Operator runbook:
 - **Storage is Upstash with an in-process Map fallback**, degrading
   fail-to-local on a Redis error, never fail-open. **The Map is only correct on
   a single node** — behind a load balancer the real limit is `N × preset`, and
-  the live stack pins `RATE_LIMIT_MODE: memory`. That is the first thing to
+  the live stack pins `RATE_LIMIT_MODE: redis` (P1.8 — the VM's own Redis, so
+  counters survive a deploy; measured on the VM 2026-10-11, and this line said
+  `memory` until then). A second replica is still the first thing to
   change when a second replica appears.
 - 429s carry `Retry-After` + `X-RateLimit-*` + `x-request-id`.
   **Body never contains IP/userId/tenantSlug.** Presets live in
@@ -2218,6 +2220,74 @@ retry would re-SPEND. The quarter-hourly cadence is a SAMPLING choice, not a
 latency one — nothing waits on a score, and an even spread across the month
 beats spending the whole budget in a few runs and leaving the rest of the month
 unscored.
+
+### P5.9 — suspension, and why the check is in `getSessionOrThrow` of all places
+
+`User.suspendedAt` is read on EVERY authenticated request, so a suspension takes
+effect on the next one (#1600). Policy in `src/lib/auth/suspension.ts`, the
+platform verbs in `src/app-layer/usecases/account-suspension.ts`.
+
+**It closes #1635, which is the thing to understand first.**
+`ACCOUNT_SUSPENDED` had been a recordable outcome since P5.1 and an announced
+one since P5.4b — the Art 17 statement tells the recipient «не можете да
+публикувате или да изпращате съобщения» — while `User` had no suspension column
+and `actOnNotice` wrote the row and stopped. Each phase was individually
+correct; nobody shipped the enforcement, and an unused enum string fails no
+guard. So `ActOnNoticeSchema` now REQUIRES `suspendUserId` for
+`ACCOUNT_SUSPENDED` / `ACCOUNT_TERMINATED`: the outcome cannot be recorded
+without being performed.
+
+**`suspendUserId` is supplied, never derived**, for the reason
+`recipientUserId` is on a statement: a notice names CONTENT, and a reported
+listing belongs to a FARM whose members are several. Which account to lock out
+is a judgement, not a lookup.
+
+**The check lives in `getSessionOrThrow` because the Edge cannot do it.**
+"Within one request" belongs in `src/middleware.ts`, which is the one reader of
+`token.error` and covers cookie and bearer alike — and middleware declares no
+runtime, so it is EDGE, and `redisBucket.ts` states the consequence: *"ioredis
+is Node-only, and so is Prisma, so the Edge has no persistent store available at
+all in this deployment."* Upstash is absent in production. Setting
+`token.error` from the `jwt` callback fails too: that callback runs on
+re-issue, not per request, which is why the `sessionVersion` check is throttled
+at all. `getSessionOrThrow` is the Node choke point — all three ctx resolvers
+call it, and it goes through `auth()` (cookie first, bearer fallback).
+
+**The two fail directions are OPPOSITE, and that asymmetry is the design.**
+Redis unreadable falls THROUGH to Postgres, because Redis is an optimisation
+over the authority rather than the authority. Postgres unreadable fails CLOSED —
+and that costs nothing new, because a request that cannot read
+`User.suspendedAt` cannot do the work it came for either. That is why
+`src/middleware.ts` can keep failing open on an unknown SESSION answer while
+this fails closed on an unknown SUSPENSION answer; do not "fix" that catch by
+reference to #1600.
+
+**The cache TTL is a backstop, not the revocation window.** `suspendAccount`
+invalidates the key through `afterCommit`, so the TTL only matters if that is
+lost. Invalidating BEFORE the commit would be worse than not invalidating: a
+request in the window would re-populate the pre-suspension value and pin it for
+the full TTL.
+
+**`suspendAccountOnTx` takes the caller's transaction.** `actOnNotice` is
+deliberately one transaction, and a second pool connection inside an open one is
+the #1191 P0.8 deadlock. The post-commit effects queue through `afterCommit`, so
+a rolled-back decision cannot leave a suspension announced in the audit chain.
+
+**Three writes, one transaction:** `suspendedAt`, `sessionVersion` incremented
+(so the throttled path also ends the session — belt and braces), and
+`UserSession.revokedAt` on every live row (so the console agrees with reality).
+Re-suspending does NOT re-stamp `suspendedAt`: that timestamp is what an appeal
+and a regulator date from. Lifting does NOT decrement `sessionVersion` or
+un-revoke sessions — reinstatement restores the ability to sign in, not
+credentials that may since have been shared.
+
+**A cache test needs Redis mocked, not a real one.** There is no `REDIS_URL` in
+`.env.test`, so `getRedis()` returns null and every cache path is dead code in
+integration tests. A test asserting cache behaviour there passes whatever the
+code does — found by mutation proof, where deleting the invalidation reddened
+nothing. The cache is covered in `tests/unit/suspension-cache.test.ts` (the
+helper) and `tests/unit/account-suspension-wiring.test.ts` (that anybody calls
+it); between them they cover the SEAM that the two halves alone did not.
 
 ## Failing tests
 

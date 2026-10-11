@@ -41,6 +41,8 @@
 import { randomUUID } from 'node:crypto';
 
 import prisma from '@/lib/prisma';
+import { suspendAccountOnTx } from './account-suspension';
+import { codedBadRequest } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logger } from '@/lib/observability/logger';
 import type { PlatformKeyGeneration } from '@/lib/auth/platform-admin';
@@ -158,7 +160,13 @@ export async function actOnNotice(input: {
     actionKind: ModerationActionKind;
     rationale: string;
     generation: PlatformKeyGeneration;
-}): Promise<{ actionId: string; status: ReportStatus }> {
+    /**
+     * REQUIRED by `ActOnNoticeSchema` when the outcome withholds access.
+     * Supplied, never derived: a notice names CONTENT, and a reported listing
+     * belongs to a farm whose members are several — see the schema.
+     */
+    suspendUserId?: string;
+}): Promise<{ actionId: string; status: ReportStatus; suspended?: boolean }> {
     const report = await prisma.contentReport.findUnique({
         where: { id: input.reportId },
         select: { id: true, subjectKind: true, subjectId: true, status: true },
@@ -171,8 +179,16 @@ export async function actOnNotice(input: {
     // ONE transaction. A notice marked ACTIONED with no action row, or an
     // action whose notice still reads RECEIVED, are both states the queue
     // cannot tell from a crash — so neither is reachable.
-    await prisma.$transaction([
-        prisma.moderationAction.create({
+    //
+    // INTERACTIVE since P5.9, where it was an array. The suspension has to be
+    // in the SAME transaction as the decision that records it: an
+    // `ACCOUNT_SUSPENDED` row with no suspension is #1635, and a suspension
+    // with no row is an unexplained lockout. `suspendAccountOnTx` takes this
+    // `tx` rather than opening its own, because a second pool connection
+    // inside an open transaction is the #1191 P0.8 deadlock.
+    let suspended: boolean | undefined;
+    await prisma.$transaction(async (tx) => {
+        await tx.moderationAction.create({
             data: {
                 id: actionId,
                 reportId: report.id,
@@ -185,12 +201,39 @@ export async function actOnNotice(input: {
                 subjectId: report.subjectId,
                 rationale: sanitizePlainText(input.rationale),
             },
-        }),
-        prisma.contentReport.update({
+        });
+        await tx.contentReport.update({
             where: { id: report.id },
             data: { status },
-        }),
-    ]);
+        });
+
+        // ACCOUNT_TERMINATED withholds access too, so it suspends here as
+        // well. The ERASURE half is P5.6 (#1597, now settled on the Art
+        // 17(3)(b) basis) — so a terminated account is locked out today and
+        // pseudonymised when that lands, rather than announced and left
+        // reachable.
+        if (input.actionKind === 'ACCOUNT_SUSPENDED'
+            || input.actionKind === 'ACCOUNT_TERMINATED') {
+            if (!input.suspendUserId) {
+                // Unreachable through the route — `ActOnNoticeSchema`'s
+                // refinement refuses it — and asserted here because this
+                // usecase is also called directly by tests and could be
+                // called by a future surface.
+                //
+                // A TYPED error, not `new Error`: `no direct Error throws in
+                // usecases` caught that, and the coded form also lowers the
+                // `no-server-authored-user-copy` count rather than merely not
+                // raising it, because the message is a bare code.
+                throw codedBadRequest('SUSPEND_TARGET_REQUIRED', 'SUSPEND_TARGET_REQUIRED');
+            }
+            const outcome = await suspendAccountOnTx(tx, {
+                userId: input.suspendUserId,
+                generation: input.generation,
+                reason: input.rationale,
+            });
+            suspended = outcome.applied;
+        }
+    });
 
     logger.info('moderation.acted', {
         component: 'moderation',
@@ -201,7 +244,7 @@ export async function actOnNotice(input: {
         generation: input.generation,
     });
 
-    return { actionId, status };
+    return { actionId, status, ...(suspended === undefined ? {} : { suspended }) };
 }
 
 /**

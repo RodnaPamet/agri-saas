@@ -31,6 +31,7 @@ import {
 } from '@/app-layer/usecases/moderation';
 import { fileNotice } from '@/app-layer/usecases/trust-safety';
 import { decryptField } from '@/lib/security/encryption';
+import { encryptField, hashForLookup } from '@/lib/security/encryption';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 
 const globalPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
@@ -56,6 +57,26 @@ async function fileOne(reporter: string | null = REPORTER) {
     return filed.id;
 }
 
+const suspendableUsers: string[] = [];
+
+/**
+ * A user the suspension path can act on.
+ *
+ * `updatedAt` is spelled out because `@updatedAt` is applied by the Prisma
+ * CLIENT, not as a database default, so a raw INSERT omitting it fails 23502.
+ */
+async function makeSuspendableUser(): Promise<string> {
+    const id = `u-p59-${randomUUID()}`;
+    const email = `p59-${randomUUID()}@example.test`;
+    await globalPrisma.$executeRawUnsafe(
+        `INSERT INTO "User"("id","emailEncrypted","emailHash","updatedAt")
+         VALUES ($1,$2,$3,NOW())`,
+        id, encryptField(email), hashForLookup(email),
+    );
+    suspendableUsers.push(id);
+    return id;
+}
+
 describeFn('P5.4a — the moderation console (#1595)', () => {
     beforeAll(async () => { await globalPrisma.$connect(); });
 
@@ -63,6 +84,16 @@ describeFn('P5.4a — the moderation console (#1595)', () => {
         if (statements.length) {
             await globalPrisma.$executeRawUnsafe(
                 `DELETE FROM "StatementOfReasons" WHERE "id" = ANY($1::text[])`, statements,
+            );
+        }
+        if (suspendableUsers.length) {
+            // Before the actions, which is only cosmetic here (no FK to User —
+            // P5.1 ships none on purpose), but keeps the order readable.
+            await globalPrisma.$executeRawUnsafe(
+                `DELETE FROM "UserSession" WHERE "userId" = ANY($1::text[])`, suspendableUsers,
+            );
+            await globalPrisma.$executeRawUnsafe(
+                `DELETE FROM "User" WHERE "id" = ANY($1::text[])`, suspendableUsers,
             );
         }
         if (actions.length) {
@@ -158,9 +189,15 @@ describeFn('P5.4a — the moderation console (#1595)', () => {
 
         it('moves the notice and writes the action TOGETHER', async () => {
             const id = await fileOne();
-            const { actionId, status } = await actOnNotice({
+            // P5.9: an access-withholding outcome now REQUIRES the account to
+            // withhold from. This test used to pass `ACCOUNT_SUSPENDED` with no
+            // target, which is #1635 exactly — the console accepted it, the
+            // statement told the person they were suspended, and nothing was.
+            const target = await makeSuspendableUser();
+            const { actionId, status, suspended } = await actOnNotice({
                 reportId: id, actionKind: 'ACCOUNT_SUSPENDED',
                 rationale: 'repeat offender', generation: 'current',
+                suspendUserId: target,
             });
             actions.push(actionId);
             expect(status).toBe('ACTIONED');
@@ -175,6 +212,36 @@ describeFn('P5.4a — the moderation console (#1595)', () => {
             );
             expect(rows[0].s).toBe('ACTIONED');
             expect(Number(rows[0].n)).toBe(1);
+
+            // THE THIRD HALF, which is what P5.9 adds: the account is actually
+            // suspended. The decision and the act are one transaction, so a
+            // recorded suspension that did not happen is unreachable.
+            expect(suspended).toBe(true);
+            const u = await globalPrisma.$queryRawUnsafe<Array<{ s: Date | null }>>(
+                `SELECT "suspendedAt" AS s FROM "User" WHERE "id" = $1`, target);
+            expect(u[0].s).not.toBeNull();
+        });
+
+        it('REFUSES to record a suspension with no account named', async () => {
+            // The property that closes #1635: the outcome cannot be recorded
+            // without being performed. Supplied rather than derived because a
+            // notice names CONTENT — a reported listing belongs to a farm.
+            const id = await fileOne();
+            await expect(actOnNotice({
+                reportId: id, actionKind: 'ACCOUNT_SUSPENDED',
+                rationale: 'no target given', generation: 'current',
+            })).rejects.toThrow('SUSPEND_TARGET_REQUIRED');
+
+            // And NOTHING was recorded — the refusal is inside the transaction,
+            // so the action row and the status move roll back together.
+            const rows = await globalPrisma.$queryRawUnsafe<Array<{ s: string; n: bigint }>>(
+                `SELECT r."status" AS s, COUNT(a."id")::bigint AS n
+                 FROM "ContentReport" r
+                 LEFT JOIN "ModerationAction" a ON a."reportId" = r."id"
+                 WHERE r."id" = $1 GROUP BY r."status"`, id,
+            );
+            expect(rows[0].s).toBe('RECEIVED');
+            expect(Number(rows[0].n)).toBe(0);
         });
 
         it('treats NONE as a DECISION — rejected, not left received', async () => {

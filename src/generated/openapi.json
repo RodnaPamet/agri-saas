@@ -131,6 +131,11 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 8000
+          },
+          "suspendUserId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
           }
         },
         "required": [
@@ -138,7 +143,7 @@
           "actionKind",
           "rationale"
         ],
-        "description": "A moderation decision on a notice. The moderator is taken from the verified platform key and is never read from this body; the subject is denormalised from the notice."
+        "description": "A moderation decision on a notice. The moderator is taken from the verified platform key and is never read from this body; the subject is denormalised from the notice.\n\n`suspendUserId` is REQUIRED when `actionKind` is `ACCOUNT_SUSPENDED` or `ACCOUNT_TERMINATED`, and rejected as `SUSPEND_TARGET_REQUIRED` otherwise. It is supplied rather than derived for the same reason `recipientUserId` is on a statement: a notice names CONTENT, a reported listing belongs to a farm, and which member to lock out is a judgement rather than a lookup."
       },
       "AdminMember": {
         "type": "object",
@@ -7499,6 +7504,18 @@
         ],
         "description": "Rent PAID against a lease for one season. `unit` defaults to the lease’s canonical rent unit, which is what stops grain rent being booked against a money obligation. seasonYear is the season settled, which is not necessarily the year in paidAt."
       },
+      "LiftAccountSuspension": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId"
+        ],
+        "description": "The account to reinstate."
+      },
       "LocationBulkDeleteRequest": {
         "type": "object",
         "properties": {
@@ -12043,6 +12060,21 @@
           "success"
         ],
         "description": "Empty success envelope. Returned by mutation endpoints that have no resource to echo back (e.g. status changes, links, deletes)."
+      },
+      "SuspendAccount": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId"
+        ],
+        "description": "The account to withhold access from, and an optional operator note."
       },
       "Task": {
         "type": "object",
@@ -48973,6 +49005,306 @@
                   },
                   "required": [
                     "statementId"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries an English `message` as a developer-facing fallback; it is NOT translated, so render your own copy keyed on `code`. Route-level 403s carry their own codes and are described on the operation that returns them.\n\nOne route-level code is described HERE rather than per-operation. MOST operations cannot return it — it is confined to the five capability families named below — but it means the same thing on each of them, and one of the five (`upload`) is gated at a choke point that many unrelated routes reach, so an exhaustive per-operation list would be the kind that is wrong by omission:\n\n- `PAST_DUE_RESTRICTED` — a payment on this tenant failed and the 14-day grace period has elapsed. It is NOT a quota or a plan ceiling: the plan is untouched and nothing was exceeded. The withheld capabilities are exactly `exchange`, `trends`, `task.create`, `upload` and `journal.create`; every other surface, including reading everything already recorded, is unaffected. The tenant's own ACTIVE exchange listings stay visible to other farms and inbound threads keep arriving — this is the unpaid tenant's own view closing, not a withdrawal.\n\n  The restriction is COMPUTED per request, with no sweep and nothing to settle, so a cleared balance lifts it on the very next request — a client can honestly tell the user to resolve it and refresh. This description deliberately names no remedy beyond that: App Store guideline 3.1.1 keeps the native client from pointing anyone to pay outside the app, so a prescribed destination would be unreachable for one of the two clients (#1490). What both clients CAN do is distinguish this from `plan_limit_exceeded:` and say which happened.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/moderation/suspensions": {
+      "post": {
+        "operationId": "suspendAccount",
+        "summary": "Moderation — suspend an account",
+        "description": "Withholds an account’s access immediately. The suspension is read on EVERY authenticated request, so it takes effect on the next one rather than at the next token refresh.\n\n**This exists alongside the notice route rather than instead of it.** Recording `ACCOUNT_SUSPENDED` on a notice already suspends the named account, in the same transaction — recording that outcome without performing it was a real defect (#1635), where the console reported success, the Art 17 statement told the recipient they could not post, and nothing withheld anything. What a notice cannot do is LIFT a suspension (an upheld appeal has no notice to act on) or suspend an account found abusive by a pattern across many subjects rather than by one report.\n\n`userId` is supplied, never derived. A notice names CONTENT — a reported listing belongs to a farm whose members are several — so which account to withhold from is a judgement a moderator makes, the same reasoning that puts `recipientUserId` on a statement.\n\nIdempotent: suspending an already-suspended account returns `alreadySuspended: true` and does NOT re-stamp the original timestamp, which is what an appeal and a regulator both date from. 404 when no such account exists — a platform admin is entitled to that difference.\n\nAudited to the `moderation` scope of `PlatformAuditLog`. `reason` is accepted and deliberately NOT stored there: only whether there was one, because `detailsJson` is not an encrypted column and the rationale belongs on `ModerationAction.rationale`, which is.\n\n**Platform-admin key**, not a tenant permission. Every role in the enum is tenant-scoped, so `admin.manage` would let an ADMIN of any one farm read every other farm’s notices — which is also why the underlying tables deny `app_user` outright rather than relying on this route to filter.",
+        "tags": [
+          "Moderation"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuspendAccount"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The account is suspended.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "suspended": {
+                      "type": "boolean"
+                    },
+                    "alreadySuspended": {
+                      "type": "boolean"
+                    },
+                    "sessionsRevoked": {
+                      "type": "integer",
+                      "description": "Live `UserSession` rows stamped revoked. Zero is normal — they may simply not be signed in."
+                    }
+                  },
+                  "required": [
+                    "suspended",
+                    "alreadySuspended",
+                    "sessionsRevoked"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries an English `message` as a developer-facing fallback; it is NOT translated, so render your own copy keyed on `code`. Route-level 403s carry their own codes and are described on the operation that returns them.\n\nOne route-level code is described HERE rather than per-operation. MOST operations cannot return it — it is confined to the five capability families named below — but it means the same thing on each of them, and one of the five (`upload`) is gated at a choke point that many unrelated routes reach, so an exhaustive per-operation list would be the kind that is wrong by omission:\n\n- `PAST_DUE_RESTRICTED` — a payment on this tenant failed and the 14-day grace period has elapsed. It is NOT a quota or a plan ceiling: the plan is untouched and nothing was exceeded. The withheld capabilities are exactly `exchange`, `trends`, `task.create`, `upload` and `journal.create`; every other surface, including reading everything already recorded, is unaffected. The tenant's own ACTIVE exchange listings stay visible to other farms and inbound threads keep arriving — this is the unpaid tenant's own view closing, not a withdrawal.\n\n  The restriction is COMPUTED per request, with no sweep and nothing to settle, so a cleared balance lifts it on the very next request — a client can honestly tell the user to resolve it and refresh. This description deliberately names no remedy beyond that: App Store guideline 3.1.1 keeps the native client from pointing anyone to pay outside the app, so a prescribed destination would be unreachable for one of the two clients (#1490). What both clients CAN do is distinguish this from `plan_limit_exceeded:` and say which happened.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "liftAccountSuspension",
+        "summary": "Moderation — lift a suspension",
+        "description": "Restores access on the next request. This is the DSA redress path: a suspension with no way back is a permanent ban wearing a temporary name.\n\nTakes a BODY rather than a path or query parameter, for the reason P5.2b’s unblock route does: iOS logs the full URL including the query string, unsuppressably, so a third party’s user id in a device log is the disclosure this phase exists to prevent.\n\n`sessionVersion` is NOT decremented and revoked sessions are NOT restored. Both are one-way: reinstatement returns the ability to sign in, not the credentials that existed before — un-revoking one would resurrect a session that may since have been shared or captured.\n\n**Platform-admin key**, not a tenant permission. Every role in the enum is tenant-scoped, so `admin.manage` would let an ADMIN of any one farm read every other farm’s notices — which is also why the underlying tables deny `app_user` outright rather than relying on this route to filter.",
+        "tags": [
+          "Moderation"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LiftAccountSuspension"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The suspension is lifted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "suspended": {
+                      "type": "boolean"
+                    },
+                    "wasSuspended": {
+                      "type": "boolean",
+                      "description": "False when the account was not suspended — the call is idempotent rather than an error."
+                    }
+                  },
+                  "required": [
+                    "suspended",
+                    "wasSuspended"
                   ]
                 }
               }

@@ -1129,12 +1129,50 @@ export const ActOnNoticeSchema = z.object({
      * is the text the statement is built from.
      */
     rationale: z.string().min(1, 'rationale is required').max(MODERATION_RATIONALE_MAX),
-}).strip().openapi('ActOnNotice', {
-    description:
-        'A moderation decision on a notice. The moderator is taken from the '
-        + 'verified platform key and is never read from this body; the subject '
-        + 'is denormalised from the notice.',
-});
+    /**
+     * The account to suspend, REQUIRED when the outcome is one that withholds
+     * access (P5.9, #1600 — and the fix for #1635).
+     *
+     * Supplied rather than derived, for the reason `recipientUserId` is
+     * supplied on `QueueStatementSchema`: a notice's subject is CONTENT, not a
+     * person. A reported listing names a FARM, and a farm has members — so
+     * "the account responsible" is a judgement a moderator makes, and deriving
+     * it would be guessing which member to lock out.
+     *
+     * The refinement below makes it IMPOSSIBLE to record `ACCOUNT_SUSPENDED`
+     * without naming an account. That is what closes #1635: for a month the
+     * console accepted that outcome, the Art 17 statement told the recipient
+     * "you cannot post or send messages", and nothing anywhere withheld
+     * anything. A decision that cannot be recorded without being performed
+     * cannot drift back into that state.
+     */
+    suspendUserId: z.string().min(1).max(200).optional(),
+})
+    .strip()
+    .refine(
+        (v) =>
+            !(v.actionKind === 'ACCOUNT_SUSPENDED' || v.actionKind === 'ACCOUNT_TERMINATED')
+            || Boolean(v.suspendUserId),
+        {
+            // A bare code, no English prose — `no-server-authored-user-copy`
+            // holds thrown sentences on a downward ratchet, and this one
+            // reaches a platform operator rather than a farmer.
+            message: 'SUSPEND_TARGET_REQUIRED',
+            path: ['suspendUserId'],
+        },
+    )
+    .openapi('ActOnNotice', {
+        description:
+            'A moderation decision on a notice. The moderator is taken from the '
+            + 'verified platform key and is never read from this body; the subject '
+            + 'is denormalised from the notice.'
+            + '\n\n`suspendUserId` is REQUIRED when `actionKind` is '
+            + '`ACCOUNT_SUSPENDED` or `ACCOUNT_TERMINATED`, and rejected as '
+            + '`SUSPEND_TARGET_REQUIRED` otherwise. It is supplied rather than '
+            + 'derived for the same reason `recipientUserId` is on a statement: a '
+            + 'notice names CONTENT, a reported listing belongs to a farm, and '
+            + 'which member to lock out is a judgement rather than a lookup.',
+    });
 
 export const QueueStatementSchema = z.object({
     actionId: z.string().min(1).max(200),

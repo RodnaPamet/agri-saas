@@ -48,7 +48,19 @@ function getDefaultPrisma(): PrismaClient {
  * inspect appears to have a gap. Adding a scope is a deliberate act; getting
  * one wrong should not be possible.
  */
-export const PLATFORM_AUDIT_SCOPES = ['feature-flags', 'key-rotation'] as const;
+export const PLATFORM_AUDIT_SCOPES = [
+    'feature-flags',
+    'key-rotation',
+    // P5.9 (#1600) — platform moderation acting on an ACCOUNT: suspension and
+    // its lifting. A third chain rather than entries on an existing one,
+    // because `scope` IS the chain key and an operator reading "the history of
+    // moderation actions" must not have key rotations interleaved into it.
+    //
+    // #1619 adds the moderation DECISIONS (acting on a notice, queueing a
+    // statement) to this same scope, so the chain ends up carrying the whole
+    // moderation history rather than two halves in two places.
+    'moderation',
+] as const;
 export type PlatformAuditScope = (typeof PLATFORM_AUDIT_SCOPES)[number];
 
 export interface AppendPlatformAuditInput {

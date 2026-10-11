@@ -135,4 +135,68 @@ export function registerModerationPaths(registry: OpenAPIRegistry): void {
             schema: z.object({ statementId: z.string() }),
         },
     });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/admin/moderation/suspensions',
+        operationId: 'suspendAccount',
+        summary: 'Moderation — suspend an account',
+        description:
+            'Withholds an account\u2019s access immediately. The suspension is read on EVERY authenticated request, so it takes effect on the next one rather than at the next token refresh.'
+            + '\n\n**This exists alongside the notice route rather than instead of it.** Recording `ACCOUNT_SUSPENDED` on a notice already suspends the named account, in the same transaction \u2014 recording that outcome without performing it was a real defect (#1635), where the console reported success, the Art 17 statement told the recipient they could not post, and nothing withheld anything. What a notice cannot do is LIFT a suspension (an upheld appeal has no notice to act on) or suspend an account found abusive by a pattern across many subjects rather than by one report.'
+            + '\n\n`userId` is supplied, never derived. A notice names CONTENT \u2014 a reported listing belongs to a farm whose members are several \u2014 so which account to withhold from is a judgement a moderator makes, the same reasoning that puts `recipientUserId` on a statement.'
+            + '\n\nIdempotent: suspending an already-suspended account returns `alreadySuspended: true` and does NOT re-stamp the original timestamp, which is what an appeal and a regulator both date from. 404 when no such account exists \u2014 a platform admin is entitled to that difference.'
+            + '\n\nAudited to the `moderation` scope of `PlatformAuditLog`. `reason` is accepted and deliberately NOT stored there: only whether there was one, because `detailsJson` is not an encrypted column and the rationale belongs on `ModerationAction.rationale`, which is.'
+            + KEY_GATE,
+        tags: ['Moderation'],
+        body: z
+            .object({
+                userId: z.string(),
+                reason: z.string().optional(),
+            })
+            .openapi('SuspendAccount', {
+                description: 'The account to withhold access from, and an optional operator note.',
+            }),
+        success: {
+            status: 200,
+            description: 'The account is suspended.',
+            schema: z.object({
+                suspended: z.boolean(),
+                alreadySuspended: z.boolean(),
+                sessionsRevoked: z.number().int().openapi({
+                    description:
+                        'Live `UserSession` rows stamped revoked. Zero is normal \u2014 they may simply not be signed in.',
+                }),
+            }),
+        },
+    });
+
+    op(registry, {
+        method: 'delete',
+        path: '/api/admin/moderation/suspensions',
+        operationId: 'liftAccountSuspension',
+        summary: 'Moderation — lift a suspension',
+        description:
+            'Restores access on the next request. This is the DSA redress path: a suspension with no way back is a permanent ban wearing a temporary name.'
+            + '\n\nTakes a BODY rather than a path or query parameter, for the reason P5.2b\u2019s unblock route does: iOS logs the full URL including the query string, unsuppressably, so a third party\u2019s user id in a device log is the disclosure this phase exists to prevent.'
+            + '\n\n`sessionVersion` is NOT decremented and revoked sessions are NOT restored. Both are one-way: reinstatement returns the ability to sign in, not the credentials that existed before \u2014 un-revoking one would resurrect a session that may since have been shared or captured.'
+            + KEY_GATE,
+        tags: ['Moderation'],
+        body: z
+            .object({ userId: z.string() })
+            .openapi('LiftAccountSuspension', {
+                description: 'The account to reinstate.',
+            }),
+        success: {
+            status: 200,
+            description: 'The suspension is lifted.',
+            schema: z.object({
+                suspended: z.boolean(),
+                wasSuspended: z.boolean().openapi({
+                    description:
+                        'False when the account was not suspended \u2014 the call is idempotent rather than an error.',
+                }),
+            }),
+        },
+    });
 }

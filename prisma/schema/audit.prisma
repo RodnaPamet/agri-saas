@@ -95,6 +95,11 @@ enum PlatformAuditAction {
   // #1237 — the LOOKUP-hash rehash sweep. In the `key-rotation` scope with the
   // three above, because an operator reads "retiring a key" as one history.
   LOOKUP_HASH_REHASHED
+  // P5.9 (#1600) — platform moderation acting on an account, in the
+  // `moderation` scope. Paired on purpose: a suspension history that recorded
+  // only the suspensions would show every account as still suspended.
+  ACCOUNT_SUSPENDED
+  ACCOUNT_SUSPENSION_LIFTED
 }
 
 model PlatformAuditLog {

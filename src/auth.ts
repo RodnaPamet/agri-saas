@@ -879,7 +879,26 @@ export const authOptions: NextAuthOptions = {
                         }
                         token.sessionVersionCheckedAt = now;
                     } catch {
-                        // Fail open on telemetry-side failures.
+                        // Still fails OPEN, and that is still right for THIS
+                        // check — `src/middleware.ts` gives the reason:
+                        // "failing closed there would turn a database blip into
+                        // a fleet-wide sign-out of every operator mid-field",
+                        // and the defect was never the fail-open on an UNKNOWN
+                        // answer but ignoring a DEFINITE one.
+                        //
+                        // P5.9's "for a suspension, failing open is the wrong
+                        // direction" (#1600) is addressed WITHOUT changing this
+                        // line, because a suspension no longer depends on it.
+                        // `getSessionOrThrow` checks `User.suspendedAt` on
+                        // every request and fails CLOSED there — where failing
+                        // closed is free, since a request that cannot read that
+                        // row cannot do its own work either. Here the same
+                        // strictness would cost a fleet-wide sign-out to
+                        // re-close a window that is already closed.
+                        //
+                        // Do not "fix" this catch by reference to #1600: the
+                        // two checks have different blast radii and the
+                        // asymmetry is the design.
                     }
                 }
             }

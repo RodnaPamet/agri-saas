@@ -121,6 +121,27 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
         // `moderatorRef` comes from the verified key generation and the
         // subject is denormalised from the notice.
         'moderation.ts',
+        // P5.9 (#1600) — `account-suspension.ts` writes `User.suspendedAt`,
+        // `User.sessionVersion` and `UserSession.revokedAt` for a person the
+        // caller is NOT: a platform moderator with no tenant context, acting
+        // on an account that may hold several farms or none at all. A
+        // tenantless account is precisely what an abuse suspension most often
+        // hits, which is why `revokeUserSessions` — tenant-scoped by
+        // construction, requiring a `TenantMembership` for the target — cannot
+        // serve it (#1600 DECISION 2).
+        //
+        // So the global handle is not a shortcut, it is the only client that
+        // can reach the row. What stands in for RLS is the route gate
+        // (`verifyPlatformApiKey`) plus, for the notice path, the same gate on
+        // `POST /notices`.
+        //
+        // The defect this exemption could hide is the one to check in review:
+        // a function here taking the target id from somewhere a NON-platform
+        // caller controls. Today both verbs take an explicit `userId` from a
+        // platform-gated body, and `actOnNotice` passes the `suspendUserId`
+        // its own platform-gated schema requires — never a value derived from
+        // the notice, because a notice names content rather than a person.
+        'account-suspension.ts',
         // #15 — `AgriEvent` is a GLOBAL catalogue (no tenantId / no RLS, like
         // `Unit` / `Promotion` / `Framework`). The tenant-facing READ still goes
         // through `runInTenantContext`; the global handle is used by exactly two
