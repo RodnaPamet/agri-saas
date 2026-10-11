@@ -21,6 +21,17 @@
  * Idempotent: safe to run multiple times without duplicating data.
  */
 
+// `hashForLookup` was CALLED at step 2 and never imported, so this script
+// threw `ReferenceError: hashForLookup is not defined` and could never resolve
+// its admin user. Nothing caught it because `scripts/` sat outside every
+// typecheck program — the same exclusion this file's own docblock already
+// blames for three field bugs it carried (#1485).
+//
+// An `import` rather than a `require` to match the rest of the repo and to get
+// the symbol TYPED; the file's existing `require` calls and `__dirname` are
+// untouched, and ts-node/tsx emit CommonJS here so both forms coexist.
+import { hashForLookup } from '@/lib/security/encryption';
+
 const { PrismaClient: StagingPrismaClient } = require('@prisma/client');
 const path = require('path');
 

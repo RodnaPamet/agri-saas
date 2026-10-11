@@ -474,13 +474,21 @@ jobs:
         # instance (NODE_OPTIONS does not reliably reach the tsc process).
         run: node --max-old-space-size=8192 ./node_modules/typescript/bin/tsc --noEmit
 
-      - name: Run tsc --noEmit on the production entrypoints
+      - name: Run tsc --noEmit on the entrypoints and data-writing scripts
         # tsconfig.json EXCLUDES `scripts`, and the step above passes no -p, so
         # it uses the root config — which means `scripts/worker.ts` and
         # `scripts/scheduler.ts`, the two processes that run the queue in
         # production, were never typechecked by anything. Nothing imports them
         # either, so they cannot arrive transitively. Separate program, same
         # heap flag, for the reason stated above. Refs #806.
+        #
+        # Since #1485 this program is no longer just those two: it carries
+        # `scripts/seed.ts` (production seeding runs `dist/seed.mjs`, bundled
+        # from it) and every script that can WRITE to a database — 20 files
+        # rather than 2. Three of the additions turned out to be scripts that
+        # could never run at all, which is what the exclusion had been hiding.
+        # `tests/guards/data-writing-scripts-are-typechecked.test.ts` derives
+        # the population, so this step's coverage cannot fall behind silently.
         run: node --max-old-space-size=8192 ./node_modules/typescript/bin/tsc -p tsconfig.scripts.json --noEmit
 
   # ═══════════════════════════════════════════════════════════════

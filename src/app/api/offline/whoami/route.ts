@@ -55,13 +55,15 @@
  * client holds a bearer, not a cookie.
  */
 import { NextResponse } from 'next/server';
-import { auth } from '@/auth';
+import { authRefusingSuspended } from '@/lib/auth/session-gate';
 import { withApiErrorHandling } from '@/lib/errors/api';
 
 export const dynamic = 'force-dynamic';
 
 export const GET = withApiErrorHandling(async () => {
-    const session = await auth();
+    // #1652: the suspension check lives in `getSessionOrThrow`, which this
+    // route does not reach — it resolved its own session with `auth()`.
+    const session = await authRefusingSuspended();
     const userId = session?.user?.id ?? null;
 
     if (!userId) {
