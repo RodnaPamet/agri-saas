@@ -104,9 +104,9 @@ export async function getTenantCtx(
  *
  * Throws `codedForbidden('MFA_REQUIRED')`, matching what the middleware's
  * tenant-path gate answers, so a client has ONE code to branch on across both
- * halves. (`getUserCtx` currently throws `forbidden('MFA_REQUIRED')`, which
- * puts the code in `message` instead — tracked as #1645 and deliberately not
- * changed here, since it alters a live response shape on every person route.)
+ * halves. `getUserCtx` answers the same code the same way since #1645; it used
+ * to call `forbidden('MFA_REQUIRED')`, which put the code in `message` and left
+ * `error.code` generic.
  */
 function assertSecondFactorPresented(session: JwtPayload, tenantId: string): void {
     // Reads the CLAIM rather than re-deriving it, and that is a correction to
@@ -183,8 +183,11 @@ export async function getUserCtx(
     if (req) {
         const bearer = extractBearerToken(req.headers.get('authorization'));
         if (bearer && isApiKeyToken(bearer)) {
-            // A code rather than prose, for the reason given at the MFA refusal.
-            throw forbidden('API_KEY_NOT_PERSON_SCOPED');
+            // Coded, for the reason given at the MFA refusal.
+            throw codedForbidden(
+                'API_KEY_NOT_PERSON_SCOPED',
+                'An API key cannot be used on a person-scoped route.',
+            );
         }
     }
 
@@ -192,22 +195,30 @@ export async function getUserCtx(
     const requestId = getRequestId(req);
 
     if (session.mfaPending === true) {
-        // A machine-readable CODE, not prose.
+        // A machine-readable CODE **in the code field**, with English beside it.
         //
-        // `tests/guards/no-server-authored-user-copy.test.ts` holds
-        // server-authored copy on a downward ratchet: a prose message thrown
-        // from `src/lib` or `src/app-layer` reaches the client verbatim —
+        // This read `forbidden('MFA_REQUIRED')` until #1645, under a comment
+        // arguing that a code beats prose because a message thrown from
+        // `src/lib` or `src/app-layer` reaches the client verbatim —
         // `ApiClientError` preserves `message` and the iOS app renders the raw
-        // envelope, English and all. A code is the half a client can translate.
+        // envelope, English and all. That half was right and the mechanism was
+        // wrong: `forbidden` takes a MESSAGE, so the code landed in `message`
+        // and `error.code` stayed generic. A client had nothing to branch on
+        // AND a farmer could be shown the literal token `MFA_REQUIRED` — the
+        // worse of both outcomes the comment was trying to choose between.
         //
-        // This deliberately does NOT match the middleware's tenant-path gate,
-        // which returns `forbiddenJson('MFA verification required')` — a
-        // different envelope (`{ error }` from the Edge) on a different path.
-        // Copying its English here would add a second untranslatable string to
-        // get a cosmetic match between two responses a client already has to
-        // handle separately. P1.6 brings the two paths together; when it does,
-        // the code is the thing worth agreeing on.
-        throw forbidden('MFA_REQUIRED');
+        // `codedForbidden` is the shape that gets both: the code is the
+        // contract a client switches on, and the message is the English
+        // fallback for a client that has never heard of it. The copy ratchet
+        // exempts a coded throw for exactly that reason, so the sentence costs
+        // nothing there.
+        //
+        // The code now AGREES with the middleware's tenant-path gate
+        // (`forbiddenJson('MFA_REQUIRED', …)`, `src/middleware.ts`). The
+        // envelopes still differ — the Edge answers its own `{ error }` shape —
+        // so a client handles the two responses separately; what it no longer
+        // has to do is know that one of them hides the code in another field.
+        throw codedForbidden('MFA_REQUIRED', 'MFA verification required.');
     }
 
     // P1.6 narrowed this from "every person-scoped surface" to the SOCIAL half.
@@ -236,7 +247,14 @@ export async function getUserCtx(
         // different envelopes on different paths anyway — the Edge's bare
         // `{ error }` versus this handler's error payload — so a client has to
         // handle them separately regardless.
-        throw forbidden('OPERATOR_SCOPE');
+        //
+        // Coded since #1645: the case argument above is about the code's
+        // SPELLING and was always right, but `forbidden` put that spelling in
+        // `message` where no client switches.
+        throw codedForbidden(
+            'OPERATOR_SCOPE',
+            'A machine operator cannot use this surface.',
+        );
     }
 
     // userId only — there is no tenant to merge, and writing one here would put

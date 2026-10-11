@@ -37,7 +37,7 @@
  * shared choke point.
  */
 import type { RequestContext } from '@/app-layer/types';
-import { forbidden } from '@/lib/errors/types';
+import { codedForbidden, forbidden } from '@/lib/errors/types';
 import { isFarmVerified } from '@/lib/farm-identity/verification-status';
 import {
     getEffectivePlan,
@@ -142,16 +142,7 @@ export async function assertAiBudget(ctx: RequestContext): Promise<AiBudgetStatu
     // upgrade prompt here would send a farmer to buy capacity they already
     // have.
     if (mode === 'SAAS' && !(await isFarmVerified(ctx))) {
-        // A bare ALL-CAPS CODE, with no English sentence beside it.
-        //
-        // `tests/guards/no-server-authored-user-copy.test.ts` holds thrown
-        // prose on a downward ratchet, because a message argument to
-        // `forbidden` reaches the client verbatim — `ApiClientError` preserves
-        // it and the iOS app renders the envelope, English and all. For a
-        // Bulgarian product that is untranslated copy escaping through the
-        // error path, which is the one place every i18n guard used to miss.
-        //
-        // So the code is the contract and the Bulgarian wording belongs to the
+        // The code is the contract and the Bulgarian wording belongs to the
         // client, keyed on it. The remedy here is "get your farm verified",
         // which is NOT what `ai_budget_exceeded` means — a client that showed
         // an upgrade prompt would send a farmer to buy capacity they already
@@ -161,7 +152,19 @@ export async function assertAiBudget(ctx: RequestContext): Promise<AiBudgetStatu
         // `ai_budget_exceeded` deliberately: that older message carries prose
         // and is one of the 502 the ratchet is draining. Draining it is a
         // welcome separate change; adding a 503rd is not.
-        throw forbidden('AI_BUDGET_REQUIRES_VERIFIED_FARM');
+        //
+        // This was `forbidden('AI_BUDGET_REQUIRES_VERIFIED_FARM')` until #1645,
+        // under a comment that opened "a bare ALL-CAPS CODE, with no English
+        // sentence beside it" and justified the omission by the copy ratchet.
+        // `forbidden` takes a MESSAGE, so what that achieved was a code in the
+        // message field and a generic `error.code` — nothing to switch on, and
+        // a farmer who could be shown the token itself. `codedForbidden` puts
+        // the code where a client reads it and the ratchet exempts the coded
+        // throw, so the English fallback costs nothing it was avoiding.
+        throw codedForbidden(
+            'AI_BUDGET_REQUIRES_VERIFIED_FARM',
+            'This farm must be verified before it can use AI features.',
+        );
     }
 
     // Unlimited (self-hosted / ENTERPRISE) — never block, never query usage.

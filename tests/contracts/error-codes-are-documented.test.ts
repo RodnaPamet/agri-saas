@@ -175,6 +175,21 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     // `POST /exchange/inquiries` was already in the spec and only wanted the
     // 409 it could already answer.
     'ACCOUNT_HAS_NO_EMAIL',
+    // `AI_BUDGET_REQUIRES_VERIFIED_FARM` is new to this list as of #1645 and
+    // for the `COMPANY_NAME_TAKEN` reason above, not because the code is
+    // unclear: its only emission path is `assertAiBudget` → `completeWithRouting`,
+    // whose sole route is `/api/t/{tenantSlug}/ai/copilot` — and NO `/ai/` path
+    // is in the spec at all. Naming it would mean documenting the AI surface,
+    // which is larger than the change that made the code visible.
+    //
+    // It was not "new" in any other sense. It has been thrown since the AI
+    // budget gate landed, as `forbidden('AI_BUDGET_REQUIRES_VERIFIED_FARM')` —
+    // a code in the MESSAGE field, which this test's population does not
+    // collect, so it was never required to be documented and never appeared
+    // here. Its three siblings from the same #1645 sweep are documented
+    // instead: `MFA_REQUIRED` already was, and `API_KEY_NOT_PERSON_SCOPED`,
+    // `OPERATOR_SCOPE` and `FARM_PROFILE_EIK_NOT_EDITABLE` are now.
+    'AI_BUDGET_REQUIRES_VERIFIED_FARM',
     'API_KEY_FAMILY_NOT_ENABLED',
     'API_KEY_WRONG_SURFACE',
     'BLOCK_SELLER_ONLY',
