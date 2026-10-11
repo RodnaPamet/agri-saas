@@ -254,10 +254,32 @@ describe('@/lib/schemas exports are reachable or acknowledged (#1386)', () => {
     it('the removal queue is exactly what we expect', () => {
         // A pinned list, not a count, and deliberately not an open-ended
         // allowlist: each entry is a schema whose deletion is waiting on a
-        // client build. Adding a fourth is a visible act in review rather than
-        // a silent widening, and striking one when it is finally deleted is the
+        // client build. Adding one is a visible act in review rather than a
+        // silent widening, and striking one when it is finally deleted is the
         // step that stops this becoming a list nobody ever clears.
-        expect(orphansOf().sort()).toEqual(['AuthRegisterSchema', 'CreatePracticeSchema']);
+        //
+        // `AuthRegisterSchema` was struck in #1628 — the owner authorised
+        // removing its published component, `AuthRegisterRequest`, since the
+        // route it was the body of has 404'd since #1379. That is this list
+        // working as designed: it held the orphan visible until somebody could
+        // authorise the breaking change, rather than letting it rot unseen.
+        //
+        // `CreatePracticeSchema` remains, and it IS the same case — I first
+        // wrote here that it publishes nothing, and that was wrong. It carries
+        // `.openapi('PracticeCreateRequest')` and that component IS in the
+        // generated spec, so it is a second orphan advertising a dead type.
+        //
+        // It stays because removing it is a SEPARATE breaking change needing
+        // its own authorisation. The owner authorised `AuthRegisterRequest`
+        // specifically; an approval for one schema is not an approval for the
+        // next, and bundling a second removal into it would be deciding on
+        // their behalf. Recorded on #1386 so it can be authorised rather than
+        // forgotten.
+        //
+        // `Practice` is also an inflect-lineage concept rather than an agrent
+        // one, which is a reason to look at it on its own terms rather than as
+        // a footnote to an auth cleanup.
+        expect(orphansOf().sort()).toEqual(['CreatePracticeSchema']);
     });
 
     it('a schema reached only through another schema counts as live', () => {

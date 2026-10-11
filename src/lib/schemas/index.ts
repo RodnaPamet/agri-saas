@@ -711,42 +711,6 @@ export const AuthRegisterStartSchema = z
             'Registration step 1: creates an UNVERIFIED user and emails a 6-digit code. Every address gets an identical 200, so nothing here reveals whether an account exists. Field constraints are shape-only — the password policy, the HIBP breach check, the Turnstile screen and the consent/version checks all run in the handler and answer with their own error codes.',
     });
 
-export const AuthRegisterSchema = z.object({
-    email: z.string().email(),
-    password: z.string().min(8),
-    name: z.string().min(1),
-    orgName: z.string().min(1),
-    /**
-     * Cloudflare Turnstile token (P3.5c).
-     *
-     * OPTIONAL in the schema and REQUIRED at runtime whenever
-     * `TURNSTILE_SECRET_KEY` is set — the two are not in conflict. The field
-     * has to be optional because a deployment with no secret renders no widget
-     * and has no token to send, and a required field would break signup for
-     * exactly the configuration that is live today. Enforcement therefore
-     * belongs where the secret is visible: `verifyTurnstile` refuses a missing
-     * token once configured, rather than treating absence as a skip.
-     *
-     * It must be declared here at all because the object is `.strip()`ed, so
-     * an undeclared field would be silently dropped before the handler saw it
-     * — a token sent correctly by a client and discarded by the schema, which
-     * would look exactly like a client bug.
-     */
-    turnstileToken: z.string().max(2048).optional(),
-}).strip().openapi('AuthRegisterRequest', {
-    /**
-     * DEPRECATED, pending removal (#1386).
-     *
-     * `POST /api/auth/register` was retired in #1379; this schema outlived the
-     * route it described. The live two-step flow is `AuthRegisterStartSchema`
-     * → `AuthRegisterStartRequest`.
-     *
-     * Same reasoning as `PracticeCreateRequest` above for deprecating rather
-     * than deleting, and the same removal condition.
-     */
-    deprecated: true,
-    description: 'Self-service signup payload (gated by AUTH_TEST_MODE in non-prod). The password is checked against HIBP via k-anonymity before persistence; emailVerification is initiated server-side. `turnstileToken` is required whenever the deployment has a Turnstile secret configured.',
-});
 
 
 // ─── Vendor Management ───
