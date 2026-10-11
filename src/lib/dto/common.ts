@@ -46,9 +46,17 @@ import { z } from '@/lib/openapi/zod';
  * go stale or claim a closed set the RFCs do not promise. Each operation's own
  * response description lists what it can send.
  *
- * The same shape also serves the spatial-import and cadastre-import routes,
- * where it predates this reasoning and `#1447` is converging the ones that
- * contradicted their own declaration.
+ * The same shape also serves the CADASTRE-import job poll, where it predates
+ * this reasoning.
+ *
+ * SPATIAL-import no longer uses it. #1447 moved its four refusals to the
+ * envelope on 2026-10-11, owner-authorised, because those were the only bare
+ * refusals the phone can reach and a farmer was therefore being shown the
+ * server's English sentence on a Bulgarian screen — agrent-ios passes a refusal
+ * through verbatim when there is no code to translate by. Cadastre-import was
+ * deliberately NOT included: the phone does not upload cadastre files, so
+ * nobody meets those refusals, and an approval for one route is not an approval
+ * for the next.
  */
 export const RawErrorResponseSchema = z
     .object({ error: z.string() })
@@ -57,8 +65,9 @@ export const RawErrorResponseSchema = z
             'A bare error body: `{"error": "<code-or-message>"}` — NOT the ' +
             '`ErrorResponse` envelope, so there is no `code`, `requestId`, `details` or ' +
             '`params`. Used by the native auth family, where it is the shape RFC 6749 §5.2 ' +
-            'specifies for an OAuth token endpoint, and by the spatial-import and ' +
-            'cadastre-import routes. A rate-limit (429) or an unexpected failure (5xx) on the ' +
+            'specifies for an OAuth token endpoint, and by the cadastre-import job poll. ' +
+            'The spatial-import routes used it until #1447 moved them to the envelope. ' +
+            'A rate-limit (429) or an unexpected failure (5xx) on the ' +
             'same route still answers with `ErrorResponse`, because the error wrapper builds ' +
             'those rather than the route.\n\nMOSTLY `error` alone, but not a guarantee: ' +
             '`POST /api/auth/accept-terms` adds `currentVersion` on its stale-version ' +

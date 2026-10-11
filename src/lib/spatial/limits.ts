@@ -48,6 +48,21 @@ export class SpatialLimitError extends Error {
     constructor(
         message: string,
         readonly statusCode: 413 | 422 = 422,
+        /**
+         * A client-switchable code and the numbers behind it (#1447).
+         *
+         * The `message` alone was what reached a farmer, and it reached them in
+         * ENGLISH on a Bulgarian screen: agrent-ios deliberately passes a
+         * refusal sentence straight through, because without a code there is
+         * nothing to look up a translation by. «File exceeds the 5 MB limit» on
+         * a Bulgarian upload screen was the most visible instance.
+         *
+         * So the facts travel structurally — the size, the cap, the format —
+         * and the client composes its own sentence. The message stays as the
+         * English fallback for a client that does not recognise the code.
+         */
+        readonly code?: string,
+        readonly params?: Readonly<Record<string, string | number>>,
     ) {
         super(message);
         this.name = 'SpatialLimitError';
@@ -69,6 +84,17 @@ export function assertUploadWithinSize(format: SpatialUploadFormat, byteLength: 
             `Spatial file is too large (${mb(byteLength)}; ${format} limit is ${mb(cap)}). ` +
                 `Simplify or split the upload.`,
             413,
+            // NOT `SPATIAL_FILE_TOO_LARGE`. `FILE_TOO_LARGE` is a real code
+            // emitted by upload/ingest, evidence and journal, and it is
+            // genuinely undocumented — but #1391's guard decides "documented"
+            // with `specText.includes(code)`, so a longer code CONTAINING it
+            // would have made that live gap read as closed. Filed separately;
+            // avoided here by not nesting one code inside another.
+            'SPATIAL_UPLOAD_TOO_LARGE',
+            // The numbers a client needs to say this in its own language, and
+            // the format so it can name the right cap — the limits differ per
+            // format (shapefile 5 MB, KML/GeoJSON 10 MB).
+            { size: mb(byteLength), limit: mb(cap), format },
         );
     }
 }

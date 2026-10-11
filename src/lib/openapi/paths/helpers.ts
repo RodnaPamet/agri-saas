@@ -107,6 +107,33 @@ export function rawErrorResponses(
     return out;
 }
 
+/**
+ * Override individual status codes with a DESCRIPTION, keeping the envelope.
+ *
+ * The sibling of `rawErrorResponses` above, and the reason it has to exist:
+ * `op()` spreads `extraResponses` AFTER the common entries, so an entry
+ * carrying only a `description` REPLACES the envelope and leaves the status
+ * with no schema at all. That is worse than the default — a documented status
+ * with no content tells a client nothing — and it is what I did on the first
+ * attempt at #1447.
+ *
+ * Use this when a route wants to name the `error.code` values a status can
+ * carry, which is the whole point of a coded refusal: the description is where
+ * a client learns what to switch on.
+ */
+export function codedErrorResponses(
+    spec: Record<number, string>,
+): NonNullable<RouteConfig['responses']> {
+    const out: NonNullable<RouteConfig['responses']> = {};
+    for (const [status, description] of Object.entries(spec)) {
+        out[Number(status)] = {
+            description,
+            content: { 'application/json': { schema: ApiErrorResponseSchema } },
+        };
+    }
+    return out;
+}
+
 export function commonErrorResponses(): RouteConfig['responses'] {
     const json = { 'application/json': { schema: ApiErrorResponseSchema } };
     return {

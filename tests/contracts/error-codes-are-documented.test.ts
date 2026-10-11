@@ -111,7 +111,12 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     'FARM_NAME_REQUIRED',
     'FARM_SLUG_UNAVAILABLE',
     'FIELD_OPERATION_NOT_FOUND',
-    'FILE_EMPTY',
+    // 'FILE_EMPTY' removed in #1630 — the spatial-import 400 now names it.
+    // `FILE_TOO_LARGE` STAYS: it is emitted by upload/ingest, evidence and
+    // journal and is still undocumented. It only LOOKS documented because
+    // `documented()` is `specText.includes(code)` and
+    // `SPATIAL_UPLOAD_TOO_LARGE` would have contained it — which is why that
+    // code is named the way it is.
     'FILE_TOO_LARGE',
     'FILE_TYPE_NOT_ALLOWED',
     'FILE_VALIDATION_ERROR',

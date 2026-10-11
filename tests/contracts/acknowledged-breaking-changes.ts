@@ -89,6 +89,29 @@ export interface AcknowledgedBreakingChange {
  */
 export const ACKNOWLEDGED_BREAKING_CHANGES: readonly AcknowledgedBreakingChange[] = [
     {
+        kind: 'type-changed',
+        schema: 'POST /api/t/{tenantSlug}/locations/{id}/spatial-import -> 400',
+        contractVersion: 3,
+        pr: 1630,
+        date: '2026-10-11',
+        why:
+            'A FARMER was reading English. The route answered a bare ' +
+            '`{ error: "<sentence>" }`, honestly declared as `RawErrorResponse` \u2014 so this is ' +
+            'a deliberate contract change, not a spec correction. agrent-ios passes a refusal ' +
+            'sentence straight through when there is no `error.code` to translate by, so ' +
+            '\u00abFile exceeds the 5 MB limit\u00bb appeared verbatim on a Bulgarian upload screen. These ' +
+            'are the ONLY bare refusals the phone can reach: agrent-ios confirmed from their ' +
+            'route contract that of 36 such routes it builds exactly two, both of them here. ' +
+            'Now `ErrorResponse` with FILE_REQUIRED / FILE_EMPTY / SPATIAL_UPLOAD_TOO_LARGE ' +
+            '(carrying size, limit and format as params) / UNSUPPORTED_FILE_TYPE, so the client ' +
+            'composes its own sentence. The 413, 415 and the job poll\u2019s 404 change the same way ' +
+            'and are the same decision. Cadastre-import was deliberately EXCLUDED \u2014 the phone ' +
+            'does not upload cadastre files, so nobody meets those refusals, and an approval for ' +
+            'one route is not an approval for the next. Owner authorised directly on 2026-10-11, ' +
+            'asked because this file records the owner\u2019s approval rather than an agent\u2019s ' +
+            'judgement.',
+    },
+    {
         kind: 'schema-removed',
         schema: 'AuthRegisterRequest',
         contractVersion: 3,
