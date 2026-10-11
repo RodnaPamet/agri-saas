@@ -166,7 +166,17 @@ A schema can outlive the route it described. `scripts/openapi-build.ts`
 registers components by walking the `@/lib/schemas` namespace, so **the export
 is the registration** — nothing distinguishes "exported for a live route" from
 "exported and forgotten". `AuthRegisterRequest` survived the retirement of
-`POST /api/auth/register` (#1379) that way, and #1386 found two more.
+`POST /api/auth/register` (#1379) that way for months, which is what #1386 was
+filed about.
+
+It is gone as of #1628 — removed under an owner-authorised acknowledgement,
+precisely because the table below is right that deleting a published component
+is a removal even when no path references it. The mechanism that let it survive
+has not changed: `schemas-barrel-has-no-orphans` (#1438) now reports an orphan
+by transitive reachability from live roots, which is a detector rather than a
+prevention. **One orphan remains and is pinned there**: `CreatePracticeSchema`,
+publishing `PracticeCreateRequest`. Removing it needs its own authorisation —
+an approval for one schema is not an approval for the next.
 
 Deleting one is still a removal by the table above, and the table is right to
 say so: a client that generates types from the spec emits one per component

@@ -89,6 +89,26 @@ export interface AcknowledgedBreakingChange {
  */
 export const ACKNOWLEDGED_BREAKING_CHANGES: readonly AcknowledgedBreakingChange[] = [
     {
+        kind: 'schema-removed',
+        schema: 'AuthRegisterRequest',
+        contractVersion: 3,
+        pr: 1628,
+        date: '2026-10-11',
+        why:
+            'It describes a request nobody can make. The route it was the body of, ' +
+            'POST /api/auth/register, was RETIRED in #1379 and now 404s; the schema was left ' +
+            'behind because `openapi-build.ts` registers components by walking the module ' +
+            'namespace, so an exported-but-unimported schema publishes itself. Importers under ' +
+            'src/: ZERO, and the orphan guard (#1438) has been pinning it as a known orphan ' +
+            'ever since. The classifier\'s harm statement — "a client decoding it fails ' +
+            'outright" — is true only of a client decoding a 404. Leaving it published is the ' +
+            'inverse of #1370: there the wire had a field the spec lacked, so a client could ' +
+            'not use something real; here the spec advertises something that does not exist, so ' +
+            'a client can implement a call that cannot succeed. Owner authorised the removal ' +
+            'directly on 2026-10-11, asked because this file records the owner\'s approval and ' +
+            'not an agent\'s own judgement.',
+    },
+    {
         kind: 'enum-narrowed',
         schema: 'ParcelGeo',
         property: 'geometry.type',

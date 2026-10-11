@@ -103,8 +103,19 @@ describe('GAP-10 step 3 — generated OpenAPI 3.1 spec', () => {
             // Task
             'TaskCreateRequest', 'TaskUpdateRequest',
             'TaskSetStatusRequest', 'TaskAssignRequest',
-            // Auth
-            'AuthRegisterRequest',
+            // Auth — `AuthRegisterRequest` was struck in #1628. It was the body
+            // of POST /api/auth/register, retired in #1379, and the schema
+            // outlived the route because `openapi-build.ts` registers by walking
+            // the module namespace. Removing it was authorised by the owner and
+            // recorded in `acknowledged-breaking-changes.ts`.
+            //
+            // This is the SECOND time this list has demanded a shape the spec no
+            // longer publishes — the note above records the GRC teardown doing
+            // exactly this. A list of names that must exist cannot tell "we
+            // deleted it on purpose" from "it regressed", so it fails on both
+            // and the only fix is to remember to edit it. That is worth
+            // replacing with a derivation one day; it is not worth doing inside
+            // a schema deletion.
         ];
         for (const name of expectedRequests) {
             expect(spec.components!.schemas![name]).toBeDefined();

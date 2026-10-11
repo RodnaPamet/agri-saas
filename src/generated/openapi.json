@@ -1080,39 +1080,6 @@
         "additionalProperties": {},
         "description": "A single audit-log row. Hash-chained at the DB layer; this DTO is the read view exposed via the audit/activity endpoints."
       },
-      "AuthRegisterRequest": {
-        "type": "object",
-        "properties": {
-          "email": {
-            "type": "string",
-            "format": "email"
-          },
-          "password": {
-            "type": "string",
-            "minLength": 8
-          },
-          "name": {
-            "type": "string",
-            "minLength": 1
-          },
-          "orgName": {
-            "type": "string",
-            "minLength": 1
-          },
-          "turnstileToken": {
-            "type": "string",
-            "maxLength": 2048
-          }
-        },
-        "required": [
-          "email",
-          "password",
-          "name",
-          "orgName"
-        ],
-        "deprecated": true,
-        "description": "Self-service signup payload (gated by AUTH_TEST_MODE in non-prod). The password is checked against HIBP via k-anonymity before persistence; emailVerification is initiated server-side. `turnstileToken` is required whenever the deployment has a Turnstile secret configured."
-      },
       "AuthRegisterStartRequest": {
         "type": "object",
         "properties": {
