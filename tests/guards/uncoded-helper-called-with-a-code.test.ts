@@ -294,6 +294,27 @@ describe('an uncoded error helper is never called with a code (#1645)', () => {
             ).toEqual([]);
         });
 
+        it('callPattern selects calls, and ONLY calls', () => {
+            // The DENOMINATOR's selector, and it needs its own control for a
+            // reason worth writing down. `scripts/selector-teeth.mjs` guts a
+            // module-level function to a neutral constant; gutted to `[]`,
+            // `callPattern()` is no longer a RegExp, and
+            // `String.prototype.matchAll` CREATES one from a non-RegExp
+            // argument **with the global flag added**. So the mutant is the
+            // EMPTY pattern, which matches at every position — `calls` becomes
+            // roughly the byte count of the tree and the `> 50` floor above is
+            // satisfied spectacularly rather than broken.
+            //
+            // A floor alone cannot catch a selector that over-selects. Zero on
+            // a line with no call is the assertion that can.
+            const count = (src: string): number =>
+                [...blankNonCode(src).matchAll(callPattern(helpers))].length;
+            expect(count(`throw forbidden('X_Y_Z');`)).toBe(1);
+            expect(count(`throw badRequest('Nope'); throw notFound('Nope');`)).toBe(2);
+            expect(count('const a = 1;\nconst b = 2;\n')).toBe(0);
+            expect(count('')).toBe(0);
+        });
+
         it('leaves the helper DEFINITIONS alone', () => {
             // `export const forbidden = (message: string = 'Forbidden') =>` is
             // the default argument, not a call.
