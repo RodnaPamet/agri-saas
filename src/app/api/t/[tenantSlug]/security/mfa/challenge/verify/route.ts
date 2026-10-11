@@ -25,6 +25,17 @@ export const POST = withApiErrorHandling(async (
     req: NextRequest,
 ) => {
     // Get current session
+    // DELIBERATELY the raw `auth()`, and the one route under `src/app/api`
+    // that still is. Owner ruling on #1652: this is part of SIGN-IN, so
+    // refusing a suspended account here surfaces as a failure at the MFA step
+    // and reads as "your code is wrong" rather than "your account is
+    // suspended". Better to let the challenge succeed and refuse at the first
+    // real request, which carries the sentence that explains it.
+    //
+    // `tests/guards/api-routes-resolve-sessions-through-the-gate.test.ts` holds
+    // the direct-`auth()` count at zero and carries this file as its single
+    // allowlist entry with that reason. Migrating it to
+    // `authRefusingSuspended` is a product change, not a cleanup.
     const session = await auth();
     if (!session?.user?.id) {
         return jsonResponse({ error: 'Not authenticated' }, { status: 401 });

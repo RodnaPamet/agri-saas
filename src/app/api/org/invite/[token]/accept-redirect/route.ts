@@ -21,7 +21,7 @@
  * Sign-in required. Rate limited per IP, mirroring the tenant flow.
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/auth';
+import { authWithSuspension } from '@/lib/auth/session-gate';
 import { resolvePublicOrigin } from '@/lib/http/request-origin';
 import { redeemOrgInvite } from '@/app-layer/usecases/org-invites';
 import { INVITE_REDEEM_LIMIT } from '@/lib/security/rate-limit';
@@ -46,12 +46,22 @@ async function handle(
 
     const { token } = await routeArgs.params;
     const origin = resolvePublicOrigin(req);
-    const session = await auth();
+    // Non-throwing, for the reason given on the tenant accept-redirect: a
+    // browser navigates here, so a JSON 403 would be shown as JSON (#1652).
+    const { session, suspended } = await authWithSuspension();
 
     if (!session?.user?.id || !session.user.email) {
         const loginUrl = new URL('/login', origin);
         loginUrl.searchParams.set('callbackUrl', req.nextUrl.pathname);
         return NextResponse.redirect(loginUrl);
+    }
+
+    if (suspended) {
+        // Before `redeemOrgInvite`, so the invite stays pending. Code, not
+        // prose — see the tenant route.
+        const inviteUrl = new URL(`/invite/org/${token}`, origin);
+        inviteUrl.searchParams.set('error', 'ACCOUNT_SUSPENDED');
+        return NextResponse.redirect(inviteUrl, 303);
     }
 
     try {
