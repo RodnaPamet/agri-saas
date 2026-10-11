@@ -128,6 +128,9 @@ describe('an unusable cap is treated as NO cap, and says so', () => {
     });
 });
 
+/** Every warning message logged so far, in no particular order. */
+const warnings = (): string[] => warn.mock.calls.map((c) => String(c[0]));
+
 describe('a database failure falls OPEN, and is visible', () => {
     it('allows the call when usage cannot be read', async () => {
         // The ledger is a cost control, not a safety one. Letting an advisory
@@ -137,7 +140,7 @@ describe('a database failure falls OPEN, and is visible', () => {
         aggregate.mockRejectedValue(new Error('connection reset'));
 
         expect(await isPlatformAiSpendAllowed('field-briefing')).toBe(true);
-        expect(String(warn.mock.calls[0][0])).toMatch(/could not read usage/i);
+        expect(warnings()).toContainEqual(expect.stringMatching(/could not read usage/i));
     });
 
     it('a failed RECORD never throws at the caller', async () => {
@@ -155,7 +158,12 @@ describe('a database failure falls OPEN, and is visible', () => {
                 completionTokens: 2,
             }),
         ).resolves.toBeUndefined();
-        expect(String(warn.mock.calls[0][0])).toMatch(/failed to record/i);
+        // Over ALL warnings, not `calls[0]`. Recording now derives the cost,
+        // and the estimator warns about an un-priced model (`claude-x` here) —
+        // so the record-failure warning is no longer first. The order of two
+        // unrelated warnings was never the property under test; coupling to it
+        // made this fail on a change that did not affect what it checks.
+        expect(warnings()).toContainEqual(expect.stringMatching(/failed to record/i));
     });
 });
 
@@ -175,8 +183,92 @@ describe('what gets recorded', () => {
                 promptTokens: 120,
                 completionTokens: 30,
                 totalTokens: 150,
+                // `claude-x` matches no key in the price table, so 0 is the
+                // CORRECT cost here — and that is exactly why the next case
+                // exists. This assertion doubles as the negative control for
+                // it: on its own, a `costMicros: 0` expectation is satisfied
+                // both by a working estimator and by the bug #1631 reported.
                 costMicros: 0,
             },
+        });
+    });
+
+    it('derives a NON-ZERO cost for a priced model (#1631)', async () => {
+        // The defect: `costMicros` was 0 on every row. The parameter existed,
+        // all four callers omitted it, and `?? 0` turned four omissions into a
+        // confident zero — so `SUM("costMicros")` answered "nothing" to "what
+        // has the platform's AI cost".
+        //
+        // 1M prompt + 1M completion on Haiku list prices ($1 in / $5 out per
+        // 1M) is $6, and the column is MICRO-dollars, so 6_000_000. Asserting
+        // the exact figure rather than `> 0` because the unit is the part worth
+        // pinning: a factor-of-1000 slip would read as plausible spend.
+        await recordPlatformAiUsage({
+            job: 'field-briefing',
+            model: 'claude-haiku-4-5',
+            promptTokens: 1_000_000,
+            completionTokens: 1_000_000,
+        });
+
+        expect(create).toHaveBeenCalledWith({
+            data: expect.objectContaining({ costMicros: 6_000_000 }),
+        });
+    });
+
+    it('prices a DATED model id the same as its base id', async () => {
+        // `support-scheme-extractor` pins `claude-haiku-4-5-20251001` while the
+        // other three pin `claude-haiku-4-5`. The table is matched by longest
+        // substring, so both resolve — but that is a property of `lookupPrice`
+        // that this module depends on and does not own, so it is pinned here:
+        // a table keyed on exact ids would price the dated one at 0 and
+        // under-state one job of four with nothing saying so.
+        await recordPlatformAiUsage({
+            job: 'support-scheme-extraction',
+            model: 'claude-haiku-4-5-20251001',
+            promptTokens: 1_000_000,
+            completionTokens: 1_000_000,
+        });
+
+        expect(create).toHaveBeenCalledWith({
+            data: expect.objectContaining({ costMicros: 6_000_000 }),
+        });
+    });
+
+    it('an UN-PRICED model records 0 and says so', async () => {
+        // The other half of #1631. A model missing from the price table still
+        // records 0 — correctly, since nothing is known about its cost — but it
+        // is now LOUD instead of silent. That matters because a silent 0 is
+        // indistinguishable from the bug this fixed: the operator reading
+        // `SUM("costMicros")` needs to know the total excludes a model, and the
+        // warning is the only thing that can tell them.
+        await recordPlatformAiUsage({
+            job: 'field-briefing',
+            model: 'some-new-model-nobody-priced',
+            promptTokens: 1_000,
+            completionTokens: 1_000,
+        });
+
+        expect(create).toHaveBeenCalledWith({
+            data: expect.objectContaining({ costMicros: 0 }),
+        });
+        expect(warnings()).toContainEqual(expect.stringMatching(/no price entry/i));
+    });
+
+    it('an explicit costMicros still wins over the estimate', async () => {
+        // The parameter survives as an override for a figure the estimator
+        // cannot produce — a provider-reported charge. Zero is deliberately NOT
+        // the test value: `0` would pass whether the override is honoured or
+        // silently replaced by an estimate of 0.
+        await recordPlatformAiUsage({
+            job: 'notice-score',
+            model: 'claude-haiku-4-5',
+            promptTokens: 1_000_000,
+            completionTokens: 1_000_000,
+            costMicros: 42,
+        });
+
+        expect(create).toHaveBeenCalledWith({
+            data: expect.objectContaining({ costMicros: 42 }),
         });
     });
 

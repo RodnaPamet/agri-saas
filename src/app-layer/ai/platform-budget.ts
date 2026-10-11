@@ -39,11 +39,19 @@
  * while a token ceiling binds on every model. Tokens are the quantity the
  * provider actually meters.
  *
+ * That reasoning is unchanged by #1631, which fixed a different thing: the
+ * column was 0 on EVERY row, priced models included, because all four callers
+ * omitted the optional `costMicros` and `?? 0` turned four omissions into a
+ * confident figure. It is now derived from the model id and token counts the
+ * call already carries. An un-priced model still records 0 — correctly — but
+ * warns while doing it, so an operator can tell a real zero from a gap.
+ *
  * @module app-layer/ai/platform-budget
  */
 import prisma from '@/lib/prisma';
 import { env } from '@/env';
 import { logger } from '@/lib/observability/logger';
+import { estimateCostMicros } from './cost';
 
 const COMPONENT = 'ai.platform-budget';
 
@@ -211,6 +219,12 @@ export async function recordPlatformAiUsage(input: {
     model: string;
     promptTokens: number;
     completionTokens: number;
+    /**
+     * Override for the cost. Omit it — the default below is derived from the
+     * same model id and token counts this call already carries, so there is
+     * nothing for a caller to compute. Pass it only when you have a figure
+     * the estimator cannot produce (a provider-reported charge, say).
+     */
     costMicros?: number;
 }): Promise<void> {
     try {
@@ -221,7 +235,30 @@ export async function recordPlatformAiUsage(input: {
                 promptTokens: input.promptTokens,
                 completionTokens: input.completionTokens,
                 totalTokens: input.promptTokens + input.completionTokens,
-                costMicros: input.costMicros ?? 0,
+                // DERIVED here rather than at each call site (#1631).
+                //
+                // `costMicros` was 0 on every row: the parameter existed, all
+                // four callers omitted it, and `?? 0` turned four omissions
+                // into a confident zero. `SELECT SUM("costMicros")` answered
+                // "nothing" to "what has the platform's AI cost", which is
+                // worse than answering nothing at all — `AiUsageEvent` next
+                // door has a real `costMicros`, so the two read as comparable.
+                //
+                // #1631 proposed one line per caller. This is the choke point
+                // every caller already goes through, and it has everything the
+                // estimator needs, so deriving it here fixes the four and the
+                // fifth: a new platform job cannot reintroduce the gap by
+                // forgetting, and the column cannot end up PARTIALLY filled —
+                // which the issue rightly called worse than uniformly empty,
+                // since a reader can tell `0` is uninformative but cannot tell
+                // that `14000` is missing three jobs.
+                costMicros:
+                    input.costMicros
+                    ?? estimateCostMicros(input.model, {
+                        promptTokens: input.promptTokens,
+                        completionTokens: input.completionTokens,
+                        totalTokens: input.promptTokens + input.completionTokens,
+                    }),
             },
         });
     } catch (err) {
