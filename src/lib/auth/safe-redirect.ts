@@ -65,12 +65,26 @@ export function sanitizeRedirectPath(next: string | null | undefined): string {
 
     if (!decoded.startsWith('/')) return '/';
 
-    // Collapse any remaining leading slashes. Slashes ONLY, and the absence
-    // of a backslash here is deliberate: a mutation test removing it changed
-    // nothing, because `/\…` is already rejected above and `\…` fails
-    // `startsWith('\\')`. A backslash cannot reach this line, so including
-    // one would be an untestable second defence sitting next to a tested
-    // first — which reads as thoroughness and is really just unreachable
-    // code. The rejection above is the single place `/\` is handled.
-    return decoded.replace(/^\/+/, '/');
+    // Return the ORIGINAL when it is already a plain path, not the decoded
+    // form — otherwise a value that survived judgement comes back having
+    // been decoded a second time.
+    //
+    // `searchParams.get('next')` has already decoded once, so by here the
+    // common case is a plain path and this returns it verbatim. Without that,
+    // `/a?b=%26c%3D2` came back as `/a?b=&c=2`: a `%26` that was a literal
+    // ampersand INSIDE the target's query value became a separator, and the
+    // target quietly changed meaning. Harmless for the native flow, which
+    // carries no query, and a latent surprise for any web flow that does.
+    // Raised by agrent-ios.
+    //
+    // The decoded form is still what gets JUDGED above — `%2F%2Fevil` has to
+    // be read as `//evil` — and is still what is returned when the original
+    // is not itself a path, so `%2Ffoo` does not come back as a relative
+    // reference resolving against the current directory.
+    //
+    // There is no leading-slash collapse. Removing one changed nothing in a
+    // mutation test, because `//` is rejected above and a single leading
+    // slash makes the replacement a no-op: it was unreachable, like the
+    // backslash variant before it.
+    return next.startsWith('/') ? next : decoded;
 }

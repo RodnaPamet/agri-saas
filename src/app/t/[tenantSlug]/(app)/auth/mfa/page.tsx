@@ -43,7 +43,13 @@ export default function MfaChallengePage() {
     // called it. (It also had a `/\` gap, fixed in `safe-redirect` — a path
     // a browser normalises to `//`.) Found by agrent-ios.
     const rawNext = searchParams.get('next');
-    const next = rawNext ? sanitizeRedirectPath(rawNext) : tenantHref('/dashboard');
+    // A REJECTED `next` falls back to the dashboard, not to `/`. The
+    // sanitiser answers `/` for anything it refuses, and this page's own
+    // comment says the dashboard is the intended default — landing a farm
+    // member on the site root after a correct code is a worse answer than
+    // the one it meant to give. Raised by agrent-ios.
+    const sanitized = rawNext ? sanitizeRedirectPath(rawNext) : null;
+    const next = sanitized && sanitized !== '/' ? sanitized : tenantHref('/dashboard');
 
     // Carried through the enrol link so a first-time enroller comes BACK here
     // to type their first code. Without it the setup page is a dead end: it

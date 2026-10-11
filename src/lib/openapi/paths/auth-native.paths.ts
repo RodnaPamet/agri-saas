@@ -235,7 +235,9 @@ export function registerAuthNativePaths(registry: OpenAPIRegistry): void {
             },
             ...codedErrorResponses({
                 403:
-                    'The farm requires a second factor this request cannot collect. `error.code` is `MFA_REQUIRED` when no `code_challenge` was sent — the client cannot show a code screen, so use Google or Microsoft, or the web. It is `MFA_ENROLLMENT_REQUIRED` when the account has no verified authenticator at all: there is no shared secret to check a code against, so the remedy is enrolment on the web and NOT another provider. Two codes because the two remedies differ.',
+                    'The farm requires a second factor this request cannot collect.\n\n' +
+                    '`error.code` is `MFA_REQUIRED` whenever **no `code_challenge` was sent**. A client that did not opt in cannot show a code screen and does not know the enrolment code either, so it gets the one code it understands — the same opt-in rule as the 202 above. Use Google or Microsoft, or the web.\n\n' +
+                    'It is `MFA_ENROLLMENT_REQUIRED` only for a client that DID send a `code_challenge` and whose account has no verified authenticator. There is no shared secret to check a code against, so the remedy is enrolment on the web rather than another provider — two codes because the two remedies differ, and gated on the opt-in so an older build never receives one it would render as a generic refusal.',
             }),
         },
         operationId: 'signInWithApple',

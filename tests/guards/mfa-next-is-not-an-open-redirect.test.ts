@@ -51,7 +51,11 @@ describe('an off-origin `next` is refused (#1649)', () => {
     it.each([
         ['/api/auth/native/complete', '/api/auth/native/complete'],
         ['/t/my-farm/dashboard', '/t/my-farm/dashboard'],
-        ['/t/my-farm/auth/mfa?next=%2Fapi%2Fauth%2Fnative%2Fcomplete', '/t/my-farm/auth/mfa?next=/api/auth/native/complete'],
+        // VERBATIM, including the nested encoding. This expectation used to
+        // read `…?next=/api/auth/native/complete`, which was asserting the
+        // over-decode nit 2 reported: flattening a nested `next` makes its
+        // parameters belong to the outer page.
+        ['/t/my-farm/auth/mfa?next=%2Fapi%2Fauth%2Fnative%2Fcomplete', '/t/my-farm/auth/mfa?next=%2Fapi%2Fauth%2Fnative%2Fcomplete'],
     ])('still allows %p', (input, expected) => {
         // The phone's flow depends on this: `/api/auth/native/complete` is a
         // relative path, so the fix must not break the native handoff.
@@ -62,6 +66,30 @@ describe('an off-origin `next` is refused (#1649)', () => {
         // Called out because the original rejected `//` and `\` and read as
         // though it covered this. A browser resolves `/\host` as `//host`.
         expect(sanitizeRedirectPath('/\\attacker.example')).toBe('/');
+    });
+
+    it('does not decode a second time', () => {
+        // `searchParams.get('next')` has already decoded once, so a value
+        // arriving here is normally a plain path. Decoding it again turned
+        // `/a?b=%26c%3D2` into `/a?b=&c=2` — a `%26` that was a literal
+        // ampersand INSIDE the target's query value became a separator, and
+        // the target quietly changed meaning. Raised by agrent-ios.
+        expect(sanitizeRedirectPath('/a?b=%26c%3D2')).toBe('/a?b=%26c%3D2');
+        expect(sanitizeRedirectPath('/a?b=1&c=2')).toBe('/a?b=1&c=2');
+    });
+
+    it('still JUDGES the decoded form, so an encoded attack is caught', () => {
+        // The other half: judging the raw string would let `%2F%2Fevil`
+        // through. Decode to judge, return the original.
+        expect(sanitizeRedirectPath('%2F%2Fattacker.example')).toBe('/');
+        expect(sanitizeRedirectPath('%2F%5Cattacker.example')).toBe('/');
+    });
+
+    it('an encoded path that is not itself a path comes back decoded', () => {
+        // `%2Ffoo` passes judgement as `/foo`. Returning the original here
+        // would hand back a RELATIVE reference resolving against the current
+        // directory — not an origin escape, but not where anyone meant to go.
+        expect(sanitizeRedirectPath('%2Ffoo')).toBe('/foo');
     });
 
     it('the challenge page SANITISES the value it navigates to', () => {
@@ -75,6 +103,16 @@ describe('an off-origin `next` is refused (#1649)', () => {
         // It can be opened directly, so it cannot rely on the challenge page
         // having cleaned the value.
         expect(code(SETUP)).toContain('sanitizeRedirectPath');
+    });
+
+    it('a REJECTED next falls back to the dashboard, not to the site root', () => {
+        // The sanitiser answers `/` for anything it refuses, and the page's
+        // own comment says the dashboard is the intended default. Landing a
+        // farm member on the site root straight after a correct code is a
+        // worse answer than the one it meant to give.
+        const src = code(CHALLENGE);
+        expect(src).toMatch(/sanitized && sanitized !== '\/'/);
+        expect(src).toContain("tenantHref('/dashboard')");
     });
 
     it('control: the checks DETECT the unsanitised shape', () => {
