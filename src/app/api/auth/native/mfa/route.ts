@@ -45,12 +45,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { encode } from 'next-auth/jwt';
 
 import { env } from '@/env';
-import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { codedBadRequest, codedForbidden } from '@/lib/errors/types';
 import { LOGIN_LIMIT } from '@/lib/security/rate-limit';
 import { redeemMfaTicket } from '@/lib/auth/native/auth-codes';
+import { recordNewSession } from '@/lib/security/session-tracker';
+import { SESSION_MAX_AGE_SECONDS } from '@/lib/auth/session-lifetime';
 import {
     ACCESS_TOKEN_TTL_SECONDS,
     issueRefreshToken,
@@ -102,13 +103,36 @@ async function handleNativeMfa(req: NextRequest): Promise<NextResponse> {
         throw codedForbidden('MFA_TICKET_INVALID', 'The sign-in attempt is no longer valid.');
     }
 
-    const sessionRow = await prisma.userSession.findUnique({
-        where: { id: redeemed.userSessionRowId },
-        select: { id: true, sessionId: true, userId: true, tenantId: true, expiresAt: true },
+    // ── The session is created HERE, not when the ticket was issued ────
+    //
+    // `recordNewSession` enforces `maxConcurrentSessions`, so writing the row
+    // at ticket time made every 202 cost the person a session slot. Somebody
+    // holding only a stolen Apple ID — the first factor alone, exactly who
+    // this second factor exists to stop — could start Apple sign-in
+    // repeatedly and evict the real person's live sessions without ever
+    // knowing a code. Abandoned tickets left rows behind too.
+    //
+    // Past this line the factor has been presented and verified, so a session
+    // is warranted. It is still recorded BEFORE the pair is minted, so the
+    // pair hangs off a revocable row and shows up in /admin/members exactly
+    // as a browser sign-in does.
+    //
+    // Raised by agrent-ios reviewing #1649 — the same mistake the refusal
+    // path had one commit earlier, and worse here because it is reachable by
+    // somebody who cannot complete the sign-in.
+    const expiresAt = new Date(Date.now() + SESSION_MAX_AGE_SECONDS * 1000);
+    const recorded = await recordNewSession({
+        userId: redeemed.userId,
+        tenantId: redeemed.tenantId,
+        expiresAt,
     });
-    if (!sessionRow) {
-        throw codedForbidden('MFA_TICKET_INVALID', 'The sign-in attempt is no longer valid.');
-    }
+    const sessionRow = {
+        id: recorded.rowId,
+        sessionId: recorded.sessionId,
+        userId: redeemed.userId,
+        tenantId: redeemed.tenantId,
+        expiresAt,
+    };
 
     const { buildSessionClaims } = await import('@/auth');
     const claims = await buildSessionClaims({

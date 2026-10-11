@@ -1,0 +1,24 @@
+-- A pending-MFA ticket has no session yet, and must not create one.
+--
+-- The first cut of the Apple ticket wrote the `UserSession` row when the
+-- TICKET was issued, which is the same mistake the refusal path had one
+-- commit earlier and worse in one respect: it is attacker-reachable.
+--
+-- `recordNewSession` enforces `maxConcurrentSessions`. So somebody holding
+-- only a stolen Apple ID — the first factor alone, exactly who the second
+-- factor exists to stop — could start Apple sign-in repeatedly and evict the
+-- real person's live sessions at a capped farm, without ever knowing a code.
+-- Abandoned tickets left rows behind too.
+--
+-- The session is now recorded by `POST /api/auth/native/mfa` after the code
+-- passes. The token pair is still minted after its row exists, so it stays
+-- revocable and still appears in /admin/members.
+--
+-- A pending ticket needs no row to be safe: it expires in five minutes, it
+-- carries no claims, and `/exchange` filters on `purpose = 'SESSION'` so it
+-- cannot be found there. Raised by agrent-ios reviewing #1649.
+--
+-- The FK keeps `ON DELETE CASCADE` for the rows that do have a session: a
+-- revoked session still takes its outstanding codes with it.
+
+ALTER TABLE "NativeAuthCode" ALTER COLUMN "userSessionId" DROP NOT NULL;

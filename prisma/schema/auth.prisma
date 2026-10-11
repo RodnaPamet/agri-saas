@@ -1089,7 +1089,18 @@ model NativeAuthCode {
   /// SHA-256 of the raw code. Unique so the exchange is one indexed read.
   codeHash      String    @unique
   /// The session the exchanged tokens will hang from.
-  userSessionId String
+  ///
+  /// NULL for a `PENDING_MFA` ticket, and that is the point. Writing the
+  /// session when the ticket is issued made every 202 enforce
+  /// `maxConcurrentSessions` — so somebody holding only a stolen Apple ID,
+  /// exactly who the second factor exists to stop, could start Apple sign-in
+  /// repeatedly and evict the real person's sessions without ever knowing a
+  /// code. The session is recorded by `POST /api/auth/native/mfa` AFTER the
+  /// code passes instead.
+  ///
+  /// A ticket needs no row to be safe: it expires in five minutes, it is not
+  /// a credential, and `/exchange` cannot find it. Raised by agrent-ios.
+  userSessionId String?
   userId        String
   tenantId      String?
   /// PKCE: base64url SHA-256 of the client's verifier. S256 only — `plain`
@@ -1113,7 +1124,7 @@ model NativeAuthCode {
   /// does not.
   mfaAttempts   Int       @default(0)
 
-  session UserSession @relation("SessionAuthCodes", fields: [userSessionId], references: [id], onDelete: Cascade)
+  session UserSession? @relation("SessionAuthCodes", fields: [userSessionId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@index([userSessionId])

@@ -109,7 +109,12 @@ export interface IssuedCode {
  * unrevocable-credential failure the whole native-auth design exists to avoid.
  */
 export async function issueAuthCode(input: {
-    userSessionRowId: string;
+    /**
+     * NULL only for a `PENDING_MFA` ticket, which has no session yet — see
+     * the schema comment on `NativeAuthCode.userSessionId`. A `SESSION` code
+     * always has one, and `exchangeAuthCode` refuses a row that does not.
+     */
+    userSessionRowId: string | null;
     userId: string;
     tenantId: string | null;
     codeChallenge: string;
@@ -219,6 +224,12 @@ export async function exchangeAuthCode(input: {
     );
     if (claimed.count !== 1) return { ok: false, reason: 'consumed' };
 
+    // A `SESSION` row always has a session — the column is only nullable for
+    // a `PENDING_MFA` ticket. Refusing rather than asserting it: a non-null
+    // operator here would turn a data anomaly into a runtime crash on an
+    // unauthenticated route.
+    if (!row.userSessionId) return { ok: false, reason: 'session_invalid' };
+
     return {
         ok: true,
         userSessionRowId: row.userSessionId,
@@ -285,7 +296,12 @@ export function classifyRedirect(uri: string, allowlist: string[]): RedirectVerd
 export const MAX_MFA_TICKET_ATTEMPTS = 5;
 
 export type MfaTicketResult =
-    | { ok: true; userSessionRowId: string; userId: string; tenantId: string | null }
+    /**
+     * The factor was presented. NO session row is referenced: the caller
+     * records one now, AFTER the code passed, so issuing a ticket can never
+     * evict a live session at a farm with `maxConcurrentSessions` set.
+     */
+    | { ok: true; userId: string; tenantId: string }
     /**
      * The ticket itself is no good — expired, consumed, unknown, wrong
      * purpose, or a PKCE mismatch. ONE reason for all of them, deliberately:
@@ -392,10 +408,5 @@ export async function redeemMfaTicket(input: {
     );
     if (claimed.count !== 1) return { ok: false, reason: 'ticket_invalid' };
 
-    return {
-        ok: true,
-        userSessionRowId: row.userSessionId,
-        userId: row.userId,
-        tenantId: row.tenantId,
-    };
+    return { ok: true, userId: row.userId, tenantId: row.tenantId };
 }

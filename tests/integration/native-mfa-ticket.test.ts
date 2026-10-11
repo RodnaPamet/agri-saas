@@ -54,11 +54,16 @@ async function makeSession() {
     });
 }
 
-/** A ticket, or a session code — the only difference is `purpose`. */
+/**
+ * A ticket, or a session code.
+ *
+ * A ticket gets NO session row, which is the shape the route uses: writing
+ * one at ticket time made every 202 enforce `maxConcurrentSessions`.
+ */
 async function mint(purpose: 'SESSION' | 'PENDING_MFA', verifier: string) {
-    const session = await makeSession();
+    const session = purpose === 'SESSION' ? await makeSession() : null;
     const code = await issueAuthCode({
-        userSessionRowId: session.id,
+        userSessionRowId: session?.id ?? null,
         userId: USER_ID,
         tenantId: null,
         codeChallenge: deriveChallenge(verifier),
@@ -240,6 +245,47 @@ describeFn('the pending-MFA ticket', () => {
                 totpCode: '123456',
             });
             expect(result).toEqual({ ok: false, reason: 'ticket_invalid' });
+        });
+    });
+
+    describe('a ticket writes no session row', () => {
+        it('issuing one leaves the user with no new UserSession', async () => {
+            // THE regression test for an attacker-reachable eviction.
+            //
+            // `recordNewSession` enforces `maxConcurrentSessions`. While the
+            // session was written at ticket time, somebody holding only a
+            // stolen Apple ID — the first factor alone, exactly who the
+            // second factor exists to stop — could start Apple sign-in
+            // repeatedly and evict the real person's live sessions without
+            // ever knowing a code. Abandoned tickets left rows behind too.
+            const before = await db.userSession.count({ where: { userId: USER_ID } });
+
+            await mint('PENDING_MFA', newVerifier());
+
+            const after = await db.userSession.count({ where: { userId: USER_ID } });
+            expect(after).toBe(before);
+        });
+
+        it('the ticket row itself has a NULL session', async () => {
+            await mint('PENDING_MFA', newVerifier());
+            const row = await db.nativeAuthCode.findFirst({
+                where: { userId: USER_ID, purpose: 'PENDING_MFA' },
+                orderBy: { createdAt: 'desc' },
+                select: { userSessionId: true },
+            });
+            expect(row?.userSessionId).toBeNull();
+        });
+
+        it('control: a SESSION code DOES hang off a session row', async () => {
+            // Without this, the two above pass on an `issueAuthCode` that
+            // simply never links anything.
+            await mint('SESSION', newVerifier());
+            const row = await db.nativeAuthCode.findFirst({
+                where: { userId: USER_ID, purpose: 'SESSION' },
+                orderBy: { createdAt: 'desc' },
+                select: { userSessionId: true },
+            });
+            expect(row?.userSessionId).not.toBeNull();
         });
     });
 

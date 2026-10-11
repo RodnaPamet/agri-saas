@@ -285,41 +285,29 @@ async function handleAppleSignIn(req: NextRequest): Promise<NextResponse> {
     // leave a visible session. It would — and the same flaw was already one
     // step earlier, in the plain refusal.
     const mfa = await resolveMfaRequirement({ userId, tenantId });
-    if ((mfa.required || mfa.dependencyFailure) && !(wantsTicket && mfa.enrolled)) {
-        // Either the client cannot collect a code (no challenge sent, so it is
-        // an older build), or there is no authenticator to collect one with.
-        // `assertMfaNotOwed` decides which refusal, and both are refusals —
-        // nothing is minted and no session row is written.
-        await assertMfaNotOwed(userId, tenantId, mfa);
-    }
 
-    const recorded = await recordNewSession({
-        userId,
-        tenantId,
-        expiresAt: new Date(Date.now() + SESSION_MAX_AGE_SECONDS * 1000),
-    });
-
-    // ── The factor is owed, and this client can collect it ────────────
+    // ── A ticket, and NO session row ───────────────────────────────────
     //
-    // A TICKET, not a token pair. The session row exists (it is what the
-    // ticket hangs off, and what makes the eventual pair revocable), but
-    // nothing that authenticates a single API call has been minted — and
-    // `native/exchange` cannot redeem this row, because it filters on
-    // `purpose: 'SESSION'`.
+    // Before `recordNewSession`, deliberately. That function enforces
+    // `maxConcurrentSessions`, so issuing the ticket after it would let
+    // somebody holding only a stolen Apple ID — the first factor alone,
+    // precisely who the second factor exists to stop — start sign-in
+    // repeatedly and evict the real person's live sessions without ever
+    // knowing a code. The session is recorded by `POST /api/auth/native/mfa`
+    // once the code passes.
     //
-    // 202 rather than 200: the sign-in is accepted and incomplete. Only a
-    // client that sent a `code_challenge` reaches here, so no installed build
-    // sees a status it does not handle.
+    // The ticket needs no row to be safe: five-minute expiry, no claims, and
+    // `/exchange` filters on `purpose = 'SESSION'` so it cannot be found
+    // there. Raised by agrent-ios reviewing #1649.
     if (mfa.required && wantsTicket && mfa.enrolled) {
         const ticket = await issueAuthCode({
-            userSessionRowId: recorded.rowId,
+            userSessionRowId: null,
             userId,
             tenantId,
             codeChallenge: codeChallenge as string,
             // No redirect is involved — the app posts the ticket back itself.
-            // The column is NOT NULL and is validated against an allowlist
-            // only at the browser-handoff issuer, so a sentinel that is not a
-            // URL is the honest value: nothing will ever redirect to it.
+            // A sentinel that is not a URL is the honest value for a NOT NULL
+            // column nothing will ever redirect to.
             redirectUri: 'native:mfa',
             purpose: 'PENDING_MFA',
         });
@@ -333,10 +321,9 @@ async function handleAppleSignIn(req: NextRequest): Promise<NextResponse> {
         return NextResponse.json(
             {
                 // A DISCRIMINANT, so a ticket can never decode as a grant or
-                // the reverse. agrent-ios asked for this: their decoder picks
-                // a type from the payload, and two shapes that differ only by
-                // which optional keys are present is how a client ends up
-                // treating one as the other.
+                // the reverse — agrent-ios's decoder picks a type from the
+                // payload, and two shapes differing only by which optional
+                // keys are present is how one gets read as the other.
                 status: 'mfa_required',
                 ticket: ticket.raw,
                 expiresIn: Math.max(
@@ -347,6 +334,19 @@ async function handleAppleSignIn(req: NextRequest): Promise<NextResponse> {
             { status: 202 },
         );
     }
+
+    if (mfa.required || mfa.dependencyFailure) {
+        // Either the client cannot collect a code (no `code_challenge`, so an
+        // older build) or there is no authenticator to collect one with.
+        // Both are refusals: nothing is minted and no session row is written.
+        await assertMfaNotOwed(userId, tenantId, mfa, wantsTicket);
+    }
+
+    const recorded = await recordNewSession({
+        userId,
+        tenantId,
+        expiresAt: new Date(Date.now() + SESSION_MAX_AGE_SECONDS * 1000),
+    });
 
     const claims = await buildClaims(userId, tenantId, recorded.sessionId);
     if (!claims) return refused();
@@ -426,13 +426,18 @@ async function assertMfaNotOwed(
     userId: string,
     tenantId: string | null,
     mfa: Awaited<ReturnType<typeof resolveMfaRequirement>>,
+    /**
+     * Whether the client sent a `code_challenge` — i.e. whether it has opted
+     * into this change at all.
+     */
+    clientOptedIn: boolean,
 ): Promise<void> {
     // A check that could not complete refuses too: "we could not find out"
     // has to fall the same way as "yes", or a session that may owe a factor
     // gets minted.
     if (!mfa.required && !mfa.dependencyFailure) return;
 
-    if (mfa.required && !mfa.enrolled && !mfa.dependencyFailure) {
+    if (mfa.required && !mfa.enrolled && !mfa.dependencyFailure && clientOptedIn) {
         // A THIRD state, and its own code. This farm requires a factor the
         // person cannot produce: there is no verified authenticator, so there
         // is no shared secret to check a code against. A challenge screen here

@@ -47,7 +47,6 @@ const VERIFIER = 'a-verifier-long-enough-to-be-plausible-0123456789';
 /** A live ticket row with `attempts` wrong codes already spent. */
 const ticketRow = (attempts: number) => ({
     id: 'code-1',
-    userSessionId: 'session-row-1',
     userId: 'user-1',
     tenantId: 'tenant-1',
     codeChallenge: deriveChallenge(VERIFIER),
@@ -135,12 +134,15 @@ describe('a correct code', () => {
             rawCode: 'raw', codeVerifier: VERIFIER, totpCode: '654321',
         });
 
-        expect(r).toEqual({
-            ok: true,
-            userSessionRowId: 'session-row-1',
-            userId: 'user-1',
-            tenantId: 'tenant-1',
-        });
+        // IDENTITY only — no session row. Returning one would mean a row
+        // existed before the code was verified, which is the eviction this
+        // shape exists to prevent: `recordNewSession` enforces
+        // `maxConcurrentSessions`, so a ticket that wrote a session let
+        // somebody holding only a stolen first factor evict the real
+        // person's live sessions without ever knowing a code. The route
+        // records the session after this returns.
+        expect(r).toEqual({ ok: true, userId: 'user-1', tenantId: 'tenant-1' });
+        expect(r).not.toHaveProperty('userSessionRowId');
         // The same claim shape the session exchange uses: the winner is
         // whoever moves `consumedAt` off null, so two concurrent correct
         // codes mint one pair rather than two.
