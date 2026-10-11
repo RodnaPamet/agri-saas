@@ -82,6 +82,50 @@ concurrency:
   # the tip. That is the point — the coverage gate and SARIF upload are
   # per-commit signals, and a signal that silently skips is worse than a slow
   # one.
+  #
+  # ── IF A PR SITS `pending` WITH AN EMPTY QUEUE, READ THIS (#1425) ──
+  #
+  # `cancel-in-progress` kills a run that is already EXECUTING. It was measured
+  # NOT to kill a run that is still `queued` — so a superseded commit's run can
+  # hold this group and leave its successor `pending` indefinitely. PR #1410 lost
+  # **2 hours 36 minutes** to exactly that, with 0 runs queued repo-wide and
+  # three executing. The pool was idle; the run was BLOCKED, not waiting.
+  #
+  # The symptom is the quiet one and it mimics an accepted cost. Nothing is red,
+  # nothing is queued, and `gh pr checks` reports NINE ABSENT WITH ZERO PENDING —
+  # which reads as "nearly green" in a rollup, and which also looks exactly like
+  # the #1414 main-push backlog that the owner has accepted. So the natural
+  # response is to wait, and waiting is wrong.
+  #
+  # Tell them apart by the POOL, not by the PR:
+  #
+  #     gh run list --limit 40 --json status,headBranch,workflowName \
+  #       --jq 'group_by(.status)[] | {(.[0].status): length}'
+  #
+  #   · queued > 0  -> the #1414 backlog. Wait; it drains.
+  #   · queued == 0 and your run is `pending` -> a stale run holds this group.
+  #
+  # The remedy, and it needs TWO cancels:
+  #
+  #     gh run list --branch <your-branch> --workflow ci.yml --limit 5 \
+  #       --json databaseId,status,headSha
+  #     gh run cancel <the-older-queued-run-id>   # no-op while it is `queued`
+  #     # wait for it to go queued -> in_progress (~90s), then:
+  #     gh run cancel <the-same-id>               # this one lands
+  #
+  # The first cancel does NOTHING on a run that has not started — measured, and
+  # it is why one cancel looks like it failed. The current run goes `pending` ->
+  # `queued` within ~20s of the second.
+  #
+  # NOT automated here, deliberately. A cleanup job that cancels superseded runs
+  # cannot work reliably for the state it targets: the first cancel is a no-op,
+  # so the job would have to WAIT for the stale run to start — burning a runner
+  # slot on a pool whose scarcity is the whole problem. #1425 records both
+  # options and the measurement that makes the automated one unreliable.
+  #
+  # The window needs several pushes to one PR while the pool is contended, which
+  # is a normal day of iterating on a branch that keeps re-conflicting in a
+  # generated file (#1401). #1410 had five pushes. Batching PR pushes avoids it.
   group: ci-${{ github.ref }}${{ github.event_name != 'pull_request' && format('-{0}', github.sha) || '' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
