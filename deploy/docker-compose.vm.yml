@@ -9,9 +9,39 @@
 # env file). Build once as agrent-app:local; app + worker share it.
 #
 
+# ── Log rotation (#1507) ────────────────────────────────────────────────
+#
+# Docker's default `json-file` driver NEVER rotates. On 2026-10-07 this VM's
+# 79 GB disk reached 100%: playerz-db PANICked on a checkpoint and agrent's
+# Redis failed its background saves with MISCONF until space was freed. Images
+# and build cache were the main cause; container logs are the other unbounded
+# thing on the same disk.
+#
+# PER SERVICE, deliberately, and NOT in /etc/docker/daemon.json. That file is
+# shared with playerz.bg, which runs on this same VM, and changing it needs a
+# Docker daemon restart — taking BOTH products down. A compose-level option
+# touches only agrent's containers and is applied by recreating them.
+#
+# 10m x 3 is 30 MB per container, so ~210 MB across the seven services below —
+# a bound, where there was none. It is deliberately not smaller: these logs are
+# the only record of a 502 window or a failed migration, and `docker logs` is
+# how both get diagnosed.
+#
+# APPLYING THIS NEEDS A RECREATE. The option is read when a container is
+# CREATED, so an existing container keeps its unbounded log until the next
+# `docker compose up -d --force-recreate`. That is a short restart for db and
+# redis and a 502 window for app, so it is the owner's call to schedule — this
+# file being correct is not the same as the VM being fixed.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   # ── Postgres (PostGIS + pgvector — spray-map geometry + RAG embeddings) ──
   db:
+    logging: *logging
     build:
       context: ./deploy/postgres
     image: agrent-db:local
@@ -35,6 +65,7 @@ services:
 
   # ── PgBouncer (transaction pooler) ──
   pgbouncer:
+    logging: *logging
     image: edoburu/pgbouncer:latest
     container_name: agrent-pgbouncer
     restart: always
@@ -64,6 +95,7 @@ services:
 
   # ── Redis (cache + BullMQ) ──
   redis:
+    logging: *logging
     image: redis:7-alpine
     container_name: agrent-redis
     restart: always
@@ -82,6 +114,7 @@ services:
 
   # ── Next.js app ──
   app:
+    logging: *logging
     build:
       context: .
       dockerfile: Dockerfile
@@ -134,6 +167,7 @@ services:
 
   # ── BullMQ worker + scheduler (same image, overridden entrypoint) ──
   worker:
+    logging: *logging
     build:
       context: .
       dockerfile: Dockerfile
@@ -207,6 +241,7 @@ services:
   # recreate the app entrypoint runs `prisma migrate deploy`, so schema
   # migrations self-apply. --cleanup removes the superseded image after update.
   watchtower:
+    logging: *logging
     image: containrrr/watchtower:latest
     container_name: agrent-watchtower
     restart: always
@@ -224,6 +259,7 @@ services:
 
   # ── Caddy (TLS + reverse proxy) ──
   caddy:
+    logging: *logging
     image: caddy:2-alpine
     container_name: agrent-caddy
     restart: always
