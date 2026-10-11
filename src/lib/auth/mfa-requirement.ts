@@ -129,3 +129,89 @@ export async function resolveMfaRequirement(input: {
         return { required: false, failClosed: false, dependencyFailure: true, enrolled: false };
     }
 }
+
+/**
+ * The same question for MANY tenants, in two queries rather than 2N.
+ *
+ * The policy is per farm, but `mfaPending` was one boolean computed against
+ * the session's PRIMARY tenant — so a member of farm A (MFA off, primary) and
+ * farm B (REQUIRED) carried "nothing owed" and reached B without B's factor.
+ * Answering per tenant is what closes that, and answering it per tenant
+ * one-at-a-time would put a query per membership on every claim mint.
+ *
+ * Returns the tenant IDs that owe a factor AND have not had one presented
+ * since `tokenIssuedAt`. Satisfaction is still `lastChallengeAt >= iat`, the
+ * existing rule, applied per enrolment instead of once — and it must stay
+ * `iat`-relative for the reason the native flow proved: a freshly minted
+ * token has a new `iat`, so a rule anchored anywhere else re-challenges
+ * forever.
+ *
+ * @param tokenIssuedAt the token's `iat` in SECONDS, as the JWT carries it.
+ *   Undefined means "treat nothing as satisfied", which holds rather than
+ *   releases.
+ */
+export async function resolveMfaRequirementsForTenants(input: {
+    userId: string;
+    tenantIds: readonly string[];
+    tokenIssuedAt: number | undefined;
+}): Promise<{ pendingTenantIds: string[]; failClosed: boolean; dependencyFailure: boolean }> {
+    if (input.tenantIds.length === 0) {
+        return { pendingTenantIds: [], failClosed: false, dependencyFailure: false };
+    }
+
+    try {
+        const settings = await prisma.tenantSecuritySettings.findMany({
+            where: { tenantId: { in: [...input.tenantIds] } },
+            select: { tenantId: true, mfaPolicy: true, mfaFailClosed: true },
+        });
+
+        // Only these can oblige anything, so only these need an enrolment read.
+        // Every farm with MFA off — the common case — costs nothing here.
+        const governed = settings.filter(
+            (s) => s.mfaPolicy === 'REQUIRED' || s.mfaPolicy === 'OPTIONAL',
+        );
+        const failClosed = settings.some((s) => s.mfaFailClosed);
+        if (governed.length === 0) {
+            return { pendingTenantIds: [], failClosed, dependencyFailure: false };
+        }
+
+        const enrollments = await prisma.userMfaEnrollment.findMany({
+            where: {
+                userId: input.userId,
+                tenantId: { in: governed.map((s) => s.tenantId) },
+                type: 'TOTP',
+            },
+            select: { tenantId: true, isVerified: true, lastChallengeAt: true },
+        });
+        const byTenant = new Map(enrollments.map((e) => [e.tenantId, e]));
+
+        const pendingTenantIds: string[] = [];
+        for (const s of governed) {
+            const enrollment = byTenant.get(s.tenantId);
+            const enrolled = enrollment?.isVerified === true;
+            // REQUIRED obliges a factor enrolled or not — an un-enrolled member
+            // of a REQUIRED farm is held, and the enrolment page is on
+            // `isMfaAllowedPath` so they can get out. OPTIONAL obliges one only
+            // once a verified authenticator exists, so turning the policy on
+            // does not lock out people who have not set one up.
+            const required = s.mfaPolicy === 'REQUIRED' || enrolled;
+            if (!required) continue;
+
+            const challengedAt = enrollment?.lastChallengeAt;
+            const satisfied =
+                input.tokenIssuedAt !== undefined &&
+                challengedAt !== null &&
+                challengedAt !== undefined &&
+                Math.floor(challengedAt.getTime() / 1000) >= input.tokenIssuedAt;
+
+            if (!satisfied) pendingTenantIds.push(s.tenantId);
+        }
+
+        return { pendingTenantIds, failClosed, dependencyFailure: false };
+    } catch {
+        // The caller decides which way this falls, exactly as the single-tenant
+        // resolver does: a settings read that fails is "we could not find out",
+        // not "nothing is owed".
+        return { pendingTenantIds: [], failClosed: false, dependencyFailure: true };
+    }
+}

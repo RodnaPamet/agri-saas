@@ -322,7 +322,45 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
     // refuses those sessions at the handler (P1.5); this is the Edge half, and
     // the only half that can protect a PAGE.
     if ((isTenantPath(pathname) || isPersonPath(pathname)) && !isMfaAllowedPath(pathname)) {
-        const mfaPending = token.mfaPending === true;
+        // Per FARM, not per session.
+        //
+        // This read `token.mfaPending`, one boolean the sign-in path computed
+        // against the session's PRIMARY tenant — while the policy is per farm.
+        // So a member of farm A (MFA off, primary) and farm B (REQUIRED) passed
+        // here on `/t/B/…` without B's factor.
+        //
+        // The REDIRECT below was already per-path; only the decision was not.
+        //
+        // No database on the Edge, so the slug is mapped through
+        // `token.memberships`, which already carries `{ slug, tenantId }` for
+        // the tenant picker and the authorisation gate below.
+        const pathSlug = (() => {
+            const segments = pathname.split('/');
+            const i = segments.indexOf('t');
+            return i >= 0 ? (segments[i + 1] ?? null) : null;
+        })();
+        const pathTenantId = pathSlug
+            ? ((token.memberships ?? []).find((m) => m.slug === pathSlug)?.tenantId ?? null)
+            : null;
+
+        const mfaPending = (() => {
+            // `memberships` is capped at MAX_JWT_MEMBERSHIPS, so an incomplete
+            // list must not read as "nothing owed" — and a slug we cannot map
+            // is the same situation. Both fall back to the session-wide
+            // boolean, which holds rather than releases.
+            if (token.membershipsTruncated === true) return token.mfaPending === true;
+            // A PERSON path carries no slug, so there is no tenant to test: a
+            // factor owed anywhere holds it. That is the session a stolen
+            // first factor produces, and someone's own account is what it is
+            // most useful against.
+            if (!pathSlug) return token.mfaPending === true;
+            if (!pathTenantId) return token.mfaPending === true;
+            // A session minted before this claim existed has no list; it falls
+            // back to the primary-tenant boolean, exactly as before.
+            const perTenant = token.mfaPendingTenantIds;
+            if (!Array.isArray(perTenant)) return token.mfaPending === true;
+            return perTenant.includes(pathTenantId);
+        })();
 
         if (mfaPending) {
             // Extract tenant slug from path: /t/:slug/... or /api/t/:slug/...

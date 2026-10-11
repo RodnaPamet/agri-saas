@@ -110,6 +110,10 @@ declare module 'next-auth' {
             tenantId?: string | null;
             role: Role;
             mfaPending?: boolean;
+            /** Tenant IDs owing a second factor this session has not presented. */
+            mfaPendingTenantIds?: string[];
+            /** True when `memberships` was capped, so the list above is incomplete. */
+            membershipsTruncated?: boolean;
             /** P3.1 — no recorded terms acceptance; the Edge holds at /accept-terms. */
             termsPending?: boolean;
             /** T00 — persisted UI language preference ('en' | 'bg'). */
@@ -133,6 +137,8 @@ declare module 'next-auth/jwt' {
         /** T00 — persisted UI language preference ('en' | 'bg'). */
         uiLanguage?: string;
         mfaPending?: boolean;
+        /** Tenant IDs owing a second factor this session has not presented. */
+        mfaPendingTenantIds?: string[];
         /** P3.1 — no recorded terms acceptance; the Edge holds at /accept-terms. */
         termsPending?: boolean;
         mfaFailClosed?: boolean;
@@ -863,6 +869,62 @@ export const authOptions: NextAuthOptions = {
                 }
             }
 
+            // ── Which FARMS owe a second factor ───────────────────────
+            //
+            // The block above answers that for ONE tenant — the session's
+            // primary — because `mfaPending` is one boolean. The policy is per
+            // farm, so a member of farm A (MFA off, primary) and farm B
+            // (REQUIRED) carried "nothing owed" and reached B without B's
+            // factor. On the web as much as a phone: the phone only changes
+            // the slug in the URL.
+            //
+            // Computed HERE rather than at the two gates, because this is the
+            // only place with both a database and the token's `iat`, and
+            // satisfaction is `lastChallengeAt >= iat` per enrolment.
+            // `middleware.ts` has no database, and `getSession()` narrows
+            // `iat` away before a handler sees it.
+            //
+            // TWO queries regardless of how many farms: one for the settings,
+            // one for the enrolments of only the farms whose policy can oblige
+            // anything. A farm with MFA off — the common case — costs nothing.
+            if (token.userId) {
+                const membershipTenantIds = (token.memberships ?? [])
+                    .map((m) => m.tenantId)
+                    .filter((id): id is string => typeof id === 'string' && id.length > 0);
+
+                if (membershipTenantIds.length > 0) {
+                    const { resolveMfaRequirementsForTenants } = await import(
+                        '@/lib/auth/mfa-requirement'
+                    );
+                    const verdict = await resolveMfaRequirementsForTenants({
+                        userId: token.userId,
+                        tenantIds: membershipTenantIds,
+                        tokenIssuedAt: token.iat as number | undefined,
+                    });
+
+                    if (verdict.dependencyFailure) {
+                        // Leave the previous list in place rather than
+                        // replacing it with an empty one: an empty list reads
+                        // as "nothing owed", so a failed read would RELEASE
+                        // every farm. Same direction as the single-tenant
+                        // block above, which keeps holding on a failure.
+                        if (verdict.failClosed || token.mfaFailClosed) {
+                            token.error = 'MfaDependencyFailure';
+                        }
+                    } else {
+                        token.mfaPendingTenantIds = verdict.pendingTenantIds;
+                        // Keep the session-wide boolean in agreement: it still
+                        // gates PERSON paths, which carry no slug and so have
+                        // no tenant to test. A factor owed anywhere holds
+                        // somebody's own account pages, which is the session a
+                        // stolen first factor produces.
+                        if (verdict.pendingTenantIds.length > 0) token.mfaPending = true;
+                    }
+                } else {
+                    token.mfaPendingTenantIds = [];
+                }
+            }
+
             // Throttled sessionVersion check (5-minute interval).
             if (typeof token.sessionVersion === 'number' && token.userId) {
                 const SESSION_CHECK_INTERVAL = 300; // seconds
@@ -917,6 +979,14 @@ export const authOptions: NextAuthOptions = {
                 session.user.role = token.role ?? 'READER';
                 session.user.uiLanguage = token.uiLanguage ?? DEFAULT_LOCALE;
                 session.user.mfaPending = token.mfaPending ?? false;
+                // Per-TENANT, because `mfaPending` above is one boolean and the
+                // policy is per farm. Copied here for the same reason
+                // `mfaPending` is: `getSession()` narrows the session and
+                // anything not listed is simply unavailable to `getTenantCtx`.
+                session.user.mfaPendingTenantIds = token.mfaPendingTenantIds ?? [];
+                // Carried so the gate can tell "no tenant owes one" from "the
+                // list is capped and I cannot see all of them".
+                session.user.membershipsTruncated = token.membershipsTruncated ?? false;
                 session.user.termsPending = token.termsPending ?? false;
                 session.user.memberships = token.memberships ?? [];
                 session.user.orgMemberships = token.orgMemberships ?? [];
