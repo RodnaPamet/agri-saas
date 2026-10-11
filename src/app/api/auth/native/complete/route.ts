@@ -107,6 +107,51 @@ async function handleComplete(req: NextRequest): Promise<NextResponse> {
         return NextResponse.json({ error: 'session_invalid' }, { status: 401 });
     }
 
+    // ── The second factor is owed here, or nowhere ─────────────────────
+    //
+    // This is the ONLY point in the native flow where the browser cookie is
+    // still authoritative, which makes it the only point where the gate can
+    // both be enforced and be CLEARED. Everything downstream — the code, the
+    // exchange, every refresh — inherits from the decision made here, so a
+    // code must not exist until the factor is satisfied.
+    //
+    // Why not gate further down instead: `buildSessionClaims` mints a fresh
+    // token with a new `iat`, and the cookie's clearing rule compares the
+    // enrollment's `lastChallengeAt` against `iat`. A requirement applied to
+    // a freshly-minted token is therefore one that can never clear — every
+    // refresh would re-challenge, which is a lockout rather than a gate.
+    //
+    // Why not rely on the middleware: `/api/auth/*` is a public path and
+    // returns before §4, and §4 only covers tenant and person paths anyway.
+    // It cannot see this route.
+    if (token.mfaPending === true) {
+        // Send them to the challenge, carrying this path as `next` so the
+        // flow resumes here afterwards. The PKCE challenge and redirect_uri
+        // do NOT need to ride along: they live in the HttpOnly handoff cookie
+        // that `/start` set, which survives the round trip on its own. (An
+        // earlier version of this comment said they were in the query string.
+        // They are not, and a test asserting it is what caught that.)
+        //
+        // The user is in the sign-in browser sheet, so a page is the right
+        // answer here and the phone needs no new screen.
+        const slug = typeof token.tenantSlug === 'string' ? token.tenantSlug : null;
+        if (slug) {
+            const next = req.nextUrl.pathname;
+            const mfa = new URL(`/t/${slug}/auth/mfa`, req.nextUrl.origin);
+            mfa.searchParams.set('next', next);
+            logger.info('native-auth.mfa_required', {
+                component: 'native-auth',
+                userId: typeof token.userId === 'string' ? token.userId : undefined,
+            });
+            return NextResponse.redirect(mfa);
+        }
+        // No slug to send them to. Refuse rather than fall through: falling
+        // through is the one outcome that makes this gate a no-op for the case
+        // it cannot classify.
+        logger.warn('native-auth.mfa_required_without_slug', { component: 'native-auth' });
+        return NextResponse.json({ error: 'mfa_required' }, { status: 403 });
+    }
+
     const code = await issueAuthCode({
         userSessionRowId: sessionRow.id,
         userId: sessionRow.userId,

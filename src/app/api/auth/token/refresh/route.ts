@@ -80,6 +80,12 @@ async function handleRefresh(req: NextRequest): Promise<NextResponse> {
     // cookie path uses (`applyMembershipClaims`), not a copy of it.
     const { buildSessionClaims } = await import('@/auth');
     const claims = await buildSessionClaims({
+        // 'inherit-satisfied': a refresh token is only issued alongside a
+        // session that cleared the gate. Re-EVALUATING here would be the
+        // lockout — a fresh `iat` can never satisfy the cookie's
+        // `lastChallengeAt >= iat` clearing rule, so every refresh would
+        // re-challenge forever.
+        mfa: 'inherit-satisfied',
         userId: sessionRow.userId,
         tenantId: sessionRow.tenantId,
         userSessionId: sessionRow.sessionId,

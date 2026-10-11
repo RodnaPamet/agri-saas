@@ -66,6 +66,10 @@ async function handleExchange(req: NextRequest): Promise<NextResponse> {
     // from anything the client sent — the same rule the refresh endpoint keeps.
     const { buildSessionClaims } = await import('@/auth');
     const claims = await buildSessionClaims({
+        // 'inherit-satisfied': the auth code being redeemed here is issued
+        // by `/complete`, which refuses while the cookie session owes a
+        // factor. A code's existence is the proof.
+        mfa: 'inherit-satisfied',
         userId: sessionRow.userId,
         tenantId: sessionRow.tenantId,
         userSessionId: sessionRow.sessionId,

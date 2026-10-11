@@ -109,6 +109,10 @@ async function handleAdopt(req: NextRequest): Promise<NextResponse> {
     }
 
     const claims = await buildSessionClaims({
+        // 'inherit-satisfied': this route requires a native BEARER, which
+        // only `/exchange` mints, from a code only `/complete` issues past
+        // the MFA gate. Holding one is the proof.
+        mfa: 'inherit-satisfied',
         userId,
         tenantId: (token.tenantId as string | null | undefined) ?? null,
         // REUSED, not minted. See the docblock — one sign-in, one UserSession

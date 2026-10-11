@@ -97,6 +97,8 @@ describe('§1 the claim is produced from the column', () => {
         const claims = await buildSessionClaims({
             userId,
             tenantId: null,
+            // Not the subject here; these tests are about termsPending.
+            mfa: 'inherit-satisfied',
             userSessionId: 'sess-1',
         });
         expect(claims?.termsPending).toBe(true);
@@ -109,6 +111,8 @@ describe('§1 the claim is produced from the column', () => {
         const claims = await buildSessionClaims({
             userId,
             tenantId: null,
+            // Not the subject here; these tests are about termsPending.
+            mfa: 'inherit-satisfied',
             userSessionId: 'sess-2',
         });
         expect(claims?.termsPending).toBe(false);
@@ -124,6 +128,8 @@ describe('§1 the claim is produced from the column', () => {
             const claims = await buildSessionClaims({
                 userId,
                 tenantId: null,
+                // Not the subject here; these tests are about termsPending.
+                mfa: 'inherit-satisfied',
                 userSessionId: 'sess-3',
             });
             expect(typeof claims?.termsPending).toBe('boolean');
@@ -143,6 +149,8 @@ describe('§2 and the gate actually holds the resulting session', () => {
         const claims = await buildSessionClaims({
             userId,
             tenantId: null,
+            // Not the subject here; these tests are about termsPending.
+            mfa: 'inherit-satisfied',
             userSessionId: 'sess-4',
         });
         // The real claim object, not a hand-written one — the point is that
@@ -158,6 +166,8 @@ describe('§2 and the gate actually holds the resulting session', () => {
         const claims = await buildSessionClaims({
             userId,
             tenantId: null,
+            // Not the subject here; these tests are about termsPending.
+            mfa: 'inherit-satisfied',
             userSessionId: 'sess-5',
         });
         getToken.mockResolvedValue(claims);
@@ -174,6 +184,8 @@ describe('§2 and the gate actually holds the resulting session', () => {
         const claims = await buildSessionClaims({
             userId,
             tenantId: null,
+            // Not the subject here; these tests are about termsPending.
+            mfa: 'inherit-satisfied',
             userSessionId: 'sess-6',
         });
         getToken.mockResolvedValue(claims);

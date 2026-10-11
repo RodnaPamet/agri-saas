@@ -67,6 +67,7 @@ import { env } from '@/env';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { codedForbidden } from '@/lib/errors/types';
 import { LOGIN_LIMIT } from '@/lib/security/rate-limit';
 import { hashForLookup, hashForLookupCandidates } from '@/lib/security/encryption';
 import { verifyAppleIdentityToken, type AppleIdentity } from '@/lib/auth/apple';
@@ -289,10 +290,51 @@ async function handleAppleSignIn(req: NextRequest): Promise<NextResponse> {
     });
 }
 
-/** Claims come from the single producer, never from anything the client sent. */
+/**
+ * Claims come from the single producer, never from anything the client sent.
+ *
+ * Returns `null` when the membership owes a second factor. Apple sign-in
+ * happens natively, with no browser sheet to type a code into and no code
+ * screen in the app yet — so there is nowhere to satisfy the requirement and
+ * the only sound answers are "refuse" or "let them in without it". Refusing
+ * is the one that is not a bypass. The other native providers do not need
+ * this because their code is typed in the sign-in sheet and the gate sits at
+ * auth-code issuance; this route has no such point.
+ *
+ * `resolveMfaRequirement` is read-only and shares its rule with the sign-in
+ * path, so a tenant that has not enabled MFA is unaffected — measured when
+ * this landed: zero farms had a policy set and nobody was enrolled, so no
+ * live Apple user was refused by it.
+ */
 async function buildClaims(userId: string, tenantId: string | null, userSessionId: string) {
+    const { resolveMfaRequirement } = await import('@/lib/auth/mfa-requirement');
+    const mfa = await resolveMfaRequirement({ userId, tenantId });
+    // A check that could not complete refuses too. This route cannot offer a
+    // challenge, so "we could not find out" has to fall the same way as "yes"
+    // — the alternative is minting a session that may owe a factor.
+    if (mfa.required || mfa.dependencyFailure) {
+        logger.warn('apple-native.mfa_required_refused', {
+            component: 'apple-native',
+            dependencyFailure: mfa.dependencyFailure,
+        });
+        // A CODE and not `refused()`. That helper answers `invalid_grant`/400
+        // and is deliberately opaque, which is right for a bad Apple token —
+        // telling a caller why its token failed helps nobody but an attacker.
+        // This is the opposite case: the farm's own policy requires a second
+        // factor, that is not a secret from the person signing in, and the app
+        // has to be able to SAY so. `MFA_REQUIRED` already exists in the
+        // middleware and the tenant context and is documented in the error
+        // helpers, so this adds no vocabulary.
+        throw codedForbidden(
+            'MFA_REQUIRED',
+            'This farm requires a second factor, which Apple sign-in cannot yet collect. Sign in with Google or Microsoft, or from the web.',
+        );
+    }
     const { buildSessionClaims } = await import('@/auth');
-    return buildSessionClaims({ userId, tenantId, userSessionId });
+    // 'inherit-satisfied': unreachable while a factor is owed — the check
+    // above refuses first. Stated rather than evaluated so this route has one
+    // refusal point, not two places that could disagree.
+    return buildSessionClaims({ userId, tenantId, userSessionId, mfa: 'inherit-satisfied' });
 }
 
 export const POST = withApiErrorHandling(handleAppleSignIn, {

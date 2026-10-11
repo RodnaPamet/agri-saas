@@ -108,6 +108,14 @@ export async function establishSsoSession(input: EstablishSessionInput): Promise
     });
 
     const claims = await buildSessionClaims({
+        // 'evaluate': a FRESH sign-in. SAML and OIDC callbacks mint this
+        // cookie without passing through the `jwt` callback, so nothing
+        // upstream has considered MFA — and an SSO user was therefore
+        // skipping the farm's second factor on the WEB too, not only on a
+        // phone. Safe to evaluate here precisely because it IS a cookie:
+        // it is mutated across requests and keeps this `iat`, so the
+        // normal clearing rule works on it.
+        mfa: 'evaluate',
         userId: input.userId,
         tenantId: input.tenantId,
         userSessionId: recorded.sessionId,
