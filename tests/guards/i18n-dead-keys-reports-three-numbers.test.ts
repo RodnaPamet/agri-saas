@@ -302,8 +302,11 @@ describe('the i18n dead-key detector (#1534)', () => {
         // Called as `weedLabel(tWeeds, x)`, so the translator crosses a
         // function boundary and no `<var>(...)` pattern sees it.
         //
-        // The helper set is DERIVED from the `: SomethingTranslator` parameter
-        // convention, not hand-listed. That distinction is the safety: a list
+        // The helper set is DERIVED from the parameter's TYPE mentioning
+        // `Translator`, `useTranslations` or `getTranslations` — not
+        // hand-listed, and no longer from the `: SomethingTranslator` spelling
+        // this comment used to name, which is precisely what missed 7 of 9
+        // takers (see the three tests at the end of this block). That distinction is the safety: a list
         // keyed on "a translator passed as an argument" would have matched
         // `clearTimeout(t)`, `String(t)` and `Date(t)`, where `t` is a timer
         // handle — and marking a namespace undecidable on the strength of a
@@ -323,6 +326,57 @@ describe('the i18n dead-key detector (#1534)', () => {
 
         it('crops too — the same helper shape', () => {
             expect(report.unreferencedKeys.filter((k) => k.startsWith('crops.'))).toEqual([]);
+        });
+
+        // ── The fifth blind spot of this class, and the narrowest ────────
+        //
+        // The convention the comment above calls derived was
+        // `: SomethingTranslator` — and its own phrasing is the bug. The test
+        // was `/:\s*[A-Z]\w*Translator\b/`, which requires a word BEFORE
+        // `Translator`, so a parameter typed plainly `Translator` did not
+        // match, and nothing matched `ReturnType<typeof useTranslations>`
+        // either. Those are the only two shapes in this repo, so 7 of 9 takers
+        // were invisible and their callers' namespaces were never marked
+        // undecidable.
+        //
+        // The result was FALSE POSITIVES, which is the dangerous direction:
+        // `buildJournalFilters` calls `t('filter.type')`, `t('filter.status')`
+        // and `t('filter.crop')` as plain literals and all three sat in the
+        // candidate list; `buildPlanningFilters` reaches all four
+        // `planningEnums.status.*` through `t(`status.${o.value}`)` one line
+        // below its own `t('filter.status')`. I found them by starting to
+        // delete the candidate list.
+        //
+        // So this corrects a claim the report itself made: the unreferenced
+        // count was described as a FLOOR because every known limit supposedly
+        // "pushes toward calling a dead key LIVE". An untracked translator does
+        // the opposite — it hides the calls, so the keys look dead.
+        it('a translator typed plainly `Translator` is a taker', () => {
+            // `exchange/filter-defs.ts` and the three grain ones declare
+            // `type Translator = (key: string) => string` locally.
+            expect(report.undecidablePrefixes).toContain('exchangeFilters');
+        });
+
+        it('so is `ReturnType<typeof useTranslations>` — journalEnums and planningEnums', () => {
+            for (const ns of ['journalEnums', 'planningEnums']) {
+                expect(report.undecidablePrefixes).toContain(ns);
+                expect(
+                    report.unreferencedKeys.filter((k) => k.startsWith(`${ns}.`)),
+                ).toEqual([]);
+            }
+        });
+
+        it('and the `*Translator` shape still matches — the half the fix nearly dropped', () => {
+            // The first version of the widening put a `\b` before the
+            // alternation, which matches `Translator` and NOT `EnumTranslator`
+            // — no word boundary between `m` and `T`. It inverted the bug
+            // instead of fixing it: `crops`, `weeds`, `taskEnums` and
+            // `knowledge.filters` left the undecidable set and 61 keys became
+            // deletion candidates. These four are the assertion that would
+            // have caught it, and two of them were already here.
+            for (const ns of ['taskEnums', 'knowledge.filters']) {
+                expect(report.undecidablePrefixes).toContain(ns);
+            }
         });
     });
 
