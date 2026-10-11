@@ -35,7 +35,7 @@
  */
 import { NextRequest } from 'next/server';
 
-import { auth } from '@/auth';
+import { authRefusingSuspended } from '@/lib/auth/session-gate';
 import prisma from '@/lib/prisma';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
@@ -45,7 +45,9 @@ import { logger } from '@/lib/observability/logger';
 
 export const POST = withApiErrorHandling(
     async (req: NextRequest) => {
-        const session = await auth();
+        // #1652: the suspension check lives in `getSessionOrThrow`, which this
+        // route does not reach — it resolved its own session with `auth()`.
+        const session = await authRefusingSuspended();
         if (!session?.user?.id) {
             return jsonResponse({ error: 'unauthenticated' }, { status: 401 });
         }

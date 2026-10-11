@@ -12,7 +12,7 @@
  * Rate limited: INVITE_REDEEM_LIMIT (10/min per IP).
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/auth';
+import { authRefusingSuspended, authWithSuspension } from '@/lib/auth/session-gate';
 import { previewInviteByToken, redeemInvite } from '@/app-layer/usecases/tenant-invites';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { INVITE_REDEEM_LIMIT } from '@/lib/security/rate-limit';
@@ -36,7 +36,12 @@ export const GET = withApiErrorHandling(
         if (limitResponse) return limitResponse;
 
         const { token } = await routeArgs.params;
-        const session = await auth();
+        // The PREVIEW proceeds for a suspended account, deliberately. The
+        // owner's #1652 ruling was about ACCEPTANCE; this is a read of an
+        // invite the person was sent, it is already enumeration-safe, and
+        // hiding it would conceal what they are being told about rather than
+        // stop them acting on it. The POST below is where the refusal is.
+        const { session } = await authWithSuspension();
         const sessionEmail = session?.user?.email ?? null;
 
         const preview = await previewInviteByToken(token, sessionEmail);
@@ -64,7 +69,11 @@ export const POST = withApiErrorHandling(
         const limitResponse = await applyRedeemRateLimit(req);
         if (limitResponse) return limitResponse;
 
-        const session = await auth();
+        // Refused for a suspended account (owner ruling, #1652): a moderator
+        // suspends somebody and that account could otherwise JOIN A SECOND FARM
+        // and carry on there under a fresh membership. The invite is left
+        // PENDING rather than consumed, so it still works after a lift.
+        const session = await authRefusingSuspended();
         if (!session?.user?.id || !session.user.email) {
             throw unauthorized('You must be signed in to accept an invite.');
         }

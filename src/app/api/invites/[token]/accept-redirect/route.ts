@@ -13,7 +13,7 @@
  * Sign-in required. Any tenant (no tenant permission middleware applies).
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/auth';
+import { authWithSuspension } from '@/lib/auth/session-gate';
 import { resolvePublicOrigin } from '@/lib/http/request-origin';
 import { redeemInvite } from '@/app-layer/usecases/tenant-invites';
 import { INVITE_REDEEM_LIMIT } from '@/lib/security/rate-limit';
@@ -34,13 +34,31 @@ export async function GET(
 
     const { token } = await routeArgs.params;
     const origin = resolvePublicOrigin(req);
-    const session = await auth();
+    // `authWithSuspension` rather than the throwing sibling: this is a bare
+    // `GET` a BROWSER navigates to, so a thrown 403 would be rendered as raw
+    // JSON. The refusal is a redirect to the surface that already explains
+    // invite failures (#1652).
+    const { session, suspended } = await authWithSuspension();
 
     if (!session?.user?.id || !session.user.email) {
         // Not signed in — send back to sign-in with this route as callbackUrl.
         const loginUrl = new URL('/login', origin);
         loginUrl.searchParams.set('callbackUrl', req.nextUrl.pathname);
         return NextResponse.redirect(loginUrl);
+    }
+
+    if (suspended) {
+        // BEFORE `redeemInvite`, so the invite is not consumed — the owner's
+        // ruling is that it stays pending and still works after a lift.
+        //
+        // A stable CODE in the query, not a sentence: the `catch` below puts
+        // `err.message` there and the invite page renders it, which is
+        // server-authored English on a ratchet. `?error=ACCOUNT_SUSPENDED`
+        // matches what every other gate answers and the page can key its own
+        // Bulgarian copy on it.
+        const inviteUrl = new URL(`/invite/${token}`, origin);
+        inviteUrl.searchParams.set('error', 'ACCOUNT_SUSPENDED');
+        return NextResponse.redirect(inviteUrl);
     }
 
     try {
