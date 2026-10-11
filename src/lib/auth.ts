@@ -17,7 +17,8 @@ import jwt from 'jsonwebtoken';
 import prisma from './prisma';
 import type { Role, User } from '@prisma/client';
 import { env } from '@/env';
-import { unauthorized, forbidden } from '@/lib/errors/types';
+import { unauthorized, forbidden, codedForbidden } from '@/lib/errors/types';
+import { isAccountSuspended } from '@/lib/auth/suspension';
 
 export interface JwtPayload {
     userId: string;
@@ -89,9 +90,46 @@ export async function getSession(): Promise<JwtPayload | null> {
     return null;
 }
 
+/**
+ * The session, or a refusal.
+ *
+ * ## Why the suspension check is HERE and nowhere else
+ *
+ * This is the one function every authenticated route reaches: all three context
+ * resolvers (`getTenantCtx`, `getUserCtx`, `getLegacyCtx`) call it, and
+ * `getSession` goes through `auth()` — which tries the cookie first and falls
+ * back to a bearer principal — so one check covers both credential types with
+ * no second, looser path to keep in sync. That is the same argument
+ * `src/middleware.ts` makes for being the only reader of `token.error`.
+ *
+ * It cannot be in middleware, which is where "within one request" would
+ * naturally live: middleware runs on the EDGE, and the Edge has neither Prisma
+ * nor ioredis in this deployment. See `@/lib/auth/suspension` for that in full.
+ *
+ * ## Why a distinct code rather than `unauthorized()`
+ *
+ * `ACCOUNT_SUSPENDED` is a 403 with its own code, following the
+ * `PAST_DUE_RESTRICTED` convention (#1388/#1405): a suspended person must be
+ * told their account was suspended, not that they lack permission or that they
+ * are signed out. Collapsing it into the 401 above would send them to a login
+ * page that signs them straight back in and refuses again, with nothing naming
+ * the cause.
+ *
+ * No English prose rides along — `no-server-authored-user-copy` holds thrown
+ * sentences on a downward ratchet, and the client renders the code.
+ */
 export async function getSessionOrThrow(): Promise<JwtPayload> {
     const session = await getSession();
     if (!session) throw unauthorized();
+
+    // Checked on EVERY request, deliberately unthrottled: this is the signal
+    // P5.9 exists to make immediate. `isAccountSuspended` absorbs the cost in
+    // Redis and fails closed only where failing closed is free — a request that
+    // cannot read this row cannot do its own work either.
+    if (session.userId && (await isAccountSuspended(session.userId))) {
+        throw codedForbidden('ACCOUNT_SUSPENDED', 'ACCOUNT_SUSPENDED');
+    }
+
     return session;
 }
 

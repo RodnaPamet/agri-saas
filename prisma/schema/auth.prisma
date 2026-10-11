@@ -677,6 +677,21 @@ model User {
   // `TERMS_VERSION` from `@/lib/legal/terms` to tell whether somebody is
   // behind.
   acceptedTermsAt               DateTime?
+  /// When platform moderation withheld this account's access (P5.9, #1600).
+  ///
+  /// A TIMESTAMP rather than a boolean, because "suspended since when" is a
+  /// question a regulator and an appeal both ask, and because the DSA statement
+  /// of reasons that announces a suspension is dated.
+  ///
+  /// NULL means not suspended. Lifting a suspension sets it back to NULL rather
+  /// than adding a second column: there is exactly one live state, and a pair
+  /// of columns would admit the contradictory "suspended and lifted at the same
+  /// instant".
+  ///
+  /// Reached on every authenticated request through `getSessionOrThrow`, so it
+  /// is indexed — see `@@index([suspendedAt])` below, which also makes "who is
+  /// currently suspended" answerable without a full scan.
+  suspendedAt                   DateTime?
   acceptedTermsVersion          String?
 
   /// Bottom-row tab arrangement, synced across the user's devices.
@@ -791,6 +806,13 @@ model User {
   // Enterprise-grain — payroll/labour cost register.
   costEntriesCreated            CostEntry[]                  @relation("CostEntryCreator")
   featureFlagCohorts FeatureFlagCohortMember[] @relation("FeatureFlagCohortMemberships")
+
+  /// P5.9 (#1600). Read on every authenticated request via the suspension
+  /// check, and the index also answers "who is currently suspended" — a
+  /// question the moderation console needs — without a full scan. PARTIAL in
+  /// the migration (`WHERE "suspendedAt" IS NOT NULL`), because the rows that
+  /// matter are the handful that are set, not the thousands that are NULL.
+  @@index([suspendedAt])
 }
 
 model Account {
