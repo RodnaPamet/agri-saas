@@ -4897,6 +4897,7 @@
             "setupStep1": "1. Open your authenticator app (Google Authenticator, Authy, 1Password, etc.)",
             "setupStep2": "2. Scan this QR code or manually enter the setup key",
             "cannotScan": "If you cannot scan, use the setup key below",
+            "openInAuthenticator": "Open in your authenticator app",
             "setupKey": "Setup Key",
             "copied": "Copied!",
             "copy": "Copy",
