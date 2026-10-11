@@ -48,6 +48,11 @@ const EXPECTED: Record<string, 'inherit-satisfied' | 'evaluate'> = {
     // A FRESH sign-in: SAML/OIDC callbacks never pass through the `jwt`
     // callback, so nothing upstream has considered MFA.
     'src/lib/auth/sso-session.ts': 'evaluate',
+    // The ONE caller that earns `inherit-satisfied` in the request itself
+    // rather than inheriting it from a credential issued earlier: the factor
+    // was just presented and verified, two statements above the mint. Apple
+    // sign-in has no browser sheet, so this is where the code is collected.
+    'src/app/api/auth/native/mfa/route.ts': 'inherit-satisfied',
 };
 
 const read = (rel: string): string =>

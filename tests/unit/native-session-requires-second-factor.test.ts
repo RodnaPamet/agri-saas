@@ -112,9 +112,47 @@ describe('resolveMfaRequirement — one producer for the requirement', () => {
         ).toBe(false);
     });
 
+    it.each([
+        ['REQUIRED + enrolled    -> owed, and collectable', 'REQUIRED', { isVerified: true }, true, true],
+        ['REQUIRED + NOT enrolled -> owed, NOT collectable', 'REQUIRED', null, true, false],
+        ['OPTIONAL + enrolled    -> owed', 'OPTIONAL', { isVerified: true }, true, true],
+        ['OPTIONAL + unverified  -> not owed', 'OPTIONAL', { isVerified: false }, false, false],
+        ['DISABLED               -> not owed', 'DISABLED', { isVerified: true }, false, false],
+    ])('%s', async (_label, mfaPolicy, enrollment, required, enrolled) => {
+        // The three states, not two. `required` alone cannot tell a farm that
+        // wants a code from a farm that wants one the person cannot produce:
+        // REQUIRED with no verified authenticator owes a factor that has no
+        // shared secret to verify against. A challenge screen there asks for
+        // a code from an app the person never set up; the remedy is enrolment
+        // on the web, which is a different sentence and so a different code.
+        findUniqueSecurity.mockResolvedValue({ mfaPolicy, mfaFailClosed: false });
+        findUniqueEnrollment.mockResolvedValue(enrollment);
+        const r = await resolveMfaRequirement({ userId: 'user-1', tenantId: 'tenant-1' });
+        expect({ required: r.required, enrolled: r.enrolled }).toEqual({ required, enrolled });
+    });
+
+    it('DISABLED does not read the enrolment at all', async () => {
+        // The common path for every farm that has not turned MFA on. Nothing
+        // downstream can act on `enrolled` when nothing is owed, so the read
+        // would be pure cost on the hot path.
+        findUniqueSecurity.mockResolvedValue({ mfaPolicy: 'DISABLED', mfaFailClosed: false });
+        await resolveMfaRequirement({ userId: 'user-1', tenantId: 'tenant-1' });
+        expect(findUniqueEnrollment).not.toHaveBeenCalled();
+    });
+
     it('a tenantless session owes nothing — MFA is enrolled per tenant', async () => {
         const r = await resolveMfaRequirement({ userId: 'user-1', tenantId: null });
-        expect(r).toEqual({ required: false, failClosed: false, dependencyFailure: false });
+        expect(r).toEqual({
+            required: false,
+            failClosed: false,
+            dependencyFailure: false,
+            // `enrolled` joined the shape with the Apple challenge work: a
+            // REQUIRED tenant whose user never enrolled owes a factor that
+            // cannot be COLLECTED, which is a third state a caller has to
+            // tell apart from the other two. False here — no tenant, so no
+            // enrolment to find and no read to do.
+            enrolled: false,
+        });
         // And it must not have asked the database at all.
         expect(findUniqueSecurity).not.toHaveBeenCalled();
     });

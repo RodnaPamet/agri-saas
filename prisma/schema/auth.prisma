@@ -1104,6 +1104,14 @@ model NativeAuthCode {
   expiresAt     DateTime
   /// Set on exchange. A second attempt is refused — see the atomic claim.
   consumedAt    DateTime?
+  /// What this row may be redeemed for. See `NativeAuthCodePurpose`: the
+  /// exchange filters ON this column, so a ticket is invisible there.
+  purpose       NativeAuthCodePurpose @default(SESSION)
+  /// Wrong TOTP codes presented against a `PENDING_MFA` ticket. Capped, then
+  /// the ticket is consumed — a 6-digit code is guessable by brute force in
+  /// a way a 32-byte code is not, so the ticket needs a limit its sibling
+  /// does not.
+  mfaAttempts   Int       @default(0)
 
   session UserSession @relation("SessionAuthCodes", fields: [userSessionId], references: [id], onDelete: Cascade)
 

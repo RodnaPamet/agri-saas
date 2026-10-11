@@ -74,6 +74,7 @@ import { hashForLookup, hashForLookupCandidates } from '@/lib/security/encryptio
 import { verifyAppleIdentityToken, type AppleIdentity } from '@/lib/auth/apple';
 import { redeemPendingInvites } from '@/lib/auth/invite-redemption';
 import { recordNewSession } from '@/lib/security/session-tracker';
+import { issueAuthCode } from '@/lib/auth/native/auth-codes';
 import { SESSION_MAX_AGE_SECONDS } from '@/lib/auth/session-lifetime';
 import {
     ACCESS_TOKEN_TTL_SECONDS,
@@ -197,6 +198,21 @@ async function handleAppleSignIn(req: NextRequest): Promise<NextResponse> {
     const obj = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>;
     const identityToken = obj.identityToken ?? obj.identity_token;
     const rawNonce = obj.nonce ?? obj.rawNonce ?? obj.raw_nonce;
+    // OPTIONAL, and its presence is the client declaring it understands a 202.
+    //
+    // The installed app does `guard status == 200`, so a 202 lands in its
+    // error branch with no code and shows a meaningless status message, while
+    // the 403 gets a real Bulgarian sentence. Making the ticket the new
+    // DEFAULT would therefore break every phone already in a pocket. So the
+    // request opts in, and a client that sends no challenge keeps the refusal
+    // it already handles. Raised by agrent-ios, who would have shipped into it.
+    //
+    // It doubles as the ticket's PKCE binding, which is the better reason to
+    // put it here rather than inventing a version flag: a ticket leaked
+    // through a log or a crash report is useless without the verifier, which
+    // never leaves the phone's memory.
+    const codeChallenge = obj.code_challenge ?? obj.codeChallenge;
+    const wantsTicket = typeof codeChallenge === 'string' && codeChallenge.length > 0;
     if (
         typeof identityToken !== 'string' ||
         typeof rawNonce !== 'string' ||
@@ -268,13 +284,69 @@ async function handleAppleSignIn(req: NextRequest): Promise<NextResponse> {
     // Found because agrent-ios asked whether an abandoned MFA ticket would
     // leave a visible session. It would — and the same flaw was already one
     // step earlier, in the plain refusal.
-    await assertMfaNotOwed(userId, tenantId);
+    const mfa = await resolveMfaRequirement({ userId, tenantId });
+    if ((mfa.required || mfa.dependencyFailure) && !(wantsTicket && mfa.enrolled)) {
+        // Either the client cannot collect a code (no challenge sent, so it is
+        // an older build), or there is no authenticator to collect one with.
+        // `assertMfaNotOwed` decides which refusal, and both are refusals —
+        // nothing is minted and no session row is written.
+        await assertMfaNotOwed(userId, tenantId, mfa);
+    }
 
     const recorded = await recordNewSession({
         userId,
         tenantId,
         expiresAt: new Date(Date.now() + SESSION_MAX_AGE_SECONDS * 1000),
     });
+
+    // ── The factor is owed, and this client can collect it ────────────
+    //
+    // A TICKET, not a token pair. The session row exists (it is what the
+    // ticket hangs off, and what makes the eventual pair revocable), but
+    // nothing that authenticates a single API call has been minted — and
+    // `native/exchange` cannot redeem this row, because it filters on
+    // `purpose: 'SESSION'`.
+    //
+    // 202 rather than 200: the sign-in is accepted and incomplete. Only a
+    // client that sent a `code_challenge` reaches here, so no installed build
+    // sees a status it does not handle.
+    if (mfa.required && wantsTicket && mfa.enrolled) {
+        const ticket = await issueAuthCode({
+            userSessionRowId: recorded.rowId,
+            userId,
+            tenantId,
+            codeChallenge: codeChallenge as string,
+            // No redirect is involved — the app posts the ticket back itself.
+            // The column is NOT NULL and is validated against an allowlist
+            // only at the browser-handoff issuer, so a sentinel that is not a
+            // URL is the honest value: nothing will ever redirect to it.
+            redirectUri: 'native:mfa',
+            purpose: 'PENDING_MFA',
+        });
+
+        logger.info('apple-native.mfa_ticket_issued', {
+            component: 'apple-native',
+            userId,
+            tenantId: tenantId ?? undefined,
+        });
+
+        return NextResponse.json(
+            {
+                // A DISCRIMINANT, so a ticket can never decode as a grant or
+                // the reverse. agrent-ios asked for this: their decoder picks
+                // a type from the payload, and two shapes that differ only by
+                // which optional keys are present is how a client ends up
+                // treating one as the other.
+                status: 'mfa_required',
+                ticket: ticket.raw,
+                expiresIn: Math.max(
+                    0,
+                    Math.floor((ticket.expiresAt.getTime() - Date.now()) / 1000),
+                ),
+            },
+            { status: 202 },
+        );
+    }
 
     const claims = await buildClaims(userId, tenantId, recorded.sessionId);
     if (!claims) return refused();
@@ -350,12 +422,37 @@ async function buildClaims(userId: string, tenantId: string | null, userSessionI
  * landed: zero farms had a policy set and nobody was enrolled, so no live
  * Apple user is refused by it today.
  */
-async function assertMfaNotOwed(userId: string, tenantId: string | null): Promise<void> {
-    const mfa = await resolveMfaRequirement({ userId, tenantId });
-    // A check that could not complete refuses too: this route cannot offer a
-    // challenge, so "we could not find out" has to fall the same way as
-    // "yes". The alternative is minting a session that may owe a factor.
+async function assertMfaNotOwed(
+    userId: string,
+    tenantId: string | null,
+    mfa: Awaited<ReturnType<typeof resolveMfaRequirement>>,
+): Promise<void> {
+    // A check that could not complete refuses too: "we could not find out"
+    // has to fall the same way as "yes", or a session that may owe a factor
+    // gets minted.
     if (!mfa.required && !mfa.dependencyFailure) return;
+
+    if (mfa.required && !mfa.enrolled && !mfa.dependencyFailure) {
+        // A THIRD state, and its own code. This farm requires a factor the
+        // person cannot produce: there is no verified authenticator, so there
+        // is no shared secret to check a code against. A challenge screen here
+        // would ask for a code from an app they never set up.
+        //
+        // The remedy is enrolment on the web, which is a different sentence
+        // from "use another provider" — so it must not share `MFA_REQUIRED`.
+        // agrent-ios asked for the split precisely because they would
+        // otherwise show the wrong one. Google and Microsoft hit the same wall
+        // in the sign-in sheet, where the enrolment page's `otpauth://` link
+        // (#1646) is what gets a phone out of it.
+        logger.warn('apple-native.mfa_enrolment_required', {
+            component: 'apple-native',
+            userId,
+        });
+        throw codedForbidden(
+            'MFA_ENROLLMENT_REQUIRED',
+            'This farm requires a second factor and this account has none set up yet. Set up an authenticator from the web, then sign in again.',
+        );
+    }
 
     logger.warn('apple-native.mfa_required_refused', {
         component: 'apple-native',

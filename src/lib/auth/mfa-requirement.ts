@@ -45,10 +45,30 @@ export interface MfaRequirement {
      * user owes a code" and "we could not find out".
      */
     dependencyFailure: boolean;
+    /**
+     * The user has a VERIFIED authenticator for this tenant.
+     *
+     * Separate from `required` because the two combine into three states, not
+     * two, and the third needs its own answer: a tenant on REQUIRED whose
+     * user has never enrolled owes a factor that CANNOT be collected — there
+     * is no shared secret to verify against. A challenge screen there would
+     * ask for a code from an authenticator the person has not set up.
+     *
+     * The remedy is enrolment on the web, which is a different sentence from
+     * "use another provider", so it needs a different code
+     * (`MFA_ENROLLMENT_REQUIRED` rather than `MFA_REQUIRED`). Raised by
+     * agrent-ios, who would otherwise have had to show the wrong one.
+     */
+    enrolled: boolean;
 }
 
 /** No tenant, no membership-scoped policy — MFA is enrolled per tenant. */
-const NONE: MfaRequirement = { required: false, failClosed: false, dependencyFailure: false };
+const NONE: MfaRequirement = {
+    required: false,
+    failClosed: false,
+    dependencyFailure: false,
+    enrolled: false,
+};
 
 /**
  * Resolve the requirement for one user in one tenant.
@@ -72,32 +92,40 @@ export async function resolveMfaRequirement(input: {
         const failClosed = settings?.mfaFailClosed ?? false;
         const policy = settings?.mfaPolicy ?? 'DISABLED';
 
-        if (policy === 'REQUIRED') {
-            return { required: true, failClosed, dependencyFailure: false };
+        if (policy === 'DISABLED') {
+            // No enrolment read: nothing downstream can act on it, and this
+            // is the common path for every farm that has not turned MFA on.
+            return { required: false, failClosed, dependencyFailure: false, enrolled: false };
         }
-        if (policy === 'OPTIONAL') {
-            const enrollment = await prisma.userMfaEnrollment.findUnique({
-                where: {
-                    userId_tenantId_type: {
-                        userId: input.userId,
-                        tenantId: input.tenantId,
-                        type: 'TOTP',
-                    },
+
+        const enrollment = await prisma.userMfaEnrollment.findUnique({
+            where: {
+                userId_tenantId_type: {
+                    userId: input.userId,
+                    tenantId: input.tenantId,
+                    type: 'TOTP',
                 },
-                select: { isVerified: true },
-            });
-            return {
-                required: enrollment?.isVerified === true,
-                failClosed,
-                dependencyFailure: false,
-            };
-        }
-        return { required: false, failClosed, dependencyFailure: false };
+            },
+            select: { isVerified: true },
+        });
+        const enrolled = enrollment?.isVerified === true;
+
+        // REQUIRED always obliges a factor, enrolled or not — the caller
+        // decides whether that means "present a code" or "go and enrol".
+        // OPTIONAL obliges one only once a verified authenticator exists, so
+        // turning the policy on does not lock out people who have not set one
+        // up yet.
+        return {
+            required: policy === 'REQUIRED' || enrolled,
+            failClosed,
+            dependencyFailure: false,
+            enrolled,
+        };
     } catch {
         // The caller decides. `failClosed` is unknown here because reading it
         // is what failed, so report the failure and let the caller apply its
         // own default — the sign-in path holds the session, and a route that
         // cannot verify refuses.
-        return { required: false, failClosed: false, dependencyFailure: true };
+        return { required: false, failClosed: false, dependencyFailure: true, enrolled: false };
     }
 }

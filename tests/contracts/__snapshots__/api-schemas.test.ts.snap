@@ -521,6 +521,35 @@ exports[`API contract — per-schema snapshots schema: AgDashboardTaskItem 1`] =
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: AppleMfaRequired 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": [
+        "mfa_required"
+      ],
+      "description": "Always this value. Switch on it: a 202 is never a token pair and a 200 is never a ticket."
+    },
+    "ticket": {
+      "type": "string",
+      "description": "Opaque, single-use, and useless without the \`code_verifier\` whose challenge you sent. Post it to \`POST /api/auth/native/mfa\` together with the code."
+    },
+    "expiresIn": {
+      "type": "number",
+      "description": "SECONDS the ticket remains valid — a DURATION, not a date. Five minutes, which is time to open an authenticator and read a code. On expiry start sign-in again; a ticket cannot be refreshed."
+    }
+  },
+  "required": [
+    "status",
+    "ticket",
+    "expiresIn"
+  ],
+  "description": "Sign-in is accepted and INCOMPLETE: the identity token verified, and the farm requires a second factor the app must now collect."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: AppleSignInRequest 1`] = `
 "{
   "type": "object",
@@ -532,6 +561,10 @@ exports[`API contract — per-schema snapshots schema: AppleSignInRequest 1`] = 
     "nonce": {
       "type": "string",
       "description": "The RAW nonce this attempt used — the server hashes it. \`rawNonce\` / \`raw_nonce\` are also accepted. Single-use."
+    },
+    "code_challenge": {
+      "type": "string",
+      "description": "OPTIONAL, and sending it is how a client DECLARES it can handle a 202. Base64url SHA-256 of a fresh verifier, generated exactly as for \`/native/start\`; S256 only.\\n\\nOmit it and a farm requiring a second factor answers \`403 MFA_REQUIRED\` — which is what every build shipped before this field existed already handles. Send it and that case answers \`202\` with a ticket instead, so adding the field is opt-in per request rather than a change every client has to absorb at once.\\n\\nIt is also the ticket’s PKCE binding: keep the verifier in memory and send it to \`POST /api/auth/native/mfa\`. A ticket leaked through a log or a crash report is useless without it. \`codeChallenge\` is also accepted."
     }
   },
   "required": [
@@ -9172,6 +9205,54 @@ exports[`API contract — per-schema snapshots schema: NativeExchangeRequest 1`]
     "code"
   ],
   "description": "One of \`code_verifier\` / \`codeVerifier\` is REQUIRED — the schema cannot express \\"exactly one of\\" without rejecting the other spelling, so both are optional here and the handler requires one. Sending neither is 400 invalid_grant."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: NativeMfaRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "ticket": {
+      "type": "string",
+      "description": "The \`ticket\` from the 202. Single-use."
+    },
+    "code": {
+      "type": "string",
+      "description": "The six-digit TOTP code. Digits only — anything else answers \`MFA_CODE_MALFORMED\` and costs no attempt."
+    },
+    "code_verifier": {
+      "type": "string",
+      "description": "The verifier whose SHA-256 you sent as \`code_challenge\` to \`signInWithApple\`. \`codeVerifier\` is also accepted. A mismatch answers \`MFA_TICKET_INVALID\` and does NOT consume the ticket — somebody else holding it must not be able to lock the real user out."
+    }
+  },
+  "required": [
+    "ticket",
+    "code",
+    "code_verifier"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: NativeMfaResponse 1`] = `
+"{
+  "allOf": [
+    {
+      "$ref": "#/components/schemas/NativeTokenPair"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "termsPending": {
+          "type": "boolean",
+          "description": "True when this account has no recorded terms acceptance. Every tenant and person route answers 403 until \`POST /api/auth/accept-terms\` succeeds."
+        }
+      },
+      "required": [
+        "termsPending"
+      ]
+    }
+  ],
+  "description": "expiresIn is a DURATION in seconds for the access token; refreshExpiresAt is an ISO INSTANT for the refresh token. The two are deliberately different kinds — do not treat expiresIn as a timestamp."
 }"
 `;
 

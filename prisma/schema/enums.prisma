@@ -472,6 +472,21 @@ enum MfaType {
   TOTP
 }
 
+/// What a `NativeAuthCode` row may be redeemed FOR.
+///
+/// This exists so a pending-MFA ticket cannot be redeemed as a grant. The
+/// exchange route looks up `{ codeHash, purpose: SESSION }`, so a
+/// `PENDING_MFA` row is NOT FOUND there — refused by the absence of a match
+/// rather than by a conditional somebody could later remove. The default is
+/// `SESSION` so every existing row and every existing issuer is unchanged.
+enum NativeAuthCodePurpose {
+  /// Redeemable at `POST /api/auth/native/exchange` for a token pair.
+  SESSION
+  /// Redeemable ONLY at `POST /api/auth/native/mfa`, and only on a correct
+  /// TOTP code. Carries no claims and is not a credential for anything else.
+  PENDING_MFA
+}
+
 
 
 
