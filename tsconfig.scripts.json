@@ -25,8 +25,61 @@
     // TS2304 "Cannot find name 'EdgeRuntime'" errors in a file that has
     // nothing to do with these scripts. Verified by removing this line.
     "src/types/**/*.d.ts",
+
+    // ── The production entrypoints ───────────────────────────────────────
     "scripts/worker.ts",
-    "scripts/scheduler.ts"
+    "scripts/scheduler.ts",
+    // `seed.ts` is one too, and was missed: production seeding runs
+    // `dist/seed.mjs`, which `build:seed` bundles from this file (see the
+    // "Knowledge-base / RAG seeding" section of CLAUDE.md). It met the
+    // criterion already written down here and simply was not listed.
+    "scripts/seed.ts",
+
+    // ── Scripts that WRITE to a database (#1485) ─────────────────────────
+    //
+    // The comment above says the rest of `scripts/` "does not hold to the
+    // app's strictness, and folding it in would make this a migration". That
+    // premise was measured and is mostly false: of the 18 scripts that can
+    // modify data, 15 passed this program unchanged and the 3 that failed were
+    // not strictness mismatches but BROKEN SCRIPTS —
+    //
+    //   seed-staging.ts   called `hashForLookup` with no import; threw
+    //                     ReferenceError at step 2. Fixed.
+    //   seed-demo.ts      `billingAccount.create` missing the required
+    //                     `stripeCustomerId`; threw every time into a
+    //                     swallowing catch, so the plan differentiator never
+    //                     happened. Fixed.
+    //   itest-spray.ts    imports `importLocationSpatialFile`, which #40
+    //                     renamed and made off-thread. Broken since then, and
+    //                     a rework rather than a rename. Excluded; filed as
+    //                     #1659.
+    //
+    // The criterion is WRITES, not runs-in-production, and for a type error
+    // the two are the same class: either way it surfaces when somebody runs
+    // the thing against live data, with no earlier signal. The difference is
+    // that a broken worker fails loudly on a schedule somebody watches, while
+    // a broken backfill fails once, in front of an operator, mid-incident.
+    //
+    // `tests/guards/data-writing-scripts-are-typechecked.test.ts` DERIVES this
+    // set from the filesystem and fails when a new data-writing script is
+    // absent — a curated list is a list somebody forgets (#805).
+    "scripts/add-tenant-owner.ts",
+    "scripts/add-test-user.ts",
+    "scripts/backfill-journal-title-descriptors.ts",
+    "scripts/backfill-news-tags.ts",
+    "scripts/import-crop-varieties.ts",
+    "scripts/import-knowledge.ts",
+    "scripts/import-products.ts",
+    "scripts/import-units.ts",
+    "scripts/migrate-files-to-cloud.ts",
+    "scripts/rag/corpus.ts",
+    "scripts/rag/ingest-satellite-guide.ts",
+    "scripts/rag/ingest-tenant.ts",
+    "scripts/retire-sample-products.ts",
+    "scripts/seed-agri-events.ts",
+    "scripts/seed-demo.ts",
+    "scripts/seed-promotions.ts",
+    "scripts/seed-staging.ts"
   ],
   "exclude": [
     "node_modules"

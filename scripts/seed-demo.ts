@@ -106,15 +106,31 @@ async function seedFarm(spec: FarmSpec, pwd: string) {
     await setEnabledModules(ctx, [...spec.modules]);
 
     // Persona differentiator #2 — billing plan (caps bite in SAAS mode).
-    try {
-        await prisma.billingAccount.upsert({
-            where: { tenantId: tenant.id },
-            update: { plan: spec.plan },
-            create: { tenantId: tenant.id, plan: spec.plan },
-        });
-    } catch {
-        /* BillingAccount shape varies by deployment; non-fatal for the demo. */
-    }
+    //
+    // `stripeCustomerId` is REQUIRED and `@unique` on `BillingAccount`, so the
+    // `create` arm was missing a mandatory field and threw EVERY time — and the
+    // `catch` swallowed it under the comment "BillingAccount shape varies by
+    // deployment; non-fatal for the demo". The shape does not vary: the create
+    // was invalid. So this differentiator silently never happened for any
+    // tenant that did not already have a billing row, and the plan caps these
+    // personas exist to exercise were never applied.
+    //
+    // Invisible because a swallowing catch makes a permanently-broken write
+    // look exactly like a working one — the repo's own fail-safe-path lesson,
+    // one level down. Found by typechecking `scripts/` at last (#1485).
+    //
+    // A synthetic id keyed on the tenant satisfies the unique constraint
+    // without inventing a real Stripe customer; nothing here talks to Stripe,
+    // and `getBillingMode()` is what decides whether any of it is consulted.
+    await prisma.billingAccount.upsert({
+        where: { tenantId: tenant.id },
+        update: { plan: spec.plan },
+        create: {
+            tenantId: tenant.id,
+            plan: spec.plan,
+            stripeCustomerId: `cus_demo_${tenant.id}`,
+        },
+    });
 
     // ── Ag data so the core flows work immediately ──
     const litre = await prisma.unit.findUnique({ where: { key: 'l' } });

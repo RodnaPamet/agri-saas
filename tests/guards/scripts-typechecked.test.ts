@@ -9,10 +9,20 @@ import { join } from 'node:path';
  * is a string inside a guard test, so they cannot arrive transitively either.
  * They were typechecked by nothing at all (#806).
  *
- * `tsconfig.scripts.json` covers exactly them. This guard pins the three links
- * that make it real, because each one fails SILENTLY when severed: a config
- * that lists no entrypoints still exits 0, and a CI job that never invokes it
- * is still green.
+ * `tsconfig.scripts.json` covers them. It covered EXACTLY them until #1485,
+ * which added `scripts/seed.ts` — a third production entrypoint, since
+ * production seeding runs `dist/seed.mjs` bundled from it — and every script
+ * that can WRITE to a database. This guard is unaffected by that widening
+ * because it asserts the entrypoints are PRESENT rather than that the list has
+ * length two; the population rule lives in
+ * `tests/guards/data-writing-scripts-are-typechecked.test.ts`, which derives
+ * its set from the filesystem.
+ *
+ * Keep the two separate. This one pins the PLUMBING — the config exists, the
+ * npm script runs it, CI invokes it — each of which fails SILENTLY when
+ * severed: a config that lists no entrypoints still exits 0, and a CI job that
+ * never invokes it is still green. That one pins WHAT IS IN the program.
+ * Neither can see the other's failure.
  */
 
 const root = join(__dirname, '..', '..');
