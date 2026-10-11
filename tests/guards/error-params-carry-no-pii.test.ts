@@ -57,10 +57,33 @@ const PERSONAL_KEY_FRAGMENTS = [
     'person',
 ];
 
-/** The start of a coded throw: the helper and its opening paren. */
-const CODED_CALL_START = /\bcoded(?:BadRequest|NotFound|Forbidden|Conflict)\(/g;
-/** Hard stop, so a malformed file cannot make the scan run away. */
-const MAX_ARG_SCAN = 600;
+/**
+ * The start of a coded throw: the helper (or error class) and its opening
+ * paren.
+ *
+ * SIX helpers and two error classes, not four helpers (#1636). This knew only
+ * the original four, so `params` passed through `codedClientError`,
+ * `codedUnsupportedMediaType`, `SpatialLimitError` or `CodedFailureError` was
+ * never looked at — and `params` is the one field that leaves the server in
+ * the clear and lands on a phone, which is this guard's whole reason for
+ * matching on key NAMES.
+ *
+ * Measured when widened: 16 throws in the four new channels, zero personal
+ * keys. So nothing was leaking; the scan simply could not have seen it.
+ */
+const CODED_CALL_START =
+    /\bcoded(?:BadRequest|NotFound|Forbidden|Conflict|ClientError|UnsupportedMediaType)\(|\bnew\s+(?:SpatialLimitError|CodedFailureError)\(/g;
+/**
+ * Hard stop, so a malformed file cannot make the scan run away.
+ *
+ * 900 and not 600 since the class channels joined: their first argument is a
+ * human sentence, sometimes a multi-line concatenation (the CRS refusal in
+ * `spatial-import.ts` is ~300 characters on its own), and `params` comes
+ * after it. At 600 the balanced scan would stop before the object on the
+ * longest calls and report them clean — a cap that silently narrows what is
+ * covered is the failure this guard's own docblock warns about.
+ */
+const MAX_ARG_SCAN = 900;
 
 /**
  * The call's OWN argument list, from `start` to its matching close paren.
@@ -311,5 +334,63 @@ describe('error params carry no personal data', () => {
             });
         });
         expect(withParams.length).toBeGreaterThan(0);
+    });
+});
+
+/**
+ * Teeth for the widened channel list (#1636).
+ *
+ * Widening this scan found zero violations — measured: 16 throws in the four
+ * new channels, no personal keys. So the change has no visible effect, and a
+ * scan that finds nothing looks the same whether or not it can see. These
+ * cases plant a violation in each newly-covered channel.
+ */
+describe('the PII scan reaches the channels it was blind to (#1636)', () => {
+    /** The pattern this file used before #1636. */
+    const OLD_START = /\bcoded(?:BadRequest|NotFound|Forbidden|Conflict)\(/g;
+
+    const keysIn = (src: string, start: RegExp): string[] => {
+        const hits: string[] = [];
+        for (const m of src.matchAll(start)) {
+            const args = argsOf(src, m.index! + m[0].length);
+            for (const om of args.matchAll(/\{([^{}]*)\}/g)) {
+                for (const km of om[1].matchAll(/(\w+)\s*:/g)) {
+                    const k = km[1].toLowerCase();
+                    if (PERSONAL_KEY_FRAGMENTS.some((f) => k.includes(f))) hits.push(km[1]);
+                }
+            }
+        }
+        return hits;
+    };
+
+    it.each([
+        ['codedClientError', "throw codedClientError(400, 'X_Y_Z', 'm', { ownerName: o });"],
+        ['codedUnsupportedMediaType', "throw codedUnsupportedMediaType('X_Y_Z', 'm', { contactEmail: e });"],
+        ['SpatialLimitError', "throw new SpatialLimitError('m', 'X_Y_Z', 422, { lessorEgn: g });"],
+        ['CodedFailureError', "throw new CodedFailureError('m', 'X_Y_Z', { personPhone: p });"],
+    ])('%s: a planted personal key is CAUGHT now and was missed before', (_label, snippet) => {
+        expect(keysIn(snippet, CODED_CALL_START)).toHaveLength(1);
+        expect(keysIn(snippet, OLD_START)).toEqual([]);
+    });
+
+    it('control: the old pattern still catches the shape it DID cover', () => {
+        const snippet = "throw codedBadRequest('X_Y_Z', 'm', { ownerName: o });";
+        expect(keysIn(snippet, OLD_START)).toEqual(['ownerName']);
+        expect(keysIn(snippet, CODED_CALL_START)).toEqual(['ownerName']);
+    });
+
+    it('a clean params object in a new channel is NOT flagged', () => {
+        // The false-alarm half. `argsOf` sailing past a call into unrelated
+        // code is how this guard previously reported three violations in a
+        // file that passes no params at all, and widening the channel list
+        // multiplies the chances of that.
+        const snippet = "throw new SpatialLimitError('m', 'X_Y_Z', 422, { count: n, limit: m });";
+        expect(keysIn(snippet, CODED_CALL_START)).toEqual([]);
+    });
+
+    it('the live tree is clean through the new channels', () => {
+        // Ties the fixtures above to reality: the real scan over `src` must
+        // still report nothing, now that it can see four more channels.
+        expect(collectPersonalParamKeys(REPO_ROOT)).toEqual([]);
     });
 });
