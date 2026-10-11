@@ -150,6 +150,24 @@ export class ExchangeRepository {
 
         const where: Prisma.ExchangeListingWhereInput = {
             status: ExchangeListingStatus.ACTIVE,
+            // #1655 — a seller who asked to delete their account is withheld
+            // from other farms for the 30-day grace period, which is what the
+            // privacy notice has been promising. Restored verbatim if they
+            // cancel, because the column is cleared rather than the status
+            // rewritten.
+            //
+            // IN THE WHERE, never a post-filter. This query takes `limit + 1`
+            // rows as its "is there more?" probe, so removing rows afterwards
+            // would shrink the page and make `hasMore` wrong — turning a
+            // privacy control into a pagination bug. P5.2b's thread list
+            // carries the identical note for the identical reason.
+            //
+            // Only THIS read is filtered. `listListingsBySeller` — the
+            // person's own management view — deliberately is not: they can
+            // still sign in to cancel, and hiding their listings from
+            // themselves would read as "already deleted" at the exact moment
+            // they are deciding whether to recover.
+            suppressedForDeletionAt: null,
             AND: and,
         };
         if (filters.sides?.length) where.side = { in: filters.sides };

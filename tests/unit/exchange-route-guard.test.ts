@@ -35,7 +35,16 @@ jest.mock('@/lib/db-context', () => ({
 // the untyped `runInGlobalContext` to `runWithoutRls({ reason })`. Mocked here
 // so the stub also asserts the REASON: a bypass that silently changed its
 // stated justification would otherwise pass.
+// SPREAD, not replaced. A whole-module double of this barrel omits
+// `withRlsTripwireExtension`, which `src/lib/prisma.ts` calls at module load —
+// and `@/lib/errors/api` reaches that module since #1655 put the deletion
+// freeze at the mutation choke point. The symptom was
+// `withRlsTripwireExtension is not a function`: a suite-level failure to run
+// before the freeze was made a lazy import, and a 500 instead of a 404 after.
+// The repo's partial-barrel-mock trap, and the mock was a landmine for whoever
+// next widened this module's graph.
 jest.mock('@/lib/db/rls-middleware', () => ({
+    ...jest.requireActual('@/lib/db/rls-middleware'),
     __esModule: true,
     runWithoutRls: jest.fn(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

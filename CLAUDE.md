@@ -2501,6 +2501,88 @@ here is "telling people their data was erased when it was not". It also pins
 `{graceDays}` as an interpolation rather than a literal, so the notice and the
 sweep cannot disagree about the date.
 
+### #1655 — the freeze the privacy notice was already promising
+
+`privacy.deleteRequest` tells people, in both locales, that asking to be
+deleted means their account "stops being visible to other farms straight away".
+**That sentence shipped in #1648 and was false.** The request wrote
+`deletionRequestedAt`, bumped `sessionVersion` and revoked sessions — and
+nothing read that column outside the erasure path, so ACTIVE listings stayed in
+the marketplace, inbound inquiries kept arriving, and signing back in restored
+full write access for the whole 30 days.
+
+**#1597's three Exit criteria were all MET.** Export proven to include the T&S
+rows, erasure with the chain still verifying, notice disclosing what survives.
+The grace-period BEHAVIOUR — the owner's "frozen but recoverable: sessions
+revoked, no new content" — was never on that list, which is how two thirds of it
+went unbuilt with every check green. When a ruling picks a behaviour, put the
+behaviour in the exit criteria.
+
+**Two halves, two mechanisms:**
+
+- **No new content** — `isDeletionPending` at the `withApiErrorHandling`
+  mutation choke point, the seam P5.5a's slow mode already uses. Refuses with
+  `ACCOUNT_DELETION_PENDING`, never `ACCOUNT_SUSPENDED`: the cause and the
+  remedy differ, and a person who asked to leave must not be pointed at an
+  appeal. Deliberately **not** in `getSessionOrThrow` — that choke point governs
+  READS too, and both escape hatches resolve through it, so a check there would
+  block the route out of the freeze.
+- **Not visible to other farms** — `ExchangeListing.suppressedForDeletionAt`,
+  set at request and cleared at cancel.
+
+**The exemption is a PREFIX rule, and that is load-bearing.** `/api/auth/` and
+`/api/account/` are exempt because session lifecycle and self-service account
+management are not "content". Nine wrapped mutation routes would otherwise each
+need to remember an opt-out — `account/deletion` (both methods), `auth/logout`,
+`auth/token`, `auth/token/refresh`, and the four native sign-in POSTs. A
+forgotten one does not fail a test; it strands a person inside the freeze. Write
+the trailing slash.
+
+**`status: 'ACTIVE'` in the suppression's `where` is the correctness argument.**
+The restore clears every row the column marks, so the suppression must mark only
+rows it is responsible for hiding. A listing the seller had WITHDRAWN themselves
+is left alone — otherwise cancelling resurrects listings they deliberately took
+down, which is worse than the bug. And it is a separate column rather than a
+fifth `ExchangeListingStatus`: reusing `WITHDRAWN` would destroy the information
+the restore needs and conflate a platform action with a human one.
+
+**Four reads had to be covered, not one.** The browse feed, the deep-link detail
+read, the inquiry path and `openExchangeThread` — which filtered on `id` alone,
+so a saved link could start a conversation against a hidden listing. All four
+answer the SAME not-found a genuinely missing listing gets: naming the state
+would disclose that the seller is being deleted. The browse filter goes **in the
+`where`**, never a post-filter — that query takes `limit + 1` as its `hasMore`
+probe, so dropping rows afterwards turns a privacy control into a pagination
+bug (P5.2b's thread list carries the identical note).
+
+**`isDeletionPending` fails OPEN on an unreadable Postgres — the opposite of
+`isAccountSuspended`, deliberately.** P5.9's "failing closed is free" argument
+does not transfer: that check guards a request that could not do its work
+anyway, while this one runs before a handler that may be perfectly healthy.
+Failing closed would refuse every mutation on the platform during a database
+blip. The data is not erased for 30 days, so a missed block costs ~nothing and a
+false block costs a field record.
+
+**`requestAccountDeletion` now DELEGATES to `requestAccountDeletionOnTx`.** It
+was a near-verbatim copy differing only in opening the transaction, so the
+suppression would have landed on one path and not the other — a
+moderator-driven termination freezing listings while a self-service request did
+not. Both cache invalidations are **directly awaited after the commit**, not
+`afterCommit`: these are bare `prisma.$transaction` calls, which open no scope,
+and #1619 shipped exactly that mistake.
+
+**The guard is on the OTHER AXIS from the existing one.**
+`privacy-notice-matches-erasure` ranges over `RETAINED_MODELS` — what SURVIVES
+— and was green throughout. `privacy-notice-freeze-is-enforced` ties the
+grace-period claim to the enforcement as a BICONDITIONAL, so the notice and the
+code cannot drift apart in either direction, and pins the seller's own
+management view as deliberately UNfiltered.
+
+**Still open: inbound messages on EXISTING threads.** Hiding the listings stops
+new conversations, which is what the notice claims; a counterparty mid-
+negotiation silently losing their correspondent is the #1325-shaped harm and a
+separate product question. Tracked on #1655.
+
 ### P5.8 — the triage alert, and why it is one mail per RUN
 
 `notice-triage-alert` runs every 10 minutes and mails the DSA contact point
