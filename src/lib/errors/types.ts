@@ -95,6 +95,29 @@ export class NotFoundError extends AppError {
     }
 }
 
+/**
+ * 415, with a client-switchable code (#1447).
+ *
+ * `toApiErrorResponse` reads `status` off any `AppError`, so a subclass is all
+ * this needs — there is no instanceof switch to extend. Added because the
+ * spatial-import upload refuses an unsupported extension with a 415 and had no
+ * way to carry a code on it.
+ *
+ * NOT folded into `DomainError`: its `domainCode` is a closed union, so a
+ * caller-supplied code would not type-check, and the point of a coded refusal
+ * is that the CALLER names the condition.
+ */
+export class UnsupportedMediaTypeError extends AppError {
+    constructor(
+        message: string = 'Unsupported Media Type',
+        code = 'UNSUPPORTED_MEDIA_TYPE',
+        params?: ErrorParams,
+    ) {
+        super(message, code, 415, true, undefined, params);
+        this.name = 'UnsupportedMediaTypeError';
+    }
+}
+
 export class ForbiddenError extends AppError {
     constructor(message: string = 'Forbidden', code = 'FORBIDDEN', params?: ErrorParams) {
         super(message, code, 403, true, undefined, params);
@@ -216,6 +239,27 @@ export const codedNotFound = (code: string, message: string, params?: ErrorParam
 
 export const codedForbidden = (code: string, message: string, params?: ErrorParams) =>
     new ForbiddenError(message, code, params);
+
+export const codedUnsupportedMediaType = (
+    code: string,
+    message: string,
+    params?: ErrorParams,
+) => new UnsupportedMediaTypeError(message, code, params);
+
+/**
+ * A coded refusal at an arbitrary 4xx — for a status with no helper of its own.
+ *
+ * Used by the spatial-import upload, whose size cap answers 413 and whose
+ * vertex/complexity caps answer 422. Both carry the size, the limit and the
+ * format as params so a client can compose its own sentence; see
+ * `SpatialLimitError`.
+ */
+export const codedClientError = (
+    status: number,
+    code: string,
+    message: string,
+    params?: ErrorParams,
+) => new AppError(message, code, status, true, undefined, params);
 
 export const codedConflict = (
     code: string,

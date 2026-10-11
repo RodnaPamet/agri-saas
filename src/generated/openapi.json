@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "10.26.1",
+    "version": "10.27.1",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -11423,7 +11423,7 @@
         "required": [
           "error"
         ],
-        "description": "A bare error body: `{\"error\": \"<code-or-message>\"}` — NOT the `ErrorResponse` envelope, so there is no `code`, `requestId`, `details` or `params`. Used by the native auth family, where it is the shape RFC 6749 §5.2 specifies for an OAuth token endpoint, and by the spatial-import and cadastre-import routes. A rate-limit (429) or an unexpected failure (5xx) on the same route still answers with `ErrorResponse`, because the error wrapper builds those rather than the route.\n\nMOSTLY `error` alone, but not a guarantee: `POST /api/auth/accept-terms` adds `currentVersion` on its stale-version branch and declares that with its own `AcceptTermsErrorResponse`. This said \"and nothing else\" until #1478, which was overstated the day it was written."
+        "description": "A bare error body: `{\"error\": \"<code-or-message>\"}` — NOT the `ErrorResponse` envelope, so there is no `code`, `requestId`, `details` or `params`. Used by the native auth family, where it is the shape RFC 6749 §5.2 specifies for an OAuth token endpoint, and by the cadastre-import job poll. The spatial-import routes used it until #1447 moved them to the envelope. A rate-limit (429) or an unexpected failure (5xx) on the same route still answers with `ErrorResponse`, because the error wrapper builds those rather than the route.\n\nMOSTLY `error` alone, but not a guarantee: `POST /api/auth/accept-terms` adds `currentVersion` on its stale-version branch and declares that with its own `AcceptTermsErrorResponse`. This said \"and nothing else\" until #1478, which was overstated the day it was written."
       },
       "RegisterStartResult": {
         "type": "object",
@@ -20870,7 +20870,7 @@
       "post": {
         "operationId": "startSpatialImport",
         "summary": "Upload parcel boundaries",
-        "description": "multipart/form-data. The parse NEVER runs on the request thread — the handler validates the extension, enforces the per-format byte cap on `file.size` before buffering anything, stages the bytes and queues the job. The worker REPLACES the location’s parcels, so nothing has changed yet when this returns; poll `getSpatialImportJob` first.\n\nEvery failure here answers the BARE `{ error }` body, not the canonical envelope.",
+        "description": "multipart/form-data. The parse NEVER runs on the request thread — the handler validates the extension, enforces the per-format byte cap on `file.size` before buffering anything, stages the bytes and queues the job. The worker REPLACES the location’s parcels, so nothing has changed yet when this returns; poll `getSpatialImportJob` first.\n\nEvery failure answers the canonical `ErrorResponse` envelope with a code (#1447). It did NOT until then: it answered a bare `{ error: \"<sentence>\" }`, and with no code to translate by a native client passed the English sentence through to a Bulgarian screen. Switch on `error.code`; `message` is only the fallback for a code you do not recognise.",
         "tags": [
           "Imports"
         ],
@@ -20924,11 +20924,11 @@
             }
           },
           "400": {
-            "description": "Missing, non-file, or empty upload. BARE `{ error }` body.",
+            "description": "Missing, non-file, or empty upload. `error.code` is `FILE_REQUIRED` when no file part was sent and `FILE_EMPTY` when one was sent with no bytes — a different fix for the person uploading, which is why they are two codes.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RawErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -20964,21 +20964,21 @@
             }
           },
           "413": {
-            "description": "Over the per-format byte cap (5 MB shapefile / 10 MB KML·GeoJSON). BARE `{ error }` body.",
+            "description": "Over the per-format byte cap. `error.code` is `SPATIAL_UPLOAD_TOO_LARGE`, with `params.size`, `params.limit` and `params.format`. The caps differ per format (5 MB shapefile, 10 MB KML·GeoJSON), so the limit TRAVELS rather than being restated by each client.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RawErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           },
           "415": {
-            "description": "Unsupported extension. BARE `{ error }` body.",
+            "description": "Unsupported extension. `error.code` is `UNSUPPORTED_FILE_TYPE`, with the accepted extensions in `params.allowed` so a client can list them in its own language.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RawErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -21132,11 +21132,11 @@
             }
           },
           "404": {
-            "description": "Unknown job, or one belonging to another tenant or location — deliberately indistinguishable. BARE `{ error }` body.",
+            "description": "`error.code` is `IMPORT_JOB_NOT_FOUND`. Unknown job, or one belonging to another tenant or location — deliberately INDISTINGUISHABLE: the same code, the same message and no params on either branch. Telling them apart would make job ids enumerable across tenants, so do not expect a reason.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RawErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

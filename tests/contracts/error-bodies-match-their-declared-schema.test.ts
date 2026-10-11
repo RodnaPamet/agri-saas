@@ -232,17 +232,22 @@ describe('the detector distinguishes the two schemas — the control the first p
 
     it('a path declaring ONLY RawErrorResponse is not treated as canonical', () => {
         // The exact case the substring test got wrong, asserted against the
-        // real spec rather than a fixture — spatial-import declares
-        // RawErrorResponse on its 400/413/415 and nothing else.
-        const p = '/api/t/{tenantSlug}/locations/{id}/spatial-import';
+        // real spec rather than a fixture.
+        //
+        // This used spatial-import until #1630 migrated it to the envelope, so
+        // it now points at the cadastre-import job poll — which still declares
+        // `RawErrorResponse` on its 404 and `ErrorResponse` on its 400, and is
+        // therefore the live example of the property: the question is
+        // answerable PER STATUS and not per path. `op()` registers the envelope
+        // for every route, so a path-level test would call this canonical and
+        // be useless.
+        //
+        // If cadastre-import is ever migrated too, re-point this at another
+        // mixed path rather than deleting it — the auth family has several.
+        const p = '/api/t/{tenantSlug}/locations/{id}/cadastre-import/{jobId}';
         expect(SPEC.paths[p]).toBeDefined();
-        // Its 400/413/415 declare RawErrorResponse — PER STATUS, which is the
-        // question that can be answered. Its 401/403/404 declare
-        // ErrorResponse, as `op()` registers for every route, so a path-level
-        // test would call this canonical and be useless.
-        expect(declaredSchemaFor(p, '400')).toBe('RawErrorResponse');
-        expect(declaredSchemaFor(p, '415')).toBe('RawErrorResponse');
-        expect(declaredSchemaFor(p, '403')).toBe('ErrorResponse');
+        expect(declaredSchemaFor(p, '404')).toBe('RawErrorResponse');
+        expect(declaredSchemaFor(p, '400')).toBe('ErrorResponse');
         expect(JSON.stringify(SPEC.paths[p])).toContain('RawErrorResponse');
     });
 });

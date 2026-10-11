@@ -20,9 +20,26 @@
  *
  * #1447 reported "9 live contract violations" on documented paths. Measured
  * 2026-10-11: **zero**. Not because the routes changed, but because #1478
- * declared the bare shape HONESTLY — `RawErrorResponse`, whose description
- * names "the spatial-import and cadastre-import routes" as users of it. The
- * spec and the code agree, which is the opposite of a lie.
+ * declared the bare shape HONESTLY — `RawErrorResponse`, which named the
+ * spatial-import and cadastre-import routes as users of it. The spec and the
+ * code agreed, which is the opposite of a lie.
+ *
+ * ## Then five of them were migrated anyway (#1630)
+ *
+ * Honest is not the same as good. agrent-ios confirmed that of the 36 bare
+ * refusals here, the phone builds exactly TWO — the spatial-import upload and
+ * its job poll — and that with no `error.code` to translate by it passes the
+ * server's English sentence through to a Bulgarian screen. A farmer was reading
+ * «File exceeds the 5 MB limit».
+ *
+ * So the owner authorised moving those five to the envelope. That left 2 honest
+ * (the cadastre-import job poll, which the phone does not reach) and 29
+ * undocumented. Cadastre was deliberately excluded: an approval for one route
+ * is not an approval for the next.
+ *
+ * The lesson for anyone reading a zero here: this guard measures whether the
+ * spec and the code AGREE, which is not the same question as whether a client
+ * can act on the answer. #1630 was invisible to it in both directions.
  *
  * (The issue's own numbers almost certainly came from matching the substring
  * `ErrorResponse`, which `RawErrorResponse` contains. I reproduced that mistake

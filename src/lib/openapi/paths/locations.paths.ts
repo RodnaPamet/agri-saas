@@ -48,7 +48,7 @@ import {
 import { ParcelLeaseSchema } from '@/app-layer/schemas/lease.schemas';
 import { LocationListItemDTOSchema } from '@/lib/dto/location.dto';
 import { UserRefSchema } from '@/lib/dto/common';
-import { op } from './helpers';
+import { codedErrorResponses, op } from './helpers';
 import { RawErrorResponseSchema } from '@/lib/dto/common';
 
 // ─── Path parameters ────────────────────────────────────────────────
@@ -1172,17 +1172,27 @@ export function registerLocationPaths(registry: OpenAPIRegistry): void {
             'buffering anything, stages the bytes and queues the job. The worker REPLACES the ' +
             'location’s parcels, so nothing has changed yet when this returns; poll ' +
             '`getSpatialImportJob` first.\n\n' +
-            'Every failure here answers the BARE `{ error }` body, not the canonical envelope.',
+            'Every failure answers the canonical `ErrorResponse` envelope with a code (#1447). It did NOT until then: it answered a bare `{ error: "<sentence>" }`, and with no code to translate by a native client passed the English sentence through to a Bulgarian screen. Switch on `error.code`; `message` is only the fallback for a code you do not recognise.',
         tags: ['Imports'],
         params: LocationParams,
         body: SpatialImportUpload,
         bodyContentType: 'multipart/form-data',
         success: { status: 202, description: 'Staged and queued.', schema: SpatialImportAccepted },
-        extraResponses: {
-            400: { description: 'Missing, non-file, or empty upload. BARE `{ error }` body.', content: rawErrorJson },
-            413: { description: 'Over the per-format byte cap (5 MB shapefile / 10 MB KML·GeoJSON). BARE `{ error }` body.', content: rawErrorJson },
-            415: { description: 'Unsupported extension. BARE `{ error }` body.', content: rawErrorJson },
-        },
+        extraResponses: codedErrorResponses({
+            400:
+                'Missing, non-file, or empty upload. `error.code` is `FILE_REQUIRED` when no ' +
+                'file part was sent and `FILE_EMPTY` when one was sent with no bytes — a ' +
+                'different fix for the person uploading, which is why they are two codes.',
+            413:
+                'Over the per-format byte cap. `error.code` is `SPATIAL_UPLOAD_TOO_LARGE`, with ' +
+                '`params.size`, `params.limit` and `params.format`. The caps differ per format ' +
+                '(5 MB shapefile, 10 MB KML·GeoJSON), so the limit TRAVELS rather than being ' +
+                'restated by each client.',
+            415:
+                'Unsupported extension. `error.code` is `UNSUPPORTED_FILE_TYPE`, with the ' +
+                'accepted extensions in `params.allowed` so a client can list them in its own ' +
+                'language.',
+        }),
     });
 
     op(registry, {
@@ -1196,13 +1206,12 @@ export function registerLocationPaths(registry: OpenAPIRegistry): void {
         tags: ['Imports'],
         params: JobParams,
         success: { status: 200, description: 'The job’s state.', schema: ImportJobStatus },
-        extraResponses: {
-            404: {
-                description:
-                    'Unknown job, or one belonging to another tenant or location — deliberately ' +
-                    'indistinguishable. BARE `{ error }` body.',
-                content: rawErrorJson,
-            },
-        },
+        extraResponses: codedErrorResponses({
+            404:
+                '`error.code` is `IMPORT_JOB_NOT_FOUND`. Unknown job, or one belonging to ' +
+                'another tenant or location — deliberately INDISTINGUISHABLE: the same code, ' +
+                'the same message and no params on either branch. Telling them apart would ' +
+                'make job ids enumerable across tenants, so do not expect a reason.',
+        }),
     });
 }

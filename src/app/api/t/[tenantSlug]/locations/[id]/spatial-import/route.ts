@@ -15,6 +15,11 @@ import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
 import { stageLocationSpatialImport } from '@/app-layer/usecases/spatial-import';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import {
+    codedBadRequest,
+    codedClientError,
+    codedUnsupportedMediaType,
+} from '@/lib/errors/types';
 import { jsonResponse } from '@/lib/api-response';
 import { detectFormat } from '@/lib/spatial/parse';
 import { assertUploadWithinSize, SpatialLimitError } from '@/lib/spatial/limits';
@@ -27,17 +32,31 @@ export const POST = withApiErrorHandling(async (req: NextRequest, { params: para
 
     const formData = await req.formData();
     const file = formData.get('file');
+    // CODED refusals (#1447). Owner-authorised 2026-10-11, and the reason is a
+    // farmer: agrent-ios passes a refusal SENTENCE straight through when there
+    // is no code to translate by, so «File exceeds the 5 MB limit» was being
+    // shown in English on a Bulgarian upload screen. These are the only bare
+    // refusals the phone can reach.
+    //
+    // The message stays as the English fallback for a client that does not
+    // recognise the code; the client composes its own sentence from the code
+    // and `params`.
     if (!file || !(file instanceof File)) {
-        return jsonResponse({ error: 'Missing or invalid file in form data' }, { status: 400 });
+        throw codedBadRequest('FILE_REQUIRED', 'No file was included in the form data.');
     }
     if (file.size === 0) {
-        return jsonResponse({ error: 'File is empty' }, { status: 400 });
+        throw codedBadRequest('FILE_EMPTY', 'The uploaded file has no content.');
     }
     const lower = (file.name || '').toLowerCase();
     if (!ALLOWED_EXT.some((ext) => lower.endsWith(ext))) {
-        return jsonResponse(
-            { error: 'Unsupported file type. Upload a shapefile (.zip), KML (.kml/.kmz), or GeoJSON (.geojson/.json).' },
-            { status: 415 },
+        // 415, NOT 400: the status is documented and a client may branch on it
+        // before reading the body. `allowed` travels as a param so the client
+        // can list the extensions itself rather than parsing them out of an
+        // English sentence.
+        throw codedUnsupportedMediaType(
+            'UNSUPPORTED_FILE_TYPE',
+            'Upload a shapefile (.zip), KML (.kml/.kmz), or GeoJSON (.geojson/.json).',
+            { allowed: ALLOWED_EXT.join(' ') },
         );
     }
 
@@ -50,7 +69,19 @@ export const POST = withApiErrorHandling(async (req: NextRequest, { params: para
         assertUploadWithinSize(format, file.size);
     } catch (err) {
         if (err instanceof SpatialLimitError) {
-            return jsonResponse({ error: err.message }, { status: err.statusCode });
+            // THE one a farmer actually meets, and the one a literal-string
+            // detector cannot see: `{ error: err.message }` is a VARIABLE, so
+            // #1447's `{ error: '<string>' }` scan — and my own re-measurement
+            // of it — both missed this line while counting the three above.
+            // #1447 said its numbers were "a floor for that pattern, not the
+            // total of all shape divergence"; this is what that means in
+            // practice, and it was the most user-visible instance of all.
+            throw codedClientError(
+                err.statusCode,
+                err.code ?? 'SPATIAL_UPLOAD_REJECTED',
+                err.message,
+                err.params,
+            );
         }
         throw err;
     }
