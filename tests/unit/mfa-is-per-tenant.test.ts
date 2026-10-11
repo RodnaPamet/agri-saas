@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- mirrors the harness in
- * mfa-gate-enforced.test.ts, which disables the same rule for NextRequest and
- * getToken runtime contracts. */
 /**
  * The second factor is owed per FARM, not per session.
  *
@@ -40,7 +37,7 @@ jest.mock('../../src/lib/rate-limit/apiReadRateLimit', () => ({
 }));
 
 const getToken = jest.fn();
-jest.mock('next-auth/jwt', () => ({ getToken: (...a: any[]) => getToken(...a) }));
+jest.mock('next-auth/jwt', () => ({ getToken: (...a: unknown[]) => getToken(...a) }));
 
 import middleware from '../../src/middleware';
 
@@ -73,6 +70,19 @@ function twoFarmToken(overrides: Record<string, unknown> = {}) {
     };
 }
 
+/**
+ * The `NextFetchEvent` the middleware never touches.
+ *
+ * Derived from the function's own signature rather than cast to `any`: a
+ * file-level `eslint-disable` for `no-explicit-any` suppressed the rule for
+ * all eleven call sites below, and `scripts/lint-ceiling.ts` counts a
+ * suppression exactly like a warning — +11 against a ceiling of 1586. Its
+ * message is the right instruction: "Fix the finding, or raise this ceiling
+ * explicitly in the diff and say why." There was nothing here worth raising a
+ * ceiling for.
+ */
+const NO_EVENT = {} as unknown as Parameters<typeof middleware>[1];
+
 const req = (pathname: string) =>
     new NextRequest(`http://localhost:3000${pathname}`, { method: 'GET' });
 
@@ -81,7 +91,7 @@ beforeEach(() => getToken.mockReset());
 describe('a factor owed by one farm does not travel to another', () => {
     it('HOLDS a page request for the farm that owes one', async () => {
         getToken.mockResolvedValue(twoFarmToken());
-        const res = await middleware(req('/t/globex/dashboard'), {} as any);
+        const res = await middleware(req('/t/globex/dashboard'), NO_EVENT);
         expect([302, 307]).toContain(res.status);
         expect(res.headers.get('location')).toContain('/t/globex/auth/mfa');
     });
@@ -102,7 +112,7 @@ describe('a factor owed by one farm does not travel to another', () => {
         getToken.mockResolvedValue(
             twoFarmToken({ mfaPending: false, mfaPendingTenantIds: ['tnt_globex'] }),
         );
-        const res = await middleware(req('/t/globex/dashboard'), {} as any);
+        const res = await middleware(req('/t/globex/dashboard'), NO_EVENT);
         expect([302, 307]).toContain(res.status);
         expect(res.headers.get('location')).toContain('/t/globex/auth/mfa');
     });
@@ -113,14 +123,14 @@ describe('a factor owed by one farm does not travel to another', () => {
         getToken.mockResolvedValue(
             twoFarmToken({ mfaPending: false, mfaPendingTenantIds: ['tnt_globex'] }),
         );
-        const res = await middleware(req('/t/acme-corp/dashboard'), {} as any);
+        const res = await middleware(req('/t/acme-corp/dashboard'), NO_EVENT);
         expect([302, 307]).not.toContain(res.status);
         expect(res.status).not.toBe(403);
     });
 
     it('HOLDS an API request for that farm, with the code', async () => {
         getToken.mockResolvedValue(twoFarmToken());
-        const res = await middleware(req('/api/t/globex/tasks'), {} as any);
+        const res = await middleware(req('/api/t/globex/tasks'), NO_EVENT);
         expect(res.status).toBe(403);
         expect(JSON.stringify(await res.json())).toContain('MFA_REQUIRED');
     });
@@ -130,7 +140,7 @@ describe('a factor owed by one farm does not travel to another', () => {
         // one. Without it, fixing the hole would hold every farm the moment
         // any farm enabled MFA.
         getToken.mockResolvedValue(twoFarmToken());
-        const res = await middleware(req('/t/acme-corp/dashboard'), {} as any);
+        const res = await middleware(req('/t/acme-corp/dashboard'), NO_EVENT);
         expect([302, 307]).not.toContain(res.status);
         expect(res.status).not.toBe(403);
     });
@@ -140,7 +150,7 @@ describe('a factor owed by one farm does not travel to another', () => {
         // That is the session a stolen first factor produces, and somebody's
         // own account is what it is most useful against (P1.6).
         getToken.mockResolvedValue(twoFarmToken());
-        const res = await middleware(req('/api/me/farms'), {} as any);
+        const res = await middleware(req('/api/me/farms'), NO_EVENT);
         expect(res.status).toBe(403);
     });
 });
@@ -159,7 +169,7 @@ describe('the gate holds when it cannot see the whole picture', () => {
                 mfaPending: true,
             }),
         );
-        const res = await middleware(req('/t/acme-corp/dashboard'), {} as any);
+        const res = await middleware(req('/t/acme-corp/dashboard'), NO_EVENT);
         expect([302, 307]).toContain(res.status);
     });
 
@@ -169,7 +179,7 @@ describe('the gate holds when it cannot see the whole picture', () => {
         const { mfaPendingTenantIds, ...legacy } = twoFarmToken();
         void mfaPendingTenantIds;
         getToken.mockResolvedValue(legacy);
-        const res = await middleware(req('/t/globex/dashboard'), {} as any);
+        const res = await middleware(req('/t/globex/dashboard'), NO_EVENT);
         expect([302, 307]).toContain(res.status);
     });
 
@@ -178,7 +188,7 @@ describe('the gate holds when it cannot see the whole picture', () => {
         // tenant-access gate will refuse it anyway, but this block must not be
         // the one that lets it past.
         getToken.mockResolvedValue(twoFarmToken());
-        const res = await middleware(req('/t/unknown-farm/dashboard'), {} as any);
+        const res = await middleware(req('/t/unknown-farm/dashboard'), NO_EVENT);
         expect(res.status).not.toBe(200);
     });
 });
@@ -187,13 +197,13 @@ describe('the challenge page stays reachable', () => {
     it('does not redirect the challenge page itself', async () => {
         // Otherwise the hold is a loop.
         getToken.mockResolvedValue(twoFarmToken());
-        const res = await middleware(req('/t/globex/auth/mfa'), {} as any);
+        const res = await middleware(req('/t/globex/auth/mfa'), NO_EVENT);
         expect([302, 307]).not.toContain(res.status);
     });
 
     it('does not redirect the enrolment page', async () => {
         getToken.mockResolvedValue(twoFarmToken());
-        const res = await middleware(req('/t/globex/security/mfa'), {} as any);
+        const res = await middleware(req('/t/globex/security/mfa'), NO_EVENT);
         expect([302, 307]).not.toContain(res.status);
     });
 });
