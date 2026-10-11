@@ -67,6 +67,62 @@ exports[`API contract — per-schema snapshots schema: AcceptTermsResult 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: AccountDeletionCancelled 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "requested": {
+      "type": "boolean"
+    },
+    "wasRequested": {
+      "type": "boolean",
+      "description": "False when nothing was pending — the call is idempotent rather than an error."
+    }
+  },
+  "required": [
+    "requested",
+    "wasRequested"
+  ],
+  "description": "The cleared state."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AccountDeletionRequested 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "requested": {
+      "type": "boolean"
+    },
+    "alreadyRequested": {
+      "type": "boolean",
+      "description": "True when a request was already outstanding; the original date stands."
+    },
+    "erasesAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "graceDays": {
+      "type": "integer"
+    },
+    "sessionsRevoked": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "requested",
+    "alreadyRequested",
+    "erasesAt",
+    "graceDays",
+    "sessionsRevoked"
+  ],
+  "description": "The recorded request, with the date the erasure will run."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: ActOnNotice 1`] = `
 "{
   "type": "object",

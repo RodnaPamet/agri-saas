@@ -2358,6 +2358,127 @@ column names in the export were wrong (`tenantId` for `sellerTenantId`,
 `PrismaClientValidationError`. Verify column names against the DMMF, not
 against a green typecheck.
 
+### P5.6b — erasure by pseudonymisation, and the row that deliberately survives
+
+`deletionRequestedAt` → 30 days → `account-erasure-sweep` (daily 04:15 UTC) →
+`eraseAccount`. Routes at `POST`/`DELETE /api/account/deletion` (#1597).
+
+**The `User` row SURVIVES, and that is the Art 17(3)(b) ruling rather than an
+oversight.** `ContentReport.reporterUserId` keeps pointing at it, so a
+moderation history stays answerable and repeat-abuse detection survives a
+re-registration — which means **erasure is incomplete**, and the privacy notice
+says so in those words. What goes is the identifying content: `name` NULL,
+`email` a tombstone at an unroutable domain.
+
+**Writing `email` is what frees the address**, not an explicit
+`emailHash: null`. `src/lib/security/pii-middleware.ts` derives
+`data.emailHash = hashForLookup(data.email)` on every write that sets `email`,
+so an explicit null there is dead code the middleware overrides — I wrote one,
+and the test asserting the hash was gone received a hash of the tombstone
+instead. Right outcome, wrong mechanism; the stored hash no longer matches the
+original address, so the person may register again.
+
+**Every erasable person column is REQUIRED**, so NULLing is not available. All
+thirteen are `String` with no `?` — measured against the schema TEXT after a
+DMMF probe reported them all nullable. That probe was reading `isRequired`,
+which **Prisma 7 no longer emits**, so the property was `undefined` for every
+field and the probe returned the same answer whatever it was asked. A uniform
+answer across every input is the tell.
+
+**Hence two actions, and the registry says which applies where.**
+`DELETE_ROW` where the row has no meaning without the person (credentials,
+cohort memberships, social blocks). `PSEUDONYMISE_COLUMN` where the row is also
+somebody ELSE's record — a listing the farm still sells, a conversation the
+counterparty is still in. The guard asserts every PSEUDONYMISE target carries a
+tenant column, which is what makes "somebody else's record" checkable.
+
+**The pseudonym is per-user and RANDOM, not a shared `deleted-user`.**
+`ExchangeThread` carries `@@unique([listingId, inquirerUserId])`, so two deleted
+people who both enquired on one listing would collide on a shared value.
+Generated at erasure time and stored nowhere, so those rows are anonymised
+rather than pseudonymised.
+
+**It works AROUND the hash chains.** `OrgAuditLog` and `PlatformAuditLog` are
+`RETAIN_ONLY`: rewriting a row inside a chain breaks verification for every
+entry after it, and `platform_audit_log_immutable` would refuse the UPDATE
+anyway. #1597's real exit criterion is that the chain still verifies AFTER an
+erasure, so the test runs `verifyPlatformChain` — and writes an entry FIRST,
+because verifying an empty chain proves nothing. The verdict is
+`{ intact, entries, brokenAt }`, not `{ valid }`.
+
+**A blocked erasure is a RETRY, not a partial success.** `eraseAccount` is one
+transaction and Postgres aborts on the first error, so tripping the last-OWNER
+trigger rolls the whole thing back: `pseudonymisedAt` stays NULL and tomorrow's
+sweep tries again. Catching per statement would need a savepoint per model and
+would leave half-erased accounts — data still present, and nothing left saying
+it should go.
+
+**The freeze revokes sessions, which is what makes recovery coherent.** The
+person signs in again and cancels explicitly; signing in does NOT silently
+cancel, because a background session refresh would then undo a deliberate
+request. Asking twice does not restart the clock, or nobody could ever be
+deleted.
+
+**`deletionRequestedAt` is SEPARATE from `suspendedAt`** though both withhold
+something: the cause differs and so does the remedy. Collapsing them would send
+an Art 17 statement to somebody who asked to leave, and would let a person
+cancel their own suspension.
+
+**The privacy notice is guarded against the registry.**
+`tests/guards/privacy-notice-matches-erasure.test.ts` reads `RETAINED_MODELS`
+and requires the notice to disclose the specific survival in BOTH locales,
+because a notice and an implementation drift silently and the drift direction
+here is "telling people their data was erased when it was not". It also pins
+`{graceDays}` as an interpolation rather than a literal, so the notice and the
+sweep cannot disagree about the date.
+
+### P5.8 — the triage alert, and why it is one mail per RUN
+
+`notice-triage-alert` runs every 10 minutes and mails the DSA contact point
+about notices awaiting triage (#1599). The queue is `alertedAt IS NULL`.
+
+**ONE message per run, however many notices arrived.** `POST
+/api/public/notices` needs no credential and `PUBLIC_NOTICE_LIMIT` is 10/min per
+IP, so a per-notice email would let anyone send 600 messages an hour to the one
+mailbox that has to stay readable during an incident. Batching is what makes
+the alert survive the flood it is most needed during — and it is why this is a
+JOB rather than an `afterCommit` hook on the notice write, which is otherwise
+this repo's way to announce a write: `afterCommit` would be per-notice, and the
+rate would be the attacker's to choose.
+
+**The notice TEXT is never in the mail.** `ContentReport.detail` is encrypted at
+rest, and a mailbox is outside that boundary; a moderator opens the console.
+
+**`alertedAt` is reporter-visible and is NOT a triage clock.** Every column on
+`ContentReport` is readable by its reporter (the arm is ROW-level), and this one
+is acceptable on its own terms — it says somebody was notified, which Art 16
+entitles a notifier to know. But P5's median-handling criterion runs from
+`createdAt` to the `ModerationAction`, never to this column.
+
+**Nothing is marked until the send resolves, and nothing is marked at all while
+`DSA_CONTACT_EMAIL` is unset.** The second half matters more than it looks: if
+the unconfigured branch stamped rows, then configuring the address correctly
+would silently skip every notice filed beforehand.
+
+**`DSA_CONTACT_EMAIL` is ABSENT on the VM** as of 2026-10-11, so
+`/dsa-contact` renders its fallback and Art 11/12 is unmet. That is an operator
+action, not a code change — `docs/runbooks/dsa-moderation-contact.md` carries
+it, including that the address must be a ROLE mailbox because this repository is
+public.
+
+**Two i18n traps, both hit while writing this.**
+
+- **`env` from `@t3-oss/env-nextjs` is a Proxy with ZERO own keys.** Measured:
+  `Object.keys(env).length === 0` while `env.DATABASE_URL` is a string. So
+  `jest.mock('@/env', () => ({ env: { ...actual.env, X } }))` produces an EMPTY
+  env — every variable reads `undefined` and Prisma falls back to port 5432. To
+  override one key, wrap the real `env` in a `Proxy` and forward the rest.
+- **`translateFor` is a simple `interpolate`, with NO ICU support.** An ICU
+  plural comes back as the literal template, and the i18n drift check reads
+  `{no urgent}` as a placeholder named `no`. Where a count needs grammatical
+  agreement, put the number AFTER a label ("спешни: 1") — grammatical at any
+  count in both languages, and the only option this interpolator supports.
+
 ## Failing tests
 
 A failing test on a branch is a failing test, full stop. "Pre-existing on

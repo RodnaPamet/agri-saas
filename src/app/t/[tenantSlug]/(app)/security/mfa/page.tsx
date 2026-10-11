@@ -15,7 +15,10 @@ import { useSearchParams } from 'next/navigation';
 import { sanitizeRedirectPath } from '@/lib/auth/safe-redirect';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { Button } from '@/components/ui/button';
-import { ShieldCheck, QrCode, Copy, CheckCircle, XCircle, Trash2, AlertTriangle, X } from 'lucide-react';
+import { ShieldCheck, QrCode as QrCodeIcon, Copy, CheckCircle, XCircle, Trash2, AlertTriangle, X } from 'lucide-react';
+// The REAL one. Both modules export `QrCode`; importing the icon by that
+// name is what put a decorative glyph where a scannable code belongs (#1646).
+import { QrCode } from '@/components/ui/qr-code';
 import { useToast } from '@/components/ui/hooks/use-toast';
 import { useCopyToClipboard } from '@/components/ui/hooks';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -255,7 +258,7 @@ export default function UserMfaPage() {
                                 onClick={startEnroll}
                                 disabled={submitting}
                                 id="mfa-enroll-btn"
-                                icon={<QrCode className="w-4 h-4" />}
+                                icon={<QrCodeIcon className="w-4 h-4" />}
                             >
                                 {submitting ? te('starting') : t('setUpMfa')}
                             </Button>
@@ -288,13 +291,49 @@ export default function UserMfaPage() {
                         </p>
                     </div>
 
-                    {/* QR Code placeholder — render the otpauth URI */}
+                    {/* The actual, scannable QR — and a tap-to-hand-off link.
+                      *
+                      * This was `<QrCode className="…" />` from `lucide-react`:
+                      * a PICTURE of a QR code, on a white card, at the size an
+                      * enrolment QR goes, in exactly the right place. It looked
+                      * finished and could not be scanned. `otpauthUrl` was
+                      * declared in the props type above and never referenced —
+                      * the server computed it and the page dropped it (#1646).
+                      *
+                      * The name collision is the whole story: `lucide-react`
+                      * exports `QrCode` and so does `@/components/ui/qr-code`.
+                      * The icon is now imported as `QrCodeIcon`, which is what
+                      * the button on the status card actually wants.
+                      *
+                      * The ANCHOR is what serves a phone. A person sent here
+                      * from the native sign-in sheet has no second device to
+                      * scan with, so a QR code is useless to them however real
+                      * it is. agrent-ios verified that tapping an `otpauth://`
+                      * link inside `ASWebAuthenticationSession` hands off to
+                      * the authenticator and does NOT cancel the session — the
+                      * sheet is still there afterwards. It must stay a plain
+                      * `<a href>`: they tested that and not a scripted
+                      * navigation.
+                      *
+                      * Order is deliberate — link, then QR, then the setup key
+                      * below. That covers tap-on-this-phone,
+                      * scan-from-a-laptop and copy-into-a-desktop-authenticator
+                      * from one layout, instead of treating the native flow as
+                      * a special case.
+                      */}
                     <div className="flex flex-col items-center gap-default py-4">
+                        <a
+                            href={enrollment.otpauthUrl}
+                            className="text-sm text-[var(--brand-muted)] underline underline-offset-4 hover:no-underline"
+                        >
+                            {te('openInAuthenticator')}
+                        </a>
                         <div className="bg-white p-4 rounded-lg">
-                            {/* Simple QR fallback: render as a monospace URI block */}
-                            <div className="w-full sm:w-48 h-48 flex items-center justify-center">
-                                <QrCode className="w-full sm:w-32 h-32 text-content-emphasis" />
-                            </div>
+                            <QrCode
+                                value={enrollment.otpauthUrl}
+                                size={192}
+                                title={te('setupTitle')}
+                            />
                         </div>
                         <p className="text-xs text-content-subtle">
                             {te('cannotScan')}

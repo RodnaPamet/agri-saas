@@ -211,7 +211,55 @@ describe('§4 the derived lists are coherent', () => {
     });
 });
 
-describe('§5 the detector can tell a classified column from an unclassified one', () => {
+describe('§5 every ERASE entry says HOW, and no RETAIN entry pretends to', () => {
+    it('an ERASE disposition carries an action', () => {
+        // Without this, an erasable column could be classified and still not
+        // erased by anything — which is the same silent survival the registry
+        // exists to prevent, one level up.
+        const missing = PERSONAL_DATA_REGISTRY
+            .filter((e) => e.disposition.startsWith('ERASE') && !e.action)
+            .map((e) => e.model);
+        expect(missing).toEqual([]);
+    });
+
+    it('a RETAIN disposition carries NO action', () => {
+        // An action on a retained entry is dead configuration that reads like
+        // a decision — and if anything ever ran it, it would erase a column
+        // the Art 17(3)(b) ruling says we keep.
+        const spurious = PERSONAL_DATA_REGISTRY
+            .filter((e) => e.disposition.startsWith('RETAIN') && e.action)
+            .map((e) => e.model);
+        expect(spurious).toEqual([]);
+    });
+
+    it('DELETE_ROW is used only where the row has no meaning without the person', () => {
+        // Named explicitly, because choosing DELETE_ROW for a row somebody ELSE
+        // also owns destroys their record: a farm's listing, a counterparty's
+        // conversation. Those are PSEUDONYMISE_COLUMN.
+        const deleted = PERSONAL_DATA_REGISTRY
+            .filter((e) => e.action === 'DELETE_ROW')
+            .map((e) => e.model)
+            .sort();
+        expect(deleted).toEqual([
+            'Account', 'AuthSession', 'FeatureFlagCohortMember',
+            'OrgMembership', 'PasswordResetToken', 'UserBlock',
+        ]);
+    });
+
+    it('every PSEUDONYMISE target is a row with a SECOND owner', () => {
+        // The complement of the above, asserted by a property rather than a
+        // list: each of these carries a tenant column, which is what makes it
+        // somebody else's record too.
+        for (const entry of PERSONAL_DATA_REGISTRY) {
+            if (entry.action !== 'PSEUDONYMISE_COLUMN') continue;
+            const model = Prisma.dmmf.datamodel.models.find((m) => m.name === entry.model)!;
+            const hasOtherOwner = model.fields.some((f) => /TenantId$/.test(f.name));
+            expect(hasOtherOwner).toBe(true);
+        }
+    });
+});
+
+describe('§6 the detector can tell a classified column from an unclassified one', () => {
     // Mutation proof against synthetic input, because every real model is
     // currently classified — so a green §2 is also what a detector that checks
     // nothing produces.
