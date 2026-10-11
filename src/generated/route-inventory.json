@@ -45,6 +45,11 @@
       "documented": true
     },
     {
+      "path": "/api/account/export",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/account/language",
       "status": "live",
       "documented": false

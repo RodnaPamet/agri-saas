@@ -133,6 +133,196 @@ const AcceptTermsErrorResponse = z
     })
     .openapi('AcceptTermsErrorResponse');
 
+/**
+ * The export's shapes, spelled out rather than left as a free-form object.
+ *
+ * `openapi-schema-documents-something` refused the first version, which had
+ * `account: z.record(...)` and a `catchall` — and its reasoning is the point:
+ * *"a documented operation with an empty schema looks COMPLETE to a client —
+ * worse than being on the undocumented baseline, where the gap is at least
+ * visible."* `UpdateFarmProfileRequest` shipped that way with thirteen
+ * enforced fields described as none, and the iOS client had to model from
+ * observed wire data.
+ */
+function exportCollection<T extends z.ZodTypeAny>(rows: T, what: string) {
+    return z.object({
+        rows: z.array(rows),
+        truncated: z.boolean().openapi({
+            description:
+                'True when the 1000-row cap was reached, so rows may be missing. Said '
+                + 'rather than silently returning a prefix.',
+        }),
+    }).openapi({ description: what });
+}
+
+const ExportedAccountSchema = z
+    .object({
+        id: z.string(),
+        email: z.string().nullable(),
+        name: z.string().nullable(),
+        uiLanguage: z.string(),
+        emailVerified: z.string().datetime({ offset: true }).nullable(),
+        acceptedTermsAt: z.string().datetime({ offset: true }).nullable(),
+        suspendedAt: z.string().datetime({ offset: true }).nullable().openapi({
+            description:
+                'Set when platform moderation has withheld access (P5.9). Included because '
+                + 'a person is entitled to know their account is suspended.',
+        }),
+        createdAt: z.string().datetime({ offset: true }),
+        updatedAt: z.string().datetime({ offset: true }),
+    })
+    .openapi('ExportedAccount', {
+        description:
+            'The caller\u2019s own `User` row, decrypted. `emailHash` is deliberately ABSENT: it '
+            + 'is a lookup derivation rather than information about the person, and publishing '
+            + 'it would hand out the input to a correlation attack against any other system '
+            + 'using the same HMAC.',
+    });
+
+const PersonalDataExportSchema = z
+    .object({
+        exportedAt: z.string().datetime({ offset: true }),
+        notIncluded: z.array(z.string()).openapi({
+            description:
+                'Categories deliberately absent, in plain language, because Art 15 is a right '
+                + 'to know what is held and a silent omission is a worse answer than a named '
+                + 'one.',
+        }),
+        account: ExportedAccountSchema,
+        contentReports: exportCollection(
+            z.object({
+                id: z.string(),
+                subjectKind: z.string(),
+                subjectId: z.string(),
+                reasonCode: z.string(),
+                status: z.string(),
+                detail: z.string().nullable(),
+                createdAt: z.string().datetime({ offset: true }),
+            }),
+            'DSA Art 16 notices this person filed. RETAINED through erasure under Art '
+            + '17(3)(b), which is what makes erasure incomplete \u2014 and why they are shown.',
+        ),
+        statementsOfReasons: exportCollection(
+            z.object({
+                id: z.string(),
+                locale: z.string(),
+                bodyRendered: z.string(),
+                deliveredAt: z.string().datetime({ offset: true }).nullable(),
+                createdAt: z.string().datetime({ offset: true }),
+            }),
+            'Art 17 statements addressed to this person. `actionId` is omitted, so nothing '
+            + 'here reaches another party\u2019s moderation record.',
+        ),
+        blocksIMade: exportCollection(
+            z.object({
+                id: z.string(),
+                blockedUserId: z.string(),
+                createdAt: z.string().datetime({ offset: true }),
+            }),
+            'Social blocks this person MADE. Blocks against them are absent \u2014 a social '
+            + 'block is silent in both directions by design.',
+        ),
+        exchangeBlocksAgainstMe: exportCollection(
+            z.object({
+                id: z.string(),
+                sellerTenantId: z.string(),
+                createdAt: z.string().datetime({ offset: true }),
+            }),
+            'Commercial blocks against this person. The OPPOSITE of a social block and '
+            + 'included, because the exchange already discloses these to them live.',
+        ),
+        exchangeListings: exportCollection(
+            z.object({
+                id: z.string(),
+                sellerTenantId: z.string(),
+                commodity: z.string(),
+                side: z.string(),
+                kind: z.string(),
+                description: z.string().nullable(),
+                status: z.string(),
+                createdAt: z.string().datetime({ offset: true }),
+            }),
+            'Listings this person created. The listing belongs to the farm; only the '
+            + 'authorship column names them.',
+        ),
+        exchangeThreads: exportCollection(
+            z.object({
+                id: z.string(),
+                listingId: z.string(),
+                closedAt: z.string().datetime({ offset: true }).nullable(),
+                createdAt: z.string().datetime({ offset: true }),
+            }),
+            'Conversations this person opened.',
+        ),
+        exchangeInquiries: exportCollection(
+            z.object({
+                id: z.string(),
+                listingId: z.string(),
+                message: z.string().nullable(),
+                quantityTonnes: z.number().nullable(),
+                status: z.string(),
+                createdAt: z.string().datetime({ offset: true }),
+            }),
+            'Enquiries this person made, including their own words.',
+        ),
+        exchangeMessages: exportCollection(
+            z.object({
+                id: z.string(),
+                threadId: z.string(),
+                body: z.string().nullable(),
+                createdAt: z.string().datetime({ offset: true }),
+            }),
+            'Messages this person SENT. A counterparty\u2019s replies are somebody else\u2019s '
+            + 'words and are absent.',
+        ),
+        insuranceLeads: exportCollection(
+            z.object({
+                id: z.string(),
+                message: z.string().nullable(),
+                riskJson: z.unknown().nullable(),
+                quoteJson: z.unknown().nullable(),
+                status: z.string(),
+                createdAt: z.string().datetime({ offset: true }),
+            }),
+            'Insurance quotes this person requested: the figures they supplied, and the '
+            + 'premium they were quoted.',
+        ),
+        promotionLeads: exportCollection(
+            z.object({
+                id: z.string(),
+                promotionId: z.string(),
+                requestMessage: z.string().nullable(),
+                consentedAt: z.string().datetime({ offset: true }).nullable(),
+                status: z.string(),
+                createdAt: z.string().datetime({ offset: true }),
+            }),
+            'Promotion enquiries this person made.',
+        ),
+        organisationMemberships: exportCollection(
+            z.object({
+                id: z.string(),
+                organizationId: z.string(),
+                role: z.string(),
+                createdAt: z.string().datetime({ offset: true }),
+            }),
+            'Organisations this person belongs to.',
+        ),
+        featureCohorts: exportCollection(
+            z.object({
+                id: z.string(),
+                cohortKey: z.string(),
+                createdAt: z.string().datetime({ offset: true }),
+            }),
+            'Dark-launch cohorts this person is in.',
+        ),
+    })
+    .openapi('PersonalDataExport', {
+        description:
+            'Every collection is `{ rows, truncated }` and bounded at 1000. The collections '
+            + 'present here are derived from one registry the ERASURE also reads, so a column '
+            + 'exported but not erased \u2014 or erased but never shown \u2014 is not reachable.',
+    });
+
 export function registerAccountPaths(registry: OpenAPIRegistry): void {
     op(registry, {
         method: 'get',
@@ -326,4 +516,46 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
             },
         },
     });
+    op(registry, {
+        method: 'get',
+        path: '/api/account/export',
+        operationId: 'exportMyPersonalData',
+        summary: 'Account — export everything we hold about you',
+        description:
+            'A GDPR Art 15 / Art 20 export of the caller\u2019s own personal data, as JSON with '
+            + '`Content-Disposition: attachment`. Machine-readable is what Art 20 asks for and JSON '
+            + 'is that; there is no generated archive, because a streamed zip would add a build '
+            + 'step and a temp file for no gain at this volume.'
+            + '\n\n**The subject is always the caller.** There is no query parameter and no body: a '
+            + 'route that could name a different person would be an arbitrary personal-data read '
+            + 'behind somebody\u2019s own session.'
+            + '\n\n**What it includes** is derived from one registry that the erasure also reads '
+            + '(`@/lib/privacy/personal-data-registry`), because a column exported but not erased '
+            + 'is a promise broken one way, and a column erased but not exported is data destroyed '
+            + 'without ever being shown. A guard derives that registry\u2019s population from the '
+            + 'Prisma DMMF, so a new table carrying a person id cannot slip past unclassified.'
+            + '\n\n**What it does NOT include is listed in the response itself**, under '
+            + '`notIncluded`, because Art 15 is a right to know what is held and an export that '
+            + 'silently omitted categories would be a worse answer than one that names them. Three '
+            + 'omissions are deliberate: FARM RECORDS the caller authored (a journal entry belongs '
+            + 'to the farm, which has its own \u0411\u0410\u0411\u0425 retention duty); CREDENTIALS and sessions (a live '
+            + 'refresh token in a downloadable file is a risk to the person and answers nothing '
+            + 'they asked); and BLOCKS MADE AGAINST THEM, since a social block is silent in both '
+            + 'directions by design.'
+            + '\n\nStatements of reasons ARE included, which is a deliberate change of posture '
+            + 'from P5.1: that phase gave a recipient no READ POLICY, because a row-level arm would '
+            + 'expose `actionId` and through it another party\u2019s moderation rationale. An export is '
+            + 'not a policy arm \u2014 it runs privileged, for one named person, over their own rows, '
+            + 'and the text was emailed to them already. `actionId` is omitted.'
+            + '\n\nEach collection is bounded at 1000 rows and says `truncated` when it hit that, '
+            + 'rather than silently returning a prefix. Rate-limited hourly: exercising a '
+            + 'data-subject right in bulk is not a thing anyone needs to do.',
+        tags: ['Account'],
+        success: {
+            status: 200,
+            description: 'The export. `Cache-Control: no-store`.',
+            schema: PersonalDataExportSchema,
+        },
+    });
+
 }

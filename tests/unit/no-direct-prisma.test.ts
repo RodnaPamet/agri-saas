@@ -142,6 +142,29 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
         // its own platform-gated schema requires — never a value derived from
         // the notice, because a notice names content rather than a person.
         'account-suspension.ts',
+        // P5.6 (#1597) — `personal-data-export.ts` reads one person's rows
+        // across THREE incompatible policy regimes, which is why no session
+        // context can serve it: `StatementOfReasons` denies `app_user` for
+        // every command; `ContentReport` admits only a reporter through
+        // `app.user_id`, which `runInUserContext` sets and
+        // `runInTenantContext` does not; and the exchange models are
+        // tenant-scoped, while a person's messages span every farm they deal
+        // with. One query shape cannot satisfy all three.
+        //
+        // So the global handle is the only client that can assemble the
+        // export — and the consequence is that the `where` clause is the ONLY
+        // control, which is the inverse of the usual arrangement where RLS is
+        // the backstop and the filter is defence in depth.
+        //
+        // The defect this exemption could hide is therefore precise: a
+        // collection read without a person filter, or filtered on something a
+        // caller supplies. Both are checked in review, and
+        // `tests/integration/p5-6a-export.test.ts` asserts a SECOND person's
+        // rows are ABSENT from the first person's export — the assertion a
+        // dropped clause fails, and the one a presence-only test would pass
+        // straight through. The subject id comes from `getUserCtx`, never from
+        // a query parameter or a body.
+        'personal-data-export.ts',
         // #15 — `AgriEvent` is a GLOBAL catalogue (no tenantId / no RLS, like
         // `Unit` / `Promotion` / `Framework`). The tenant-facing READ still goes
         // through `runInTenantContext`; the global handle is used by exactly two

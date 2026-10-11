@@ -5494,6 +5494,74 @@ exports[`API contract — per-schema snapshots schema: ExchangeThreadSummary 1`]
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: ExportedAccount 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "email": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "uiLanguage": {
+      "type": "string"
+    },
+    "emailVerified": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "acceptedTermsAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "suspendedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "Set when platform moderation has withheld access (P5.9). Included because a person is entitled to know their account is suspended."
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "id",
+    "email",
+    "name",
+    "uiLanguage",
+    "emailVerified",
+    "acceptedTermsAt",
+    "suspendedAt",
+    "createdAt",
+    "updatedAt"
+  ],
+  "description": "The caller’s own \`User\` row, decrypted. \`emailHash\` is deliberately ABSENT: it is a lookup derivation rather than information about the person, and publishing it would hand out the input to a correlation attack against any other system using the same HMAC."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: FarmProfile 1`] = `
 "{
   "type": "object",
@@ -11189,6 +11257,609 @@ exports[`API contract — per-schema snapshots schema: PersonBlock 1`] = `
     "blockedUserId"
   ],
   "description": "The person to block or unblock. The blocker is the authenticated caller and cannot be supplied."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: PersonalDataExport 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "exportedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "notIncluded": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Categories deliberately absent, in plain language, because Art 15 is a right to know what is held and a silent omission is a worse answer than a named one."
+    },
+    "account": {
+      "$ref": "#/components/schemas/ExportedAccount"
+    },
+    "contentReports": {
+      "type": "object",
+      "properties": {
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "subjectKind": {
+                "type": "string"
+              },
+              "subjectId": {
+                "type": "string"
+              },
+              "reasonCode": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "detail": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "id",
+              "subjectKind",
+              "subjectId",
+              "reasonCode",
+              "status",
+              "detail",
+              "createdAt"
+            ]
+          }
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "True when the 1000-row cap was reached, so rows may be missing. Said rather than silently returning a prefix."
+        }
+      },
+      "required": [
+        "rows",
+        "truncated"
+      ],
+      "description": "DSA Art 16 notices this person filed. RETAINED through erasure under Art 17(3)(b), which is what makes erasure incomplete — and why they are shown."
+    },
+    "statementsOfReasons": {
+      "type": "object",
+      "properties": {
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "locale": {
+                "type": "string"
+              },
+              "bodyRendered": {
+                "type": "string"
+              },
+              "deliveredAt": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "id",
+              "locale",
+              "bodyRendered",
+              "deliveredAt",
+              "createdAt"
+            ]
+          }
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "True when the 1000-row cap was reached, so rows may be missing. Said rather than silently returning a prefix."
+        }
+      },
+      "required": [
+        "rows",
+        "truncated"
+      ],
+      "description": "Art 17 statements addressed to this person. \`actionId\` is omitted, so nothing here reaches another party’s moderation record."
+    },
+    "blocksIMade": {
+      "type": "object",
+      "properties": {
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "blockedUserId": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "id",
+              "blockedUserId",
+              "createdAt"
+            ]
+          }
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "True when the 1000-row cap was reached, so rows may be missing. Said rather than silently returning a prefix."
+        }
+      },
+      "required": [
+        "rows",
+        "truncated"
+      ],
+      "description": "Social blocks this person MADE. Blocks against them are absent — a social block is silent in both directions by design."
+    },
+    "exchangeBlocksAgainstMe": {
+      "type": "object",
+      "properties": {
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "sellerTenantId": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "id",
+              "sellerTenantId",
+              "createdAt"
+            ]
+          }
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "True when the 1000-row cap was reached, so rows may be missing. Said rather than silently returning a prefix."
+        }
+      },
+      "required": [
+        "rows",
+        "truncated"
+      ],
+      "description": "Commercial blocks against this person. The OPPOSITE of a social block and included, because the exchange already discloses these to them live."
+    },
+    "exchangeListings": {
+      "type": "object",
+      "properties": {
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "sellerTenantId": {
+                "type": "string"
+              },
+              "commodity": {
+                "type": "string"
+              },
+              "side": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "id",
+              "sellerTenantId",
+              "commodity",
+              "side",
+              "kind",
+              "description",
+              "status",
+              "createdAt"
+            ]
+          }
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "True when the 1000-row cap was reached, so rows may be missing. Said rather than silently returning a prefix."
+        }
+      },
+      "required": [
+        "rows",
+        "truncated"
+      ],
+      "description": "Listings this person created. The listing belongs to the farm; only the authorship column names them."
+    },
+    "exchangeThreads": {
+      "type": "object",
+      "properties": {
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "listingId": {
+                "type": "string"
+              },
+              "closedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "id",
+              "listingId",
+              "closedAt",
+              "createdAt"
+            ]
+          }
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "True when the 1000-row cap was reached, so rows may be missing. Said rather than silently returning a prefix."
+        }
+      },
+      "required": [
+        "rows",
+        "truncated"
+      ],
+      "description": "Conversations this person opened."
+    },
+    "exchangeInquiries": {
+      "type": "object",
+      "properties": {
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "listingId": {
+                "type": "string"
+              },
+              "message": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "quantityTonnes": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "status": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "id",
+              "listingId",
+              "message",
+              "quantityTonnes",
+              "status",
+              "createdAt"
+            ]
+          }
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "True when the 1000-row cap was reached, so rows may be missing. Said rather than silently returning a prefix."
+        }
+      },
+      "required": [
+        "rows",
+        "truncated"
+      ],
+      "description": "Enquiries this person made, including their own words."
+    },
+    "exchangeMessages": {
+      "type": "object",
+      "properties": {
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "threadId": {
+                "type": "string"
+              },
+              "body": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "id",
+              "threadId",
+              "body",
+              "createdAt"
+            ]
+          }
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "True when the 1000-row cap was reached, so rows may be missing. Said rather than silently returning a prefix."
+        }
+      },
+      "required": [
+        "rows",
+        "truncated"
+      ],
+      "description": "Messages this person SENT. A counterparty’s replies are somebody else’s words and are absent."
+    },
+    "insuranceLeads": {
+      "type": "object",
+      "properties": {
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "message": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "riskJson": {},
+              "quoteJson": {},
+              "status": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "id",
+              "message",
+              "status",
+              "createdAt"
+            ]
+          }
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "True when the 1000-row cap was reached, so rows may be missing. Said rather than silently returning a prefix."
+        }
+      },
+      "required": [
+        "rows",
+        "truncated"
+      ],
+      "description": "Insurance quotes this person requested: the figures they supplied, and the premium they were quoted."
+    },
+    "promotionLeads": {
+      "type": "object",
+      "properties": {
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "promotionId": {
+                "type": "string"
+              },
+              "requestMessage": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "consentedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "status": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "id",
+              "promotionId",
+              "requestMessage",
+              "consentedAt",
+              "status",
+              "createdAt"
+            ]
+          }
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "True when the 1000-row cap was reached, so rows may be missing. Said rather than silently returning a prefix."
+        }
+      },
+      "required": [
+        "rows",
+        "truncated"
+      ],
+      "description": "Promotion enquiries this person made."
+    },
+    "organisationMemberships": {
+      "type": "object",
+      "properties": {
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "organizationId": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "id",
+              "organizationId",
+              "role",
+              "createdAt"
+            ]
+          }
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "True when the 1000-row cap was reached, so rows may be missing. Said rather than silently returning a prefix."
+        }
+      },
+      "required": [
+        "rows",
+        "truncated"
+      ],
+      "description": "Organisations this person belongs to."
+    },
+    "featureCohorts": {
+      "type": "object",
+      "properties": {
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "cohortKey": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "id",
+              "cohortKey",
+              "createdAt"
+            ]
+          }
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "True when the 1000-row cap was reached, so rows may be missing. Said rather than silently returning a prefix."
+        }
+      },
+      "required": [
+        "rows",
+        "truncated"
+      ],
+      "description": "Dark-launch cohorts this person is in."
+    }
+  },
+  "required": [
+    "exportedAt",
+    "notIncluded",
+    "account",
+    "contentReports",
+    "statementsOfReasons",
+    "blocksIMade",
+    "exchangeBlocksAgainstMe",
+    "exchangeListings",
+    "exchangeThreads",
+    "exchangeInquiries",
+    "exchangeMessages",
+    "insuranceLeads",
+    "promotionLeads",
+    "organisationMemberships",
+    "featureCohorts"
+  ],
+  "description": "Every collection is \`{ rows, truncated }\` and bounded at 1000. The collections present here are derived from one registry the ERASURE also reads, so a column exported but not erased — or erased but never shown — is not reachable."
 }"
 `;
 
