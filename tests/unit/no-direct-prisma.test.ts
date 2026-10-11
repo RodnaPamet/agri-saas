@@ -165,6 +165,24 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
         // straight through. The subject id comes from `getUserCtx`, never from
         // a query parameter or a body.
         'personal-data-export.ts',
+        // P5.6b (#1597) — `account-erasure.ts` is the export's mirror and needs
+        // the global handle for the same reason plus one more: the erasure
+        // SPANS every tenant the person ever dealt with. A tenant context
+        // would reach one farm's rows, and the whole point is that a person's
+        // name must stop appearing anywhere — a listing they created on one
+        // farm, a conversation they opened with another.
+        //
+        // It also writes columns no tenant session may write: `ContentReport`
+        // and `StatementOfReasons` deny `app_user` entirely, and they are the
+        // RETAIN side the erasure must deliberately NOT touch.
+        //
+        // The defect this exemption could hide: an erasure keyed on anything
+        // other than the subject's own id. Both verbs take a `userId` that
+        // comes from `getUserCtx` at the route, or from
+        // `findAccountsDueForErasure` in the sweep — never from a request
+        // body, and there is no parameter by which a caller could name
+        // somebody else's account.
+        'account-erasure.ts',
         // #15 — `AgriEvent` is a GLOBAL catalogue (no tenantId / no RLS, like
         // `Unit` / `Promotion` / `Framework`). The tenant-facing READ still goes
         // through `runInTenantContext`; the global handle is used by exactly two

@@ -2358,6 +2358,80 @@ column names in the export were wrong (`tenantId` for `sellerTenantId`,
 `PrismaClientValidationError`. Verify column names against the DMMF, not
 against a green typecheck.
 
+### P5.6b — erasure by pseudonymisation, and the row that deliberately survives
+
+`deletionRequestedAt` → 30 days → `account-erasure-sweep` (daily 04:15 UTC) →
+`eraseAccount`. Routes at `POST`/`DELETE /api/account/deletion` (#1597).
+
+**The `User` row SURVIVES, and that is the Art 17(3)(b) ruling rather than an
+oversight.** `ContentReport.reporterUserId` keeps pointing at it, so a
+moderation history stays answerable and repeat-abuse detection survives a
+re-registration — which means **erasure is incomplete**, and the privacy notice
+says so in those words. What goes is the identifying content: `name` NULL,
+`email` a tombstone at an unroutable domain.
+
+**Writing `email` is what frees the address**, not an explicit
+`emailHash: null`. `src/lib/security/pii-middleware.ts` derives
+`data.emailHash = hashForLookup(data.email)` on every write that sets `email`,
+so an explicit null there is dead code the middleware overrides — I wrote one,
+and the test asserting the hash was gone received a hash of the tombstone
+instead. Right outcome, wrong mechanism; the stored hash no longer matches the
+original address, so the person may register again.
+
+**Every erasable person column is REQUIRED**, so NULLing is not available. All
+thirteen are `String` with no `?` — measured against the schema TEXT after a
+DMMF probe reported them all nullable. That probe was reading `isRequired`,
+which **Prisma 7 no longer emits**, so the property was `undefined` for every
+field and the probe returned the same answer whatever it was asked. A uniform
+answer across every input is the tell.
+
+**Hence two actions, and the registry says which applies where.**
+`DELETE_ROW` where the row has no meaning without the person (credentials,
+cohort memberships, social blocks). `PSEUDONYMISE_COLUMN` where the row is also
+somebody ELSE's record — a listing the farm still sells, a conversation the
+counterparty is still in. The guard asserts every PSEUDONYMISE target carries a
+tenant column, which is what makes "somebody else's record" checkable.
+
+**The pseudonym is per-user and RANDOM, not a shared `deleted-user`.**
+`ExchangeThread` carries `@@unique([listingId, inquirerUserId])`, so two deleted
+people who both enquired on one listing would collide on a shared value.
+Generated at erasure time and stored nowhere, so those rows are anonymised
+rather than pseudonymised.
+
+**It works AROUND the hash chains.** `OrgAuditLog` and `PlatformAuditLog` are
+`RETAIN_ONLY`: rewriting a row inside a chain breaks verification for every
+entry after it, and `platform_audit_log_immutable` would refuse the UPDATE
+anyway. #1597's real exit criterion is that the chain still verifies AFTER an
+erasure, so the test runs `verifyPlatformChain` — and writes an entry FIRST,
+because verifying an empty chain proves nothing. The verdict is
+`{ intact, entries, brokenAt }`, not `{ valid }`.
+
+**A blocked erasure is a RETRY, not a partial success.** `eraseAccount` is one
+transaction and Postgres aborts on the first error, so tripping the last-OWNER
+trigger rolls the whole thing back: `pseudonymisedAt` stays NULL and tomorrow's
+sweep tries again. Catching per statement would need a savepoint per model and
+would leave half-erased accounts — data still present, and nothing left saying
+it should go.
+
+**The freeze revokes sessions, which is what makes recovery coherent.** The
+person signs in again and cancels explicitly; signing in does NOT silently
+cancel, because a background session refresh would then undo a deliberate
+request. Asking twice does not restart the clock, or nobody could ever be
+deleted.
+
+**`deletionRequestedAt` is SEPARATE from `suspendedAt`** though both withhold
+something: the cause differs and so does the remedy. Collapsing them would send
+an Art 17 statement to somebody who asked to leave, and would let a person
+cancel their own suspension.
+
+**The privacy notice is guarded against the registry.**
+`tests/guards/privacy-notice-matches-erasure.test.ts` reads `RETAINED_MODELS`
+and requires the notice to disclose the specific survival in BOTH locales,
+because a notice and an implementation drift silently and the drift direction
+here is "telling people their data was erased when it was not". It also pins
+`{graceDays}` as an interpolation rather than a literal, so the notice and the
+sweep cannot disagree about the date.
+
 ## Failing tests
 
 A failing test on a branch is a failing test, full stop. "Pre-existing on

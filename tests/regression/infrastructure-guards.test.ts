@@ -145,7 +145,13 @@ describe('Infrastructure Regression Guards', () => {
             // rather than a latency one: nothing waits on a score, and the
             // cadence spreads the monthly platform AI budget (#1423) evenly
             // across the month instead of spending it in a few runs.
-            expect(SCHEDULED_JOBS).toHaveLength(28);
+            // 28 → 29 (P5.6b): `account-erasure-sweep`. Pseudonymises accounts
+            // 30 days after a deletion request. Daily rather than hourly
+            // because the cadence only decides how long past day 30 an erasure
+            // waits, and 04:15 UTC keeps a multi-table transaction clear of
+            // `data-lifecycle` at 04:00 and of the morning notification sweeps
+            // — they would otherwise compete for a 12-connection pool.
+            expect(SCHEDULED_JOBS).toHaveLength(29);
         });
 
         test('scheduled job names match expected set', () => {
@@ -158,6 +164,11 @@ describe('Infrastructure Regression Guards', () => {
                 // Epic G-4 — daily reviewer reminder for access review
                 // campaigns approaching their dueAt.
                 'access-review-reminder',
+                // P5.6b — daily 04:15 UTC pseudonymisation of accounts whose
+                // 30-day deletion grace period has run out. The row SURVIVES:
+                // Art 17(3)(b) keeps the DSA trail answerable, so erasure is
+                // incomplete by design.
+                'account-erasure-sweep',
                 // 'compliance-digest' removed in GRC teardown phase 2.
                 'compliance-snapshot',
                 // Grain fulfilment — daily 07:30 UTC sweep firing
