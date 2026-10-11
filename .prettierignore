@@ -1,0 +1,31 @@
+# Everything. Prettier is NOT this repo's formatter, and running it is
+# destructive here (#1615).
+#
+# There is no `.prettierrc`, no `prettier.config.*` and no `prettier` key in
+# `package.json` — and prettier is not installed either: `npm ls prettier` is
+# empty and `package-lock.json` mentions it zero times. So `npx prettier`
+# DOWNLOADS the newest release and runs it with its own defaults: 2-space
+# indent and double quotes, over a tree written with 4-space indent and single
+# quotes. Nothing objects. `tsc` passes, eslint passes, the generated OpenAPI
+# artefact comes out byte-identical, and the pre-commit hook looks only at
+# secrets and spec sync. The sole signal is the diffstat.
+#
+# It cost an ~80-line spec edit on #1611 turning into a 1560-line commit
+# (+857/−703) that had to be reverted in a follow-up.
+#
+# Why an ignore file and not a `.prettierrc` matching the house style, which
+# is what #1615 first proposed: that config is not a no-op. Measured over 40
+# random `src/**/*.ts` against
+# `{tabWidth:4, singleQuote:true, printWidth:100, trailingComma:'all'}`,
+# 24 of 40 still differ — about 60%, so roughly a thousand files of churn.
+# Adopting prettier is therefore a tree-wide reformat and its own reviewable
+# decision, not a guardrail. This file is the guardrail: one line, no churn.
+#
+# Verified with a positive control: `prettier --write <file>` leaves the file
+# untouched with this in place, and rewrites it once the file is removed. So
+# it stops even an explicitly named target, not just a glob.
+#
+# To adopt prettier deliberately, delete this file in the same change that
+# adds a config and lands the reformat — which is the explicit decision that
+# should be required.
+*
