@@ -2289,6 +2289,75 @@ nothing. The cache is covered in `tests/unit/suspension-cache.test.ts` (the
 helper) and `tests/unit/account-suspension-wiring.test.ts` (that anybody calls
 it); between them they cover the SEAM that the two halves alone did not.
 
+### P5.6a — one registry for export and erasure, derived from the DMMF
+
+`src/lib/privacy/personal-data-registry.ts` classifies every tenantless
+person-naming column (#1597). `GET /api/account/export` is its first consumer;
+the erasure is the second.
+
+**ONE registry, two consumers, and that is the whole design.** A column
+exported but not erased is a promise broken in one direction; a column erased
+but not exported is data destroyed without ever being shown. Two lists would
+drift, so there is one, and each entry carries a `Disposition` both consumers
+read: `ERASE_AND_EXPORT`, `ERASE_ONLY`, `RETAIN_AND_EXPORT`, `RETAIN_ONLY`.
+
+**It is DERIVED-complete.** `tests/guards/personal-data-registry-complete.test.ts`
+walks `Prisma.dmmf.datamodel.models` and fails when a tenantless model gains a
+person-naming column that nobody has classified — which is what #1597 asked
+for, because pseudonymisation is an UPDATE across enumerated columns rather
+than a cascade and "a new table holding a person id is a new place to forget".
+Measured: **67 models carry a person column, 18 tenantless** (this registry's
+population) and **49 tenant-scoped** (farm records, out of scope). The guard
+prints both so the split is visible rather than implied.
+
+**The person column is matched by SUFFIX, not by a list of spellings.** The
+schema uses at least seven — `reporterUserId`, `blockerUserId`, `blockedUserId`,
+`recipientUserId`, `inquirerUserId`, `senderUserId`, `actorUserId` — and a list
+of them is the thing that goes stale.
+
+**Farm records are out of scope deliberately.** A journal entry naming a farmer
+is authorship; the record belongs to a farm with its own retention duty (БАБХ
+ДНЕВНИК), and a farmer's own compliance diary is not theirs to take away from
+the farm. The boundary is stated in the export response's `notIncluded` rather
+than left implicit, because Art 15 is a right to know what is held and a silent
+omission is a worse answer than a named one.
+
+**The export runs PRIVILEGED, so the `where` clause IS the control.** No
+session context can read the set — `StatementOfReasons` denies `app_user`,
+`ContentReport` admits only a reporter through `app.user_id`, the exchange
+models are tenant-scoped — so one query shape cannot satisfy three policies.
+That inverts the usual arrangement where RLS is the backstop: here a dropped
+clause exports the database. Every test therefore asserts a SECOND person's
+rows are ABSENT; a presence-only test would pass while the route leaked
+everything.
+
+**Statements of reasons ARE exported, which reverses P5.1's posture
+deliberately.** That phase gave a recipient no read POLICY because a row-level
+arm would expose `actionId` and through it another party's moderation
+rationale. An export is not a policy arm: privileged, one named person, their
+own rows, and the text was emailed to them already. Withholding a copy of a
+letter we wrote to them would be indefensible under Art 15. `actionId` is
+omitted.
+
+**Credentials are `ERASE_ONLY`.** A live refresh or reset token in a
+downloadable file is a credential leak and answers nothing the person asked.
+`emailHash` is likewise never exported — a lookup derivation, not information
+about the person, and publishing it hands out the input to a correlation attack
+against any other system using the same HMAC.
+
+**A rate limit on a GET must be enforced INLINE.** `resolveRateLimitScope`
+returns `null` for anything outside `MUTATION_METHODS`, so `rateLimit: { config }`
+on a GET is a control that cannot execute — I shipped exactly that first, with
+a docblock explaining the budget. The route now passes `rateLimit: false` and
+calls `enforceRateLimit` itself. The Edge read tier is no help either:
+`API_READ_LIMIT` covers `/api/t/**` GETs, not `/api/account/**`.
+
+**`tsc` does NOT catch a wrong `select` key on the extended client.** Five
+column names in the export were wrong (`tenantId` for `sellerTenantId`,
+`cohort` for `cohortKey`, …) and typechecked clean; they failed at runtime as
+`PrismaClientValidationError`. Verify column names against the DMMF, not
+against a green typecheck.
+
 ## Failing tests
 
 A failing test on a branch is a failing test, full stop. "Pre-existing on
