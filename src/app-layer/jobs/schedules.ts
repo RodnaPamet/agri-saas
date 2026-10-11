@@ -97,6 +97,23 @@ export const ALL_SCHEDULES: ScheduleDefinition[] = [
     },
     {
         /**
+         * P5.5b — shadow-score the unscored notices.
+         *
+         * Quarter-hourly, which is a SAMPLING decision rather than a latency
+         * one: nothing reads a score, so nothing is waiting for it. What the
+         * cadence buys is an even spread of the monthly platform AI budget
+         * across the month — a sparser schedule with a bigger batch would
+         * spend it in a few runs and leave the rest of the month unscored,
+         * which is the worst possible sampling for judging whether the scorer
+         * works.
+         */
+        name: 'notice-score',
+        pattern: '*/15 * * * *',  // every 15 minutes
+        description: 'Shadow-score DSA notices for abuse likelihood; read by nothing (#1596)',
+        defaultPayload: {},
+    },
+    {
+        /**
          * P5.4b — drain the Art 17 statement queue.
          *
          * Every 10 minutes rather than daily, because the number this feeds

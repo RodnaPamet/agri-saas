@@ -294,6 +294,17 @@ export interface StatementDispatchPayload {
     limit?: number;
 }
 
+/**
+ * Shadow scoring of DSA notices (P5.5b, #1596).
+ *
+ * No `tenantId`: a notice is person-scoped, and the anonymous Art 16 path has
+ * no user at all. Recorded in both job tenant-scope audits with that reason.
+ */
+export interface NoticeScorePayload {
+    /** Cap for this run. Defaults to 20. */
+    limit?: number;
+}
+
 export interface NotificationDispatchPayload {
     tenantId?: string;
     /** Which categories to dispatch. Default: all */
@@ -814,6 +825,7 @@ export interface JobPayloadMap {
     'evidence-stale-review-sweep': EvidenceStaleReviewSweepPayload;
     'notification-dispatch': NotificationDispatchPayload;
     'statement-dispatch': StatementDispatchPayload;
+    'notice-score': NoticeScorePayload;
     'sync-pull': SyncPullPayload;
     'compliance-snapshot': ComplianceSnapshotPayload;
     'sla-monitor': SlaMonitorPayload;
@@ -1135,6 +1147,19 @@ export const JOB_DEFAULTS: Record<JobName, {
     // handled inside the job: it is caught, counted as skipped, and the row
     // stays undelivered for the next scheduled run — which is a retry with
     // the right granularity.
+    // P5.5b — ONE attempt, for a different reason from its neighbour below.
+    // `statement-dispatch` uses 1 because a retry would RE-SEND; this uses 1
+    // because a retry would re-SPEND. Each scored notice costs platform AI
+    // budget, and the queue is "notices with no score row", so the next
+    // scheduled run picks up anything this one missed at no extra cost.
+    'notice-score': {
+        attempts: 1,
+        // INERT — the type requires it and `attempts: 1` leaves nothing to
+        // delay. Values copied from the neighbours rather than chosen.
+        backoff: { type: 'exponential', delay: 10000 },
+        removeOnComplete: 200,
+        removeOnFail: 500,
+    },
     'statement-dispatch': {
         attempts: 1,
         // INERT, and present only because the type requires it. With

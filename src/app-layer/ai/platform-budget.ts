@@ -64,6 +64,12 @@ export const PLATFORM_AI_JOBS = [
     'field-briefing',
     'news-event-extraction',
     'support-scheme-extraction',
+    // P5.5b (#1596) — shadow scoring of DSA notices. The fourth entry, and the
+    // first whose VOLUME is set by the public: the other three are scheduled
+    // against data we already hold, while a notice arrives because somebody
+    // filed one on an unauthenticated endpoint. That is what makes a ceiling
+    // load-bearing here rather than prudent.
+    'notice-score',
 ] as const;
 
 export type PlatformAiJob = (typeof PLATFORM_AI_JOBS)[number];

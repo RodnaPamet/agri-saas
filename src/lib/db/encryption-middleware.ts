@@ -222,6 +222,12 @@ export const GLOBAL_KEK_MODELS: ReadonlySet<string> = new Set([
     // while serving a reporter's request, read only by platform admins — so
     // there is no tenant whose key could serve either side.
     'ReportSnapshot',
+    // P5.5b (#1596). Tenantless and encrypted, written by a scheduled job with
+    // no tenant in scope and read only by a human evaluating the scorer. No
+    // tenant's DEK could serve either side — and unlike the four above there
+    // is not even a reporter-shaped reader, because shadow mode means nothing
+    // reads it on a request path at all.
+    'NoticeScore',
 ]);
 
 /**

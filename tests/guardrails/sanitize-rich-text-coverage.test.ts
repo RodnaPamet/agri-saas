@@ -242,6 +242,20 @@ const NON_RICH_TEXT_MODELS: Readonly<Record<string, string>> = {
     TenantSecuritySettings:
         'auditStreamSecretEncrypted is a system-generated HMAC secret, ' +
         'never user-supplied free text — there is nothing to sanitise.',
+
+    NoticeScore:
+        'NoticeScore.rationale is MODEL-authored (P5.5b, #1596): no client ' +
+        'can write this column, and the only writer is a scheduled job. The ' +
+        'user text it quotes arrives already sanitised — ContentReport.detail ' +
+        'goes through sanitizePlainText on the P5.2 write path, so the quoted ' +
+        'source carries no markup to begin with. Nothing renders it either: ' +
+        'shadow mode means no request path reads a score at all, which is ' +
+        'held by notice-score-is-shadow-only plus a bypass-only RLS policy. ' +
+        'Sanitising here would therefore alter the record of what the model ' +
+        'actually said, which is the one thing a human evaluating the scorer ' +
+        'needs — the ReportSnapshot argument. IF a human-facing evaluation ' +
+        'surface is ever built, it sanitises at ITS usecase (C.5) and this ' +
+        'entry should be revisited in the same change.',
 };
 
 /**

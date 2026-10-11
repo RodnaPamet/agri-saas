@@ -2153,6 +2153,72 @@ currently compliant.
 counters stay attributable rather than one tier's consumption appearing in the
 other's.
 
+### P5.5b — the shadow score, where the GUARD is the deliverable
+
+`notice-score` runs every 15 minutes, scores unscored `ContentReport` rows for
+abuse likelihood, and writes `NoticeScore` (#1596). Nothing reads a score.
+
+**"Shadow mode" is a property somebody has to keep, so it is held by two
+controls at different depths.** `tests/guards/notice-score-is-shadow-only.test.ts`
+is the source half — no file outside the writing path may name the model — and
+the migration is the database half: `NoticeScore` has `superuser_bypass` as its
+ONLY policy, so a request-path read sees zero rows even if the source changed.
+Neither subsumes the other, because a platform-key route runs privileged and
+would read those rows fine — and that route is the moderation console, which is
+exactly what the guard is about.
+
+**The violation to expect is a SORT, not a read.** "Order the triage queue by
+score" looks like an improvement and is an unevaluated model deciding which Art
+16 notices a human sees first. So the guard's matcher is deliberately coarse
+(any mention of the model outside the writing path) rather than a rule about
+`orderBy`: a rule about sorts passes a threshold filter, and a rule about
+thresholds passes a sort. It strips comments first, so a file may EXPLAIN why it
+does not read the score without being reported as reading it.
+
+**`NoticeScore` is a table, not a column on `ContentReport`** — the
+`ReportSnapshot` reasoning exactly. That table carries
+`content_report_reporter_read`, a ROW-level SELECT arm, and Postgres RLS is
+row-level rather than column-level, so every column on it is reporter-readable.
+A score there would be readable by the person it was computed about.
+
+**Idempotence is the UNIQUE index on `reportId`, not a flag.** The queue is
+"notices with no score row", so a re-run cannot double-charge the platform AI
+budget and there is no `scored` boolean for anything to forget to set.
+
+**Two queries, and the split is load-bearing.** The anti-join is RAW SQL so the
+database does it under a `LIMIT` — collecting every scored `reportId` into a
+`notIn` would grow without bound. The row read then goes through PRISMA,
+because `ContentReport.detail` is encrypted and the client extension is what
+decrypts it. Fold the two together and the model scores CIPHERTEXT, returning a
+confident number about nothing with nothing failing;
+`tests/integration/p5-5b-notice-score.test.ts` asserts the plaintext reaches
+the scorer for that reason.
+
+**It is the fourth member of the `field-briefing` family**, and the first whose
+volume is set by the public rather than by a schedule over data we already hold.
+A notice arrives because somebody filed one on an endpoint needing no
+credential, so `isPlatformAiSpendAllowed('notice-score')` (#1423) is
+load-bearing here in a way it is not for its three siblings:
+`PUBLIC_NOTICE_LIMIT` makes a flood slow at 10/min per IP, and slow is not
+bounded. It is recorded in `ai-spend-gate-covers-embeddings`'s
+`DELIBERATELY_UNGATED` map with that reason — "ungated" there means no
+per-TENANT assertion, which a person-scoped notice structurally cannot make.
+
+**The prompt asks for no recommendation.** A shadow period exists to find out
+whether the scoring is any good BEFORE anything depends on it; a model asked
+"should this be removed" produces an artefact somebody will act on. It is also
+told to be conservative, because a farmer reporting a real problem may be terse,
+upset, or writing in a second language — and `anonymous` is passed while the
+reporter's id is not, the same rule the triage queue applies for the same
+reason.
+
+**`attempts: 1`, for a different reason from its neighbour.**
+`statement-dispatch` uses 1 because a retry would re-SEND; this uses 1 because a
+retry would re-SPEND. The quarter-hourly cadence is a SAMPLING choice, not a
+latency one — nothing waits on a score, and an even spread across the month
+beats spending the whole budget in a few runs and leaving the rest of the month
+unscored.
+
 ## Failing tests
 
 A failing test on a branch is a failing test, full stop. "Pre-existing on

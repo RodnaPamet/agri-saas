@@ -133,6 +133,14 @@ const PLATFORM_GATED: Readonly<Record<string, string>> = {
         'GLOBAL: MarketNewsItem is a tenant-less table and the daily job that calls this has no ctx. Gated by the platform AI budget (#1423); returns an empty array when refused, as it does on any other failure.',
     'src/app-layer/ai/support-scheme-extractor.ts':
         'GLOBAL subsidy extraction, copied in shape from field-briefing. Gated by the platform AI budget (#1423) rather than a per-tenant one, because a global job has no tenant to charge.',
+    // P5.5b (#1596) — the fourth of this family, and the first whose VOLUME is
+    // set by the public rather than by a schedule over data we already hold. A
+    // notice arrives because somebody filed one on an endpoint that needs no
+    // credential, so the platform ceiling is load-bearing here in a way it is
+    // not for its three siblings: `PUBLIC_NOTICE_LIMIT` makes a flood slow at
+    // 10/min per IP, and slow is not bounded.
+    'src/app-layer/ai/notice-scorer.ts':
+        'Shadow scoring of DSA notices, person-scoped so no tenant RequestContext exists to assert against — the signed-in path sets no tenant and the anonymous Art 16 path has no user. Gated by the platform AI budget (#1423), same as the three above.',
 };
 
 /** The platform gate being CALLED, and the ledger write beside it. */
