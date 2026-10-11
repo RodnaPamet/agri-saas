@@ -92,7 +92,12 @@ export const ACKNOWLEDGED_BREAKING_CHANGES: readonly AcknowledgedBreakingChange[
         kind: 'type-changed',
         schema: 'POST /api/t/{tenantSlug}/locations/{id}/spatial-import -> 400',
         contractVersion: 3,
-        pr: 1630,
+        // 1633, not 1630. Corrected in #1612's change: this entry was added in
+        // c286ae751, which is #1633's squash. #1630 is an unrelated P5.5b
+        // notice-scoring PR from another session, so a reviewer following this
+        // field — whose stated purpose is "the pull request that authorised
+        // it" — landed on a PR saying nothing about spatial-import. My error.
+        pr: 1633,
         date: '2026-10-11',
         why:
             'A FARMER was reading English. The route answered a bare ' +
@@ -180,6 +185,31 @@ export const ACKNOWLEDGED_BREAKING_CHANGES: readonly AcknowledgedBreakingChange[
             'which is what makes the removal a correction rather than a withdrawal. ' +
             'Verified against the route rather than inferred from the request shape, after ' +
             'doing exactly that inference wrong on #1443 earlier today.',
+    },
+    {
+        kind: 'property-removed',
+        schema: 'GET /api/t/{tenantSlug}/grain/costs/defaults -> 200',
+        property: 'overheads',
+        contractVersion: 3,
+        pr: 1641,
+        date: '2026-10-11',
+        why:
+            'The route returns TWO disjoint shapes and the 200 declared one, so the spec told a ' +
+            'reader something false for half the route\'s inputs: omit `commodity` and you get ' +
+            '`{ overheads }`, send it and you get `{ commodity, lines }`. The 200 is now ' +
+            '`z.union([CostDefaults, CropCostDefaults])`, which moves `overheads` from a ' +
+            'top-level property into an `anyOf` member \u2014 hence `property-removed`. NO byte any ' +
+            'caller receives changes: one that never sends `commodity` gets exactly what it got ' +
+            'before. The break is codegen-only and there is no codegen consumer to break \u2014 no ' +
+            '`openapi-typescript` in the tree, nothing imports generated API types, and ' +
+            'agrent-ios reviewed #1611 and confirmed every response is a hand-written ' +
+            '`Decodable`. The now-redundant `registry.register(\'CropCostDefaults\')` goes in the ' +
+            'same change: the union makes the component reachable, and keeping both would leave ' +
+            'two divergent copies of one shape. Owner authorised on 2026-10-11, having been ' +
+            'shown the codegen measurement and the alternative of splitting the route into two ' +
+            'paths \u2014 which would have needed an agrent-ios change and a deprecation window. ' +
+            'Tracked as #1612; found by agrent-ios reviewing #1611 against its head rather than ' +
+            'against my description of it.',
     },
 ];
 

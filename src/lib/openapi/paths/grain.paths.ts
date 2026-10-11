@@ -135,28 +135,34 @@ const GrainDeliverySchema = z
     });
 
 /**
- * The per-CROP response of `GET /grain/costs/defaults?commodity=` (#1611).
+ * The per-CROP response of `GET /grain/costs/defaults?commodity=` (#1611),
+ * and as of #1612 one of the two members of that route's 200 union.
  *
- * Registered EXPLICITLY below rather than named inline on the 200, and the
- * reason is a contract one. The 200 declares `CostDefaults`, whose top-level
- * `overheads` an existing client reads directly. Expressing both shapes as a
- * `z.union` is the more honest spec — the route really does return either — but
- * it takes `overheads` off the top level, and `openapi-breaking-change.test.ts`
- * correctly classifies that as `property-removed`: a generated client's
- * `response.overheads` stops type-checking even though the bytes an existing
- * caller receives are unchanged.
+ * It used to be registered EXPLICITLY and referenced by nothing, for a
+ * contract reason. The honest spec is both shapes as a `z.union` — the route
+ * really does return either — but that takes `overheads` off the top level,
+ * and `openapi-breaking-change.test.ts` correctly classifies it as
+ * `property-removed`: a generated client's `response.overheads` stops
+ * type-checking even though no byte an existing caller receives changes.
+ * That break was the OWNER's to authorise rather than mine, so #1611 shipped
+ * the half needing nobody's permission and #1612 tracked the rest.
  *
- * That break may well be worth taking, but it is the OWNER's to authorise —
- * `acknowledged-breaking-changes.ts` records approvals given on the PR that
- * needs them, not ones an agent decided for itself. So this ships the half that
- * needs no authorisation: the shape is PUBLISHED as a named component a client
- * can generate a type from, and the operation's description says when you get
- * it. Same pattern and same reason as `SpatialImportDetails` in
- * `locations.paths.ts` — `.openapi()` alone only LABELS a schema, it does not
- * emit one that no path reaches. Tracked as #1612.
+ * Authorised 2026-10-11 and recorded in
+ * `tests/contracts/acknowledged-breaking-changes.ts` against this PR. The
+ * `registry.register` call went with it: the union makes this component
+ * reachable, and keeping both would leave two divergent copies of one shape.
  *
- * If the union lands later, DELETE the `register` call: the union would make
- * this component reachable and leave two divergent copies of one shape.
+ * What was measured before asking, since "breaking" overstates it: the break
+ * is codegen-only and there is NO codegen consumer. No `openapi-typescript`
+ * in the tree, nothing imports generated API types, and agrent-ios reviewed
+ * #1611 and confirmed they hand-write every `Decodable`.
+ *
+ * `anyOf`, NOT `oneOf`: `z.union` renders as `anyOf`, and the two are
+ * equivalent here only because the members are disjoint on their REQUIRED
+ * properties. Neither sets `additionalProperties: false`, so if either ever
+ * gains an optional key the other requires, `anyOf` stops discriminating and
+ * a positional read picks the wrong member silently. Branch on which key is
+ * PRESENT, which is what the 200's description tells clients.
  */
 const CropCostDefaults = z
     .object({
@@ -203,11 +209,36 @@ const CropCostDefaults = z
     })
     .openapi('CropCostDefaults');
 
+/**
+ * The no-`commodity` response: the farm's latest overhead figures.
+ *
+ * Lifted out of the 200 into a named const so the union can reference it
+ * (#1612). The shape itself is unchanged.
+ */
+const CostDefaults = z
+    .object({
+        overheads: z.array(
+            z.object({
+                category: z
+                    .enum(['PAYROLL', 'CREDIT', 'DEPRECIATION', 'OTHER'])
+                    .openapi({ description: 'Which overhead this is the last value for.' }),
+                amount: z.number().openapi({ description: 'The yearly figure as entered.' }),
+                currency: z.string(),
+                incurredOn: z.string().datetime().openapi({
+                    description:
+                        'When it was incurred. Show it — a default from last season should look like one.',
+                }),
+                payrollHeadcount: z.number().int().nullable().optional().openapi({
+                    description:
+                        'PAYROLL only. `null` means a plain total was entered, which is NOT the same as zero people.',
+                }),
+                payrollAnnualPerPerson: z.number().nullable().optional(),
+            }),
+        ),
+    })
+    .openapi('CostDefaults');
+
 export function registerGrainPaths(registry: OpenAPIRegistry): void {
-    // Registered explicitly because nothing REFERENCES it \u2014 see the docblock
-    // above. A client needs a name to generate a type from, and a schema that no
-    // path reaches is not emitted at all.
-    registry.register('CropCostDefaults', CropCostDefaults);
 
     op(registry, {
         method: 'get',
@@ -858,30 +889,17 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         success: {
             status: 200,
             description:
-                'The latest overhead figures, in a fixed category order so the form\'s fields do not reorder between visits. Empty when the farm has no overhead history. ' +
-                'This schema describes the response when `commodity` is ABSENT; sending it returns `CropCostDefaults` instead \u2014 a registered component rather than a second 200 schema here, because declaring a union would take `overheads` off the top level and break a generated client\'s typed read (#1612).',
-            schema: z
-                .object({
-                    overheads: z.array(
-                        z.object({
-                            category: z
-                                .enum(['PAYROLL', 'CREDIT', 'DEPRECIATION', 'OTHER'])
-                                .openapi({ description: 'Which overhead this is the last value for.' }),
-                            amount: z.number().openapi({ description: 'The yearly figure as entered.' }),
-                            currency: z.string(),
-                            incurredOn: z.string().datetime().openapi({
-                                description:
-                                    'When it was incurred. Show it — a default from last season should look like one.',
-                            }),
-                            payrollHeadcount: z.number().int().nullable().optional().openapi({
-                                description:
-                                    'PAYROLL only. `null` means a plain total was entered, which is NOT the same as zero people.',
-                            }),
-                            payrollAnnualPerPerson: z.number().nullable().optional(),
-                        }),
-                    ),
-                })
-                .openapi('CostDefaults'),
+                'TWO disjoint shapes, and `commodity` decides which (#1612). Omit it and the ' +
+                'response is `CostDefaults`: the farm\'s latest overhead figures, in a fixed ' +
+                'category order so the form\'s fields do not reorder between visits, empty when ' +
+                'the farm has no overhead history. Send it and the response is ' +
+                '`CropCostDefaults`, that crop\'s own sheet.\n\n' +
+                'BRANCH ON WHICH KEY IS PRESENT — `overheads` or `lines` — never on the `anyOf` ' +
+                'order. The members are disjoint on their REQUIRED properties, which is the only ' +
+                'reason `anyOf` discriminates at all; neither sets `additionalProperties: false`, ' +
+                'so a member that later gains an optional key the other requires would make a ' +
+                'positional read pick the wrong one with nothing failing.',
+            schema: z.union([CostDefaults, CropCostDefaults])
         },
     });
 
