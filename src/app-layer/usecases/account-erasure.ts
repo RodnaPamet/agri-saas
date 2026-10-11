@@ -45,6 +45,8 @@
  */
 import { randomUUID } from 'node:crypto';
 
+import type { Prisma } from '@prisma/client';
+
 import prisma from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { PERSONAL_DATA_REGISTRY } from '@/lib/privacy/personal-data-registry';
@@ -53,6 +55,12 @@ import { PERSONAL_DATA_REGISTRY } from '@/lib/privacy/personal-data-registry';
 export const DELETION_GRACE_DAYS = 30;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * A transaction-capable client, so a caller already inside a transaction does
+ * not make this reach for a second pool connection (#1191's P0.8 shape).
+ */
+type TxClient = Prisma.TransactionClient;
 
 export interface ErasureOutcome {
     readonly userId: string;
@@ -246,6 +254,53 @@ export interface DeletionRequestResult {
  * stamped, exactly as P5.9's suspension does — the two share the mechanism
  * while deliberately not sharing the column.
  */
+/**
+ * The freeze, on a caller-supplied transaction.
+ *
+ * Exists for `actOnNotice`, which is deliberately ONE transaction: calling the
+ * wrapper below from inside it would reach for a second pool connection, which
+ * is the #1191 P0.8 deadlock shape. Same split as `suspendAccountOnTx`.
+ */
+export async function requestAccountDeletionOnTx(
+    tx: TxClient,
+    userId: string,
+): Promise<DeletionRequestResult> {
+    const existing = await tx.user.findUnique({
+        where: { id: userId },
+        select: { id: true, deletionRequestedAt: true, pseudonymisedAt: true },
+    });
+    if (!existing || existing.pseudonymisedAt) {
+        return { applied: false, alreadyRequested: false, erasesAt: null, sessionsRevoked: 0 };
+    }
+    if (existing.deletionRequestedAt) {
+        return {
+            applied: true,
+            alreadyRequested: true,
+            erasesAt: new Date(
+                existing.deletionRequestedAt.getTime() + DELETION_GRACE_DAYS * DAY_MS,
+            ).toISOString(),
+            sessionsRevoked: 0,
+        };
+    }
+
+    const now = new Date();
+    await tx.user.update({
+        where: { id: userId },
+        data: { deletionRequestedAt: now, sessionVersion: { increment: 1 } },
+    });
+    const revoked = await tx.userSession.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: now },
+    });
+
+    return {
+        applied: true,
+        alreadyRequested: false,
+        erasesAt: new Date(now.getTime() + DELETION_GRACE_DAYS * DAY_MS).toISOString(),
+        sessionsRevoked: revoked.count,
+    };
+}
+
 export async function requestAccountDeletion(userId: string): Promise<DeletionRequestResult> {
     return prisma.$transaction(async (tx) => {
         const existing = await tx.user.findUnique({

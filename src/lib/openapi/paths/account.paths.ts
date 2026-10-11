@@ -26,7 +26,7 @@ import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { MAX_BOTTOM_TABS } from '@/lib/account/bottom-tabs';
 import { ApiErrorResponseSchema } from '@/lib/dto/common';
-import { op, rawErrorResponses } from './helpers';
+import { codedErrorResponses, op, rawErrorResponses } from './helpers';
 
 /**
  * The caller's effective avatar URL, and the ONE hazard a client has to know
@@ -327,6 +327,20 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
     op(registry, {
         method: 'get',
         path: '/api/auth/me',
+        extraResponses: {
+            ...codedErrorResponses({
+                403:
+                    'Carries `ACCOUNT_SUSPENDED` in `error.code` — the SAME shape and the ' +
+                    'same code as every other suspension refusal in this API, because it ' +
+                    'is the same throw. The account is suspended, so NOTHING else is ' +
+                    'returned: no `user`, no `tenant`, no `featureFlags` and in particular ' +
+                    'no `deletion`. Treat it as FINAL — re-authenticating succeeds and is ' +
+                    'refused again, so a client that retries loops. Show the suspension and ' +
+                    'offer sign-out. A moderator TERMINATING an account both suspends it ' +
+                    'and starts the erasure, so a terminated caller lands here rather than ' +
+                    'on the deletion-recovery path (#1652).',
+            }),
+        },
         operationId: 'getCurrentUser',
         summary: 'The signed-in user, their primary tenant, and their preferences',
         description:
@@ -361,6 +375,25 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
                         role: z.string().nullable(),
                         bottomTabOrder: BottomTabOrder,
                         avatarUrl: AvatarUrl,
+                        deletion: z
+                            .object({
+                                // `.datetime()`, not a bare string: #1391's
+                                // guard requires every response-side timestamp
+                                // to declare a `format`, so a generated client
+                                // gets a date rather than an opaque string. It
+                                // is free — `format` is none of the six classes
+                                // the breaking-change scorer reads, and these
+                                // schemas are registration-only, so nothing
+                                // starts validating.
+                                requestedAt: z.string().datetime(),
+                                erasesAt: z.string().datetime(),
+                            })
+                            .nullable()
+                            .openapi({
+                                description:
+                                    'A pending account deletion, or `null`. An ABSENT key means the same as `null` — pinned deliberately, so an older server cannot strand a client in a recovery screen it cannot leave. `erasesAt` is `requestedAt` plus the 30-day grace period, derived from the SAME constant the erasure sweep reads, so the date shown and the date the data goes cannot disagree; render it, do not recompute it. Both are ISO instants (`…Z`). Cancel with `DELETE /api/account/deletion` — signing in does NOT cancel, because a background session refresh would then undo a deliberate request. A SUSPENDED caller never sees this field: the route answers 403 first.',
+                                example: null,
+                            }),
                     }),
                     tenant: z
                         .object({ id: z.string(), name: z.string(), slug: z.string() })
