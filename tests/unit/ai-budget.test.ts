@@ -106,12 +106,22 @@ describe('assertAiBudget: the farm-verification gate (P3.5f)', () => {
         mockIsFarmVerified.mockResolvedValue(false);
 
         await expect(assertAiBudget(ctx)).rejects.toThrow(ForbiddenError);
-        await expect(assertAiBudget(ctx)).rejects.toThrow(
-            /AI_BUDGET_REQUIRES_VERIFIED_FARM/,
-        );
+        // On `code`, not on the message.
+        //
+        // This read `.rejects.toThrow(/AI_BUDGET_REQUIRES_VERIFIED_FARM/)`
+        // until #1645, which matches the MESSAGE — and passed because the call
+        // site used `forbidden`, so the code WAS the message and `code` was the
+        // generic `FORBIDDEN`. A client switching on `code` saw nothing
+        // specific while this test reported the code was being sent.
+        await expect(assertAiBudget(ctx)).rejects.toMatchObject({
+            code: 'AI_BUDGET_REQUIRES_VERIFIED_FARM',
+            message: 'This farm must be verified before it can use AI features.',
+        });
         // Distinct from `ai_budget_exceeded` deliberately: the remedy is "get
         // verified", not "upgrade", and a client showing an upgrade prompt here
-        // would send a farmer to buy capacity they already have.
+        // would send a farmer to buy capacity they already have. That sibling
+        // is still an UNCODED prose throw, so the two are distinguishable in
+        // different fields — hence both halves below.
         await expect(assertAiBudget(ctx)).rejects.not.toThrow(/ai_budget_exceeded/);
     });
 
@@ -130,9 +140,9 @@ describe('assertAiBudget: the farm-verification gate (P3.5f)', () => {
         mockGetEffectivePlan.mockResolvedValue('ENTERPRISE');
         mockGetLimit.mockReturnValue(null);
         mockIsFarmVerified.mockResolvedValue(false);
-        await expect(assertAiBudget(ctx)).rejects.toThrow(
-            /AI_BUDGET_REQUIRES_VERIFIED_FARM/,
-        );
+        await expect(assertAiBudget(ctx)).rejects.toMatchObject({
+            code: 'AI_BUDGET_REQUIRES_VERIFIED_FARM',
+        });
     });
 
     it('does NOT gate a SELF-HOSTED install, however unverified', async () => {
