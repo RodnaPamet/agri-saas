@@ -33,6 +33,30 @@ import * as path from 'path';
 import { collectTrackedFiles } from '../helpers/collect-files';
 import { blankNonCode } from '../helpers/blank-non-code';
 
+/**
+ * The braced block that opens after `from`, to its MATCHING close brace.
+ *
+ * A bound the source supplies, so a comment added inside the block cannot push
+ * the thing being asserted out of range. `error-codes-are-documented` and
+ * `error-params-carry-no-pii` both reached this conclusion from their own
+ * broken character windows; this is the same fix for a brace rather than a
+ * paren. Caller passes text that has been through `blankNonCode`, so a brace
+ * inside a comment or a string cannot be counted.
+ */
+function blockAfter(src: string, from: number): string {
+    const open = src.indexOf('{', from);
+    if (open === -1) return '';
+    let depth = 0;
+    for (let i = open; i < src.length; i++) {
+        if (src[i] === '{') depth++;
+        else if (src[i] === '}') {
+            depth--;
+            if (depth === 0) return src.slice(open, i + 1);
+        }
+    }
+    return src.slice(open);
+}
+
 const ROOT = path.resolve(__dirname, '../..');
 
 /** The one module allowed to write it, because it owns the verification. */
@@ -83,12 +107,24 @@ describe('FarmProfile.eik has exactly one write path', () => {
         const src = blankNonCode(
             fs.readFileSync(path.join(ROOT, 'src/app-layer/usecases/farm-profile.ts'), 'utf8'),
         );
-        // The window spans the stored-value read that sits between the guard
-        // and the throw. Widened deliberately rather than pinned tight: a
-        // needle that only matched the two adjacent would have gone blind the
-        // moment a comparison was introduced between them, which is exactly
-        // what happened.
-        expect(src).toMatch(/said\('eik'\)[\s\S]{0,600}?FARM_PROFILE_EIK_NOT_EDITABLE/);
+        // The window is the `if (said('eik')) { … }` BLOCK, taken to its
+        // matching close brace — not a character count.
+        //
+        // It was `[\s\S]{0,600}?` and 600 was not enough as of #1645, which
+        // added four comment lines explaining why the refusal is coded. That is
+        // the third time a character window has broken in this repo for the
+        // same reason, and `error-codes-are-documented` records the second with
+        // its conclusion: raising the constant fixes today's comment and leaves
+        // the next one to break it again, so the bound comes from the source.
+        //
+        // Worth noting what the OLD pattern did on the same diff, because it is
+        // the more interesting half: against the RAW file it still matched, 541
+        // characters in — on the word `FARM_PROFILE_EIK_NOT_EDITABLE` inside
+        // the new comment. `blankNonCode` is the only reason this went red
+        // rather than silently grading a comment. A scar is not a wound.
+        const i = src.indexOf("said('eik')");
+        expect(i).toBeGreaterThan(-1);
+        expect(blockAfter(src, i)).toContain('FARM_PROFILE_EIK_NOT_EDITABLE');
     });
 
     it('…and an UNCHANGED `eik` is a no-op, not a refusal', () => {

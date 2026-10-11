@@ -278,18 +278,27 @@ describe('eik is refused only when it would CHANGE (#1352)', () => {
 
     it('a CHANGED eik is refused', async () => {
         stored('831641791');
+        // On `code`. These three read `.rejects.toThrow(/FARM_PROFILE_EIK_NOT_
+        // EDITABLE/)` until #1645 — a match against the MESSAGE, which passed
+        // because the call site used `badRequest` and so put the code there,
+        // leaving `code` at the generic `BAD_REQUEST`. The message is a
+        // sentence now and is asserted once, below, so a revert cannot satisfy
+        // these by moving the token back.
         await expect(
             upsertFarmProfile(makeCtx(), { eik: '175074752' }),
-        ).rejects.toThrow(/FARM_PROFILE_EIK_NOT_EDITABLE/);
+        ).rejects.toMatchObject({
+            code: 'FARM_PROFILE_EIK_NOT_EDITABLE',
+            message: 'The EIK of a verified farm cannot be changed.',
+        });
     });
 
     it('CLEARING a stored eik is refused too', async () => {
         // `null` is an attempt to write the field, and wiping a verified
         // identity is no more self-serviceable than setting one.
         stored('831641791');
-        await expect(upsertFarmProfile(makeCtx(), { eik: null })).rejects.toThrow(
-            /FARM_PROFILE_EIK_NOT_EDITABLE/,
-        );
+        await expect(upsertFarmProfile(makeCtx(), { eik: null })).rejects.toMatchObject({
+            code: 'FARM_PROFILE_EIK_NOT_EDITABLE',
+        });
     });
 
     it('SETTING one on a profile that has none is refused', async () => {
@@ -298,7 +307,7 @@ describe('eik is refused only when it would CHANGE (#1352)', () => {
         stored(null);
         await expect(
             upsertFarmProfile(makeCtx(), { eik: '831641791' }),
-        ).rejects.toThrow(/FARM_PROFILE_EIK_NOT_EDITABLE/);
+        ).rejects.toMatchObject({ code: 'FARM_PROFILE_EIK_NOT_EDITABLE' });
     });
 
     it('and `eik` never reaches the write object, even when it matched', async () => {

@@ -32,7 +32,7 @@
 import { z } from '@/lib/openapi/zod';
 import { UpdateFarmProfileSchema } from '@/app-layer/schemas/farm-profile.schemas';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
-import { op } from './helpers';
+import { codedErrorResponses, op } from './helpers';
 import { ApiErrorResponseSchema } from '@/lib/dto/common';
 
 const TenantParams = z.object({
@@ -217,6 +217,19 @@ export function registerFarmProfilePaths(registry: OpenAPIRegistry): void {
             schema: FarmProfileSchema,
         },
         extraResponses: {
+            ...codedErrorResponses({
+                400:
+                    'Invalid request body, or a refused write.\n\n' +
+                    '`error.code` is `FARM_PROFILE_EIK_NOT_EDITABLE` when the body carries an ' +
+                    '`eik` that DIFFERS from the stored one on a VERIFIED farm. The EIK is the ' +
+                    'identity the verification was performed against, so changing it would ' +
+                    'silently move a verified badge onto a different legal entity. An IDENTICAL ' +
+                    'value is a no-op and is accepted — a read-modify-write that round-trips the ' +
+                    'whole object is still correct — and so is omitting the field. `null` is a ' +
+                    'DIFFERENT value and is refused: clearing a verified identity is the same ' +
+                    'change in the other direction. The remedy is support, not another request; ' +
+                    'do not offer a retry.',
+            }),
             409: {
                 description:
                     'Optimistic-lock conflict — the profile moved on, or you sent a version for a row that does not exist. Re-read and retry; do NOT treat it as success.',

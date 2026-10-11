@@ -176,7 +176,28 @@ export function commonErrorResponses(): RouteConfig['responses'] {
                 'the native client from pointing anyone to pay outside the app, so a ' +
                 'prescribed destination would be unreachable for one of the two clients ' +
                 '(#1490). What both clients CAN do is distinguish this from ' +
-                '`plan_limit_exceeded:` and say which happened.',
+                '`plan_limit_exceeded:` and say which happened.\n\n' +
+                'Two more are described here rather than per-operation, and their scope is ' +
+                'NARROWER than the four above: they come from `getUserCtx`, so they are ' +
+                'reachable on the PERSON-scoped routes only — `/api/account/**`, ' +
+                '`/api/me/**` and `/api/social/**`. No tenant route can answer either. ' +
+                'They are here because that one function is the choke point all of those ' +
+                'routes reach and three of their paths are not in this document yet, so a ' +
+                'per-operation list would be wrong by omission:\n\n' +
+                '- `API_KEY_NOT_PERSON_SCOPED` — an `iflk_` API key was presented on a ' +
+                'route about a PERSON. A key belongs to a farm and authorises nobody in ' +
+                'particular, so this is a category error rather than a permission ' +
+                'shortfall: retrying with a wider-scoped key cannot work. Use a user ' +
+                'session or a bearer token minted for one.\n' +
+                '- `OPERATOR_SCOPE` — the signed-in user is a MECHANISATOR and the route ' +
+                'is a social surface. Deliberately narrower than the Edge lockdown of the ' +
+                'same persona: an operator reaches their own account and security pages ' +
+                'normally, because a lockdown that locks somebody out of their own ' +
+                'credentials is a defect (owner ruling, 2026-10-02). Nothing the client ' +
+                'can do lifts it; do not offer a retry.\n\n' +
+                'Both carried their code in `error.message` with a generic `error.code` ' +
+                'until #1645. If you are reading a cached copy of this spec, check that it ' +
+                'carries this sentence before switching on either.',
             content: json,
         },
         404: { description: 'Not found, or not visible to this tenant.', content: json },
