@@ -225,6 +225,11 @@
       "documented": true
     },
     {
+      "path": "/api/auth/native/mfa",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/auth/native/revoke",
       "status": "live",
       "documented": true

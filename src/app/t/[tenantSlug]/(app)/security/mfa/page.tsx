@@ -11,6 +11,8 @@ import { cn } from '@/lib/cn';
 
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
+import { useSearchParams } from 'next/navigation';
+import { sanitizeRedirectPath } from '@/lib/auth/safe-redirect';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { Button } from '@/components/ui/button';
 import { ShieldCheck, QrCode as QrCodeIcon, Copy, CheckCircle, XCircle, Trash2, AlertTriangle, X } from 'lucide-react';
@@ -43,6 +45,7 @@ export default function UserMfaPage() {
     const { formatDate } = useDateFormat();
     const t = useTranslations('mfa');
     const te = useTranslations('mfa.enroll');
+    const searchParams = useSearchParams();
     const apiUrl = useTenantApiUrl();
     const [status, setStatus] = useState<MfaStatus | null>(null);
     const [step, setStep] = useState<Step>('status');
@@ -106,6 +109,17 @@ export default function UserMfaPage() {
             });
             const data = await res.json();
             if (data.success) {
+                // Somebody sent here mid-sign-in has somewhere to go back TO,
+                // and leaving them on this status card is a dead end: in the
+                // phone's sign-in sheet the only way onward is the back
+                // arrow, which nobody will guess. `next` is set by the
+                // challenge page's enrol link; it is sanitised here as well
+                // as there, because this page can also be opened directly.
+                const resume = searchParams.get('next');
+                if (resume) {
+                    window.location.href = sanitizeRedirectPath(resume);
+                    return;
+                }
                 setSuccess(te('enrolledSuccess'));
                 setStep('status');
                 setEnrollment(null);

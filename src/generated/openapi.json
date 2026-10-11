@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "10.29.2",
+    "version": "10.29.4",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -592,6 +592,32 @@
           "dueAt"
         ]
       },
+      "AppleMfaRequired": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "mfa_required"
+            ],
+            "description": "Always this value. Switch on it: a 202 is never a token pair and a 200 is never a ticket."
+          },
+          "ticket": {
+            "type": "string",
+            "description": "Opaque, single-use, and useless without the `code_verifier` whose challenge you sent. Post it to `POST /api/auth/native/mfa` together with the code."
+          },
+          "expiresIn": {
+            "type": "number",
+            "description": "SECONDS the ticket remains valid — a DURATION, not a date. Five minutes, which is time to open an authenticator and read a code. On expiry start sign-in again; a ticket cannot be refreshed."
+          }
+        },
+        "required": [
+          "status",
+          "ticket",
+          "expiresIn"
+        ],
+        "description": "Sign-in is accepted and INCOMPLETE: the identity token verified, and the farm requires a second factor the app must now collect."
+      },
       "AppleSignInRequest": {
         "type": "object",
         "properties": {
@@ -602,6 +628,10 @@
           "nonce": {
             "type": "string",
             "description": "The RAW nonce this attempt used — the server hashes it. `rawNonce` / `raw_nonce` are also accepted. Single-use."
+          },
+          "code_challenge": {
+            "type": "string",
+            "description": "OPTIONAL, and sending it is how a client DECLARES it can handle a 202. Base64url SHA-256 of a fresh verifier, generated exactly as for `/native/start`; S256 only.\n\nOmit it and a farm requiring a second factor answers `403 MFA_REQUIRED` — which is what every build shipped before this field existed already handles. Send it and that case answers `202` with a ticket instead, so adding the field is opt-in per request rather than a change every client has to absorb at once.\n\nIt is also the ticket’s PKCE binding: keep the verifier in memory and send it to `POST /api/auth/native/mfa`. A ticket leaked through a log or a crash report is useless without it. `codeChallenge` is also accepted."
           }
         },
         "required": [
@@ -8798,6 +8828,48 @@
           "code"
         ],
         "description": "One of `code_verifier` / `codeVerifier` is REQUIRED — the schema cannot express \"exactly one of\" without rejecting the other spelling, so both are optional here and the handler requires one. Sending neither is 400 invalid_grant."
+      },
+      "NativeMfaRequest": {
+        "type": "object",
+        "properties": {
+          "ticket": {
+            "type": "string",
+            "description": "The `ticket` from the 202. Single-use."
+          },
+          "code": {
+            "type": "string",
+            "description": "The six-digit TOTP code. Digits only — anything else answers `MFA_CODE_MALFORMED` and costs no attempt."
+          },
+          "code_verifier": {
+            "type": "string",
+            "description": "The verifier whose SHA-256 you sent as `code_challenge` to `signInWithApple`. `codeVerifier` is also accepted. A mismatch answers `MFA_TICKET_INVALID` and does NOT consume the ticket — somebody else holding it must not be able to lock the real user out."
+          }
+        },
+        "required": [
+          "ticket",
+          "code",
+          "code_verifier"
+        ]
+      },
+      "NativeMfaResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NativeTokenPair"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "termsPending": {
+                "type": "boolean",
+                "description": "True when this account has no recorded terms acceptance. Every tenant and person route answers 403 until `POST /api/auth/accept-terms` succeeds."
+              }
+            },
+            "required": [
+              "termsPending"
+            ]
+          }
+        ],
+        "description": "expiresIn is a DURATION in seconds for the access token; refreshExpiresAt is an ISO INSTANT for the refresh token. The two are deliberately different kinds — do not treat expiresIn as a timestamp."
       },
       "NativeRefreshRequest": {
         "type": "object",
@@ -37659,6 +37731,16 @@
               }
             }
           },
+          "202": {
+            "description": "The farm requires a second factor and this request declared it can collect one (a `code_challenge` was sent). No token pair yet — redeem the ticket at `POST /api/auth/native/mfa`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppleMfaRequired"
+                }
+              }
+            }
+          },
           "400": {
             "description": "`invalid_grant` — a BARE body. Covers a bad signature, the wrong audience, an expired token, a nonce mismatch and a replayed nonce, deliberately indistinguishable.",
             "content": {
@@ -37680,7 +37762,7 @@
             }
           },
           "403": {
-            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries an English `message` as a developer-facing fallback; it is NOT translated, so render your own copy keyed on `code`. Route-level 403s carry their own codes and are described on the operation that returns them.\n\nOne route-level code is described HERE rather than per-operation. MOST operations cannot return it — it is confined to the five capability families named below — but it means the same thing on each of them, and one of the five (`upload`) is gated at a choke point that many unrelated routes reach, so an exhaustive per-operation list would be the kind that is wrong by omission:\n\n- `PAST_DUE_RESTRICTED` — a payment on this tenant failed and the 14-day grace period has elapsed. It is NOT a quota or a plan ceiling: the plan is untouched and nothing was exceeded. The withheld capabilities are exactly `exchange`, `trends`, `task.create`, `upload` and `journal.create`; every other surface, including reading everything already recorded, is unaffected. The tenant's own ACTIVE exchange listings stay visible to other farms and inbound threads keep arriving — this is the unpaid tenant's own view closing, not a withdrawal.\n\n  The restriction is COMPUTED per request, with no sweep and nothing to settle, so a cleared balance lifts it on the very next request — a client can honestly tell the user to resolve it and refresh. This description deliberately names no remedy beyond that: App Store guideline 3.1.1 keeps the native client from pointing anyone to pay outside the app, so a prescribed destination would be unreachable for one of the two clients (#1490). What both clients CAN do is distinguish this from `plan_limit_exceeded:` and say which happened.",
+            "description": "The farm requires a second factor this request cannot collect.\n\n`error.code` is `MFA_REQUIRED` whenever **no `code_challenge` was sent**. A client that did not opt in cannot show a code screen and does not know the enrolment code either, so it gets the one code it understands — the same opt-in rule as the 202 above. Use Google or Microsoft, or the web.\n\nIt is `MFA_ENROLLMENT_REQUIRED` only for a client that DID send a `code_challenge` and whose account has no verified authenticator. There is no shared secret to check a code against, so the remedy is enrolment on the web rather than another provider — two codes because the two remedies differ, and gated on the opt-in so an older build never receives one it would render as a generic refusal.",
             "content": {
               "application/json": {
                 "schema": {
@@ -37762,6 +37844,135 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RawErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/native/mfa": {
+      "post": {
+        "operationId": "completeNativeMfa",
+        "summary": "Redeem a pending-MFA ticket with a TOTP code",
+        "description": "The second half of Apple sign-in at a farm that requires a second factor. `signInWithApple` returned `202` with a ticket; post it here with the six-digit code and the verifier whose challenge you sent. \n\n**Only reachable for Apple.** Google and Microsoft sign-in goes through the system browser, so their code is typed in the sign-in sheet and `completeNativeSignIn` simply withholds the auth code until it clears. There is no sheet in the Apple flow, which is why this endpoint exists at all — it is not a general-purpose MFA endpoint and the web does not use it. \n\n**The ticket is not a credential.** It is opaque, single-use, server-stored hashed, five-minute, and PKCE-bound; it carries no claims and authenticates nothing. `exchangeNativeAuthCode` cannot redeem it — that endpoint looks only for session codes, so a ticket is not found there rather than refused by a check. \n\n**Five wrong codes burn the ticket.** The cap is on the TICKET, not on an IP or an account, so it bounds exactly one sign-in attempt and cannot be sidestepped by reconnecting. It matches the web challenge's allowance, so the number of tries does not depend on which device somebody is holding. Expect `429` with `Retry-After` if the shared per-user limiter trips first. \n\n**On success you get the ordinary token pair**, with `termsPending` exactly as `signInWithApple` returns it — a first Apple sign-in can owe both a second factor and the terms.",
+        "tags": [
+          "Auth"
+        ],
+        "security": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NativeMfaRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The factor was accepted. The ticket is consumed and this is the token pair.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NativeMfaResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`error.code` is `MFA_CODE_INVALID` when the ticket is fine and the CODE was wrong — `error.params.attemptsRemaining` is an integer, and at `0` the ticket is already burned by this same response, so say \"too many wrong codes, sign in again\" without another call to find out. It is `MFA_CODE_MALFORMED` when six digits were not supplied; that costs no attempt, because input that was never a guess should not spend one of five tries.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`error.code` is `MFA_TICKET_INVALID`. ONE code for expired, consumed, unknown, wrong-purpose and PKCE-mismatched tickets, deliberately indistinguishable — the remedy is identical in every case (start sign-in again), and telling a caller which of five checks defeated it is free help to somebody probing. Do not branch on it beyond restarting.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
+import { sanitizeRedirectPath } from '@/lib/auth/safe-redirect';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { Button } from '@/components/ui/button';
 import { buttonVariants } from '@/components/ui/button-variants';
@@ -31,7 +32,32 @@ export default function MfaChallengePage() {
     // Default to /dashboard, not /, because `/t/<slug>/` has no
     // page.tsx (404) and post-MFA navigation would land on a broken
     // route if the URL didn't carry an explicit `next`.
-    const next = searchParams.get('next') || tenantHref('/dashboard');
+    // SANITISED. This value is navigated to with `window.location.href` the
+    // instant a correct code is accepted, and it arrived in the query string
+    // — so unvalidated it was an open redirect at the single most convincing
+    // moment to show a fake "session expired, sign in again" page: the person
+    // has just proved to themselves they are mid-authentication.
+    //
+    // `sanitizeRedirectPath` already existed and was already used by
+    // `buildLoginRedirect` and the consent page. This page simply never
+    // called it. (It also had a `/\` gap, fixed in `safe-redirect` — a path
+    // a browser normalises to `//`.) Found by agrent-ios.
+    const rawNext = searchParams.get('next');
+    // A REJECTED `next` falls back to the dashboard, not to `/`. The
+    // sanitiser answers `/` for anything it refuses, and this page's own
+    // comment says the dashboard is the intended default — landing a farm
+    // member on the site root after a correct code is a worse answer than
+    // the one it meant to give. Raised by agrent-ios.
+    const sanitized = rawNext ? sanitizeRedirectPath(rawNext) : null;
+    const next = sanitized && sanitized !== '/' ? sanitized : tenantHref('/dashboard');
+
+    // Carried through the enrol link so a first-time enroller comes BACK here
+    // to type their first code. Without it the setup page is a dead end: it
+    // returns to its own status card, and in the phone's sign-in sheet the
+    // only way onward is the back arrow, which nobody will guess.
+    const enrolHref = `${tenantHref('/security/mfa')}?next=${encodeURIComponent(
+        `${tenantHref('/auth/mfa')}${rawNext ? `?next=${encodeURIComponent(sanitizeRedirectPath(rawNext))}` : ''}`,
+    )}`;
 
     const [code, setCode] = useState('');
     const [error, setError] = useState<string | null>(null);
@@ -111,7 +137,7 @@ export default function MfaChallengePage() {
                         {tc('enrollRequiredDesc')}
                     </p>
                     <a
-                        href={tenantHref('/security/mfa')}
+                        href={enrolHref}
                         className={buttonVariants({ variant: 'primary', className: 'w-full justify-center' })}
                         id="mfa-go-enroll-btn"
                     >

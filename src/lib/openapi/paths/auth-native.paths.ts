@@ -56,7 +56,7 @@
  */
 import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
-import { op, rawErrorResponses } from './helpers';
+import { op, rawErrorResponses, codedErrorResponses } from './helpers';
 
 /** Unauthenticated by construction — the code and verifier ARE the credential. */
 const NO_AUTH: Array<Record<string, string[]>> = [];
@@ -80,6 +80,40 @@ const NativeTokenPair = z
     .openapi('NativeTokenPair', {
         description:
             'expiresIn is a DURATION in seconds for the access token; refreshExpiresAt is an ISO INSTANT for the refresh token. The two are deliberately different kinds — do not treat expiresIn as a timestamp.',
+    });
+
+/**
+ * The 202 from `signInWithApple` when the farm requires a second factor.
+ *
+ * A DISCRIMINATED shape, carrying `status` so it can never be decoded as a
+ * token pair or the reverse. Two payloads differing only by which optional
+ * keys are present is how a client ends up treating one as the other;
+ * agrent-ios asked for the discriminant because their decoder picks a type
+ * from the payload.
+ *
+ * Nothing here authenticates a single API call. The ticket is a server-stored,
+ * hashed, single-use, PKCE-bound row carrying no claims — and
+ * `exchangeNativeAuthCode` cannot redeem it, because that endpoint looks only
+ * for session codes.
+ */
+const AppleMfaRequired = z
+    .object({
+        status: z.literal('mfa_required').openapi({
+            description:
+                'Always this value. Switch on it: a 202 is never a token pair and a 200 is never a ticket.',
+        }),
+        ticket: z.string().openapi({
+            description:
+                'Opaque, single-use, and useless without the `code_verifier` whose challenge you sent. Post it to `POST /api/auth/native/mfa` together with the code.',
+        }),
+        expiresIn: z.number().openapi({
+            description:
+                'SECONDS the ticket remains valid — a DURATION, not a date. Five minutes, which is time to open an authenticator and read a code. On expiry start sign-in again; a ticket cannot be refreshed.',
+        }),
+    })
+    .openapi('AppleMfaRequired', {
+        description:
+            'Sign-in is accepted and INCOMPLETE: the identity token verified, and the farm requires a second factor the app must now collect.',
     });
 
 export function registerAuthNativePaths(registry: OpenAPIRegistry): void {
@@ -187,12 +221,25 @@ export function registerAuthNativePaths(registry: OpenAPIRegistry): void {
     op(registry, {
         method: 'post',
         path: '/api/auth/native/apple',
-        extraResponses: rawErrorResponses({
-            400:
-                '`invalid_grant` — a BARE body. Covers a bad signature, the wrong audience, an expired token, a nonce mismatch and a replayed nonce, deliberately indistinguishable.',
-            503:
-                '`apple_sign_in_disabled` — a BARE body. No Apple audience is configured for this flow, so the feature is dormant rather than broken.',
-        }),
+        extraResponses: {
+            ...rawErrorResponses({
+                400:
+                    '`invalid_grant` — a BARE body. Covers a bad signature, the wrong audience, an expired token, a nonce mismatch and a replayed nonce, deliberately indistinguishable.',
+                503:
+                    '`apple_sign_in_disabled` — a BARE body. No Apple audience is configured for this flow, so the feature is dormant rather than broken.',
+            }),
+            202: {
+                description:
+                    'The farm requires a second factor and this request declared it can collect one (a `code_challenge` was sent). No token pair yet — redeem the ticket at `POST /api/auth/native/mfa`.',
+                content: { 'application/json': { schema: AppleMfaRequired } },
+            },
+            ...codedErrorResponses({
+                403:
+                    'The farm requires a second factor this request cannot collect.\n\n' +
+                    '`error.code` is `MFA_REQUIRED` whenever **no `code_challenge` was sent**. A client that did not opt in cannot show a code screen and does not know the enrolment code either, so it gets the one code it understands — the same opt-in rule as the 202 above. Use Google or Microsoft, or the web.\n\n' +
+                    'It is `MFA_ENROLLMENT_REQUIRED` only for a client that DID send a `code_challenge` and whose account has no verified authenticator. There is no shared secret to check a code against, so the remedy is enrolment on the web rather than another provider — two codes because the two remedies differ, and gated on the opt-in so an older build never receives one it would render as a generic refusal.',
+            }),
+        },
         operationId: 'signInWithApple',
         summary: 'Sign in with Apple — identity token to token pair',
         description:
@@ -214,6 +261,12 @@ export function registerAuthNativePaths(registry: OpenAPIRegistry): void {
                     description:
                         'The RAW nonce this attempt used — the server hashes it. `rawNonce` / `raw_nonce` are also accepted. Single-use.',
                 }),
+                code_challenge: z.string().optional().openapi({
+                    description:
+                        'OPTIONAL, and sending it is how a client DECLARES it can handle a 202. Base64url SHA-256 of a fresh verifier, generated exactly as for `/native/start`; S256 only.' +
+                        '\n\nOmit it and a farm requiring a second factor answers `403 MFA_REQUIRED` — which is what every build shipped before this field existed already handles. Send it and that case answers `202` with a ticket instead, so adding the field is opt-in per request rather than a change every client has to absorb at once.' +
+                        '\n\nIt is also the ticket’s PKCE binding: keep the verifier in memory and send it to `POST /api/auth/native/mfa`. A ticket leaked through a log or a crash report is useless without it. `codeChallenge` is also accepted.',
+                }),
             })
             .openapi('AppleSignInRequest'),
         success: {
@@ -226,6 +279,54 @@ export function registerAuthNativePaths(registry: OpenAPIRegistry): void {
                         'True when this account has no recorded terms acceptance. Every tenant and person route answers 403 until `POST /api/auth/accept-terms` succeeds.',
                 }),
             }).openapi('AppleSignInResponse'),
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/auth/native/mfa',
+        extraResponses: codedErrorResponses({
+            400:
+                '`error.code` is `MFA_CODE_INVALID` when the ticket is fine and the CODE was wrong — `error.params.attemptsRemaining` is an integer, and at `0` the ticket is already burned by this same response, so say "too many wrong codes, sign in again" without another call to find out. ' +
+                'It is `MFA_CODE_MALFORMED` when six digits were not supplied; that costs no attempt, because input that was never a guess should not spend one of five tries.',
+            403:
+                '`error.code` is `MFA_TICKET_INVALID`. ONE code for expired, consumed, unknown, wrong-purpose and PKCE-mismatched tickets, deliberately indistinguishable — the remedy is identical in every case (start sign-in again), and telling a caller which of five checks defeated it is free help to somebody probing. Do not branch on it beyond restarting.',
+        }),
+        operationId: 'completeNativeMfa',
+        summary: 'Redeem a pending-MFA ticket with a TOTP code',
+        description:
+            'The second half of Apple sign-in at a farm that requires a second factor. `signInWithApple` returned `202` with a ticket; post it here with the six-digit code and the verifier whose challenge you sent. ' +
+            '\n\n**Only reachable for Apple.** Google and Microsoft sign-in goes through the system browser, so their code is typed in the sign-in sheet and `completeNativeSignIn` simply withholds the auth code until it clears. There is no sheet in the Apple flow, which is why this endpoint exists at all — it is not a general-purpose MFA endpoint and the web does not use it. ' +
+            '\n\n**The ticket is not a credential.** It is opaque, single-use, server-stored hashed, five-minute, and PKCE-bound; it carries no claims and authenticates nothing. `exchangeNativeAuthCode` cannot redeem it — that endpoint looks only for session codes, so a ticket is not found there rather than refused by a check. ' +
+            '\n\n**Five wrong codes burn the ticket.** The cap is on the TICKET, not on an IP or an account, so it bounds exactly one sign-in attempt and cannot be sidestepped by reconnecting. It matches the web challenge\'s allowance, so the number of tries does not depend on which device somebody is holding. Expect `429` with `Retry-After` if the shared per-user limiter trips first. ' +
+            '\n\n**On success you get the ordinary token pair**, with `termsPending` exactly as `signInWithApple` returns it — a first Apple sign-in can owe both a second factor and the terms.',
+        tags: ['Auth'],
+        security: NO_AUTH,
+        body: z
+            .object({
+                ticket: z.string().openapi({
+                    description: 'The `ticket` from the 202. Single-use.',
+                }),
+                code: z.string().openapi({
+                    description:
+                        'The six-digit TOTP code. Digits only — anything else answers `MFA_CODE_MALFORMED` and costs no attempt.',
+                }),
+                code_verifier: z.string().openapi({
+                    description:
+                        'The verifier whose SHA-256 you sent as `code_challenge` to `signInWithApple`. `codeVerifier` is also accepted. A mismatch answers `MFA_TICKET_INVALID` and does NOT consume the ticket — somebody else holding it must not be able to lock the real user out.',
+                }),
+            })
+            .openapi('NativeMfaRequest'),
+        success: {
+            status: 200,
+            description:
+                'The factor was accepted. The ticket is consumed and this is the token pair.',
+            schema: NativeTokenPair.extend({
+                termsPending: z.boolean().openapi({
+                    description:
+                        'True when this account has no recorded terms acceptance. Every tenant and person route answers 403 until `POST /api/auth/accept-terms` succeeds.',
+                }),
+            }).openapi('NativeMfaResponse'),
         },
     });
 

@@ -5,6 +5,7 @@
  */
 import { NextResponse } from 'next/server';
 import { CSP_REPORT_PATH } from '@/lib/security/csp';
+import { sanitizeRedirectPath } from './safe-redirect';
 
 // ─── Public path allowlist ───
 
@@ -463,6 +464,31 @@ export function isMfaAllowedPath(pathname: string): boolean {
     // MFA challenge page and enrollment API routes
     if (/^\/t\/[^/]+\/auth\/mfa/.test(pathname)) return true;
     if (/^\/api\/t\/[^/]+\/security\/mfa/.test(pathname)) return true;
+    // The enrolment PAGE, and this was a lockout until it was added.
+    //
+    // Under a REQUIRED policy a member who has never enrolled gets a pending
+    // session, so §4 sends them to `/t/:slug/auth/mfa`. That page's
+    // not-enrolled branch offers one way out: a link to
+    // `/t/:slug/security/mfa` (`mfa-go-enroll-btn`). That path was NOT
+    // allowed here, so §4 bounced it straight back to `/auth/mfa` — and the
+    // person could not enrol at all. Not on the web, and not through Google
+    // or Microsoft in the phone's sign-in sheet either, which is where
+    // #1646's `otpauth://` link lives. Only the admins the anti-lockout
+    // check guarantees were unaffected.
+    //
+    // ANCHORED to the page itself, `/security/mfa` and not `/security/*`: a
+    // pending session has an outstanding security control, and opening the
+    // rest of the security area to it would be a far wider hole than the one
+    // being closed. The page's own calls go to the `/api/t/:slug/security/mfa`
+    // routes already allowed above.
+    //
+    // Safe because enrolling does NOT clear the gate: `mfaPending` falls only
+    // when `UserMfaEnrollment.lastChallengeAt >= token.iat`, and the
+    // enrolment usecase never writes `lastChallengeAt` (verified: zero
+    // occurrences in `mfa-enrollment.ts`). So somebody who enrols a fresh
+    // authenticator must still complete a challenge afterwards, and cannot
+    // use this door to skip one. Found by agrent-ios on #1649.
+    if (/^\/t\/[^/]+\/security\/mfa\/?$/.test(pathname)) return true;
     // Auth callbacks (sign-out, etc.)
     if (pathname.startsWith('/api/auth/')) return true;
     return false;
@@ -502,41 +528,14 @@ export function isTermsAllowedPath(pathname: string): boolean {
 }
 
 /**
- * Sanitize a redirect path to prevent open-redirect attacks.
- * Only allows relative paths starting with '/'.
- * Strips protocol, host, and any absolute URL to return '/'.
+ * Re-exported so every existing caller keeps ONE implementation.
+ *
+ * The body moved to `./safe-redirect` because this module imports
+ * `next/server`, which a client component cannot pull in — and the MFA
+ * challenge page, a client component, is exactly where an unsanitised `next`
+ * was being navigated to.
  */
-export function sanitizeRedirectPath(next: string | null | undefined): string {
-    if (!next) return '/';
-
-    // Decode if URL-encoded
-    let decoded: string;
-    try {
-        decoded = decodeURIComponent(next);
-    } catch {
-        return '/';
-    }
-
-    // Strip any protocol + host (prevents https://evil.com)
-    // Reject anything that looks like an absolute URL
-    if (
-        decoded.startsWith('//') ||
-        decoded.includes('://') ||
-        decoded.startsWith('\\')
-    ) {
-        return '/';
-    }
-
-    // Must start with /
-    if (!decoded.startsWith('/')) {
-        return '/';
-    }
-
-    // Drop any authority component (//evil.com/path)
-    const cleaned = decoded.replace(/^\/\/+/, '/');
-
-    return cleaned;
-}
+export { sanitizeRedirectPath };
 
 /**
  * Build a login redirect URL with a safe 'next' parameter.
