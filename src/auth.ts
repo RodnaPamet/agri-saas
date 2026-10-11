@@ -964,11 +964,46 @@ export const authOptions: NextAuthOptions = {
  * time someone adds one, and the Edge tenant gate reads `memberships`,
  * which is exactly the claim a hand-written list forgets.
  */
+/**
+ * How this mint path knows whether the second factor is satisfied.
+ *
+ * REQUIRED, with no default, and that is the whole point. `mfaPending` was
+ * simply absent from these claims, both gates that read it test `=== true`,
+ * and an absent claim passes both — so every hand-minted session skipped the
+ * farm's second factor while the web asked for it. A parameter with a safe
+ * default would have been just as easy to not think about; this one cannot be
+ * omitted, so a new mint path has to state which case it is.
+ *
+ *   'inherit-satisfied'
+ *       The caller holds a credential that could only have been issued past
+ *       the gate — an auth code from `native/complete`, a bearer minted from
+ *       one, or a refresh token. The factor was presented when that credential
+ *       was created, so the claim is written FALSE rather than left absent:
+ *       absence is what hid this, and a present `false` says a decision was
+ *       made.
+ *
+ *   'evaluate'
+ *       A fresh sign-in with no prior proof — the SSO callbacks, which mint a
+ *       cookie session without going through the `jwt` callback at all. The
+ *       requirement is resolved from the tenant's policy here.
+ *
+ * Why 'evaluate' is NOT simply the default for everything: the cookie's
+ * clearing rule compares the enrollment's `lastChallengeAt` against the
+ * token's `iat`, which works because a cookie token is MUTATED across
+ * requests and keeps its sign-in `iat`. A refresh mints a FRESH token whose
+ * `iat` is always newer than any past challenge, so evaluating there would
+ * produce a claim that can never clear — every refresh re-challenging, which
+ * is a lockout rather than a gate and the reverse of the bug being fixed.
+ */
+export type MfaClaimSource = 'inherit-satisfied' | 'evaluate';
+
 export async function buildSessionClaims(input: {
     userId: string;
     tenantId: string | null;
     /** The EXTERNAL `UserSession.sessionId` claim, not the row id. */
     userSessionId: string;
+    /** See `MfaClaimSource`. No default, deliberately. */
+    mfa: MfaClaimSource;
 }): Promise<JWT | null> {
     const dbUser = await prisma.user.findUnique({
         where: { id: input.userId },
@@ -1000,12 +1035,43 @@ export async function buildSessionClaims(input: {
         // consent page, and strictness is affordable on a path with no session
         // yet — there is nobody to lock out of their own account.
         termsPending: dbUser.acceptedTermsAt == null,
+        // Present, never absent — see `MfaClaimSource`. The same argument the
+        // comment above makes for `termsPending` applies here and was missed:
+        // this is the single producer, every hand-minted session comes through
+        // it, and an absent claim passes a `=== true` gate. The difference is
+        // that `termsPending` is a pure function of the row above and so is
+        // safe to recompute on every refresh, while re-evaluating MFA on a
+        // freshly-minted token produces a claim that can never clear.
+        mfaPending: false,
     };
 
     // The single producer. Sets userId, sessionVersion, uiLanguage,
     // memberships(+Truncated), orgMemberships(+Truncated), and the primary
     // tenantId/tenantSlug/role.
     await applyMembershipClaims(token, input.userId);
+
+    // AFTER membership claims, because the effective tenant is resolved there
+    // and the policy is per tenant.
+    if (input.mfa === 'evaluate') {
+        const { resolveMfaRequirement } = await import('@/lib/auth/mfa-requirement');
+        const effectiveTenantId =
+            typeof token.tenantId === 'string' ? token.tenantId : input.tenantId;
+        const requirement = await resolveMfaRequirement({
+            userId: input.userId,
+            tenantId: effectiveTenantId,
+        });
+        // A check that could not complete holds the session only when the
+        // tenant asked for that. Same direction as the sign-in path: refusing
+        // by default would disable sign-in for every tenant whenever the
+        // settings read hiccups.
+        if (requirement.required || (requirement.dependencyFailure && requirement.failClosed)) {
+            token.mfaPending = true;
+        }
+        if (requirement.failClosed) token.mfaFailClosed = true;
+        if (requirement.dependencyFailure && requirement.failClosed) {
+            token.error = 'MfaDependencyFailure';
+        }
+    }
 
     // Preserve the session's own tenant when the user is a member of it, so a
     // native client stays on the tenant it signed in against rather than being
