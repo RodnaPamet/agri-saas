@@ -42,6 +42,8 @@ import { randomUUID } from 'node:crypto';
 
 import prisma from '@/lib/prisma';
 import { suspendAccountOnTx } from './account-suspension';
+import { requestAccountDeletionOnTx } from './account-erasure';
+import { appendPlatformAuditEntry } from '@/lib/audit/platform-audit-writer';
 import { codedBadRequest } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logger } from '@/lib/observability/logger';
@@ -232,8 +234,78 @@ export async function actOnNotice(input: {
                 reason: input.rationale,
             });
             suspended = outcome.applied;
+
+            // TERMINATED also FINALISES, owner ruling 2026-10-11. Suspension
+            // alone made the Art 17 statement ("we closed your account") true
+            // of access and not of the data; this makes it true of both, after
+            // the 30-day grace P5.6b already operates.
+            //
+            // Safe against self-undo, which is the thing to check before
+            // wiring a moderation outcome to a self-service path: a terminated
+            // account is suspended, and `getUserCtx` → `getSessionOrThrow`
+            // refuses `ACCOUNT_SUSPENDED`, so the person cannot reach
+            // `DELETE /api/account/deletion` to cancel it.
+            //
+            // The accepted cost: 30 days becomes an effective deadline on DSA
+            // redress for a termination, because an appeal upheld afterwards
+            // has nothing left to restore. Anyone shortening that window is
+            // shortening an appeal window.
+            if (input.actionKind === 'ACCOUNT_TERMINATED') {
+                await requestAccountDeletionOnTx(tx, input.suspendUserId);
+            }
         }
     });
+
+    // The hash-chained platform trail (#1619), BEST-EFFORT via `afterCommit`
+    // — owner ruling. The decision has already committed, so a chain-writer
+    // failure must not undo it; #1287 is the precedent where that writer failed
+    // on 275 of 275 attempts under one runtime, and a moderation queue that
+    // cannot be worked because an audit subsystem is sick is its own compliance
+    // failure with the DSA clock running.
+    //
+    // The cost, stated so nobody rediscovers it: there is a crash window
+    // between COMMIT and the drain in which a decision exists with no chain
+    // entry. The gap is REPORTED (`audit.write_failed`, plus the counter) and
+    // not prevented, and a verifier cannot tell "no entry was written" from
+    // "nothing happened here".
+    //
+    // AWAITED directly, not through `afterCommit`, and that is a correction:
+    // `afterCommit` only defers when a scope is open, and a scope is opened by
+    // `db-context.ts`'s helpers (`runWithAfterCommit`), not by a bare
+    // `prisma.$transaction` — which is what this usecase uses. With no scope
+    // it fires `void runEffect(...)`: un-awaited, fire-and-forget. So the
+    // append raced the caller's next read, and my first version of the test
+    // saw zero chain rows.
+    //
+    // Placed AFTER the transaction either way, which is the property that
+    // matters: a rolled-back decision cannot leave a suspension announced in
+    // the chain.
+    try {
+        await appendPlatformAuditEntry({
+            scope: 'moderation',
+            action: 'MODERATION_ACTION_RECORDED',
+            actorUserId: null,
+            detailsJson: {
+                actionId,
+                reportId: report.id,
+                actionKind: input.actionKind,
+                moderatorRef: moderatorRefFor(input.generation),
+                subjectKind: report.subjectKind,
+                subjectId: report.subjectId,
+                // The RATIONALE is not here. It is moderator free text and
+                // `detailsJson` is not an encrypted column; it lives on
+                // `ModerationAction.rationale`, which is.
+                hasRationale: Boolean(input.rationale),
+                ...(input.suspendUserId ? { suspendUserId: input.suspendUserId } : {}),
+            },
+        });
+    } catch (err) {
+        logger.error('moderation.audit_append_failed', {
+            component: 'moderation',
+            actionId,
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
 
     logger.info('moderation.acted', {
         component: 'moderation',
@@ -280,6 +352,42 @@ export async function queueStatement(input: {
             // deliveredAt stays NULL. P5.4b stamps it.
         },
     });
+    // #1619 — the same `moderation` chain, best-effort for the same reason.
+    //
+    // A statement is a separate verb rather than a field on the action's entry:
+    // Art 17 requires a decision to be EXPLAINED, so "decided" and "explained"
+    // are two obligations and a regulator can be shown the second was met. An
+    // action with no statement entry is then visible in the chain rather than
+    // inferred from a missing field.
+    //
+    // No `afterCommit` here: `queueStatement` is a single `create` with no
+    // transaction frame of its own, so `afterCommit` would fire inline anyway
+    // (it runs the effect immediately when no scope is open). Calling directly
+    // says that plainly instead of implying a deferral that does not happen.
+    try {
+        await appendPlatformAuditEntry({
+            scope: 'moderation',
+            action: 'MODERATION_STATEMENT_QUEUED',
+            actorUserId: null,
+            detailsJson: {
+                statementId,
+                actionId: input.actionId,
+                recipientUserId: input.recipientUserId,
+                locale: input.locale,
+                // NOT `bodyRendered`: it is the delivered text, encrypted at
+                // rest, and `detailsJson` is not an encrypted column. P5.4b
+                // also replaces it at send time, so a copy here would be a
+                // draft the chain presented as final.
+            },
+        });
+    } catch (err) {
+        logger.error('moderation.audit_append_failed', {
+            component: 'moderation',
+            statementId,
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+
     logger.info('moderation.statement_queued', {
         component: 'moderation',
         statementId,
