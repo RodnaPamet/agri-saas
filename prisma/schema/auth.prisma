@@ -692,6 +692,36 @@ model User {
   /// is indexed — see `@@index([suspendedAt])` below, which also makes "who is
   /// currently suspended" answerable without a full scan.
   suspendedAt                   DateTime?
+
+  /// When this person asked for their account to be deleted (P5.6, #1597).
+  ///
+  /// NULL means no request outstanding. Set, the account is FROZEN — no new
+  /// content, sessions revoked — and recoverable: signing in and cancelling
+  /// clears it. Owner ruling 2026-10-11, over a visible grace period, because a
+  /// person who asked to be deleted should stop appearing to other farms
+  /// immediately rather than keep showing up in live negotiations for a month.
+  ///
+  /// SEPARATE from `suspendedAt` deliberately, though both withhold something.
+  /// The cause differs and so does the remedy: a suspension is imposed and only
+  /// a moderator lifts it, while this is self-inflicted and self-cancellable.
+  /// Collapsing them would send an Art 17 statement to somebody who asked to
+  /// leave, and would let a person cancel a suspension.
+  deletionRequestedAt           DateTime?
+
+  /// When pseudonymisation actually ran (P5.6, #1597).
+  ///
+  /// The marker that erasure COMPLETED, so the sweep cannot process a row
+  /// twice — the second pass would overwrite an already-pseudonymised row with
+  /// a second pseudonym, which is harmless but makes the audit unreadable.
+  ///
+  /// The row SURVIVES erasure: `ContentReport.reporterUserId` keeps pointing at
+  /// it, which is the Art 17(3)(b) ruling and the reason the privacy notice
+  /// says erasure is incomplete. What is gone is the identifying content:
+  /// `email` becomes a tombstone at an unroutable domain and `name` NULL. The
+  /// lookup hash follows the email automatically — `pii-middleware` derives
+  /// `emailHash` from `email` on every write that sets it — so the ORIGINAL
+  /// address matches nothing and the person may register again.
+  pseudonymisedAt               DateTime?
   acceptedTermsVersion          String?
 
   /// Bottom-row tab arrangement, synced across the user's devices.
@@ -813,6 +843,12 @@ model User {
   /// the migration (`WHERE "suspendedAt" IS NOT NULL`), because the rows that
   /// matter are the handful that are set, not the thousands that are NULL.
   @@index([suspendedAt])
+  /// P5.6b (#1597). Both PARTIAL in the migration (`WHERE … IS NOT NULL`),
+  /// which Prisma's DSL cannot express — the sweep only ever wants rows where
+  /// the column is SET, and an entry per NULL would be the size of the user
+  /// table. Same divergence as `suspendedAt` above.
+  @@index([deletionRequestedAt])
+  @@index([pseudonymisedAt])
 }
 
 model Account {

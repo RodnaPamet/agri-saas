@@ -45,6 +45,11 @@
       "documented": true
     },
     {
+      "path": "/api/account/deletion",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/account/export",
       "status": "live",
       "documented": true

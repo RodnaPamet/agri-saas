@@ -97,6 +97,23 @@ export const ALL_SCHEDULES: ScheduleDefinition[] = [
     },
     {
         /**
+         * P5.6b — erase the accounts whose 30-day grace period has run out.
+         *
+         * Daily, which only decides how long past day 30 an erasure waits — up
+         * to 24 hours, within any reading of "after 30 days" and far cheaper
+         * than a tighter beat on a queue that is empty almost always.
+         *
+         * 04:15 UTC: after `data-lifecycle` (04:00) and before the morning
+         * notification sweeps, so a long erasure transaction is not competing
+         * with them for the 12-connection pool.
+         */
+        name: 'account-erasure-sweep',
+        pattern: '15 4 * * *',
+        description: 'Pseudonymise accounts 30 days after a deletion request (#1597)',
+        defaultPayload: {},
+    },
+    {
+        /**
          * P5.5b — shadow-score the unscored notices.
          *
          * Quarter-hourly, which is a SAMPLING decision rather than a latency

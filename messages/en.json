@@ -6039,6 +6039,12 @@
         }
     },
     "privacy": {
+        "exportTitle": "Getting a copy of your data",
+        "exportBody": "You can download everything we hold about you from your account settings, as a machine-readable file. It contains your account details, the notices you have filed, the statements of reasons written to you, your messages, enquiries and blocks. It does NOT contain farm records you authored — those belong to the farm, which has its own record-keeping duties — nor your sign-in credentials, nor blocks other people have made against you. The file itself lists what it leaves out.",
+        "deleteTitle": "Deleting your account",
+        "deleteRequest": "You can ask us to delete your account from your account settings, or in the app. When you do, we sign you out everywhere and your account stops being visible to other farms straight away. Nothing is removed for {graceDays} days: if you change your mind, sign in again and cancel. That waiting period is there to protect you from a hasty decision or from someone else using your account.",
+        "deleteWhatHappens": "After {graceDays} days we remove the information that identifies you. Your name is deleted and your email address is replaced, which also frees that address so you can sign up again. Your sign-in credentials, your social blocks and your feature-trial memberships are deleted outright. Listings, conversations, messages and enquiries stay, with your name replaced by a random code that we do not keep a key to — those records also belong to the farm you dealt with, or to the person on the other side of the conversation.",
+        "deleteIncomplete": "We cannot delete everything, and we would rather say so than imply otherwise. Where you have reported content to us, the report stays linked to you. The law that requires us to act on reports about illegal or harmful content (the EU Digital Services Act) also requires us to keep an auditable record of what was reported and what we did about it, and Article 17(3)(b) of the GDPR allows us to keep personal data where we have that kind of legal obligation. For the same reason, our tamper-evident activity logs are never rewritten. So after deletion you are no longer identifiable from your account, and a regulator asking about a specific report can still be answered.",
         "title": "Privacy notice",
         "intro": "How Agrent handles the information you enter, and what happens to a request when you ask a supplier for an offer.",
         "collectTitle": "What we hold",

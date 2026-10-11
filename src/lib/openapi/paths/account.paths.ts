@@ -558,4 +558,84 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
         },
     });
 
+    op(registry, {
+        method: 'post',
+        path: '/api/account/deletion',
+        operationId: 'requestAccountDeletion',
+        summary: 'Account — ask for your account to be deleted',
+        description:
+            'Starts a 30-day grace period and FREEZES the account: every live session is '
+            + 'revoked immediately. Owner ruling \u2014 frozen rather than visible, because a person '
+            + 'who asked to be deleted should stop appearing to other farms at once rather than '
+            + 'keep showing up in live negotiations for a month. The 30 days protects THEM, from '
+            + 'an impulse or a compromised account.'
+            + '\n\nIdempotent, and asking twice does NOT restart the clock \u2014 otherwise a person '
+            + 'could never actually be deleted. `erasesAt` is returned so a client can state the '
+            + 'date rather than recompute it: two places deriving one deadline is two places to '
+            + 'get it wrong.'
+            + '\n\n**What happens at the end is pseudonymisation, not deletion, and erasure is '
+            + 'INCOMPLETE by design.** The basis is GDPR Art 17(3)(b), legal obligation: the DSA '
+            + 'audit trail survives, so a notice this person filed stays linkable to them and the '
+            + '`User` row is kept but emptied \u2014 the email becomes a tombstone at an unroutable '
+            + 'domain and the name is removed, which also frees the original address for '
+            + 're-registration. Credentials, sessions, social blocks and cohort memberships are '
+            + 'DELETED; listings, conversations, messages and enquiries survive with the '
+            + 'authorship column overwritten by a random pseudonym, because those rows are also '
+            + 'a farm\u2019s or a counterparty\u2019s record. The hash-chained audit logs are untouched: '
+            + 'rewriting a row inside one breaks verification for every entry after it.'
+            + '\n\n404 `ACCOUNT_ALREADY_ERASED` when there is nothing left to request.',
+        tags: ['Account'],
+        success: {
+            status: 200,
+            description: 'The request is recorded and the account is frozen.',
+            schema: z
+                .object({
+                    requested: z.boolean(),
+                    alreadyRequested: z.boolean().openapi({
+                        description: 'True when a request was already outstanding; the original date stands.',
+                    }),
+                    erasesAt: z.string().datetime({ offset: true }).nullable(),
+                    graceDays: z.number().int(),
+                    sessionsRevoked: z.number().int(),
+                })
+                .openapi('AccountDeletionRequested', {
+                    description: 'The recorded request, with the date the erasure will run.',
+                }),
+        },
+    });
+
+    op(registry, {
+        method: 'delete',
+        path: '/api/account/deletion',
+        operationId: 'cancelAccountDeletion',
+        summary: 'Account — cancel a pending deletion',
+        description:
+            'Clears the freeze. This is the DSA-adjacent recovery path for a decision somebody '
+            + 'may regret, and it is why the grace period exists at all.'
+            + '\n\nAn EXPLICIT act, not a side effect of signing in. Signing in is how a person '
+            + 'reaches this \u2014 their sessions were revoked when they asked \u2014 but a silent '
+            + 'cancellation on session refresh would let a background request undo a deliberate '
+            + 'decision.'
+            + '\n\nRevoked sessions are NOT restored: reinstatement returns the ability to sign '
+            + 'in, not credentials that may since have been shared. Same one-way rule as lifting '
+            + 'a suspension.'
+            + '\n\n404 `ACCOUNT_ALREADY_ERASED` once pseudonymisation has run \u2014 past that point '
+            + 'there is nothing to cancel, and saying so beats pretending it worked.',
+        tags: ['Account'],
+        success: {
+            status: 200,
+            description: 'The pending deletion is cancelled.',
+            schema: z
+                .object({
+                    requested: z.boolean(),
+                    wasRequested: z.boolean().openapi({
+                        description: 'False when nothing was pending \u2014 the call is idempotent rather than an error.',
+                    }),
+                })
+                .openapi('AccountDeletionCancelled', {
+                    description: 'The cleared state.',
+                }),
+        },
+    });
+
 }

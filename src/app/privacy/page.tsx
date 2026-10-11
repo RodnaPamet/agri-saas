@@ -6,6 +6,7 @@ import {
     PROMOTION_LEAD_PURGE_GRACE_DAYS,
 } from '@/app-layer/jobs/promotion-lead-retention';
 import { Heading } from '@/components/ui/typography';
+import { DELETION_GRACE_DAYS } from '@/app-layer/usecases/account-erasure';
 
 /**
  * Privacy notice — a PUBLIC route (no tenant, no auth), because the promotions
@@ -50,6 +51,21 @@ export default async function PrivacyPage() {
         { key: 'use', body: ['useOperate', 'useSuppliers', 'useExchange'] },
         { key: 'protect', body: ['protectEncryption', 'protectIsolation', 'protectConsent'] },
         { key: 'rights', body: ['rightsList'] },
+        // P5.6 (#1597). The export and the deletion flow, and — in
+        // `deleteIncomplete` — the fact that erasure is INCOMPLETE.
+        //
+        // That last paragraph is #1597's third exit criterion: "the privacy
+        // notice states what survives, matching what the code does". The owner
+        // ruled the basis is Art 17(3)(b), which means a report stays linked to
+        // the person who filed it, and a notice that implied otherwise would be
+        // worse than one that said nothing — so it names the Act, the Article
+        // and the consequence in plain language.
+        //
+        // `RETAINED_MODELS` is exported from the registry so a future change to
+        // what survives has a place to be checked against rather than a
+        // paragraph somebody has to remember to edit.
+        { key: 'export', body: ['exportBody'] },
+        { key: 'delete', body: ['deleteRequest', 'deleteWhatHappens', 'deleteIncomplete'] },
     ] as const;
 
     const retentionMonths = Math.round(PROMOTION_LEAD_RETENTION_DAYS / 30);
@@ -66,7 +82,12 @@ export default async function PrivacyPage() {
                     <Heading level={2}>{t(`${section.key}Title`)}</Heading>
                     {section.body.map((line) => (
                         <p key={line} className="text-content-muted">
-                            {t(line)}
+                            {/* `graceDays` is passed to every line rather than
+                                only the two that use it: next-intl ignores an
+                                unused parameter, and a per-line conditional
+                                here is how one paragraph ends up rendering a
+                                literal `{graceDays}` after an edit. */}
+                            {t(line, { graceDays: DELETION_GRACE_DAYS })}
                         </p>
                     ))}
                 </section>

@@ -48,12 +48,13 @@
 /** What erasure does to a column, and whether an export includes it. */
 export type Disposition =
     /**
-     * Overwritten at erasure, and included in an export. The ordinary case for
-     * data that exists because of this person.
+     * Erased, and included in an export. The ordinary case for data that exists
+     * because of this person. HOW it is erased — the row deleted, or the column
+     * overwritten with a pseudonym — is the entry's `action`.
      */
     | 'ERASE_AND_EXPORT'
     /**
-     * Overwritten at erasure, NOT exported. Credentials and session rows:
+     * Erased, NOT exported. Credentials and session rows:
      * handing someone a copy of their own password-reset token or OAuth refresh
      * token in a file they may email to themselves is a hazard, and it answers
      * no question they asked.
@@ -70,12 +71,54 @@ export type Disposition =
      */
     | 'RETAIN_ONLY';
 
+/**
+ * HOW a column is erased.
+ *
+ * Needed because every erasable person column in this schema is **REQUIRED**
+ * (`String`, no `?`) — measured against the schema text, after a DMMF probe
+ * reported them all nullable and turned out to be reading an `isRequired`
+ * property Prisma 7 no longer emits. So NULLing is not available, and each
+ * entry has to say which of the two real options applies.
+ */
+export type ErasureAction =
+    /**
+     * The row goes. Right where the row has no meaning without the person: a
+     * credential, a cohort membership, a block they made.
+     */
+    | 'DELETE_ROW'
+    /**
+     * The person column is overwritten with a per-erasure random pseudonym,
+     * and the row survives. Right where the row is also somebody ELSE's record
+     * — a listing the farm still sells, a conversation the counterparty is
+     * still in.
+     *
+     * The pseudonym is per-USER and random, not a shared `deleted-user`
+     * sentinel, and the reason is a constraint rather than taste:
+     * `ExchangeThread` carries `@@unique([listingId, inquirerUserId])`, so two
+     * deleted people who both enquired on one listing would collide on a
+     * shared value. A per-user pseudonym also keeps a conversation coherent
+     * for the counterparty, who can still see that one (unknown) person sent
+     * these messages.
+     *
+     * The mapping is generated at erasure time and stored NOWHERE, so these
+     * rows are anonymised rather than merely pseudonymised. The person stays
+     * identifiable only through the `RETAIN` columns, which is the Art 17(3)(b)
+     * ruling and the reason the privacy notice says erasure is incomplete.
+     */
+    | 'PSEUDONYMISE_COLUMN';
+
 export interface PersonalDataEntry {
     /** Prisma model name. */
     readonly model: string;
     /** The scalar column(s) on it that name a person. */
     readonly columns: readonly string[];
     readonly disposition: Disposition;
+    /**
+     * Present exactly when the disposition erases. The guard enforces that
+     * pairing, so a `RETAIN` entry cannot carry an action nobody runs and an
+     * `ERASE` entry cannot be missing one.
+     */
+    readonly action?: ErasureAction;
     /** Why. Required — the guard rejects a short or placeholder reason. */
     readonly reason: string;
 }
@@ -91,6 +134,7 @@ export const PERSONAL_DATA_REGISTRY: readonly PersonalDataEntry[] = [
         model: 'Account',
         columns: ['userId'],
         disposition: 'ERASE_ONLY',
+        action: 'DELETE_ROW',
         reason:
             'OAuth provider linkage holding access and refresh tokens. Deleted at '
             + 'erasure because a dangling provider link would let the same IdP identity '
@@ -102,6 +146,7 @@ export const PERSONAL_DATA_REGISTRY: readonly PersonalDataEntry[] = [
         model: 'AuthSession',
         columns: ['userId'],
         disposition: 'ERASE_ONLY',
+        action: 'DELETE_ROW',
         reason:
             'NextAuth session rows. Deleted so no credential outlives the erasure. '
             + 'Not exported for the same reason as Account.',
@@ -122,6 +167,7 @@ export const PERSONAL_DATA_REGISTRY: readonly PersonalDataEntry[] = [
         model: 'ExchangeBlock',
         columns: ['blockedUserId', 'createdByUserId'],
         disposition: 'ERASE_AND_EXPORT',
+        action: 'PSEUDONYMISE_COLUMN',
         reason:
             'A commercial block between a farm and a person. Overwritten at erasure '
             + 'because the row names a person rather than recording a legal duty — and '
@@ -132,6 +178,7 @@ export const PERSONAL_DATA_REGISTRY: readonly PersonalDataEntry[] = [
         model: 'ExchangeInquiry',
         columns: ['inquirerUserId'],
         disposition: 'ERASE_AND_EXPORT',
+        action: 'PSEUDONYMISE_COLUMN',
         reason:
             'An enquiry this person made about a listing. Their own act, so theirs to '
             + 'receive and to have overwritten.',
@@ -140,6 +187,7 @@ export const PERSONAL_DATA_REGISTRY: readonly PersonalDataEntry[] = [
         model: 'ExchangeListing',
         columns: ['sellerUserId'],
         disposition: 'ERASE_AND_EXPORT',
+        action: 'PSEUDONYMISE_COLUMN',
         reason:
             'Authorship of a listing. The LISTING belongs to the selling farm and is '
             + 'untouched; only the column naming which member created it is '
@@ -150,6 +198,7 @@ export const PERSONAL_DATA_REGISTRY: readonly PersonalDataEntry[] = [
         model: 'ExchangeMessage',
         columns: ['senderUserId'],
         disposition: 'ERASE_AND_EXPORT',
+        action: 'PSEUDONYMISE_COLUMN',
         reason:
             'Messages this person sent. The message BODY is encrypted and belongs to a '
             + 'conversation with a counterparty who also has rights over it, so the '
@@ -160,6 +209,7 @@ export const PERSONAL_DATA_REGISTRY: readonly PersonalDataEntry[] = [
         model: 'ExchangeThread',
         columns: ['inquirerUserId'],
         disposition: 'ERASE_AND_EXPORT',
+        action: 'PSEUDONYMISE_COLUMN',
         reason:
             'The conversation this person opened. Overwritten rather than deleted, '
             + 'because the counterparty farm retains its side of a negotiation.',
@@ -179,6 +229,7 @@ export const PERSONAL_DATA_REGISTRY: readonly PersonalDataEntry[] = [
         model: 'FeatureFlagCohortMember',
         columns: ['userId'],
         disposition: 'ERASE_AND_EXPORT',
+        action: 'DELETE_ROW',
         reason:
             'Membership of a dark-launch cohort. Deleted at erasure — a pseudonymised '
             + 'row has no reason to stay in a rollout cohort — and exported because '
@@ -188,6 +239,7 @@ export const PERSONAL_DATA_REGISTRY: readonly PersonalDataEntry[] = [
         model: 'InsuranceLead',
         columns: ['inquirerUserId'],
         disposition: 'ERASE_AND_EXPORT',
+        action: 'PSEUDONYMISE_COLUMN',
         reason:
             'An insurance quote this person requested, carrying figures they supplied. '
             + 'Theirs on both counts.',
@@ -207,6 +259,7 @@ export const PERSONAL_DATA_REGISTRY: readonly PersonalDataEntry[] = [
         model: 'OrgMembership',
         columns: ['userId'],
         disposition: 'ERASE_AND_EXPORT',
+        action: 'DELETE_ROW',
         reason:
             'This person\'s membership of an organisation. Deleted at erasure — the '
             + 'last-OWNER trigger governs the order, which the erasure job must '
@@ -217,6 +270,7 @@ export const PERSONAL_DATA_REGISTRY: readonly PersonalDataEntry[] = [
         model: 'PasswordResetToken',
         columns: ['userId'],
         disposition: 'ERASE_ONLY',
+        action: 'DELETE_ROW',
         reason:
             'A single-use reset token, SHA-256 hashed at rest. Deleted so no reset '
             + 'path survives the erasure. Never exported, even hashed: it is a '
@@ -236,6 +290,7 @@ export const PERSONAL_DATA_REGISTRY: readonly PersonalDataEntry[] = [
         model: 'PromotionLead',
         columns: ['inquirerUserId'],
         disposition: 'ERASE_AND_EXPORT',
+        action: 'PSEUDONYMISE_COLUMN',
         reason:
             'A promotion enquiry, already on a retention sweep of its own '
             + '(`promotion-lead-retention`). Erasure overwrites the person column '
@@ -259,6 +314,7 @@ export const PERSONAL_DATA_REGISTRY: readonly PersonalDataEntry[] = [
         model: 'UserBlock',
         columns: ['blockerUserId', 'blockedUserId'],
         disposition: 'ERASE_AND_EXPORT',
+        action: 'DELETE_ROW',
         reason:
             'Person-to-person social blocks. Deleted at erasure in BOTH directions: a '
             + 'block made by a pseudonymised account protects nobody, and a block '
