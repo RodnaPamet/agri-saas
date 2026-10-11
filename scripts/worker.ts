@@ -138,7 +138,47 @@ async function processJob(job: Job) {
             attemptsMade: job.attemptsMade,
             durationMs,
             errorMessage: result.errorMessage,
+            errorCode: result.errorCode,
         }, 'job processing failed');
+
+        // #1447 — stamp the failure's CODE where the poll route can read it.
+        //
+        // BullMQ stores exactly one thing about a failure: `err.message`, as
+        // `failedReason`. There is no second field, and the throw below is
+        // what produces it — so a code has to travel another way.
+        //
+        // It is NOT encoded into the message. A structured prefix or embedded
+        // JSON inside `failedReason` would be a wire format invented inside a
+        // string, parsed forever by every client, and indistinguishable from a
+        // message that happens to start with the same characters.
+        //
+        // `job.data` is the channel instead: the poll routes already read it
+        // (that is where the tenant pin comes from), so there is no new
+        // storage and no schema change. The spread preserves the payload —
+        // nothing in the tree validates a job payload strictly, and every
+        // reader picks named fields, so the extra key is inert on a retry.
+        //
+        // Best-effort by construction: a Redis hiccup here must not replace a
+        // real import failure with a BullMQ write error, which would lose the
+        // very message this code is meant to accompany.
+        if (result.errorCode) {
+            try {
+                const { withFailureStamp } = await import('../src/app-layer/jobs/failure-stamp');
+                await job.updateData(
+                    withFailureStamp(job.data, {
+                        code: result.errorCode,
+                        params: result.errorParams,
+                    }),
+                );
+            } catch (stampError) {
+                log.warn({
+                    jobName,
+                    jobId: job.id,
+                    errorCode: result.errorCode,
+                    error: stampError instanceof Error ? stampError.message : String(stampError),
+                }, 'could not stamp failure code onto job data — failedReason still carries the message');
+            }
+        }
 
         throw new Error(result.errorMessage || `Job "${jobName}" failed`);
     }

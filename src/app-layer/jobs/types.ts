@@ -52,6 +52,25 @@ export interface JobRunResult {
     itemsSkipped: number;
     /** Optional error message if success=false */
     errorMessage?: string;
+    /**
+     * Stable code for the failure, when the thrower named itself (#1447).
+     *
+     * `errorMessage` is English free text — fine for a log line, and it was
+     * the ONLY thing a farmer polling an import ever saw, because BullMQ
+     * persists `err.message` as `failedReason` and nothing else. A code lets
+     * a client say the same thing in its own language; the message stays as
+     * the fallback for a code the client does not recognise.
+     *
+     * Present only for a `CodedFailure` (see `@/lib/errors/coded-failure`) —
+     * absent for an arbitrary crash, which has no code to publish.
+     */
+    errorCode?: string;
+    /**
+     * The scalars behind `errorCode` — a count, a limit, a format — for a
+     * client composing its own sentence. Never personal, same rule as the
+     * request-path `params` the error envelope documents.
+     */
+    errorParams?: Readonly<Record<string, string | number>>;
     /** Optional structured details (job-specific payload) */
     details?: Record<string, unknown>;
 }

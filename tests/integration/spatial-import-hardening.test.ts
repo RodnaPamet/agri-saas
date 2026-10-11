@@ -37,6 +37,7 @@ import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
 import { registerEncryptionMiddleware } from '@/lib/db/encryption-middleware';
 import { prisma } from '@/lib/prisma';
 import { getStorageProvider, buildTenantObjectKey } from '@/lib/storage';
+import { logger } from '@/lib/observability/logger';
 import { FileRepository } from '@/app-layer/repositories/FileRepository';
 import { runInTenantContext } from '@/lib/db/rls-middleware';
 import { runLocationSpatialImport } from '@/app-layer/jobs/spatial-import';
@@ -251,6 +252,24 @@ describeFn('spatial-import hardening — integration (PostGIS)', () => {
         expect(after).toBe(before); // untouched — fail closed before persist
     });
 
+    // ── which invariant fired ──────────────────────────────────────────
+    //
+    // The three internal invariants below share ONE code and one sentence
+    // (#1447). That is deliberate — a farmer can do nothing about any of
+    // them — but it would also quietly halve what these three tests prove,
+    // since each used to identify its own failure by the English. The detail
+    // is now in the server log, so these read it from there.
+    let errorSpy: jest.SpyInstance;
+    const events = (): string[] =>
+        errorSpy.mock.calls.map((c) => String(c[0]));
+
+    beforeEach(() => {
+        errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => undefined);
+    });
+    afterEach(() => {
+        errorSpy.mockRestore();
+    });
+
     test('authorization: a READER (no write) is rejected', async () => {
         const staged = await stageGeoJson(tenantA, readerId, 'reader', fc(square('X', 0.01)));
         await expect(
@@ -262,7 +281,15 @@ describeFn('spatial-import hardening — integration (PostGIS)', () => {
                 stagingFileRecordId: staged.fileRecordId,
                 filename: 'reader.geojson',
             }),
-        ).rejects.toThrow(/lacks write permission/);
+        ).rejects.toMatchObject({ code: 'SPATIAL_IMPORT_INTERNAL' });
+
+        // The message no longer says WHICH invariant tripped — all three are
+        // one code with one generic sentence as of #1447, because the old
+        // sentences put two raw cuids on a farmer's screen in English for a
+        // condition they cannot fix. The distinguishing detail moved to the
+        // logger, so the assertion moves with it: without this line, a bug
+        // that failed a READER's import as "location not found" would pass.
+        expect(events()).toContain('spatial-import.write_permission_lost');
     });
 
     test('authorization: a non-member of the target tenant is rejected', async () => {
@@ -276,7 +303,8 @@ describeFn('spatial-import hardening — integration (PostGIS)', () => {
                 stagingFileRecordId: staged.fileRecordId,
                 filename: 'foreign.geojson',
             }),
-        ).rejects.toThrow(/not an active member/);
+        ).rejects.toMatchObject({ code: 'SPATIAL_IMPORT_INTERNAL' });
+        expect(events()).toContain('spatial-import.membership_missing');
     });
 
     test('tenant isolation: importing into a sibling tenant\'s location is not found', async () => {
@@ -293,7 +321,11 @@ describeFn('spatial-import hardening — integration (PostGIS)', () => {
                 stagingFileRecordId: staged.fileRecordId,
                 filename: 'isolation.geojson',
             }),
-        ).rejects.toThrow(/not found/i);
+        ).rejects.toMatchObject({ code: 'SPATIAL_IMPORT_INTERNAL' });
+        // Specifically the LOCATION lookup, not a membership failure — the
+        // editor is a legitimate writer in tenant A, which is what makes this
+        // a tenant-isolation test rather than an authorization one.
+        expect(events()).toContain('spatial-import.location_missing');
 
         // locationB never got parcels.
         const leaked = await testPrisma.parcel.count({ where: { locationId: locationB } });

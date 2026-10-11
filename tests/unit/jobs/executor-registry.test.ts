@@ -107,6 +107,51 @@ describe('executorRegistry — fault isolation', () => {
         expect(result.errorMessage).toBe('plain string failure');
     });
 
+    it('lifts the CODE off a coded failure onto the result (#1447)', async () => {
+        // The registry is the last place that still holds the thrown error:
+        // `execute` never rethrows, and the worker's
+        // `throw new Error(result.errorMessage)` keeps the sentence and drops
+        // everything else. A code not lifted here is a code that cannot reach
+        // a polling client at all.
+        const { CodedFailureError } = await import('@/lib/errors/coded-failure');
+        const name = uniqueName();
+        executorRegistry.register(name, (async () => {
+            throw new CodedFailureError('Import is too complex.', 'SPATIAL_IMPORT_TOO_COMPLEX', {
+                vertices: 812_340,
+                limit: 500_000,
+            });
+        }) as never);
+
+        const result = await executorRegistry.execute(name, {} as never);
+
+        expect(result.success).toBe(false);
+        expect(result.errorCode).toBe('SPATIAL_IMPORT_TOO_COMPLEX');
+        expect(result.errorParams).toEqual({ vertices: 812_340, limit: 500_000 });
+        // The English stays as the fallback.
+        expect(result.errorMessage).toBe('Import is too complex.');
+    });
+
+    it.each([
+        ['a plain Error', () => new Error('boom')],
+        ['a node fs error', () => Object.assign(new Error('nope'), { code: 'ENOENT' })],
+        ['a Prisma error', () => Object.assign(new Error('unique'), { code: 'P2002' })],
+    ])('publishes NO code for %s', async (_label, make) => {
+        // `ENOENT` and `P2002` both look like codes. Lifting them would put a
+        // storage errno on a farmer's phone as a documented refusal code, and
+        // the client would stop reading `failedReason` — a worse outcome than
+        // no code at all.
+        const name = uniqueName();
+        executorRegistry.register(name, (async () => {
+            throw make();
+        }) as never);
+
+        const result = await executorRegistry.execute(name, {} as never);
+
+        expect(result.success).toBe(false);
+        expect(result.errorCode).toBeUndefined();
+        expect(result.errorParams).toBeUndefined();
+    });
+
     it('stamps a distinct run id on each execution', async () => {
         // Break: a shared or missing jobRunId makes two concurrent runs
         // of the same job indistinguishable in the logs.

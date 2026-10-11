@@ -14,6 +14,7 @@ import { assertCanWrite } from '@/app-layer/policies/common';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { getQueue } from '@/app-layer/jobs/queue';
+import { readFailureStamp } from '@/app-layer/jobs/failure-stamp';
 
 export const GET = withApiErrorHandling(
     async (
@@ -42,6 +43,13 @@ export const GET = withApiErrorHandling(
             progress: job.progress,
             result: job.returnvalue ?? null,
             failedReason: job.failedReason ?? null,
+            // #1447 — same stamp as the spatial-import poll. Wired here too
+            // because `ImportJobStatus` is ONE schema shared by both routes:
+            // documenting the fields and returning them from only one of the
+            // two would make the spec lie about the other. The cadastre job's
+            // codes are `CADASTRE_`-prefixed — the conditions overlap with the
+            // upload path but the remedy does not.
+            ...readFailureStamp(job.data, state),
         });
     },
 );

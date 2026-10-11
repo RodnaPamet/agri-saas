@@ -620,12 +620,64 @@ const ImportJobStatus = z
                 'The worker’s return value once `state` is completed. NULL until then — poll ' +
                 'until `state` is `completed` rather than treating a null result as a failure.',
         }),
-        failedReason: z.string().nullable(),
+        failedReason: z.string().nullable().openapi({
+            description:
+                'ENGLISH free text, and a FALLBACK — not UI copy. It is whatever the worker ' +
+                'threw, which is all BullMQ persists about a failure. Render it only when you ' +
+                'do not recognise `failedCode`.',
+        }),
+        failedCode: z
+            .string()
+            .nullable()
+            .openapi({
+                description:
+                    'Stable code for WHY the import failed, for a client that wants to say it ' +
+                    'in its own language (#1447). NULL unless `state` is `failed`, and null ' +
+                    'for an unexpected crash, which names no code — fall back to ' +
+                    '`failedReason` in both cases.\n\n' +
+                    'A boundary upload (`getSpatialImportJob`) sends: ' +
+                    '`SPATIAL_PARSE_TIMEOUT` (`params.seconds`) when the parse outran its ' +
+                    'budget; `SPATIAL_TOO_MANY_PARCELS`, `SPATIAL_PARCEL_TOO_COMPLEX` and ' +
+                    '`SPATIAL_IMPORT_TOO_COMPLEX` (each `params.limit`, plus `params.count` ' +
+                    'or `params.vertices`) for the complexity caps; ' +
+                    '`SPATIAL_GEOMETRY_UNPARSEABLE` and `SPATIAL_GEOMETRY_INVALID` ' +
+                    '(`params.count`) for topology; `SPATIAL_SOURCE_CRS_UNRESOLVED` when a ' +
+                    'prj-less projected layer could not be placed in Bulgaria; and ' +
+                    '`SPATIAL_IMPORT_INTERNAL` for a broken server invariant — the one case ' +
+                    'where the uploader can do nothing but retry, so it carries no params and ' +
+                    'no detail.\n\n' +
+                    'A cadastre import (`getCadastreImportJob`) sends ' +
+                    '`CADASTRE_GEOMETRY_UNPARSEABLE`, `CADASTRE_GEOMETRY_INVALID` ' +
+                    '(`params.count`) and `CADASTRE_SOURCE_CRS_UNRESOLVED`. Those three ' +
+                    'conditions are the same ones the upload path hits, and they are ' +
+                    'deliberately DIFFERENT codes: nobody uploaded a file, so "fix the ' +
+                    'geometry and re-upload" is not the remedy. It also sends ' +
+                    '`CADASTRE_NOT_CONFIGURED` when КАИС OpenData is not configured on the ' +
+                    'deployment — `GET …/cadastre-import` reports that as `enabled: false` ' +
+                    'up front, but the POST does not gate on it, so a client that enqueues ' +
+                    'anyway learns it here — and `CADASTRE_IMPORT_INTERNAL`, the counterpart ' +
+                    'of `SPATIAL_IMPORT_INTERNAL`.',
+                example: 'SPATIAL_IMPORT_TOO_COMPLEX',
+            }),
+        failedParams: z
+            .record(z.string(), z.union([z.string(), z.number()]))
+            .nullable()
+            .openapi({
+                description:
+                    'The scalars behind `failedCode`, to interpolate into your own sentence — ' +
+                    'same contract as `ErrorResponse.params`: ids and quantities only, never ' +
+                    'an object and never personal data. Sizes are raw integer BYTES, not ' +
+                    'pre-formatted megabytes, so you format them in your own locale. Null ' +
+                    'when the code needs no values.',
+                example: { vertices: 812_340, limit: 500_000 },
+            }),
     })
     .openapi('ImportJobStatus', {
         description:
-            'Poll response for an off-thread import. Note that a not-found or wrong-tenant job ' +
-            'answers 404 with the bare `{ error }` body, not this shape and not the canonical envelope.',
+            'Poll response for an off-thread import, shared by the boundary-upload and ' +
+            'cadastre polls. A not-found or wrong-tenant job answers 404 instead of this ' +
+            'shape — the canonical `ErrorResponse` envelope with `IMPORT_JOB_NOT_FOUND` for ' +
+            '`getSpatialImportJob`, still a bare `{ error }` body for `getCadastreImportJob`.',
     });
 
 
@@ -1185,9 +1237,11 @@ export function registerLocationPaths(registry: OpenAPIRegistry): void {
                 'different fix for the person uploading, which is why they are two codes.',
             413:
                 'Over the per-format byte cap. `error.code` is `SPATIAL_UPLOAD_TOO_LARGE`, with ' +
-                '`params.size`, `params.limit` and `params.format`. The caps differ per format ' +
-                '(5 MB shapefile, 10 MB KML·GeoJSON), so the limit TRAVELS rather than being ' +
-                'restated by each client.',
+                '`params.sizeBytes`, `params.limitBytes` and `params.format`. The caps differ ' +
+                'per format (5 MB shapefile, 10 MB KML·GeoJSON), so the limit TRAVELS rather ' +
+                'than being restated by each client. Raw integer bytes and not the «5.0 MB» ' +
+                'the message uses: that string carries an English decimal point, and a client ' +
+                'writing «7,2 MB» would have had to parse it back out (#1447).',
             415:
                 'Unsupported extension. `error.code` is `UNSUPPORTED_FILE_TYPE`, with the ' +
                 'accepted extensions in `params.allowed` so a client can list them in its own ' +
@@ -1202,7 +1256,9 @@ export function registerLocationPaths(registry: OpenAPIRegistry): void {
         summary: 'Poll a boundary import',
         description:
             'On completion `result.details` carries parcelCount / format / bounds; on failure ' +
-            '`failedReason` carries the per-format, complexity or topology message.',
+            '`failedCode` + `failedParams` carry the complexity, topology or CRS refusal in a ' +
+            'form you can translate, and `failedReason` keeps the English sentence as the ' +
+            'fallback. See `ImportJobStatus.failedCode` for the codes this poll can send.',
         tags: ['Imports'],
         params: JobParams,
         success: { status: 200, description: 'The job’s state.', schema: ImportJobStatus },
