@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { API_KEY_AUTH_ENABLED } from '@/lib/auth/api-key-availability';
 import { getSessionOrThrow } from '@/lib/auth';
+import type { JwtPayload } from '@/lib/auth';
 import { resolveTenantContext } from '@/lib/tenant-context';
 import { RequestContext, OrgContext, UserContext } from './types';
 import { randomUUID } from 'crypto';
@@ -11,7 +12,7 @@ import {
     isApiKeyToken,
     verifyApiKey,
 } from '@/lib/auth/api-key-auth';
-import { badRequest, forbidden, notFound, unauthorized } from '@/lib/errors/types';
+import { badRequest, codedForbidden, forbidden, notFound, unauthorized } from '@/lib/errors/types';
 import { personSurfaceOf, type PersonSurface } from '@/lib/auth/guard';
 import prisma from '@/lib/prisma';
 import { getOrgPermissions } from '@/lib/permissions';
@@ -62,6 +63,26 @@ export async function getTenantCtx(
     // This checks membership and resolves the tenant UUID & role
     const ctx = await resolveTenantContext(params, session.userId);
 
+    // ── The second factor, for THIS farm ───────────────────────────────
+    //
+    // The MFA check lived only in `getUserCtx`, and the policy is per farm
+    // while `session.mfaPending` was one boolean computed against the
+    // session's PRIMARY tenant. So a member of farm A (MFA off, primary) and
+    // farm B (REQUIRED) arrived here with "nothing owed" and read B's data
+    // without B's factor. On the web as well as a phone — the phone only
+    // changes the slug.
+    //
+    // THIS function, rather than a wrapper, for the reason its own docblock
+    // gives about API-key scopes: only ~23 of the 273 tenant routes use
+    // `requirePermission`, and `getTenantCtx` is the one they all reach.
+    //
+    // It resolves the requirement itself rather than reading the claim. The
+    // Edge gate is claim-based because it has no database and must stay a
+    // single cookie read; this half has one, so it is the authoritative
+    // answer. A stale or truncated claim can then only cause an unnecessary
+    // challenge, never a missed one.
+    assertSecondFactorPresented(session, ctx.tenant.id);
+
     // Enrich the observability context with tenant and user info
     // so that logs/traces emitted downstream automatically include them.
     mergeRequestContext({ tenantId: ctx.tenant.id, userId: session.userId });
@@ -75,6 +96,39 @@ export async function getTenantCtx(
         permissions: ctx.permissions,
         appPermissions: ctx.appPermissions,
     };
+}
+
+/**
+ * Refuse a request whose farm wants a second factor that this session has not
+ * presented.
+ *
+ * Throws `codedForbidden('MFA_REQUIRED')`, matching what the middleware's
+ * tenant-path gate answers, so a client has ONE code to branch on across both
+ * halves. (`getUserCtx` currently throws `forbidden('MFA_REQUIRED')`, which
+ * puts the code in `message` instead — tracked as #1645 and deliberately not
+ * changed here, since it alters a live response shape on every person route.)
+ */
+function assertSecondFactorPresented(session: JwtPayload, tenantId: string): void {
+    // Reads the CLAIM rather than re-deriving it, and that is a correction to
+    // the first version of this change.
+    //
+    // Satisfaction is `lastChallengeAt >= iat`, and `getSession()` narrows the
+    // Auth.js session into a small payload that does not carry `iat` — so
+    // re-deriving here would mean plumbing `iat` through the session callback
+    // purely to recompute what the `jwt` callback already worked out. And the
+    // claim is not hearsay: it is a signed token this server minted, which is
+    // exactly how `mfaPending` has always been trusted.
+    if (session.mfaPendingTenantIds?.includes(tenantId)) {
+        throw codedForbidden('MFA_REQUIRED', 'MFA verification required.');
+    }
+
+    // `memberships` is capped at `MAX_JWT_MEMBERSHIPS` (50), so a user in more
+    // farms than that has an INCOMPLETE list and a missing tenant would read
+    // as "nothing owed". Fall back to the session-wide boolean, which holds
+    // rather than releases.
+    if (session.membershipsTruncated === true && session.mfaPending === true) {
+        throw codedForbidden('MFA_REQUIRED', 'MFA verification required.');
+    }
 }
 
 /**

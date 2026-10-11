@@ -38,6 +38,26 @@ export interface JwtPayload {
      * same value the middleware reads there, so the two agree.
      */
     mfaPending?: boolean;
+    /**
+     * Tenant IDs that owe a second factor this session has not presented.
+     *
+     * `mfaPending` above is ONE boolean, and the sign-in path computed it
+     * against the session's PRIMARY tenant — while the policy is per farm. So
+     * a member of farm A (MFA off, primary) and farm B (REQUIRED) arrived with
+     * "nothing owed" and read B's data without B's factor. `getTenantCtx`
+     * tests this list for its own tenant instead.
+     *
+     * Undefined on a session minted before this existed, and on the
+     * legacy-cookie path. Both fall back to `mfaPending`, which holds the
+     * primary tenant exactly as it always did — an old cookie loses the
+     * per-tenant precision, not the gate.
+     */
+    mfaPendingTenantIds?: string[];
+    /**
+     * True when `memberships` hit `MAX_JWT_MEMBERSHIPS`, so the list above is
+     * INCOMPLETE and a missing tenant cannot be read as "nothing owed".
+     */
+    membershipsTruncated?: boolean;
 }
 
 // Legacy JWT secret — used only for reading old cookies during migration
@@ -60,6 +80,8 @@ export async function getSession(): Promise<JwtPayload | null> {
             email: session.user.email ?? '',
             role: session.user.role ?? 'READER',
             mfaPending: session.user.mfaPending,
+            mfaPendingTenantIds: session.user.mfaPendingTenantIds,
+            membershipsTruncated: session.user.membershipsTruncated,
         };
     }
 
