@@ -411,6 +411,21 @@ export const env = createEnv({
         // bearer key; ANTHROPIC_BASE_URL optionally points at a proxy /
         // gateway (Anthropic's default host when unset).
         ANTHROPIC_API_KEY: z.string().optional(),
+
+        // The platform's OWN monthly AI token ceiling (#1423). Three global
+        // jobs spend without a tenant, so no per-tenant budget can cover them.
+        //
+        // OPTIONAL, and unset means NO CAP rather than zero. All three callers
+        // are fail-safe — they return null or an empty array rather than
+        // throwing — so a default-deny would switch off three working features
+        // INVISIBLY the moment it shipped. The ledger records unconditionally,
+        // which gives an operator the number before they have to pick a limit.
+        //
+        // A string rather than `z.coerce.number()`: the module treats an
+        // unusable value as uncapped and logs what it read, which a coercion
+        // failure at boot could not do — it would refuse to start the whole app
+        // over a cost-control typo.
+        PLATFORM_AI_TOKENS_MONTHLY: z.string().optional(),
         ANTHROPIC_BASE_URL: z.string().url().optional(),
         // ── Embedding provider — resolved INDEPENDENTLY of AI_BACKEND ──
         // (fix/rag-embedding-provider-split). Anthropic exposes no
@@ -781,6 +796,7 @@ export const env = createEnv({
         AI_MODEL: process.env.AI_MODEL,
         AI_EMBED_MODEL: process.env.AI_EMBED_MODEL,
         ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+        PLATFORM_AI_TOKENS_MONTHLY: process.env.PLATFORM_AI_TOKENS_MONTHLY,
         ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL,
         AI_EMBED_BACKEND: process.env.AI_EMBED_BACKEND,
         AI_EMBED_BASE_URL: process.env.AI_EMBED_BASE_URL,
