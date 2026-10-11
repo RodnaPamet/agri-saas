@@ -1,4 +1,4 @@
-import { authRefusingSuspended } from '@/lib/auth/session-gate';
+import { auth } from '@/auth';
 import prisma from '@/lib/prisma';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
@@ -8,9 +8,7 @@ import { resolveFlags } from '@/lib/feature-flags';
 import { DELETION_GRACE_DAYS } from '@/app-layer/usecases/account-erasure';
 
 export const GET = withApiErrorHandling(async () => {
-    // #1652: the suspension check lives in `getSessionOrThrow`, which this
-    // route does not reach — it resolved its own session with `auth()`.
-    const session = await authRefusingSuspended();
+    const session = await auth();
     if (!session?.user) {
         return jsonResponse({ error: 'Unauthorized' }, { status: 401 });
     }

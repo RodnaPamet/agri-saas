@@ -20,6 +20,12 @@
  *     have the cancel refused 403 by the route that DOES check. A recovery
  *     screen offering an action the server would never honour.
  *
+ * That last one was fixed by #1654 while this change was open, and NOT by this
+ * gate: it reads `suspendedAt` off the `User` row the route already queries,
+ * which costs nothing where a second lookup would. It is in the allowlist as a
+ * `selfChecks` entry rather than migrated. So the population this closes is
+ * NINE routes, and the tenth is covered by a cheaper mechanism.
+ *
  * ## A count nobody printed, for the second time in this phase
  *
  * `count-the-routes-a-gate-covers` is the lesson, and the shape recurs: a
@@ -59,21 +65,48 @@ const RAW_AUTH = /(?<![A-Za-z0-9_$.])auth\s*\(\s*\)/g;
 const GATE = /\bauth(?:RefusingSuspended|WithSuspension)\s*\(\s*\)/g;
 
 /**
- * Routes allowed to call the raw `auth()`, keyed by repo-relative path, each
- * with the reason it is a DECISION rather than an oversight.
+ * Routes allowed to call the raw `auth()`.
  *
- * An entry here means a suspended account is deliberately not refused on that
- * route, so the reason has to say what the refusal would cost. "It is only a
- * read" is not one — `offline/whoami` and the promotion image are reads and
- * both went through the gate.
+ * Two KINDS, and the distinction is checked rather than trusted:
+ *
+ *   `selfChecks: true`   the route refuses a suspended account ITSELF, by some
+ *                        other mechanism. The test below requires its source to
+ *                        name `ACCOUNT_SUSPENDED`, so an entry cannot quietly
+ *                        become an exemption when the inline check is removed.
+ *   `selfChecks: false`  a suspended account is deliberately NOT refused. The
+ *                        test requires the source NOT to name the code, so the
+ *                        two kinds cannot blur into each other.
+ *
+ * "It is only a read" is not a reason — `offline/whoami` and the promotion
+ * image are reads, and both went through the gate.
  */
-const ALLOWLIST: Readonly<Record<string, string>> = {
-    'src/app/api/t/[tenantSlug]/security/mfa/challenge/verify/route.ts':
-        'Owner ruling, #1652. Part of SIGN-IN: refusing a suspended account at ' +
-        'the MFA step surfaces as a failure on the code entry and reads as "your ' +
-        'code is wrong" rather than "your account is suspended". The challenge ' +
-        'is allowed to succeed and the first real request refuses with the ' +
-        'sentence that explains it. Migrating this route is a product change.',
+interface Exemption {
+    reason: string;
+    selfChecks: boolean;
+}
+
+const ALLOWLIST: Readonly<Record<string, Exemption>> = {
+    'src/app/api/t/[tenantSlug]/security/mfa/challenge/verify/route.ts': {
+        selfChecks: false,
+        reason:
+            'Owner ruling, #1652. Part of SIGN-IN: refusing a suspended account at ' +
+            'the MFA step surfaces as a failure on the code entry and reads as "your ' +
+            'code is wrong" rather than "your account is suspended". The challenge ' +
+            'is allowed to succeed and the first real request refuses with the ' +
+            'sentence that explains it. Migrating this route is a product change.',
+    },
+    'src/app/api/auth/me/route.ts': {
+        selfChecks: true,
+        reason:
+            'Refuses a suspended account INLINE, off the `User` row it already ' +
+            'queries (#1654, landed by the parallel session while #1652 was open). ' +
+            'That is better than this gate for this one route: the row is being ' +
+            'fetched anyway, so reading `suspendedAt` from it costs nothing, while ' +
+            '`authRefusingSuspended` would add a second lookup. It is covered by a ' +
+            'different mechanism, NOT uncovered — `tests/unit/auth-me-deletion-' +
+            'pending.test.ts` executes it, and `selfChecks` makes the claim ' +
+            'checkable here rather than a sentence nobody re-reads.',
+    },
 };
 
 describe('API routes resolve sessions through the suspension gate (#1652)', () => {
@@ -145,9 +178,20 @@ describe('API routes resolve sessions through the suspension gate (#1652)', () =
     });
 
     it('carries a substantive reason for every allowlist entry', () => {
-        for (const [path, reason] of Object.entries(ALLOWLIST)) {
+        for (const [path, { reason }] of Object.entries(ALLOWLIST)) {
             expect(path).toMatch(/^src\/app\/api\/.+\/route\.ts$/);
             expect(reason.trim().length).toBeGreaterThan(120);
+        }
+    });
+
+    it('holds each entry to the KIND it claims', () => {
+        // The half that makes `selfChecks` worth more than a comment. A route
+        // excused as "it checks itself" must still contain the refusal; one
+        // excused as a deliberate carve-out must not, or the entry is
+        // describing a route that no longer exists as described.
+        for (const [path, { selfChecks }] of Object.entries(ALLOWLIST)) {
+            const src = blankNonCode(readFileSync(`${REPO_ROOT}/${path}`, 'utf8'));
+            expect(src.includes('ACCOUNT_SUSPENDED')).toBe(selfChecks);
         }
     });
 

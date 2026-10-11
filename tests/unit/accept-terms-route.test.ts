@@ -20,9 +20,24 @@ const mockAuth = jest.fn();
 jest.mock('@/auth', () => ({ auth: (...a: unknown[]) => mockAuth(...a) }));
 
 const mockUpdateMany = jest.fn();
+// `findUnique` is here for #1652, not for this file's own subject. The route now
+// resolves its session through `authRefusingSuspended`, which reads
+// `User.suspendedAt` — and `isAccountSuspended` fails CLOSED on a lookup error,
+// which is the right production behaviour and means a mock missing this method
+// turns every test in the file into a 403. Loud, which is how it was found,
+// rather than a wrong answer.
+//
+// `suspendedAt: null` is the default: these tests are about terms consent and
+// their subject is a person in good standing.
+const mockFindUnique = jest.fn();
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
-    default: { user: { updateMany: (...a: unknown[]) => mockUpdateMany(...a) } },
+    default: {
+        user: {
+            updateMany: (...a: unknown[]) => mockUpdateMany(...a),
+            findUnique: (...a: unknown[]) => mockFindUnique(...a),
+        },
+    },
 }));
 
 import { NextRequest } from 'next/server';
@@ -42,6 +57,7 @@ function post(body: unknown): Promise<Response> {
 const VALID = { acceptedTerms: true, termsVersion: TERMS_VERSION };
 
 beforeEach(() => {
+    mockFindUnique.mockResolvedValue({ suspendedAt: null });
     jest.clearAllMocks();
     mockAuth.mockResolvedValue({ user: { id: 'user-1' } });
     mockUpdateMany.mockResolvedValue({ count: 1 });
