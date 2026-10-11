@@ -2432,6 +2432,53 @@ here is "telling people their data was erased when it was not". It also pins
 `{graceDays}` as an interpolation rather than a literal, so the notice and the
 sweep cannot disagree about the date.
 
+### P5.8 — the triage alert, and why it is one mail per RUN
+
+`notice-triage-alert` runs every 10 minutes and mails the DSA contact point
+about notices awaiting triage (#1599). The queue is `alertedAt IS NULL`.
+
+**ONE message per run, however many notices arrived.** `POST
+/api/public/notices` needs no credential and `PUBLIC_NOTICE_LIMIT` is 10/min per
+IP, so a per-notice email would let anyone send 600 messages an hour to the one
+mailbox that has to stay readable during an incident. Batching is what makes
+the alert survive the flood it is most needed during — and it is why this is a
+JOB rather than an `afterCommit` hook on the notice write, which is otherwise
+this repo's way to announce a write: `afterCommit` would be per-notice, and the
+rate would be the attacker's to choose.
+
+**The notice TEXT is never in the mail.** `ContentReport.detail` is encrypted at
+rest, and a mailbox is outside that boundary; a moderator opens the console.
+
+**`alertedAt` is reporter-visible and is NOT a triage clock.** Every column on
+`ContentReport` is readable by its reporter (the arm is ROW-level), and this one
+is acceptable on its own terms — it says somebody was notified, which Art 16
+entitles a notifier to know. But P5's median-handling criterion runs from
+`createdAt` to the `ModerationAction`, never to this column.
+
+**Nothing is marked until the send resolves, and nothing is marked at all while
+`DSA_CONTACT_EMAIL` is unset.** The second half matters more than it looks: if
+the unconfigured branch stamped rows, then configuring the address correctly
+would silently skip every notice filed beforehand.
+
+**`DSA_CONTACT_EMAIL` is ABSENT on the VM** as of 2026-10-11, so
+`/dsa-contact` renders its fallback and Art 11/12 is unmet. That is an operator
+action, not a code change — `docs/runbooks/dsa-moderation-contact.md` carries
+it, including that the address must be a ROLE mailbox because this repository is
+public.
+
+**Two i18n traps, both hit while writing this.**
+
+- **`env` from `@t3-oss/env-nextjs` is a Proxy with ZERO own keys.** Measured:
+  `Object.keys(env).length === 0` while `env.DATABASE_URL` is a string. So
+  `jest.mock('@/env', () => ({ env: { ...actual.env, X } }))` produces an EMPTY
+  env — every variable reads `undefined` and Prisma falls back to port 5432. To
+  override one key, wrap the real `env` in a `Proxy` and forward the rest.
+- **`translateFor` is a simple `interpolate`, with NO ICU support.** An ICU
+  plural comes back as the literal template, and the i18n drift check reads
+  `{no urgent}` as a placeholder named `no`. Where a count needs grammatical
+  agreement, put the number AFTER a label ("спешни: 1") — grammatical at any
+  count in both languages, and the only option this interpolator supports.
+
 ## Failing tests
 
 A failing test on a branch is a failing test, full stop. "Pre-existing on

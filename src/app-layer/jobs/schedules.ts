@@ -97,6 +97,26 @@ export const ALL_SCHEDULES: ScheduleDefinition[] = [
     },
     {
         /**
+         * P5.8 — tell a human that notices are waiting.
+         *
+         * Every 10 minutes, which is what makes P5's "median handling under
+         * 24h" reachable: the queue is only useful if somebody is told it has
+         * something in it. ONE message per run regardless of how many notices
+         * arrived, because `POST /api/public/notices` is unauthenticated and a
+         * per-notice mail would be an amplifier pointed at the one mailbox
+         * that has to stay readable during an incident.
+         *
+         * Silent and harmless while `DSA_CONTACT_EMAIL` is unset — it logs at
+         * WARN and does nothing, and starts working the moment an operator
+         * sets the address, with no deploy.
+         */
+        name: 'notice-triage-alert',
+        pattern: '*/10 * * * *',  // every 10 minutes
+        description: 'Mail the DSA contact point about notices awaiting triage (#1599)',
+        defaultPayload: {},
+    },
+    {
+        /**
          * P5.6b — erase the accounts whose 30-day grace period has run out.
          *
          * Daily, which only decides how long past day 30 an erasure waits — up

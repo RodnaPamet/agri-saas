@@ -234,8 +234,24 @@ model ContentReport {
 
   /// The triage queue's two access paths: "everything about this subject"
   /// and "the oldest thing still in this state".
+  /// When the triage alert naming this notice was sent (P5.8, #1599).
+  ///
+  /// NULL means no human has been told yet, and that absence IS the alert
+  /// queue — the same "the queue is the missing marker" shape as
+  /// `StatementOfReasons.deliveredAt` and `NoticeScore`.
+  ///
+  /// Reporter-visible, like every column on this table, and acceptable on its
+  /// own terms: it says somebody was notified, which is reassurance rather
+  /// than disclosure. It reveals no moderator, no decision and no rationale —
+  /// all of which live on `ModerationAction`, which denies `app_user` outright.
+  alertedAt DateTime?
+
   @@index([subjectKind, subjectId])
   @@index([status, createdAt])
+  /// P5.8 (#1599) — the alert queue: `WHERE "alertedAt" IS NULL ORDER BY
+  /// "createdAt"`. PARTIAL in the migration, since an alerted notice is never
+  /// selected again and the un-alerted set is small.
+  @@index([alertedAt, createdAt])
   /// "My reports", which the reporter arm now makes reachable.
   @@index([reporterUserId])
 }
