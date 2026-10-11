@@ -202,33 +202,21 @@ async function readLog(
             { timeout: 10_000 },
         );
     }
-    // ── Surviving a navigation mid-read (#1329, second cause) ────────────
+    // ── A navigation makes this unanswerable; say so, never guess ────────
     //
-    // `page.evaluate` throws `Execution context was destroyed, most likely
-    // because of a navigation` when the document goes away between the call and
-    // its execution. That took MAIN RED on `7de62829c`, failing all three
-    // attempts — so it is not the flake the ledger describes, which was
-    // `log.fcp` being null and which #1610 fixed. One cause was replaced by
-    // another and the ledger's reason went stale.
+    // #1621 made this read survive a navigation by waiting for `load` and
+    // re-reading. The reasoning given was that the property is
+    // document-independent. **It is not.** The first document persists the
+    // theme choice, so a reloaded document is served the correct theme and
+    // needs no correction — `0` mutations, which is right for that document and
+    // wrong for the question being asked. That turned a crash into a confident
+    // wrong answer.
     //
-    // A retry is sound HERE for two specific reasons, neither of which
-    // generalises:
-    //
-    //   1. this is a READ and nothing else — no click, no write, no outbox, so
-    //      a second attempt cannot leave anything half-done. The repo turns
-    //      retries OFF on the offline and mobile specs precisely because a
-    //      retry after a delivered outbox item cannot restore the pre-delivery
-    //      state;
-    //   2. the property under test is DOCUMENT-INDEPENDENT. `recordFirstPaint`
-    //      installs via `addInitScript`, which re-runs on every navigation, so
-    //      any `/login` document has its own fresh log in which the server sends
-    //      `dark` and the inline script corrects it exactly once. Reading the
-    //      post-navigation document answers the same question.
-    //
-    // What it must NOT do is swallow a different error. Anything that is not a
-    // destroyed context rethrows immediately, and a second destroyed context
-    // rethrows too rather than looping — a page navigating repeatedly is a real
-    // defect and must not be waited out.
+    // The cause is removed above (`serviceWorkers: 'block'`), so this should
+    // not fire. It stays because a destroyed context here must never again be
+    // papered over: if some other navigation appears, the failure should name
+    // it rather than resurface as an inexplicable `toHaveLength(0)` three
+    // screens later.
     const read = () =>
         page.evaluate(() => {
             const log = (window as unknown as { __themeLog: ThemeLog }).__themeLog;
@@ -242,17 +230,52 @@ async function readLog(
         return await read();
     } catch (err) {
         if (!/Execution context was destroyed/i.test(String(err))) throw err;
-        // Let the navigation that destroyed the context finish, then read the
-        // document it produced. `load` and not `networkidle`: this page fetches
-        // `/api/auth/providers` and `/api/auth/ui-config` on mount, so idle is
-        // a different and later event that would make the wait depend on two
-        // requests this test is not about.
-        await page.waitForLoadState('load');
-        return read();
+        throw new Error(
+            'The page navigated while reading __themeLog, so this assertion cannot be ' +
+                'evaluated: `addInitScript` re-runs on the new document and its log starts ' +
+                'empty, and the first document has already persisted the theme — so the ' +
+                'reloaded one needs no correction and reads 0 mutations legitimately. ' +
+                'Do NOT re-read the new document (that was #1621 and it produced a wrong ' +
+                'answer). Find what navigated. The known cause is the service worker: ' +
+                '`ServiceWorkerRegistrar` reloads on `controllerchange`, which ' +
+                '`clients.claim()` fires on a first visit — blocked for this spec. ' +
+                `Original error: ${String(err)}`,
+        );
     }
 }
 
 test.describe('theme reaches the first paint', () => {
+    // ── The service worker RELOADS the page mid-test (#1329) ─────────────
+    //
+    // Found in the code, not guessed. `ServiceWorkerRegistrar` is mounted in
+    // the ROOT layout, so it runs on `/login` like everywhere else. It listens
+    // for `controllerchange` and calls `window.location.reload()`. On a FIRST
+    // VISIT there is no worker yet, so `public/sw.js` installs, activates and
+    // calls `self.clients.claim()` — which fires `controllerchange` on this
+    // page — and the registrar reloads it.
+    //
+    // That is the navigation these tests kept losing to, and it explains why it
+    // was intermittent in exactly this spec: `recordFirstPaint` throttles the
+    // CPU 4x, so whether the worker finishes activating before the two reads
+    // complete is a race this spec is uniquely slow at.
+    //
+    // It cost two wrong fixes. #1610 saw `expect(log.fcp).not.toBeNull()` fail
+    // and waited for the paint observer — right about the observer, and it then
+    // unmasked the second read. #1621 saw `Execution context was destroyed` and
+    // made the read survive a navigation by re-reading the NEW document, on the
+    // stated reasoning that the property was document-independent. It is NOT:
+    // the first document persists the theme choice, so the reloaded document
+    // gets the right theme from the server and needs NO correction — `0`
+    // mutations, which is correct for that document and wrong for the question.
+    // So #1621 turned a crash into a confident wrong answer, which is worse.
+    //
+    // Blocking the worker removes the cause rather than coping with it. These
+    // tests are about whether the THEME reaches the first paint; the worker is
+    // irrelevant to that and was corrupting the measurement. The PWA's own
+    // behaviour is covered by the offline specs, which is where it belongs.
+    test.use({ serviceWorkers: 'block' });
+
+
     // RETRIES ARE ON, deliberately, and this comment is why — the opposite of
     // what used to be here (#1570).
     //
