@@ -144,6 +144,21 @@ declare module 'next-auth/jwt' {
         membershipsTruncated?: boolean;
         /** True when `orgMemberships` is a capped subset of the real set. */
         orgMembershipsTruncated?: boolean;
+        /**
+         * P5.5a — `User.emailVerified` as epoch ms, or `null` when the address
+         * was never confirmed. Read by the mutation limiter to decide slow
+         * mode. ABSENT on any session minted before P5.5a, which
+         * `isSlowModeAccount` reads as not-slow so existing sessions keep
+         * their budget until natural re-mint.
+         */
+        emailVerifiedAt?: number | null;
+        /**
+         * P5.5a — `User.createdAt` as epoch ms. The raw timestamp rather than
+         * a precomputed `slowMode` boolean on purpose: age is time-dependent,
+         * so baking the verdict in would keep an account throttled past the
+         * threshold until its token re-minted.
+         */
+        accountCreatedAt?: number;
         /** Provider name when the user signed in via OAuth. */
         provider?: string;
         /** EI-1/EI-3 — telemetry flag: the groups claim overflowed (>200 groups)
@@ -208,6 +223,29 @@ async function applyMembershipClaims(
         // T00 — persisted UI language preference. The `include` query
         // returns every scalar column, so `uiLanguage` is present.
         token.uiLanguage = dbUser.uiLanguage ?? DEFAULT_LOCALE;
+
+        // P5.5a — the two facts slow mode is decided from. Same free ride as
+        // `uiLanguage`: the `include` above returns every scalar, so neither
+        // costs a query.
+        //
+        // This is the ONLY producer, and that matters: every hand-minted
+        // session (SSO, token refresh, native exchange, webview adopt, Apple)
+        // reaches `buildSessionClaims`, which calls this function — so a
+        // credential cannot be minted without them. A second producer that
+        // forgot one would be a silently more permissive path, which is the
+        // `applyMembershipClaims` / `POST /api/auth/token` argument verbatim.
+        //
+        // Raw timestamps, not a `slowMode` boolean: the verdict depends on the
+        // CURRENT time, so baking it in would keep an account throttled past
+        // the age threshold until its token happened to re-mint.
+        token.emailVerifiedAt = dbUser.emailVerified
+            ? dbUser.emailVerified.getTime()
+            // `null`, not `undefined`. `isSlowModeAccount` reads an explicit
+            // null as "never confirmed" and an absent claim as "this session
+            // predates the feature" — collapsing them would make every old
+            // session look unverified.
+            : null;
+        token.accountCreatedAt = dbUser.createdAt.getTime();
 
         // Active tenant memberships, capped at MAX_JWT_MEMBERSHIPS so the
         // cookie stays bounded; `membershipsTruncated` flags the rare

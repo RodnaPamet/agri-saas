@@ -51,6 +51,28 @@
 import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { env } from '@/env';
+import { isSlowModeAccount } from './slow-mode';
+
+/**
+ * Everything the limiter needs about the caller, from ONE token decode.
+ *
+ * Both fields come out of the same JWE. Resolving them separately would pay
+ * the decode twice on every mutation for no gain, and would make it possible
+ * for the two answers to disagree — the id from one decode and the account
+ * state from another.
+ */
+export interface RequestIdentity {
+    /** `token.sub`, or `null` when there isn't one we can read. */
+    readonly userId: string | null;
+    /**
+     * Whether this caller gets the reduced mutation budget (P5.5a).
+     *
+     * `false` for an anonymous caller: anon is already keyed per-IP on the
+     * tightest presets, and slow mode is a statement about an ACCOUNT. There
+     * is no account here to make it about.
+     */
+    readonly slowMode: boolean;
+}
 
 /**
  * The caller's user id, or `null` when there isn't one we can read.
@@ -63,12 +85,45 @@ import { env } from '@/env';
  * network.
  */
 export async function resolveRequestUserId(req: NextRequest): Promise<string | null> {
+    return (await resolveRequestIdentity(req)).userId;
+}
+
+/**
+ * The caller's id AND slow-mode state, from one decode (P5.5a, #1596).
+ *
+ * `resolveRequestUserId` delegates here so there is exactly one decode and one
+ * place that reads these claims. The fail-soft contract is unchanged and
+ * extends to the new field: an unreadable token yields
+ * `{ userId: null, slowMode: false }`.
+ *
+ * `slowMode: false` on failure is NOT a hole. A caller we cannot identify is
+ * keyed `anon` per-IP, which is the tighter bucket the docblock above describes
+ * — applying a reduced per-account budget to a shared anonymous key would
+ * punish a whole CGNAT egress for one unreadable cookie, which is the exact
+ * defect this module was written to remove.
+ */
+export async function resolveRequestIdentity(req: NextRequest): Promise<RequestIdentity> {
     try {
         const token = await getToken({ req, secret: env.AUTH_SECRET });
         const sub = token?.sub;
-        return typeof sub === 'string' && sub.length > 0 ? sub : null;
+        const userId = typeof sub === 'string' && sub.length > 0 ? sub : null;
+
+        // No account ⇒ no account-level state to apply.
+        if (!userId) return { userId: null, slowMode: false };
+
+        return {
+            userId,
+            slowMode: isSlowModeAccount({
+                emailVerifiedAt: typeof token?.emailVerifiedAt === 'number'
+                    ? token.emailVerifiedAt
+                    : token?.emailVerifiedAt === null ? null : undefined,
+                accountCreatedAt: typeof token?.accountCreatedAt === 'number'
+                    ? token.accountCreatedAt
+                    : undefined,
+            }),
+        };
     } catch {
         // See "Fail SOFT" above: anon is a tighter bucket, not a looser one.
-        return null;
+        return { userId: null, slowMode: false };
     }
 }
