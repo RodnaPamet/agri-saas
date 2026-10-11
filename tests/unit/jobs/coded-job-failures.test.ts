@@ -9,6 +9,7 @@
  */
 import { CodedFailureError, isCodedFailure } from '@/lib/errors/coded-failure';
 import { SpatialLimitError, assertUploadWithinSize, assertParcelComplexity } from '@/lib/spatial/limits';
+import type { ParsedParcel } from '@/lib/spatial/parse';
 import {
     JOB_FAILURE_STAMP_KEY,
     readFailureStamp,
@@ -138,12 +139,17 @@ describe('the spatial limit codes a client switches on', () => {
     });
 
     it('names the complexity cap it hit, with the numbers behind it', () => {
-        const parcel = (name: string, vertices: number) => ({
+        const parcel = (name: string, vertices: number): ParsedParcel => ({
             name,
             geometry: {
                 type: 'MultiPolygon' as const,
                 coordinates: [[Array.from({ length: vertices }, () => [0, 0] as [number, number])]],
             },
+            // Required by `ParsedParcel`. Annotating the return type rather
+            // than leaving it inferred is the point: the first version was an
+            // untyped object literal, so a missing required field only
+            // surfaced in CI's typecheck.
+            properties: {},
         });
         try {
             assertParcelComplexity([parcel('A', 60_000)]);

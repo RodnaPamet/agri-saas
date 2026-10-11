@@ -632,9 +632,16 @@ const ImportJobStatus = z
             .openapi({
                 description:
                     'Stable code for WHY the import failed, for a client that wants to say it ' +
-                    'in its own language (#1447). NULL unless `state` is `failed`, and null ' +
-                    'for an unexpected crash, which names no code — fall back to ' +
-                    '`failedReason` in both cases.\n\n' +
+                    'in its own language (#1447). NULL unless `state` is `failed`.\n\n' +
+                    'Also null when the job DIED rather than refused — and in that case do ' +
+                    'not show `failedReason`. A refusal names itself with a code, so a null ' +
+                    'code means the message is whatever the exception carried: «connect ' +
+                    'ECONNREFUSED 127.0.0.1:6379», a stack-trace line, an ORM error. Show ' +
+                    'your own "something went wrong, try again" copy, as for ' +
+                    '`SPATIAL_IMPORT_INTERNAL`. `failedReason` is the fallback for a code you ' +
+                    'do not RECOGNISE — a sentence written for a person — not the fallback ' +
+                    'for no code at all. (Raised by agrent-ios, who shipped this distinction ' +
+                    'in their client before the spec said it.)\n\n' +
                     'A boundary upload (`getSpatialImportJob`) sends: ' +
                     '`SPATIAL_PARSE_TIMEOUT` (`params.seconds`) when the parse outran its ' +
                     'budget; `SPATIAL_TOO_MANY_PARCELS`, `SPATIAL_PARCEL_TOO_COMPLEX` and ' +
