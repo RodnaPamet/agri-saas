@@ -25,6 +25,7 @@ import { z } from 'zod';
 import { env } from '@/env';
 import { logger } from '@/lib/observability/logger';
 import { withLocaleInstruction } from './locale-instruction';
+import { isPlatformAiSpendAllowed, recordPlatformAiUsage } from './platform-budget';
 
 /** Model for the briefing — the caller supplies a Haiku API key. */
 const BRIEFING_MODEL = 'claude-haiku-4-5';
@@ -242,6 +243,21 @@ export async function generateFieldBriefing(input: BriefingInput): Promise<Field
     const apiKey = env.ANTHROPIC_API_KEY;
     if (!apiKey) return null;
 
+    // The PLATFORM budget (#1423). This job has no tenant — that is why it
+    // bypasses the router at all — so no per-tenant budget can cover it, and
+    // until this gate existed its spend had no ceiling of any kind.
+    //
+    // A boolean rather than a throw: the `catch` below would otherwise swallow
+    // the refusal and report it as a failed call, making the cap invisible in
+    // the logs of the thing it refused. Said in its own words instead.
+    if (!(await isPlatformAiSpendAllowed('field-briefing'))) {
+        logger.warn('field-briefing skipped: the platform AI budget is exhausted', {
+            component: 'ai',
+            model: BRIEFING_MODEL,
+        });
+        return null;
+    }
+
     try {
         const client = new Anthropic({
             apiKey,
@@ -262,6 +278,17 @@ export async function generateFieldBriefing(input: BriefingInput): Promise<Field
                 },
             ],
             tool_choice: { type: 'tool', name: 'field_briefing' },
+        });
+
+        // Recorded BEFORE the output is parsed, and unconditionally. The
+        // tokens were spent whether or not the tool block validates — charging
+        // only successful parses would under-count exactly the calls worth
+        // noticing, and the ledger is what an operator reads to choose a cap.
+        await recordPlatformAiUsage({
+            job: 'field-briefing',
+            model: BRIEFING_MODEL,
+            promptTokens: response.usage.input_tokens,
+            completionTokens: response.usage.output_tokens,
         });
 
         for (const block of response.content) {
