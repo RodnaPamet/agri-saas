@@ -100,6 +100,11 @@ enum PlatformAuditAction {
   // only the suspensions would show every account as still suspended.
   ACCOUNT_SUSPENDED
   ACCOUNT_SUSPENSION_LIFTED
+  // #1619 — the moderation DECISIONS, in the same `moderation` scope as the
+  // two above, so an operator reading "the moderation history" gets the
+  // decision and its consequence in one chain rather than two halves.
+  MODERATION_ACTION_RECORDED
+  MODERATION_STATEMENT_QUEUED
 }
 
 model PlatformAuditLog {

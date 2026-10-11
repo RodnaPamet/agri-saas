@@ -2250,8 +2250,25 @@ is Node-only, and so is Prisma, so the Edge has no persistent store available at
 all in this deployment."* Upstash is absent in production. Setting
 `token.error` from the `jwt` callback fails too: that callback runs on
 re-issue, not per request, which is why the `sessionVersion` check is throttled
-at all. `getSessionOrThrow` is the Node choke point — all three ctx resolvers
+at all. `getSessionOrThrow` is the Node choke point for the CTX RESOLVERS — all three
 call it, and it goes through `auth()` (cookie first, bearer fallback).
+
+**It is NOT every authenticated request, and this paragraph implied that it
+was.** `isAccountSuspended` has exactly one caller, and **ten route files
+resolve a session with a bare `await auth()`**, so none of them reach it. The
+two that matter are `auth/change-password` and the invite-acceptance pair: a
+suspended account could rotate its own credential, or join a second farm and
+carry on there. `/api/auth/me` is fixed (403 `ACCOUNT_SUSPENDED`, #1619) because
+it hands out the `deletion` field that drives the native recovery screen, and a
+TERMINATED person — suspended AND erasure-pending — was being shown a recovery
+screen whose cancel the server refuses. **The remaining nine are #1652**, which
+also carries the guard that would hold the count at zero; `mfa/challenge/verify`
+is argued there as deliberately uncovered, because refusing at the MFA step
+reads as "wrong code" rather than "suspended account".
+
+Found by the native client reading this section against the route, not by a
+test. The lesson is `count-the-routes-a-gate-covers`: a gate named correctly,
+with a population nobody printed.
 
 **The two fail directions are OPPOSITE, and that asymmetry is the design.**
 Redis unreadable falls THROUGH to Postgres, because Redis is an optimisation
@@ -2288,6 +2305,58 @@ code does — found by mutation proof, where deleting the invalidation reddened
 nothing. The cache is covered in `tests/unit/suspension-cache.test.ts` (the
 helper) and `tests/unit/account-suspension-wiring.test.ts` (that anybody calls
 it); between them they cover the SEAM that the two halves alone did not.
+
+### #1619 — moderation decisions in the hash chain, and the ruling that made it best-effort
+
+`actOnNotice` and `queueStatement` append to `PlatformAuditLog` under scope
+`moderation`: `MODERATION_ACTION_RECORDED` and `MODERATION_STATEMENT_QUEUED`.
+
+**Best-effort by owner ruling, and the alternative was measured.** The append
+runs AFTER the transaction commits, inside a try/catch, so a chain-writer
+failure cannot undo a moderation decision. #1287 is why: that writer failed on
+**275 of 275 attempts** under one runtime, and a moderation queue that cannot be
+worked because an audit subsystem is sick is its own compliance failure with the
+DSA clock running. The cost is a crash window between COMMIT and the append, and
+`tests/integration/moderation-audit-chain.test.ts` asserts the shape of it
+rather than pretending it away.
+
+**It is a DIRECTLY AWAITED try/catch, not `afterCommit`.** The ruling said
+"best-effort — via `afterCommit`", and `afterCommit` is the house pattern for
+announcing a write — but it only DEFERS when a scope is open, and a scope is
+opened by the `src/lib/db-context.ts` helpers, not by a bare
+`prisma.$transaction`. `actOnNotice` uses the latter, so `afterCommit` fired
+`void runEffect(...)` un-awaited and the test saw **zero chain rows**. Same
+best-effort semantics, honestly spelled.
+
+**Two verbs, not one with a field.** Art 17 makes "decided" and "explained" two
+obligations, so an action with no statement is visible in the chain rather than
+inferred from a missing field.
+
+**Neither entry carries the rationale or the statement body.** `detailsJson` is
+not an encrypted column; the rationale lives on `ModerationAction.rationale`,
+which is, and the chain records `hasRationale` instead. The body is additionally
+REPLACED at send time by P5.4b, so a copy here would be a draft the chain
+presented as final.
+
+**`actorUserId` is NULL and `moderatorRef` is `platform-key:<generation>`** —
+there is one `PLATFORM_ADMIN_API_KEY`, so there is no person to name. #1599 owns
+the credential model that would change it, and the chain test PINS the
+generation string so that change is visible when it lands.
+
+**`ACCOUNT_TERMINATED` now finalises** (owner ruling 2026-10-11): terminate
+suspends AND calls `requestAccountDeletionOnTx`, so the Art 17 statement ("we
+closed your account") is true of the data as well as of access. It takes the
+caller's `tx` for the P5.9 reason — a second pool connection inside an open
+transaction is #1191's P0.8 deadlock. `ACCOUNT_SUSPENDED` deliberately does NOT
+queue an erasure: the two statements describe two different things, and a
+suspension that silently queued one would be #1635 inverted.
+
+**A terminated person cannot cancel the erasure**, which is what makes wiring a
+moderation outcome to a self-service path safe: they are suspended, so the
+cancel route refuses them. That argument now depends on #1652 — the suspension
+check does not cover every route — so it holds for `DELETE
+/api/account/deletion` (a ctx-resolver route) and is the reason `/api/auth/me`
+had to be fixed in the same change.
 
 ### P5.6a — one registry for export and erasure, derived from the DMMF
 

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "10.29.4",
+    "version": "10.30.1",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -4353,6 +4353,28 @@
                 ],
                 "description": "The caller's EFFECTIVE avatar, or `null` for none (draw initials). ONE field for both kinds of avatar: an uploaded photo and an OAuth provider photo both live in `User.image`, so there is no second endpoint to consult and no fallback chain to walk. Read from the database, so it is current the moment an upload lands — fresher than the `picture` claim in a session token, which is minted at sign-in.\n\n**TWO SHAPES, RETURNED AS STORED — the server never absolutises one into the other.** Branch on whether the value starts with `/`:\n\n- a ROOT-RELATIVE path, `/api/account/avatar/{userId}` — an avatar uploaded through this API. Resolve it against the API base and send your session cookie or bearer; it is `getUserAvatar`, and it 404s once the avatar is removed.\n- an ABSOLUTE `https://` URL on a THIRD-PARTY host (e.g. `https://lh3.googleusercontent.com/...`) — a provider photo from an OAuth sign-in. Fetch it exactly as given and attach NO credentials.\n\nBoth halves of that are failure modes somebody will otherwise hit: resolving an absolute provider URL against the API base 404s, and attaching your bearer token to it leaks the token to that host. Confirmed with the native client (agrent-ios#149): it handles both shapes, and leaving the value as stored is the deliberate choice, because an absolutised URL hides which host is about to be contacted.\n\nMay be ABSENT (not just null) from a server older than this field — treat absent as `null`, never as a third state.",
                 "example": "/api/account/avatar/clx8k2p9a0000qwer"
+              },
+              "deletion": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "requestedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "erasesAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "requestedAt",
+                  "erasesAt"
+                ],
+                "description": "A pending account deletion, or `null`. An ABSENT key means the same as `null` — pinned deliberately, so an older server cannot strand a client in a recovery screen it cannot leave. `erasesAt` is `requestedAt` plus the 30-day grace period, derived from the SAME constant the erasure sweep reads, so the date shown and the date the data goes cannot disagree; render it, do not recompute it. Both are ISO instants (`…Z`). Cancel with `DELETE /api/account/deletion` — signing in does NOT cancel, because a background session refresh would then undo a deliberate request. A SUSPENDED caller never sees this field: the route answers 403 first.",
+                "example": null
               }
             },
             "required": [
@@ -4360,7 +4382,8 @@
               "email",
               "name",
               "role",
-              "bottomTabOrder"
+              "bottomTabOrder",
+              "deletion"
             ]
           },
           "tenant": {
@@ -29580,7 +29603,7 @@
             }
           },
           "403": {
-            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries an English `message` as a developer-facing fallback; it is NOT translated, so render your own copy keyed on `code`. Route-level 403s carry their own codes and are described on the operation that returns them.\n\nOne route-level code is described HERE rather than per-operation. MOST operations cannot return it — it is confined to the five capability families named below — but it means the same thing on each of them, and one of the five (`upload`) is gated at a choke point that many unrelated routes reach, so an exhaustive per-operation list would be the kind that is wrong by omission:\n\n- `PAST_DUE_RESTRICTED` — a payment on this tenant failed and the 14-day grace period has elapsed. It is NOT a quota or a plan ceiling: the plan is untouched and nothing was exceeded. The withheld capabilities are exactly `exchange`, `trends`, `task.create`, `upload` and `journal.create`; every other surface, including reading everything already recorded, is unaffected. The tenant's own ACTIVE exchange listings stay visible to other farms and inbound threads keep arriving — this is the unpaid tenant's own view closing, not a withdrawal.\n\n  The restriction is COMPUTED per request, with no sweep and nothing to settle, so a cleared balance lifts it on the very next request — a client can honestly tell the user to resolve it and refresh. This description deliberately names no remedy beyond that: App Store guideline 3.1.1 keeps the native client from pointing anyone to pay outside the app, so a prescribed destination would be unreachable for one of the two clients (#1490). What both clients CAN do is distinguish this from `plan_limit_exceeded:` and say which happened.",
+            "description": "Carries `ACCOUNT_SUSPENDED` in `error.code` — the SAME shape and the same code as every other suspension refusal in this API, because it is the same throw. The account is suspended, so NOTHING else is returned: no `user`, no `tenant`, no `featureFlags` and in particular no `deletion`. Treat it as FINAL — re-authenticating succeeds and is refused again, so a client that retries loops. Show the suspension and offer sign-out. A moderator TERMINATING an account both suspends it and starts the erasure, so a terminated caller lands here rather than on the deletion-recovery path (#1652).",
             "content": {
               "application/json": {
                 "schema": {
