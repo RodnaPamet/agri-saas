@@ -840,6 +840,14 @@ executorRegistry.register('evidence-stale-review-sweep', async (payload) => {
     );
 });
 
+// ── notice-score ─────────────────────────────────────────────────────
+
+executorRegistry.register('notice-score', async (payload) => {
+    const { runNoticeScore } = await import('./notice-score');
+    const { result } = await runNoticeScore({ limit: payload.limit });
+    return result;
+});
+
 // ── statement-dispatch ───────────────────────────────────────────────
 
 executorRegistry.register('statement-dispatch', async (payload) => {

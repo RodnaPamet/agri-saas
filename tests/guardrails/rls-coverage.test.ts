@@ -222,6 +222,15 @@ const PLATFORM_ONLY_RLS_MODELS: ReadonlyMap<string, readonly string[]> = new Map
     // temptation to give `app_user` an insert arm is real. The capture runs on
     // the privileged path instead, as the moderation write does.
     ['ReportSnapshot', ['superuser_bypass']],
+    // P5.5b (#1596). Bypass-only, and the EQUALITY check matters here for a
+    // reason the others do not have: shadow mode means nothing may READ a
+    // score on a request path, so an arm added later would not merely widen
+    // access — it would be the first step of the exact violation
+    // `notice-score-is-shadow-only` exists to prevent. The two controls are
+    // the database and source halves of one rule, and neither subsumes the
+    // other: a platform-key route runs privileged and would read these rows
+    // fine, which is the moderation console the guard is about.
+    ['NoticeScore', ['superuser_bypass']],
 ]);
 
 // Models that are GLOBAL BY DESIGN — deliberately readable across every

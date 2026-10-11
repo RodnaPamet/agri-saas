@@ -186,6 +186,10 @@ describe('Executor Registry — structural tenant-scope guards', () => {
         // hold no farm or several. A tenantId here would be an invented answer
         // to a question the obligation does not ask.
         'statement-dispatch',
+        // notice-score (P5.5b) shadow-scores those same notices. Person-scoped
+        // for the same reason, and `NoticeScore` likewise carries no tenantId:
+        // the score is about a notice, and a notice belongs to no farm.
+        'notice-score',
         // PromotionLead is CROSS-tenant (inquirerTenantId, not tenantId) and is
         // swept globally in one pass — see job-scope-audit for the full reason.
         'promotion-lead-retention',
@@ -284,6 +288,9 @@ describe('Payload Type Contract — tenantId field audit', () => {
         // Person-scoped legal obligation: `StatementOfReasons` has no tenantId
         // and the recipient may hold no farm. See 'statement-dispatch' above.
         'StatementDispatchPayload',
+        // Person-scoped too: a notice belongs to no farm, so neither does its
+        // shadow score. See 'notice-score' above.
+        'NoticeScorePayload',
         // Calendar roadmap PR 3 — same GLOBAL shape as MarketNewsPullPayload
         // above; NewsDerivedEvent/MarketNewsItem carry no tenantId.
         'NewsEventExtractionPayload',

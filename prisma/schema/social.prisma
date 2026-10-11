@@ -414,3 +414,51 @@ model ReportSnapshot {
   @@index([subjectKind, subjectId])
   @@index([capturedAt])
 }
+
+/// The AI's shadow score for a notice (P5.5b, #1596).
+///
+/// SHADOW MODE is the constraint, not the feature: the score is written, and
+/// read by nothing that decides anything.
+/// `tests/guards/notice-score-is-shadow-only.test.ts` is what keeps it that
+/// way, because the easy way to violate it later is to order the triage queue
+/// by score — a decision path wearing a sort.
+///
+/// NOT a column on `ContentReport`, and that is settled rather than a
+/// preference: that table carries `content_report_reporter_read`, a ROW-level
+/// SELECT arm, and Postgres RLS is row-level rather than column-level — so
+/// every column on it is readable by the reporter. A score there would be
+/// readable by the person it was computed about. Same reasoning that put
+/// `ReportSnapshot` in its own table.
+model NoticeScore {
+  id String @id @default(cuid())
+
+  /// The notice scored. Not an FK, matching `ReportSnapshot`: an FK would force
+  /// an `onDelete`, and `Cascade` would destroy the evaluation record for a
+  /// notice that was deleted — which is the record you want when asking
+  /// whether the scorer was ever any good.
+  reportId String
+
+  /// 0-100, how likely this notice is to be abusive or vexatious. An integer
+  /// because a float implies a precision the model does not have, and because
+  /// any threshold anyone ever sets will be an integer.
+  score Int
+
+  /// The model's own stated reason, ENCRYPTED. Shadow mode means nobody acts on
+  /// this, but a human deciding whether the scorer is worth trusting has to
+  /// read its reasoning — and that reasoning quotes the notice, so this column
+  /// holds the notifier's free text at one remove.
+  rationale String
+
+  /// Resolved model id. A score with no provenance cannot be compared against
+  /// one produced after a model change, which is the whole point of a shadow
+  /// period.
+  model String
+
+  createdAt DateTime @default(now())
+
+  /// One score per notice. This UNIQUE is what makes the scorer idempotent:
+  /// "already scored" is a property of the table rather than a flag somebody
+  /// has to maintain, so a re-run cannot double-charge the platform budget.
+  @@unique([reportId])
+  @@index([createdAt])
+}

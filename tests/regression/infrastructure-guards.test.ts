@@ -138,7 +138,14 @@ describe('Infrastructure Regression Guards', () => {
             // exit criterion is a median handling time measured from
             // `createdAt` to `deliveredAt`, so delivery lag is the number
             // being reported.
-            expect(SCHEDULED_JOBS).toHaveLength(27);
+            // 27 → 28 (P5.5b): `notice-score`. Shadow-scores DSA notices for
+            // abuse likelihood, read by nothing that decides — see
+            // `tests/guards/notice-score-is-shadow-only.test.ts`, which is the
+            // real artefact of that phase. Quarter-hourly as a SAMPLING choice
+            // rather than a latency one: nothing waits on a score, and the
+            // cadence spreads the monthly platform AI budget (#1423) evenly
+            // across the month instead of spending it in a few runs.
+            expect(SCHEDULED_JOBS).toHaveLength(28);
         });
 
         test('scheduled job names match expected set', () => {
@@ -205,6 +212,10 @@ describe('Infrastructure Regression Guards', () => {
                 // on BARCHART_API_KEY — absent in this key-less test env — so it
                 // is deliberately not in this always-on set.)
                 'market-prices-pull',
+                // P5.5b — every 15 minutes, scores unscored DSA notices for
+                // abuse likelihood. SHADOW MODE: written, and read by nothing
+                // that decides anything.
+                'notice-score',
                 'notification-dispatch',
                 // Retention for promotion leads (contact PII): soft-delete past
                 // the window, then purge past the grace. Scheduled because the

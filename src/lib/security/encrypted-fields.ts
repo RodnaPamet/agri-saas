@@ -344,6 +344,11 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     // this is private conversation, which is the whole reason it lives on a
     // platform-only table rather than as a reporter-readable column.
     ReportSnapshot: ['body'],
+    // P5.5b (#1596). The model's stated reason for a notice's shadow score.
+    // Encrypted because that reasoning QUOTES the notice: asked why it scored
+    // something highly, a model answers by citing the text — so this column
+    // holds the notifier's free text at one remove.
+    NoticeScore: ['rationale'],
 
 } as const;
 

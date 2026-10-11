@@ -112,7 +112,13 @@ describe('Executor Registry — tenantId propagation audit', () => {
             // tenantId is non-nullable, could not be the outbox for it — and the
             // recipient may hold no farm or several, so resolving one would invent
             // a tenant for a person-scoped legal obligation.
-            if (['health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction', 'support-scheme-extraction', 'promotion-lead-retention', 'process-outbox', 'zero-success-route-check', 'unverified-account-sweep', 'mail-canary', 'statement-dispatch'].includes(jobName)) continue;
+            // notice-score (P5.5b) shadow-scores DSA notices, which are
+            // person-scoped: the signed-in report path runs `runInUserContext`
+            // and sets NO tenant, and the anonymous Art 16 path has no user at
+            // all. `ContentReport` and `NoticeScore` both carry no tenantId, so
+            // there is no tenant axis to scope by — and inventing one would
+            // charge an arbitrary farm for platform moderation work.
+            if (['health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction', 'support-scheme-extraction', 'promotion-lead-retention', 'process-outbox', 'zero-success-route-check', 'unverified-account-sweep', 'mail-canary', 'statement-dispatch', 'notice-score'].includes(jobName)) continue;
 
             // If the parameter is named _payload, it means tenantId is being ignored
             if (paramName.startsWith('_')) {

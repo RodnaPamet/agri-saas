@@ -183,10 +183,18 @@ describe('what gets recorded', () => {
     it('every job name in the ledger is one the module declares', () => {
         // The `job` column is a plain string, so the vocabulary lives here. A
         // fourth global job that forgot to register would still compile.
+        //
+        // That fourth job arrived: `notice-score` (P5.5b, #1596) shadow-scores
+        // DSA notices. It is the first entry whose VOLUME is set by the public
+        // rather than by a schedule over data we already hold — a notice
+        // arrives because somebody filed one on an endpoint that needs no
+        // credential — so it is the first for which this ceiling is
+        // load-bearing rather than prudent.
         expect([...PLATFORM_AI_JOBS]).toEqual([
             'field-briefing',
             'news-event-extraction',
             'support-scheme-extraction',
+            'notice-score',
         ]);
     });
 });
