@@ -101,11 +101,14 @@ export const GET = withApiErrorHandling(async () => {
     // `no-server-authored-user-copy` holds thrown sentences on a downward
     // ratchet and the client renders the code.
     //
-    // NINE OTHER ROUTES still resolve a session with a bare `auth()` and
-    // remain uncovered — `change-password` and the invite-acceptance pair are
-    // the ones that matter. #1652 carries them AND the guard that holds the
-    // count at zero, because repeating this block per route is how it gets
-    // forgotten on the tenth.
+    // The nine other routes that resolved a session with a bare `auth()` are
+    // FIXED (#1652, closed by #1658 — `src/lib/auth/session-gate.ts`), and the
+    // direct-`auth()` count under `src/app/api` is now held at zero by
+    // `api-routes-resolve-sessions-through-the-gate.test.ts`. This route is in
+    // that guard's allowlist on purpose: it reads `suspendedAt` off the
+    // `findUnique` it already runs, where the gate would cost a second lookup.
+    // Removing the check below therefore has to remove the allowlist entry too,
+    // which is what keeps the exemption honest.
     if (user?.suspendedAt) {
         throw codedForbidden('ACCOUNT_SUSPENDED', 'ACCOUNT_SUSPENDED');
     }

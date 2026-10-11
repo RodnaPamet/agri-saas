@@ -93,11 +93,20 @@ describe('refusal 1 — API keys', () => {
     it('refuses a bearer API key with 403', async () => {
         await expect(getUserCtx(req({ authorization: `Bearer ${API_KEY}` }))).rejects.toMatchObject({
             status: 403,
-            // A CODE, not prose. Pinned because the downward copy ratchet in
-            // `tests/guards/no-server-authored-user-copy.test.ts` exempts codes
-            // and counts prose, and a later "friendlier message" here would
-            // break that guard rather than this one.
-            message: 'API_KEY_NOT_PERSON_SCOPED',
+            // The code in `code`, which is where a client switches.
+            //
+            // This asserted `message: 'API_KEY_NOT_PERSON_SCOPED'` until #1645
+            // — it PINNED the defect. The comment it carried argued that a
+            // code beats prose because the copy ratchet exempts codes and
+            // counts prose, which is true and was never the question: the call
+            // site used `forbidden`, which takes a MESSAGE, so the code landed
+            // in `message` and `code` stayed at the generic `FORBIDDEN`.
+            // Asserting on `message` made the green test agree with it.
+            code: 'API_KEY_NOT_PERSON_SCOPED',
+            // And the message is a sentence now, not the token. Pinned so a
+            // future revert cannot put the code back in this field and still
+            // satisfy the assertion above.
+            message: 'An API key cannot be used on a person-scoped route.',
         });
     });
 
@@ -124,7 +133,13 @@ describe('refusal 2 — MFA-pending sessions', () => {
         getSessionOrThrow.mockResolvedValue({ ...SESSION, mfaPending: true });
         await expect(getUserCtx(req())).rejects.toMatchObject({
             status: 403,
-            message: 'MFA_REQUIRED',
+            // Agrees with `src/middleware.ts`'s tenant-path gate and with
+            // `assertSecondFactorPresented` in `context.ts`. Before #1645 this
+            // one gate answered the code in two different FIELDS depending on
+            // which half refused, so a client written against one silently
+            // failed against the other.
+            code: 'MFA_REQUIRED',
+            message: 'MFA verification required.',
         });
     });
 
@@ -160,8 +175,9 @@ describe('refusal 3 — operator-only users', () => {
             // ALL-CAPS, and that case is load-bearing: the copy ratchet
             // counts `operator_scope` as prose (two latin words) and exempts an
             // ALL-CAPS identifier as a code. All three refusals use codes for
-            // the same reason.
-            message: 'OPERATOR_SCOPE',
+            // the same reason — in the `code` field since #1645.
+            code: 'OPERATOR_SCOPE',
+            message: 'A machine operator cannot use this surface.',
         });
     });
 

@@ -3,7 +3,7 @@ import { assertCanViewAdminSettings } from '../policies/admin.policies';
 import { assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
-import { badRequest } from '@/lib/errors/types';
+import { badRequest, codedBadRequest } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { staleData } from '@/lib/errors/types';
 import { isUniqueViolation } from '@/lib/errors/prisma';
@@ -409,7 +409,14 @@ export async function upsertFarmProfile(
                     select: { eik: true },
                 });
                 if (norm(input.eik) !== (held?.eik ?? null)) {
-                    throw badRequest('FARM_PROFILE_EIK_NOT_EDITABLE');
+                    // Coded since #1645. `badRequest` takes a MESSAGE, so the
+                    // bare token used to land in `message` with a generic
+                    // `error.code`: nothing for a client to branch on, and a
+                    // farmer who could be shown `FARM_PROFILE_EIK_NOT_EDITABLE`.
+                    throw codedBadRequest(
+                        'FARM_PROFILE_EIK_NOT_EDITABLE',
+                        'The EIK of a verified farm cannot be changed.',
+                    );
                 }
             }
 

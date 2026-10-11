@@ -2261,10 +2261,14 @@ suspended account could rotate its own credential, or join a second farm and
 carry on there. `/api/auth/me` is fixed (403 `ACCOUNT_SUSPENDED`, #1619) because
 it hands out the `deletion` field that drives the native recovery screen, and a
 TERMINATED person — suspended AND erasure-pending — was being shown a recovery
-screen whose cancel the server refuses. **The remaining nine are #1652**, which
-also carries the guard that would hold the count at zero; `mfa/challenge/verify`
-is argued there as deliberately uncovered, because refusing at the MFA step
-reads as "wrong code" rather than "suspended account".
+screen whose cancel the server refuses. **The remaining nine were #1652, CLOSED by
+#1658**, which built `src/lib/auth/session-gate.ts` and
+`api-routes-resolve-sessions-through-the-gate.test.ts` — the guard holding the
+direct-`auth()` count under `src/app/api` at zero, with `/api/auth/me`
+allowlisted because it reads `suspendedAt` off the row it already fetches. That
+PR deliberately kept TWO helpers rather than one, because those ten routes
+answered an absent session in four different shapes and collapsing them inside
+a security fix would have been a breaking change riding along.
 
 Found by the native client reading this section against the route, not by a
 test. The lesson is `count-the-routes-a-gate-covers`: a gate named correctly,

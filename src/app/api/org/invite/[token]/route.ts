@@ -12,7 +12,7 @@
  * the tenant-invite redemption endpoint.
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/auth';
+import { authRefusingSuspended, authWithSuspension } from '@/lib/auth/session-gate';
 import {
     previewOrgInviteByToken,
     redeemOrgInvite,
@@ -43,7 +43,9 @@ export const GET = withApiErrorHandling(
         if (limitResponse) return limitResponse;
 
         const { token } = await routeArgs.params;
-        const session = await auth();
+        // Preview — proceeds for a suspended account, for the reason given on
+        // the tenant invite route next door (#1652).
+        const { session } = await authWithSuspension();
         const sessionEmail = session?.user?.email ?? null;
 
         const preview = await previewOrgInviteByToken(token, sessionEmail);
@@ -69,7 +71,9 @@ export const POST = withApiErrorHandling(
         const limitResponse = await applyRedeemRateLimit(req);
         if (limitResponse) return limitResponse;
 
-        const session = await auth();
+        // Refused for a suspended account (owner ruling, #1652) — the
+        // organisation half of the same hole.
+        const session = await authRefusingSuspended();
         if (!session?.user?.id || !session.user.email) {
             throw unauthorized('You must be signed in to accept an invite.');
         }

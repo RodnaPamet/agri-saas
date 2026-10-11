@@ -16,7 +16,7 @@
  */
 import { z } from 'zod';
 
-import { auth } from '@/auth';
+import { authRefusingSuspended } from '@/lib/auth/session-gate';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { withValidatedBody } from '@/lib/validation/route';
 import { jsonResponse } from '@/lib/api-response';
@@ -36,7 +36,9 @@ const ChangePasswordSchema = z
 
 export const POST = withApiErrorHandling(
     withValidatedBody(ChangePasswordSchema, async (req, _ctx, body) => {
-        const session = await auth();
+        // #1652: the suspension check lives in `getSessionOrThrow`, which this
+        // route does not reach — it resolved its own session with `auth()`.
+        const session = await authRefusingSuspended();
         if (!session?.user) {
             return jsonResponse({ error: 'Unauthorized' }, { status: 401 });
         }
