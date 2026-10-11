@@ -194,6 +194,10 @@ describe('Executor Registry — structural tenant-scope guards', () => {
         // tenant they ever dealt with. A tenantId would be contradictory, not
         // merely unused — the sweep's whole job is to span them.
         'account-erasure-sweep',
+        // notice-triage-alert (P5.8) mails the PLATFORM contact point. A notice
+        // belongs to no farm, and the recipient is a role mailbox rather than
+        // a tenant's compliance address.
+        'notice-triage-alert',
         // PromotionLead is CROSS-tenant (inquirerTenantId, not tenantId) and is
         // swept globally in one pass — see job-scope-audit for the full reason.
         'promotion-lead-retention',
@@ -298,6 +302,9 @@ describe('Payload Type Contract — tenantId field audit', () => {
         // Person-scoped: an account belongs to a person, who may hold several
         // farms or none. See 'account-erasure-sweep' above.
         'AccountErasureSweepPayload',
+        // Platform-scoped: the alert is about tenantless notices and goes to a
+        // role mailbox. See 'notice-triage-alert' above.
+        'NoticeTriageAlertPayload',
         // Calendar roadmap PR 3 — same GLOBAL shape as MarketNewsPullPayload
         // above; NewsDerivedEvent/MarketNewsItem carry no tenantId.
         'NewsEventExtractionPayload',

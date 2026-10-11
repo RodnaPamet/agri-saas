@@ -850,6 +850,14 @@ executorRegistry.register('evidence-stale-review-sweep', async (payload) => {
     );
 });
 
+// ── notice-triage-alert ──────────────────────────────────────────────
+
+executorRegistry.register('notice-triage-alert', async (payload) => {
+    const { runNoticeTriageAlert } = await import('./notice-triage-alert');
+    const { result } = await runNoticeTriageAlert({ limit: payload.limit });
+    return result;
+});
+
 // ── account-erasure-sweep ────────────────────────────────────────────
 
 executorRegistry.register('account-erasure-sweep', async (payload) => {

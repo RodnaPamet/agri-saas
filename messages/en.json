@@ -6558,6 +6558,12 @@
             "failed": "That could not be changed. Please try again."
         }
     },
+    "noticeTriage": {
+        "subject": "Agrent moderation — urgent: {urgent}, waiting: {total}",
+        "intro": "Notices waiting in the moderation queue: {total}. Of those, urgent: {urgent}. They are listed oldest first — the handling time is measured from the moment each was filed.",
+        "urgentLabel": "Urgent (illegal content, or harassment and hate):",
+        "consoleHint": "Open the moderation console to read the full notice and record a decision. The text of each notice is deliberately not included in this message."
+    },
     "statementOfReasons": {
         "subject": "A decision about your content on Agrent",
         "intro": "We are writing because we took a decision about something you posted on Agrent. This notice sets out what we did and why, as required by Article 17 of the EU Digital Services Act.",

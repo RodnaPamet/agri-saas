@@ -60,6 +60,8 @@ const REPORTER_SAFE: Readonly<Record<string, string>> = {
         'The category they picked from the enum. Their own input, read back; it is an enum precisely so a count by reason needs nobody to read a detail field.',
     detail:
         'Their own words. ENCRYPTED at rest, and decrypted under the global KEK for exactly this reader — see GLOBAL_KEK_MODELS.',
+    alertedAt:
+        'When a triage alert naming this notice was sent (P5.8). Reporter-visible and acceptable on its own terms: it says somebody was NOTIFIED, which is reassurance rather than disclosure — and under Art 16 a notifier is entitled to know their notice was received and is being handled. It reveals no moderator, no decision and no rationale; all of those live on ModerationAction, which denies app_user outright. Note what it is NOT: a triage clock. The handling time P5 measures runs to ModerationAction, so this column cannot be used to infer how long a decision took.',
     status:
         'DELIBERATE, and the one entry worth arguing. It reveals that a notice was TRIAGED, ACTIONED or REJECTED — which is an outcome the reporter is entitled to under DSA Art 16, and the reason the arm was wanted at all. It reveals no moderator identity, no rationale and no timing beyond its own row; all of that is on ModerationAction, which denies app_user outright.',
 };

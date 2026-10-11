@@ -151,7 +151,14 @@ describe('Infrastructure Regression Guards', () => {
             // waits, and 04:15 UTC keeps a multi-table transaction clear of
             // `data-lifecycle` at 04:00 and of the morning notification sweeps
             // — they would otherwise compete for a 12-connection pool.
-            expect(SCHEDULED_JOBS).toHaveLength(29);
+            // 29 → 30 (P5.8): `notice-triage-alert`. P5.4 built a triage
+            // queue; a queue nobody opens has a median handling time of
+            // infinity, and P5's exit criterion is under 24 hours. ONE message
+            // per run regardless of notice volume, because the notice route is
+            // unauthenticated and a per-notice mail would be an amplifier
+            // pointed at the mailbox that must stay readable during an
+            // incident.
+            expect(SCHEDULED_JOBS).toHaveLength(30);
         });
 
         test('scheduled job names match expected set', () => {
@@ -227,6 +234,9 @@ describe('Infrastructure Regression Guards', () => {
                 // abuse likelihood. SHADOW MODE: written, and read by nothing
                 // that decides anything.
                 'notice-score',
+                // P5.8 — every 10 minutes, mails the DSA contact point about
+                // notices awaiting triage. Silent while the address is unset.
+                'notice-triage-alert',
                 'notification-dispatch',
                 // Retention for promotion leads (contact PII): soft-delete past
                 // the window, then purge past the grace. Scheduled because the

@@ -325,6 +325,16 @@ export interface StatementDispatchPayload {
  * No `tenantId`: an account erasure is about a PERSON, and the person may hold
  * several farms or none. Recorded in both job tenant-scope audits.
  */
+/**
+ * The moderation triage alert (P5.8, #1599).
+ *
+ * No `tenantId`: a notice belongs to no farm, and the alert goes to the
+ * PLATFORM contact point. Recorded in both job tenant-scope audits.
+ */
+export interface NoticeTriageAlertPayload {
+    limit?: number;
+}
+
 export interface AccountErasureSweepPayload {
     /** Cap for this run. Defaults to 25. */
     limit?: number;
@@ -857,6 +867,7 @@ export interface JobPayloadMap {
     'statement-dispatch': StatementDispatchPayload;
     'notice-score': NoticeScorePayload;
     'account-erasure-sweep': AccountErasureSweepPayload;
+    'notice-triage-alert': NoticeTriageAlertPayload;
     'sync-pull': SyncPullPayload;
     'compliance-snapshot': ComplianceSnapshotPayload;
     'sla-monitor': SlaMonitorPayload;
@@ -1178,6 +1189,18 @@ export const JOB_DEFAULTS: Record<JobName, {
     // handled inside the job: it is caught, counted as skipped, and the row
     // stays undelivered for the next scheduled run — which is a retry with
     // the right granularity.
+    // P5.8 — ONE attempt. A retry would re-send the alert mail: the stamp
+    // happens only after the send resolves, so a run that failed mid-way has
+    // sent nothing and the next scheduled run is the retry. `attempts: 2`
+    // would mean two messages to the one mailbox that has to stay readable
+    // during an incident.
+    'notice-triage-alert': {
+        attempts: 1,
+        // Inert — `attempts: 1` leaves nothing to delay.
+        backoff: { type: 'exponential', delay: 10000 },
+        removeOnComplete: 200,
+        removeOnFail: 500,
+    },
     // P5.6b — ONE attempt. A retry would re-attempt accounts the run already
     // erased; `pseudonymisedAt` makes that a no-op rather than damage, but the
     // queue IS the absence of that marker, so the next DAILY run is the retry
