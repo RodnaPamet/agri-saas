@@ -102,29 +102,42 @@ const DELIBERATELY_UNGATED: Readonly<Record<string, string>> = {
     'src/app-layer/ai/vision/claude-vision-provider.ts':
         'A provider implementation for the vision surface; its callers hold the RequestContext and are where a budget decision belongs.',
 
-    // ── GLOBAL, tenant-less jobs: there is no tenant budget to charge ──
-    //
-    // Not an oversight, and this is the half #1345's suggested fix would have
-    // broken. The issue proposed gating at the provider factory as "the point
-    // every path reaches"; these three do not reach it at all. They talk to
-    // the Anthropic Messages API directly BECAUSE the router needs a tenant
-    // `RequestContext` to resolve budget and model policy, and a global job
-    // has none to supply. Each says so in its own docblock —
-    // `field-briefing.ts` is the documented template the other two copy.
-    //
-    // `assertAiSpendAllowed(ctx)` cannot be called here: there is no ctx, and
-    // inventing one would charge an arbitrary tenant for platform work.
-    //
-    // What IS missing is a PLATFORM-level cap on this spend — these jobs have
-    // no ceiling of any kind. That is a different control from a per-tenant
-    // budget and is filed separately rather than smuggled in here.
-    'src/app-layer/ai/field-briefing.ts':
-        'GLOBAL fail-safe helper with no tenant RequestContext — the repo template for this pattern. Gates on env.ANTHROPIC_API_KEY and returns null rather than throwing; there is no tenant whose budget could be charged.',
-    'src/app-layer/ai/news-event-extractor.ts':
-        'GLOBAL: MarketNewsItem is a tenant-less table and the daily job that calls this has no ctx. Returns an empty array on any failure, so extraction is advisory and degrades to "nothing proposed today".',
-    'src/app-layer/ai/support-scheme-extractor.ts':
-        'GLOBAL subsidy extraction, copied in shape from field-briefing for the same reason: a global job has no tenant, so there is no per-tenant budget to assert against.',
 };
+
+/**
+ * GLOBAL, tenant-less jobs: gated by the PLATFORM budget, not a tenant's.
+ *
+ * These three talk to the Anthropic Messages API directly and deliberately
+ * bypass `ai/routing.ts`. That is correct and must not be "fixed": the router
+ * needs a tenant `RequestContext` to resolve budget and model policy, and a
+ * global job has none to supply. `assertAiSpendAllowed(ctx)` cannot be called
+ * here — there is no ctx, and inventing one would charge an arbitrary tenant
+ * for platform work.
+ *
+ * They used to sit in `DELIBERATELY_UNGATED` with exactly that reasoning, and
+ * the entry closed by saying what was still missing: a PLATFORM-level cap, so
+ * that their spend had no ceiling of any kind. #1423 built it, and these are no
+ * longer exempt — they are gated by a different gate, which is a different
+ * claim from ungated and is why this is its own map rather than a looser
+ * `GATED` regex.
+ *
+ * Both calls are required. The assertion alone would cap against a total
+ * nothing contributes to, so the cap would never bind; the recording alone
+ * would give an operator a number with no lever. A file that does one and not
+ * the other is the failure this names.
+ */
+const PLATFORM_GATED: Readonly<Record<string, string>> = {
+    'src/app-layer/ai/field-briefing.ts':
+        'GLOBAL fail-safe helper with no tenant RequestContext — the repo template for this pattern. Gated by the platform AI budget (#1423) and records its tokens to the platform ledger.',
+    'src/app-layer/ai/news-event-extractor.ts':
+        'GLOBAL: MarketNewsItem is a tenant-less table and the daily job that calls this has no ctx. Gated by the platform AI budget (#1423); returns an empty array when refused, as it does on any other failure.',
+    'src/app-layer/ai/support-scheme-extractor.ts':
+        'GLOBAL subsidy extraction, copied in shape from field-briefing. Gated by the platform AI budget (#1423) rather than a per-tenant one, because a global job has no tenant to charge.',
+};
+
+/** The platform gate being CALLED, and the ledger write beside it. */
+const PLATFORM_ASSERTS = /\bisPlatformAiSpendAllowed\s*\(/;
+const PLATFORM_RECORDS = /\brecordPlatformAiUsage\s*\(/;
 
 const SPENDING = ALL.map(rel).filter((p) => {
     const code = codeOnly(readFileSync(join(ROOT, p), 'utf8'));
@@ -151,6 +164,21 @@ describe('§2 every spending path is gated, or recorded as not', () => {
         const code = withoutImports(codeOnly(readFileSync(join(ROOT, path), 'utf8')));
         const gated = GATED.test(code);
         const exempt = path in DELIBERATELY_UNGATED;
+        const platform = path in PLATFORM_GATED;
+
+        if (platform) {
+            // A different gate, not an absent one. Both halves are required —
+            // the assertion caps, the recording is what it caps against.
+            expect({ path, asserts: PLATFORM_ASSERTS.test(code) }).toEqual({
+                path,
+                asserts: true,
+            });
+            expect({ path, records: PLATFORM_RECORDS.test(code) }).toEqual({
+                path,
+                records: true,
+            });
+            return;
+        }
 
         if (!gated && !exempt) {
             throw new Error(
@@ -178,8 +206,21 @@ describe('§3 the exemption list has no stale entries', () => {
         expect(USES_FACTORY.test(code)).toBe(true);
     });
 
+    it.each(Object.keys(PLATFORM_GATED))('%s is platform-gated and still spends', (path) => {
+        // The same staleness check, for the same reason: an entry naming a file
+        // that no longer reaches a model keeps a path pre-approved for whatever
+        // is written there next.
+        const code = codeOnly(readFileSync(join(ROOT, path), 'utf8'));
+        expect(USES_FACTORY.test(code)).toBe(true);
+        // And it must not ALSO be exempt — the two maps are different claims.
+        expect(path in DELIBERATELY_UNGATED).toBe(false);
+    });
+
     it('every entry carries a real reason', () => {
-        for (const [path, reason] of Object.entries(DELIBERATELY_UNGATED)) {
+        for (const [path, reason] of Object.entries({
+            ...DELIBERATELY_UNGATED,
+            ...PLATFORM_GATED,
+        })) {
             expect(reason.length).toBeGreaterThan(40);
             expect(reason).not.toMatch(/TODO|TBD|FIXME/i);
             expect(path).toBeTruthy();
