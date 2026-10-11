@@ -186,6 +186,94 @@ describe('bullmq real-API smoke', () => {
         }, 30_000);
     });
 
+    describe('failure-code stamping (#1447)', () => {
+        let queue: Queue | undefined;
+        let worker: Worker | undefined;
+
+        afterAll(async () => {
+            await worker?.close().catch(() => undefined);
+            await queue?.close().catch(() => undefined);
+        });
+
+        it('updateData round-trips a failure stamp and PRESERVES the payload', async () => {
+            if (!redisAvailable) return;
+
+            // `job.updateData` is a BullMQ verb `scripts/worker.ts` now calls,
+            // so by this file's own rule it belongs here. It is also the only
+            // transport a failure CODE has: BullMQ persists `err.message` as
+            // `failedReason` and has no second field, so the worker writes the
+            // code into `job.data` and the poll route reads it back out.
+            //
+            // Two things have to hold and neither is ours to assume. The stamp
+            // must survive the write, and the PAYLOAD must survive it too —
+            // the poll routes read `job.data.tenantId` to prove the job is
+            // yours, so a clobbered payload would turn every subsequent poll
+            // into a 404 and look exactly like a tenant-isolation bug.
+            const { withFailureStamp } = await import('../../src/app-layer/jobs/failure-stamp');
+            const { readFailureStamp } = await import('../../src/app-layer/jobs/failure-stamp');
+
+            const QN = `${QUEUE}-stamp`;
+            queue = new Queue(QN, { connection: conn() });
+
+            // Shape copied from `processJob` in scripts/worker.ts: stamp, then
+            // throw — the throw is what makes BullMQ record `failedReason`.
+            worker = new Worker(
+                QN,
+                async (job) => {
+                    await job.updateData(
+                        withFailureStamp(job.data, {
+                            code: 'SPATIAL_IMPORT_TOO_COMPLEX',
+                            params: { vertices: 812_340, limit: 500_000 },
+                        }),
+                    );
+                    throw new Error('Import is too complex (812340 vertices; limit is 500000).');
+                },
+                { connection: conn(), concurrency: 1 },
+            );
+
+            const failed = new Promise<void>((resolve, reject) => {
+                worker!.on('failed', () => resolve());
+                worker!.on('completed', () => reject(new Error('job completed; it was meant to fail')));
+            });
+
+            const added = await queue.add(
+                'smoke-stamp',
+                { tenantId: 'tenant-1', locationId: 'loc-1', filename: 'parcels.zip' },
+                { attempts: 1 },
+            );
+            await failed;
+
+            // Re-read through the queue, the way the poll route does.
+            const reread = await queue.getJob(String(added.id));
+            expect(reread).toBeDefined();
+
+            const data = reread!.data as Record<string, unknown>;
+            // The payload survived — this is the tenant pin.
+            expect(data.tenantId).toBe('tenant-1');
+            expect(data.locationId).toBe('loc-1');
+            expect(data.filename).toBe('parcels.zip');
+
+            // And the code came back out, gated on the real BullMQ state.
+            const state = await reread!.getState();
+            expect(state).toBe('failed');
+            expect(readFailureStamp(data, state)).toEqual({
+                failedCode: 'SPATIAL_IMPORT_TOO_COMPLEX',
+                failedParams: { vertices: 812_340, limit: 500_000 },
+            });
+
+            // `failedReason` still carries the English, as the fallback.
+            expect(reread!.failedReason).toContain('too complex');
+
+            // Positive control: the SAME data read in a non-failed state
+            // publishes nothing — so the assertion above is testing the stamp
+            // and not merely that the fields exist.
+            expect(readFailureStamp(data, 'completed')).toEqual({
+                failedCode: null,
+                failedParams: null,
+            });
+        }, 30_000);
+    });
+
     describe('job scheduler API', () => {
         let queue: Queue | undefined;
         afterAll(async () => {

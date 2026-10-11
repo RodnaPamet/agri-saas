@@ -34,6 +34,7 @@ import { runJob } from '@/lib/observability/job-runner';
 import { runInTenantContext } from '@/lib/db-context';
 import { parseShapefileZip, type ParsedParcel } from '@/lib/spatial/parse';
 import { assertParcelComplexity, SpatialLimitError } from '@/lib/spatial/limits';
+import { CodedFailureError } from '@/lib/errors/coded-failure';
 import { ParcelRepository } from '@/app-layer/repositories/ParcelRepository';
 import { logEvent } from '@/app-layer/events/audit';
 import { computePermissions } from '@/lib/tenant-context';
@@ -69,9 +70,12 @@ async function buildJobContext(payload: CadastreImportJobPayload): Promise<Reque
         include: { customRole: true },
     });
     if (!membership) {
-        throw new Error(
-            `cadastre-import: user ${payload.initiatedByUserId} is not an active member of tenant ${payload.tenantId}`,
-        );
+        logger.error('cadastre-import.membership_missing', {
+            component: 'cadastre-import',
+            tenantId: payload.tenantId,
+            userId: payload.initiatedByUserId,
+        });
+        throw internalCadastreFailure();
     }
     const effectiveRole = membership.customRole?.baseRole ?? membership.role;
     const appPermissions = membership.customRole
@@ -161,6 +165,27 @@ async function resolveArchive(
     return { buffer: fetched.buffer, cached: false };
 }
 
+/**
+ * The one failure a farmer cannot act on — cadastre half.
+ *
+ * Mirrors `internalImportFailure` in `spatial-import.ts`. Three conditions
+ * here are broken invariants rather than refusals: the initiator's
+ * membership vanished, their write permission vanished, or the target
+ * location vanished, all between the POST and the worker. Each used to
+ * throw an English sentence with two raw cuids in it, and `failedReason` is
+ * rendered verbatim by the import modal.
+ *
+ * `CADASTRE_` and not `SPATIAL_` even though the condition is identical,
+ * for the same reason as the geometry codes: a client showing this knows
+ * which import the user was running and may word it differently.
+ */
+function internalCadastreFailure(): CodedFailureError {
+    return new CodedFailureError(
+        'The cadastre import could not be completed. Please try again.',
+        'CADASTRE_IMPORT_INTERNAL',
+    );
+}
+
 /** Job entry point — fetch + parse + select + persist requested parcels. */
 export async function runCadastreImport(
     payload: CadastreImportJobPayload,
@@ -168,13 +193,25 @@ export async function runCadastreImport(
     const jobRunId = crypto.randomUUID();
     return runJob('cadastre-import', async () => {
         if (!env.CADASTRE_OPENDATA_INDEX_URL) {
-            throw new Error('cadastre-import: CADASTRE_OPENDATA_INDEX_URL is not configured.');
+            // Its own code, not the internal one: this is REACHABLE and the
+            // remedy is real. The GET half of the route reports
+            // `{ enabled: false }` when КАИС is unconfigured, but the POST
+            // half does not gate on it — a client that enqueues anyway lands
+            // here, and «ask your administrator to configure КАИС» is a
+            // sentence worth being able to write in Bulgarian.
+            throw new CodedFailureError(
+                'Cadastre import is not configured on this deployment.',
+                'CADASTRE_NOT_CONFIGURED',
+            );
         }
         const ctx = await buildJobContext(payload);
         if (!ctx.permissions.canWrite) {
-            throw new Error(
-                `cadastre-import: user ${payload.initiatedByUserId} lacks write permission on tenant ${payload.tenantId}`,
-            );
+            logger.error('cadastre-import.write_permission_lost', {
+                component: 'cadastre-import',
+                tenantId: payload.tenantId,
+                userId: payload.initiatedByUserId,
+            });
+            throw internalCadastreFailure();
         }
 
         const client = new CadastreOpenDataClient({ baseUrl: env.CADASTRE_OPENDATA_INDEX_URL });
@@ -245,7 +282,12 @@ export async function runCadastreImport(
                 select: { id: true },
             });
             if (!location) {
-                throw new Error(`cadastre-import: location ${payload.locationId} not found for tenant ${ctx.tenantId}`);
+                logger.error('cadastre-import.location_missing', {
+                    component: 'cadastre-import',
+                    tenantId: ctx.tenantId,
+                    locationId: payload.locationId,
+                });
+                throw internalCadastreFailure();
             }
 
             // Topology check over every selected geometry (raw — SRID-independent).
@@ -258,13 +300,28 @@ export async function runCadastreImport(
                     tenantId: ctx.tenantId,
                     error: err instanceof Error ? err.message : String(err),
                 });
-                throw new SpatialLimitError('Cadastre import contains malformed geometry.', 422);
+                // CADASTRE_ and not SPATIAL_ for the three codes in this job,
+                // even though the three conditions are the same ones the
+                // upload path hits: the REMEDY is different, and the remedy is
+                // what a code exists to name. Nobody uploaded anything here —
+                // the geometry came from КАИС OpenData — so "fix the geometry
+                // and re-upload" would be nonsense advice to a farmer who only
+                // typed an identifier.
+                throw new SpatialLimitError(
+                    'Cadastre import contains malformed geometry.',
+                    'CADASTRE_GEOMETRY_UNPARSEABLE',
+                    422,
+                );
             }
             if (invalidNames.length > 0) {
                 const preview = invalidNames.slice(0, 5).join(', ');
                 throw new SpatialLimitError(
                     `Cadastre import contains ${invalidNames.length} invalid (self-intersecting) parcel(s): ${preview}.`,
+                    'CADASTRE_GEOMETRY_INVALID',
                     422,
+                    // Count only — the names are КАИС parcel designations in
+                    // the English message and do not belong in `params`.
+                    { count: invalidNames.length },
                 );
             }
 
@@ -279,6 +336,7 @@ export async function runCadastreImport(
                     throw new SpatialLimitError(
                         'Cadastre features are in projected metres but the source CRS (КС2005 / UTM 35N) ' +
                             'could not be resolved by reprojection.',
+                        'CADASTRE_SOURCE_CRS_UNRESOLVED',
                         422,
                     );
                 }

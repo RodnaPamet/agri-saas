@@ -19,6 +19,7 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { codedNotFound } from '@/lib/errors/types';
 import { jsonResponse } from '@/lib/api-response';
 import { getQueue } from '@/app-layer/jobs/queue';
+import { readFailureStamp } from '@/app-layer/jobs/failure-stamp';
 
 export const GET = withApiErrorHandling(
     async (
@@ -56,6 +57,14 @@ export const GET = withApiErrorHandling(
             // its `details` carries parcelCount / format / bounds.
             result: job.returnvalue ?? null,
             failedReason: job.failedReason ?? null,
+            // #1447 — the same refusal, switchable. `failedReason` is English
+            // free text and the import modal rendered it verbatim, so a
+            // Bulgarian farmer read «Import is too complex (…)» in English.
+            // The code and its scalars let the client write that sentence
+            // itself; the message stays as the fallback for an unrecognised
+            // code. Null on a job that has not failed, and null for a crash
+            // that named no code.
+            ...readFailureStamp(job.data, state),
         });
     },
 );

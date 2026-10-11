@@ -76,12 +76,13 @@ export const POST = withApiErrorHandling(async (req: NextRequest, { params: para
             // #1447 said its numbers were "a floor for that pattern, not the
             // total of all shape divergence"; this is what that means in
             // practice, and it was the most user-visible instance of all.
-            throw codedClientError(
-                err.statusCode,
-                err.code ?? 'SPATIAL_UPLOAD_REJECTED',
-                err.message,
-                err.params,
-            );
+            // `err.code` and not `err.code ?? 'SPATIAL_UPLOAD_REJECTED'`. The
+            // fallback was unreachable the day it was written — every thrower
+            // in the tree passed a code — so it documented a code the server
+            // could not send, which agrent-ios flagged. `code` is REQUIRED on
+            // `SpatialLimitError` as of #1447, so the type now carries the
+            // guarantee the `??` was pretending to need.
+            throw codedClientError(err.statusCode, err.code, err.message, err.params);
         }
         throw err;
     }

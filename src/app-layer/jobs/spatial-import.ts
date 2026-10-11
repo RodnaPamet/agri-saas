@@ -68,6 +68,7 @@ import {
     SpatialLimitError,
     assertParcelComplexity,
 } from '@/lib/spatial/limits';
+import { CodedFailureError } from '@/lib/errors/coded-failure';
 import { ParcelRepository } from '@/app-layer/repositories/ParcelRepository';
 import { logEvent } from '@/app-layer/events/audit';
 import { computePermissions } from '@/lib/tenant-context';
@@ -113,9 +114,19 @@ async function buildJobContext(payload: SpatialImportJobPayload): Promise<Reques
         include: { customRole: true },
     });
     if (!membership) {
-        throw new Error(
-            `spatial-import: user ${payload.initiatedByUserId} is not an active member of tenant ${payload.tenantId}`,
-        );
+        // INTERNAL invariant, not a refusal the uploader can act on — so one
+        // generic code, NO params, and the ids in the server log only. The
+        // message used to be `user <cuid> is not an active member of tenant
+        // <cuid>`, and `failedReason` is rendered verbatim by the import
+        // modal: two raw identifiers on a farmer's screen, in English, for a
+        // condition they cannot fix. See the code's docblock in
+        // `openapi/paths/locations.paths.ts` for what a client should show.
+        logger.error('spatial-import.membership_missing', {
+            component: 'spatial-import',
+            tenantId: payload.tenantId,
+            userId: payload.initiatedByUserId,
+        });
+        throw internalImportFailure();
     }
     const effectiveRole = membership.customRole?.baseRole ?? membership.role;
     const appPermissions = membership.customRole
@@ -157,7 +168,9 @@ async function parseWithBudget(args: {
             reject(
                 new SpatialLimitError(
                     `Parsing exceeded the ${SPATIAL_PARSE_TIMEOUT_MS / 1000}s budget. Simplify or split the upload.`,
+                    'SPATIAL_PARSE_TIMEOUT',
                     422,
+                    { seconds: SPATIAL_PARSE_TIMEOUT_MS / 1000 },
                 ),
             );
         }, SPATIAL_PARSE_TIMEOUT_MS);
@@ -170,6 +183,28 @@ async function parseWithBudget(args: {
 }
 
 /**
+ * The one failure a farmer cannot act on.
+ *
+ * Three conditions in this job are broken invariants rather than refusals:
+ * the uploader's membership vanished, their write permission vanished, or
+ * the target location vanished — all between the POST that staged the file
+ * and the worker that picked it up. Each used to throw an English sentence
+ * with two raw cuids in it, and `failedReason` is rendered verbatim by the
+ * import modal.
+ *
+ * One code for all three, deliberately: a client's only sensible response
+ * is the same in every case, and three codes would invite three unhelpful
+ * sentences. The distinguishing detail goes to the logger at the throw
+ * site, where it is actually useful.
+ */
+function internalImportFailure(): CodedFailureError {
+    return new CodedFailureError(
+        'The import could not be completed. Please try the upload again.',
+        'SPATIAL_IMPORT_INTERNAL',
+    );
+}
+
+/**
  * Job entry point — parse + validate + persist a staged spatial upload.
  */
 export async function runLocationSpatialImport(
@@ -179,9 +214,15 @@ export async function runLocationSpatialImport(
     return runJob('spatial-import', async () => {
         const ctx = await buildJobContext(payload);
         if (!ctx.permissions.canWrite) {
-            throw new Error(
-                `spatial-import: user ${payload.initiatedByUserId} lacks write permission on tenant ${payload.tenantId}`,
-            );
+            // Also internal: the POST route already gated on canWrite, so
+            // reaching here means the membership changed between enqueue and
+            // run. Nothing for the uploader to do but retry.
+            logger.error('spatial-import.write_permission_lost', {
+                component: 'spatial-import',
+                tenantId: payload.tenantId,
+                userId: payload.initiatedByUserId,
+            });
+            throw internalImportFailure();
         }
 
         // 1 — stream the staged bytes back from storage.
@@ -206,9 +247,15 @@ export async function runLocationSpatialImport(
                 select: { id: true, name: true },
             });
             if (!location) {
-                throw new Error(
-                    `spatial-import: location ${payload.locationId} not found for tenant ${ctx.tenantId}`,
-                );
+                // Internal for the same reason: the location existed when the
+                // upload was staged. Deleted mid-flight, or a tenant mismatch
+                // that the stage step should have caught.
+                logger.error('spatial-import.location_missing', {
+                    component: 'spatial-import',
+                    tenantId: ctx.tenantId,
+                    locationId: payload.locationId,
+                });
+                throw internalImportFailure();
             }
 
             // 4a — topology check (ST_IsValid) over every parcel in ONE
@@ -228,6 +275,7 @@ export async function runLocationSpatialImport(
                 });
                 throw new SpatialLimitError(
                     'Import contains malformed geometry that PostGIS refused to parse.',
+                    'SPATIAL_GEOMETRY_UNPARSEABLE',
                     422,
                 );
             }
@@ -236,7 +284,13 @@ export async function runLocationSpatialImport(
                 throw new SpatialLimitError(
                     `Import contains ${invalidNames.length} invalid (self-intersecting) parcel(s): ` +
                         `${preview}${invalidNames.length > 5 ? '…' : ''}. Fix the geometry and re-upload.`,
+                    'SPATIAL_GEOMETRY_INVALID',
                     422,
+                    // The COUNT travels; the names stay in the English message.
+                    // Parcel names come from inside the uploaded file and can
+                    // name a person, and `params` is the one field that must
+                    // stay clear of that.
+                    { count: invalidNames.length },
                 );
             }
 
@@ -256,7 +310,11 @@ export async function runLocationSpatialImport(
                         'The upload is in projected metres but its source CRS could not be resolved: ' +
                             'neither КС2005 (EPSG:7801) nor UTM 35N (EPSG:32635) reprojects it inside ' +
                             'Bulgaria. Re-export the layer as WGS84 / EPSG:4326 (or include a .prj) and re-upload.',
+                        'SPATIAL_SOURCE_CRS_UNRESOLVED',
                         422,
+                        // No params: the two candidate EPSG codes are
+                        // constants, so a client's own sentence can name them
+                        // without the server restating them per failure.
                     );
                 }
             }

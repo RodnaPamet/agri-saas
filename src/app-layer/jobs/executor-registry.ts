@@ -32,6 +32,7 @@
 import { logger } from '@/lib/observability/logger';
 import { recordJobMetrics } from '@/lib/observability/metrics';
 import { env } from '@/env';
+import { isCodedFailure } from '@/lib/errors/coded-failure';
 import type { JobName, JobPayload, JobRunResult } from './types';
 
 // ─── Executor Contract ──────────────────────────────────────────────
@@ -173,6 +174,13 @@ export const executorRegistry = {
             const errorMessage = error instanceof Error
                 ? error.message
                 : String(error);
+            // Lift the code OFF the thrown error, here, because this is the
+            // only place that still holds it: `execute` never rethrows, and
+            // the worker's `throw new Error(result.errorMessage)` keeps the
+            // sentence and drops everything else. Doing it here also means
+            // the cron and CLI entrypoints — which have no BullMQ job to
+            // stamp — get the code on the result for free (#1447).
+            const coded = isCodedFailure(error) ? error : undefined;
 
             logger.error('job executor threw', {
                 component: 'executor-registry',
@@ -196,6 +204,8 @@ export const executorRegistry = {
                 itemsActioned: 0,
                 itemsSkipped: 0,
                 errorMessage,
+                errorCode: coded?.code,
+                errorParams: coded?.params,
             };
         }
     },
