@@ -157,8 +157,57 @@ function scanFile(file: string, known: Set<string>, res: ScanResult): void {
 
     const declare = (name: ts.BindingName, ns: string | null): void => {
         if (ts.isIdentifier(name)) scopes[scopes.length - 1].set(name.text, ns);
-        // Destructuring never yields a translations function here.
+        // A destructured name that is NOT resolved positionally below still
+        // has to shadow an outer translations binding, or `const [t] = pair()`
+        // would let an enclosing `t` answer for it.
         else scopes[scopes.length - 1].set('__destructured__', null);
+    };
+
+    /**
+     * Pair an array pattern with `Promise.all([...])` by POSITION.
+     *
+     * This replaced the comment "Destructuring never yields a translations
+     * function here", which was true when written and is now false in four
+     * page files:
+     *
+     *     // t/[tenantSlug]/(app)/evidence/page.tsx:26
+     *     const [t, tc, ctx] = await Promise.all([
+     *         getTranslations('evidence'),
+     *         getTranslations('common'),
+     *         getTenantCtx({ tenantSlug }),
+     *     ]);
+     *
+     * Because the pattern bound nothing for `t`, `resolve('t')` returned
+     * `undefined` and all 56 literal calls in those files were SKIPPED rather
+     * than checked — this guard exists to catch a reference to a key that is
+     * not in the catalogue, and it was blind to the files most at risk of one.
+     * Nothing failed to say so, which is how a safety argument expires. Refs
+     * #1703.
+     *
+     * A position that is not a translator factory binds `null`, keeping the
+     * shadowing rule above.
+     */
+    const declarePositional = (
+        pattern: ts.ArrayBindingPattern,
+        init: ts.Expression,
+    ): boolean => {
+        let call: ts.Expression = init;
+        if (ts.isAwaitExpression(call)) call = call.expression;
+        if (!ts.isCallExpression(call)) return false;
+        if (!ts.isPropertyAccessExpression(call.expression)) return false;
+        if (call.expression.name.text !== 'all') return false;
+        const arr = call.arguments[0];
+        if (arr === undefined || !ts.isArrayLiteralExpression(arr)) return false;
+
+        pattern.elements.forEach((el, i) => {
+            if (!ts.isBindingElement(el) || !ts.isIdentifier(el.name)) return;
+            const part = arr.elements[i];
+            scopes[scopes.length - 1].set(
+                el.name.text,
+                part === undefined ? null : namespaceOf(part),
+            );
+        });
+        return true;
     };
 
     const visit = (node: ts.Node): void => {
@@ -181,7 +230,10 @@ function scanFile(file: string, known: Set<string>, res: ScanResult): void {
         }
 
         if (ts.isVariableDeclaration(node) && node.initializer) {
-            declare(node.name, namespaceOf(node.initializer));
+            const positional =
+                ts.isArrayBindingPattern(node.name) &&
+                declarePositional(node.name, node.initializer);
+            if (!positional) declare(node.name, namespaceOf(node.initializer));
         }
 
         if (ts.isCallExpression(node)) {
@@ -292,6 +344,65 @@ describe('the scanner has teeth — synthetic fixtures', () => {
     it('accepts a key that does exist — the positive control', () => {
         const r = scan(`const t = useTranslations('ns');\nexport const A = () => <p>{t('real')}</p>;`);
         expect(r.findings).toEqual([]);
+        expect(r.staticCalls).toBe(1);
+    });
+
+    it('resolves a translator destructured out of Promise.all', () => {
+        // False-positive class 4 (#1703). Before this, the array pattern bound
+        // nothing, `t` resolved to undefined, and the call was skipped — so a
+        // reference to a deleted key in any of the four real files that use
+        // this shape would have passed silently.
+        const r = scan(
+            `export default async function Page() {\n` +
+                `    const [t, tc, ctx] = await Promise.all([\n` +
+                `        getTranslations('ns'),\n` +
+                `        getTranslations('other'),\n` +
+                `        getTenantCtx({ tenantSlug }),\n` +
+                `    ]);\n` +
+                `    return <p>{t('missing')}{tc('real')}</p>;\n` +
+                `}`,
+        );
+        // `ns.missing` is caught, `other.real` passes — so the fix resolves
+        // BOTH positions rather than binding the first and defaulting the rest.
+        expect(r.findings.map((f) => f.key)).toEqual(['ns.missing']);
+        expect(r.staticCalls).toBe(2);
+    });
+
+    it('does not let a non-factory position inherit a namespace', () => {
+        // `ctx` is position 2 and must bind null, not `other` — a positional
+        // pairing that drifted by one would make this pass while attributing
+        // every key to the wrong namespace.
+        const r = scan(
+            `export default async function Page() {\n` +
+                `    const [t, ctx] = await Promise.all([\n` +
+                `        getTranslations('ns'),\n` +
+                `        getTenantCtx({ tenantSlug }),\n` +
+                `    ]);\n` +
+                `    return <p>{t('real')}{ctx('missing')}</p>;\n` +
+                `}`,
+        );
+        expect(r.findings).toEqual([]);
+        expect(r.staticCalls).toBe(1);
+    });
+
+    it('lets a non-factory position SHADOW an outer translator', () => {
+        // The case the previous test cannot see. With no outer binding, "binds
+        // null" and "binds nothing" are indistinguishable — removing the
+        // shadowing branch left both green, so this adds the outer `ctx` that
+        // makes them differ: unshadowed, `ctx('missing')` resolves against
+        // `ns` and the guard reports a key the code never asks for.
+        const r = scan(
+            `const ctx = useTranslations('ns');\n` +
+                `export default async function Page() {\n` +
+                `    const [t, ctx] = await Promise.all([\n` +
+                `        getTranslations('other'),\n` +
+                `        getTenantCtx({ tenantSlug }),\n` +
+                `    ]);\n` +
+                `    return <p>{t('real')}{ctx('missing')}</p>;\n` +
+                `}`,
+        );
+        expect(r.findings).toEqual([]);
+        // Not vacuous: `other.real` IS checked, so the scan reached the body.
         expect(r.staticCalls).toBe(1);
     });
 

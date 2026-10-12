@@ -49,6 +49,8 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { collectSourceFiles } from '../helpers/collect-files';
+
 interface Report {
     total: number;
     referenced: number;
@@ -377,6 +379,104 @@ describe('the i18n dead-key detector (#1534)', () => {
             for (const ns of ['taskEnums', 'knowledge.filters']) {
                 expect(report.undecidablePrefixes).toContain(ns);
             }
+        });
+    });
+
+    describe('a translator destructured out of Promise.all is resolved too', () => {
+        // Blind spot 5 (#1703). `BIND` requires an identifier on the left, and
+        // four page files bind by POSITION instead:
+        //
+        //     const [t, tc, ctx] = await Promise.all([
+        //         getTranslations('evidence'), getTranslations('common'),
+        //         getTenantCtx({ tenantSlug }),
+        //     ]);
+        //
+        // 56 literal calls resolved to nothing, so the keys they reach were
+        // reported dead — on the list whose purpose is to be deleted from.
+        // Found by reviewing `evidence` by hand: the detector called
+        // `evidence.title` dead with `t('title')` on line 40 of the page.
+        const SHAPE = /const\s*\[[^\]]*\]\s*=\s*(?:await\s+)?Promise\.all\(\s*\[/;
+
+        /**
+         * Files still using the shape — derived, because a curated list of
+         * four paths goes stale the moment one is refactored and then every
+         * assertion below passes for the wrong reason.
+         *
+         * Through `collectSourceFiles` rather than a hand-rolled walk: the
+         * first version was its own `readdirSync` recursion, which
+         * `file-collection-is-not-silently-empty` correctly refused — a
+         * hand-rolled collector can be gutted to return `[]` with every
+         * assertion built on it still green, measured at 81% of auditable
+         * guards. The helper refuses an empty result and names a renamed root.
+         */
+        const shapeFiles = collectSourceFiles({ roots: ['src'] }).filter((f) => {
+            const src = readFileSync(f, 'utf8');
+            return SHAPE.test(src) && /useTranslations|getTranslations/.test(src);
+        });
+
+        it('the shape is still used — the denominator', () => {
+            expect(shapeFiles.length).toBeGreaterThan(0);
+        });
+
+        it('keys reached only through that binding are no longer dead', () => {
+            // Each of these WAS in the dead set before the fix and is reached
+            // by a literal call in one of those files.
+            for (const key of [
+                'evidence.title',        // evidence/page.tsx:40  t('title')
+                'evidence.addEvidence',  // evidence/page.tsx:52
+                'evidence.listDescription',
+                'common.none',           // same file, the `tc` position
+                'admin.noEntries',       // admin/audit-log/page.tsx
+                'admin.action',
+            ]) {
+                expect(catalogueKeys).toContain(key);
+                expect(report.unreferencedKeys).not.toContain(key);
+            }
+        });
+
+        it('and the detector has NOT just become permissive — the control', () => {
+            // The collapse this catches: binding every destructured name to
+            // the first namespace in the array would resolve these six and
+            // also drain the dead set of keys that really are unreachable.
+            expect(report.unreferenced).toBeGreaterThan(100);
+            expect(report.unreferencedKeys).toContain('evidence.cadence');
+        });
+    });
+
+    describe('a ROOT translator with a computed key is resolved too', () => {
+        // Blind spot 6 (#1704). `createTranslator` was not a binder at all, so
+        // no namespace was associated with its `t` and none of the
+        // per-namespace rules fired. All 9 `errors.*` keys were reported dead
+        // the hour #1702 shipped them — freshly reviewed Bulgarian copy.
+        const errorKeys = catalogueKeys.filter((k) => k.startsWith('errors.'));
+
+        it('the namespace exists and is non-trivial — the denominator', () => {
+            expect(errorKeys.length).toBeGreaterThan(5);
+            expect(readFileSync(join(process.cwd(), 'src/lib/errors/localize.ts'), 'utf8'))
+                .toMatch(/createTranslator\(/);
+        });
+
+        it('every errors.* key is undecidable, not dead', () => {
+            for (const key of errorKeys) {
+                expect(report.unreferencedKeys).not.toContain(key);
+            }
+        });
+
+        it('the prefix came from the template heads the file builds', () => {
+            // `${NS}.${code}` has no static text before its first
+            // substitution, so the head is resolved by substituting the
+            // module-level `const NS = 'errors'`. Without that it collapses to
+            // the empty string and the prefix is not registered at all.
+            expect(report.undecidablePrefixes).toContain('errors');
+        });
+
+        it('and it did NOT mark the whole catalogue undecidable — the control', () => {
+            // The reason a root binding cannot use the ordinary rule: its
+            // namespace is the WHOLE catalogue, so "mark the namespace
+            // undecidable" would mark all 5572 keys and the report would
+            // decide nothing while every other assertion here still passed.
+            expect(report.undecidable / report.total).toBeLessThan(0.3);
+            expect(report.referenced).toBeGreaterThan(4000);
         });
     });
 

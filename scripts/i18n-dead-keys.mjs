@@ -231,12 +231,117 @@ for (const file of files) {
 }
 
 const BIND = /const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:await\s+)?(?:useTranslations|getTranslations)\(\s*['"]([^'"]+)['"]\s*\)/g;
+
+/**
+ * Bindings made by POSITION out of `Promise.all([...])`.
+ *
+ * `BIND` above requires an identifier on the left, and four page files bind a
+ * translator through an array pattern instead:
+ *
+ *     // t/[tenantSlug]/(app)/evidence/page.tsx:26
+ *     const [t, tc, ctx] = await Promise.all([
+ *         getTranslations('evidence'),
+ *         getTranslations('common'),
+ *         getTenantCtx({ tenantSlug }),
+ *     ]);
+ *
+ * 56 literal calls across those four files resolved to nothing, so every key
+ * they reach was reported unreferenced — 21 of the 42 `evidence` candidates,
+ * on the list whose purpose is to be deleted from. Found by reviewing
+ * `evidence` by hand: the detector called `evidence.title` dead with
+ * `t('title')` on line 40 of the page. Refs #1703.
+ *
+ * Commas are split at depth 0 so a call carrying its own arguments
+ * (`getTenantCtx({ tenantSlug })`) stays one element and the positions do not
+ * shift — getting that wrong would pair `tc` with the wrong namespace, which
+ * is worse than not resolving it at all.
+ */
+/** `createTranslator({ messages })` — a ROOT translator, no namespace. */
+const ROOT_BIND = /const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:await\s+)?createTranslator\(/g;
+
+const PROMISE_ALL = /const\s*\[([^\]]*)\]\s*=\s*(?:await\s+)?Promise\.all\(\s*\[/g;
+const FACTORY_ONLY = /^\s*(?:await\s+)?(?:useTranslations|getTranslations)\(\s*['"]([^'"]+)['"]\s*\)\s*$/;
+
+/**
+ * The static head of a template literal, substituting module-level consts.
+ *
+ * `` `${NS}.${code}` `` has NO static text before its first substitution, so
+ * taking the head verbatim yields `''` and the prefix collapses to the bare
+ * namespace. With `const NS = 'errors'` in scope it resolves to `errors.`,
+ * which is the answer. Refs #1704.
+ *
+ * Stops at the first substitution it cannot resolve — everything after that is
+ * genuinely unknown, and continuing would invent a prefix.
+ */
+function resolvedTemplateHead(body, consts) {
+    let head = '';
+    let i = 0;
+    while (i < body.length) {
+        const next = body.indexOf('${', i);
+        if (next === -1) return head + body.slice(i);
+        head += body.slice(i, next);
+        const close = body.indexOf('}', next);
+        if (close === -1) return head;
+        const expr = body.slice(next + 2, close).trim();
+        if (!consts.has(expr)) return head;
+        head += consts.get(expr);
+        i = close + 1;
+    }
+    return head;
+}
+
+/** Module-level `const NAME = 'literal'`, for the substitution above. */
+function stringConsts(code) {
+    const out = new Map();
+    for (const m of code.matchAll(/const\s+([A-Za-z_$][\w$]*)\s*=\s*['"]([^'"]+)['"]\s*;/g)) {
+        out.set(m[1], m[2]);
+    }
+    return out;
+}
+
+function promiseAllBindings(code) {
+    const out = [];
+    for (const m of code.matchAll(PROMISE_ALL)) {
+        // Walk to the `]` that closes the array, tracking nesting.
+        const start = m.index + m[0].length;
+        let depth = 0;
+        let i = start;
+        for (; i < code.length; i += 1) {
+            const c = code[i];
+            if (c === '[' || c === '(' || c === '{') depth += 1;
+            else if (c === ']' && depth === 0) break;
+            else if (c === ']' || c === ')' || c === '}') depth -= 1;
+        }
+        if (i >= code.length) continue; // unbalanced — resolve nothing
+
+        const elements = [];
+        let d = 0;
+        let cur = '';
+        for (const c of code.slice(start, i)) {
+            if (c === '[' || c === '(' || c === '{') d += 1;
+            else if (c === ']' || c === ')' || c === '}') d -= 1;
+            if (c === ',' && d === 0) { elements.push(cur); cur = ''; continue; }
+            cur += c;
+        }
+        elements.push(cur);
+
+        m[1].split(',').map((n) => n.trim()).forEach((name, idx) => {
+            // Skip a hole, a rest element or a nested pattern — anything whose
+            // position is not a plain name.
+            if (!/^[A-Za-z_$][\w$]*$/.test(name)) return;
+            const f = elements[idx] ? elements[idx].match(FACTORY_ONLY) : null;
+            if (f) out.push([name, f[1]]);
+        });
+    }
+    return out;
+}
 const referenced = new Set();
 const undecidablePrefixes = new Set();
 const allStrings = new Set();
 let literalCalls = 0;
 let dynamicCalls = 0;
 let wholeNamespaceDynamic = 0;
+const rootUnresolved = [];
 
 for (const file of files) {
     const code = blankComments(readFileSync(file, 'utf8'));
@@ -270,6 +375,58 @@ for (const file of files) {
         if (!vars.has(m[1])) vars.set(m[1], new Set());
         vars.get(m[1]).add(m[2]);
     }
+    for (const [name, ns] of promiseAllBindings(code)) {
+        if (!vars.has(name)) vars.set(name, new Set());
+        vars.get(name).add(ns);
+    }
+    // ── A ROOT translator: `createTranslator({ messages })` ──────────────
+    //
+    // `lib/errors/localize.ts` is the only one, and it defeated resolution
+    // twice over: `createTranslator` was not a binder, so no namespace was
+    // ever associated with its `t`; and the key reaches `t(key)` as a
+    // VARIABLE, built three statements earlier. All 9 `errors.*` keys were
+    // reported dead the hour #1702 shipped them. Refs #1704.
+    //
+    // The namespace is the WHOLE catalogue, so the bare-identifier rule above
+    // — mark the namespace undecidable — would mark all 5572 keys and the
+    // report would decide nothing. Instead the prefixes come from the template
+    // literals the FILE builds: the keys a root translator can reach are the
+    // ones its own file constructs.
+    for (const m of code.matchAll(ROOT_BIND)) {
+        const esc = m[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // Only when the key is actually computed. A root translator called
+        // with a literal resolves like any other and needs none of this.
+        const computed = new RegExp(`\\b${esc}(?:\\.(?:has|rich|raw|markup))?\\(\\s*[A-Za-z_$][\\w$.]*\\s*[,)]`);
+        if (!computed.test(code)) continue;
+
+        const consts = stringConsts(code);
+        let resolvedAny = false;
+        for (const t of code.matchAll(/`([^`]*)`/g)) {
+            if (!t[1].includes('${')) continue;
+            const head = resolvedTemplateHead(t[1], consts);
+            const cut = head.lastIndexOf('.');
+            if (cut === -1) continue;
+            const prefix = head.slice(0, cut);
+            // Accept a prefix only when the catalogue holds keys under it. A
+            // mis-resolved head would otherwise widen the undecidable set
+            // silently, which is the one failure that makes every number here
+            // look fine while deciding nothing.
+            let covers = false;
+            for (const k of keys) {
+                if (k.startsWith(`${prefix}.`)) { covers = true; break; }
+            }
+            if (!covers) continue;
+            undecidablePrefixes.add(prefix);
+            resolvedAny = true;
+        }
+        dynamicCalls += 1;
+        if (!resolvedAny) {
+            // A root translator with a computed key and no resolvable head
+            // could reach anything. Say so rather than absorbing it.
+            rootUnresolved.push(file.replace(`${REPO}/`, ''));
+        }
+    }
+
     if (vars.size === 0) continue;
 
     for (const [name, namespaces] of vars) {
@@ -341,6 +498,8 @@ for (const file of files) {
         }
       }
     }
+
+
 }
 
 // ── Server-side emails use a DIFFERENT mechanism (#1534 follow-up) ──
