@@ -61,8 +61,21 @@ import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
 /** `await auth()` / `auth()` — the raw NextAuth session resolver. */
 const RAW_AUTH = /(?<![A-Za-z0-9_$.])auth\s*\(\s*\)/g;
 
-/** The two doors in `@/lib/auth/session-gate`. */
-const GATE = /\bauth(?:RefusingSuspended|WithSuspension)\s*\(\s*\)/g;
+/**
+ * The two doors in `@/lib/auth/session-gate`.
+ *
+ * The parameter list is NOT required to be empty. It was —
+ * `\(\s*\)` — and #1656 gave `authRefusingSuspended` an optional refusal
+ * record, so the two invite-acceptance routes started calling it with an
+ * argument and **stopped being counted as gated**. The count fell from 9 to 8
+ * and tripped the floor below, which is the only reason it was noticed.
+ *
+ * That is the `a-needle-loses-the-thread-at-a-rename` shape with an argument
+ * instead of a rename: the call was still there, still the gate, and the
+ * detector had gone blind to it. A detector for "does this route use the gate"
+ * must not care what the gate is passed.
+ */
+const GATE = /\bauth(?:RefusingSuspended|WithSuspension)\s*\(/g;
 
 /**
  * Routes allowed to call the raw `auth()`.
@@ -156,7 +169,12 @@ describe('API routes resolve sessions through the suspension gate (#1652)', () =
         expect(files.length).toBeGreaterThan(200);
         // The gate has to be WIRED, or "zero raw callers" is satisfied by a
         // tree where nothing authenticates at all.
-        expect(gateCalls).toBeGreaterThanOrEqual(9);
+        //
+        // Raised 9 -> 10 at #1656's two invite-acceptance calls. To the LIVE
+        // count rather than left with slack: this floor is the only thing that
+        // noticed the detector above going blind, and it could only notice
+        // because it had none.
+        expect(gateCalls).toBeGreaterThanOrEqual(10);
     });
 
     it('has no unexcused raw auth() call', () => {

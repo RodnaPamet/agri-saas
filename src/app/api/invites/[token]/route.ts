@@ -69,16 +69,30 @@ export const POST = withApiErrorHandling(
         const limitResponse = await applyRedeemRateLimit(req);
         if (limitResponse) return limitResponse;
 
+        // Read BEFORE the gate, because the gate records what was refused
+        // (#1656) and the invite is how the refusal is identified. Reading
+        // route params has no side effect, so the order is free.
+        const { token } = await routeArgs.params;
+
         // Refused for a suspended account (owner ruling, #1652): a moderator
         // suspends somebody and that account could otherwise JOIN A SECOND FARM
         // and carry on there under a fresh membership. The invite is left
         // PENDING rather than consumed, so it still works after a lift.
-        const session = await authRefusingSuspended();
+        //
+        // The refusal is RECORDED in the moderation chain (#1656, owner ruling:
+        // platform admins only). Nothing is sent to the inviter — see
+        // `recordSuspendedRefusal` for why that is the ruling rather than a
+        // gap, and note the record is the only durable trace: this invite's
+        // token is consumed or deleted later, and a refusal leaves nothing else.
+        const session = await authRefusingSuspended({
+            attempted: 'INVITE_ACCEPTANCE',
+            surface: 'TENANT',
+            token,
+        });
         if (!session?.user?.id || !session.user.email) {
             throw unauthorized('You must be signed in to accept an invite.');
         }
 
-        const { token } = await routeArgs.params;
         const result = await redeemInvite({
             token,
             userId: session.user.id,

@@ -14,6 +14,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { authWithSuspension } from '@/lib/auth/session-gate';
+import { recordSuspendedRefusal } from '@/lib/auth/suspended-refusal-audit';
 import { resolvePublicOrigin } from '@/lib/http/request-origin';
 import { redeemInvite } from '@/app-layer/usecases/tenant-invites';
 import { INVITE_REDEEM_LIMIT } from '@/lib/security/rate-limit';
@@ -56,6 +57,17 @@ export async function GET(
         // server-authored English on a ratchet. `?error=ACCOUNT_SUSPENDED`
         // matches what every other gate answers and the page can key its own
         // Bulgarian copy on it.
+        // Recorded for platform admins (#1656). `recordSuspendedRefusal`
+        // directly rather than through the gate's parameter, because this
+        // route refuses by REDIRECTING and so uses the non-throwing door —
+        // the recorder is the shared piece, and the gate's parameter is only
+        // a convenience for callers that throw.
+        await recordSuspendedRefusal(session.user.id, {
+            attempted: 'INVITE_ACCEPTANCE',
+            surface: 'TENANT',
+            token,
+        });
+
         const inviteUrl = new URL(`/invite/${token}`, origin);
         inviteUrl.searchParams.set('error', 'ACCOUNT_SUSPENDED');
         return NextResponse.redirect(inviteUrl);

@@ -22,6 +22,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { authWithSuspension } from '@/lib/auth/session-gate';
+import { recordSuspendedRefusal } from '@/lib/auth/suspended-refusal-audit';
 import { resolvePublicOrigin } from '@/lib/http/request-origin';
 import { redeemOrgInvite } from '@/app-layer/usecases/org-invites';
 import { INVITE_REDEEM_LIMIT } from '@/lib/security/rate-limit';
@@ -59,6 +60,14 @@ async function handle(
     if (suspended) {
         // Before `redeemOrgInvite`, so the invite stays pending. Code, not
         // prose — see the tenant route.
+        // Recorded (#1656) — see the tenant route for why directly rather
+        // than through the gate.
+        await recordSuspendedRefusal(session.user.id, {
+            attempted: 'INVITE_ACCEPTANCE',
+            surface: 'ORG',
+            token,
+        });
+
         const inviteUrl = new URL(`/invite/org/${token}`, origin);
         inviteUrl.searchParams.set('error', 'ACCOUNT_SUSPENDED');
         return NextResponse.redirect(inviteUrl, 303);

@@ -129,7 +129,6 @@ describe('§1 the population this covers', () => {
     it('prints the gated paths and the allowlist', () => {
         // Visible denominator. If either list shrinks to nothing, the suite
         // below is vacuous and this line is where that shows.
-        // eslint-disable-next-line no-console -- the denominator IS the output
         console.log(
             `[terms-gate] gated=${Object.keys(GATED).length} ` +
                 `(${Object.values(GATED).join(', ')}) ` +
