@@ -161,6 +161,15 @@ export function commonErrorResponses(): RouteConfig['responses'] {
                 'one of the five (`upload`) is gated at a choke point that many unrelated ' +
                 'routes reach, so an exhaustive per-operation list would be the kind that ' +
                 'is wrong by omission:\n\n' +
+                '- `ACCOUNT_DELETION_PENDING` — this person asked to delete their account ' +
+                'and is inside the 30-day grace period, so the account creates nothing new. ' +
+                'It is NOT a moderator action and NOT a permission problem: do not offer an ' +
+                'appeal. Reachable on any MUTATION outside `/api/auth/**` and ' +
+                '`/api/account/**`, which stay open precisely so the way out stays open — ' +
+                '`DELETE /api/account/deletion` cancels it, and the person recovers their ' +
+                'account and their listings in full. Reads are unaffected, and ' +
+                '`GET /api/account/export` keeps working, because a right of access does ' +
+                'not lapse because a right of erasure was invoked.\n\n' +
                 '- `PAST_DUE_RESTRICTED` — a payment on this tenant failed and the 14-day ' +
                 'grace period has elapsed. It is NOT a quota or a plan ceiling: the plan is ' +
                 'untouched and nothing was exceeded. The withheld capabilities are exactly ' +

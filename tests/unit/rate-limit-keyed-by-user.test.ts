@@ -171,9 +171,23 @@ describe('an authenticated mutation is keyed by user, not IP alone', () => {
         expect(lastKey()).not.toContain('usr_admin');
     });
 
-    it('getBucket still replaces the caller key, and skips the decode', async () => {
+    it('getBucket still replaces the caller key', async () => {
         // #1161: a bucketed route caps a SHARED resource, so the identity is
-        // irrelevant — and resolving it would be a JWE decode thrown away.
+        // irrelevant TO THE KEY — which is the property that matters and is
+        // asserted below, unchanged.
+        //
+        // #1161 also skipped the JWE decode on this path, as waste. That is no
+        // longer true and the change is deliberate: #1655's deletion freeze
+        // asks a question about the CALLER, and the one live bucketed mutation
+        // route is `exchange/threads/[threadId]/messages` — sending a message,
+        // which is precisely the content a frozen account must not create. An
+        // identity irrelevant to the key is not irrelevant to every control.
+        //
+        // So the decode is back, once, and `callerUserId` carries it separately
+        // from the budget-bounding `userId`. The assertion that would catch a
+        // regression here is the KEY one: if a future change let the caller
+        // leak into the key, a per-caller split would quietly replace the
+        // shared-resource cap.
         getToken.mockResolvedValue({ sub: 'usr_abc' });
         const handler = withApiErrorHandling(
             async () => new Response('{}', { status: 200 }),
@@ -183,8 +197,9 @@ describe('an authenticated mutation is keyed by user, not IP alone', () => {
         await handler(post(), { params: Promise.resolve({}) });
 
         expect(lastKey()).toBe('exchange-message:t:acme');
-        // The decode is skipped entirely on this path.
-        expect(getToken).not.toHaveBeenCalled();
+        // Resolved for the freeze, and EXACTLY ONCE — a second decode per
+        // message send is the waste #1161 was right about.
+        expect(getToken).toHaveBeenCalledTimes(1);
     });
 
     it('a GET is not rate-limited by this tier, and pays no decode', async () => {

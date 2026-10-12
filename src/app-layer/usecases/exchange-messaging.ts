@@ -442,9 +442,20 @@ export async function openExchangeThread(ctx: RequestContext, listingId: string)
             // `sellerUserId` for the person-block check below — the member who
             // LISTED it, which is the only person the seller side of a thread
             // names.
-            select: { id: true, sellerTenantId: true, sellerUserId: true },
+            // `suppressedForDeletionAt` for #1655 — a listing whose seller
+            // asked to delete their account cannot start a NEW conversation.
+            select: {
+                id: true, sellerTenantId: true, sellerUserId: true,
+                suppressedForDeletionAt: true,
+            },
         });
-        if (!listing) throw codedNotFound('LISTING_NOT_FOUND', 'That listing was not found.');
+        // #1655 rides the existing throw, which is both the silence wanted and
+        // one fewer server-authored sentence. This path filtered on `id` alone,
+        // so a saved link could open a thread against a listing the feed had
+        // already stopped showing.
+        if (!listing || listing.suppressedForDeletionAt) {
+            throw codedNotFound('LISTING_NOT_FOUND', 'That listing was not found.');
+        }
 
         // A seller cannot open a thread against their own listing: there would
         // be no second party. They reply to threads buyers open.

@@ -123,7 +123,18 @@ describe('ExchangeRepository.listActiveListings', () => {
     it('adds no facet keys when no filters are supplied', async () => {
         await ExchangeRepository.listActiveListings(asTx(db));
 
-        expect(Object.keys(whereOf(db.exchangeListing.findMany)).sort()).toEqual(['AND', 'status']);
+        // `status` and `suppressedForDeletionAt` are BASE predicates, not
+        // facets: both apply on every browse regardless of what the farmer
+        // asked for. The property this pins is that an absent filter adds no
+        // key — so a facet silently defaulting to a value, which would narrow
+        // the market without anyone choosing to, still fails here.
+        //
+        // `suppressedForDeletionAt` joined the base set in #1655: a seller who
+        // asked to delete their account is withheld from other farms for the
+        // 30-day grace period, which is what the privacy notice promises.
+        expect(Object.keys(whereOf(db.exchangeListing.findMany)).sort()).toEqual([
+            'AND', 'status', 'suppressedForDeletionAt',
+        ]);
     });
 
     it('selects facet values exactly — a facet is a chosen set, not a prefix', async () => {
