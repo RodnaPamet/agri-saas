@@ -296,8 +296,13 @@ export const PUBLIC_READ_LIMIT: RateLimitConfig = {
  * Per-SUBJECT capping is deliberately not done here. It is the control that
  * would actually catch brigading, and it has the wrong failure mode: the first
  * few notices would suppress later legitimate ones about the same content.
- * P5.2 records a per-subject count without enforcing it, so a threshold can be
- * chosen from data.
+ * A per-subject count IS now recorded — but it was not when this paragraph
+ * first claimed it, and the claim mattered: the justification for not capping
+ * per-subject was that data would be available to choose a threshold from, and
+ * nothing anywhere computed such a count (#1600). The capability had been
+ * indexed for — `ContentReport.@@index([subjectKind, subjectId])` — and never
+ * built. `listNotices` computes it now, DISPLAY ONLY, so a threshold can
+ * genuinely be chosen from data before any enforcement is added here.
  */
 export const PUBLIC_NOTICE_LIMIT: RateLimitConfig = {
     maxAttempts: 10,

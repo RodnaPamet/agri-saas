@@ -220,3 +220,125 @@ describe('§4 the detector can tell a read from a declaration', () => {
         `)).toBe(false);
     });
 });
+
+/**
+ * §4 — `subjectNoticeCount` is display-only too (#1600).
+ *
+ * ## Why this guard had to grow a second subject
+ *
+ * §1-§3 cover `NoticeScore`, a model, by name. #1600 added
+ * `QueuedNotice.subjectNoticeCount` — how many notices exist about the same
+ * subject — and the owner ruled it DISPLAY ONLY for the reason this whole file
+ * exists: a number that orders the triage queue decides which Art 16 notices a
+ * human reads first.
+ *
+ * **The existing sections could not have caught it.** They match a MODEL name;
+ * the count is a computed field on a return type, with no model of its own. So
+ * a `sortBy(notices, n => -n.subjectNoticeCount)` in a console or an
+ * `orderBy` derived from it would have been invisible here — a guard aimed one
+ * level off its target, which is `a-guard-that-grades-the-wrong-thing`.
+ *
+ * ## The distinction being enforced
+ *
+ * A raw count is a FACT, unlike a model score, and a moderator reading "5
+ * notices about this listing" is exactly the point of computing it. What is
+ * forbidden is the count becoming the ORDER — report volume is the one signal
+ * a brigade can drive directly, so ordering by it rewards the brigading that
+ * `PUBLIC_NOTICE_LIMIT`'s docblock says per-subject capping would otherwise
+ * catch.
+ *
+ * Reading it, formatting it, and displaying it are all fine. Sorting or
+ * filtering the queue on it is not.
+ */
+const COUNT_FIELD = 'subjectNoticeCount';
+
+/** A sort or filter keyed on the count, with comments stripped first. */
+function ordersByCount(src: string): boolean {
+    const code = blankNonCode(src);
+    if (!code.includes(COUNT_FIELD)) return false;
+    return (
+        // `orderBy: { subjectNoticeCount: ... }` or a Prisma-shaped sort
+        /orderBy[\s\S]{0,80}subjectNoticeCount/.test(code) ||
+        // `.sort(...)` / `sortBy(...)` with the field inside the comparator
+        /\.sort\s*\([\s\S]{0,160}subjectNoticeCount/.test(code) ||
+        /sortBy[\s\S]{0,120}subjectNoticeCount/.test(code) ||
+        // a threshold filter — the other half, per §3's lesson that a rule
+        // about sorts passes a filter and vice versa. Only the
+        // FIELD-then-OPERATOR direction, and the operator must be adjacent:
+        //
+        // the mirror form (`operator ... field`) matched JSX, because the `>`
+        // closing `<span>` sits within a few characters of
+        // `{notice.subjectNoticeCount}`. That is a matcher tripping on syntax
+        // rather than on its subject, and it reported the one usage the field
+        // exists FOR — rendering it — as a violation. An inverted comparison
+        // (`5 <= n.count`) is now uncaught, which is the right trade: a guard
+        // that cries wolf on every display site is one somebody deletes.
+        /subjectNoticeCount\s*(>=|<=|>|<)[^=]/.test(code) ||
+        /subjectNoticeCount[\s\S]{0,30}\b(gte|gt|lte|lt)\s*:/.test(code)
+    );
+}
+
+describe('§4 the per-subject count never orders or filters the queue', () => {
+    it('no file in the repo sorts or filters on it', () => {
+        // `ALL` is this file's existing population — `collectSourceFiles({
+        // roots: ['src'], floor: 1500 })` — reused rather than re-derived, so
+        // §4 cannot end up scanning a different tree from §1-§3.
+        const offenders = ALL
+            .filter((p) => ordersByCount(readFileSync(p, 'utf8')))
+            .map(rel);
+
+        // The denominator printed, so a selection that stopped matching
+        // anything cannot read as a pass — the `a-gate-narrow-enough-to-
+        // always-pass` rule.
+        const mentioning = ALL.filter((p) =>
+            blankNonCode(readFileSync(p, 'utf8')).includes(COUNT_FIELD),
+        ).length;
+
+        expect({ offenders, filesMentioningTheCount: mentioning })
+            .toEqual({ offenders: [], filesMentioningTheCount: mentioning });
+        // A positive control on the population: if nothing mentions the field
+        // at all, the scan above proves nothing and the field has been renamed
+        // or removed without this guard following it.
+        expect(mentioning).toBeGreaterThan(0);
+    });
+
+    it('catches a Prisma orderBy on the count', () => {
+        expect(ordersByCount(`
+            const rows = await prisma.contentReport.findMany({
+                orderBy: { subjectNoticeCount: 'desc' },
+            });
+        `)).toBe(true);
+    });
+
+    it('catches an in-memory sort on the count', () => {
+        expect(ordersByCount(`
+            const worst = notices.sort((a, b) => b.subjectNoticeCount - a.subjectNoticeCount);
+        `)).toBe(true);
+    });
+
+    it('catches a threshold filter on the count', () => {
+        expect(ordersByCount(`
+            const brigaded = notices.filter((n) => n.subjectNoticeCount >= 5);
+        `)).toBe(true);
+    });
+
+    it('does NOT catch merely reading or rendering it', () => {
+        // The half that keeps the field usable for the purpose it was built
+        // for: a moderator has to be able to see the number.
+        expect(ordersByCount(`
+            return <span>{notice.subjectNoticeCount} notices about this subject</span>;
+        `)).toBe(false);
+        expect(ordersByCount(`
+            const label = String(notice.subjectNoticeCount);
+        `)).toBe(false);
+    });
+
+    it('does NOT catch a comment explaining the rule', () => {
+        expect(ordersByCount(`
+            // Deliberately NOT ordered by subjectNoticeCount >= anything:
+            // report volume is a signal a brigade can drive.
+            const notices = rows.sort((a, b) => +a.createdAt - +b.createdAt);
+        `)).toBe(false);
+    });
+});
+
