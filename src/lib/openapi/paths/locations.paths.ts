@@ -799,10 +799,15 @@ export function registerLocationPaths(registry: OpenAPIRegistry): void {
         operationId: 'createLocation',
         summary: 'Create a location',
         description:
-            'A plan gate runs first: a FREE tenant at its farm/field cap gets 403 with a message ' +
-            'beginning `plan_limit_exceeded:` — a permission-shaped status for a billing ' +
-            'condition, so do not treat every 403 here as "not allowed". Parcels are added ' +
-            'afterwards, by import or by drawing.',
+            'A plan gate runs first: a FREE tenant at its farm/field cap gets 403 with ' +
+            '`code: "PLAN_LIMIT_EXCEEDED"` and `params` carrying `plan`, `resource`, ' +
+            '`limit` and `current` (#1679) — a permission-shaped status for a billing ' +
+            'condition, so do not treat every 403 here as "not allowed". The shared 403 ' +
+            'description says what the code means and what a client should do with it. ' +
+            'The `message` still BEGINS `plan_limit_exceeded:` for one release, because ' +
+            'that prefix was this refusal\'s only identifier before #1679 and installed ' +
+            'clients match on it; switch on the code rather than the prefix. Parcels are ' +
+            'added afterwards, by import or by drawing.',
         tags: ['Locations'],
         params: TenantParams,
         body: CreateLocationSchema,

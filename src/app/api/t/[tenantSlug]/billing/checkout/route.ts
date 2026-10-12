@@ -5,7 +5,7 @@ import { findOrCreateCustomer, createCheckoutSession } from '@/lib/stripe';
 import { env } from '@/env';
 import { z } from 'zod';
 import { jsonResponse } from '@/lib/api-response';
-import { forbidden } from '@/lib/errors/types';
+import { codedForbidden, forbidden } from '@/lib/errors/types';
 import { getBillingMode } from '@/lib/billing/entitlements';
 
 const CheckoutBody = z.object({
@@ -25,9 +25,11 @@ const CheckoutBody = z.object({
 export const POST = withApiErrorHandling(
     requirePermission('admin.manage', async (req: NextRequest, _routeArgs, ctx) => {
         if (getBillingMode() === 'SELFHOSTED') {
-            throw forbidden(
+            throw codedForbidden(
+                'BILLING_UNAVAILABLE',
                 'billing_unavailable: this deployment runs in self-hosted mode; ' +
                     'plan changes are not exposed via the in-app checkout.',
+                { mode: 'SELFHOSTED' },
             );
         }
         const body = CheckoutBody.parse(await req.json());

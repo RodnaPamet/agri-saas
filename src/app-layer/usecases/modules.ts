@@ -2,7 +2,7 @@ import { RequestContext } from '../types';
 import { ModuleSettingsRepository } from '../repositories/ModuleSettingsRepository';
 import { assertCanRead, assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
-import { forbidden, badRequest } from '@/lib/errors/types';
+import { codedForbidden, forbidden, badRequest } from '@/lib/errors/types';
 import { isAllowedMeteobotUrl } from '@/lib/security/meteobot';
 import { runInTenantContext } from '@/lib/db-context';
 import { ModuleKey } from '@prisma/client';
@@ -144,6 +144,6 @@ export async function assertModuleEnabled(ctx: RequestContext, key: ModuleKey): 
     // attempts count too. Best-effort; never affects the gate.
     await recordModuleAccess(key);
     if (!(await isModuleAvailable(ctx, key))) {
-        throw forbidden(`module_disabled: ${key}`);
+        throw codedForbidden('MODULE_DISABLED', `module_disabled: ${key}`, { module: key });
     }
 }

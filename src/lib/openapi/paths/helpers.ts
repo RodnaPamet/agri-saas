@@ -185,7 +185,38 @@ export function commonErrorResponses(): RouteConfig['responses'] {
                 'the native client from pointing anyone to pay outside the app, so a ' +
                 'prescribed destination would be unreachable for one of the two clients ' +
                 '(#1490). What both clients CAN do is distinguish this from ' +
-                '`plan_limit_exceeded:` and say which happened.\n\n' +
+                '`PLAN_LIMIT_EXCEEDED` and say which happened.\n\n' +
+                'Five billing and capability codes are described here for the same reason ' +
+                'and with the same caveat: each is confined to the routes that reach one ' +
+                'gate, those gates sit below many operations, and an exhaustive ' +
+                'per-operation list would be wrong by omission. Each carries `params` so a ' +
+                'client composes its own sentence rather than rendering ours (#1679):\n\n' +
+                '- `PLAN_LIMIT_EXCEEDED` — a per-plan ceiling on a COUNT was reached. ' +
+                'Params: `plan`, `resource`, `limit`, `current`. Reachable wherever ' +
+                '`assertWithinLimit` guards a create. It is NOT a payment problem and NOT ' +
+                'a permission shortfall: nothing failed and no role lifts it. The remedy is ' +
+                'a higher plan or deleting something, and this description names no ' +
+                'destination for the same reason `PAST_DUE_RESTRICTED` does not.\n' +
+                '- `AI_BUDGET_EXCEEDED` — the tenant has spent its monthly AI token budget. ' +
+                'Params: `plan`, `limit`, `used`. It resets at the month boundary with ' +
+                'nothing to settle, so a client can honestly say \"next month\" — which is ' +
+                'what distinguishes it from the one above, where waiting changes nothing.\n' +
+                '- `AI_TIER_NOT_ALLOWED` — the requested model TIER is above this plan\'s ' +
+                'ceiling. Params: `plan`, `tier`, `ceiling`. Distinct from the budget code ' +
+                'on purpose: the refusal is on capability, not on spend, so retrying at ' +
+                '`ceiling` succeeds immediately and retrying the same tier never will.\n' +
+                '- `MODULE_DISABLED` — a product module is off for this tenant. Params: ' +
+                '`module`. An administrator of the farm can turn it on, so unlike the four ' +
+                'other codes here a retry CAN become possible without a plan change.\n' +
+                '- `BILLING_UNAVAILABLE` — this deployment runs self-hosted and exposes no ' +
+                'in-app checkout at all. Params: `mode`. Nothing the client or the user can ' +
+                'do lifts it; do not offer a retry or a plan picker.\n\n' +
+                '  TRANSITIONAL, and it will be removed. All five also repeat their old ' +
+                'lower_snake token at the START of `message` — `plan_limit_exceeded: …` and ' +
+                'so on. That prefix was these refusals\' only identifier before #1679 and ' +
+                'installed clients match on it, so it stays for one release. Switch on ' +
+                '`code` and read `params`; do not parse `message`, and do not render it to ' +
+                'a user — it is English and is not translated.\n\n' +
                 'Two more are described here rather than per-operation, and their scope is ' +
                 'NARROWER than the four above: they come from `getUserCtx`, so they are ' +
                 'reachable on the PERSON-scoped routes only — `/api/account/**`, ' +
