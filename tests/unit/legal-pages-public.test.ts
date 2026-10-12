@@ -160,6 +160,15 @@ describe('every page allowed outside /t/ is EITHER public or session-gated on pu
         invite: 'sign-in gated by design (Epic 1): the invitee authenticates, then redeems',
         audit: 'token-gated share view under /audit/shared/[token], not a root page',
         'vendor-assessment': 'token-gated respondent page, same shape as audit/shared',
+        suspended:
+            'where a suspended account is sent instead of a page (#1657). ' +
+            'Session-gated by PURPOSE rather than by its code: the Edge gates ' +
+            'it like any non-public path, and its content is about the ' +
+            "reader's own account state, so a signed-out visitor has nothing " +
+            'to read there. The page itself renders without a session — that ' +
+            'is defensive, not a claim to be public, and it is deliberately ' +
+            'NOT gated on being suspended, since gating the destination on the ' +
+            'condition would redirect it to itself.',
     };
 
     it('reports the population it classified', () => {

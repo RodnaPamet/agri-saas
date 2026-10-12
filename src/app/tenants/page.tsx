@@ -21,6 +21,7 @@ import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import prisma from '@/lib/prisma';
 import { Heading } from '@/components/ui/typography';
+import { redirectIfSuspended } from '@/lib/auth/suspension-page';
 
 export default async function TenantsPage() {
     const session = await auth();
@@ -28,6 +29,12 @@ export default async function TenantsPage() {
     if (!session?.user?.id) {
         redirect('/login');
     }
+
+    // Not covered by `getTenantServerContext` — this page is person-scoped and
+    // reads its farm list straight from Prisma, which is exactly why it needs
+    // its own call (#1657). Without it a suspended account is shown the names
+    // of every farm it belongs to.
+    await redirectIfSuspended(session.user.id);
 
     const t = await getTranslations('tenants');
 

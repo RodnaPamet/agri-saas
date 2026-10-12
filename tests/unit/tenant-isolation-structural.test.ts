@@ -136,6 +136,16 @@ describe('Structural Guard: Tenant Isolation Conventions', () => {
             // data. The Edge gate redirects here, so it has to be a real URL
             // rather than a modal inside the shell it is gating.
             'accept-terms',
+            // #1657 — where a suspended account is sent instead of a page.
+            // Person-level by NECESSITY, not by preference: it exists because
+            // every `/t/{slug}` page now redirects here, so putting it under
+            // `/t/{slug}` would make the destination unreachable from the
+            // thing that redirects to it. A suspended person may also hold
+            // several farms, so there is no slug to scope it to.
+            //
+            // It reads a session only to decide whether to offer sign-out, and
+            // renders no tenant data at all — the sentence and a button.
+            'suspended',
         ]);
 
         // Get immediate children of app/ that are page directories

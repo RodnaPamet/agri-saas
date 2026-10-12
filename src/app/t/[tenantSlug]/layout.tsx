@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation';
+import { isNextControlFlow } from '@/lib/auth/suspension-page';
 import { unstable_noStore as noStore } from 'next/cache';
 import { auth } from '@/auth';
 import { getTenantServerContext } from '@/lib/server/tenant-context.server';
@@ -50,7 +51,14 @@ export default async function TenantLayout({
             tenantSlug,
             userId: session.user.id,
         });
-    } catch {
+    } catch (error) {
+        // Next signals `redirect()` and `notFound()` by THROWING, so a bare
+        // `catch { notFound() }` converts a redirect into a 404. That matters
+        // now that the context resolver sends a suspended account to
+        // `/suspended` (#1657): the swallow would have produced exactly the
+        // "your farm does not exist" answer the owner's ruling rejected,
+        // arriving by accident rather than by decision.
+        if (isNextControlFlow(error)) throw error;
         notFound();
     }
     const [planRaw, availableModules, promotionsAvailable] =
