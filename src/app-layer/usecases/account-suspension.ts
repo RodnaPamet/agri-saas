@@ -333,9 +333,22 @@ export async function liftSuspension(input: {
                 // it. Always cleared, not conditionally: a lift of a
                 // non-terminated account writes NULL over NULL.
                 terminatedAt: null,
-                // ONE update, so a reinstatement cannot half-apply: an account
-                // un-suspended with its erasure still scheduled is the exact
-                // state this fixes, and a second statement could leave it.
+                // ONE update — but NOT because two would half-apply. Both
+                // statements would be inside this `$transaction` and therefore
+                // still atomic; measured by splitting this into two updates,
+                // which leaves the real-database cases green and reddens only
+                // the unit test that counts the calls.
+                //
+                // What one statement buys is that a later edit has nowhere to
+                // put a SECOND one — and a second statement is the shape that
+                // ends up outside the transaction when somebody hoists it for
+                // readability. That escape is real and catchable: hoisting
+                // `cancelAccountDeletion`'s clear onto `prisma` reddens four
+                // integration cases.
+                //
+                // It also keeps both fields moving together in one place, which
+                // is the defect this fixes: an account un-suspended with its
+                // erasure still scheduled.
                 ...(erasureStopped
                     ? { deletionRequestedAt: null, deletionRequestedBy: null }
                     : {}),

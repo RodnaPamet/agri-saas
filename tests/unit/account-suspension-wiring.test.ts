@@ -275,7 +275,12 @@ describe('lifting a suspension stops a moderator erasure (#1667)', () => {
 
         expect(result.erasureStopped).toBe(true);
         expect(invalidateDeletionPendingCache).toHaveBeenCalledWith('u1');
-        // ONE update, so the reinstatement cannot half-apply.
+        // ONE update. The count, not atomicity — two updates inside the
+        // same `$transaction` are still atomic, so this does not prove the
+        // reinstatement cannot half-apply and the usecase's comment no longer
+        // claims it does. What it holds is that a later edit has nowhere to put
+        // a second statement, which is the shape that gets hoisted out of the
+        // transaction and then really can half-apply.
         expect(userUpdate).toHaveBeenCalledTimes(1);
         expect(userUpdate.mock.calls[0][0].data).toMatchObject({
             suspendedAt: null,
