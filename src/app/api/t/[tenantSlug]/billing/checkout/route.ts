@@ -27,7 +27,7 @@ export const POST = withApiErrorHandling(
         if (getBillingMode() === 'SELFHOSTED') {
             throw codedForbidden(
                 'BILLING_UNAVAILABLE',
-                'billing_unavailable: this deployment runs in self-hosted mode; ' +
+                'This deployment runs in self-hosted mode; ' +
                     'plan changes are not exposed via the in-app checkout.',
                 { mode: 'SELFHOSTED' },
             );

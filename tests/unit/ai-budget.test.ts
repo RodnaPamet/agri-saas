@@ -49,19 +49,28 @@ describe('assertAiBudget', () => {
         expect(status.softWarn).toBe(false);
     });
 
-    it('hard-stops at the limit with forbidden(ai_budget_exceeded...)', async () => {
+    it('hard-stops at the limit with AI_BUDGET_EXCEEDED', async () => {
         mockGetEffectivePlan.mockResolvedValue('FREE');
         mockGetLimit.mockReturnValue(50_000);
         mockGetUsed.mockResolvedValue(50_000);
         await expect(assertAiBudget(ctx)).rejects.toBeInstanceOf(ForbiddenError);
-        await expect(assertAiBudget(ctx)).rejects.toThrow(/ai_budget_exceeded/);
+        // The CODE and PARAMS. The legacy `ai_budget_exceeded:` prefix is gone
+        // (#1677) and `message` is translated per reader, so pinning the prose
+        // would pin a sentence the catalogue is allowed to change.
+        await expect(assertAiBudget(ctx)).rejects.toMatchObject({
+            code: 'AI_BUDGET_EXCEEDED',
+            params: { plan: 'FREE', limit: '50000', used: '50000' },
+        });
     });
 
     it('hard-stops when over the limit', async () => {
         mockGetEffectivePlan.mockResolvedValue('FREE');
         mockGetLimit.mockReturnValue(50_000);
         mockGetUsed.mockResolvedValue(60_000);
-        await expect(assertAiBudget(ctx)).rejects.toThrow(/ai_budget_exceeded/);
+        await expect(assertAiBudget(ctx)).rejects.toMatchObject({
+            code: 'AI_BUDGET_EXCEEDED',
+            params: { plan: 'FREE', limit: '50000', used: '60000' },
+        });
     });
 
     it('soft-warns at >= 80% without blocking', async () => {
@@ -117,12 +126,19 @@ describe('assertAiBudget: the farm-verification gate (P3.5f)', () => {
             code: 'AI_BUDGET_REQUIRES_VERIFIED_FARM',
             message: 'This farm must be verified before it can use AI features.',
         });
-        // Distinct from `ai_budget_exceeded` deliberately: the remedy is "get
+        // Distinct from the budget refusal deliberately: the remedy is "get
         // verified", not "upgrade", and a client showing an upgrade prompt here
-        // would send a farmer to buy capacity they already have. That sibling
-        // is still an UNCODED prose throw, so the two are distinguishable in
-        // different fields — hence both halves below.
-        await expect(assertAiBudget(ctx)).rejects.not.toThrow(/ai_budget_exceeded/);
+        // would send a farmer to buy capacity they already have.
+        //
+        // Asserted on the CODE, not by negating the old prose. `#1677` removed
+        // the `ai_budget_exceeded:` prefix, so `not.toThrow(/ai_budget_exceeded/)`
+        // would now pass for free — the window it negates is empty
+        // (`an-empty-window-passes-a-negated-assertion`). A negative assertion
+        // naming a string nothing produces is worse than none, because it
+        // reads as coverage.
+        await expect(assertAiBudget(ctx)).rejects.not.toMatchObject({
+            code: 'AI_BUDGET_EXCEEDED',
+        });
     });
 
     it('refuses BEFORE consulting usage, so an unverified farm costs no query', async () => {

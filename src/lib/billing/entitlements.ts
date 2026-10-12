@@ -360,8 +360,8 @@ export async function assertAiTierAllowed(
     if (AI_TIER_ORDER.indexOf(tier) > AI_TIER_ORDER.indexOf(ceiling)) {
         throw codedForbidden(
             'AI_TIER_NOT_ALLOWED',
-            `ai_tier_not_allowed: ${plan} plan allows the "${ceiling}" AI tier at most; ` +
-                `the "${tier}" tier requires a higher plan. Upgrade to use it.`,
+            `${plan} plan allows the "${ceiling}" AI tier at most; ` +
+                `the "${tier}" tier requires a higher plan.`,
             { plan, tier, ceiling },
         );
     }
@@ -483,8 +483,8 @@ export async function assertWithinLimit(
         // adding a new error type / shape to the API contract.
         throw codedForbidden(
             'PLAN_LIMIT_EXCEEDED',
-            `plan_limit_exceeded: ${plan} plan allows ${limit} ${resource}(s); ` +
-                `tenant currently has ${current}. Upgrade to add more.`,
+            `${plan} plan allows ${limit} ${resource}(s); ` +
+                `tenant currently has ${current}.`,
             // Counts and names only — no personal data ever goes in `params`.
             { plan, resource, limit: String(limit), current: String(current) },
         );

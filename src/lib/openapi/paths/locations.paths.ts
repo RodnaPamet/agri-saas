@@ -804,10 +804,12 @@ export function registerLocationPaths(registry: OpenAPIRegistry): void {
             '`limit` and `current` (#1679) — a permission-shaped status for a billing ' +
             'condition, so do not treat every 403 here as "not allowed". The shared 403 ' +
             'description says what the code means and what a client should do with it. ' +
-            'The `message` still BEGINS `plan_limit_exceeded:` for one release, because ' +
-            'that prefix was this refusal\'s only identifier before #1679 and installed ' +
-            'clients match on it; switch on the code rather than the prefix. Parcels are ' +
-            'added afterwards, by import or by drawing.',
+            'The `message` no longer begins with the legacy `plan_limit_exceeded:` prefix ' +
+            '(#1677), which was this refusal\'s only identifier before #1679 — switch on ' +
+            'the code. It is NOT yet translated: `PLAN_LIMIT_EXCEEDED` is one of the three ' +
+            'whose Bulgarian needs ICU plural agreement, so it still carries an English ' +
+            'developer-facing sentence rather than copy with `exchange_listing` ' +
+            'interpolated into it. Parcels are added afterwards, by import or by drawing.',
         tags: ['Locations'],
         params: TenantParams,
         body: CreateLocationSchema,

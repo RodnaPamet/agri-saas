@@ -170,13 +170,13 @@ export async function assertModuleEnabled(ctx: RequestContext, key: ModuleKey): 
 
     const plan = await getTenantPlan(ctx.tenantId);
     if (!planAllowsModule(plan, key)) {
-        throw codedForbidden('MODULE_DISABLED', `module_disabled: ${key}`, {
+        throw codedForbidden('MODULE_DISABLED', `module ${key} is not available`, {
             module: key,
             reason: 'plan',
         });
     }
     if (!(await isModuleEnabled(ctx, key))) {
-        throw codedForbidden('MODULE_DISABLED', `module_disabled: ${key}`, {
+        throw codedForbidden('MODULE_DISABLED', `module ${key} is not available`, {
             module: key,
             reason: 'tenant',
         });
