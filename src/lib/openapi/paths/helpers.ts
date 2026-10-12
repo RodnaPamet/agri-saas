@@ -210,17 +210,27 @@ export function commonErrorResponses(): RouteConfig['responses'] {
                 'on purpose: the refusal is on capability, not on spend, so retrying at ' +
                 '`ceiling` succeeds immediately and retrying the same tier never will.\n' +
                 '- `MODULE_DISABLED` — a product module is off for this tenant. Params: ' +
-                '`module`. An administrator of the farm can turn it on, so unlike the four ' +
-                'other codes here a retry CAN become possible without a plan change.\n' +
+                '`module` and `reason`. AVAILABLE is a conjunction (plan-allowed AND ' +
+                'tenant-enabled) and `reason` says which half failed, because the remedies ' +
+                'differ: `\"tenant\"` means an administrator of THIS farm can turn it on, ' +
+                '`\"plan\"` means the plan does not include it and no administrator can. ' +
+                'Do NOT name an administrator without reading `reason` — telling somebody ' +
+                'to ask an admin who cannot help is the defect agrent-ios#241 is about, and ' +
+                'an earlier draft of this paragraph said exactly that. A client that ignores ' +
+                '`reason` should stay neutral; the code alone only means "off".\n' +
                 '- `BILLING_UNAVAILABLE` — this deployment runs self-hosted and exposes no ' +
                 'in-app checkout at all. Params: `mode`. Nothing the client or the user can ' +
                 'do lifts it; do not offer a retry or a plan picker.\n\n' +
                 '  TRANSITIONAL, and it will be removed. All five also repeat their old ' +
                 'lower_snake token at the START of `message` — `plan_limit_exceeded: …` and ' +
                 'so on. That prefix was these refusals\' only identifier before #1679 and ' +
-                'installed clients match on it, so it stays for one release. Switch on ' +
-                '`code` and read `params`; do not parse `message`, and do not render it to ' +
-                'a user — it is English and is not translated.\n\n' +
+                'installed clients match on it. It stays until `message` becomes a ' +
+                'localised sentence (#1677), which removes it as a side effect — NOT for ' +
+                'some number of releases, so do not count them. Switch on `code` and read ' +
+                '`params`; do not parse `message`. Until #1677 lands, `message` is English ' +
+                'and untranslated, so do not render it to a user; when #1677 lands this ' +
+                'paragraph and the English-message note above are both rewritten in the ' +
+                'same change.\n\n' +
                 'Two more are described here rather than per-operation, and their scope is ' +
                 'NARROWER than the four above: they come from `getUserCtx`, so they are ' +
                 'reachable on the PERSON-scoped routes only — `/api/account/**`, ' +
