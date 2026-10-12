@@ -6387,7 +6387,6 @@
     "suspended": {
         "title": "Your account is suspended",
         "body": "You cannot open your farm while the suspension is in force. Everything already recorded is kept.",
-        "whereToLook": "We sent the reason to your email address. If you think this is a mistake, reply to it.",
         "signOut": "Sign out"
     }
 }

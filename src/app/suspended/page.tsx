@@ -11,11 +11,30 @@
  *
  * ## Three things it deliberately does not do
  *
- * - **It does not name a reason.** Why an account was suspended is a moderation
- *   decision, and Art 17 delivers it as a statement of reasons to the person's
- *   own inbox (`statement-dispatch`). Repeating a summary here would be a
- *   second, un-versioned channel for the same obligation, free to drift from
- *   the one that is legally the record.
+ * - **It does not name a reason, and it does not say one was emailed.** Why an
+ *   account was suspended is a moderation decision, and Art 17 delivers it as a
+ *   statement of reasons — so repeating a summary here would be a second,
+ *   un-versioned channel for the same obligation.
+ *
+ *   This page shipped for a few minutes with a third line reading «Изпратихме
+ *   причината на имейла Ви… отговорете на него» — *we sent the reason to your
+ *   email; reply to it if this is a mistake*. **Both halves were false**, and
+ *   agrent-ios caught it before it merged:
+ *
+ *   - **A suspension queues no statement.** `queueStatement` has exactly one
+ *     caller, `POST /api/admin/moderation/statements`. `actOnNotice` suspends
+ *     inside its own transaction and does not call it, and
+ *     `POST /api/admin/moderation/suspensions` does not either — so in the
+ *     ordinary case nothing was sent. The sentence was past tense and
+ *     unconditional, so it was wrong in every one of those cases.
+ *   - **Replies go to a no-reply mailbox.** `statement-dispatch` calls
+ *     `sendEmail({ to, subject, text })` with no `replyTo`, and the sender
+ *     defaults to `noreply@agrent.bg`.
+ *
+ *   A page that promises an email the code does not send is #1655's shape — a
+ *   notice promising a freeze the code did not implement — and this one was
+ *   mine. Tracked separately; until the statement and its redress route are
+ *   real, this page says less rather than more.
  * - **It does not offer an appeal button.** There is no appeal surface yet. A
  *   control that does nothing is worse than its absence on the one page a
  *   person reads when they have just lost access.
@@ -46,8 +65,7 @@ export default async function SuspendedPage() {
                 <Heading level={1} className="mb-2">
                     {t('title')}
                 </Heading>
-                <p className="text-content-muted mb-2">{t('body')}</p>
-                <p className="text-content-muted mb-6">{t('whereToLook')}</p>
+                <p className="text-content-muted mb-6">{t('body')}</p>
                 {session?.user ? (
                     <form
                         action={async () => {
