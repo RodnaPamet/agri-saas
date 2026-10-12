@@ -46,6 +46,8 @@
  *       // never 503 the probe.
  *       "satellite": { "configured": boolean, "missing": string[] },
  *       "basemap":   { "branch": "maptiler" | "demotiles" | "blind", ... },
+ *       "platformConsole": { "state": "unconfigured" | "misconfigured"
+ *                                    | "reachable" | "unknown" },
  *       "email":     { "provider": "resend" | "smtp" | "console", "sends": boolean },
  *       "lookupKey": { "pinned": boolean }   // false => the master KEK is
  *                                            // NOT safely rotatable (P1.1)
@@ -70,6 +72,7 @@ import { geeConfigStatus } from '@/lib/agro/gee-config';
 import { emailCapabilityStatus } from '@/lib/email/provider-selection';
 import { isLookupKeyPinned } from '@/lib/security/encryption';
 import { basemapBranchStatus } from '@/lib/geo/basemap-bundle-scan';
+import { platformConsoleCapability } from '@/lib/auth/platform-console-capability';
 import { jsonResponse } from '@/lib/api-response';
 import { SERVICE_ID } from '@/lib/service-identity';
 import { logger } from '@/lib/observability/logger';
@@ -295,6 +298,25 @@ export async function GET() {
     // never the key, never its length, never a hash of it.
     const lookupKey = { pinned: isLookupKeyPinned() };
 
+    // #1669 — is the platform-support console reachable? Fourth instance of the
+    // same argument and the same silence: `assertPlatformSupport` is
+    // fail-closed, so an unset `PLATFORM_TENANT_SLUG` makes every route behind
+    // it unreachable rather than open — correct, and indistinguishable from
+    // "deliberately closed" from outside. Measured on the VM 2026-10-12: unset,
+    // so #12's console has never worked in production.
+    //
+    // OUTSIDE `checks`/`failed`, like its three siblings, and that placement is
+    // load-bearing rather than stylistic: this endpoint IS the GCP uptime
+    // check's target, and a misconfigured console must never 503 a healthy
+    // instance or page somebody for a non-outage. A closed enum, never the slug.
+    //
+    // The client is PASSED, not imported by the capability: `@/lib/prisma`
+    // reads `Prisma.dmmf` at module load and three readyz suites mock
+    // `@prisma/client` with `PrismaClient` alone, so importing it there broke
+    // 28 tests before any of them ran. This raw client is also the correct one
+    // — `slug` and `deletedAt` are not encrypted.
+    const platformConsole = await platformConsoleCapability(prisma);
+
     if (!allOk) {
         // Log the failure for observability — operators want to see
         // readyz failures in the logs even though the probe response
@@ -319,7 +341,7 @@ export async function GET() {
             version: process.env.BUILD_SHA || process.env.VERCEL_GIT_COMMIT_SHA || 'dev',
             checks,
             failed,
-            capabilities: { satellite, basemap, email, lookupKey },
+            capabilities: { satellite, basemap, email, lookupKey, platformConsole },
             latencyMs: Date.now() - start,
         },
         { status: allOk ? 200 : 503 },
