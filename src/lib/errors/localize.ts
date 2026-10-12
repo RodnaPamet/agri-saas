@@ -26,16 +26,44 @@
  * calls about Bulgarian legal and agricultural phrasing in one PR, which is
  * the shape of change nobody can review.
  *
- * ## A code may vary by its `reason`
+ * ## ICU, via `next-intl` — and why not `translateFor`
  *
- * `errors.<CODE>.<reason>` is tried before `errors.<CODE>` when the error
- * carries a `reason` param. `MODULE_DISABLED` needs it: the remedy differs by
- * which half of a conjunction failed, and naming a farm administrator when the
- * PLAN is what excludes the module is the agrent-ios#241 defect — a farmer
- * sent to somebody who cannot help.
+ * Stage 1 rendered through `translateFor`, which supports simple `{param}`
+ * only and says so deliberately. `agrent-ios` then reviewed the Bulgarian and
+ * three of five sentences needed **plural agreement**: after a numeral,
+ * Bulgarian differs by gender (1 локация / 5 локации, 1 потребител /
+ * 5 потребителя). Those sentences through `translateFor` would have put
+ * literal `{limit, plural, …}` braces in a farmer's message.
  *
- * Two keys rather than ICU `select`, because `translateFor` deliberately
- * supports only simple `{param}` placeholders and says so.
+ * `server-messages.ts` pointed at the fix in its own docblock — "if a message
+ * ever needs real ICU, render it through next-intl at display time instead of
+ * reaching for this" — so this uses `createTranslator`. `translateFor` keeps
+ * its scope for notification copy.
+ *
+ * String params pluralise correctly (`{ limit: '5' }` → «5 локации»), measured
+ * rather than assumed, so `ErrorParams`' string values need no coercion.
+ *
+ * ## A code may vary by a DISCRIMINATOR param
+ *
+ * `errors.<CODE>.<value>` is tried before `errors.<CODE>`, for each param in
+ * `DISCRIMINATORS`. Two codes need it and they use different params:
+ *
+ *   `PLAN_LIMIT_EXCEEDED`  by `resource` — the noun has to be translated and
+ *                          declined, so «обяви в Борсата» and «локации» are
+ *                          separate sentences rather than one with the wire
+ *                          identifier interpolated.
+ *   `MODULE_DISABLED`      by `reason` — the remedy differs by which half of a
+ *                          conjunction failed, and naming a farm administrator
+ *                          when the PLAN excludes the module is the
+ *                          agrent-ios#241 defect.
+ *
+ * Separate keys rather than one ICU `select`, because a translator editing
+ * Bulgarian should see whole sentences, not a nested selector.
+ *
+ * The rule those two cases taught, from `agrent-ios` and now applied to the
+ * remaining codes: **a `{param}` belongs in a sentence only if it is a NUMBER
+ * or a NAME THE PERSON TYPED.** An enum value on the wire — `resource`,
+ * `tier`, `ceiling`, `module`, `plan` — gets a translated table or stays out.
  *
  * ## Why here and not inside `toApiErrorResponse`
  *
@@ -50,13 +78,30 @@
  * untranslated message is always correct; failing the response to localise it
  * would be the tail wagging the dog.
  */
+import { createTranslator } from 'next-intl';
+
 import type { ApiErrorResponse } from './types';
-import { translateFor } from '@/lib/i18n/server-messages';
+import { loadMessagesFor } from '@/lib/i18n/server-messages';
 import { resolveRequestLocale } from '@/lib/i18n/request-locale';
 import { logger } from '@/lib/observability/logger';
 
 /** The catalogue namespace. `errors.PLAN_LIMIT_EXCEEDED`, and so on. */
 const NS = 'errors';
+
+/**
+ * Params that may select a sentence variant, most specific first.
+ *
+ * `resource` before `reason` because no code carries both today and the order
+ * has to be defined rather than incidental: if one ever does, the subject of
+ * the refusal is the more specific discriminator.
+ */
+const DISCRIMINATORS = ['resource', 'reason'] as const;
+
+/** `createTranslator`'s surface, with keys known only at runtime. */
+interface DynamicTranslator {
+    (key: string, values?: Record<string, string | number>): string;
+    has(key: string): boolean;
+}
 
 /**
  * Replace `payload.error.message` with the catalogue's sentence for its code,
@@ -69,21 +114,55 @@ export async function localizeErrorPayload(payload: ApiErrorResponse): Promise<v
         if (!code) return;
 
         const locale = resolveRequestLocale();
-        const reason = typeof params?.reason === 'string' ? params.reason : null;
+        const messages = await loadMessagesFor(locale);
+        if (!messages) return;
 
-        // Most specific first. A `reason` variant that does not exist falls
-        // through to the plain code, so adding `reason` to an error never
+        // `onError` swallowed: a missing key is how absence is DETECTED here,
+        // not a fault, and next-intl's default handler logs every miss at
+        // error level. `t.has` is the signal instead.
+        // Cast to a dynamic-key signature. `createTranslator` types `t`
+        // against the SHAPE of the messages it was given, so a key that is
+        // only known at runtime — an error code — resolves to `never`. That
+        // typing is right for a component with literal keys and cannot
+        // express this caller, so the cast is the narrow, honest escape rather
+        // than widening the catalogue's type everywhere.
+        const t = createTranslator({
+            locale,
+            messages: messages as Record<string, unknown>,
+            onError: () => {},
+        }) as unknown as DynamicTranslator;
+
+        // Most specific first. A variant that does not exist falls through to
+        // the plain code, so adding a discriminator param to an error never
         // breaks its message.
-        for (const key of reason ? [`${NS}.${code}.${reason}`, `${NS}.${code}`] : [`${NS}.${code}`]) {
-            const text = await translateFor(locale, key, params);
-            // `translateFor` returns the key verbatim when it finds no entry.
-            // That is the documented behaviour and the only absence signal it
-            // offers, so comparing against the key is the detector rather than
-            // a second "does this key exist" lookup that could disagree.
-            if (text !== key) {
-                payload.error.message = text;
-                return;
-            }
+        const keys = [
+            ...DISCRIMINATORS.flatMap((name) => {
+                const v = params?.[name];
+                return typeof v === 'string' && v ? [`${NS}.${code}.${v}`] : [];
+            }),
+            // The variant table's own fallback, for a discriminator value with
+            // no sentence — an unknown `GatedResource`, say. Named rather than
+            // positional so a translator editing the file can see what it is.
+            `${NS}.${code}.default`,
+            // A code whose entry is a flat string.
+            `${NS}.${code}`,
+        ];
+
+        for (const key of keys) {
+            // BOTH checks, and the second is not redundant.
+            //
+            // `t.has('errors.PLAN_LIMIT_EXCEEDED')` returns TRUE for that
+            // code, because its entry is a variant TABLE and `has` answers for
+            // a namespace node. `t()` on a namespace then returns the KEY
+            // itself — so a `has`-only detector would put the literal string
+            // `errors.PLAN_LIMIT_EXCEEDED` in front of a farmer, which is the
+            // exact failure `never leaves a KEY where a sentence belongs`
+            // exists to catch. Measured against next-intl, not assumed.
+            if (!t.has(key)) continue;
+            const text = t(key, params);
+            if (text === key) continue;
+            payload.error.message = text;
+            return;
         }
     } catch (err) {
         // The log is itself in a try/catch, and that is NOT belt-and-braces.

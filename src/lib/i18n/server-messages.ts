@@ -31,6 +31,22 @@ type MessageTree = { [key: string]: string | MessageTree };
 /** Parsed message files are immutable per process — load each at most once. */
 const cache = new Map<Locale, MessageTree>();
 
+/**
+ * The parsed catalogue for one locale, or `null` if it will not load.
+ *
+ * Exported for `lib/errors/localize.ts` (#1677 stage 2), which renders ICU
+ * through `next-intl`'s `createTranslator` and therefore needs the whole tree
+ * rather than one key. Sharing this function shares the CACHE — a second
+ * dynamic `import()` of the same JSON would be a second copy of ~5600 keys per
+ * locale in memory, and two caches that can disagree after a hot reload.
+ *
+ * `translateFor` below stays as it is: simple `{param}` interpolation for
+ * notification copy, exactly as its docblock scopes it.
+ */
+export async function loadMessagesFor(locale: Locale): Promise<MessageTree | null> {
+    return loadMessages(locale);
+}
+
 async function loadMessages(locale: Locale): Promise<MessageTree | null> {
     const hit = cache.get(locale);
     if (hit) return hit;

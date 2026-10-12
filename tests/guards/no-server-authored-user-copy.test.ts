@@ -203,15 +203,24 @@ export function collectServerAuthoredCopy(root: string, dirs: string[] = ROOTS):
 // language, and the English string the scan counts is only the fallback for a
 // code with no entry yet.
 //
-// TWO codes have entries today — `MODULE_DISABLED` and
-// `BILLING_UNAVAILABLE`. So 466 counts two strings that no longer reach anyone
-// in English.
+// FIVE codes have entries today — `PLAN_LIMIT_EXCEEDED` (by resource),
+// `AI_BUDGET_EXCEEDED`, `AI_TIER_NOT_ALLOWED`, `MODULE_DISABLED` (by reason)
+// and `BILLING_UNAVAILABLE`. So 466 counts five strings that no longer reach
+// anyone in English through an API route.
 //
-// It was five until agrent-ios reviewed the Bulgarian and found wire
-// identifiers in three of them (`exchange_listing`, `deep`, `FREE`); those
-// three went back to English pending an ICU renderer, and this comment went
-// with them. A count whose stated reason drifts from the catalogue is the
-// thing it warns about one paragraph down.
+// It read TWO for a few hours: agrent-ios found wire identifiers in three of
+// the five, those went back to English pending an ICU renderer, and #1677
+// stage 2 brought them back with plural agreement. This comment has now been
+// wrong in both directions, which is the hazard it warns about one paragraph
+// down — a count whose stated reason drifts from the catalogue.
+//
+// The five English strings are still in the SOURCE, so the number does not
+// move. Deleting them is a separate change with its own blast radius:
+// `assertModuleEnabled` is called from SIX server components, where the
+// localiser never runs because it lives in `withApiErrorHandling`'s catch — so
+// for that one the English is still what surfaces. The other four are
+// API-only and their English is genuinely dead weight; removing it is what
+// will finally drop this number, and it is tracked rather than done here.
 //
 // NOT corrected for, deliberately. The strings are still in the source, and a
 // scan that tried to exclude "but this one is localised at runtime" would have

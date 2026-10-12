@@ -53,23 +53,69 @@ describe('a refusal speaks the reader’s language (#1677)', () => {
         expect(p.error.message).not.toBe('This deployment runs in self-hosted mode; …');
     });
 
-    it('PLAN_LIMIT_EXCEEDED is NOT translated yet, and keeps its English', async () => {
-        // The migration property on a REAL un-migrated code rather than an
-        // invented one. agrent-ios reviewed the Bulgarian for this code and
-        // found `{resource}` putting a wire identifier — `exchange_listing` —
-        // on a farmer's screen, and their corrected copy needs ICU plurals
-        // (Bulgarian agreement after a numeral differs by gender) which
-        // `translateFor` deliberately cannot render. So it waits for stage 2,
-        // and until then it must look exactly as it did before #1677.
+    it('PLAN_LIMIT_EXCEEDED picks its RESOURCE variant, with Bulgarian plural agreement', async () => {
+        // Stage 2. This case asserted the opposite in stage 1 — that the code
+        // kept its English — and objected the moment the catalogue entry
+        // landed, which is what a boundary test is for.
+        //
+        // The noun is TRANSLATED AND DECLINED, never interpolated: «до 5
+        // exchange_listing» was the defect agrent-ios found, and Bulgarian
+        // agreement after a numeral differs by gender, so the count and the
+        // noun have to agree inside one ICU message.
         getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
-        const original = 'FREE plan allows 5 location(s); tenant currently has 5.';
-        const p = payloadFor('PLAN_LIMIT_EXCEEDED', original, {
+        const p = payloadFor('PLAN_LIMIT_EXCEEDED', 'FREE plan allows 5 location(s); …', {
             plan: 'FREE', resource: 'location', limit: '5', current: '5',
         });
         await localizeErrorPayload(p);
-        expect(p.error.message).toBe(original);
-        // And specifically NOT a wire identifier dressed as Bulgarian.
-        expect(p.error.message).not.toMatch(/[А-Яа-я]/);
+        expect(p.error.message).toContain('локации');
+        // The wire identifier is GONE from the sentence, which is the point.
+        expect(p.error.message).not.toContain('location');
+        expect(p.error.message).not.toContain('FREE');
+        expect(p.error.message).not.toMatch(/\{\w+\}/);
+    });
+
+    it('the singular and plural forms AGREE — 1 локация, 5 локации', async () => {
+        // The reason this needed ICU at all. `translateFor` would have rendered
+        // the selector literally; a sentence with a bare `{limit}` would read
+        // «до 1 локации», which is wrong in a way a farmer notices.
+        getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+        const one = payloadFor('PLAN_LIMIT_EXCEEDED', 'x', { resource: 'location', limit: '1' });
+        const many = payloadFor('PLAN_LIMIT_EXCEEDED', 'x', { resource: 'location', limit: '5' });
+        await localizeErrorPayload(one);
+        await localizeErrorPayload(many);
+        expect(one.error.message).toContain('1 локация');
+        expect(many.error.message).toContain('5 локации');
+        // Masculine nouns take the count form instead — the distinction
+        // agrent-ios supplied and I would not have known.
+        const user = payloadFor('PLAN_LIMIT_EXCEEDED', 'x', { resource: 'user', limit: '3' });
+        await localizeErrorPayload(user);
+        expect(user.error.message).toContain('3 потребителя');
+    });
+
+    it('an UNKNOWN resource falls back to the variant table’s default', async () => {
+        // A fifth `GatedResource` must get a true sentence, not a key and not
+        // the English. This is the sentence agrent-ios uses on the phone, so
+        // the two agree when both fall back.
+        getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+        const p = payloadFor('PLAN_LIMIT_EXCEEDED', 'x', { resource: 'something_new', limit: '5' });
+        await localizeErrorPayload(p);
+        expect(p.error.message).toMatch(/[А-Яа-я]/);
+        expect(p.error.message).not.toContain('errors.');
+        expect(p.error.message).not.toContain('something_new');
+    });
+
+    it('never renders a variant TABLE as a message', async () => {
+        // `t.has('errors.PLAN_LIMIT_EXCEEDED')` returns TRUE — it is a
+        // namespace node — and `t()` on a namespace returns the KEY. So a
+        // `has`-only detector would put `errors.PLAN_LIMIT_EXCEEDED` in front
+        // of a farmer. With no discriminator at all, the `.default` key is
+        // what must answer.
+        getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+        const p = payloadFor('PLAN_LIMIT_EXCEEDED', 'the original English');
+        await localizeErrorPayload(p);
+        expect(p.error.message).not.toContain('errors.');
+        expect(p.error.message).not.toBe('errors.PLAN_LIMIT_EXCEEDED');
+        expect(p.error.message).toMatch(/[А-Яа-я]/);
     });
 
     it('leaves a code with NO entry byte for byte — the migration property', async () => {
