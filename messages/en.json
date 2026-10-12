@@ -1348,7 +1348,11 @@
             "certificatesDesc": "Plant-protection certificates carried by this member — printed on the БАБХ ДНЕВНИК.",
             "certificatesForMember": "Certificates — {name}",
             "certificatesEditableNote": "Editable per member. Blank clears a field.",
-            "saveCertificates": "Save certificates"
+            "saveCertificates": "Save certificates",
+            "certApplicatorLabel": "Applicator certificate (Art. 84(2))",
+            "certApplicatorHint": "Certificate number of the person carrying out the treatment (Art. 83 ЗЗР).",
+            "certAgronomistNameLabel": "Agronomist — name (Art. 84(1))",
+            "certAgronomistNoLabel": "Agronomist — certificate no."
         },
         "hub": {
             "theme": "Theme",
@@ -2120,7 +2124,8 @@
             "expiring": "Expiring soon",
             "daysLeft": "{days} d",
             "noActive": "No active leases",
-            "outstanding": "Outstanding"
+            "outstanding": "Outstanding",
+            "areaUnit": "dca"
         },
         "lease": {
             "owned": "Owned",

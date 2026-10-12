@@ -1166,8 +1166,8 @@ export default function MembersAdminPage() {
                 <Modal.Body>
                     <div className="space-y-default">
                         <FormField
-                            label="Сертификат на приложителя (чл. 84 ал. 2)"
-                            description="№ на сертификат на лицето, което извършва третирането (чл. 83 ЗЗР)."
+                            label={t('certApplicatorLabel')}
+                            description={t('certApplicatorHint')}
                         >
                             <Input
                                 value={certApplicator}
@@ -1175,14 +1175,14 @@ export default function MembersAdminPage() {
                                 id="cert-applicator-input"
                             />
                         </FormField>
-                        <FormField label="Агроном — име (чл. 84 ал. 1)">
+                        <FormField label={t('certAgronomistNameLabel')}>
                             <Input
                                 value={certAgronomistName}
                                 onChange={(e) => setCertAgronomistName(e.target.value)}
                                 id="cert-agronomist-name-input"
                             />
                         </FormField>
-                        <FormField label="Агроном — № сертификат">
+                        <FormField label={t('certAgronomistNoLabel')}>
                             <Input
                                 value={certAgronomistNo}
                                 onChange={(e) => setCertAgronomistNo(e.target.value)}
