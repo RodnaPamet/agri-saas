@@ -287,10 +287,19 @@ export async function actOnNotice(input: {
                 // called by a future surface.
                 //
                 // A TYPED error, not `new Error`: `no direct Error throws in
-                // usecases` caught that, and the coded form also lowers the
-                // `no-server-authored-user-copy` count rather than merely not
-                // raising it, because the message is a bare code.
-                throw codedBadRequest('SUSPEND_TARGET_REQUIRED', 'SUSPEND_TARGET_REQUIRED');
+                // usecases` caught that.
+                //
+                // The message WAS the bare code, chosen because a code lowers
+                // the `no-server-authored-user-copy` count rather than merely
+                // not raising it. That optimised for the ratchet and against
+                // the reader: `agrent-ios` confirmed the phone shows `message`
+                // verbatim for any code its own table does not carry, and this
+                // code is not in it — so a farmer read «SUSPEND_TARGET_REQUIRED».
+                // The Bulgarian now comes from `errors.SUSPEND_TARGET_REQUIRED`
+                // and this English is the fallback if the catalogue cannot
+                // load. The ratchet is unaffected either way: it exempts a
+                // throw that carries a code, whatever its message says.
+                throw codedBadRequest('SUSPEND_TARGET_REQUIRED', 'Name the account to suspend.');
             }
             const outcome = await suspendAccountOnTx(tx, {
                 userId: input.suspendUserId,

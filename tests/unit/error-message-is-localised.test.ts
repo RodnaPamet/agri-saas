@@ -210,6 +210,44 @@ describe('a refusal speaks the reader’s language (#1677)', () => {
         expect(p.error.message).toBe('bare');
     });
 
+    describe('every catalogued code actually resolves', () => {
+        // DERIVED from the catalogue, not a curated list. A list of code names
+        // here would go stale the moment somebody adds the 25th entry and then
+        // assert nothing about it — the exact failure #805 records. This way a
+        // new `errors.<CODE>` is covered the moment it is written.
+        //
+        // The flat-string entries only: a variant table is exercised by the
+        // PLAN_LIMIT_EXCEEDED and MODULE_DISABLED cases above, which check the
+        // discriminator selection a bulk sweep cannot.
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const catalogue = require('../../messages/bg.json') as {
+            errors: Record<string, unknown>;
+        };
+        const flatCodes = Object.entries(catalogue.errors)
+            .filter(([, v]) => typeof v === 'string')
+            .map(([code, text]) => [code, text as string] as const);
+
+        it('covers a real population — the denominator', () => {
+            // Without this the loop below passes on an empty catalogue, which
+            // would read as "every code resolves" while checking none.
+            expect(flatCodes.length).toBeGreaterThanOrEqual(24);
+        });
+
+        it.each(flatCodes)('%s renders its Bulgarian sentence', async (code, expected) => {
+            getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+            const english = 'Some English prose that must not survive.';
+            const p = payloadFor(code, english);
+            await localizeErrorPayload(p);
+            expect(p.error.message).toBe(expected);
+            // Three things that each look like success and are not: the English
+            // surviving, the KEY leaking through (`t()` returns the key for a
+            // namespace node), and a non-Cyrillic result.
+            expect(p.error.message).not.toBe(english);
+            expect(p.error.message).not.toContain('errors.');
+            expect(p.error.message).toMatch(/[\u0400-\u04FF]/);
+        });
+    });
+
     it('bg and en both answer — the positive control', async () => {
         // `a-probe-with-no-discriminating-power`: without this, a catalogue
         // that only ever served one language would satisfy the assertions above
