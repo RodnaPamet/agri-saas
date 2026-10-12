@@ -52,6 +52,8 @@ import {
     appendPlatformAuditEntry,
     type PlatformAuditScope,
 } from '@/lib/audit/platform-audit-writer';
+import { moderatorRefFor } from '@/lib/auth/platform-admin';
+import { sanitizePlainText } from '@/lib/security/sanitize';
 
 /** The chain these entries belong to. Added by this phase's migration. */
 const SUSPENSION_SCOPE: PlatformAuditScope = 'moderation';
@@ -75,9 +77,21 @@ export interface SuspendAccountInput {
      * would make it a person.
      */
     readonly generation: 'current' | 'previous';
-    /** Free text from the moderator. Never shown to the suspended person by
-     *  this path — the Art 17 statement is a separate, deliberate act. */
-    readonly reason?: string;
+    /**
+     * Free text from the moderator. REQUIRED since #1667.
+     *
+     * It used to be optional and was DISCARDED: only `hasReason: Boolean(...)`
+     * reached `PlatformAuditLog`, under a comment correctly saying the
+     * rationale "belongs on `ModerationAction.rationale`" — a comment
+     * describing a row this path never created. So a moderator typed a reason
+     * and nothing kept it.
+     *
+     * It is now the `rationale` of a proactive `ModerationAction`, which is
+     * encrypted at rest and is what an Art 17 statement is composed from. A
+     * decision that withholds a farm from a person is not recordable without
+     * one.
+     */
+    readonly reason: string;
 }
 
 export interface SuspendAccountResult {
@@ -198,7 +212,42 @@ function queuePostCommit(input: SuspendAccountInput, result: SuspendAccountResul
 export async function suspendAccount(
     input: SuspendAccountInput,
 ): Promise<SuspendAccountResult> {
-    return prisma.$transaction((tx) => suspendAccountOnTx(tx, input));
+    return prisma.$transaction(async (tx) => {
+        const result = await suspendAccountOnTx(tx, input);
+
+        // The DECISION, in the same transaction as the suspension (#1667).
+        //
+        // This path created no `ModerationAction` at all. `actOnNotice` always
+        // has one — a notice to act on — but a PROACTIVE suspension had
+        // nothing recording why it happened: the reason reached
+        // `PlatformAuditLog` as a boolean and the text was dropped. The schema
+        // anticipated this exactly: `reportId` is nullable *"because a
+        // PROACTIVE action has no notice behind it"*.
+        //
+        // AFTER `suspendAccountOnTx`, and only when it applied: an action row
+        // for a user who does not exist would be a decision about nobody, and
+        // the idempotent repeat path returns `applied: true` with
+        // `alreadySuspended`, which must not mint a second action for one
+        // decision.
+        //
+        // `subjectKind: 'ACCOUNT'` — the subject is a PERSON, not content.
+        // `PROFILE` would have made "somebody reported this profile" and "we
+        // suspended this account" the same query.
+        if (result.applied && !result.alreadySuspended) {
+            await tx.moderationAction.create({
+                data: {
+                    reportId: null,
+                    moderatorRef: moderatorRefFor(input.generation),
+                    actionKind: 'ACCOUNT_SUSPENDED',
+                    subjectKind: 'ACCOUNT',
+                    subjectId: input.userId,
+                    rationale: sanitizePlainText(input.reason),
+                },
+            });
+        }
+
+        return result;
+    });
 }
 
 export interface LiftSuspensionResult {

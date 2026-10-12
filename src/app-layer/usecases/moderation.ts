@@ -47,7 +47,7 @@ import { appendPlatformAuditEntry } from '@/lib/audit/platform-audit-writer';
 import { codedBadRequest } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logger } from '@/lib/observability/logger';
-import type { PlatformKeyGeneration } from '@/lib/auth/platform-admin';
+import { moderatorRefFor, type PlatformKeyGeneration } from '@/lib/auth/platform-admin';
 
 export type ReportStatus = 'RECEIVED' | 'TRIAGED' | 'ACTIONED' | 'REJECTED';
 export type ModerationActionKind =
@@ -61,11 +61,11 @@ export type ModerationActionKind =
 const DEFAULT_QUEUE_PAGE = 50;
 
 /** The attribution string stored on every action. See the module docblock. */
-export function moderatorRefFor(generation: PlatformKeyGeneration): string {
-    // Prefixed so the shape says what kind of thing it is. A bare "current"
-    // in an attribution column would read as a person's handle.
-    return `platform-key:${generation}`;
-}
+// Moved to `@/lib/auth/platform-admin` in #1667 — `suspendAccount` needs it
+// too, and this module already imports from `account-suspension`, so importing
+// it back would be a cycle. Re-exported so existing importers (and
+// `p5-4a-moderation-console.test.ts`) are untouched.
+export { moderatorRefFor } from '@/lib/auth/platform-admin';
 
 export interface QueuedNotice {
     id: string;

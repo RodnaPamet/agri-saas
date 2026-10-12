@@ -112,3 +112,23 @@ function constantTimeKeyMatch(provided: string, expected: string): boolean {
 
     return timingSafeEqual(a, b);
 }
+
+/**
+ * How a platform-key decision is attributed in a moderation record.
+ *
+ * Lives HERE, beside `PlatformKeyGeneration`, rather than in
+ * `usecases/moderation.ts` where it was first written (#1667). Two usecases now
+ * need it — `actOnNotice` and `suspendAccount` — and `moderation.ts` already
+ * imports `suspendAccountOnTx` from `account-suspension.ts`, so importing it
+ * back would make a cycle between the two.
+ *
+ * It names a KEY GENERATION, not a person: there is one
+ * `PLATFORM_ADMIN_API_KEY` for every operator, so this narrows a compromise
+ * window to one side of a rotation and is honest about being no more than that.
+ * #1599 (P5.8) owns the credential model that would make it a person.
+ */
+export function moderatorRefFor(generation: PlatformKeyGeneration): string {
+    // Prefixed so the shape says what kind of thing it is. A bare "current"
+    // in an attribution column would read as a person's handle.
+    return `platform-key:${generation}`;
+}
