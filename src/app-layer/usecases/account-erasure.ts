@@ -57,6 +57,55 @@ import { codedForbidden } from '@/lib/errors/types';
 /** How long a person has to change their mind. Owner ruling: 30 days. */
 export const DELETION_GRACE_DAYS = 30;
 
+/** The columns that decide whether a pending erasure is the subject's to stop. */
+export interface ErasureCancellability {
+    readonly deletionRequestedAt: Date | null;
+    readonly deletionRequestedBy: DeletionInitiator | null;
+    readonly terminatedAt: Date | null;
+    readonly pseudonymisedAt: Date | null;
+}
+
+/**
+ * May THIS person stop the erasure pending on their own account?
+ *
+ * ## Why this is a function and not two spellings of a condition
+ *
+ * Two places need the answer and they must never disagree:
+ *
+ * - {@link cancelAccountDeletion}, which enforces it;
+ * - `GET /api/auth/me`, which decides whether its 403 carries `erasesAt` —
+ *   and `erasesAt` is what the phone turns into a «stop the deletion» button.
+ *
+ * When they disagree in the direction of the route being more generous, the
+ * person is shown a date and a control, and the server then refuses: the
+ * offer-then-refuse shape that #1671, #1667 and this predicate have each been
+ * about in turn. It has now been reintroduced twice by adding a refusal signal
+ * to the usecase and not to the route — first the initiator, then
+ * `terminatedAt` — which is the argument for one callable rule rather than a
+ * comment asking the next person to remember. Found by agrent-ios, on a PR
+ * whose checks were green.
+ *
+ * ## The signals, and why each is separately necessary
+ *
+ * - `pseudonymisedAt` — past the point of no return; there is nothing left.
+ * - `deletionRequestedAt` — nothing pending, so nothing to stop.
+ * - `terminatedAt` — moderation finalised this account (#1654). Holds in the
+ *   case the initiator misses: a person may ask to leave and be terminated
+ *   afterwards, and `requestAccountDeletionOnTx` early-returns on an existing
+ *   request without writing the initiator, so the row stays `SELF`.
+ * - `deletionRequestedBy === 'MODERATION'` — whose erasure this is, which
+ *   `liftSuspension` also reads to decide whether a reinstatement clears the
+ *   erasure or leaves the person's own request standing.
+ *
+ * A NULL initiator reads as SELF: every row predating #1671 is a self-service
+ * request, since termination→erasure only shipped in #1654.
+ */
+export function subjectMayCancelErasure(user: ErasureCancellability): boolean {
+    if (user.pseudonymisedAt !== null) return false;
+    if (user.deletionRequestedAt === null) return false;
+    return user.terminatedAt === null && user.deletionRequestedBy !== 'MODERATION';
+}
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
@@ -479,10 +528,13 @@ export async function cancelAccountDeletion(
         //
         // A NULL initiator reads as SELF: every row predating #1671 is a
         // self-service request.
-        if (
-            existing.terminatedAt !== null ||
-            existing.deletionRequestedBy === 'MODERATION'
-        ) {
+        //
+        // Routed through the shared predicate rather than spelled again here.
+        // The two early returns above have already excluded its other two
+        // signals, so at this point `!subjectMayCancelErasure` is exactly the
+        // condition this used to test inline — and `/api/auth/me` now reads the
+        // same function, so a third signal cannot reach one and miss the other.
+        if (!subjectMayCancelErasure(existing)) {
             throw codedForbidden('ACCOUNT_TERMINATED', 'ACCOUNT_TERMINATED');
         }
 
