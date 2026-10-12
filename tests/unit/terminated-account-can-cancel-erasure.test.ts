@@ -1,10 +1,28 @@
 /**
  * A suspended account may STOP an erasure and may not START one (#1667).
  *
+ * ## Two rulings, and they only fit together with an initiator column
+ *
  * `ACCOUNT_TERMINATED` sets `suspendedAt` as well as `deletionRequestedAt`, so
- * P5.9's check was refusing `DELETE /api/account/deletion` — the one route a
- * terminated person is entitled to use — while agrent-ios's recovery screen
- * (#282, installed) offered them the button. Owner ruling: they may cancel.
+ * P5.9's check was refusing `DELETE /api/account/deletion` and a person who had
+ * REQUESTED deletion and was later suspended could not change their mind.
+ *
+ * Admitting every suspended account would also have let a moderator-terminated
+ * one undo its own termination, against the #1654 ruling that termination
+ * finalises — because `User` had no initiator column and #1654 wired
+ * `ACCOUNT_TERMINATED` to the SELF-SERVICE helper, making the two
+ * indistinguishable in the data. Caught by agrent backend-2 on the PR, whose
+ * ten required checks were green.
+ *
+ * Owner ruling (#1671): split by initiator. `SELF` may cancel even while
+ * suspended; `MODERATION` is refused with `ACCOUNT_TERMINATED`, a distinct code
+ * because `ACCOUNT_SUSPENDED` invites an appeal that would not restore
+ * anything.
+ *
+ * The protection that vanished is the thing to keep in view: it was this route
+ * refusing suspended accounts — a side effect of a different control, not a
+ * property of the erasure — so `cancelAccountDeletion` owns it now and the
+ * assertions below name it directly.
  *
  * ## The asymmetry is the subject
  *
@@ -43,6 +61,8 @@ jest.mock('@/app-layer/usecases/account-erasure', () => ({
 
 import { NextRequest } from 'next/server';
 
+import { codedForbidden } from '@/lib/errors/types';
+
 import { DELETE, POST } from '@/app/api/account/deletion/route';
 
 const SESSION = { user: { id: 'u-1', email: 'farmer@example.com' } };
@@ -70,11 +90,28 @@ beforeEach(() => {
 });
 
 describe('DELETE /api/account/deletion — the way out', () => {
-    it('lets a SUSPENDED account cancel', async () => {
+    it('lets a SUSPENDED account cancel its OWN request', async () => {
         isAccountSuspended.mockResolvedValue(true);
         const res = await DELETE(req('DELETE'), ctx());
         expect(res.status).toBe(200);
         expect(cancelAccountDeletion).toHaveBeenCalledWith('u-1');
+    });
+
+    it('refuses a MODERATION-initiated erasure with a DISTINCT code', async () => {
+        // The usecase owns this refusal, so the route only has to carry it.
+        // `ACCOUNT_TERMINATED` rather than `ACCOUNT_SUSPENDED`: the second
+        // invites an appeal, and an appeal would not restore anything here.
+        isAccountSuspended.mockResolvedValue(true);
+        // A REAL `codedForbidden`, not a plain object with the right
+        // properties. `withApiErrorHandling` maps error INSTANCES; a duck-typed
+        // one came back 500, which is the wrapper being strict rather than the
+        // refusal missing.
+        cancelAccountDeletion.mockRejectedValue(
+            codedForbidden('ACCOUNT_TERMINATED', 'ACCOUNT_TERMINATED'),
+        );
+        const res = await DELETE(req('DELETE'), ctx());
+        expect(res.status).toBe(403);
+        expect((await res.json()).error.code).toBe('ACCOUNT_TERMINATED');
     });
 
     it('still works for an account that is not suspended — the control', async () => {

@@ -996,3 +996,30 @@ enum CostAllocationBasis {
   /// figure wins, per the owner's exclusivity ruling.
   CROP
 }
+
+/// Who asked for an account's erasure (#1671, owner ruling 2026-10-12).
+///
+/// `User` had no such column, and #1654 wired `ACCOUNT_TERMINATED` to
+/// `requestAccountDeletionOnTx` — the SELF-SERVICE helper — so a moderator's
+/// termination wrote exactly what a person asking to leave writes. The two
+/// were indistinguishable in the data, which made one control do two jobs:
+/// the cancel route refused a suspended account, and that refusal was the ONLY
+/// thing stopping a terminated person undoing their own termination. It was a
+/// side effect of a different control rather than a property of the erasure,
+/// so admitting suspended accounts to the cancel route (#1667) removed it
+/// silently — all ten required checks were green on that PR.
+///
+/// NULLABLE on `User`, and a NULL reads as `SELF`: termination→erasure only
+/// shipped in #1654 and production holds no terminated accounts, so every
+/// pre-existing row is a self-service request. A non-null default would have
+/// been the same claim with less of a paper trail.
+enum DeletionInitiator {
+  /// The person asked to leave. Cancellable by them, INCLUDING while
+  /// suspended — a way out must not be gated on the condition it escapes.
+  SELF
+
+  /// A moderator terminated the account. NOT cancellable by its subject:
+  /// termination finalises (owner ruling on #1654), and the Art 17 statement
+  /// says the account was closed.
+  MODERATION
+}

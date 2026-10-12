@@ -28,6 +28,9 @@ export const GET = withApiErrorHandling(async () => {
             // trip. See `deletion` in the response for why it lives here
             // rather than on `/api/account/profile`.
             deletionRequestedAt: true,
+            // #1671 — WHO asked, which decides whether the 403 below may offer
+            // a cancel. Same query; no extra trip.
+            deletionRequestedBy: true,
             // P5.9 / #1652 — likewise on the query this handler ALREADY runs.
             // See the refusal below for why it is read here and not through
             // `isAccountSuspended`.
@@ -110,7 +113,34 @@ export const GET = withApiErrorHandling(async () => {
     // Removing the check below therefore has to remove the allowlist entry too,
     // which is what keeps the exemption honest.
     if (user?.suspendedAt) {
-        throw codedForbidden('ACCOUNT_SUSPENDED', 'ACCOUNT_SUSPENDED');
+        // The 403 carries `erasesAt` ONLY when the pending erasure is one the
+        // person may actually stop (#1671, owner ruling 2026-10-12).
+        //
+        // Why conditional and not simply "when a deletion is pending": a
+        // MODERATION-initiated erasure is refused by `cancelAccountDeletion`,
+        // so handing a terminated person a date would offer them an action the
+        // server will not honour — the EXACT defect the paragraph above
+        // describes this check as having fixed, reintroduced one level up.
+        // Caught by agrent backend-2 before it shipped.
+        //
+        // NULL reads as SELF: every row predating #1671 is a self-service
+        // request, since termination→erasure only shipped in #1654 and
+        // production holds no terminated accounts.
+        const cancellable =
+            user.deletionRequestedAt !== null &&
+            user.deletionRequestedBy !== 'MODERATION';
+        throw codedForbidden(
+            'ACCOUNT_SUSPENDED',
+            'ACCOUNT_SUSPENDED',
+            cancellable && user.deletionRequestedAt
+                ? {
+                      erasesAt: new Date(
+                          user.deletionRequestedAt.getTime() +
+                              DELETION_GRACE_DAYS * 24 * 60 * 60 * 1000,
+                      ).toISOString(),
+                  }
+                : undefined,
+        );
     }
 
     const membership = user?.tenantMemberships[0];

@@ -45,12 +45,15 @@ const PASSES_OPTION = /allowSuspended\s*:\s*(?:true|!0)/;
  */
 const ALLOWED: Readonly<Record<string, string>> = {
     'src/app/api/account/deletion/route.ts':
-        'DELETE only — cancelling an erasure the person is entitled to stop. ' +
-        '`ACCOUNT_TERMINATED` sets `suspendedAt` too, so the check was refusing ' +
-        'exactly the person it should admit, and the phone already offers the ' +
-        'button. Clears one column on the caller own row, does not lift the ' +
-        'suspension, and does not widen what they can read. POST on the same ' +
-        'route keeps the refusal.',
+        'DELETE only, and it admits a SELF-requested erasure only. The option ' +
+        'lets the request reach `cancelAccountDeletion`, which then refuses a ' +
+        'MODERATION-initiated erasure with `ACCOUNT_TERMINATED` — so what this ' +
+        'exemption actually buys is that a person who asked to leave and was ' +
+        'LATER suspended can still change their mind, which the suspension ' +
+        'check was denying them. It clears one column on the caller own row, ' +
+        'does not lift the suspension, and does not widen what they can read. ' +
+        'POST on the same route keeps the refusal, so a suspended account may ' +
+        'stop an erasure and may not start one.',
 };
 
 describe('the suspension escape is one named route (#1667)', () => {

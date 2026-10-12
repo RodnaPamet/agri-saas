@@ -81,11 +81,17 @@ export const DELETE = withApiErrorHandling(
         // `allowSuspended` — the ONE place it is passed, and the reason is that
         // a way out must never be gated on the condition it escapes.
         //
-        // `ACCOUNT_TERMINATED` sets `suspendedAt` as well as
-        // `deletionRequestedAt`, so until #1667 this route answered
-        // `ACCOUNT_SUSPENDED` to exactly the person entitled to stop the
-        // erasure — while agrent-ios's recovery screen (#282, installed)
-        // offered them the button. Owner ruling: they may cancel.
+        // The case it exists for is a person who REQUESTED deletion and was
+        // later suspended: until #1667 this route answered `ACCOUNT_SUSPENDED`
+        // and they could not change their mind.
+        //
+        // It does NOT admit a terminated account. `cancelAccountDeletion`
+        // refuses a MODERATION-initiated erasure with `ACCOUNT_TERMINATED`
+        // (#1671) — and that refusal lives in the usecase on purpose, because
+        // the previous protection was this route refusing suspended accounts,
+        // which is a side effect of a different control. #1667 removed it with
+        // every required check green; nothing asserted the protection
+        // directly, so nothing noticed.
         //
         // The same shape as P5.5a's slow-mode escape, where an unverified
         // account throttled on the route that verifies it cannot get out.

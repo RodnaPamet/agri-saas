@@ -314,7 +314,13 @@ export async function actOnNotice(input: {
             // has nothing left to restore. Anyone shortening that window is
             // shortening an appeal window.
             if (input.actionKind === 'ACCOUNT_TERMINATED') {
-                await requestAccountDeletionOnTx(tx, input.suspendUserId);
+                // MODERATION, which is what makes the erasure uncancellable by
+                // its subject (#1671). #1654 called this helper with no
+                // initiator, so a termination wrote exactly what a person
+                // asking to leave writes — and the only thing then stopping a
+                // self-undo was the cancel route refusing a suspended account,
+                // a side effect of a different control.
+                await requestAccountDeletionOnTx(tx, input.suspendUserId, 'MODERATION');
             }
         }
     });
