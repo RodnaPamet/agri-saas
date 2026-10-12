@@ -111,10 +111,31 @@ that may redirect converts it.
   explicitly not a reason — `account/layout.tsx` is a layout and it is gated.
 
 - **The page names no reason and offers no appeal.** Why an account was
-  suspended is delivered as an Art 17 statement of reasons to the person's own
-  inbox; repeating a summary here would be a second, un-versioned channel for
-  the same obligation. And there is no appeal surface, so a button would do
-  nothing on the one page somebody reads when they have just lost access.
+  suspended is a moderation decision, and Art 17 delivers it as a statement of
+  reasons; repeating a summary here would be a second, un-versioned channel for
+  the same obligation. There is no appeal surface, so a button would do nothing
+  on the one page a person reads when they have just lost access.
+
+- **And it does NOT claim an email was sent — a correction, caught before
+  merge.** It carried a third line reading «Изпратихме причината на имейла Ви…
+  отговорете на него» — *we sent the reason to your email; reply to it*. Both
+  halves are false, and agrent-ios found it:
+
+  - **A suspension queues no statement.** `queueStatement` has exactly one
+    caller, `POST /api/admin/moderation/statements`. `actOnNotice` suspends
+    inside its own transaction and never calls it, and
+    `POST /api/admin/moderation/suspensions` does not either. Even a queued
+    statement waits for a dispatch run, and a failed send stays undelivered by
+    design. The sentence was past tense and unconditional, so it was wrong in
+    all three cases.
+  - **Replies go to a no-reply mailbox.** `statement-dispatch` calls
+    `sendEmail({ to, subject, text })` with no `replyTo`, and the sender
+    defaults to `noreply@agrent.bg`.
+
+  This is #1655's shape — a notice promising what the code does not do — in the
+  one page whose entire purpose is to be honest with somebody who has just lost
+  access, and it was mine. Saying less was the only fix that did not require
+  building something first. The underlying gaps are filed separately.
 
 - **Exposure was nil.** Production holds three tenants of the owner's own test
   data and no suspended accounts, so nothing live was ever rendered to a
