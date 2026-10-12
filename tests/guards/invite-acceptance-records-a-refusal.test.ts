@@ -85,7 +85,6 @@ describe('invite acceptance records a refusal (#1656)', () => {
         // Per `a-gate-narrow-enough-to-always-pass`: an `accepting` list that
         // silently emptied — a renamed redeem function, a moved directory —
         // would satisfy the assertion below for free.
-        // eslint-disable-next-line no-console
         console.log(
             `[invite-acceptance-records-a-refusal] ${all.length} invite route(s); ` +
                 `${accepting.length} redeem: ` +

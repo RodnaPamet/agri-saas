@@ -90,7 +90,6 @@ const POPULATION = ALL.map(rel).filter(
 
 describe('§1 the population this covers', () => {
     it('prints the denominator', () => {
-        // eslint-disable-next-line no-console -- the denominator IS the output
         console.log(
             `[past-due] watched=${POPULATION.length} gated-files=${GATED.size} ` +
                 `open=${Object.keys(DELIBERATELY_OPEN).length}\n  ` +
