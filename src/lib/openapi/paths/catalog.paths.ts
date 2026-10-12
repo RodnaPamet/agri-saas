@@ -210,7 +210,7 @@ export function registerCatalogPaths(registry: OpenAPIRegistry): void {
         extraResponses: {
             409: {
                 description:
-                    'That name is already taken, case-insensitively. Not a stale edit — re-reading will not free the name; ask for a different one.',
+                    '`ITEM_NAME_ALREADY_EXISTS` — that name is already taken, case-insensitively. NOT `STALE_DATA`: re-reading will not free the name, so do not drive this through the stale-edit path; ask for a different one.',
                 content: { 'application/json': { schema: ItemNameConflictError } },
             },
         },
@@ -242,7 +242,7 @@ export function registerCatalogPaths(registry: OpenAPIRegistry): void {
         extraResponses: {
             409: {
                 description:
-                    'The rename collides with another item, case-insensitively. Same index and same remedy as create: a different name, not a re-read.',
+                    '`ITEM_NAME_ALREADY_EXISTS` — the rename collides with another item, case-insensitively. Same index, same code and same remedy as create: a different name, not a re-read.',
                 content: { 'application/json': { schema: ItemNameConflictError } },
             },
         },

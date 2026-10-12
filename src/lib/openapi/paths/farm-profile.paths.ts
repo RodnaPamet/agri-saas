@@ -232,7 +232,7 @@ export function registerFarmProfilePaths(registry: OpenAPIRegistry): void {
             }),
             409: {
                 description:
-                    'Optimistic-lock conflict — the profile moved on, or you sent a version for a row that does not exist. Re-read and retry; do NOT treat it as success.',
+                    '`STALE_DATA` — optimistic-lock conflict: the profile moved on, or you sent a version for a row that does not exist. Re-read and retry; do NOT treat it as success. `details` carries `currentVersion` and `expectedVersion`.',
                 content: { 'application/json': { schema: FarmProfileStaleDataError } },
             },
         },

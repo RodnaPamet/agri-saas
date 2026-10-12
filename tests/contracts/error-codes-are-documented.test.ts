@@ -234,7 +234,10 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     'INVALID_TAB_ORDER',
     'INVALID_TASK',
     'INVALID_VARIETY',
-    'ITEM_NAME_ALREADY_EXISTS',
+    // ITEM_NAME_ALREADY_EXISTS left this baseline in #1391: the catalogue's
+    // two 409 descriptions now NAME it, so it is documented rather than
+    // excused. Deleted rather than commented out — a baseline is a list of
+    // debts, and a paid one is not a debt with a note on it.
     'JOURNAL_ENTRY_NOT_DELETED',
     'JOURNAL_ENTRY_NOT_FOUND',
     'JOURNAL_ENTRY_NOT_SOFT_DELETED',

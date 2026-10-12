@@ -217,7 +217,7 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
             success: { status: 200, description: 'The updated entry.', schema: z.object({ success: z.literal(true), entry: LogEntryLike }) },
             extraResponses: {
                 409: {
-                    description: 'Optimistic-lock conflict — the entry moved on. Resolve it; do not treat it as success.',
+                    description: '`STALE_DATA` — optimistic-lock conflict: the entry moved on. Resolve it; do not treat it as success. `details` carries `currentVersion` and `expectedVersion`.',
                     content: { 'application/json': { schema: StaleDataError } },
                 },
             },
