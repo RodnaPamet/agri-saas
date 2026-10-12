@@ -6380,7 +6380,7 @@
             "NONE": "We looked at a report about your content and decided to take no action. Your content stays as it is.",
             "CONTENT_REMOVED": "We removed the content.",
             "CONTENT_DEMOTED": "We left the content in place but reduced how widely it is shown.",
-            "ACCOUNT_SUSPENDED": "We suspended your account. You cannot post or send messages while the suspension lasts.",
+            "ACCOUNT_SUSPENDED": "We suspended your account. You cannot open your farm while the suspension is in force. Everything already recorded is kept.",
             "ACCOUNT_TERMINATED": "We closed your account."
         }
     },

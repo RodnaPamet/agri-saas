@@ -1945,6 +1945,53 @@ literals only, so an operator can find the flag by reading the route. And
 unsuppressably, and a third party's user id in a device log is the disclosure
 this phase exists to prevent.
 
+### #1664 — the person block did not enforce, and the two session variables are why
+
+**`UserBlock`'s SELECT policy keys on `app.user_id`. The enforcement runs under
+`app.actor_user_id`.** `requireParty` — the choke point P5.2b credits with
+covering five paths — reads through the transaction `runInTenantContext` gives
+it, and that helper sets `app.tenant_id`, `app.request_id` and
+`app.actor_user_id`, never `app.user_id`. So `personBlockExists` and
+`amIBlockedByAnyOf` selected from an empty view and returned `false` for every
+pair, always. Blocking somebody had no effect on any thread path and nothing
+errored.
+
+Measured with a positive control — same row, same helper, two contexts: **1
+under a user context, 0 under a tenant context.** P5.1's own migration comment
+predicted this exact shape: *"picking the wrong one fails SILENTLY — the unset
+one yields NULL and the arm matches nothing."*
+
+**Fixed by a SELECT-ONLY arm keyed on `app.actor_user_id`**
+(`user_block_select_actor`). It admits exactly the same two people in the other
+context, so it widens nothing. Writes stay `app.user_id`-keyed because the
+social block routes are person-scoped — and a tenant-context DELETE arm would
+hand the blocked party a way to unblock themselves, which is why P5.1 split
+these policies per command.
+
+**Two fixes that look better and are worse:**
+
+- **Reading `UserBlock` through the privileged client.** `requireParty` runs
+  INSIDE a `$transaction`, so a global-client read takes a SECOND pool
+  connection while the first is held — #1191's P0.8 deadlock at `PG_POOL_MAX`
+  12.
+- **Setting `app.user_id` in `runInTenantContext`.** One line, and it starts
+  admitting `ContentReport`'s reporter-read rows inside every tenant
+  transaction. P5.2a's design depends on that arm NOT matching there, which is
+  why reporting lives under `/api/social/`.
+
+**Why two green suites missed it, and what that means for the next one.**
+`tests/unit/person-block-is-silent.test.ts` mocks Prisma, so its double returns
+a block row when asked and cannot express "the policy hides this row".
+`tests/integration/p5-1-trust-safety-rls.test.ts` covers the table's policies
+under `runInUserContext`. Both correct about their own axis; neither covering
+the seam. **A policy keyed on a session variable needs a test that runs in the
+context the production caller runs in** — asserting the table's policies from
+the right context proves the policy, not the feature.
+`tests/integration/p5-2b-person-block-enforces.test.ts` is that test, with
+controls in both directions: an outsider must see ZERO (so the fix is not a
+disclosure) and the blocked party must still fail to DELETE (so it stayed
+SELECT-only).
+
 ### P5.3 — «Сигнализирай» and «Блокирай», two controls that must not read alike
 
 One `ReportDialog` for every subject kind, three thin `ReportButton` triggers
