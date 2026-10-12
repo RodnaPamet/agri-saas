@@ -29,7 +29,8 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { randomUUID } from 'crypto';
 
 import { runStatementDispatch } from '@/app-layer/jobs/statement-dispatch';
-import { encryptField, hashForLookup } from '@/lib/security/encryption';
+import { queueStatementForAction } from '@/app-layer/usecases/statement-queue';
+import { decryptField, encryptField, hashForLookup } from '@/lib/security/encryption';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 
 const globalPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
@@ -105,6 +106,131 @@ describeFn('P5.4b — Art 17 statement dispatch (#1595)', () => {
                 `DELETE FROM "User" WHERE "id" = ANY($1::text[])`, users);
         }
         await globalPrisma.$disconnect();
+    });
+
+    // ── #1667 ──────────────────────────────────────────────────────────
+
+    it('the redress line never says "reply to this message", and never points at a page', async () => {
+        // Ruling 2, as finally implemented. `SMTP_FROM` defaults to
+        // `noreply@agrent.bg`, so the original copy — "reply to this message
+        // and a person will look at it again" — promised a reply nobody reads.
+        //
+        // And NOT a page either: my first fix pointed at `/dsa-contact`, which
+        // agrent-ios then read in production and found rendering "A contact
+        // address has not been configured for this deployment". The redress
+        // line is now a function of what is CONFIGURED — see
+        // `tests/unit/statement-redress-names-a-real-channel.test.ts` for the
+        // three configurations.
+        //
+        // Asserted on what reaches the MAILER rather than on the catalogue: a
+        // key that stopped being interpolated would leave a literal
+        // `{address}` in a legal notice and still match the catalogue.
+        const { id } = await makeUser('bg');
+        await makeQueuedStatement(id);
+
+        await runStatementDispatch();
+
+        const sent = sendEmail.mock.calls[0][0] as { text: string };
+        expect(sent.text).not.toMatch(/\{address\}|\{url\}/);
+        expect(sent.text).not.toContain('/dsa-contact');
+        expect(sent.text).not.toMatch(/отговорете на това съобщение|reply to this message/i);
+        // The judicial route is named whatever the configuration — Art 17
+        // requires it and it is true regardless.
+        expect(sent.text).toMatch(/съда/);
+    });
+
+    it('the auto-queued DRAFT is the text that gets delivered, when the locale has not moved', async () => {
+        // The property the shared `composeStatementBody` exists for (#1667).
+        //
+        // The console's `bodyRendered` was always a draft the dispatch job
+        // replaced, which was fine while a HUMAN typed it. A statement queued
+        // automatically has no human, so the draft is machine-composed — and if
+        // the queue and the job composed separately, the console's undelivered
+        // view would misreport what is about to be sent.
+        //
+        // Equality is asserted rather than "both mention the action", because
+        // the whole point is that they are one composition and not two that
+        // happen to agree today.
+        const { id } = await makeUser('bg');
+        const actionId = `ma-p54b-${randomUUID()}`;
+        await globalPrisma.$executeRawUnsafe(
+            `INSERT INTO "ModerationAction"("id","moderatorRef","actionKind","subjectKind","subjectId","rationale")
+             VALUES ($1,'platform-key:current','ACCOUNT_SUSPENDED','ACCOUNT',$2,$3)`,
+            actionId, id, encryptField('repeated unsubstantiated grade claims'),
+        );
+        actions.push(actionId);
+
+        const queued = await queueStatementForAction({
+            actionId,
+            recipientUserId: id,
+            actionKind: 'ACCOUNT_SUSPENDED',
+            rationale: 'repeated unsubstantiated grade claims',
+        });
+        expect(queued).not.toBeNull();
+        statements.push(queued!.statementId);
+
+        const draft = (await globalPrisma.statementOfReasons.findUnique({
+            where: { id: queued!.statementId },
+            select: { bodyRendered: true, locale: true },
+        }))!;
+        expect(draft.locale).toBe('bg');
+
+        await runStatementDispatch();
+
+        const delivered = (await globalPrisma.statementOfReasons.findUnique({
+            where: { id: queued!.statementId },
+            select: { bodyRendered: true, deliveredAt: true },
+        }))!;
+        expect(delivered.deliveredAt).not.toBeNull();
+        // DECRYPTED, because `bodyRendered` is an encrypted column and AES-GCM
+        // uses a random IV — identical text has different ciphertext, so a
+        // ciphertext comparison fails for two copies of the same sentence.
+        // (`globalPrisma` here is a raw client with no encryption middleware,
+        // which is why the rows come back as ciphertext at all.)
+        expect(decryptField(delivered.bodyRendered)).toBe(decryptField(draft.bodyRendered));
+        // And it is the text that actually went out.
+        expect((sendEmail.mock.calls[0][0] as { text: string }).text).toBe(
+            decryptField(delivered.bodyRendered),
+        );
+    });
+
+    it('a draft composed for a DIFFERENT language is replaced — the control', async () => {
+        // Without this, the equality above would also hold for a job that
+        // ignored the locale entirely. Art 17 wants the recipient's language at
+        // SEND time, so a person who switched language between the decision and
+        // the send must get the new one.
+        const { id } = await makeUser('bg');
+        const actionId = `ma-p54b-${randomUUID()}`;
+        await globalPrisma.$executeRawUnsafe(
+            `INSERT INTO "ModerationAction"("id","moderatorRef","actionKind","subjectKind","subjectId","rationale")
+             VALUES ($1,'platform-key:current','ACCOUNT_SUSPENDED','ACCOUNT',$2,$3)`,
+            actionId, id, encryptField('repeated unsubstantiated grade claims'),
+        );
+        actions.push(actionId);
+
+        const queued = await queueStatementForAction({
+            actionId,
+            recipientUserId: id,
+            actionKind: 'ACCOUNT_SUSPENDED',
+            rationale: 'repeated unsubstantiated grade claims',
+        });
+        statements.push(queued!.statementId);
+        const draft = (await globalPrisma.statementOfReasons.findUnique({
+            where: { id: queued!.statementId }, select: { bodyRendered: true },
+        }))!;
+
+        // They change their mind about the interface language.
+        await globalPrisma.$executeRawUnsafe(
+            `UPDATE "User" SET "uiLanguage" = 'en' WHERE "id" = $1`, id);
+
+        await runStatementDispatch();
+
+        const delivered = (await globalPrisma.statementOfReasons.findUnique({
+            where: { id: queued!.statementId },
+            select: { bodyRendered: true, locale: true },
+        }))!;
+        expect(delivered.locale).toBe('en');
+        expect(decryptField(delivered.bodyRendered)).not.toBe(decryptField(draft.bodyRendered));
     });
 
     it('delivers in the recipient’s OWN language, not the sender’s', async () => {

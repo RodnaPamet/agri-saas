@@ -42,6 +42,7 @@ import { randomUUID } from 'node:crypto';
 
 import prisma from '@/lib/prisma';
 import { suspendAccountOnTx } from './account-suspension';
+import { queueStatementForAction } from './statement-queue';
 import { requestAccountDeletionOnTx } from './account-erasure';
 import { appendPlatformAuditEntry } from '@/lib/audit/platform-audit-writer';
 import { codedBadRequest } from '@/lib/errors/types';
@@ -412,86 +413,42 @@ export async function actOnNotice(input: {
         generation: input.generation,
     });
 
+    // #1667 ruling 1 — the statement is queued automatically, not when
+    // somebody remembers the console. AFTER the transaction on purpose:
+    // composing it loads message catalogues from disk, and holding a database
+    // transaction open across file I/O is what `afterCommit` exists to avoid.
+    //
+    // Only where the RECIPIENT is unambiguous, which is the account kinds:
+    // `suspendUserId` is a person, supplied and validated. A content action's
+    // `subjectId` is a listing or a post, and resolving its owner needs a
+    // subjectKind -> owner mapping with a judgement per kind — deliberately
+    // NOT invented here, and filed instead. A statement addressed to the wrong
+    // person is worse than one not yet queued.
+    if (
+        input.suspendUserId &&
+        (input.actionKind === 'ACCOUNT_SUSPENDED' || input.actionKind === 'ACCOUNT_TERMINATED')
+    ) {
+        await queueStatementForAction({
+            actionId,
+            recipientUserId: input.suspendUserId,
+            actionKind: input.actionKind,
+            rationale: input.rationale,
+        });
+    }
+
     return { actionId, status, ...(suspended === undefined ? {} : { suspended }) };
 }
 
 /**
- * Queue a DSA Art 17 statement of reasons.
+ * Queueing a statement now lives in `./statement-queue`, re-exported here so
+ * the console route and the two integration suites that import it from this
+ * module are untouched.
  *
- * Written with `deliveredAt` NULL. **The row IS the outbox**: the existing
- * `NotificationOutbox` is tenant-scoped with a non-nullable `tenantId`, and an
- * Art 17 statement is addressed to a PERSON who may have no farm or several —
- * resolving one would be inventing a tenant for a person-scoped obligation.
- *
- * P5.1 already shaped the column for this: "NULL until the push succeeds. The
- * gap between `createdAt` and this is the Art 17 delivery lag, which is a
- * thing a regulator can ask about." P5.4b drains it.
- *
- * Stored RENDERED rather than as a template reference, following the
- * `NotificationOutbox` precedent: what was sent is a fact, and re-rendering
- * later from a since-changed template answers a different question.
+ * It moved because `account-suspension.ts` needs it for #1667's auto-queue and
+ * this module already imports `suspendAccountOnTx` from there — reaching back
+ * would close a cycle. Same move and same reason as `moderatorRefFor` (#1674).
  */
-export async function queueStatement(input: {
-    actionId: string;
-    recipientUserId: string;
-    locale: string;
-    bodyRendered: string;
-}): Promise<{ statementId: string }> {
-    const statementId = `sor-${randomUUID()}`;
-    await prisma.statementOfReasons.create({
-        data: {
-            id: statementId,
-            actionId: input.actionId,
-            recipientUserId: input.recipientUserId,
-            locale: input.locale,
-            bodyRendered: sanitizePlainText(input.bodyRendered),
-            // deliveredAt stays NULL. P5.4b stamps it.
-        },
-    });
-    // #1619 — the same `moderation` chain, best-effort for the same reason.
-    //
-    // A statement is a separate verb rather than a field on the action's entry:
-    // Art 17 requires a decision to be EXPLAINED, so "decided" and "explained"
-    // are two obligations and a regulator can be shown the second was met. An
-    // action with no statement entry is then visible in the chain rather than
-    // inferred from a missing field.
-    //
-    // No `afterCommit` here: `queueStatement` is a single `create` with no
-    // transaction frame of its own, so `afterCommit` would fire inline anyway
-    // (it runs the effect immediately when no scope is open). Calling directly
-    // says that plainly instead of implying a deferral that does not happen.
-    try {
-        await appendPlatformAuditEntry({
-            scope: 'moderation',
-            action: 'MODERATION_STATEMENT_QUEUED',
-            actorUserId: null,
-            detailsJson: {
-                statementId,
-                actionId: input.actionId,
-                recipientUserId: input.recipientUserId,
-                locale: input.locale,
-                // NOT `bodyRendered`: it is the delivered text, encrypted at
-                // rest, and `detailsJson` is not an encrypted column. P5.4b
-                // also replaces it at send time, so a copy here would be a
-                // draft the chain presented as final.
-            },
-        });
-    } catch (err) {
-        logger.error('moderation.audit_append_failed', {
-            component: 'moderation',
-            statementId,
-            error: err instanceof Error ? err.message : String(err),
-        });
-    }
-
-    logger.info('moderation.statement_queued', {
-        component: 'moderation',
-        statementId,
-        actionId: input.actionId,
-        locale: input.locale,
-    });
-    return { statementId };
-}
+export { queueStatement, queueStatementForAction } from './statement-queue';
 
 /**
  * Statements written and not yet delivered.
