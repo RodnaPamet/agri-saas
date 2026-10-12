@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { toApiErrorResponse } from './types';
+import { toApiErrorResponse, codedForbidden } from './types';
 import { runWithRequestContext, getRequestContext } from '@/lib/observability/context';
 import { logger, extractErrorMeta } from '@/lib/observability/logger';
 import { getTracer } from '@/lib/observability/tracing';
@@ -38,6 +38,39 @@ function generateRequestId(): string {
 // this wrapper anyway) pass `rateLimit: false`.
 
 const MUTATION_METHODS = new Set(['POST', 'PUT', 'DELETE', 'PATCH']);
+
+/**
+ * Surfaces the deletion freeze does NOT cover (#1655).
+ *
+ * The owner's ruling is "no new content" during the 30-day grace period, and
+ * these two prefixes are not content by construction: `/api/auth/` is session
+ * lifecycle (getting in, getting out, proving who you are, rotating a
+ * password) and `/api/account/` is self-service account management.
+ *
+ * **A PREFIX rule, not a per-route opt-out, and that is the load-bearing
+ * choice.** Nine wrapped mutation routes would otherwise each need to remember
+ * a flag — `account/deletion` (both methods), `auth/logout`, `auth/token`,
+ * `auth/token/refresh`, and the four native `auth/native/*` POSTs the phone
+ * signs in through. A forgotten one does not fail a test; it traps a person
+ * inside the freeze with no way out. This file's own rate-limit comment records
+ * the same lesson from the other side: the mechanism was opt-in and 343 of 346
+ * routes keyed `anon`, because "an invariant that holds only when 346 authors
+ * each remember it is not an invariant".
+ *
+ * The trailing slash is deliberate, per the `PUBLIC_PATH_PREFIXES` convention:
+ * `/api/accountsomething` must not be exempted by `/api/account`.
+ *
+ * `GET /api/account/export` needs no entry — it is a GET, and the freeze only
+ * ever applies to `MUTATION_METHODS`. It is named here anyway because Art 15
+ * does not lapse because Art 17 was invoked, and a future reader wondering
+ * whether the export survives the freeze should find the answer next to the
+ * rule rather than have to derive it.
+ */
+const DELETION_FREEZE_EXEMPT_PREFIXES = ['/api/auth/', '/api/account/'] as const;
+
+function isDeletionFreezeExempt(route: string): boolean {
+    return DELETION_FREEZE_EXEMPT_PREFIXES.some((p) => route.startsWith(p));
+}
 
 export interface ApiWrapperOptions {
     /**
@@ -124,6 +157,21 @@ async function resolveRateLimitScope(
     const usesDefaultTier = options?.config === undefined;
     let effectiveConfig = config;
 
+    // The CALLER, resolved once and reported separately from the id that bounds
+    // the budget (#1655). The two are not the same thing and conflating them
+    // would aim the deletion freeze at the wrong person:
+    //
+    //   - a `getUserId` route's `userId` is the TARGET of the action, so using
+    //     it would ask whether the target asked to be deleted;
+    //   - a `getBucket` route resolves no identity at all, and its one live
+    //     instance is SENDING A MESSAGE — exactly what the freeze must stop.
+    //
+    // So this is resolved for every mutation, which costs the bucketed route a
+    // JWE decode it used to skip. #1161 skipped it because the identity was
+    // irrelevant to the KEY, and that is still true — the key is untouched.
+    // What changed is that a second control now needs the answer.
+    let callerUserId: string | null = null;
+
     if (bucket == null) {
         if (options?.getUserId) {
             try {
@@ -131,14 +179,18 @@ async function resolveRateLimitScope(
             } catch {
                 userId = null;
             }
+            callerUserId = (await resolveRequestIdentity(req)).userId ?? null;
         } else {
-            // One decode for both answers — see `resolveRequestIdentity`.
+            // One decode for all three answers — see `resolveRequestIdentity`.
             const identity = await resolveRequestIdentity(req);
             userId = identity.userId;
+            callerUserId = identity.userId ?? null;
             if (usesDefaultTier && identity.slowMode) {
                 effectiveConfig = SLOW_MODE_MUTATION_LIMIT;
             }
         }
+    } else {
+        callerUserId = (await resolveRequestIdentity(req)).userId ?? null;
     }
     // NOTE the two paths that deliberately do NOT get slow mode:
     //
@@ -157,6 +209,7 @@ async function resolveRateLimitScope(
         scope: effectiveConfig === config ? scope : `${scope}-slow`,
         config: effectiveConfig,
         userId: userId ?? null,
+        callerUserId,
         bucket: bucket ?? undefined,
     };
 }
@@ -289,6 +342,67 @@ export function withApiErrorHandling<Context = unknown>(
                                 rateBlocked.headers.set('x-request-id', requestId);
                                 rateBlocked.headers.set(API_VERSION_HEADER, API_VERSION);
                                 return rateBlocked;
+                            }
+                        }
+
+                        // ── The deletion freeze (#1655) ──
+                        //
+                        // The privacy notice tells people, in both locales,
+                        // that asking to be deleted stops the account straight
+                        // away. Until this landed the request wrote
+                        // `deletionRequestedAt`, revoked sessions, and nothing
+                        // else read the column — so a person who signed back in
+                        // could keep posting for the full 30 days while the
+                        // notice said otherwise.
+                        //
+                        // HERE and not in `getSessionOrThrow`, where P5.9's
+                        // suspension check lives, for two reasons: that choke
+                        // point governs READS too and the ruling is "no new
+                        // content" rather than "no access"; and both escape
+                        // hatches resolve through it, so a check there would
+                        // block the route out of the freeze — the
+                        // `slow-mode-escape-is-not-throttled` failure exactly.
+                        //
+                        // The id is REUSED from the rate-limit scope where one
+                        // was resolved, so the common mutation pays no second
+                        // JWT decode; only a `rateLimit: false` route does its
+                        // own.
+                        if (
+                            MUTATION_METHODS.has(method) &&
+                            !isDeletionFreezeExempt(route)
+                        ) {
+                            // `callerUserId`, never `userId` — see
+                            // `resolveRateLimitScope`. The own-decode branch is
+                            // only for a `rateLimit: false` route, where no
+                            // scope was resolved at all.
+                            const frozenUserId = rateScope
+                                ? rateScope.callerUserId
+                                : (await resolveRequestIdentity(req)).userId;
+                            // LAZY, and not for performance. A static import
+                            // pulls the Prisma client into this module's graph,
+                            // and this module is imported by ~65 unit suites
+                            // through the route they test — two of them mock
+                            // `@/lib/db/rls-middleware` partially and died with
+                            // `withRlsTripwireExtension is not a function`, the
+                            // repo's partial-barrel-mock trap. Loading it here
+                            // costs nothing real: a non-exempt mutation is
+                            // about to touch the database anyway, so the module
+                            // is already warm, and the import cache makes it
+                            // once per process.
+                            const { isDeletionPending } = await import(
+                                '@/lib/auth/deletion-pending'
+                            );
+                            if (frozenUserId && (await isDeletionPending(frozenUserId))) {
+                                // A DISTINCT code, never `ACCOUNT_SUSPENDED`:
+                                // the cause and the remedy differ, and a person
+                                // who asked to leave must not be told a
+                                // moderator stopped them. The remedy is
+                                // `DELETE /api/account/deletion`, which the
+                                // prefix rule above keeps reachable.
+                                throw codedForbidden(
+                                    'ACCOUNT_DELETION_PENDING',
+                                    'ACCOUNT_DELETION_PENDING',
+                                );
                             }
                         }
 

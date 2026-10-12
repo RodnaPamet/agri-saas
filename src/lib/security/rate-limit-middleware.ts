@@ -54,6 +54,26 @@ export interface RateLimitScope {
     userId?: string | null;
 
     /**
+     * The id of the person MAKING the request, which is not always `userId`
+     * above (#1655).
+     *
+     * `userId` bounds the rate-limit BUDGET, and two options deliberately make
+     * it somebody other than the caller: a `getUserId` route sets it to the
+     * TARGET of the action, and a `getBucket` route replaces the caller key
+     * entirely and resolves no identity at all.
+     *
+     * Controls that ask a question about the CALLER — "has this person asked to
+     * delete their account?" — must read this field. Reading `userId` would aim
+     * the deletion freeze at the target of the action on one route class and at
+     * nobody on another, and the second is the route that sends messages.
+     *
+     * Not a rate-limiting concern, carried here because this is where the
+     * request identity is already resolved and a second decode per mutation is
+     * waste.
+     */
+    callerUserId?: string | null;
+
+    /**
      * Optional override for the client IP. Useful in tests and for
      * trusted upstreams that provide a verified client IP. When
      * omitted, extracted from the request.

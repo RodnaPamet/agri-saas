@@ -139,8 +139,28 @@ export async function getListing(ctx: RequestContext, id: string) {
     // withdraw their own row, which is the whole point of the exemption on
     // the withdraw path.
     if (listing.sellerTenantId !== ctx.tenantId) {
-        const off = await sellerTenantsWithExchangeOff();
-        if (off.includes(listing.sellerTenantId)) throw notFound('Listing not found');
+        // #1655 — and this is the same argument the paragraph above makes, one
+        // cause later: the browse feed now withholds a listing whose seller
+        // asked to delete their account, so a deep link must withhold it too
+        // or the hiding is defeated by sharing a URL. The OWNER exemption is
+        // the enclosing `if`, unchanged and for the same reason — they can
+        // still sign in to cancel, and must be able to see what they are
+        // recovering.
+        //
+        // `notFound`, deliberately the SAME refusal a genuinely missing
+        // listing gets. A distinct code would tell a stranger that this
+        // person's account is being deleted, which is their business and
+        // nobody else's — P5.2b's silence, applied to a different cause.
+        // ONE throw for both causes, and the suppression is checked first so a
+        // hidden listing short-circuits the module-exclusion query. Merged
+        // rather than added beside it because `no-server-authored-user-copy`
+        // holds English prose in thrown errors on a downward ratchet — a second
+        // `notFound('Listing not found')` raises the count for a sentence that
+        // already exists one line below.
+        const hidden = listing.suppressedForDeletionAt
+            ? true
+            : (await sellerTenantsWithExchangeOff()).includes(listing.sellerTenantId);
+        if (hidden) throw notFound('Listing not found');
     }
     return listing;
 }
@@ -375,7 +395,13 @@ export async function createInquiry(ctx: RequestContext, input: CreateInquiryInp
 
     const { inquiry, listing } = await runInTenantContext(ctx, async (db) => {
         const listing = await ExchangeRepository.getListing(db, input.listingId);
-        if (!listing) throw notFound('Listing not found');
+        // #1655 rides the EXISTING not-found rather than adding a second one,
+        // which is also exactly the behaviour wanted: a suppressed listing is
+        // indistinguishable from an absent one. A withdrawn listing still gets
+        // `listing_not_active` below — honest, because the seller withdrew it —
+        // whereas naming the suppressed state would disclose that its seller
+        // asked to delete their account.
+        if (!listing || listing.suppressedForDeletionAt) throw notFound('Listing not found');
         if (listing.status !== ExchangeListingStatus.ACTIVE) {
             throw badRequest('listing_not_active', 'This listing is no longer active');
         }

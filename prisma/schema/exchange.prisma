@@ -84,6 +84,17 @@ model ExchangeListing {
   /// can still be reachable after a deal without publishing anything.
   sellerContact     String?
   status            ExchangeListingStatus @default(ACTIVE)
+  /// Hidden from other farms because the SELLER asked to delete their account
+  /// (#1655). NULL means visible; a timestamp means withheld for the 30-day
+  /// grace period and restored verbatim if they cancel.
+  ///
+  /// Named for its one cause on purpose. The restore clears exactly the rows
+  /// this column marks, so a second, unrelated reason to hide a listing must
+  /// NOT share it — restoring would then un-hide something it never hid. It is
+  /// also deliberately NOT `status = WITHDRAWN`: that value is the seller's own
+  /// decision, and overwriting it would destroy the information the restore
+  /// needs and conflate a platform action with a human one.
+  suppressedForDeletionAt DateTime?
   expiresAt         DateTime?
   createdAt         DateTime              @default(now())
   updatedAt         DateTime              @updatedAt
