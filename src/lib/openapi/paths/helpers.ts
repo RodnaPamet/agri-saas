@@ -198,9 +198,13 @@ export function commonErrorResponses(): RouteConfig['responses'] {
                 'a higher plan or deleting something, and this description names no ' +
                 'destination for the same reason `PAST_DUE_RESTRICTED` does not.\n' +
                 '- `AI_BUDGET_EXCEEDED` — the tenant has spent its monthly AI token budget. ' +
-                'Params: `plan`, `limit`, `used`. It resets at the month boundary with ' +
-                'nothing to settle, so a client can honestly say \"next month\" — which is ' +
-                'what distinguishes it from the one above, where waiting changes nothing.\n' +
+                'Params: `plan`, `limit`, `used`. It resets at the start of the next ' +
+                '**UTC** month with nothing to settle, so a client can honestly say ' +
+                '\"next month\" — which is what distinguishes it from the one above, where ' +
+                'waiting changes nothing. UTC is stated because it is not local: for a ' +
+                'Bulgarian user the reset lands at 02:00 or 03:00 on the 1st (EET/EEST), ' +
+                'so copy naming a DAY would be wrong for a few hours each month. Raised ' +
+                'by agrent-ios, which got this right before the spec said it.\n' +
                 '- `AI_TIER_NOT_ALLOWED` — the requested model TIER is above this plan\'s ' +
                 'ceiling. Params: `plan`, `tier`, `ceiling`. Distinct from the budget code ' +
                 'on purpose: the refusal is on capability, not on spend, so retrying at ' +
