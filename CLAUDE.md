@@ -2270,14 +2270,16 @@ unscored.
 
 ### P5.9 — suspension, and why the check is in `getSessionOrThrow` of all places
 
-`User.suspendedAt` is read on EVERY authenticated request, so a suspension takes
+`User.suspendedAt` is read on every authenticated request but ONE, so a suspension takes
 effect on the next one (#1600). Policy in `src/lib/auth/suspension.ts`, the
 platform verbs in `src/app-layer/usecases/account-suspension.ts`.
 
 **It closes #1635, which is the thing to understand first.**
 `ACCOUNT_SUSPENDED` had been a recordable outcome since P5.1 and an announced
 one since P5.4b — the Art 17 statement tells the recipient «не можете да
-публикувате или да изпращате съобщения» — while `User` had no suspension column
+отваряте стопанството си» (it said «не можете да публикувате или да изпращате
+съобщения» until #1668, which was accurate for P5.4b and understated what P5.9
+does) — while `User` had no suspension column
 and `actOnNotice` wrote the row and stopped. Each phase was individually
 correct; nobody shipped the enforcement, and an unused enum string fails no
 guard. So `ActOnNoticeSchema` now REQUIRES `suspendUserId` for
@@ -2288,6 +2290,18 @@ without being performed.
 `recipientUserId` is on a statement: a notice names CONTENT, and a reported
 listing belongs to a FARM whose members are several. Which account to lock out
 is a judgement, not a lookup.
+
+**One route opts OUT, and the rule is the one P5.5a already wrote.**
+`DELETE /api/account/deletion` passes `allowSuspended` (#1667): a way out must
+never be gated on the condition it escapes, and `ACCOUNT_TERMINATED` sets
+`suspendedAt` as well as `deletionRequestedAt`, so the check was refusing
+exactly the person entitled to stop the erasure — while the phone's recovery
+screen offered them the button. Cancelling clears one column on the caller's own
+row and does NOT lift the suspension: they stop the erasure and stay locked out.
+`POST` on the same route keeps the refusal, so a suspended account may stop an
+erasure and may not start one, and
+`tests/guards/suspension-escape-is-not-gated.test.ts` holds the call-site count
+at one.
 
 **The check lives in `getSessionOrThrow` because the Edge cannot do it.**
 "Within one request" belongs in `src/middleware.ts`, which is the one reader of
