@@ -792,6 +792,13 @@
             "loading": "Loading farm profile…",
             "heading": "Farm profile",
             "encryptedNote": "Stored encrypted at rest.",
+            "identityHeading": "Farm identification",
+            "about": "These details are printed in the „ДНЕВНИК за проведените растителнозащитни мероприятия и торене“ (Annex 1 to БАБХ order № РД 11-3194/31.12.2021). Every field is optional — the empty ones stay as dots on the form.",
+            "loadFailed": "Could not load the farm profile.",
+            "saveFailed": "Could not save.",
+            "saved": "Farm profile saved.",
+            "saving": "Saving…",
+            "save": "Save",
             "fields": {
                 "producerName": "Agricultural producer (name / company)",
                 "egn": "ЕГН (personal ID)",
@@ -808,7 +815,7 @@
                 "grainProduced": "Crops produced"
             },
             "fieldHints": {
-                "urn": "The holding's number on the producer register — not the same as ЕИК or ЕГН.",
+                "urn": "The holding's unique registration number from ДФЗ (ИСАК) — not the same as ЕИК or ЕГН.",
                 "sizeHa": "As declared. May differ from the sum of the mapped parcels.",
                 "grainProduced": "Comma-separated, e.g. “wheat, sunflower, maize”.",
                 "registrationPlace": "Where the holding is registered. This is usually also the produce warehouse — the warehouse itself is recorded per parcel."

@@ -96,11 +96,17 @@ export default function AdminFarmProfilePage() {
                 setGrainProduced((data?.grainProduced ?? []).join(', '));
             }
         } catch {
-            setError('Неуспешно зареждане на профила на стопанството.');
+            setError(t('loadFailed'));
         } finally {
             setLoading(false);
         }
-    }, [apiUrl]);
+        // `t` is referentially stable: next-intl's `useTranslations` returns a
+        // `useMemo` keyed on cache, formatters, messages, namespace, locale and
+        // time zone, all of which the provider memoises. So naming it here
+        // satisfies the rule without making this effect re-run per render —
+        // which, via `useEffect(…, [fetchProfile])` below, would refetch the
+        // profile on every render.
+    }, [apiUrl, t]);
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => { fetchProfile(); }, [fetchProfile]);
@@ -133,7 +139,7 @@ export default function AdminFarmProfilePage() {
             });
             if (!res.ok) {
                 const data = await res.json().catch(() => ({}));
-                throw new Error(data.error || 'Неуспешно записване.');
+                throw new Error(data.error || t('saveFailed'));
             }
             const updated = await res.json();
             setProfile(
@@ -147,10 +153,10 @@ export default function AdminFarmProfilePage() {
             // negative size), and showing the typed value would hide that.
             setSizeHa(updated?.sizeHa == null ? '' : String(updated.sizeHa));
             setGrainProduced((updated?.grainProduced ?? []).join(', '));
-            setSuccess('Профилът на стопанството е записан.');
+            setSuccess(t('saved'));
             setTimeout(() => setSuccess(null), 3000);
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Неуспешно записване.');
+            setError(err instanceof Error ? err.message : t('saveFailed'));
         } finally {
             setSaving(false);
         }
@@ -205,12 +211,8 @@ export default function AdminFarmProfilePage() {
 
             <div className={cn(cardVariants(), 'space-y-default')}>
                 <div>
-                    <Heading level={2}>Идентификация на стопанството</Heading>
-                    <p className="text-sm text-content-muted mt-1">
-                        Данните се отпечатват в „ДНЕВНИК за проведените растителнозащитни
-                        мероприятия и торене“ (Приложение 1 към заповед № РД 11-3194/31.12.2021 г.
-                        на БАБХ). Всички полета са незадължителни — празните остават като точки във формата.
-                    </p>
+                    <Heading level={2}>{t('identityHeading')}</Heading>
+                    <p className="text-sm text-content-muted mt-1">{t('about')}</p>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-default">
@@ -285,7 +287,7 @@ export default function AdminFarmProfilePage() {
                     loading={saving}
                     id="farm-profile-save-btn"
                 >
-                    {saving ? 'Записване…' : 'Запис'}
+                    {saving ? t('saving') : t('save')}
                 </Button>
             </div>
         </div>

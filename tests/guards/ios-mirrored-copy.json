@@ -1,6 +1,6 @@
 {
     "Admin/FarmProfileEditing": {
-        "admin.farmProfile.fieldHints.urn": "Номерът на стопанството в регистъра на земеделските стопани — различен от ЕИК и ЕГН.",
+        "admin.farmProfile.fieldHints.urn": "Уникалният регистрационен номер от ДФЗ (ИСАК) — различен от ЕИК и ЕГН.",
         "admin.farmProfile.fields.address": "Адрес по регистрация / на управление",
         "admin.farmProfile.fields.agricultureDirectorateCity": "ОД „Земеделие“ гр.",
         "admin.farmProfile.fields.egn": "ЕГН",
@@ -156,5 +156,8 @@
     },
     "API/JournalFilter": {
         "ui.filter.anyDate": "Всяка дата"
+    },
+    "Admin/FarmProfileView": {
+        "admin.farmProfile.about": "Данните се отпечатват в „ДНЕВНИК за проведените растителнозащитни мероприятия и торене“ (Приложение 1 към заповед № РД 11-3194/31.12.2021 г. на БАБХ). Всички полета са незадължителни — празните остават като точки във формата."
     }
 }
