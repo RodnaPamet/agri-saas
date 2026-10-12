@@ -77,10 +77,19 @@ describe('Billing routes — self-hosted mode', () => {
         )) as Response;
         expect(res.status).toBe(403);
         const body = (await res.json()) as {
-            error?: { code?: string; message?: string };
+            error?: { code?: string; message?: string; params?: Record<string, string> };
         };
-        expect(body.error?.code).toBe('FORBIDDEN');
-        expect(body.error?.message).toMatch(/billing_unavailable/);
+        // A real code since #1679, where this was the generic `FORBIDDEN`.
+        expect(body.error?.code).toBe('BILLING_UNAVAILABLE');
+        expect(body.error?.params).toEqual({ mode: 'SELFHOSTED' });
+        // The legacy prefix is RETAINED, deliberately and transitionally: it
+        // was this refusal's only identifier before #1679 and installed
+        // clients match on it. `startsWith`, not `toMatch`, because the
+        // guarantee is about the START of the string — the position a client
+        // checks — and a loose match would keep passing if the token slid into
+        // the middle of a sentence. See
+        // tests/guards/legacy-refusal-prefixes-are-retained.test.ts.
+        expect(body.error?.message?.startsWith('billing_unavailable:')).toBe(true);
         expect(stripeSpy).not.toHaveBeenCalled();
     });
 
@@ -97,10 +106,19 @@ describe('Billing routes — self-hosted mode', () => {
         )) as Response;
         expect(res.status).toBe(403);
         const body = (await res.json()) as {
-            error?: { code?: string; message?: string };
+            error?: { code?: string; message?: string; params?: Record<string, string> };
         };
-        expect(body.error?.code).toBe('FORBIDDEN');
-        expect(body.error?.message).toMatch(/billing_unavailable/);
+        // A real code since #1679, where this was the generic `FORBIDDEN`.
+        expect(body.error?.code).toBe('BILLING_UNAVAILABLE');
+        expect(body.error?.params).toEqual({ mode: 'SELFHOSTED' });
+        // The legacy prefix is RETAINED, deliberately and transitionally: it
+        // was this refusal's only identifier before #1679 and installed
+        // clients match on it. `startsWith`, not `toMatch`, because the
+        // guarantee is about the START of the string — the position a client
+        // checks — and a loose match would keep passing if the token slid into
+        // the middle of a sentence. See
+        // tests/guards/legacy-refusal-prefixes-are-retained.test.ts.
+        expect(body.error?.message?.startsWith('billing_unavailable:')).toBe(true);
         expect(stripeSpy).not.toHaveBeenCalled();
     });
 });

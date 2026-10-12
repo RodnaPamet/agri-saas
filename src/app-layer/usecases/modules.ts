@@ -2,7 +2,7 @@ import { RequestContext } from '../types';
 import { ModuleSettingsRepository } from '../repositories/ModuleSettingsRepository';
 import { assertCanRead, assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
-import { forbidden, badRequest } from '@/lib/errors/types';
+import { codedForbidden, forbidden, badRequest } from '@/lib/errors/types';
 import { isAllowedMeteobotUrl } from '@/lib/security/meteobot';
 import { runInTenantContext } from '@/lib/db-context';
 import { ModuleKey } from '@prisma/client';
@@ -133,17 +133,52 @@ export async function isModuleAvailable(ctx: RequestContext, key: ModuleKey): Pr
 }
 
 /**
- * Throw a generic 403 if `key` is not AVAILABLE (plan-allowed ∧
- * tenant-enabled). Call after `getTenantCtx` in any API route belonging
- * to a gated module. The key is echoed only in the (non-sensitive) error
- * code `module_disabled:<key>`. The page twin is `requireModule()`
- * (redirect) in `@/lib/security/require-module`.
+ * Throw `MODULE_DISABLED` if `key` is not AVAILABLE (plan-allowed ∧
+ * tenant-enabled). Call after `getTenantCtx` in any API route belonging to a
+ * gated module. The page twin is `requireModule()` (redirect) in
+ * `@/lib/security/require-module`.
+ *
+ * ## `params.reason` — because the two halves have different remedies
+ *
+ * AVAILABLE is a conjunction, and which side failed decides what a client may
+ * truthfully tell the person:
+ *
+ *   `reason: 'tenant'`   an administrator of THIS farm can turn it on.
+ *   `reason: 'plan'`     the plan does not include it. No administrator can
+ *                        turn it on, and on iOS nobody can be sent anywhere
+ *                        (App Store 3.1.1).
+ *
+ * Collapsed into one answer, this is the agrent-ios#241 shape: a farmer sent
+ * to an admin who cannot help. It nearly shipped as exactly that — #1679's
+ * first spec text said "an administrator of the farm can turn it on" full
+ * stop, and agrent-ios had already written that sentence into Bulgarian from
+ * it before reading the conjunction here and catching it.
+ *
+ * A PARAM rather than a second code (`MODULE_NOT_IN_PLAN`), deliberately:
+ * `MODULE_DISABLED` currently means "this module is off", which is true of
+ * both halves, and splitting it would NARROW an already-published code — a
+ * breaking change for any client switching on it. A param is additive, so a
+ * client that ignores it keeps a correct, neutral sentence.
+ *
+ * The two checks are the two reads `isModuleAvailable` already performs, in
+ * the same order, so this costs no extra query.
  */
 export async function assertModuleEnabled(ctx: RequestContext, key: ModuleKey): Promise<void> {
     // Usage telemetry (module × device) — recorded before the check so denied
     // attempts count too. Best-effort; never affects the gate.
     await recordModuleAccess(key);
-    if (!(await isModuleAvailable(ctx, key))) {
-        throw forbidden(`module_disabled: ${key}`);
+
+    const plan = await getTenantPlan(ctx.tenantId);
+    if (!planAllowsModule(plan, key)) {
+        throw codedForbidden('MODULE_DISABLED', `module_disabled: ${key}`, {
+            module: key,
+            reason: 'plan',
+        });
+    }
+    if (!(await isModuleEnabled(ctx, key))) {
+        throw codedForbidden('MODULE_DISABLED', `module_disabled: ${key}`, {
+            module: key,
+            reason: 'tenant',
+        });
     }
 }
