@@ -37,6 +37,7 @@
  * dispatch job, where that reasoning was first written down.
  */
 import type { Locale } from '@/lib/i18n/locales';
+import { env } from '@/env';
 import { translateFor } from '@/lib/i18n/server-messages';
 
 export interface StatementBody {
@@ -62,22 +63,17 @@ export async function composeStatementBody(
     locale: Locale,
     actionKind: string,
     rationale: string,
-    opts?: { readonly redressUrl?: string },
 ): Promise<StatementBody> {
+    const address = resolveRedressAddress();
     const [subject, intro, actionLine, reasonLabel, redress] = await Promise.all([
         translateFor(locale, 'statementOfReasons.subject'),
         translateFor(locale, 'statementOfReasons.intro'),
         translateFor(locale, `statementOfReasons.action.${actionKind}`),
         translateFor(locale, 'statementOfReasons.reasonLabel'),
-        // #1667 ruling 2: the redress line names the `/dsa-contact` page, not
-        // "reply to this message". `SMTP_FROM` defaults to
-        // `noreply@agrent.bg`, so the old copy promised a reply nobody reads —
-        // in the one communication where a broken remedy is itself the
-        // compliance failure. The page is already public (`guard.ts` allowlists
-        // it) and does not depend on the role mailbox #1599 is blocked on.
-        translateFor(locale, 'statementOfReasons.redress', {
-            url: opts?.redressUrl ?? DSA_CONTACT_PATH,
-        }),
+        // #1667 ruling 2, SECOND attempt — see `resolveRedressAddress`.
+        address
+            ? translateFor(locale, 'statementOfReasons.redress', { address })
+            : translateFor(locale, 'statementOfReasons.redressNoContact'),
     ]);
 
     return {
@@ -86,11 +82,40 @@ export async function composeStatementBody(
     };
 }
 
-/** The DSA single point of contact, as a path. Public — see `lib/auth/guard.ts`. */
-export const DSA_CONTACT_PATH = '/dsa-contact';
-
-/** Absolute `/dsa-contact` for an email, which cannot resolve a relative path. */
-export function dsaContactUrl(appUrl: string | undefined | null): string {
-    const base = (appUrl ?? '').replace(/\/+$/, '');
-    return base ? `${base}${DSA_CONTACT_PATH}` : DSA_CONTACT_PATH;
+/**
+ * The address a suspended person may write to, or `null` if there is none.
+ *
+ * ## Why this does NOT point at `/dsa-contact`
+ *
+ * #1667 ruling 2 was "point at `/dsa-contact` instead" of "reply to this
+ * message", and my first implementation did exactly that. `agrent-ios` then
+ * read production: the page still renders `dsa.addressUnset` —
+ * *"A contact address has not been configured for this deployment"* — because
+ * `DSA_CONTACT_EMAIL` is unset, while the page's own body says "Write to the
+ * address below" with nothing below it.
+ *
+ * So the statement would have sent a suspended farmer **email → a page with no
+ * address → a third page**. That is a worse dead end than the `noreply`
+ * promise the ruling was correcting, and it would have gone out automatically
+ * on every suspension.
+ *
+ * The ruling's intent — a redress route that exists — is served better by
+ * naming an ADDRESS in the email, with no hop at all:
+ *
+ *   1. `DSA_CONTACT_EMAIL`      the Art 11/12 single point of contact.
+ *   2. `PRIVACY_CONTACT_EMAIL`  a real operator contact, the fallback the
+ *                               `/dsa-contact` page itself suggests.
+ *   3. neither set              name NO address and promise no human review.
+ *
+ * Case 3 is the honest one and the point of the whole change: the statement
+ * still informs the person of out-of-court and judicial redress, which is true
+ * regardless of configuration, and claims nothing that is not. A legal notice
+ * that names a channel nobody reads is the defect, not the absence of one.
+ *
+ * Both variables are `z.string().email().optional()` with no default, and
+ * deliberately so — `env.ts` says the controller is the organisation operating
+ * the deployment, so an address cannot be baked in.
+ */
+export function resolveRedressAddress(): string | null {
+    return env.DSA_CONTACT_EMAIL ?? env.PRIVACY_CONTACT_EMAIL ?? null;
 }

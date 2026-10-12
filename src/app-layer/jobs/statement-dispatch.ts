@@ -54,7 +54,7 @@ import prisma from '@/lib/prisma';
 import { sendEmail } from '@/lib/mailer';
 import { env } from '@/env';
 import { logger } from '@/lib/observability/logger';
-import { composeStatementBody, dsaContactUrl } from '@/app-layer/usecases/statement-body';
+import { composeStatementBody } from '@/app-layer/usecases/statement-body';
 import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
 import type { JobRunResult } from './types';
 
@@ -151,7 +151,6 @@ export async function runStatementDispatch(
                 locale,
                 action.actionKind,
                 action.rationale,
-                { redressUrl: dsaContactUrl(env.APP_URL) },
             );
 
             await sendEmail({ to: recipient.email, subject, text: body });

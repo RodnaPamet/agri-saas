@@ -42,6 +42,7 @@
  * transaction, and this usecase is the outermost one. A direct call after
  * `$transaction` returns is the same moment with less indirection.
  */
+import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 
 import prisma from '@/lib/prisma';
@@ -54,6 +55,7 @@ import {
     type PlatformAuditScope,
 } from '@/lib/audit/platform-audit-writer';
 import { moderatorRefFor } from '@/lib/auth/platform-admin';
+import { queueStatementForAction } from './statement-queue';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 
 /** The chain these entries belong to. Added by this phase's migration. */
@@ -213,7 +215,11 @@ function queuePostCommit(input: SuspendAccountInput, result: SuspendAccountResul
 export async function suspendAccount(
     input: SuspendAccountInput,
 ): Promise<SuspendAccountResult> {
-    return prisma.$transaction(async (tx) => {
+    // Minted OUTSIDE the transaction so the statement can be queued after it
+    // commits. `actOnNotice` does the same, for the same reason.
+    const actionId = `ma-${randomUUID()}`;
+
+    const { result, actionRecorded } = await prisma.$transaction(async (tx) => {
         const result = await suspendAccountOnTx(tx, input);
 
         // The DECISION, in the same transaction as the suspension (#1667).
@@ -237,6 +243,7 @@ export async function suspendAccount(
         if (result.applied && !result.alreadySuspended) {
             await tx.moderationAction.create({
                 data: {
+                    id: actionId,
                     reportId: null,
                     moderatorRef: moderatorRefFor(input.generation),
                     actionKind: 'ACCOUNT_SUSPENDED',
@@ -245,10 +252,49 @@ export async function suspendAccount(
                     rationale: sanitizePlainText(input.reason),
                 },
             });
+            return { result, actionRecorded: true };
         }
 
-        return result;
+        return { result, actionRecorded: false };
     });
+
+    // #1667 ruling 1 — the suspension EXPLAINS itself. This is the measurement
+    // that opened the issue: "a suspension sends nothing". The decision was
+    // taken, the account was locked, and the Art 17 obligation to explain it
+    // depended on a moderator opening a second screen.
+    //
+    // Gated on `actionRecorded`, not on `result.applied`: the idempotent repeat
+    // path returns `applied: true` with `alreadySuspended` and mints no action,
+    // so queueing there would send a second legal notice for one decision.
+    //
+    // AFTER the transaction — composing the body reads message catalogues from
+    // disk, and holding a transaction open across file I/O is what the #1191
+    // P0.8 shape is about. Never throws; see `queueStatementForAction`.
+    if (actionRecorded) {
+        // Guarded HERE as well, even though `queueStatementForAction` already
+        // swallows. "Never throws" is a promise a refactor can break silently,
+        // and the cost of trusting it is leaving harmful content up because a
+        // message catalogue would not load. The two layers are not redundant:
+        // the helper's catch is what records WHY it failed, and this one is
+        // what keeps that failure from reaching the caller.
+        try {
+            await queueStatementForAction({
+                actionId,
+                recipientUserId: input.userId,
+                actionKind: 'ACCOUNT_SUSPENDED',
+                rationale: input.reason,
+            });
+        } catch (err) {
+            logger.error('account-suspension.statement_queue_threw', {
+                component: 'account-suspension',
+                targetId: input.userId,
+                actionId,
+                error: err instanceof Error ? err.message : String(err),
+            });
+        }
+    }
+
+    return result;
 }
 
 export interface LiftSuspensionResult {
