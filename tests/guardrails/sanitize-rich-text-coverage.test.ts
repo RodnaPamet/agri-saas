@@ -63,8 +63,14 @@ const RICH_TEXT_COVERAGE: Readonly<
     // — "until P5.4 does that, rendering cannot be trusted to be clean".
     // P5.4a does both, in one module and one PR, so the transitive argument is
     // moot: each is sanitised where it is written.
+    //
+    // #1667 moved `queueStatement` to `statement-queue.ts` so
+    // `account-suspension.ts` could reach it without closing an import cycle.
+    // THIS GUARD CAUGHT THE MOVE — it is the write path that matters, not the
+    // module that happened to hold it, and a sanitiser named in the wrong file
+    // is a sanitiser nobody is checking.
     StatementOfReasons: {
-        usecases: ['src/app-layer/usecases/moderation.ts'],
+        usecases: ['src/app-layer/usecases/statement-queue.ts'],
         sanitizer: 'sanitizePlainText',
     },
     // P5.4a (#1595). `ModerationAction.rationale` is moderator-authored free

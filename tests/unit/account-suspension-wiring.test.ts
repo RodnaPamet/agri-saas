@@ -49,6 +49,12 @@ const sessionUpdateMany = jest.fn();
 // reaches one more delegate. Without it every test in this file failed on a
 // missing `moderationAction`, which is the ordinary cost of a new write and
 // cheaper than discovering it in CI.
+const queueStatementForAction = jest.fn();
+jest.mock('@/app-layer/usecases/statement-queue', () => ({
+    ...jest.requireActual('@/app-layer/usecases/statement-queue'),
+    queueStatementForAction: (...a: unknown[]) => queueStatementForAction(...a),
+}));
+
 const moderationActionCreate = jest.fn();
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
@@ -83,6 +89,9 @@ beforeEach(() => {
     sessionUpdateMany.mockReset().mockResolvedValue({ count: 2 });
     moderationActionCreate.mockReset().mockResolvedValue({});
     invalidateDeletionPendingCache.mockReset().mockResolvedValue(undefined);
+    // `mockReset` clears the IMPLEMENTATION too, so the rejecting one a
+    // later case installs cannot poison the rest of the file.
+    queueStatementForAction.mockReset().mockResolvedValue({ statementId: 'sor-1' });
 });
 
 describe('suspending wires both post-commit effects', () => {
@@ -152,6 +161,65 @@ describe('suspending wires both post-commit effects', () => {
         await suspendAccount({ userId: 'u1', generation: 'current', reason: 'repeat abuse' });
 
         expect(moderationActionCreate).not.toHaveBeenCalled();
+    });
+
+    // ── #1667 ruling 1: the suspension EXPLAINS itself ─────────────
+
+    it('queues an Art 17 statement for the suspended person', async () => {
+        // The measurement that opened #1667: "a suspension sends nothing". The
+        // decision was taken, the account was locked, and the obligation to
+        // explain it depended on a moderator opening a second screen.
+        userFindUnique.mockResolvedValue({ id: 'u1', suspendedAt: null });
+        await suspendAccount({ userId: 'u1', reason: 'repeat illegal content', generation: 'current' });
+
+        expect(queueStatementForAction).toHaveBeenCalledTimes(1);
+        expect(queueStatementForAction.mock.calls[0][0]).toMatchObject({
+            recipientUserId: 'u1',
+            actionKind: 'ACCOUNT_SUSPENDED',
+            // The RAW reason, not the sanitised copy stored on the action: the
+            // composer sanitises on the way into `bodyRendered`, and
+            // double-sanitising a legal notice is how its punctuation changes.
+            rationale: 'repeat illegal content',
+        });
+        // The same action the chain names, so a regulator can line them up.
+        expect(queueStatementForAction.mock.calls[0][0].actionId).toBe(
+            moderationActionCreate.mock.calls[0][0].data.id,
+        );
+    });
+
+    it('queues NO SECOND statement for an idempotent repeat', async () => {
+        // The one that matters most. A repeat returns `applied: true` with
+        // `alreadySuspended` and mints no action — so queueing on `applied`
+        // would send a second legal notice for one decision. Gated on the
+        // action having been recorded instead.
+        userFindUnique.mockResolvedValue({ id: 'u1', suspendedAt: new Date() });
+        await suspendAccount({ userId: 'u1', reason: 'repeat illegal content', generation: 'current' });
+
+        expect(moderationActionCreate).not.toHaveBeenCalled();
+        expect(queueStatementForAction).not.toHaveBeenCalled();
+    });
+
+    it('queues nothing for an account that does not exist', async () => {
+        userFindUnique.mockResolvedValue(null);
+        await suspendAccount({ userId: 'ghost', reason: 'repeat illegal content', generation: 'current' });
+        expect(queueStatementForAction).not.toHaveBeenCalled();
+    });
+
+    it('a failed statement queue does NOT undo the suspension', async () => {
+        // The suspension is what protects the farm. A statement that could not
+        // be drafted is a compliance gap, not a reason to leave harmful
+        // content up — the same ordering the chain append already uses. The
+        // gap stays visible as an action with no MODERATION_STATEMENT_QUEUED
+        // entry beside it in the chain.
+        userFindUnique.mockResolvedValue({ id: 'u1', suspendedAt: null });
+        queueStatementForAction.mockRejectedValue(new Error('catalogue unreadable'));
+
+        const result = await suspendAccount({
+            userId: 'u1', reason: 'repeat illegal content', generation: 'current',
+        });
+
+        expect(result.applied).toBe(true);
+        expect(userUpdate).toHaveBeenCalled();
     });
 
     it('records NO action for an account that does not exist', async () => {

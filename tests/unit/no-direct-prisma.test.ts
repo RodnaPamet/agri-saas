@@ -121,6 +121,24 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
         // `moderatorRef` comes from the verified key generation and the
         // subject is denormalised from the notice.
         'moderation.ts',
+        // #1667 — `statement-queue.ts` is the half of `moderation.ts` that
+        // writes a `StatementOfReasons`. It was IN `moderation.ts` and carries
+        // the same exemption for the same reason: a statement is addressed to
+        // a PERSON who may hold several farms or none, written by a platform
+        // moderator with no tenant context, so there is no tenant client to
+        // reach for and the route gate (`verifyPlatformApiKey`) is what stands
+        // in for RLS.
+        //
+        // It moved only to break a cycle — `moderation.ts` already imports
+        // `suspendAccountOnTx` from `account-suspension.ts`, which needs the
+        // queue for #1667's auto-queue — so this is the pre-existing exemption
+        // following its code rather than a new one being granted.
+        //
+        // The defect this could hide is the same one to check in review: a
+        // function here taking a tenant or user id from a request BODY. It
+        // takes `recipientUserId` from its caller, which is either the notice's
+        // validated `suspendUserId` or `suspendAccount`'s own target.
+        'statement-queue.ts',
         // P5.9 (#1600) — `account-suspension.ts` writes `User.suspendedAt`,
         // `User.sessionVersion` and `UserSession.revokedAt` for a person the
         // caller is NOT: a platform moderator with no tenant context, acting
