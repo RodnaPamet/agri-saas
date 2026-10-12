@@ -45,6 +45,11 @@ jest.mock('@/lib/audit/platform-audit-writer', () => ({
 const userFindUnique = jest.fn();
 const userUpdate = jest.fn();
 const sessionUpdateMany = jest.fn();
+// #1667 — a direct suspension now records the DECISION, so the transaction
+// reaches one more delegate. Without it every test in this file failed on a
+// missing `moderationAction`, which is the ordinary cost of a new write and
+// cheaper than discovering it in CI.
+const moderationActionCreate = jest.fn();
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
     default: {
@@ -57,6 +62,9 @@ jest.mock('@/lib/prisma', () => ({
                     update: (...a: unknown[]) => userUpdate(...a),
                 },
                 userSession: { updateMany: (...a: unknown[]) => sessionUpdateMany(...a) },
+                moderationAction: {
+                    create: (...a: unknown[]) => moderationActionCreate(...a),
+                },
             }),
     },
 }));
@@ -73,12 +81,13 @@ beforeEach(() => {
     userFindUnique.mockReset().mockResolvedValue({ id: 'u1', suspendedAt: null });
     userUpdate.mockReset().mockResolvedValue({});
     sessionUpdateMany.mockReset().mockResolvedValue({ count: 2 });
+    moderationActionCreate.mockReset().mockResolvedValue({});
     invalidateDeletionPendingCache.mockReset().mockResolvedValue(undefined);
 });
 
 describe('suspending wires both post-commit effects', () => {
     it('invalidates the cached verdict', async () => {
-        await suspendAccount({ userId: 'u1', generation: 'current' });
+        await suspendAccount({ userId: 'u1', generation: 'current', reason: 'repeat abuse' });
 
         // THE MUTATION TARGET. Without this assertion, dropping the
         // invalidation is green everywhere.
@@ -86,7 +95,7 @@ describe('suspending wires both post-commit effects', () => {
     });
 
     it('appends to the moderation chain, naming the key generation', async () => {
-        await suspendAccount({ userId: 'u1', generation: 'previous' });
+        await suspendAccount({ userId: 'u1', generation: 'previous', reason: 'repeat abuse' });
 
         expect(appendPlatformAuditEntry).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -108,15 +117,56 @@ describe('suspending wires both post-commit effects', () => {
 
         const details = appendPlatformAuditEntry.mock.calls[0][0].detailsJson;
         expect(details.hasReason).toBe(true);
-        // `detailsJson` is not an encrypted column; the rationale belongs on
-        // `ModerationAction.rationale`, which is.
+        // `detailsJson` is not an encrypted column.
         expect(JSON.stringify(details)).not.toContain('repeat abuse');
+    });
+
+    it('and the reason itself reaches ModerationAction.rationale', async () => {
+        // The other half, which the comment above used to assert on its own:
+        // "the rationale belongs on `ModerationAction.rationale`, which is
+        // [encrypted]". That was ASPIRATIONAL — this path created no action
+        // row, so the reason was accepted and dropped (#1667). Now it is a
+        // claim with a test.
+        await suspendAccount({ userId: 'u1', generation: 'current', reason: 'repeat abuse' });
+
+        expect(moderationActionCreate).toHaveBeenCalledTimes(1);
+        expect(moderationActionCreate.mock.calls[0][0].data).toMatchObject({
+            // PROACTIVE: no notice behind it, which is why `reportId` is
+            // nullable on that model.
+            reportId: null,
+            actionKind: 'ACCOUNT_SUSPENDED',
+            // The subject is a PERSON, not content.
+            subjectKind: 'ACCOUNT',
+            subjectId: 'u1',
+            rationale: 'repeat abuse',
+            moderatorRef: 'platform-key:current',
+        });
+    });
+
+    it('records NO action for an idempotent repeat', async () => {
+        // One decision, one row. A second action would make the history claim
+        // two suspensions — the same reasoning the chain-entry test below
+        // applies to `PlatformAuditLog`.
+        userFindUnique.mockResolvedValue({ id: 'u1', suspendedAt: new Date() });
+
+        await suspendAccount({ userId: 'u1', generation: 'current', reason: 'repeat abuse' });
+
+        expect(moderationActionCreate).not.toHaveBeenCalled();
+    });
+
+    it('records NO action for an account that does not exist', async () => {
+        // A decision about nobody. `applied: false` is the caller's 404.
+        userFindUnique.mockResolvedValue(null);
+
+        await suspendAccount({ userId: 'nope', generation: 'current', reason: 'repeat abuse' });
+
+        expect(moderationActionCreate).not.toHaveBeenCalled();
     });
 
     it('does NEITHER when the account is already suspended', async () => {
         userFindUnique.mockResolvedValue({ id: 'u1', suspendedAt: new Date() });
 
-        const result = await suspendAccount({ userId: 'u1', generation: 'current' });
+        const result = await suspendAccount({ userId: 'u1', generation: 'current', reason: 'repeat abuse' });
 
         expect(result.alreadySuspended).toBe(true);
         // A second chain entry would make the history claim two suspensions.
@@ -128,7 +178,7 @@ describe('suspending wires both post-commit effects', () => {
     it('does NEITHER when the account does not exist', async () => {
         userFindUnique.mockResolvedValue(null);
 
-        const result = await suspendAccount({ userId: 'nope', generation: 'current' });
+        const result = await suspendAccount({ userId: 'nope', generation: 'current', reason: 'repeat abuse' });
 
         expect(result.applied).toBe(false);
         expect(appendPlatformAuditEntry).not.toHaveBeenCalled();
@@ -141,12 +191,12 @@ describe('suspending wires both post-commit effects', () => {
         // not propagate.
         appendPlatformAuditEntry.mockRejectedValue(new Error('chain locked'));
 
-        await expect(suspendAccount({ userId: 'u1', generation: 'current' }))
+        await expect(suspendAccount({ userId: 'u1', generation: 'current', reason: 'repeat abuse' }))
             .resolves.toMatchObject({ applied: true });
     });
 
     it('bumps sessionVersion AND stamps suspendedAt in one update', async () => {
-        await suspendAccount({ userId: 'u1', generation: 'current' });
+        await suspendAccount({ userId: 'u1', generation: 'current', reason: 'repeat abuse' });
 
         const data = userUpdate.mock.calls[0][0].data;
         expect(data.suspendedAt).toBeInstanceOf(Date);
@@ -156,7 +206,7 @@ describe('suspending wires both post-commit effects', () => {
     });
 
     it('revokes only the LIVE session rows', async () => {
-        await suspendAccount({ userId: 'u1', generation: 'current' });
+        await suspendAccount({ userId: 'u1', generation: 'current', reason: 'repeat abuse' });
 
         expect(sessionUpdateMany).toHaveBeenCalledWith(
             expect.objectContaining({

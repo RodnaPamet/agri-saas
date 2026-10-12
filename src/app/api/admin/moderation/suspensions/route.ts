@@ -44,8 +44,23 @@ export const runtime = 'nodejs';
 
 const SuspendBody = z.object({
     userId: z.string().min(1).max(200),
-    /** Optional: only `hasReason` reaches the audit chain, never the text. */
-    reason: z.string().min(1).max(MODERATION_RATIONALE_MAX).optional(),
+    /**
+     * REQUIRED since #1667 — it is the `rationale` of the `ModerationAction`
+     * this route now records, which is encrypted at rest and is what an Art 17
+     * statement is composed from.
+     *
+     * It was optional, and the text was DISCARDED: only
+     * `hasReason: Boolean(...)` reached `PlatformAuditLog`, under a comment
+     * correctly saying the rationale "belongs on
+     * `ModerationAction.rationale`" — a row this path never created. A
+     * decision that withholds a farm from a person is not recordable without
+     * one.
+     *
+     * A contract narrowing on a platform-admin route, and deliberate: owner
+     * ruling on #1667 is that a suspension carries a statement, and the
+     * moderator writes the reason.
+     */
+    reason: z.string().min(1).max(MODERATION_RATIONALE_MAX),
 }).strip();
 
 const LiftBody = z.object({
