@@ -1,0 +1,11 @@
+-- #1656 — a suspended account's refused attempt becomes a platform audit entry.
+--
+-- Additive: a new enum VALUE. No rollback inverse is required (see
+-- deploy/rollback/README.md) — nothing is renamed, dropped or rewritten, and
+-- the previous image keeps working because it never writes the value.
+--
+-- Note for a rollback that goes the OTHER way: an entry already written with
+-- this value stays readable under the previous image, because `scope` and
+-- `action` are read as text by the chain verifier. The value cannot be removed
+-- from the type once a row uses it, which is why the inverse is not attempted.
+ALTER TYPE "PlatformAuditAction" ADD VALUE 'SUSPENDED_ACCOUNT_REFUSED';
