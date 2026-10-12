@@ -200,10 +200,27 @@ describeFn('P5.6b — erasure by pseudonymisation (#1597)', () => {
                 code: 'ACCOUNT_TERMINATED',
             });
 
-            // And the erasure is STILL pending — a refused cancel must not
-            // half-apply. Asserted on the row rather than on the return,
-            // because "it threw" and "it threw after clearing the column" look
-            // identical from the caller.
+            // And the erasure is STILL pending. Asserted on the ROW rather
+            // than on the return, but NOT for the reason this comment used to
+            // give.
+            //
+            // It said "it threw" and "it threw after clearing the column" look
+            // identical from the caller. They do — and this assertion cannot
+            // tell them apart either, because `cancelAccountDeletion` runs its
+            // whole body in one `prisma.$transaction`, so a write placed before
+            // the refusal is rolled back by the throw. Measured: moving the
+            // clear above the refusal leaves all 23 cases green.
+            //
+            // What it DOES catch is a write that ESCAPES the transaction, which
+            // is the shape a refactor actually produces — "do the clear first,
+            // it's idempotent", or a step hoisted above `$transaction` for
+            // readability. Measured: hoisting the clear onto `prisma` instead
+            // of `tx` reddens four cases here, this one among them.
+            //
+            // So it guards the transaction BOUNDARY, not the ordering inside
+            // it. The ordering is guaranteed by something stronger than a test.
+            // Corrected after agrent backend-2 found the same overstatement in
+            // its own version and checked rather than assuming.
             const row = await globalPrisma.$queryRawUnsafe<Array<{ d: Date | null }>>(
                 `SELECT "deletionRequestedAt" AS d FROM "User" WHERE "id" = $1`, id);
             expect(row[0].d).not.toBeNull();

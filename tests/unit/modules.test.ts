@@ -194,24 +194,78 @@ describe('assertModuleEnabled', () => {
         await expect(assertModuleEnabled(readerCtx, 'CERTIFICATION')).resolves.toBeUndefined();
     });
 
-    it('throws a forbidden carrying the module_disabled code when disabled', async () => {
+    it('refuses with reason "tenant" when the FARM turned it off', async () => {
         (ModuleSettingsRepository.get as jest.Mock).mockResolvedValue({
             enabledModules: ['JOURNAL'],
         });
-        await expect(assertModuleEnabled(readerCtx, 'CERTIFICATION')).rejects.toThrow(
-            /module_disabled: CERTIFICATION/,
-        );
+        await expect(assertModuleEnabled(readerCtx, 'CERTIFICATION')).rejects.toMatchObject({
+            status: 403,
+            code: 'MODULE_DISABLED',
+            // `reason` is the half that decides what a client may truthfully
+            // say. This is the half where "ask your farm administrator" is
+            // true.
+            params: { module: 'CERTIFICATION', reason: 'tenant' },
+        });
     });
 
-    it('throws when the PLAN blocks the module even though the tenant enabled it', async () => {
-        // FREE plan cannot reach CERTIFICATION (PRO) — the plan half of
-        // availability fails first, regardless of the tenant toggle.
+    it('refuses with reason "plan" when the PLAN excludes it, even if the farm enabled it', async () => {
+        // FREE cannot reach CERTIFICATION (PRO). The plan half fails first,
+        // regardless of the tenant toggle — and here NO administrator can turn
+        // it on, which is why the two cannot share one answer. Collapsing them
+        // is the agrent-ios#241 shape: a farmer sent to an admin who cannot
+        // help. Found by agrent-ios reading the conjunction in
+        // `isModuleAvailable` against #1679's first spec text, which claimed an
+        // administrator could always lift it.
+        mockGetTenantPlan.mockResolvedValue('FREE');
+        (ModuleSettingsRepository.get as jest.Mock).mockResolvedValue({
+            enabledModules: ['CERTIFICATION'],
+        });
+        await expect(assertModuleEnabled(readerCtx, 'CERTIFICATION')).rejects.toMatchObject({
+            status: 403,
+            code: 'MODULE_DISABLED',
+            params: { module: 'CERTIFICATION', reason: 'plan' },
+        });
+    });
+
+    it('the two reasons are DIFFERENT — the control', async () => {
+        // Without this, a `reason` hardcoded to one value would satisfy one of
+        // the two assertions above and read as covered.
+        const reasonFor = async (plan: string | null, enabled: string[]) => {
+            mockGetTenantPlan.mockResolvedValue(plan);
+            (ModuleSettingsRepository.get as jest.Mock).mockResolvedValue({
+                enabledModules: enabled,
+            });
+            try {
+                await assertModuleEnabled(readerCtx, 'CERTIFICATION');
+                return 'allowed';
+            } catch (e) {
+                return (e as { params?: { reason?: string } }).params?.reason ?? 'none';
+            }
+        };
+        expect(await reasonFor('FREE', ['CERTIFICATION'])).toBe('plan');
+        expect(await reasonFor(null, ['JOURNAL'])).toBe('tenant');
+        // And the happy path still passes, so neither branch fires always.
+        expect(await reasonFor(null, ['CERTIFICATION'])).toBe('allowed');
+    });
+
+    it('keeps the legacy message prefix on BOTH halves', async () => {
+        // The prefix is what installed agrent-ios builds match on, and the
+        // plan half is a new throw site — a new site is exactly where it gets
+        // forgotten. `tests/guards/legacy-refusal-prefixes-are-retained.test.ts`
+        // holds the shape; this holds the runtime value.
         mockGetTenantPlan.mockResolvedValue('FREE');
         (ModuleSettingsRepository.get as jest.Mock).mockResolvedValue({
             enabledModules: ['CERTIFICATION'],
         });
         await expect(assertModuleEnabled(readerCtx, 'CERTIFICATION')).rejects.toThrow(
-            /module_disabled: CERTIFICATION/,
+            /^module_disabled: CERTIFICATION/,
+        );
+        mockGetTenantPlan.mockResolvedValue(null);
+        (ModuleSettingsRepository.get as jest.Mock).mockResolvedValue({
+            enabledModules: ['JOURNAL'],
+        });
+        await expect(assertModuleEnabled(readerCtx, 'CERTIFICATION')).rejects.toThrow(
+            /^module_disabled: CERTIFICATION/,
         );
     });
 });

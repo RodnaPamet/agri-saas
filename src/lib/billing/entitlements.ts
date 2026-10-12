@@ -358,9 +358,11 @@ export async function assertAiTierAllowed(
     const plan = await getEffectivePlan(ctx);
     const ceiling = PLAN_AI_TIER_CEILING[plan];
     if (AI_TIER_ORDER.indexOf(tier) > AI_TIER_ORDER.indexOf(ceiling)) {
-        throw forbidden(
+        throw codedForbidden(
+            'AI_TIER_NOT_ALLOWED',
             `ai_tier_not_allowed: ${plan} plan allows the "${ceiling}" AI tier at most; ` +
                 `the "${tier}" tier requires a higher plan. Upgrade to use it.`,
+            { plan, tier, ceiling },
         );
     }
 }
@@ -479,9 +481,12 @@ export async function assertWithinLimit(
         // 403. The message embeds plan + resource + limit so the
         // billing UI can parse it into an "Upgrade" CTA without
         // adding a new error type / shape to the API contract.
-        throw forbidden(
+        throw codedForbidden(
+            'PLAN_LIMIT_EXCEEDED',
             `plan_limit_exceeded: ${plan} plan allows ${limit} ${resource}(s); ` +
                 `tenant currently has ${current}. Upgrade to add more.`,
+            // Counts and names only — no personal data ever goes in `params`.
+            { plan, resource, limit: String(limit), current: String(current) },
         );
     }
 }

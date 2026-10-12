@@ -175,9 +175,11 @@ export async function assertAiBudget(ctx: RequestContext): Promise<AiBudgetStatu
     const used = await getAiTokensUsedThisMonth(ctx);
 
     if (used >= limit) {
-        throw forbidden(
+        throw codedForbidden(
+            'AI_BUDGET_EXCEEDED',
             `ai_budget_exceeded: ${plan} plan allows ${limit} AI tokens per month; ` +
                 `tenant has used ${used} this month. Upgrade for a higher budget.`,
+            { plan, limit: String(limit), used: String(used) },
         );
     }
 

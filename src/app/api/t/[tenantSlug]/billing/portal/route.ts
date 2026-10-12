@@ -4,7 +4,7 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { findOrCreateCustomer, createPortalSession } from '@/lib/stripe';
 import { env } from '@/env';
 import { jsonResponse } from '@/lib/api-response';
-import { forbidden } from '@/lib/errors/types';
+import { codedForbidden, forbidden } from '@/lib/errors/types';
 import { getBillingMode } from '@/lib/billing/entitlements';
 
 /**
@@ -20,10 +20,12 @@ import { getBillingMode } from '@/lib/billing/entitlements';
 export const POST = withApiErrorHandling(
     requirePermission('admin.manage', async (req: NextRequest, _routeArgs, ctx) => {
         if (getBillingMode() === 'SELFHOSTED') {
-            throw forbidden(
-                'billing_unavailable: this deployment runs in self-hosted mode; ' +
+            throw codedForbidden(
+    'BILLING_UNAVAILABLE',
+    'billing_unavailable: this deployment runs in self-hosted mode; ' +
                     'subscription management is not exposed via the in-app portal.',
-            );
+    { mode: 'SELFHOSTED' },
+);
         }
         const appUrl = env.APP_URL || `https://${req.headers.get('host') || 'localhost:3000'}`;
 
