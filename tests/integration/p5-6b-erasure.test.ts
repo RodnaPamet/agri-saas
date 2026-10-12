@@ -31,6 +31,7 @@ import {
     requestAccountDeletionOnTx,
     cancelAccountDeletion,
     findAccountsDueForErasure,
+    subjectMayCancelErasure,
     DELETION_GRACE_DAYS,
 } from '@/app-layer/usecases/account-erasure';
 import { appendPlatformAuditEntry, verifyPlatformChain } from '@/lib/audit/platform-audit-writer';
@@ -206,6 +207,92 @@ describeFn('P5.6b — erasure by pseudonymisation (#1597)', () => {
             const row = await globalPrisma.$queryRawUnsafe<Array<{ d: Date | null }>>(
                 `SELECT "deletionRequestedAt" AS d FROM "User" WHERE "id" = $1`, id);
             expect(row[0].d).not.toBeNull();
+        });
+
+        // ── the predicate agrees with the enforcement (#1667) ───────
+        //
+        // The assertion that was missing both times this broke. `/api/auth/me`
+        // decides whether its 403 carries `erasesAt` — which the phone renders
+        // as a «stop the deletion» button — by calling
+        // `subjectMayCancelErasure`. So "a date was offered" and "the cancel
+        // was honoured" are the same question, and this asserts they give the
+        // same answer against real rows rather than trusting that two call
+        // sites were edited together.
+        //
+        // Twice they were not: #1671 added the initiator and #1667 added
+        // `terminatedAt`, each to the usecase only, each shipping a PR with
+        // ten green checks. Both found by agrent-ios reading the diff.
+        describe.each([
+            ['nothing pending', 'none'],
+            ['a SELF request', 'self'],
+            ['a MODERATION request', 'moderation'],
+            ['a SELF request, then terminated', 'self-then-terminated'],
+        ])('%s', (_label, kind) => {
+            it('offers a date exactly when the cancel is honoured', async () => {
+                const { id } = await makeUser();
+                if (kind === 'self' || kind === 'self-then-terminated') {
+                    await requestAccountDeletion(id);
+                } else if (kind === 'moderation') {
+                    await requestAccountDeletionOnTx(globalPrisma, id, 'MODERATION');
+                }
+                if (kind === 'self-then-terminated') {
+                    // What `actOnNotice` writes. Done directly here so the case
+                    // does not depend on the moderation surface being reachable
+                    // from this suite.
+                    await globalPrisma.$executeRawUnsafe(
+                        `UPDATE "User" SET "terminatedAt" = NOW() WHERE "id" = $1`, id);
+                }
+
+                const row = await globalPrisma.$queryRawUnsafe<Array<{
+                    deletionRequestedAt: Date | null;
+                    deletionRequestedBy: 'SELF' | 'MODERATION' | null;
+                    terminatedAt: Date | null;
+                    pseudonymisedAt: Date | null;
+                }>>(
+                    `SELECT "deletionRequestedAt", "deletionRequestedBy",
+                            "terminatedAt", "pseudonymisedAt"
+                     FROM "User" WHERE "id" = $1`, id);
+
+                // What the route would decide — the same function it calls.
+                const wouldOfferADate = subjectMayCancelErasure(row[0]);
+
+                // What the server actually does. A refusal THROWS; a cancel
+                // with nothing pending resolves `wasRequested: false`. Neither
+                // is an honoured cancel, and the distinction between them is
+                // not this test's subject.
+                let honoured: boolean;
+                try {
+                    honoured = (await cancelAccountDeletion(id)).wasRequested === true;
+                } catch {
+                    honoured = false;
+                }
+
+                expect(wouldOfferADate).toBe(honoured);
+            });
+        });
+
+        it('and the four cases are not all the same answer — the control', async () => {
+            // Without this, a predicate stuck at `false` and an enforcement
+            // that refused everything would satisfy every case above. The
+            // equivalence is only worth something if both values move.
+            const { id: selfId } = await makeUser();
+            await requestAccountDeletion(selfId);
+            const { id: modId } = await makeUser();
+            await requestAccountDeletionOnTx(globalPrisma, modId, 'MODERATION');
+
+            const read = async (id: string) =>
+                (await globalPrisma.$queryRawUnsafe<Array<{
+                    deletionRequestedAt: Date | null;
+                    deletionRequestedBy: 'SELF' | 'MODERATION' | null;
+                    terminatedAt: Date | null;
+                    pseudonymisedAt: Date | null;
+                }>>(
+                    `SELECT "deletionRequestedAt", "deletionRequestedBy",
+                            "terminatedAt", "pseudonymisedAt"
+                     FROM "User" WHERE "id" = $1`, id))[0];
+
+            expect(subjectMayCancelErasure(await read(selfId))).toBe(true);
+            expect(subjectMayCancelErasure(await read(modId))).toBe(false);
         });
 
         it('a NULL initiator reads as SELF — every row predating #1671', async () => {

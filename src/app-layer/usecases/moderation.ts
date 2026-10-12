@@ -303,16 +303,33 @@ export async function actOnNotice(input: {
             // of access and not of the data; this makes it true of both, after
             // the 30-day grace P5.6b already operates.
             //
-            // Safe against self-undo, which is the thing to check before
-            // wiring a moderation outcome to a self-service path: a terminated
-            // account is suspended, and `getUserCtx` → `getSessionOrThrow`
-            // refuses `ACCOUNT_SUSPENDED`, so the person cannot reach
-            // `DELETE /api/account/deletion` to cancel it.
+            // Safe against self-undo — but NOT for the reason this comment
+            // used to give, and both of its claims have since been falsified.
             //
-            // The accepted cost: 30 days becomes an effective deadline on DSA
-            // redress for a termination, because an appeal upheld afterwards
-            // has nothing left to restore. Anyone shortening that window is
-            // shortening an appeal window.
+            // It said: *"a terminated account is suspended, and `getUserCtx` →
+            // `getSessionOrThrow` refuses `ACCOUNT_SUSPENDED`, so the person
+            // cannot reach `DELETE /api/account/deletion`"*. That was a
+            // property of a DIFFERENT control, and #1667 changed it so a
+            // person who had asked to leave and was later suspended could
+            // still change their mind. The protection vanished with it,
+            // silently, with every required check green.
+            //
+            // And: *"an appeal upheld afterwards has nothing left to restore"*.
+            // #1676 made that false too — `liftSuspension` now stops a
+            // moderator's erasure, so an appeal upheld inside the grace period
+            // restores the account rather than delaying a deletion.
+            //
+            // What makes it safe NOW is written down rather than inherited:
+            // `terminatedAt` below, which `cancelAccountDeletion` refuses on.
+            // That holds even when the person had already asked to leave — the
+            // case that defeated the initiator check, because
+            // `requestAccountDeletionOnTx` early-returns on an existing
+            // request and never writes the initiator, leaving the row `SELF`.
+            // Found by agrent-ios.
+            //
+            // The 30-day window is still a real DSA redress deadline: after it
+            // the data is gone whatever an appeal decides. Anyone shortening
+            // that window is shortening an appeal window.
             if (input.actionKind === 'ACCOUNT_TERMINATED') {
                 // MODERATION, which is what makes the erasure uncancellable by
                 // its subject (#1671). #1654 called this helper with no
@@ -321,6 +338,16 @@ export async function actOnNotice(input: {
                 // self-undo was the cancel route refusing a suspended account,
                 // a side effect of a different control.
                 await requestAccountDeletionOnTx(tx, input.suspendUserId, 'MODERATION');
+
+                // The TERMINATION itself, in the same transaction. Separate
+                // from the erasure's initiator because a person may have asked
+                // to leave FIRST, in which case the initiator stays `SELF`
+                // (the helper above early-returns) and only this says the
+                // account was terminated.
+                await tx.user.update({
+                    where: { id: input.suspendUserId },
+                    data: { terminatedAt: new Date() },
+                });
             }
         }
     });

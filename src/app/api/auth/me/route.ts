@@ -5,7 +5,10 @@ import { jsonResponse } from '@/lib/api-response';
 import { codedForbidden } from '@/lib/errors/types';
 import { parseBottomTabOrder } from '@/lib/account/bottom-tabs';
 import { resolveFlags } from '@/lib/feature-flags';
-import { DELETION_GRACE_DAYS } from '@/app-layer/usecases/account-erasure';
+import {
+    DELETION_GRACE_DAYS,
+    subjectMayCancelErasure,
+} from '@/app-layer/usecases/account-erasure';
 
 export const GET = withApiErrorHandling(async () => {
     const session = await auth();
@@ -31,6 +34,14 @@ export const GET = withApiErrorHandling(async () => {
             // #1671 — WHO asked, which decides whether the 403 below may offer
             // a cancel. Same query; no extra trip.
             deletionRequestedBy: true,
+            // #1667 — the other two signals `subjectMayCancelErasure` reads.
+            // This route had neither, so once `cancelAccountDeletion` grew a
+            // `terminatedAt` refusal the 403 went on offering a cancel the
+            // server would not honour. Selected here rather than derived,
+            // because the whole point of the shared predicate is that the
+            // route does not get to decide which signals matter.
+            terminatedAt: true,
+            pseudonymisedAt: true,
             // P5.9 / #1652 — likewise on the query this handler ALREADY runs.
             // See the refusal below for why it is read here and not through
             // `isAccountSuspended`.
@@ -116,19 +127,19 @@ export const GET = withApiErrorHandling(async () => {
         // The 403 carries `erasesAt` ONLY when the pending erasure is one the
         // person may actually stop (#1671, owner ruling 2026-10-12).
         //
-        // Why conditional and not simply "when a deletion is pending": a
-        // MODERATION-initiated erasure is refused by `cancelAccountDeletion`,
-        // so handing a terminated person a date would offer them an action the
-        // server will not honour — the EXACT defect the paragraph above
-        // describes this check as having fixed, reintroduced one level up.
-        // Caught by agrent backend-2 before it shipped.
+        // Why conditional and not simply "when a deletion is pending": an
+        // erasure `cancelAccountDeletion` will refuse means handing the person
+        // a date for an action the server will not honour, and `erasesAt` is
+        // what the phone turns into a «stop the deletion» button.
         //
-        // NULL reads as SELF: every row predating #1671 is a self-service
-        // request, since termination→erasure only shipped in #1654 and
-        // production holds no terminated accounts.
-        const cancellable =
-            user.deletionRequestedAt !== null &&
-            user.deletionRequestedBy !== 'MODERATION';
+        // This condition is NOT spelled here. It was, twice, and both times a
+        // new refusal signal reached the usecase and missed this route — the
+        // initiator in #1671, then `terminatedAt` in #1667. So the rule is one
+        // exported function that the usecase itself enforces through, and
+        // `tests/guards/erasure-cancellability-has-one-rule.test.ts` holds
+        // this route to calling it rather than re-deriving it. Found by
+        // agrent-ios both times, on PRs whose checks were green.
+        const cancellable = subjectMayCancelErasure(user);
         throw codedForbidden(
             'ACCOUNT_SUSPENDED',
             'ACCOUNT_SUSPENDED',

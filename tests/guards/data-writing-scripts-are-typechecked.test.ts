@@ -27,7 +27,7 @@
  *                      "BillingAccount shape varies by deployment". It does
  *                      not vary. The plan differentiator those personas exist
  *                      for never happened.
- *   `itest-spray.ts`   imports `importLocationSpatialFile`, which #40 renamed
+ *   `itest-spray.ts`   imported `importLocationSpatialFile`, which #40 renamed
  *                      to `stageLocationSpatialImport` and made off-thread.
  *                      Broken since then. See EXCLUSIONS.
  *
@@ -90,18 +90,17 @@ const WRITE_CALL =
  * a failure is the finding rather than the excuse.
  */
 const EXCLUSIONS: Readonly<Record<string, string>> = {
-    'scripts/itest-spray.ts':
-        'Broken since #40 and a REWORK rather than a rename. It imports ' +
-        '`importLocationSpatialFile`, which that PR renamed to ' +
-        '`stageLocationSpatialImport` AND made off-thread: the old function ' +
-        'returned `{ parcelCount, bounds, fileRecordId, format }` synchronously, ' +
-        'the new one returns `{ jobId, fileRecordId, format }` and enqueues a ' +
-        'BullMQ job. This harness asserts on `parcelCount` and `bounds`, so ' +
-        'fixing it means teaching it to WAIT for the import — poll the job, or ' +
-        'run the executor inline — which is a design question about an ' +
-        'integration harness and not part of adding a typecheck. Filed as ' +
-        '#1659; the script cannot even load today, so nothing regresses while ' +
-        'it waits.',
+    // Empty, and that is the goal state rather than a gap.
+    //
+    // `scripts/itest-spray.ts` was the only entry. #1659 reworked it — it
+    // stages through `stageLocationSpatialImport` and then runs
+    // `runLocationSpatialImport` inline (owner ruling: inline, not polled), so
+    // it compiles and is in `tsconfig.scripts.json` with the other 17.
+    //
+    // The entry is DELETED rather than kept with "fixed" appended, because the
+    // assertion below demands a 150-character reason and a satisfied one would
+    // have to be written as prose about history. The history is in #1659 and in
+    // tsconfig's own comment; this map is for live exemptions.
 };
 
 /** The include list, with the comments the file is full of stripped first. */
