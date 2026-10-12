@@ -23,6 +23,22 @@ jest.mock('@/lib/prisma', () => ({
     default: mockPrisma,
 }));
 
+// #1657 — `getTenantServerContext` now refuses a suspended account before it
+// resolves anything, so this suite has to say which it is testing.
+//
+// Mocking the CHECK rather than adding `user.findUnique` to `mockPrisma` is
+// deliberate: `isAccountSuspended` fails CLOSED on an unreadable lookup, which
+// is correct in production and meant the missing delegate made every test in
+// this describe fail with `NEXT_REDIRECT` instead of its own assertion.
+// Mocking the question keeps this file about tenant resolution; the check's own
+// behaviour is executed in
+// `tests/unit/suspension-on-server-rendered-pages.test.ts`.
+const mockIsAccountSuspended = jest.fn();
+jest.mock('@/lib/auth/suspension', () => ({
+    ...jest.requireActual('@/lib/auth/suspension'),
+    isAccountSuspended: (userId: string) => mockIsAccountSuspended(userId),
+}));
+
 import {
     resolveTenantBySlug,
     getTenantServerContext,
@@ -70,7 +86,10 @@ const MEMBERSHIP_DEACTIVATED = {
 // ─── resolveTenantBySlug ───
 
 describe('resolveTenantBySlug', () => {
-    beforeEach(() => jest.clearAllMocks());
+    beforeEach(() => {
+        jest.clearAllMocks();
+        mockIsAccountSuspended.mockResolvedValue(false);
+    });
 
     it('returns tenant record for valid slug', async () => {
         mockPrisma.tenant.findUnique.mockResolvedValue({
@@ -117,7 +136,25 @@ describe('resolveTenantBySlug', () => {
 // ─── getTenantServerContext ───
 
 describe('getTenantServerContext', () => {
-    beforeEach(() => jest.clearAllMocks());
+    beforeEach(() => {
+        jest.clearAllMocks();
+        // AFTER clearAllMocks, which drops the resolved value as well as the
+        // calls — a default set once at module scope would survive only the
+        // first test.
+        mockIsAccountSuspended.mockResolvedValue(false);
+    });
+
+    it('refuses a suspended account BEFORE resolving the tenant (#1657)', async () => {
+        // Pinned in this file as well as in the suspension suite, because the
+        // mock above is the kind a later reader simplifies away — and doing so
+        // would silently remove the only thing standing between a suspended
+        // account and a server-rendered farm page.
+        mockIsAccountSuspended.mockResolvedValue(true);
+        await expect(
+            getTenantServerContext({ tenantSlug: 'acme-corp', userId: 'user-1' }),
+        ).rejects.toMatchObject({ digest: expect.stringContaining('NEXT_REDIRECT') });
+        expect(mockPrisma.tenant.findUnique).not.toHaveBeenCalled();
+    });
 
     it('returns full context for valid slug and membership', async () => {
         mockPrisma.tenant.findUnique.mockResolvedValue(TENANT);
