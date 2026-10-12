@@ -41,7 +41,14 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { randomUUID } from 'crypto';
 
 import { actOnNotice, queueStatement } from '@/app-layer/usecases/moderation';
-import { cancelAccountDeletion } from '@/app-layer/usecases/account-erasure';
+import {
+    cancelAccountDeletion,
+    requestAccountDeletion,
+} from '@/app-layer/usecases/account-erasure';
+import {
+    liftSuspension,
+    suspendAccount,
+} from '@/app-layer/usecases/account-suspension';
 import { verifyPlatformChain } from '@/lib/audit/platform-audit-writer';
 import { encryptField, hashForLookup } from '@/lib/security/encryption';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
@@ -255,6 +262,68 @@ describeFn('#1619 — moderation decisions in the platform chain', () => {
             const row = await globalPrisma.$queryRawUnsafe<Array<{ b: string | null }>>(
                 `SELECT "deletionRequestedBy" AS b FROM "User" WHERE "id" = $1`, target);
             expect(row[0].b).toBe('MODERATION');
+        });
+
+        it('an upheld appeal INSIDE the grace period stops the erasure', async () => {
+            // The capability #1671 removed without noticing, found by
+            // agrent-ios reviewing #1670.
+            //
+            // Before #1671 the refusal was on the SUSPENSION, so a reinstated
+            // person was admitted to the cancel route and could clear the
+            // erasure themselves. Moving the refusal onto the INITIATOR closed
+            // the self-undo and took that with it — a reinstated person would
+            // have been erased at the end of the grace period anyway, which
+            // makes "appeal upheld" mean nothing.
+            //
+            // The authority that decided now undoes it. `liftSuspension` IS
+            // the reversal verb; "the subject may not undo a termination" was
+            // the ruling, "nobody can" never was.
+            const reportId = await fileNotice();
+            const target = await makeUser();
+
+            const { actionId } = await actOnNotice({
+                reportId, actionKind: 'ACCOUNT_TERMINATED',
+                rationale: 'repeat illegal content', generation: 'current',
+                suspendUserId: target,
+            });
+            actions.push(actionId);
+
+            const lifted = await liftSuspension({ userId: target, generation: 'current' });
+            expect(lifted.erasureStopped).toBe(true);
+
+            const row = await globalPrisma.$queryRawUnsafe<Array<{
+                s: Date | null; d: Date | null; b: string | null;
+            }>>(
+                `SELECT "suspendedAt" AS s, "deletionRequestedAt" AS d,
+                        "deletionRequestedBy" AS b
+                 FROM "User" WHERE "id" = $1`, target);
+            // All three, in ONE row read: un-suspended, erasure cleared, and
+            // the initiator cleared with it. An account un-suspended with its
+            // erasure still scheduled is the state this exists to prevent, and
+            // asserting only `suspendedAt` would pass for it.
+            expect(row[0].s).toBeNull();
+            expect(row[0].d).toBeNull();
+            expect(row[0].b).toBeNull();
+        });
+
+        it('but lifting does NOT cancel a deletion the person asked for', async () => {
+            // Lifting says the SUSPENSION was wrong, not that the person
+            // changed their mind about leaving. Cancelling it for them would
+            // overrule a decision that was theirs — and they can still cancel
+            // it themselves, since a SELF erasure is admitted even while
+            // suspended.
+            const target = await makeUser();
+            await requestAccountDeletion(target);
+            await suspendAccount({
+                userId: target, generation: 'current', reason: 'unrelated',
+            });
+
+            const lifted = await liftSuspension({ userId: target, generation: 'current' });
+            expect(lifted.erasureStopped).toBe(false);
+
+            const row = await globalPrisma.$queryRawUnsafe<Array<{ d: Date | null }>>(
+                `SELECT "deletionRequestedAt" AS d FROM "User" WHERE "id" = $1`, target);
+            expect(row[0].d).not.toBeNull();
         });
 
         it('and the subject CANNOT cancel it', async () => {
