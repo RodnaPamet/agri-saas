@@ -1,5 +1,12 @@
 /**
- * Is this account suspended? Asked on every authenticated request (P5.9, #1600).
+ * Is this account suspended? Asked on every authenticated request but one
+ * (P5.9, #1600; the exception is #1667).
+ *
+ * The exception is `DELETE /api/account/deletion`, which passes
+ * `allowSuspended` — a way out must never be gated on the condition it
+ * escapes, and `ACCOUNT_TERMINATED` suspends the very person entitled to stop
+ * the erasure. `tests/guards/suspension-escape-is-not-gated.test.ts` holds
+ * that call-site count at one.
  *
  * ## Why a suspension-specific check rather than tightening the general ones
  *

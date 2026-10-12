@@ -140,15 +140,43 @@ export async function getSession(): Promise<JwtPayload | null> {
  * No English prose rides along — `no-server-authored-user-copy` holds thrown
  * sentences on a downward ratchet, and the client renders the code.
  */
-export async function getSessionOrThrow(): Promise<JwtPayload> {
+export async function getSessionOrThrow(opts?: {
+    /**
+     * Resolve the session WITHOUT refusing a suspended account.
+     *
+     * Owner ruling on #1667: a terminated person may cancel the 30-day
+     * erasure. `ACCOUNT_TERMINATED` sets `suspendedAt` as well as
+     * `deletionRequestedAt`, so the one route they need is the one this check
+     * was refusing — `DELETE /api/account/deletion` answered 403 while
+     * agrent-ios's recovery screen (#282, installed) offered the button.
+     *
+     * **A way out must never be gated on the condition it escapes.** That is
+     * P5.5a's rule for slow mode, where an unverified account throttled on the
+     * route that verifies it cannot get out, and
+     * `tests/guards/slow-mode-escape-is-not-throttled.test.ts` pins it. The
+     * same shape, with the same remedy: one named exception and a guard
+     * holding the count.
+     *
+     * It is narrow by construction rather than by promise. The caller still
+     * needs a valid session, and `cancelAccountDeletion` touches one column on
+     * the CALLER's own row. Nothing here widens what a suspended account can
+     * read.
+     */
+    allowSuspended?: boolean;
+}): Promise<JwtPayload> {
     const session = await getSession();
     if (!session) throw unauthorized();
 
-    // Checked on EVERY request, deliberately unthrottled: this is the signal
-    // P5.9 exists to make immediate. `isAccountSuspended` absorbs the cost in
-    // Redis and fails closed only where failing closed is free — a request that
-    // cannot read this row cannot do its own work either.
-    if (session.userId && (await isAccountSuspended(session.userId))) {
+    // Checked on every request that does not explicitly opt out, deliberately
+    // unthrottled: this is the signal P5.9 exists to make immediate.
+    // `isAccountSuspended` absorbs the cost in Redis and fails closed only
+    // where failing closed is free — a request that cannot read this row
+    // cannot do its own work either.
+    if (
+        !opts?.allowSuspended &&
+        session.userId &&
+        (await isAccountSuspended(session.userId))
+    ) {
         throw codedForbidden('ACCOUNT_SUSPENDED', 'ACCOUNT_SUSPENDED');
     }
 
