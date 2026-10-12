@@ -36,6 +36,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { blankNonCode } from '../helpers/blank-non-code';
+import { collectSourceFiles } from '../helpers/collect-files';
 
 const REPO = path.resolve(__dirname, '../..');
 
@@ -113,27 +114,31 @@ describe('legacy refusal prefixes are retained (#1679)', () => {
         // The inverse, and the reason #1679 was filed: a prefix in a human
         // field is a protocol in the wrong place. These six are grandfathered;
         // a seventh is the defect returning.
+        // `collectSourceFiles`, not a hand-rolled walk —
+        // `tests/guards/file-collection-is-not-silently-empty.test.ts` requires
+        // it and caught this file's first draft. The shared collector is what
+        // supplies the `floor`, so a renamed `src/` names itself instead of
+        // scanning nothing and reporting the tree clean (#875). Second time
+        // today I reached for `readdirSync` first; it is the default habit and
+        // the meta-guard is the thing that corrects it.
         const offenders: string[] = [];
-        const walk = (dir: string): void => {
-            for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-                const abs = path.join(dir, e.name);
-                if (e.isDirectory()) {
-                    if (e.name === 'generated' || e.name === 'node_modules') continue;
-                    walk(abs);
-                } else if (/\.tsx?$/.test(e.name)) {
-                    const src = blankNonCode(fs.readFileSync(abs, 'utf8'));
-                    for (const m of src.matchAll(
-                        /coded[A-Za-z]+\(\s*'([A-Z0-9_]+)'\s*,\s*[`'"]([a-z][a-z0-9_]{4,}):/g,
-                    )) {
-                        const rel = path.relative(REPO, abs);
-                        if (!RETAINED.some(([c, t, f]) => c === m[1] && t === m[2] && f === rel)) {
-                            offenders.push(`${rel}  ${m[1]} / ${m[2]}:`);
-                        }
-                    }
+        const files = collectSourceFiles({
+            roots: ['src'],
+            extensions: ['.ts', '.tsx'],
+            exclude: (rel) => rel.startsWith('src/generated/'),
+            floor: 1000,
+        });
+        for (const abs of files) {
+            const src = blankNonCode(fs.readFileSync(abs, 'utf8'));
+            for (const m of src.matchAll(
+                /coded[A-Za-z]+\(\s*'([A-Z0-9_]+)'\s*,\s*[`'"]([a-z][a-z0-9_]{4,}):/g,
+            )) {
+                const rel = path.relative(REPO, abs);
+                if (!RETAINED.some(([c, t, f]) => c === m[1] && t === m[2] && f === rel)) {
+                    offenders.push(`${rel}  ${m[1]} / ${m[2]}:`);
                 }
             }
-        };
-        walk(path.join(REPO, 'src'));
+        }
         if (offenders.length > 0) {
             throw new Error(
                 `${offenders.length} coded refusal(s) put a machine-readable token in ` +
