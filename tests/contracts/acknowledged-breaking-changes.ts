@@ -216,7 +216,7 @@ export const ACKNOWLEDGED_BREAKING_CHANGES: readonly AcknowledgedBreakingChange[
         schema: 'SuspendAccount',
         property: 'reason',
         contractVersion: 3,
-        pr: 1673,
+        pr: 1674,
         date: '2026-10-12',
         why:
             'A direct suspension now RECORDS its reason, so the route cannot accept a request ' +
