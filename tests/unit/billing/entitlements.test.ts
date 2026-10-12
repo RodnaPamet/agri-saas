@@ -8,7 +8,7 @@
  *      (`getEffectivePlan`).
  *   3. Per-plan limit lookup (`getLimit`).
  *   4. Pre-mutation gate (`assertWithinLimit`):
- *        - throws `forbidden(plan_limit_exceeded: …)` at the cap,
+ *        - refuses with `PLAN_LIMIT_EXCEEDED` + params at the cap,
  *        - lets the call through under the cap,
  *        - never throws under ENTERPRISE / SELFHOSTED.
  *
@@ -121,7 +121,7 @@ describe('assertWithinLimit — exchange_listing', () => {
         ).resolves.toBeUndefined();
     });
 
-    it('SAAS FREE: throws plan_limit_exceeded at exactly 5 ACTIVE listings', async () => {
+    it('SAAS FREE: refuses with PLAN_LIMIT_EXCEEDED at exactly 5 ACTIVE listings', async () => {
         const mod = await loadEntitlements('sk_test_dummy');
         const dbCtx = (await import('@/lib/db-context')) as unknown as {
             __stub: {
@@ -133,7 +133,15 @@ describe('assertWithinLimit — exchange_listing', () => {
         dbCtx.__stub.exchangeListing.count.mockResolvedValue(5);
         await expect(
             mod.assertWithinLimit(makeRequestContext('ADMIN'), 'exchange_listing'),
-        ).rejects.toThrow(/plan_limit_exceeded: FREE plan allows 5 exchange_listing/);
+        ).rejects.toMatchObject({
+            status: 403,
+            // The CODE and PARAMS, not the prose. The legacy
+            // `plan_limit_exceeded:` prefix is gone (#1677) and `message` is
+            // now translated per reader, so asserting on it would pin a
+            // sentence that legitimately changes with the catalogue.
+            code: 'PLAN_LIMIT_EXCEEDED',
+            params: { plan: 'FREE', resource: 'exchange_listing', limit: '5', current: '5' },
+        });
     });
 });
 
@@ -253,7 +261,7 @@ describe('assertWithinLimit — location', () => {
         ).resolves.toBeUndefined();
     });
 
-    it('SAAS FREE: throws plan_limit_exceeded at exactly 5', async () => {
+    it('SAAS FREE: refuses with PLAN_LIMIT_EXCEEDED at exactly 5', async () => {
         const mod = await loadEntitlements('sk_test_dummy');
         const dbCtx = (await import('@/lib/db-context')) as unknown as {
             __stub: {
@@ -268,7 +276,7 @@ describe('assertWithinLimit — location', () => {
 
         await expect(
             mod.assertWithinLimit(makeRequestContext('ADMIN'), 'location'),
-        ).rejects.toThrow(/plan_limit_exceeded/);
+        ).rejects.toMatchObject({ status: 403, code: 'PLAN_LIMIT_EXCEEDED' });
     });
 
     it('SAAS FREE: throws above 5', async () => {
@@ -327,7 +335,7 @@ describe('assertWithinLimit — location', () => {
         expect(dbCtx.__stub.location.count).not.toHaveBeenCalled();
     });
 
-    it('error message includes plan, limit, and current count for billing-UI parsing', async () => {
+    it('params carry plan, resource, limit and current — the values a client needs', async () => {
         const mod = await loadEntitlements('sk_test_dummy');
         const dbCtx = (await import('@/lib/db-context')) as unknown as {
             __stub: {
@@ -344,11 +352,20 @@ describe('assertWithinLimit — location', () => {
             await mod.assertWithinLimit(makeRequestContext('ADMIN'), 'location');
             fail('expected throw');
         } catch (err) {
-            const msg = (err as Error).message;
-            expect(msg).toContain('plan_limit_exceeded');
-            expect(msg).toContain('FREE');
-            expect(msg).toContain('5');
-            expect(msg).toContain('13');
+            // On `params`, not on the message. This test used to read the
+            // message "for billing-UI parsing", and #1677 measured that
+            // premise false: ZERO `.tsx` files mention `plan_limit`, so no
+            // billing UI ever parsed it. `UpgradeGate` takes a `feature` prop
+            // and never looks at an error.
+            //
+            // The values a client needs are now where a client can use them —
+            // and `message` is a translated sentence, so parsing it would be
+            // parsing Bulgarian.
+            const e = err as { code?: string; params?: Record<string, string> };
+            expect(e.code).toBe('PLAN_LIMIT_EXCEEDED');
+            expect(e.params).toEqual({
+                plan: 'FREE', resource: 'location', limit: '5', current: '13',
+            });
         }
     });
 });

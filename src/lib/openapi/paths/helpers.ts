@@ -152,9 +152,18 @@ export function commonErrorResponses(): RouteConfig['responses'] {
                 '- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. ' +
                 '`POST /api/auth/accept-terms` is the way out, and the session must be ' +
                 're-minted afterwards because `termsPending` is a JWT claim.\n\n' +
-                'Each carries an English `message` as a developer-facing fallback; it is NOT ' +
-                'translated, so render your own copy keyed on `code`. Route-level 403s carry ' +
-                'their own codes and are described on the operation that returns them.\n\n' +
+                'Each carries a `message`. Since #1677 the SERVER translates it, into the ' +
+                'language on the signed-in person\'s profile (`User.uiLanguage`, default ' +
+                'Bulgarian) — NOT negotiated from `Accept-Language`, which this API ' +
+                'deliberately ignores. So `message` is safe to render to a user for any code ' +
+                'that has a catalogue entry.\n\n' +
+                '  The migration is INCOMPLETE and visibly so: a code with no entry yet keeps ' +
+                'its English developer-facing sentence, unchanged. There is no flag telling ' +
+                'the two apart, which is why switching on `code` and holding your own copy ' +
+                'remains the robust choice — the server\'s `message` is then a better ' +
+                'fallback than it used to be rather than something you depend on. Route-level ' +
+                '403s carry their own codes and are described on the operation that returns ' +
+                'them.\n\n' +
                 'One route-level code is described HERE rather than per-operation. MOST ' +
                 'operations cannot return it — it is confined to the five capability ' +
                 'families named below — but it means the same thing on each of them, and ' +
@@ -221,16 +230,19 @@ export function commonErrorResponses(): RouteConfig['responses'] {
                 '- `BILLING_UNAVAILABLE` — this deployment runs self-hosted and exposes no ' +
                 'in-app checkout at all. Params: `mode`. Nothing the client or the user can ' +
                 'do lifts it; do not offer a retry or a plan picker.\n\n' +
-                '  TRANSITIONAL, and it will be removed. All five also repeat their old ' +
-                'lower_snake token at the START of `message` — `plan_limit_exceeded: …` and ' +
-                'so on. That prefix was these refusals\' only identifier before #1679 and ' +
-                'installed clients match on it. It stays until `message` becomes a ' +
-                'localised sentence (#1677), which removes it as a side effect — NOT for ' +
-                'some number of releases, so do not count them. Switch on `code` and read ' +
-                '`params`; do not parse `message`. Until #1677 lands, `message` is English ' +
-                'and untranslated, so do not render it to a user; when #1677 lands this ' +
-                'paragraph and the English-message note above are both rewritten in the ' +
-                'same change.\n\n' +
+                '  TWO of the five are TRANSLATED by the server (#1677) — ' +
+                '`MODULE_DISABLED` and `BILLING_UNAVAILABLE` — so their `message` is ' +
+                'renderable to a user. The other three still carry an English ' +
+                'developer-facing sentence: their Bulgarian needs ICU plural agreement, ' +
+                'which the server-side renderer does not yet do, and shipping copy that ' +
+                'interpolated a wire identifier (`exchange_listing`, `deep`, `FREE`) into ' +
+                'a farmer\'s screen would have been worse than the English. They are ' +
+                'tracked on #1677.\n\n' +
+                '  All five carried a legacy `lower_snake:` prefix at the start of ' +
+                '`message` until #1677; that prefix is GONE for all of them. If you are ' +
+                'reading a cached copy of this spec and your client matches on ' +
+                '`plan_limit_exceeded:` or a sibling, switch to `code` — the prefix was ' +
+                'removed once the only client depending on it had shipped the codes.\n\n' +
                 'Two more are described here rather than per-operation, and their scope is ' +
                 'NARROWER than the four above: they come from `getUserCtx`, so they are ' +
                 'reachable on the PERSON-scoped routes only — `/api/account/**`, ' +

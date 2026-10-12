@@ -248,24 +248,26 @@ describe('assertModuleEnabled', () => {
         expect(await reasonFor(null, ['CERTIFICATION'])).toBe('allowed');
     });
 
-    it('keeps the legacy message prefix on BOTH halves', async () => {
-        // The prefix is what installed agrent-ios builds match on, and the
-        // plan half is a new throw site — a new site is exactly where it gets
-        // forgotten. `tests/guards/legacy-refusal-prefixes-are-retained.test.ts`
-        // holds the shape; this holds the runtime value.
+    it('names the module in the thrown message on BOTH halves', async () => {
+        // The legacy `module_disabled:` prefix is gone (#1677) — agrent-ios
+        // confirmed its only installed build reads the code. What still has to
+        // hold is that the module is NAMED, on both throw sites: the plan half
+        // is the newer one and a new site is exactly where a detail gets
+        // forgotten. The reader-facing sentence comes from the catalogue, keyed
+        // on the code and its `reason`; this is the developer-facing fallback.
         mockGetTenantPlan.mockResolvedValue('FREE');
         (ModuleSettingsRepository.get as jest.Mock).mockResolvedValue({
             enabledModules: ['CERTIFICATION'],
         });
         await expect(assertModuleEnabled(readerCtx, 'CERTIFICATION')).rejects.toThrow(
-            /^module_disabled: CERTIFICATION/,
+            /CERTIFICATION/,
         );
         mockGetTenantPlan.mockResolvedValue(null);
         (ModuleSettingsRepository.get as jest.Mock).mockResolvedValue({
             enabledModules: ['JOURNAL'],
         });
         await expect(assertModuleEnabled(readerCtx, 'CERTIFICATION')).rejects.toThrow(
-            /^module_disabled: CERTIFICATION/,
+            /CERTIFICATION/,
         );
     });
 });

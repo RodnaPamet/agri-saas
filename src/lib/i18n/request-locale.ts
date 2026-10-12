@@ -22,9 +22,20 @@
  *
  *   1. the session's `uiLanguage` claim — the person's own setting, already in
  *      the JWT, so no query;
- *   2. an explicit `?locale`, for unauthenticated surfaces that have no
- *      session to read. #1140's own pattern, merged at the iOS app's request;
- *   3. `bg`.
+ *   2. `bg`.
+ *
+ * ## The unauthenticated source is NOT built yet, deliberately
+ *
+ * A surface with no session has no claim to read, and the pattern for it is
+ * already settled: an explicit `?locale`, which is #1140's own shape
+ * ("declare the catalogue's `?locale`, so a generated client sends it"),
+ * merged at the iOS app's request. A locale in a query string is safe under
+ * the CFNetwork logging constraint — it is neither an identifier nor a secret.
+ *
+ * It is not a parameter here, because nothing passes one. An unused parameter
+ * reads as a working feature to whoever finds it next, and the first thing
+ * they would do is pass a value and watch it have no effect anywhere. The
+ * stage that localises an unauthenticated refusal adds it then.
  *
  * ## Why the fallback is `bg` and `DEFAULT_LOCALE` would be a bug
  *
@@ -50,9 +61,8 @@ import { getRequestContext } from '@/lib/observability/context';
  * refusal, and failing the response to localise it would be the tail wagging
  * the dog.
  */
-export function resolveRequestLocale(explicit?: string | null): Locale {
+export function resolveRequestLocale(): Locale {
     const fromSession = getRequestContext()?.uiLanguage;
     if (isLocale(fromSession)) return fromSession;
-    if (isLocale(explicit)) return explicit;
     return RECIPIENT_FALLBACK_LOCALE;
 }

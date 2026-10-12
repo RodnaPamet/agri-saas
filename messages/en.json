@@ -6389,5 +6389,12 @@
         "title": "Your account is suspended",
         "body": "You cannot open your farm while the suspension is in force. Everything already recorded is kept.",
         "signOut": "Sign out"
+    },
+    "errors": {
+        "BILLING_UNAVAILABLE": "This installation does not offer plans or payments in the app.",
+        "MODULE_DISABLED": {
+            "tenant": "This part of the app is switched off for this farm. A farm administrator can turn it on.",
+            "plan": "This part of the app is not included in the farm’s plan."
+        }
     }
 }
