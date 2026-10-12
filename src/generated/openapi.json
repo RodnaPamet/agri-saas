@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "11.1.0",
+    "version": "11.1.4",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -12878,13 +12878,15 @@
             "type": "string"
           },
           "reason": {
-            "type": "string"
+            "type": "string",
+            "description": "Why. REQUIRED since #1667 — it becomes the `rationale` of the `ModerationAction` this route records, which is encrypted at rest and is what an Art 17 statement of reasons is composed from. A decision that withholds a farm from a person is not recordable without one.\n\nIt was optional and the text was DISCARDED: only `hasReason: true|false` reached the platform audit chain, under a comment correctly saying the rationale belongs on `ModerationAction.rationale` — a row this path never created."
           }
         },
         "required": [
-          "userId"
+          "userId",
+          "reason"
         ],
-        "description": "The account to withhold access from, and an optional operator note."
+        "description": "The account to withhold access from, and WHY. Both required."
       },
       "Task": {
         "type": "object",

@@ -211,6 +211,34 @@ export const ACKNOWLEDGED_BREAKING_CHANGES: readonly AcknowledgedBreakingChange[
             'Tracked as #1612; found by agrent-ios reviewing #1611 against its head rather than ' +
             'against my description of it.',
     },
+    {
+        kind: 'property-now-required',
+        schema: 'SuspendAccount',
+        property: 'reason',
+        contractVersion: 3,
+        pr: 1673,
+        date: '2026-10-12',
+        why:
+            'A direct suspension now RECORDS its reason, so the route cannot accept a request ' +
+            'without one. `POST /api/admin/moderation/suspensions` took an optional `reason` and ' +
+            'DISCARDED the text: only `hasReason: true|false` reached `PlatformAuditLog`, under a ' +
+            'comment correctly saying the rationale "belongs on `ModerationAction.rationale`, ' +
+            'which is [encrypted]" — a comment describing a row this path never created. So a ' +
+            'moderator typed a reason and nothing kept it, and a proactive suspension had no ' +
+            'recorded justification at all. It is now the `rationale` of a PROACTIVE ' +
+            '`ModerationAction` (`reportId: null`, which the schema anticipated in terms), ' +
+            'encrypted at rest, and it is what an Art 17 statement of reasons is composed from. ' +
+            'The caller population is ONE: a platform admin holding ' +
+            '`PLATFORM_ADMIN_API_KEY`, which is the owner — there is no third-party ' +
+            'integration and agrent-ios does not call admin routes. Owner ruling on #1667 ' +
+            '(2026-10-12) is that a suspension carries a statement and "the moderator still ' +
+            'writes the reason", so requiring it is the ruling rather than a side effect of it. ' +
+            'The alternative — keeping it optional and writing an empty rationale — would put ' +
+            'an unexplained decision in a legal record, which is the defect in the other ' +
+            'direction. Found while implementing that ruling; the route\'s LOCAL `SuspendBody` ' +
+            'and the published `SuspendAccount` schema are separate zod objects, so narrowing ' +
+            'one left the other documenting the old contract until this change.',
+    },
 ];
 
 /** True when `entry` covers `finding`. */
