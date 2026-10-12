@@ -51,6 +51,8 @@ import prisma from '@/lib/prisma';
 import { invalidateDeletionPendingCache } from '@/lib/auth/deletion-pending';
 import { logger } from '@/lib/observability/logger';
 import { PERSONAL_DATA_REGISTRY } from '@/lib/privacy/personal-data-registry';
+import type { DeletionInitiator } from '@prisma/client';
+import { codedForbidden } from '@/lib/errors/types';
 
 /** How long a person has to change their mind. Owner ruling: 30 days. */
 export const DELETION_GRACE_DAYS = 30;
@@ -331,6 +333,16 @@ async function restoreListingsAfterCancel(tx: TxClient, userId: string): Promise
 export async function requestAccountDeletionOnTx(
     tx: TxClient,
     userId: string,
+    /**
+     * WHO asked. REQUIRED — no default, deliberately (#1671).
+     *
+     * A default would make the distinction optional at the very call site that
+     * has to get it right, and the failure is silent: a termination recorded
+     * as `SELF` becomes cancellable by its subject, which is the defect this
+     * column exists to close. TypeScript refusing the call is the cheapest
+     * possible reminder.
+     */
+    initiator: DeletionInitiator,
 ): Promise<DeletionRequestResult> {
     const existing = await tx.user.findUnique({
         where: { id: userId },
@@ -357,7 +369,11 @@ export async function requestAccountDeletionOnTx(
     const now = new Date();
     await tx.user.update({
         where: { id: userId },
-        data: { deletionRequestedAt: now, sessionVersion: { increment: 1 } },
+        data: {
+            deletionRequestedAt: now,
+            deletionRequestedBy: initiator,
+            sessionVersion: { increment: 1 },
+        },
     });
     const revoked = await tx.userSession.updateMany({
         where: { userId, revokedAt: null },
@@ -385,7 +401,11 @@ export async function requestAccountDeletion(userId: string): Promise<DeletionRe
     // self-service request did not, or the reverse. "Two spellings of one
     // policy" is how this repo has repeatedly ended up with a control enforced
     // on one path only.
-    const result = await prisma.$transaction((tx) => requestAccountDeletionOnTx(tx, userId));
+    // SELF: this is the self-service route. The moderator path is
+    // `actOnNotice`, which passes MODERATION (#1671).
+    const result = await prisma.$transaction((tx) =>
+        requestAccountDeletionOnTx(tx, userId, 'SELF'),
+    );
 
     // AFTER the commit and DIRECTLY awaited, not through `afterCommit`.
     // `afterCommit` only defers when a scope is open, and a scope is opened by
@@ -404,6 +424,23 @@ export async function requestAccountDeletion(userId: string): Promise<DeletionRe
  * Clears the freeze. Does NOT restore the revoked sessions — reinstatement
  * returns the ability to sign in, not credentials that may since have been
  * shared, which is the same one-way rule `liftSuspension` follows.
+ *
+ * ## A MODERATION-initiated erasure is refused here, not at the route
+ *
+ * Termination finalises (owner ruling on #1654), so its subject may not undo
+ * it. That is a property of the erasure rather than of one HTTP surface, so
+ * the rule lives in the usecase and any future caller inherits it — a second
+ * cancel path deciding this for itself is how a control ends up enforced on
+ * one route only, which this repo has paid for repeatedly.
+ *
+ * It refuses on the INITIATOR, not on `suspendedAt`. Until #1671 the only
+ * thing stopping a self-undo was the cancel route refusing a suspended
+ * account, which is a side effect of a different control rather than a
+ * property of this one — and #1667 removed that control with every required
+ * check green, because nothing asserted the protection directly.
+ *
+ * A distinct code, not `ACCOUNT_SUSPENDED`: that one invites an appeal, and an
+ * appeal would not restore anything here.
  */
 export async function cancelAccountDeletion(
     userId: string,
@@ -411,7 +448,12 @@ export async function cancelAccountDeletion(
     const result = await prisma.$transaction(async (tx) => {
         const existing = await tx.user.findUnique({
             where: { id: userId },
-            select: { id: true, deletionRequestedAt: true, pseudonymisedAt: true },
+            select: {
+                id: true,
+                deletionRequestedAt: true,
+                deletionRequestedBy: true,
+                pseudonymisedAt: true,
+            },
         });
         // Past the point of no return: there is nothing left to cancel, and
         // saying so is better than pretending it worked.
@@ -419,6 +461,13 @@ export async function cancelAccountDeletion(
             return { applied: false, wasRequested: false };
         }
         if (!existing.deletionRequestedAt) return { applied: true, wasRequested: false };
+
+        // A NULL initiator reads as SELF — every row predating #1671 is a
+        // self-service request, since termination→erasure only shipped in
+        // #1654 and production holds no terminated accounts.
+        if (existing.deletionRequestedBy === 'MODERATION') {
+            throw codedForbidden('ACCOUNT_TERMINATED', 'ACCOUNT_TERMINATED');
+        }
 
         await tx.user.update({ where: { id: userId }, data: { deletionRequestedAt: null } });
         const listingsRestored = await restoreListingsAfterCancel(tx, userId);

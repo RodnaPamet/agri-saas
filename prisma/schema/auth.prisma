@@ -708,6 +708,11 @@ model User {
   /// leave, and would let a person cancel a suspension.
   deletionRequestedAt           DateTime?
 
+  /// WHO asked — the distinction `deletionRequestedAt` alone cannot carry
+  /// (#1671). NULL reads as `SELF`; see `DeletionInitiator` for why that is the
+  /// safe direction here and what it is paying for.
+  deletionRequestedBy           DeletionInitiator?
+
   /// When pseudonymisation actually ran (P5.6, #1597).
   ///
   /// The marker that erasure COMPLETED, so the sweep cannot process a row

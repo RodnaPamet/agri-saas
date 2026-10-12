@@ -176,7 +176,19 @@ function assertSecondFactorPresented(session: JwtPayload, tenantId: string): voi
  */
 export async function getUserCtx(
     req?: NextRequest,
-    opts?: { surface?: PersonSurface },
+    opts?: {
+        surface?: PersonSurface;
+        /**
+         * Pass through to `getSessionOrThrow`: do NOT refuse a suspended
+         * account.
+         *
+         * ONE caller — `DELETE /api/account/deletion`, the way out of an
+         * erasure a terminated person is entitled to stop (owner ruling,
+         * #1667). Held at one by
+         * `tests/guards/suspension-escape-is-not-gated.test.ts`.
+         */
+        allowSuspended?: boolean;
+    },
 ): Promise<UserContext> {
     // FIRST, before any session work: a key presented here is a category error
     // and must not be answered as the cookie's user.
@@ -191,7 +203,7 @@ export async function getUserCtx(
         }
     }
 
-    const session = await getSessionOrThrow();
+    const session = await getSessionOrThrow({ allowSuspended: opts?.allowSuspended });
     const requestId = getRequestId(req);
 
     if (session.mfaPending === true) {

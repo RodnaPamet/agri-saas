@@ -176,6 +176,37 @@ and why the probe is `readyz` rather than `livez` — the previous spec's
 reasoning was imported from a multi-pod Kubernetes deployment and is
 false for a single VM with one app container.
 
+**A fail-closed gate with no signal is indistinguishable from an unconfigured
+one, so `/api/readyz` reports the platform console (#1669).**
+`assertPlatformSupport` is correctly fail-closed — unset `PLATFORM_TENANT_SLUG`
+makes #12's console unreachable for every tenant rather than open for all of
+them — and that produced no signal, so nobody noticed the var has **never been
+set on the VM**. Every route behind the gate (`admin/promotions`,
+`admin/promotions/[id]/image`, `admin/companies/[id]`, `admin/market-prices`)
+has been inert in production since #12 merged; the global catalogues could only
+be changed by direct database access.
+
+`capabilities.platformConsole` is the #781 treatment — WATCHED, not gated, and
+OUTSIDE `checks`/`failed` like its three siblings, because this endpoint is the
+GCP uptime check's target and a typo'd env var must never page anybody. Four
+states, and the fourth exists to stop a false alarm: `unconfigured` (the
+legitimate self-hosted state), `misconfigured` (a slug naming no live tenant —
+**which the gate itself cannot distinguish from absent**), `reachable`, and
+`unknown` for a lookup that could not run, because during a database incident
+every probe would otherwise report a configuration fault that does not exist.
+
+It also checks something the GATE does not: `isPlatformTenant` compares slugs
+only, so a SOFT-DELETED platform tenant still opens the gate while being
+invisible to every other consumer. That reports `misconfigured`.
+
+**The client is PASSED in, not imported.** `@/lib/prisma` reads `Prisma.dmmf`
+at module load, and three readyz suites mock `@prisma/client` with
+`PrismaClient` alone — importing it inside the capability broke 28 tests across
+3 suites before any of them ran. `readyz` already builds its own raw client for
+the database check and hands that over, which is also the correct client:
+`slug` and `deletedAt` are not encrypted, so the extension's per-tenant DEK
+resolution would be work for nothing.
+
 **`deploy/Caddyfile` is a record, not a deployment.** `deploy/apply.sh`
 does not copy it and `deploy/check-drift.sh` does not hash it, so the
 live `/opt/agrent/Caddyfile` is edited by hand and nothing detects the
@@ -2270,14 +2301,16 @@ unscored.
 
 ### P5.9 — suspension, and why the check is in `getSessionOrThrow` of all places
 
-`User.suspendedAt` is read on EVERY authenticated request, so a suspension takes
+`User.suspendedAt` is read on every authenticated request but ONE, so a suspension takes
 effect on the next one (#1600). Policy in `src/lib/auth/suspension.ts`, the
 platform verbs in `src/app-layer/usecases/account-suspension.ts`.
 
 **It closes #1635, which is the thing to understand first.**
 `ACCOUNT_SUSPENDED` had been a recordable outcome since P5.1 and an announced
 one since P5.4b — the Art 17 statement tells the recipient «не можете да
-публикувате или да изпращате съобщения» — while `User` had no suspension column
+отваряте стопанството си» (it said «не можете да публикувате или да изпращате
+съобщения» until #1668, which was accurate for P5.4b and understated what P5.9
+does) — while `User` had no suspension column
 and `actOnNotice` wrote the row and stopped. Each phase was individually
 correct; nobody shipped the enforcement, and an unused enum string fails no
 guard. So `ActOnNoticeSchema` now REQUIRES `suspendUserId` for
@@ -2288,6 +2321,18 @@ without being performed.
 `recipientUserId` is on a statement: a notice names CONTENT, and a reported
 listing belongs to a FARM whose members are several. Which account to lock out
 is a judgement, not a lookup.
+
+**One route opts OUT, and the rule is the one P5.5a already wrote.**
+`DELETE /api/account/deletion` passes `allowSuspended` (#1667): a way out must
+never be gated on the condition it escapes, and `ACCOUNT_TERMINATED` sets
+`suspendedAt` as well as `deletionRequestedAt`, so the check was refusing
+exactly the person entitled to stop the erasure — while the phone's recovery
+screen offered them the button. Cancelling clears one column on the caller's own
+row and does NOT lift the suspension: they stop the erasure and stay locked out.
+`POST` on the same route keeps the refusal, so a suspended account may stop an
+erasure and may not start one, and
+`tests/guards/suspension-escape-is-not-gated.test.ts` holds the call-site count
+at one.
 
 **The check lives in `getSessionOrThrow` because the Edge cannot do it.**
 "Within one request" belongs in `src/middleware.ts`, which is the one reader of
@@ -2312,7 +2357,20 @@ screen whose cancel the server refuses. **The remaining nine were #1652, CLOSED 
 #1658**, which built `src/lib/auth/session-gate.ts` and
 `api-routes-resolve-sessions-through-the-gate.test.ts` — the guard holding the
 direct-`auth()` count under `src/app/api` at zero, with `/api/auth/me`
-allowlisted because it reads `suspendedAt` off the row it already fetches. That
+allowlisted because it reads `suspendedAt` off the row it already fetches.
+
+**The class appeared a THIRD time, outside that guard's population.** #1665
+found four SERVER-RENDERED PAGES that rendered farm data to a suspended
+account, because `getTenantServerContext` takes a `userId` parameter and so
+never reaches `getSessionOrThrow`. Pages are not under `src/app/api`, so the
+#1658 guard could not see them. `tests/guards/server-pages-check-suspension.test.ts`
+now covers `src/app` EXCLUDING `src/app/api`, by subtree, derived from the
+filesystem — 251 non-API files, 21 resolving a session, 3 gates covering 11, 10
+allowlisted with reasons. **So the two guards now PARTITION `src/app` between
+them** rather than leaving a gap, which is the only reason the scoped wording
+above is safe to read as complete. Ten API routes, then four pages: when a gate
+is named without its denominator, the denominator is usually smaller than the
+sentence implies. That
 PR deliberately kept TWO helpers rather than one, because those ten routes
 answered an absent session in four different shapes and collapsing them inside
 a security fix would have been a breaking change riding along.

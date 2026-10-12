@@ -28,6 +28,7 @@ import { randomUUID } from 'crypto';
 import {
     eraseAccount,
     requestAccountDeletion,
+    requestAccountDeletionOnTx,
     cancelAccountDeletion,
     findAccountsDueForErasure,
     DELETION_GRACE_DAYS,
@@ -168,6 +169,57 @@ describeFn('P5.6b — erasure by pseudonymisation (#1597)', () => {
             const row = await globalPrisma.$queryRawUnsafe<Array<{ d: Date | null }>>(
                 `SELECT "deletionRequestedAt" AS d FROM "User" WHERE "id" = $1`, id);
             expect(row[0].d).toBeNull();
+        });
+
+        // ── who asked, and who may take it back (#1671) ──────────────
+        //
+        // The rule lives in `cancelAccountDeletion` rather than at the route,
+        // because the previous protection WAS a route behaviour — the cancel
+        // refusing a suspended account — and that is a side effect of a
+        // different control rather than a property of the erasure. #1667
+        // removed it with every required check green, because nothing asserted
+        // the protection directly. These two do.
+        it('records SELF for a self-service request', async () => {
+            const { id } = await makeUser();
+            await requestAccountDeletion(id);
+
+            const row = await globalPrisma.$queryRawUnsafe<Array<{ b: string | null }>>(
+                `SELECT "deletionRequestedBy" AS b FROM "User" WHERE "id" = $1`, id);
+            expect(row[0].b).toBe('SELF');
+        });
+
+        it('refuses to cancel a MODERATION-initiated erasure, with a DISTINCT code', async () => {
+            const { id } = await makeUser();
+            await requestAccountDeletionOnTx(globalPrisma, id, 'MODERATION');
+
+            await expect(cancelAccountDeletion(id)).rejects.toMatchObject({
+                status: 403,
+                // NOT `ACCOUNT_SUSPENDED`: that invites an appeal, and an
+                // appeal would not restore anything here.
+                code: 'ACCOUNT_TERMINATED',
+            });
+
+            // And the erasure is STILL pending — a refused cancel must not
+            // half-apply. Asserted on the row rather than on the return,
+            // because "it threw" and "it threw after clearing the column" look
+            // identical from the caller.
+            const row = await globalPrisma.$queryRawUnsafe<Array<{ d: Date | null }>>(
+                `SELECT "deletionRequestedAt" AS d FROM "User" WHERE "id" = $1`, id);
+            expect(row[0].d).not.toBeNull();
+        });
+
+        it('a NULL initiator reads as SELF — every row predating #1671', async () => {
+            // The migration adds a nullable column, so existing requests carry
+            // no initiator. Treating NULL as MODERATION would have made every
+            // pre-existing self-service request uncancellable on deploy day.
+            const { id } = await makeUser();
+            await requestAccountDeletion(id);
+            await globalPrisma.$executeRawUnsafe(
+                `UPDATE "User" SET "deletionRequestedBy" = NULL WHERE "id" = $1`, id);
+
+            await expect(cancelAccountDeletion(id)).resolves.toMatchObject({
+                wasRequested: true,
+            });
         });
     });
 

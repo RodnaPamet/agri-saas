@@ -78,7 +78,30 @@ export const POST = withApiErrorHandling(
 
 export const DELETE = withApiErrorHandling(
     async (req: NextRequest) => {
-        const ctx = await getUserCtx(req);
+        // `allowSuspended` — the ONE place it is passed, and the reason is that
+        // a way out must never be gated on the condition it escapes.
+        //
+        // The case it exists for is a person who REQUESTED deletion and was
+        // later suspended: until #1667 this route answered `ACCOUNT_SUSPENDED`
+        // and they could not change their mind.
+        //
+        // It does NOT admit a terminated account. `cancelAccountDeletion`
+        // refuses a MODERATION-initiated erasure with `ACCOUNT_TERMINATED`
+        // (#1671) — and that refusal lives in the usecase on purpose, because
+        // the previous protection was this route refusing suspended accounts,
+        // which is a side effect of a different control. #1667 removed it with
+        // every required check green; nothing asserted the protection
+        // directly, so nothing noticed.
+        //
+        // The same shape as P5.5a's slow-mode escape, where an unverified
+        // account throttled on the route that verifies it cannot get out.
+        //
+        // Narrow by construction, not by promise: a valid session is still
+        // required, and `cancelAccountDeletion` clears one column on the
+        // CALLER's own row. Cancelling does NOT lift the suspension — they
+        // stop the erasure and remain locked out, which is the honest outcome
+        // and is why POST below keeps the refusal.
+        const ctx = await getUserCtx(req, { allowSuspended: true });
 
         const result = await cancelAccountDeletion(ctx.userId);
 

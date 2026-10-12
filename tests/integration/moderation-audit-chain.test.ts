@@ -18,15 +18,30 @@
  *
  * Owner ruling 2026-10-11: terminate suspends AND requests deletion, so the Art
  * 17 statement ("we closed your account") is true of the data as well as of
- * access. The test that matters is that a terminated person cannot UNDO it —
- * which holds because they are suspended, so `getSessionOrThrow` refuses them
- * before they reach the cancel route.
+ * access.
+ *
+ * This docblock used to continue: *"The test that matters is that a terminated
+ * person cannot UNDO it — which holds because they are suspended, so
+ * `getSessionOrThrow` refuses them before they reach the cancel route."* **That
+ * premise expired and took the protection with it.** It was a property of a
+ * DIFFERENT control, and #1667 changed that control — admitting suspended
+ * accounts to the cancel route so a person who had asked to leave could change
+ * their mind. Every required check was green, because nothing here asserted the
+ * protection directly.
+ *
+ * It is a property of the erasure now: #1671 records
+ * `User.deletionRequestedBy`, a termination writes `MODERATION`, and
+ * `cancelAccountDeletion` refuses that with `ACCOUNT_TERMINATED`. The two
+ * assertions below are the ones the old sentence stood in for — found by
+ * mutating `actOnNotice` to record `SELF` and watching this entire suite stay
+ * green.
  */
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { randomUUID } from 'crypto';
 
 import { actOnNotice, queueStatement } from '@/app-layer/usecases/moderation';
+import { cancelAccountDeletion } from '@/app-layer/usecases/account-erasure';
 import { verifyPlatformChain } from '@/lib/audit/platform-audit-writer';
 import { encryptField, hashForLookup } from '@/lib/security/encryption';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
@@ -220,6 +235,49 @@ describeFn('#1619 — moderation decisions in the platform chain', () => {
             // Suspension alone made "we closed your account" true of access
             // and not of the data.
             expect(row[0].s).not.toBeNull();
+            expect(row[0].d).not.toBeNull();
+        });
+
+        it('records MODERATION as the initiator — the thing that makes it final', async () => {
+            // Mutating this to 'SELF' left the whole suite green before this
+            // test existed, which is how a termination could have become
+            // cancellable by its subject with nothing noticing.
+            const reportId = await fileNotice();
+            const target = await makeUser();
+
+            const { actionId } = await actOnNotice({
+                reportId, actionKind: 'ACCOUNT_TERMINATED',
+                rationale: 'repeat illegal content', generation: 'current',
+                suspendUserId: target,
+            });
+            actions.push(actionId);
+
+            const row = await globalPrisma.$queryRawUnsafe<Array<{ b: string | null }>>(
+                `SELECT "deletionRequestedBy" AS b FROM "User" WHERE "id" = $1`, target);
+            expect(row[0].b).toBe('MODERATION');
+        });
+
+        it('and the subject CANNOT cancel it', async () => {
+            // The assertion the old docblock claimed without making. It no
+            // longer depends on the suspension check: `cancelAccountDeletion`
+            // refuses on the INITIATOR, so changing who may reach the route
+            // cannot silently remove this.
+            const reportId = await fileNotice();
+            const target = await makeUser();
+
+            const { actionId } = await actOnNotice({
+                reportId, actionKind: 'ACCOUNT_TERMINATED',
+                rationale: 'repeat illegal content', generation: 'current',
+                suspendUserId: target,
+            });
+            actions.push(actionId);
+
+            await expect(cancelAccountDeletion(target)).rejects.toMatchObject({
+                status: 403,
+                code: 'ACCOUNT_TERMINATED',
+            });
+            const row = await globalPrisma.$queryRawUnsafe<Array<{ d: Date | null }>>(
+                `SELECT "deletionRequestedAt" AS d FROM "User" WHERE "id" = $1`, target);
             expect(row[0].d).not.toBeNull();
         });
 
