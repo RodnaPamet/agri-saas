@@ -65,7 +65,6 @@ const tenantScoped = derived.filter((d) => d.tenantScoped);
 
 describe('§1 the population, printed', () => {
     it('prints both counts so the tenantless split is visible', () => {
-        // eslint-disable-next-line no-console
         console.log(
             `[personal-data] ${derived.length} models carry a person column: `
             + `${tenantless.length} tenantless (this guard's population), `

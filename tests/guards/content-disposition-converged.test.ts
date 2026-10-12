@@ -56,7 +56,6 @@ const ALL = collectSourceFiles({ roots: ['src'] }).map(rel);
 
 describe('§1 the population this covers', () => {
     it('prints the denominator', () => {
-        // eslint-disable-next-line no-console -- the denominator IS the output
         console.log(`[content-disposition] src files scanned: ${ALL.length}`);
         expect(ALL.length).toBeGreaterThan(500);
         expect(ALL).toContain(HELPER);
@@ -92,7 +91,6 @@ describe('§3 every download route reaches the helper', () => {
     ).filter((p) => p !== HELPER);
 
     it('reports the converted call sites', () => {
-        // eslint-disable-next-line no-console -- the denominator IS the output
         console.log(`[content-disposition] call sites: ${callers.length}\n  ` + callers.join('\n  '));
         // Eight routes today. A floor rather than an equality so adding a
         // download does not break this, while losing most of them does.

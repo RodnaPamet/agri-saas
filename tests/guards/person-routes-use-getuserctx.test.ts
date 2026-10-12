@@ -102,7 +102,6 @@ describe('every person-scoped route uses getUserCtx', () => {
                 (m) => `${rel(f)}#${m.split(' ').pop()}`,
             ),
         );
-        // eslint-disable-next-line no-console -- the denominator IS the output
         console.log(
             `person-scoped route files: ${files.length}, handlers: ${handlers.length}\n  ` +
                 handlers.join('\n  '),

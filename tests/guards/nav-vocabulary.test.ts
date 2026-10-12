@@ -226,7 +226,6 @@ describe('nav vocabulary — derived from docs/nav-vocabulary.md', () => {
         // catalogue read as an empty object, reports zero violations and looks
         // perfect. The numbers are printed so being wrong is visible.
         const keyCount = rows.reduce((n, r) => n + r.keys.length, 0);
-        // eslint-disable-next-line no-console
         console.log(
             `[nav-vocabulary] ${rows.length} concepts, ${keyCount} pinned keys, ` +
                 `${bgFlat.size} bg / ${enFlat.size} en strings swept`,

@@ -99,7 +99,6 @@ const mentioning = ALL.map(rel).filter((p) =>
 
 describe('§1 the population this covers', () => {
     it('prints the denominator, so an empty selection is visible', () => {
-        // eslint-disable-next-line no-console
         console.log(
             `[notice-score-shadow] scanned ${ALL.length} source files; `
             + `${mentioning.length} mention NoticeScore: ${mentioning.join(', ') || '(none)'}`,
