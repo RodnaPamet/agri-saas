@@ -142,7 +142,6 @@ describe('WCAG 1.4.11 — focus and state indicators reach 3:1', () => {
             (p) => resolve(p.theme, p.token) && resolve(p.theme, p.ground),
         );
         expect(resolved.length).toBe(PAIRS.length);
-        // eslint-disable-next-line no-console -- the denominator IS the output
         console.log(`[nontext-contrast] ${resolved.length} indicator/ground pairs at ${THRESHOLD}:1`);
     });
 

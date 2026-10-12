@@ -343,7 +343,6 @@ describe('every social HANDLER is flag-gated, or recorded as deliberately not (#
         // The number that matters, and the one the per-file sweep could not
         // show: a file counts once, a file with four handlers counts four
         // times. A reader of a green run should see which.
-        // eslint-disable-next-line no-console -- the denominator IS the output
         console.log(
             `social HANDLERS swept: ${handlers.length} across ${social.length} file(s)\n  ` +
                 handlers.map(([k]) => k).join('\n  '),
