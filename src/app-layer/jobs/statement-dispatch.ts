@@ -52,8 +52,9 @@ import { randomUUID } from 'node:crypto';
 
 import prisma from '@/lib/prisma';
 import { sendEmail } from '@/lib/mailer';
+import { env } from '@/env';
 import { logger } from '@/lib/observability/logger';
-import { translateFor } from '@/lib/i18n/server-messages';
+import { composeStatementBody, dsaContactUrl } from '@/app-layer/usecases/statement-body';
 import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
 import type { JobRunResult } from './types';
 
@@ -141,20 +142,17 @@ export async function runStatementDispatch(
                 continue;
             }
 
-            const subject = await translateFor(locale, 'statementOfReasons.subject');
-            const intro = await translateFor(locale, 'statementOfReasons.intro');
-            const actionLine = await translateFor(
+            // One composition, shared with the auto-queue (#1667). It used to
+            // be inlined here, which was right while a human typed the draft;
+            // now that a statement is queued automatically from both action
+            // paths there is no human, and two compositions would let the
+            // console's draft drift from what is actually sent.
+            const { subject, body } = await composeStatementBody(
                 locale,
-                `statementOfReasons.action.${action.actionKind}`,
+                action.actionKind,
+                action.rationale,
+                { redressUrl: dsaContactUrl(env.APP_URL) },
             );
-            const reasonLabel = await translateFor(locale, 'statementOfReasons.reasonLabel');
-            const redress = await translateFor(locale, 'statementOfReasons.redress');
-
-            // Plain text. An Art 17 statement is a legal communication, not a
-            // marketing email, and a text body is the one shape every client
-            // renders identically.
-            const body = [intro, '', actionLine, '', `${reasonLabel}`, action.rationale, '', redress]
-                .join('\n');
 
             await sendEmail({ to: recipient.email, subject, text: body });
 

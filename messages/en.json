@@ -6375,7 +6375,7 @@
         "subject": "A decision about your content on Agrent",
         "intro": "We are writing because we took a decision about something you posted on Agrent. This notice sets out what we did and why, as required by Article 17 of the EU Digital Services Act.",
         "reasonLabel": "Why:",
-        "redress": "If you believe this decision is wrong, reply to this message and a person will look at it again. You may also take the matter to an out-of-court dispute settlement body, or to a court.",
+        "redress": "If you believe this decision is wrong, you can ask for a person to review it again through our contact page: {url}. You may also take the matter to an out-of-court dispute settlement body, or to a court.",
         "action": {
             "NONE": "We looked at a report about your content and decided to take no action. Your content stays as it is.",
             "CONTENT_REMOVED": "We removed the content.",
