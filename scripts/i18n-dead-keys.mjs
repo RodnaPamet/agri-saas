@@ -157,13 +157,76 @@ const files = ROOTS.flatMap((r) => walk(join(REPO, r)));
  * `AgTranslator`, `StatusTranslator`, `TaskEnumTranslator`, `FacetTranslator`,
  * `CelebrationTranslator`) across 16 parameter declarations.
  */
+/**
+ * Functions that RECEIVE a translator as a parameter.
+ *
+ * Handing `t` to a function takes its calls out of this scan's sight, so the
+ * caller's namespace is marked undecidable rather than its unreached keys being
+ * called dead. That treatment was already here; what was wrong was WHICH
+ * functions it found.
+ *
+ * ## The blind spot, and why it was the dangerous direction
+ *
+ * The test was `/:\s*[A-Z]\w*Translator\b/`, which requires something BEFORE
+ * the word — it matches `FooTranslator` and does NOT match a parameter typed
+ * `Translator`. Nor did anything match
+ * `ReturnType<typeof useTranslations>`. Between them those are the only two
+ * shapes in this repo, so **7 of 9 takers were invisible**:
+ *
+ *     journal/filter-defs.ts        t: ReturnType<typeof useTranslations>
+ *     planning/filter-defs.ts       t: ReturnType<typeof useTranslations>
+ *     exchange/filter-defs.ts       t: Translator          (local alias)
+ *     grain/{costs,yield,contracts}/filter-defs.ts   t: Translator
+ *     org/audit/AuditLogTable.tsx   t: ReturnType<…>
+ *     org/tenants/new/NewTenantForm.tsx, sharepoint/SharePointFilePicker.tsx
+ *
+ * The consequence is false POSITIVES — keys reported dead that the app renders.
+ * `buildJournalFilters` calls `t('filter.type')`, `t('filter.status')` and
+ * `t('filter.crop')` as plain literals, and all three were in the candidate
+ * list; so were all four `planningEnums.status.*` reached by
+ * `t(`status.${o.value}`)` one line further down.
+ *
+ * **That corrects a claim this detector has been making.** Its own report and
+ * #1534's comments said every remaining limit "pushes toward calling a dead
+ * key LIVE", naming a translator passed as a prop as an example — so the
+ * unreferenced count was described as a floor. It is the opposite: an
+ * untracked translator makes its calls INVISIBLE, which makes its keys look
+ * DEAD. The candidate list is what somebody deletes from, so a false positive
+ * there is the one error that destroys working copy.
+ *
+ * ## Matched by what the type MENTIONS, not how it is spelled
+ *
+ * A parameter is a translator if its type names `Translator`,
+ * `useTranslations` or `getTranslations`. That covers both live shapes and a
+ *
+ * **There is NO leading `\b` on that alternation, and the first version of
+ * this fix had one.** With it, `\bTranslator\b` matches a parameter typed
+ * `Translator` and does NOT match `EnumTranslator` — no word boundary between
+ * `m` and `T` — so widening the matcher silently DROPPED the `*Translator`
+ * shape the old pattern was built for. Measured: `crops`, `weeds`, `taskEnums`
+ * and `knowledge.filters` left the undecidable set and 61 keys became
+ * candidates for deletion. The fix for a matcher written to the shape in front
+ * of me was a matcher written to the shape in front of me.
+ * third somebody writes next, which a list of spellings would not — this is
+ * the fifth blind spot of exactly that kind in this one script. The count is
+ * printed so a shape it still cannot see shows up as a number rather than as
+ * silence.
+ */
+const TRANSLATOR_PARAM = /:\s*[^,)]*(?:Translator|useTranslations|getTranslations)\b/;
 const TRANSLATOR_TAKERS = new Set();
 for (const file of files) {
     const code = blankComments(readFileSync(file, 'utf8'));
     for (const m of code.matchAll(
         /(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)/g,
     )) {
-        if (/:\s*[A-Z]\w*Translator\b/.test(m[2])) TRANSLATOR_TAKERS.add(m[1]);
+        if (TRANSLATOR_PARAM.test(m[2])) TRANSLATOR_TAKERS.add(m[1]);
+    }
+    // Arrow form too: `const buildX = (t: Translator) => …`. None today, and
+    // the asymmetry is exactly how the shape above got missed.
+    for (const m of code.matchAll(
+        /const\s+(\w+)\s*=\s*(?:async\s*)?\(([^)]*)\)\s*(?::[^=]+)?=>/g,
+    )) {
+        if (TRANSLATOR_PARAM.test(m[2])) TRANSLATOR_TAKERS.add(m[1]);
     }
 }
 
