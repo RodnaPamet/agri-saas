@@ -312,6 +312,16 @@ describe('lifting a suspension stops a moderator erasure (#1667)', () => {
         const result = await liftSuspension({ userId: 'u1', generation: 'current' });
 
         expect(result.erasureStopped).toBe(false);
-        expect(userUpdate.mock.calls[0][0].data).toEqual({ suspendedAt: null });
+        // `terminatedAt` is cleared alongside — unconditionally, so a lift of a
+        // never-terminated account writes NULL over NULL. That is what gives
+        // the person their own request back: `cancelAccountDeletion` refuses
+        // while `terminatedAt` is set, so leaving it would un-suspend somebody
+        // and still hold them to an erasure they could no longer stop.
+        // `toEqual`, not `toMatchObject`, so a future key that clears the
+        // deletion here fails instead of passing silently.
+        expect(userUpdate.mock.calls[0][0].data).toEqual({
+            suspendedAt: null,
+            terminatedAt: null,
+        });
     });
 });
