@@ -56,6 +56,18 @@ export const EXCHANGE_SIDE_COLORS = { SELL: '#34d399', BUY: '#5b8def' } as const
 /** Grain-gold — the brand accent (wheat + value/money). Chrome + liquidity. */
 export const EXCHANGE_ACCENT_GOLD = '#e3b341';
 
+/**
+ * The chip's wordmark. Uppercase, and NOT a translation — it is the Борса
+ * brand, the same mark in every locale.
+ *
+ * The chip pairs it with a localised label, which reads as intended in
+ * English («БОРСА · Exchange») and degenerated in Bulgarian, where
+ * `exchangeMap.exchangeSuffix` is «Борса» — so a farmer saw the same word
+ * twice. Bulgarian is the primary locale, so the broken form was the one that
+ * shipped and the sensible one was never seen. Refs #1708.
+ */
+export const EXCHANGE_WORDMARK = 'БОРСА';
+
 /** Brighter gold reserved for the best-price ring so it out-punches the chrome. */
 const BEST_GOLD = '#f5c542';
 /** Selected-region fill (emerald, matching the SELL marker family). */
@@ -350,6 +362,11 @@ export function ExchangeMap({
 }: ExchangeMapProps) {
     const t = useTranslations('exchangeMap');
     const locale = useLocale();
+    // A COMPARISON rather than a locale check, so the next locale added gets
+    // the same treatment without anybody remembering to. Uppercased in the
+    // active locale because that is what the wordmark is.
+    const suffixDiffersFromWordmark =
+        t('exchangeSuffix').toLocaleUpperCase(locale) !== EXCHANGE_WORDMARK;
     // The tonne glyph is a TRANSLATED string, not a latin `t`: the Bulgarian
     // surfaces alternated between `t` and `т` on adjacent chips. Canvas text
     // can't go through <FormattedMessage>, so it is read once here and threaded
@@ -958,8 +975,12 @@ export function ExchangeMap({
                             className="inline-flex h-2 w-2 animate-pulse rounded-full"
                             style={{ backgroundColor: EXCHANGE_ACCENT_GOLD }}
                         />
-                        <span className="text-xs font-semibold tracking-wide text-content-emphasis">БОРСА</span>
-                        <span className="text-xs text-content-muted">· {t('exchangeSuffix')}</span>
+                        <span className="text-xs font-semibold tracking-wide text-content-emphasis">
+                            {EXCHANGE_WORDMARK}
+                        </span>
+                        {suffixDiffersFromWordmark && (
+                            <span className="text-xs text-content-muted">· {t('exchangeSuffix')}</span>
+                        )}
                     </div>
                     <div className="pointer-events-none absolute bottom-3 left-3 right-14 flex flex-wrap items-center gap-compact rounded-lg border border-border-subtle bg-bg-default/70 px-3 py-1.5 backdrop-blur-sm">
                         <span className="flex items-center gap-1.5 text-xs text-content-muted">

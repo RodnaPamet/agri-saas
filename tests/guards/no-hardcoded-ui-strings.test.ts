@@ -106,13 +106,46 @@ const CURRENT_BASELINE = 13;
 // the ceiling, so the live count is 218 — not estimated.
 const CONFIG_PROP_BASELINE = 201;
 
-/** A string counts as user-facing copy if — after stripping HTML entities —
- *  it has a real word (≥2 latin letters) and is not an ALL-CAPS enum/acronym
- *  (SOC, ALE, WYSIWYG) or a lone symbol. Same test for JSX text + attributes. */
+/**
+ * A string counts as user-facing copy if — after stripping HTML entities — it
+ * has a real word and is not an ALL-CAPS enum/acronym (SOC, ALE, WYSIWYG,
+ * БАБХ) or a lone symbol. Same test for JSX text + attributes.
+ *
+ * ## Cyrillic counts as a real word (#1709)
+ *
+ * This asked for ≥2 **latin** letters, which was right for the migration it
+ * was built for — finding untranslated ENGLISH across 5413 keys. But the
+ * product ships in Bulgarian, so the easiest way to add untranslated copy was
+ * to type it in Cyrillic: it reaches a farmer, it is outside the catalogue,
+ * and every i18n signal stays green. `missing`/`orphan`/`drift`/
+ * `untranslated` are en-vs-bg key parity, so a string that never became a key
+ * is invisible to them; `i18n-dead-keys` reports keys nothing reaches, and a
+ * literal has no key to be dead; `i18n-bulgarian-cyrillic` checks that bg
+ * VALUES are Cyrillic, which is the opposite direction.
+ *
+ * The farm-profile page was the evidence: a heading, a regulation-citing
+ * paragraph and five status messages, all hardcoded Bulgarian, while CI
+ * printed `missing=0 orphan=0 drift=0 untranslated=0`.
+ *
+ * The ALL-CAPS carve-out is mirrored rather than reused. `БОРСА` is a
+ * wordmark and `БАБХ`, `ЕИК`, `ЕГН`, `УРН`, `ИСАК`, `ДФЗ` are institutional
+ * acronyms that appear inside legitimately-catalogued values; treating them as
+ * copy would make the guard cry wolf on the very strings it protects. Uppercase
+ * Cyrillic is U+0400–U+042F, lowercase U+0430–U+044F, so the two cases are
+ * separable — unlike a naive `toUpperCase()` comparison.
+ *
+ * Deliberately NOT widened: a Cyrillic string in a non-copy position. The
+ * positions are unchanged — JSX text, `USER_FACING_PROPS` attributes, and
+ * config props — which is what keeps `rentUnit: 'лв/дка'` out of scope. That
+ * is a persisted `ParcelLease` value normalised by `canonicalRentUnit()`, and
+ * "translating" it would corrupt the write path rather than localise anything.
+ */
 function isUserFacingCopy(raw: string): boolean {
     const decoded = raw.replace(/&#?[a-zA-Z0-9]+;/g, '').trim();
-    if (!/[A-Za-z]{2,}/.test(decoded)) return false; // no real word
+    // A real word in either script.
+    if (!/[A-Za-z]{2,}|[\u0400-\u04FF]{2,}/.test(decoded)) return false;
     if (/^[A-Z0-9 ./&()-]+$/.test(decoded)) return false; // all-caps enum/acronym/label
+    if (/^[\u0400-\u042F0-9 ./&()-]+$/.test(decoded)) return false; // ditto, Cyrillic
     return true;
 }
 
@@ -285,6 +318,50 @@ describe('hardcoded-string detector self-test', () => {
     it('does NOT flag a t() attribute value', () => {
         const hits = scanSource('x.tsx', "export const A = () => <input placeholder={t('search')} />;");
         expect(hits).toHaveLength(0);
+    });
+
+    it('flags hardcoded BULGARIAN JSX text (#1709)', () => {
+        // The language the app ships in. Before #1709 the predicate required
+        // ≥2 LATIN letters, so this was the one way to add untranslated copy
+        // that every i18n signal reported as clean.
+        const hits = scanSource('x.tsx', 'export const A = () => <div>Запази промените</div>;');
+        expect(hits.some((h) => h.kind === 'jsx-text')).toBe(true);
+    });
+
+    it('flags a hardcoded Bulgarian label attribute', () => {
+        const hits = scanSource(
+            'x.tsx',
+            'export const A = () => <FormField label="Агроном — име (чл. 84 ал. 1)" />;',
+        );
+        expect(hits.some((h) => h.kind === 'attr')).toBe(true);
+    });
+
+    it('does NOT flag an ALL-CAPS Cyrillic acronym or wordmark', () => {
+        // `БАБХ`, `ЕИК`, `ЕГН`, `УРН`, `ИСАК`, `ДФЗ` appear inside
+        // legitimately-catalogued values, and `БОРСА` is a wordmark. Flagging
+        // them would make the guard cry wolf on the strings it protects.
+        // Mirrors the latin carve-out rather than reusing it, because
+        // uppercase Cyrillic is a different range (U+0400–U+042F).
+        expect(scanSource('x.tsx', 'export const A = () => <span>БОРСА</span>;')).toHaveLength(0);
+        expect(scanSource('x.tsx', 'export const A = () => <span>ЕИК</span>;')).toHaveLength(0);
+        expect(scanSource('x.tsx', 'export const A = () => <abbr title="БАБХ">x</abbr>;')).toHaveLength(0);
+    });
+
+    it('still flags a MIXED-case Cyrillic string — the carve-out is not a bypass', () => {
+        // The carve-out above would be a hole if it matched anything with a
+        // Cyrillic capital in it. `Агроном` has lowercase letters, so it is
+        // copy; `ЕИК` does not, so it is a token.
+        expect(scanSource('x.tsx', 'export const A = () => <span>Агроном</span>;').length)
+            .toBeGreaterThan(0);
+    });
+
+    it('does NOT flag a Cyrillic string in a non-copy position', () => {
+        // `rentUnit: 'лв/дка'` is a persisted ParcelLease value normalised by
+        // canonicalRentUnit(); "translating" it would corrupt the write path.
+        // The positions are unchanged by #1709 — only the predicate widened —
+        // and this records that the distinction is deliberate.
+        expect(scanSource('x.tsx', "export const A = () => <Input value={'лв/дка'} name=\"лв/дка\" />;"))
+            .toHaveLength(0);
     });
 
     it('does NOT flag structural attributes or all-caps enums', () => {

@@ -1348,7 +1348,11 @@
             "certificatesDesc": "Сертификати за растителна защита, притежавани от този член — отпечатват се в БАБХ ДНЕВНИК.",
             "certificatesForMember": "Сертификати — {name}",
             "certificatesEditableNote": "Редактируеми за всеки член. Празно поле изчиства стойността.",
-            "saveCertificates": "Запази сертификатите"
+            "saveCertificates": "Запази сертификатите",
+            "certApplicatorLabel": "Сертификат на приложителя (чл. 84 ал. 2)",
+            "certApplicatorHint": "№ на сертификат на лицето, което извършва третирането (чл. 83 ЗЗР).",
+            "certAgronomistNameLabel": "Агроном — име (чл. 84 ал. 1)",
+            "certAgronomistNoLabel": "Агроном — № сертификат"
         },
         "hub": {
             "theme": "Тема",
@@ -2120,7 +2124,8 @@
             "expiring": "Изтичащи скоро",
             "daysLeft": "{days} д",
             "noActive": "Няма активни договори",
-            "outstanding": "Оставащо"
+            "outstanding": "Оставащо",
+            "areaUnit": "дка"
         },
         "lease": {
             "owned": "Собствена",

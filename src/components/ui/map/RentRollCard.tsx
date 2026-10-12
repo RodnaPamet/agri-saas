@@ -101,7 +101,7 @@ export function RentRollCard({
             <dl className="grid grid-cols-2 gap-default text-sm sm:grid-cols-5">
                 <div>
                     <dt className="text-content-muted">{t('leasedArea')}</dt>
-                    <dd className="font-medium tabular-nums">{num(data.totalLeasedDca)} дка</dd>
+                    <dd className="font-medium tabular-nums">{num(data.totalLeasedDca)} {t('areaUnit')}</dd>
                 </div>
                 <div>
                     <dt className="text-content-muted">{t('lessors')}</dt>
