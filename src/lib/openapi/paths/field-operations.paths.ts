@@ -233,7 +233,7 @@ export function registerFieldOperationPaths(registry: OpenAPIRegistry): void {
         extraResponses: {
             409: {
                 description:
-                    'Optimistic-lock conflict — the line moved to a DIFFERENT status while you ' +
+                    '`STALE_DATA` — optimistic-lock conflict: the line moved to a DIFFERENT status while you ' +
                     'were offline. Resolve it; do not treat it as success.',
                 content: { 'application/json': { schema: OperationParcelStaleDataError } },
             },

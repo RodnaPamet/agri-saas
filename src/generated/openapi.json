@@ -15394,7 +15394,7 @@
             }
           },
           "409": {
-            "description": "Optimistic-lock conflict — the entry moved on. Resolve it; do not treat it as success.",
+            "description": "`STALE_DATA` — optimistic-lock conflict: the entry moved on. Resolve it; do not treat it as success. `details` carries `currentVersion` and `expectedVersion`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15572,7 +15572,7 @@
             }
           },
           "409": {
-            "description": "Optimistic-lock conflict — the entry moved on. Resolve it; do not treat it as success.",
+            "description": "`STALE_DATA` — optimistic-lock conflict: the entry moved on. Resolve it; do not treat it as success. `details` carries `currentVersion` and `expectedVersion`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -17019,7 +17019,7 @@
             }
           },
           "409": {
-            "description": "Optimistic-lock conflict — the line moved to a DIFFERENT status while you were offline. Resolve it; do not treat it as success.",
+            "description": "`STALE_DATA` — optimistic-lock conflict: the line moved to a DIFFERENT status while you were offline. Resolve it; do not treat it as success.",
             "content": {
               "application/json": {
                 "schema": {
@@ -36735,7 +36735,7 @@
             }
           },
           "409": {
-            "description": "That name is already taken, case-insensitively. Not a stale edit — re-reading will not free the name; ask for a different one.",
+            "description": "`ITEM_NAME_ALREADY_EXISTS` — that name is already taken, case-insensitively. NOT `STALE_DATA`: re-reading will not free the name, so do not drive this through the stale-edit path; ask for a different one.",
             "content": {
               "application/json": {
                 "schema": {
@@ -37102,7 +37102,7 @@
             }
           },
           "409": {
-            "description": "The rename collides with another item, case-insensitively. Same index and same remedy as create: a different name, not a re-read.",
+            "description": "`ITEM_NAME_ALREADY_EXISTS` — the rename collides with another item, case-insensitively. Same index, same code and same remedy as create: a different name, not a re-read.",
             "content": {
               "application/json": {
                 "schema": {
@@ -48436,7 +48436,7 @@
             }
           },
           "409": {
-            "description": "Optimistic-lock conflict — the profile moved on, or you sent a version for a row that does not exist. Re-read and retry; do NOT treat it as success.",
+            "description": "`STALE_DATA` — optimistic-lock conflict: the profile moved on, or you sent a version for a row that does not exist. Re-read and retry; do NOT treat it as success. `details` carries `currentVersion` and `expectedVersion`.",
             "content": {
               "application/json": {
                 "schema": {
