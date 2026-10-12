@@ -26,6 +26,16 @@ jest.mock('@/lib/auth/suspension', () => ({
     isAccountSuspended: jest.fn(),
 }));
 
+// #1667 — lifting a suspension stops a MODERATION erasure, so the erasure
+// verdict's own cache has to be dropped as well. Mocked here because this file
+// is about which post-commit effects are CALLED.
+const invalidateDeletionPendingCache = jest.fn();
+jest.mock('@/lib/auth/deletion-pending', () => ({
+    ...jest.requireActual('@/lib/auth/deletion-pending'),
+    invalidateDeletionPendingCache: (...a: unknown[]) =>
+        invalidateDeletionPendingCache(...a),
+}));
+
 const appendPlatformAuditEntry = jest.fn();
 jest.mock('@/lib/audit/platform-audit-writer', () => ({
     appendPlatformAuditEntry: (...a: unknown[]) => appendPlatformAuditEntry(...a),
@@ -63,6 +73,7 @@ beforeEach(() => {
     userFindUnique.mockReset().mockResolvedValue({ id: 'u1', suspendedAt: null });
     userUpdate.mockReset().mockResolvedValue({});
     sessionUpdateMany.mockReset().mockResolvedValue({ count: 2 });
+    invalidateDeletionPendingCache.mockReset().mockResolvedValue(undefined);
 });
 
 describe('suspending wires both post-commit effects', () => {
@@ -194,5 +205,63 @@ describe('lifting wires them too', () => {
 
         expect(result.wasSuspended).toBe(false);
         expect(appendPlatformAuditEntry).not.toHaveBeenCalled();
+    });
+});
+
+describe('lifting a suspension stops a moderator erasure (#1667)', () => {
+    it('drops the deletion-pending cache when it stopped one', async () => {
+        // Without this, `/me` keeps reporting a `deletion` that no longer
+        // exists for the remainder of the TTL — and the phone offers a cancel
+        // for it, which is the promise-then-refuse shape this whole thread has
+        // been about.
+        userFindUnique.mockResolvedValue({
+            id: 'u1',
+            suspendedAt: new Date(),
+            deletionRequestedAt: new Date(),
+            deletionRequestedBy: 'MODERATION',
+        });
+
+        const result = await liftSuspension({ userId: 'u1', generation: 'current' });
+
+        expect(result.erasureStopped).toBe(true);
+        expect(invalidateDeletionPendingCache).toHaveBeenCalledWith('u1');
+        // ONE update, so the reinstatement cannot half-apply.
+        expect(userUpdate).toHaveBeenCalledTimes(1);
+        expect(userUpdate.mock.calls[0][0].data).toMatchObject({
+            suspendedAt: null,
+            deletionRequestedAt: null,
+            deletionRequestedBy: null,
+        });
+    });
+
+    it('does NOT drop it when there was nothing to stop', async () => {
+        // The control. A cache drop on every lift would make the assertion
+        // above pass for the wrong reason, and would also clear a verdict for
+        // somebody mid-deletion who was never erasure-bound by a moderator.
+        userFindUnique.mockResolvedValue({
+            id: 'u1',
+            suspendedAt: new Date(),
+            deletionRequestedAt: null,
+            deletionRequestedBy: null,
+        });
+
+        const result = await liftSuspension({ userId: 'u1', generation: 'current' });
+
+        expect(result.erasureStopped).toBe(false);
+        expect(invalidateDeletionPendingCache).not.toHaveBeenCalled();
+    });
+
+    it('leaves a SELF-requested deletion alone', async () => {
+        userFindUnique.mockResolvedValue({
+            id: 'u1',
+            suspendedAt: new Date(),
+            deletionRequestedAt: new Date(),
+            deletionRequestedBy: 'SELF',
+        });
+
+        const result = await liftSuspension({ userId: 'u1', generation: 'current' });
+
+        expect(result.erasureStopped).toBe(false);
+        expect(userUpdate.mock.calls[0][0].data).toEqual({ suspendedAt: null });
     });
 });

@@ -48,6 +48,7 @@ import prisma from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { afterCommit } from '@/lib/db/after-commit';
 import { invalidateSuspensionCache } from '@/lib/auth/suspension';
+import { invalidateDeletionPendingCache } from '@/lib/auth/deletion-pending';
 import {
     appendPlatformAuditEntry,
     type PlatformAuditScope,
@@ -204,6 +205,15 @@ export async function suspendAccount(
 export interface LiftSuspensionResult {
     readonly applied: boolean;
     readonly wasSuspended: boolean;
+    /**
+     * A moderator-initiated erasure was stopped too (#1667).
+     *
+     * Reported rather than silent: the console shows what the reinstatement
+     * actually did, and "we lifted the suspension" and "we lifted it and
+     * cancelled the deletion" are different facts for an operator reading an
+     * appeal outcome.
+     */
+    readonly erasureStopped: boolean;
 }
 
 /**
@@ -213,6 +223,29 @@ export interface LiftSuspensionResult {
  * NOT un-revoked: both are one-way. Reinstatement restores the ability to sign
  * in, not the sessions that existed before — un-revoking a session row would
  * resurrect a credential that may since have been shared or captured.
+ *
+ * ## It also STOPS a moderator-initiated erasure, and that is a fix
+ *
+ * `ACCOUNT_TERMINATED` sets `deletionRequestedAt` as well as `suspendedAt`.
+ * This function cleared only the second, which until #1671 was survivable: the
+ * reinstated person was no longer suspended, so the cancel route admitted them
+ * and they could clear the erasure themselves.
+ *
+ * #1671 moved that refusal onto the INITIATOR — `MODERATION` is refused
+ * whatever the suspension state — which closed a self-undo and **removed the
+ * only path by which an upheld appeal could be completed**. A reinstated person
+ * would have signed in, been unable to cancel, and been erased at the end of
+ * the grace period anyway. Found by agrent-ios reviewing #1670 rather than by
+ * any test here, and it is the same shape as the defect #1671 fixed: a
+ * capability that existed only as a side effect of a different control.
+ *
+ * So the authority that made the decision undoes it. "The subject may not undo
+ * a termination" stays true; "nobody can" was never the ruling, and
+ * `liftSuspension` is the reversal verb.
+ *
+ * A SELF-requested erasure is LEFT ALONE. Lifting a suspension says the
+ * suspension was wrong, not that the person changed their mind about leaving —
+ * cancelling it for them would overrule a decision that was theirs.
  */
 export async function liftSuspension(input: {
     readonly userId: string;
@@ -221,16 +254,38 @@ export async function liftSuspension(input: {
     const result = await prisma.$transaction(async (tx) => {
         const existing = await tx.user.findUnique({
             where: { id: input.userId },
-            select: { id: true, suspendedAt: true },
+            select: {
+                id: true,
+                suspendedAt: true,
+                deletionRequestedAt: true,
+                deletionRequestedBy: true,
+            },
         });
-        if (!existing) return { applied: false, wasSuspended: false };
-        if (!existing.suspendedAt) return { applied: true, wasSuspended: false };
+        if (!existing) return { applied: false, wasSuspended: false, erasureStopped: false };
+        if (!existing.suspendedAt) {
+            return { applied: true, wasSuspended: false, erasureStopped: false };
+        }
+
+        // Only a MODERATION erasure, and only one that is still pending. A
+        // SELF-requested deletion is the person's own decision and survives
+        // the reinstatement.
+        const erasureStopped =
+            existing.deletionRequestedAt !== null &&
+            existing.deletionRequestedBy === 'MODERATION';
 
         await tx.user.update({
             where: { id: input.userId },
-            data: { suspendedAt: null },
+            data: {
+                suspendedAt: null,
+                // ONE update, so a reinstatement cannot half-apply: an account
+                // un-suspended with its erasure still scheduled is the exact
+                // state this fixes, and a second statement could leave it.
+                ...(erasureStopped
+                    ? { deletionRequestedAt: null, deletionRequestedBy: null }
+                    : {}),
+            },
         });
-        return { applied: true, wasSuspended: true };
+        return { applied: true, wasSuspended: true, erasureStopped };
     });
 
     if (result.applied && result.wasSuspended) {
@@ -238,6 +293,17 @@ export async function liftSuspension(input: {
         // a person should have their account back, and a stale `'1'` would
         // hold them out for the remaining TTL.
         await invalidateSuspensionCache(input.userId);
+
+        // The erasure verdict is cached separately, so stopping the erasure
+        // without dropping it would leave `/me` reporting a `deletion` that no
+        // longer exists — and the phone would offer a cancel for it, which is
+        // the promise-then-refuse shape this whole thread has been about.
+        // Directly awaited, not through `afterCommit`, for the reason
+        // `requestAccountDeletion` gives: `afterCommit` only defers when a
+        // scope is open, and a bare `prisma.$transaction` opens none.
+        if (result.erasureStopped) {
+            await invalidateDeletionPendingCache(input.userId);
+        }
 
         try {
             await appendPlatformAuditEntry({
@@ -248,6 +314,10 @@ export async function liftSuspension(input: {
                 detailsJson: {
                     targetUserId: input.userId,
                     moderatorRef: `platform-key:${input.generation}`,
+                    // Part of the decision's record: an appeal upheld inside
+                    // the grace period stopped an erasure, and the chain is
+                    // where that is answerable afterwards.
+                    erasureStopped: result.erasureStopped,
                 },
             });
         } catch (err) {
