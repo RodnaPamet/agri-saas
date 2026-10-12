@@ -452,6 +452,7 @@ export async function cancelAccountDeletion(
                 id: true,
                 deletionRequestedAt: true,
                 deletionRequestedBy: true,
+                terminatedAt: true,
                 pseudonymisedAt: true,
             },
         });
@@ -462,10 +463,26 @@ export async function cancelAccountDeletion(
         }
         if (!existing.deletionRequestedAt) return { applied: true, wasRequested: false };
 
-        // A NULL initiator reads as SELF — every row predating #1671 is a
-        // self-service request, since termination→erasure only shipped in
-        // #1654 and production holds no terminated accounts.
-        if (existing.deletionRequestedBy === 'MODERATION') {
+        // TWO signals, and neither is alone load-bearing.
+        //
+        // `terminatedAt` is the one that holds in the case the other misses: a
+        // person may ask to leave and be terminated afterwards, and
+        // `requestAccountDeletionOnTx` early-returns on an existing request
+        // without writing the initiator — so the row stays `SELF` and this
+        // cancel would have been allowed, leaving the account terminated,
+        // suspended and with no erasure at all. Found by agrent-ios.
+        //
+        // The initiator check stays because it answers a different question —
+        // whose erasure this is — and `liftSuspension` reads it to decide
+        // whether a reinstatement clears the erasure or leaves the person's own
+        // request standing.
+        //
+        // A NULL initiator reads as SELF: every row predating #1671 is a
+        // self-service request.
+        if (
+            existing.terminatedAt !== null ||
+            existing.deletionRequestedBy === 'MODERATION'
+        ) {
             throw codedForbidden('ACCOUNT_TERMINATED', 'ACCOUNT_TERMINATED');
         }
 

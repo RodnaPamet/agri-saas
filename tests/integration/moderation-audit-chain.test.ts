@@ -264,6 +264,83 @@ describeFn('#1619 — moderation decisions in the platform chain', () => {
             expect(row[0].b).toBe('MODERATION');
         });
 
+        it('takes over a deletion the person had ALREADY asked for', async () => {
+            // The sequence that defeated the initiator check (#1667, found by
+            // agrent-ios): ask to leave, then be terminated.
+            //
+            // `requestAccountDeletionOnTx` early-returns on an existing
+            // request and never writes the initiator, so the row stays `SELF`
+            // — and the terminated person could cancel their own erasure,
+            // ending up terminated, suspended and with NO erasure at all.
+            // Termination did not finalise for exactly the person who saw it
+            // coming.
+            const target = await makeUser();
+            await requestAccountDeletion(target);
+
+            const reportId = await fileNotice();
+            const { actionId } = await actOnNotice({
+                reportId, actionKind: 'ACCOUNT_TERMINATED',
+                rationale: 'repeat illegal content', generation: 'current',
+                suspendUserId: target,
+            });
+            actions.push(actionId);
+
+            const row = await globalPrisma.$queryRawUnsafe<Array<{
+                t: Date | null; b: string | null; d: Date | null;
+            }>>(
+                `SELECT "terminatedAt" AS t, "deletionRequestedBy" AS b,
+                        "deletionRequestedAt" AS d
+                 FROM "User" WHERE "id" = $1`, target);
+            // The initiator is STILL `SELF` — that is the early return, and it
+            // is why a second signal was needed rather than a takeover.
+            expect(row[0].b).toBe('SELF');
+            expect(row[0].t).not.toBeNull();
+            // And the grace period did NOT restart: the original request's
+            // date stands, so a termination cannot extend somebody's deadline.
+            expect(row[0].d).not.toBeNull();
+
+            await expect(cancelAccountDeletion(target)).rejects.toMatchObject({
+                status: 403,
+                code: 'ACCOUNT_TERMINATED',
+            });
+        });
+
+        it('and after an upheld appeal that person CAN leave, as they asked', async () => {
+            // The other half, and the reason this is two signals rather than a
+            // takeover: reinstatement un-terminates, and the erasure the
+            // person asked for themselves is still theirs. A takeover would
+            // have rewritten the initiator to `MODERATION` and the lift would
+            // then have cancelled their own request for them.
+            const target = await makeUser();
+            await requestAccountDeletion(target);
+
+            const reportId = await fileNotice();
+            const { actionId } = await actOnNotice({
+                reportId, actionKind: 'ACCOUNT_TERMINATED',
+                rationale: 'repeat illegal content', generation: 'current',
+                suspendUserId: target,
+            });
+            actions.push(actionId);
+
+            const lifted = await liftSuspension({ userId: target, generation: 'current' });
+            // NOT stopped: the erasure is the person's own.
+            expect(lifted.erasureStopped).toBe(false);
+
+            const row = await globalPrisma.$queryRawUnsafe<Array<{
+                t: Date | null; d: Date | null;
+            }>>(
+                `SELECT "terminatedAt" AS t, "deletionRequestedAt" AS d
+                 FROM "User" WHERE "id" = $1`, target);
+            expect(row[0].t).toBeNull();
+            expect(row[0].d).not.toBeNull();
+
+            // And they can now stop it if they change their mind — which they
+            // could not while terminated.
+            await expect(cancelAccountDeletion(target)).resolves.toMatchObject({
+                wasRequested: true,
+            });
+        });
+
         it('an upheld appeal INSIDE the grace period stops the erasure', async () => {
             // The capability #1671 removed without noticing, found by
             // agrent-ios reviewing #1670.

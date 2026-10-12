@@ -277,6 +277,13 @@ export async function liftSuspension(input: {
             where: { id: input.userId },
             data: {
                 suspendedAt: null,
+                // Reinstatement UN-TERMINATES (#1667). Without this a
+                // reinstated person stays refused by `cancelAccountDeletion`,
+                // which reads `terminatedAt` — so an erasure they had asked for
+                // themselves would survive the appeal and they could not stop
+                // it. Always cleared, not conditionally: a lift of a
+                // non-terminated account writes NULL over NULL.
+                terminatedAt: null,
                 // ONE update, so a reinstatement cannot half-apply: an account
                 // un-suspended with its erasure still scheduled is the exact
                 // state this fixes, and a second statement could leave it.
