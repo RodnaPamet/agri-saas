@@ -75,6 +75,10 @@ import { auth } from '@/auth';
 import { codedForbidden } from '@/lib/errors/types';
 
 import { isAccountSuspended } from './suspension';
+import {
+    recordSuspendedRefusal,
+    type SuspendedRefusalRecord,
+} from './suspended-refusal-audit';
 
 export interface SessionWithSuspension {
     /** Exactly what `auth()` returned, `null` included. */
@@ -105,8 +109,31 @@ export async function authWithSuspension(): Promise<SessionWithSuspension> {
  * `getSessionOrThrow` exactly. Two gates answering one condition in two shapes
  * is #1645, three days old at the time of writing.
  */
-export async function authRefusingSuspended(): Promise<Session | null> {
+/**
+ * @param record  When given, the refusal is appended to the moderation audit
+ *                chain before the throw (#1656, owner ruling: platform admins
+ *                only). Best-effort — see `recordSuspendedRefusal`.
+ *
+ * The record is a PARAMETER rather than a second door. A
+ * `authRefusingSuspendedAndRecording` sibling would put the refusal — the part
+ * that actually protects the farm — in two places, and two spellings of one
+ * rule is the drift that #1671 and #1667 each shipped in turn. There is one
+ * `suspended` test and one throw; only the bookkeeping is optional.
+ *
+ * Recorded BEFORE the throw, not after: the throw leaves this function.
+ */
+export async function authRefusingSuspended(
+    record?: SuspendedRefusalRecord,
+): Promise<Session | null> {
     const { session, suspended } = await authWithSuspension();
-    if (suspended) throw codedForbidden('ACCOUNT_SUSPENDED', 'ACCOUNT_SUSPENDED');
+    if (suspended) {
+        // `session.user.id` is present whenever `suspended` is true —
+        // `authWithSuspension` resolves suspension FROM the session's user —
+        // but the type does not say so, so an absent id skips the record
+        // rather than refusing differently.
+        const userId = session?.user?.id;
+        if (record && userId) await recordSuspendedRefusal(userId, record);
+        throw codedForbidden('ACCOUNT_SUSPENDED', 'ACCOUNT_SUSPENDED');
+    }
     return session;
 }

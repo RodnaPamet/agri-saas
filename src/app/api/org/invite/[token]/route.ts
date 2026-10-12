@@ -71,14 +71,20 @@ export const POST = withApiErrorHandling(
         const limitResponse = await applyRedeemRateLimit(req);
         if (limitResponse) return limitResponse;
 
+        // Read BEFORE the gate — see the tenant half for why.
+        const { token } = await routeArgs.params;
+
         // Refused for a suspended account (owner ruling, #1652) — the
-        // organisation half of the same hole.
-        const session = await authRefusingSuspended();
+        // organisation half of the same hole, recorded the same way (#1656).
+        const session = await authRefusingSuspended({
+            attempted: 'INVITE_ACCEPTANCE',
+            surface: 'ORG',
+            token,
+        });
         if (!session?.user?.id || !session.user.email) {
             throw unauthorized('You must be signed in to accept an invite.');
         }
 
-        const { token } = await routeArgs.params;
         const result = await redeemOrgInvite({
             token,
             userId: session.user.id,

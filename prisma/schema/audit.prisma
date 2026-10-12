@@ -105,6 +105,15 @@ enum PlatformAuditAction {
   // decision and its consequence in one chain rather than two halves.
   MODERATION_ACTION_RECORDED
   MODERATION_STATEMENT_QUEUED
+  // #1656 — a suspended account's attempt to act was REFUSED. In the same
+  // `moderation` scope: a platform admin reading "what has this suspension
+  // done" needs the consequences next to the decision, and an attempt to join
+  // a second farm is the consequence the suspension exists to stop.
+  //
+  // One value rather than one per surface. What was refused is in
+  // `detailsJson.attempted`, so a second surface needs no migration — and the
+  // chain reads "refused" uniformly, which is what an operator scans for.
+  SUSPENDED_ACCOUNT_REFUSED
 }
 
 model PlatformAuditLog {
