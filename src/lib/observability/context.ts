@@ -39,6 +39,25 @@ export interface RequestContextData {
     userId?: string;
     /** Request route pattern (e.g. /api/t/[tenantSlug]/practices) */
     route?: string;
+    /**
+     * The reader's interface language, merged after auth (#1677).
+     *
+     * Here rather than threaded through every signature for the reason this
+     * module exists: the error envelope is assembled in
+     * `withApiErrorHandling`, several frames above whatever threw, and a
+     * localised `message` needs the locale THERE. Passing it down every call
+     * path to carry it back up is the problem ALS already solves for
+     * `requestId`.
+     *
+     * RAW, as the session carries it — see `JwtPayload.uiLanguage` for why the
+     * `'en'` fallback upstream must not be inherited. Resolve with
+     * `resolveRequestLocale`.
+     *
+     * Not a secret, a token, or a payload, so the SAFETY note above is
+     * satisfied: a person's choice of interface language is already visible in
+     * every page they are served.
+     */
+    uiLanguage?: string;
     /** High-resolution start time for duration calculation */
     startTime: number;
 }
