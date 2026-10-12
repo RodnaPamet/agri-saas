@@ -20,7 +20,9 @@ import { randomUUID } from 'crypto';
 import type { RequestContext } from '@/app-layer/types';
 import { getPermissionsForRole } from '@/lib/permissions';
 import { createLocation, listLocationParcels } from '@/app-layer/usecases/location';
-import { importLocationSpatialFile } from '@/app-layer/usecases/spatial-import';
+import { stageLocationSpatialImport } from '@/app-layer/usecases/spatial-import';
+import { runLocationSpatialImport } from '@/app-layer/jobs/spatial-import';
+import { closeQueue } from '@/app-layer/jobs/queue';
 import {
     createFieldOperation,
     getFieldOperation,
@@ -99,15 +101,62 @@ async function main() {
     const location = await createLocation(adminCtx, { name: `ITest Block ${Date.now()}`, description: 'integration' });
     check(!!location.id, `createLocation → ${location.id}`);
 
-    // 2 ── import a GeoJSON spatial file
-    const imp = await importLocationSpatialFile(adminCtx, location.id, {
+    // 2 ── import a GeoJSON spatial file — TWO calls since #40
+    //
+    // #40 split the import in half, which is why this script stopped loading:
+    // `importLocationSpatialFile` no longer exists. Staging is the cheap
+    // synchronous half (authorize, detect format, enforce the per-format byte
+    // cap, verify the Location, store the bytes with a REAL scan verdict,
+    // enqueue); `runLocationSpatialImport` is the half that parses and writes
+    // PostGIS, deliberately off the request thread because parsing a
+    // shapefile/KML/GeoJSON is attacker-influenced CPU.
+    //
+    // The executor is invoked INLINE rather than polled (owner ruling
+    // 2026-10-12), so the harness needs no worker and settles deterministically
+    // instead of waiting on one. It does NOT make the script Redis-free —
+    // `enqueue` is a real BullMQ `add`, and step 6 below already needs Redis
+    // through `markOperationParcel`. Since Redis is already a dependency, the
+    // real staging call is kept rather than hand-rolled: reaching past it
+    // (as the integration suites do, for their own reasons) would skip the
+    // authorization, the size cap and the scan verdict, which is most of what
+    // an integration driver is for.
+    const staged = await stageLocationSpatialImport(adminCtx, location.id, {
         filename: 'fields.geojson',
         buffer: Buffer.from(SAMPLE_GEOJSON),
         mimeType: 'application/geo+json',
     });
+    check(!!staged.jobId, `stage → job ${staged.jobId}, format=${staged.format}`);
+
+    // The storage key lives on the FileRecord, not in the stage result. READ
+    // rather than recomputed: `buildTenantObjectKey` puts a `crypto.randomUUID()`
+    // in the key, so deriving it a second time yields a path staging never
+    // wrote and the executor would fail on a missing object.
+    const stagedFile = await prisma.fileRecord.findUnique({
+        where: { id: staged.fileRecordId },
+        select: { pathKey: true },
+    });
+    check(!!stagedFile?.pathKey, `stage → FileRecord stored (${staged.fileRecordId})`);
+
+    const imp = await runLocationSpatialImport({
+        tenantId: tenant.id,
+        initiatedByUserId: owner.userId,
+        locationId: location.id,
+        stagingPathKey: stagedFile!.pathKey,
+        stagingFileRecordId: staged.fileRecordId,
+        filename: 'fields.geojson',
+        mimeType: 'application/geo+json',
+    });
+    // `parcelCount` is `matched + created` — the shapes the FILE held. Asserted
+    // rather than `>= 2` because the whole point of the fixture is that it
+    // contains exactly two.
     check(imp.parcelCount === 2, `import → 2 parcels (got ${imp.parcelCount}), format=${imp.format}`);
     check(Array.isArray(imp.bounds) && imp.bounds.length === 4, `import → bounds computed (${JSON.stringify(imp.bounds)})`);
-    check(!!imp.fileRecordId, `import → FileRecord stored (${imp.fileRecordId})`);
+    // The same record, so staging and the executor are provably talking about
+    // one upload. `!!imp.fileRecordId` would pass on any id at all.
+    check(
+        imp.fileRecordId === staged.fileRecordId,
+        `import → same FileRecord as staged (${imp.fileRecordId})`,
+    );
 
     // 3 ── verify parcels carry PostGIS geometry + areaHa
     const { parcels } = await listLocationParcels(adminCtx, location.id);
@@ -165,9 +214,19 @@ async function main() {
     return failed === 0 ? 0 : 1;
 }
 
+// `closeQueue()` before the exit, on BOTH paths. `process.exit` would drop a
+// lingering BullMQ handle anyway, but relying on that is what made the CI seed
+// hang for forty minutes once the exit was refactored away — so the handle is
+// released explicitly rather than left to the exit to paper over.
+const shutdown = async (code: number): Promise<never> => {
+    await closeQueue().catch(() => {});
+    await prisma.$disconnect().catch(() => {});
+    process.exit(code);
+};
+
 main()
-    .then((code) => prisma.$disconnect().then(() => process.exit(code)))
+    .then((code) => shutdown(code))
     .catch((err) => {
         console.error('FATAL', err);
-        return prisma.$disconnect().then(() => process.exit(1));
+        return shutdown(1);
     });

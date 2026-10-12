@@ -49,10 +49,13 @@
     //                     `stripeCustomerId`; threw every time into a
     //                     swallowing catch, so the plan differentiator never
     //                     happened. Fixed.
-    //   itest-spray.ts    imports `importLocationSpatialFile`, which #40
+    //   itest-spray.ts    imported `importLocationSpatialFile`, which #40
     //                     renamed and made off-thread. Broken since then, and
-    //                     a rework rather than a rename. Excluded; filed as
-    //                     #1659.
+    //                     a rework rather than a rename, so it was excluded
+    //                     and filed as #1659. Fixed there: it now stages
+    //                     through the real usecase and runs the executor
+    //                     inline, and is in this program like the other 17.
+    //                     The exclusion set is empty again.
     //
     // The criterion is WRITES, not runs-in-production, and for a type error
     // the two are the same class: either way it surfaces when somebody runs
@@ -71,6 +74,7 @@
     "scripts/import-knowledge.ts",
     "scripts/import-products.ts",
     "scripts/import-units.ts",
+    "scripts/itest-spray.ts",
     "scripts/migrate-files-to-cloud.ts",
     "scripts/rag/corpus.ts",
     "scripts/rag/ingest-satellite-guide.ts",
