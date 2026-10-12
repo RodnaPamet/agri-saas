@@ -7,12 +7,38 @@
 #   App → PgBouncer (pooled, transaction mode) → Postgres
 #   Migrations → Postgres (direct, via DIRECT_DATABASE_URL)
 # ────────────────────────────────────────────────────────────
+# ─── Container log rotation (#1507) ──────────────────────────
+#
+# Docker's default `json-file` driver NEVER rotates, so every container log
+# grows without bound. On 2026-10-07 this VM's 79 GB disk reached 100%:
+# playerz-db PANICked on a checkpoint and agrent's Redis failed its background
+# saves (MISCONF) until space was freed. Images and build cache were the main
+# cause; logs are the other unbounded thing on the same disk.
+#
+# Per SERVICE, deliberately, and not in `/etc/docker/daemon.json`: the daemon
+# config is shared with playerz on this VM, and changing it needs a Docker
+# restart that would take BOTH products down. playerz caps its own containers
+# the same way, in its own compose files.
+#
+# 10m x 3 = 30 MB per container, so this whole stack is bounded at ~180 MB.
+#
+# Applied when a container is CREATED. An existing container keeps its current
+# (uncapped) setting until the next `docker compose up -d --force-recreate`,
+# which is a short restart for db and redis. So merging this changes nothing on
+# its own — see the PR for the deploy step.
+x-logging: &logging
+    driver: json-file
+    options:
+        max-size: '10m'
+        max-file: '3'
+
 services:
   # ── Postgres ──
   postgres:
     image: postgres:16-alpine
     container_name: inflect-staging-db
     restart: unless-stopped
+    logging: *logging
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-inflect}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-staging_password_change_me}
@@ -30,6 +56,7 @@ services:
     image: edoburu/pgbouncer:1.23.1-p2
     container_name: inflect-staging-pgbouncer
     restart: unless-stopped
+    logging: *logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -59,6 +86,7 @@ services:
     image: redis:7-alpine
     container_name: inflect-staging-redis
     restart: unless-stopped
+    logging: *logging
     # Redis MUST require a password in a production-like deployment.
     # The :? syntax aborts `docker compose up` before the container
     # is created if REDIS_PASSWORD is unset — same fail-fast pattern
@@ -86,6 +114,7 @@ services:
     image: clamav/clamav:1.4
     container_name: inflect-staging-clamav
     restart: unless-stopped
+    logging: *logging
     volumes:
       - staging-clamav-defs:/var/lib/clamav
     healthcheck:
@@ -102,6 +131,7 @@ services:
       dockerfile: Dockerfile
     container_name: inflect-staging-app
     restart: unless-stopped
+    logging: *logging
     depends_on:
       pgbouncer:
         condition: service_healthy
@@ -146,6 +176,7 @@ services:
       dockerfile: Dockerfile
     container_name: inflect-staging-worker
     restart: unless-stopped
+    logging: *logging
     entrypoint: ["/bin/sh", "-c"]
     command: ["node dist/scheduler.mjs && node dist/worker.mjs"]
     depends_on:
