@@ -176,3 +176,79 @@ export async function queueStatementForAction(input: {
         return null;
     }
 }
+
+/**
+ * Who receives the statement for an action about CONTENT (#1690).
+ *
+ * Owner ruling: **the member who posted it** — the person whose act was
+ * judged. That is what Art 17's "recipient of the service" most naturally
+ * means here, and it discloses the decision to nobody who was not already a
+ * party to it. The alternative, the farm's owner, would tell an owner about a
+ * colleague's moderated content — close to what P5.2b decided a block must
+ * never reveal, and the way #1656 was decided.
+ *
+ * ## Two kinds resolve, two do not — and that split is not mine
+ *
+ * It mirrors `captureReportSnapshot` in `trust-safety.ts`, which already
+ * treats the same two as unsupported and for the same reasons:
+ *
+ *   LISTING   `ExchangeListing.sellerUserId`
+ *   MESSAGE   `ExchangeMessage.senderUserId`
+ *   PROFILE   the surface does not exist yet — it arrives with P6
+ *   THREAD    a thread is not POSTED. It has two parties, and the seller side
+ *             deliberately has no column: `ExchangeThread`'s own comment says
+ *             "the seller-side principal needs no column: it is
+ *             `listing.sellerUserId`". So "the member who posted it" has no
+ *             referent, and picking the inquirer would omit the other party
+ *             from a decision about their conversation.
+ *
+ * Returning `null` leaves the action with no statement, which is VISIBLE
+ * rather than silent: `queueStatement` writes `MODERATION_STATEMENT_QUEUED`
+ * as a separate audit verb, so an action with no statement entry beside it in
+ * the chain is exactly what a reader looks for.
+ *
+ * ## `subjectId` is reporter-supplied, and resolving through the owner is why
+ * that is safe
+ *
+ * `FileReportSchema` calls `subjectId` "opaque here; the server resolves it",
+ * so nothing validates it per kind. Resolving the recipient from the ROW means
+ * a bogus id resolves to nothing, and a real id resolves to whoever genuinely
+ * owns that row — which is the subject of the decision the moderator actually
+ * saw and acted on. A mis-aimed notice is a moderator-review problem, not a
+ * resolution one.
+ */
+export async function resolveContentRecipient(
+    subjectKind: string,
+    subjectId: string,
+): Promise<string | null> {
+    try {
+        if (subjectKind === 'LISTING') {
+            const row = await prisma.exchangeListing.findUnique({
+                where: { id: subjectId },
+                select: { sellerUserId: true },
+            });
+            return row?.sellerUserId ?? null;
+        }
+        if (subjectKind === 'MESSAGE') {
+            const row = await prisma.exchangeMessage.findUnique({
+                where: { id: subjectId },
+                select: { senderUserId: true },
+            });
+            return row?.senderUserId ?? null;
+        }
+        // PROFILE and THREAD — see the docblock. Logged at info, not warn: it
+        // is the designed outcome for these kinds today, not a fault.
+        logger.info('moderation.statement_recipient_unsupported', {
+            component: 'statement-queue',
+            subjectKind,
+        });
+        return null;
+    } catch (err) {
+        logger.error('moderation.statement_recipient_lookup_failed', {
+            component: 'statement-queue',
+            subjectKind,
+            error: err instanceof Error ? err.message : String(err),
+        });
+        return null;
+    }
+}
