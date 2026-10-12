@@ -2815,6 +2815,24 @@ negated. Say what remains instead:
 ## Key Conventions
 
 - **Zod schemas** for all API input validation live in `src/app-layer/schemas/` (backend) and `src/lib/schemas/` (shared).
+- **A conflict in a committed generated artifact: run `npm run merge:main`, do
+  not resolve it by hand (#1608).** `src/generated/openapi.json`,
+  `src/generated/route-inventory.json`, `tests/contracts/__snapshots__/*.snap`
+  and `package-lock.json` conflict on most concurrent PRs — `openapi.json` is
+  one ~1 MB document, so two PRs touching *different* endpoints still edit the
+  same file. `scripts/merge-main-regenerating.sh` (that alias) merges first and
+  regenerates afterwards, which is the ordering that makes it correct, and it
+  handles `package-lock.json` by re-applying only the declared-dependency delta
+  rather than reinstalling — a full `npm install` on a glibc host silently drops
+  all 34 `libc` platform entries.
+  **Do not reach for a `.gitattributes` merge driver.** It was proposed,
+  built and measured on #1401 and is worse than doing nothing: a driver runs
+  DURING the merge, before git has written the merged sources, so it
+  regenerates from pre-merge inputs and silently drops the other branch's
+  change where plain git's text merge produced the right file.
+  `tests/guards/generated-artifacts-have-no-merge-driver.test.ts` holds that,
+  and #1608 was filed proposing the driver again precisely because none of this
+  was findable from the conflict.
 - **A breaking API change is measured against the PR's BASE, and regenerating
   the spec no longer silences it (#1228).** `tests/contracts/openapi-breaking-change.test.ts`
   compared the committed `src/generated/openapi.json` against a spec generated
