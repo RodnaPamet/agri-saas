@@ -46,8 +46,10 @@
  * invariant has nobody checking the checker.
  */
 import { execFileSync } from 'node:child_process';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+
+import { collectSourceFiles } from '../helpers/collect-files';
 
 interface Report {
     total: number;
@@ -395,22 +397,22 @@ describe('the i18n dead-key detector (#1534)', () => {
         // `evidence.title` dead with `t('title')` on line 40 of the page.
         const SHAPE = /const\s*\[[^\]]*\]\s*=\s*(?:await\s+)?Promise\.all\(\s*\[/;
 
-        /** Files still using the shape — derived, because a curated list of
-         *  four paths goes stale the moment one is refactored and then every
-         *  assertion below passes for the wrong reason. */
-        const shapeFiles = (function walk(dir: string, acc: string[] = []): string[] {
-            for (const e of readdirSync(dir, { withFileTypes: true })) {
-                const full = join(dir, e.name);
-                if (e.isDirectory()) walk(full, acc);
-                else if (/\.tsx?$/.test(e.name)) {
-                    const src = readFileSync(full, 'utf8');
-                    if (SHAPE.test(src) && /useTranslations|getTranslations/.test(src)) {
-                        acc.push(full);
-                    }
-                }
-            }
-            return acc;
-        })(join(process.cwd(), 'src'));
+        /**
+         * Files still using the shape — derived, because a curated list of
+         * four paths goes stale the moment one is refactored and then every
+         * assertion below passes for the wrong reason.
+         *
+         * Through `collectSourceFiles` rather than a hand-rolled walk: the
+         * first version was its own `readdirSync` recursion, which
+         * `file-collection-is-not-silently-empty` correctly refused — a
+         * hand-rolled collector can be gutted to return `[]` with every
+         * assertion built on it still green, measured at 81% of auditable
+         * guards. The helper refuses an empty result and names a renamed root.
+         */
+        const shapeFiles = collectSourceFiles({ roots: ['src'] }).filter((f) => {
+            const src = readFileSync(f, 'utf8');
+            return SHAPE.test(src) && /useTranslations|getTranslations/.test(src);
+        });
 
         it('the shape is still used — the denominator', () => {
             expect(shapeFiles.length).toBeGreaterThan(0);
