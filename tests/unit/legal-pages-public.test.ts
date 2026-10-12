@@ -172,7 +172,6 @@ describe('every page allowed outside /t/ is EITHER public or session-gated on pu
     };
 
     it('reports the population it classified', () => {
-        // eslint-disable-next-line no-console -- the denominator IS the output
         console.log(`[root-pages] ${allowedRoots.length} roots allowed outside /t/`);
         expect(allowedRoots.length).toBeGreaterThan(5);
     });

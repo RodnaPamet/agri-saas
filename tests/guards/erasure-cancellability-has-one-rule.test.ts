@@ -116,7 +116,6 @@ describe('erasure cancellability has one rule (#1667)', () => {
         // The denominator, per `a-gate-narrow-enough-to-always-pass`: a guard
         // over an empty reader list passes every assertion above for free.
         expect(READERS.length).toBeGreaterThan(0);
-        // eslint-disable-next-line no-console
         console.log(
             `[erasure-cancellability] rule=${RULE} readers=${READERS.length} ` +
                 `columns=${DECIDING_COLUMNS.length}`,

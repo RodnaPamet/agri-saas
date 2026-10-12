@@ -54,7 +54,6 @@ describe('a schema calling .openapi() imports the EXTENDED zod', () => {
         const callers = files.filter((f) => callsOpenapi(fs.readFileSync(f, 'utf8')));
         // Printed, because the interesting number is the small one: a regex
         // that stopped matching `.openapi(` would sweep zero and agree.
-        // eslint-disable-next-line no-console -- the denominator IS the output
         console.log(
             `schema files: ${files.length}, of which call .openapi(): ${callers.length}\n  ` +
                 callers.map((f) => path.relative(ROOT, f)).join('\n  '),
