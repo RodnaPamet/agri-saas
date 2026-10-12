@@ -176,6 +176,37 @@ and why the probe is `readyz` rather than `livez` — the previous spec's
 reasoning was imported from a multi-pod Kubernetes deployment and is
 false for a single VM with one app container.
 
+**A fail-closed gate with no signal is indistinguishable from an unconfigured
+one, so `/api/readyz` reports the platform console (#1669).**
+`assertPlatformSupport` is correctly fail-closed — unset `PLATFORM_TENANT_SLUG`
+makes #12's console unreachable for every tenant rather than open for all of
+them — and that produced no signal, so nobody noticed the var has **never been
+set on the VM**. Every route behind the gate (`admin/promotions`,
+`admin/promotions/[id]/image`, `admin/companies/[id]`, `admin/market-prices`)
+has been inert in production since #12 merged; the global catalogues could only
+be changed by direct database access.
+
+`capabilities.platformConsole` is the #781 treatment — WATCHED, not gated, and
+OUTSIDE `checks`/`failed` like its three siblings, because this endpoint is the
+GCP uptime check's target and a typo'd env var must never page anybody. Four
+states, and the fourth exists to stop a false alarm: `unconfigured` (the
+legitimate self-hosted state), `misconfigured` (a slug naming no live tenant —
+**which the gate itself cannot distinguish from absent**), `reachable`, and
+`unknown` for a lookup that could not run, because during a database incident
+every probe would otherwise report a configuration fault that does not exist.
+
+It also checks something the GATE does not: `isPlatformTenant` compares slugs
+only, so a SOFT-DELETED platform tenant still opens the gate while being
+invisible to every other consumer. That reports `misconfigured`.
+
+**The client is PASSED in, not imported.** `@/lib/prisma` reads `Prisma.dmmf`
+at module load, and three readyz suites mock `@prisma/client` with
+`PrismaClient` alone — importing it inside the capability broke 28 tests across
+3 suites before any of them ran. `readyz` already builds its own raw client for
+the database check and hands that over, which is also the correct client:
+`slug` and `deletedAt` are not encrypted, so the extension's per-tenant DEK
+resolution would be work for nothing.
+
 **`deploy/Caddyfile` is a record, not a deployment.** `deploy/apply.sh`
 does not copy it and `deploy/check-drift.sh` does not hash it, so the
 live `/opt/agrent/Caddyfile` is edited by hand and nothing detects the
@@ -2312,7 +2343,20 @@ screen whose cancel the server refuses. **The remaining nine were #1652, CLOSED 
 #1658**, which built `src/lib/auth/session-gate.ts` and
 `api-routes-resolve-sessions-through-the-gate.test.ts` — the guard holding the
 direct-`auth()` count under `src/app/api` at zero, with `/api/auth/me`
-allowlisted because it reads `suspendedAt` off the row it already fetches. That
+allowlisted because it reads `suspendedAt` off the row it already fetches.
+
+**The class appeared a THIRD time, outside that guard's population.** #1665
+found four SERVER-RENDERED PAGES that rendered farm data to a suspended
+account, because `getTenantServerContext` takes a `userId` parameter and so
+never reaches `getSessionOrThrow`. Pages are not under `src/app/api`, so the
+#1658 guard could not see them. `tests/guards/server-pages-check-suspension.test.ts`
+now covers `src/app` EXCLUDING `src/app/api`, by subtree, derived from the
+filesystem — 251 non-API files, 21 resolving a session, 3 gates covering 11, 10
+allowlisted with reasons. **So the two guards now PARTITION `src/app` between
+them** rather than leaving a gap, which is the only reason the scoped wording
+above is safe to read as complete. Ten API routes, then four pages: when a gate
+is named without its denominator, the denominator is usually smaller than the
+sentence implies. That
 PR deliberately kept TWO helpers rather than one, because those ten routes
 answered an absent session in four different shapes and collapsing them inside
 a security fix would have been a breaking change riding along.
