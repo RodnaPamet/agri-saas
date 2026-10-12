@@ -126,7 +126,6 @@ describe('a negative assertion on a prisma write names a live method', () => {
     const { findings, population, pairs, roots } = analyse();
 
     it('prints its denominator, so a selection bug cannot read as a clean pass', () => {
-        // eslint-disable-next-line no-console -- the population IS the result
         console.log(
             `[negative-assertion-liveness] ${population} assertion(s) over ${pairs} ` +
                 `(model, method) pair(s), across ${roots.size} receiver root(s): ` +

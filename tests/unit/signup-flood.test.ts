@@ -139,7 +139,6 @@ async function flood(opts: {
     // that is not a regression. But a range assertion hides the number, and
     // the number is the finding, so the run reports it.
     //
-    // eslint-disable-next-line no-console -- this test's output IS its result
     console.log(
         `[signup-flood] ${label.padEnd(26)} attempts=${ATTEMPTS} ` +
             `created=${out.created} refused429=${out.refused429} ` +

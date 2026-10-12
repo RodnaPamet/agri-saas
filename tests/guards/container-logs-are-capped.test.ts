@@ -54,7 +54,6 @@ describe('container logs are capped (#1507)', () => {
     it('prints the denominator, including what it does NOT cover', () => {
         const counts = DEPLOYED.map((f) => Object.keys(load(f).services ?? {}).length);
         const outside = NOT_DEPLOYED.map((f) => Object.keys(load(f).services ?? {}).length);
-        // eslint-disable-next-line no-console
         console.log(
             `[container-logs-are-capped] ${DEPLOYED.length} deployed file(s), ` +
                 `${counts.reduce((a, b) => a + b, 0)} service(s) covered. ` +
@@ -100,7 +99,6 @@ describe('container logs are capped (#1507)', () => {
         }
         // 10m x 3 per container, so the whole stack is bounded.
         const perContainerMb = 10 * 3;
-        // eslint-disable-next-line no-console
         console.log(
             `[container-logs-are-capped] ${rel}: ${services.length} x ${perContainerMb} MB ` +
                 `= ${services.length * perContainerMb} MB ceiling.`,

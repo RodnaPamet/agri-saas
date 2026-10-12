@@ -158,7 +158,6 @@ describe('§1 the population this covers', () => {
         // a rename, a wrapper, a destructured import — this drops toward zero
         // and every assertion below passes vacuously. That is the failure this
         // line exists to make loud.
-        // eslint-disable-next-line no-console -- the denominator IS the output
         console.log(
             `[ai-spend] files reaching a provider: ${SPENDING.length}\n  ` +
                 SPENDING.join('\n  '),
