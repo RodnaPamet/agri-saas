@@ -79,6 +79,18 @@ export interface QueuedNotice {
     detail: string | null;
     /** Whether evidence was captured, and the reason if not. */
     snapshot: { capturedAt: Date; captureError: string | null } | null;
+    /**
+     * How many notices exist about this subject, this one included (#1600).
+     *
+     * DISPLAY ONLY. `notice-score-is-shadow-only` covers this field alongside
+     * `NoticeScore`: nothing may `orderBy` it, because report VOLUME deciding
+     * which Art 16 notice a human reads first is a queue order a brigade can
+     * drive. A moderator reading "5 notices about this listing" is the point;
+     * the queue staying oldest-first is the constraint.
+     *
+     * Minimum 1, never 0 — the notice being displayed is itself one of them.
+     */
+    subjectNoticeCount: number;
 }
 
 /**
@@ -130,6 +142,52 @@ export async function listNotices(opts: {
         : [];
     const byReport = new Map(snaps.map((s) => [s.reportId, s]));
 
+    /**
+     * How many notices exist about each SUBJECT on this page (#1600).
+     *
+     * ## Why this exists at all
+     *
+     * `PUBLIC_NOTICE_LIMIT`'s docblock justified NOT capping per-subject by
+     * saying "P5.2 records a per-subject count without enforcing it, so a
+     * threshold can be chosen from data", and #1600 asked for a test of "the
+     * per-subject counter P5.2 records". **Neither was true**: nothing anywhere
+     * computed such a count. The capability had been INDEXED for —
+     * `ContentReport` carries `@@index([subjectKind, subjectId])`, commented
+     * "the triage queue's two access paths" — and never built, so no threshold
+     * could have been chosen from data. Both claims are corrected in the same
+     * change as this.
+     *
+     * ## DISPLAY ONLY, and that is an owner ruling with teeth behind it
+     *
+     * A moderator sees it; nothing may order the queue by it. P5.5b drew that
+     * line for the AI score and its guard's docblock says the violation to
+     * expect is a SORT rather than a read, because "order the triage queue by
+     * score" looks like an improvement and is an unevaluated signal deciding
+     * which Art 16 notices a human sees first. A raw count is a fact rather
+     * than a model output — but it is still a number a brigade can drive, and
+     * `notice-score-is-shadow-only` would not have caught an `orderBy` on it.
+     * It covers this field now too.
+     *
+     * ## One `groupBy`, scoped to the page
+     *
+     * Not one count per row (D1 forbids a read in a loop), and not a global
+     * tally (unbounded). The `in` list is the page's own subjects, so the query
+     * is bounded by `take` and served by the index above.
+     */
+    const subjectCounts = rows.length
+        ? await prisma.contentReport.groupBy({
+            by: ['subjectKind', 'subjectId'],
+            where: {
+                OR: rows.map((r) => ({ subjectKind: r.subjectKind, subjectId: r.subjectId })),
+            },
+            _count: { _all: true },
+        })
+        : [];
+    const countKey = (kind: string, id: string) => `${kind}\u0000${id}`;
+    const bySubject = new Map(
+        subjectCounts.map((c) => [countKey(c.subjectKind, c.subjectId), c._count._all]),
+    );
+
     return rows.map((r) => ({
         id: r.id,
         createdAt: r.createdAt,
@@ -140,6 +198,11 @@ export async function listNotices(opts: {
         // The FACT, not the identity.
         anonymous: r.reporterUserId === null,
         detail: r.detail,
+        /**
+         * Total notices about this subject, including this one — so the
+         * minimum is 1 and never 0. DISPLAY ONLY; see the `groupBy` above.
+         */
+        subjectNoticeCount: bySubject.get(countKey(r.subjectKind, r.subjectId)) ?? 1,
         snapshot: byReport.has(r.id)
             ? {
                 capturedAt: byReport.get(r.id)!.capturedAt,
