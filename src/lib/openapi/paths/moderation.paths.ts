@@ -152,10 +152,22 @@ export function registerModerationPaths(registry: OpenAPIRegistry): void {
         body: z
             .object({
                 userId: z.string(),
-                reason: z.string().optional(),
+                reason: z.string().openapi({
+                    description:
+                        'Why. REQUIRED since #1667 — it becomes the `rationale` of ' +
+                        'the `ModerationAction` this route records, which is encrypted ' +
+                        'at rest and is what an Art 17 statement of reasons is composed ' +
+                        'from. A decision that withholds a farm from a person is not ' +
+                        'recordable without one.\n\n' +
+                        'It was optional and the text was DISCARDED: only ' +
+                        '`hasReason: true|false` reached the platform audit chain, under ' +
+                        'a comment correctly saying the rationale belongs on ' +
+                        '`ModerationAction.rationale` — a row this path never created.',
+                }),
             })
             .openapi('SuspendAccount', {
-                description: 'The account to withhold access from, and an optional operator note.',
+                description:
+                    'The account to withhold access from, and WHY. Both required.',
             }),
         success: {
             status: 200,

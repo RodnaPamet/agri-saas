@@ -108,6 +108,24 @@ enum ReportSubjectKind {
   MESSAGE
   PROFILE
   THREAD
+
+  /// An ACCOUNT, as the subject of a moderation ACTION — never of a notice
+  /// (#1667).
+  ///
+  /// A proactive suspension is a decision about a person, not about a piece of
+  /// content, and the four above are all content. Overloading `PROFILE` would
+  /// make "somebody reported this profile" and "we suspended this account" the
+  /// same query.
+  ///
+  /// **It is deliberately NOT reportable.** `REPORT_SUBJECT_KINDS` in
+  /// `src/lib/schemas/index.ts` is what `FileReportSchema` validates against,
+  /// and it stays at four — `/api/public/notices` needs no credential, so
+  /// widening what a notifier may name would be a real escalation.
+  /// `tests/guards/report-subject-kinds-mirror.test.ts` holds that list as a
+  /// strict SUBSET of this enum with the difference named, which nothing
+  /// checked before: the list carried a comment saying it "Mirrors the
+  /// `ReportSubjectKind` enum" and no test compared them.
+  ACCOUNT
 }
 
 /// Why the notifier says the content is unlawful or violating.

@@ -105,7 +105,7 @@ describeFn('P5.9 — a suspension takes effect on the next request (#1600)', () 
     it('refuses with a DISTINCT code, not unauthorized', async () => {
         const userId = await makeUser();
         signedInAs(userId);
-        await suspendAccount({ userId, generation: 'current' });
+        await suspendAccount({ userId, generation: 'current', reason: 'repeat abuse' });
 
         // A suspended person must be told their account was suspended, not
         // that they are signed out — a 401 would send them to a login page
@@ -119,7 +119,7 @@ describeFn('P5.9 — a suspension takes effect on the next request (#1600)', () 
         await makeSession(userId);
         await makeSession(userId);
 
-        const result = await suspendAccount({ userId, generation: 'current' });
+        const result = await suspendAccount({ userId, generation: 'current', reason: 'repeat abuse' });
 
         expect(result.sessionsRevoked).toBe(2);
         const live = await globalPrisma.$queryRawUnsafe<Array<{ n: bigint }>>(
@@ -136,7 +136,7 @@ describeFn('P5.9 — a suspension takes effect on the next request (#1600)', () 
         const before = await globalPrisma.$queryRawUnsafe<Array<{ v: number }>>(
             `SELECT "sessionVersion" AS v FROM "User" WHERE "id" = $1`, userId);
 
-        await suspendAccount({ userId, generation: 'current' });
+        await suspendAccount({ userId, generation: 'current', reason: 'repeat abuse' });
 
         const after = await globalPrisma.$queryRawUnsafe<Array<{ v: number }>>(
             `SELECT "sessionVersion" AS v FROM "User" WHERE "id" = $1`, userId);
@@ -145,11 +145,11 @@ describeFn('P5.9 — a suspension takes effect on the next request (#1600)', () 
 
     it('is IDEMPOTENT and does not move the original timestamp', async () => {
         const userId = await makeUser();
-        await suspendAccount({ userId, generation: 'current' });
+        await suspendAccount({ userId, generation: 'current', reason: 'repeat abuse' });
         const first = await globalPrisma.$queryRawUnsafe<Array<{ s: Date }>>(
             `SELECT "suspendedAt" AS s FROM "User" WHERE "id" = $1`, userId);
 
-        const second = await suspendAccount({ userId, generation: 'current' });
+        const second = await suspendAccount({ userId, generation: 'current', reason: 'repeat abuse' });
 
         expect(second.alreadySuspended).toBe(true);
         const again = await globalPrisma.$queryRawUnsafe<Array<{ s: Date }>>(
@@ -162,7 +162,7 @@ describeFn('P5.9 — a suspension takes effect on the next request (#1600)', () 
     it('LIFTING restores access on the next request', async () => {
         const userId = await makeUser();
         signedInAs(userId);
-        await suspendAccount({ userId, generation: 'current' });
+        await suspendAccount({ userId, generation: 'current', reason: 'repeat abuse' });
         await expect(getSessionOrThrow()).rejects.toThrow('ACCOUNT_SUSPENDED');
 
         await liftSuspension({ userId, generation: 'current' });
@@ -175,7 +175,9 @@ describeFn('P5.9 — a suspension takes effect on the next request (#1600)', () 
 
     it('does not suspend an account that does not exist', async () => {
         const result = await suspendAccount({
-            userId: `u-p59-missing-${randomUUID()}`, generation: 'current',
+            userId: `u-p59-missing-${randomUUID()}`,
+            generation: 'current',
+            reason: 'repeat abuse',
         });
         expect(result.applied).toBe(false);
     });
@@ -185,7 +187,7 @@ describeFn('P5.9 — a suspension takes effect on the next request (#1600)', () 
         const bystander = await makeUser();
         signedInAs(bystander);
 
-        await suspendAccount({ userId: victim, generation: 'current' });
+        await suspendAccount({ userId: victim, generation: 'current', reason: 'repeat abuse' });
 
         // The check is keyed on the caller's own id; a shared key would be a
         // platform-wide outage dressed as a suspension.
@@ -212,7 +214,7 @@ describeFn('P5.9 — a suspension takes effect on the next request (#1600)', () 
         signedInAs(userId);
         await expect(getSessionOrThrow()).resolves.toMatchObject({ userId });
 
-        await suspendAccount({ userId, generation: 'current' });
+        await suspendAccount({ userId, generation: 'current', reason: 'repeat abuse' });
 
         await expect(getSessionOrThrow()).rejects.toThrow('ACCOUNT_SUSPENDED');
         await expect(getSessionOrThrow()).rejects.toThrow('ACCOUNT_SUSPENDED');
@@ -223,7 +225,7 @@ describeFn('P5.9 — a suspension takes effect on the next request (#1600)', () 
         // actually clears a positive verdict.
         const userId = await makeUser();
         signedInAs(userId);
-        await suspendAccount({ userId, generation: 'current' });
+        await suspendAccount({ userId, generation: 'current', reason: 'repeat abuse' });
         await expect(getSessionOrThrow()).rejects.toThrow('ACCOUNT_SUSPENDED');
 
         await globalPrisma.$executeRawUnsafe(
