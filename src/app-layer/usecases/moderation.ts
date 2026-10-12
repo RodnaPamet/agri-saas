@@ -42,7 +42,7 @@ import { randomUUID } from 'node:crypto';
 
 import prisma from '@/lib/prisma';
 import { suspendAccountOnTx } from './account-suspension';
-import { queueStatementForAction } from './statement-queue';
+import { queueStatementForAction, resolveContentRecipient } from './statement-queue';
 import { requestAccountDeletionOnTx } from './account-erasure';
 import { appendPlatformAuditEntry } from '@/lib/audit/platform-audit-writer';
 import { codedBadRequest } from '@/lib/errors/types';
@@ -418,22 +418,33 @@ export async function actOnNotice(input: {
     // composing it loads message catalogues from disk, and holding a database
     // transaction open across file I/O is what `afterCommit` exists to avoid.
     //
-    // Only where the RECIPIENT is unambiguous, which is the account kinds:
-    // `suspendUserId` is a person, supplied and validated. A content action's
-    // `subjectId` is a listing or a post, and resolving its owner needs a
-    // subjectKind -> owner mapping with a judgement per kind — deliberately
-    // NOT invented here, and filed instead. A statement addressed to the wrong
-    // person is worse than one not yet queued.
-    if (
-        input.suspendUserId &&
-        (input.actionKind === 'ACCOUNT_SUSPENDED' || input.actionKind === 'ACCOUNT_TERMINATED')
-    ) {
-        await queueStatementForAction({
-            actionId,
-            recipientUserId: input.suspendUserId,
-            actionKind: input.actionKind,
-            rationale: input.rationale,
-        });
+    // The recipient differs by what was acted on:
+    //
+    //   an ACCOUNT action   `suspendUserId` — a person, supplied and validated
+    //                       by `ActOnNoticeSchema`'s refinement.
+    //   a CONTENT action    the member who POSTED it (#1690, owner ruling),
+    //                       resolved from the row rather than from the
+    //                       request. Two of the four reportable kinds resolve;
+    //                       `PROFILE` and `THREAD` do not, for the reasons
+    //                       `captureReportSnapshot` already gives about the
+    //                       same two.
+    //
+    // `NONE` queues nothing: a rejected notice took no action against anybody,
+    // so there is no decision to explain.
+    if (input.actionKind !== 'NONE') {
+        const recipientUserId =
+            input.actionKind === 'ACCOUNT_SUSPENDED' || input.actionKind === 'ACCOUNT_TERMINATED'
+                ? input.suspendUserId ?? null
+                : await resolveContentRecipient(report.subjectKind, report.subjectId);
+
+        if (recipientUserId) {
+            await queueStatementForAction({
+                actionId,
+                recipientUserId,
+                actionKind: input.actionKind,
+                rationale: input.rationale,
+            });
+        }
     }
 
     return { actionId, status, ...(suspended === undefined ? {} : { suspended }) };
