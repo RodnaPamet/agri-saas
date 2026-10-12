@@ -6576,5 +6576,11 @@
             "ACCOUNT_SUSPENDED": "We suspended your account. You cannot post or send messages while the suspension lasts.",
             "ACCOUNT_TERMINATED": "We closed your account."
         }
+    },
+    "suspended": {
+        "title": "Your account is suspended",
+        "body": "You cannot open your farm while the suspension is in force. Everything already recorded is kept.",
+        "whereToLook": "We sent the reason to your email address. If you think this is a mistake, reply to it.",
+        "signOut": "Sign out"
     }
 }

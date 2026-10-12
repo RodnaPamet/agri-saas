@@ -7,6 +7,7 @@ import { auth } from '@/auth';
 import { Heading } from '@/components/ui/typography';
 import { ChevronLeft } from '@/components/ui/icons/nucleo/chevron-left';
 import { AccountNav } from './AccountNav';
+import { redirectIfSuspended } from '@/lib/auth/suspension-page';
 
 /**
  * The personal-settings shell (P2.7).
@@ -45,6 +46,10 @@ export default async function AccountLayout({ children }: { children: ReactNode 
     // be requested directly.
     const session = await auth();
     if (!session?.user) redirect('/login?next=/account');
+
+    // Covers every `/account/**` page in one place (#1657). These are
+    // person-scoped, so `getTenantServerContext` never runs for them.
+    await redirectIfSuspended(session.user.id);
 
     const t = await getTranslations('account.nav');
 

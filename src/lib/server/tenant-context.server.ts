@@ -14,6 +14,7 @@
  * @module server/tenant-context.server
  */
 import prisma from '@/lib/prisma';
+import { redirectIfSuspended } from '@/lib/auth/suspension-page';
 import { resolveTenantContext } from '@/lib/tenant-context';
 import { notFound } from '@/lib/errors/types';
 import type { Role } from '@prisma/client';
@@ -107,6 +108,27 @@ export async function getTenantServerContext(params: {
     tenantSlug: string;
     userId: string;
 }): Promise<TenantServerContext> {
+    // FIRST, before any tenant work: a suspended account is sent to
+    // `/suspended` (#1657).
+    //
+    // This is the choke point every server-rendered tenant page reaches, which
+    // is why the check belongs here and not in each layout — the same argument
+    // `getTenantCtx` makes for the API side, where "only ~23 of the 273 tenant
+    // routes use `requirePermission`". Until #1657 no PAGE reached the
+    // suspension check at all: `getSessionOrThrow` carries it and a server
+    // component never calls one of the three ctx resolvers.
+    //
+    // Before the resolver, deliberately. A suspended account should not be able
+    // to compel a membership lookup, and the ORDER is also what makes the
+    // answer right: `resolveTenantContext` throws for a non-member, so checking
+    // afterwards would answer "no such farm" to a suspended member — which is
+    // precisely the 404 the owner's ruling rejected.
+    //
+    // It REDIRECTS, which Next implements by throwing. Any caller wrapping this
+    // in a `catch` must re-throw control flow — see `isNextControlFlow`, and
+    // `src/app/t/[tenantSlug]/layout.tsx`, which had exactly that bug latent.
+    await redirectIfSuspended(params.userId);
+
     // Delegate to the authoritative resolver which handles:
     // - Tenant lookup
     // - Membership verification
