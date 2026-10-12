@@ -1,157 +1,144 @@
 /**
- * Every service in agrent's VM stack caps its container log (#1507).
+ * Every deployed container caps its own logs (#1507).
  *
- * Docker's default `json-file` driver NEVER rotates. On 2026-10-07 this VM's
- * 79 GB disk reached 100%: playerz-db PANICked on a checkpoint and agrent's
- * Redis failed its background saves with MISCONF until space was freed. Images
- * and build cache were the main cause; container logs are the other unbounded
- * thing on the same disk, and the one nothing was watching.
+ * ## The incident
+ *
+ * Docker's default `json-file` driver NEVER rotates. On 2026-10-07 the shared
+ * VM's 79 GB disk reached 100%: playerz-db PANICked on a checkpoint and
+ * agrent's Redis failed its background saves (MISCONF) until space was freed.
+ * Images and build cache were the main cause; container logs are the other
+ * unbounded thing on the same disk, and nothing bounded them.
  *
  * ## Why a guard and not just the fix
  *
- * The fix is seven lines in one file and is already applied. What rots is the
- * NEXT service: adding one to the stack without a `logging:` key reintroduces
- * an unbounded log, silently, and the symptom arrives weeks later as a full
- * disk — which, per this repo's own experience, reads as a performance
- * regression rather than as a disk problem, because a full disk stops Next
- * writing `.next` and pages slow with no error anywhere.
+ * The fix is one `logging: *logging` line per service, and the failure mode is
+ * a service added WITHOUT it. That is invisible: the stack comes up, the new
+ * container logs happily, and the disk fills months later during an unrelated
+ * incident — which is exactly how this was found, from the other product's
+ * side (RodnaPamet/projectZ#440).
  *
- * So the population is DERIVED from the compose file rather than listed: every
- * service it defines must be capped, and a new one fails this until it is.
+ * So the population is derived from the file rather than listed here. A
+ * curated list of services is a list somebody forgets, which is the #805
+ * lesson this repo applies to its other derived guards.
  *
- * ## Why per-service and not the daemon
+ * ## Which files, and why not all four
  *
- * `/etc/docker/daemon.json` would cap everything in one line, and it is the
- * wrong place: that file is shared with playerz.bg on the same VM, and changing
- * it needs a Docker daemon restart, which takes BOTH products down. This is
- * asserted below, because "just move it to the daemon config" is the obvious
- * simplification and it is the one that breaks a neighbour.
- *
- * ## What this guard does NOT prove
- *
- * That the running containers are capped. The option is read when a container
- * is CREATED, so an existing one keeps its unbounded log until the next
- * `docker compose up -d --force-recreate`. That is a short restart for db and
- * redis and a 502 window for app, so it is the owner's to schedule. A green
- * test here means the file is right, not that the VM is fixed — the difference
- * this repo has been caught by before (code-complete is not running).
+ * `prod` and `staging` only — the two that run on a shared VM with a finite
+ * disk. `docker-compose.yml` (dev) and `docker-compose.test.yml` run on a
+ * developer's machine and in CI, where containers are short-lived and the
+ * disk is not shared with another product. Stated with a number beside it
+ * below rather than left as an unexamined boundary: a scope without one is a
+ * blind spot.
  */
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { readFileSync } from 'fs';
+import * as path from 'path';
 
-import * as yaml from 'js-yaml';
+import yaml from 'js-yaml';
 
-const ROOT = path.resolve(__dirname, '../..');
+const REPO_ROOT = path.resolve(__dirname, '../..');
 
-/**
- * agrent's stack, and ONLY agrent's.
- *
- * This repository also carries `docker-compose.prod.yml` and
- * `deploy/docker-compose.prod.yml`, which describe the inflect product — their
- * images are `ghcr.io/inflect-compliance/...` and their containers are named
- * `inflect-prod-*`. Capping those from here would be editing another product's
- * deployment from this repo's test suite. The discriminator below is the image
- * name, not the filename, because a filename is a convention and an image is a
- * fact.
- */
-const COMPOSE_REL = 'deploy/docker-compose.vm.yml';
+/** The compose files describing containers on the shared VM. */
+const DEPLOYED = ['docker-compose.prod.yml', 'docker-compose.staging.yml'];
 
-interface Compose {
-    services?: Record<string, { image?: string; logging?: { driver?: string; options?: Record<string, string> } }>;
+/** Left uncapped on purpose — see the docblock. */
+const NOT_DEPLOYED = ['docker-compose.yml', 'docker-compose.test.yml'];
+
+interface ComposeFile {
+    services?: Record<string, { logging?: { driver?: string; options?: Record<string, unknown> } } | null>;
 }
 
-const raw = fs.readFileSync(path.join(ROOT, COMPOSE_REL), 'utf8');
-const compose = yaml.load(raw) as Compose;
-const services = compose.services ?? {};
+const load = (rel: string): ComposeFile =>
+    yaml.load(readFileSync(path.join(REPO_ROOT, rel), 'utf8')) as ComposeFile;
 
-describe('agrent container logs are capped (#1507)', () => {
-    it('control: this is agrent’s stack, and the parse found services', () => {
-        // Without this the per-service assertions below iterate an empty object,
-        // which is agreement and worthless. And the image check is what stops
-        // this guard silently migrating to another product's compose file if the
-        // path is ever reused.
-        const names = Object.keys(services);
-        expect(names.length).toBeGreaterThanOrEqual(5);
-        expect(JSON.stringify(services)).toContain('ghcr.io/rodnapamet/agri-saas');
-        expect(JSON.stringify(services)).not.toContain('inflect-compliance');
-    });
-
-    it.each(Object.keys(services))('%s caps its log', (name) => {
-        const svc = services[name];
-
-        // Named rather than a bare truthy check, so the failure says which
-        // service and what is missing instead of "expected true".
-        expect({ service: name, hasLogging: svc.logging != null }).toEqual({
-            service: name,
-            hasLogging: true,
-        });
-        expect(svc.logging?.driver).toBe('json-file');
-
-        const opts = svc.logging?.options ?? {};
-        // Both halves are required and neither implies the other: a max-size
-        // with no max-file rotates into unbounded ROTATED files, and a max-file
-        // with no max-size never rotates at all because nothing triggers it.
-        expect({ service: name, maxSize: opts['max-size'] != null }).toEqual({
-            service: name,
-            maxSize: true,
-        });
-        expect({ service: name, maxFile: opts['max-file'] != null }).toEqual({
-            service: name,
-            maxFile: true,
-        });
-
-        // A cap is only a cap if it is finite. Docker treats max-file 1 as "no
-        // rotation", so the bound has to be at least 2 files.
-        expect(Number(opts['max-file'])).toBeGreaterThanOrEqual(2);
-        expect(opts['max-size']).toMatch(/^\d+[kmg]$/i);
-    });
-
-    it('the whole stack is bounded, and the bound is stated', () => {
-        // The number an operator actually needs: not "is it capped" but "by how
-        // much". A cap nobody has multiplied out is how a 100 MB-per-service
-        // default gets called a fix on a 79 GB disk shared with another product.
-        const bytes = (sz: string): number => {
-            const m = /^(\d+)([kmg])$/i.exec(sz);
-            if (!m) return Number.NaN;
-            const mult = { k: 1024, m: 1024 ** 2, g: 1024 ** 3 }[m[2].toLowerCase()]!;
-            return Number(m[1]) * mult;
-        };
-        const total = Object.values(services).reduce((n, s) => {
-            const o = s.logging?.options ?? {};
-            return n + bytes(o['max-size'] ?? '0m') * Number(o['max-file'] ?? 0);
-        }, 0);
-
-        expect(Number.isFinite(total)).toBe(true);
-        expect(total).toBeGreaterThan(0);
-        // Under 2 GB on a disk that ran out at 79 GB. Deliberately a ceiling
-        // and not an equality: adding a service should not fail this, only
-        // adding an unreasonable amount of logging should.
-        expect(total).toBeLessThan(2 * 1024 ** 3);
-        // The bound IS the output. No `eslint-disable` here: `no-console` is not
-        // enabled for tests, so the directive would be UNUSED — which is itself a
-        // warning, and the lint ceiling counts suppressions deliberately so that
-        // muting is never the cheapest fix.
+describe('container logs are capped (#1507)', () => {
+    it('prints the denominator, including what it does NOT cover', () => {
+        const counts = DEPLOYED.map((f) => Object.keys(load(f).services ?? {}).length);
+        const outside = NOT_DEPLOYED.map((f) => Object.keys(load(f).services ?? {}).length);
+        // eslint-disable-next-line no-console
         console.log(
-            `[logs] agrent's bound across ${Object.keys(services).length} services: ` +
-                `${(total / 1024 ** 2).toFixed(0)} MB`,
+            `[container-logs-are-capped] ${DEPLOYED.length} deployed file(s), ` +
+                `${counts.reduce((a, b) => a + b, 0)} service(s) covered. ` +
+                `OUT OF SCOPE: ${NOT_DEPLOYED.length} local file(s), ` +
+                `${outside.reduce((a, b) => a + b, 0)} service(s) — dev and CI, ` +
+                `short-lived containers on an unshared disk.`,
         );
+        // A file that lost its `services:` key, or a renamed one, would make
+        // every assertion below run over an empty set.
+        for (const n of counts) expect(n).toBeGreaterThanOrEqual(5);
     });
 
-    it('the cap lives in the compose file, NOT in the shared daemon config', () => {
-        // /etc/docker/daemon.json is shared with playerz.bg on the same VM and
-        // changing it needs a daemon restart that takes both products down.
-        // This asserts the repo never grows that file, because "move it to the
-        // daemon" is the obvious simplification and the one that breaks a
-        // neighbour.
-        const candidates = ['deploy/daemon.json', 'deploy/docker-daemon.json', 'daemon.json'];
-        for (const c of candidates) {
-            expect({ file: c, exists: fs.existsSync(path.join(ROOT, c)) }).toEqual({
-                file: c,
-                exists: false,
-            });
+    it.each(DEPLOYED)('%s caps every service', (rel) => {
+        const services = load(rel).services ?? {};
+        const uncapped: string[] = [];
+        for (const [name, def] of Object.entries(services)) {
+            const logging = def?.logging;
+            const size = logging?.options?.['max-size'];
+            const files = logging?.options?.['max-file'];
+            if (logging?.driver !== 'json-file' || !size || !files) uncapped.push(name);
         }
-        // And the reason is written where the change is, not only here.
-        expect(raw).toMatch(/daemon\.json/);
-        expect(raw).toMatch(/playerz/i);
+        if (uncapped.length > 0) {
+            throw new Error(
+                `${uncapped.length} service(s) in ${rel} have unbounded container logs ` +
+                    `(#1507):\n\n` +
+                    uncapped.map((u) => `  ${u}`).join('\n') +
+                    `\n\nAdd \`logging: *logging\` to each — the anchor is defined at ` +
+                    `the top of the file. json-file never rotates, and this VM's disk ` +
+                    `is shared with another product; it reached 100% once already.`,
+            );
+        }
+        expect(uncapped).toEqual([]);
+    });
+
+    it.each(DEPLOYED)('%s bounds the total, not just each file count', (rel) => {
+        // A cap of `max-size: 10g` would satisfy the assertion above and bound
+        // nothing useful. The numbers are asserted, so raising them is a
+        // deliberate edit rather than a silent one.
+        const services = Object.entries(load(rel).services ?? {});
+        for (const [name, def] of services) {
+            expect(def?.logging?.options?.['max-size']).toBe('10m');
+            expect(String(def?.logging?.options?.['max-file'])).toBe('3');
+        }
+        // 10m x 3 per container, so the whole stack is bounded.
+        const perContainerMb = 10 * 3;
+        // eslint-disable-next-line no-console
+        console.log(
+            `[container-logs-are-capped] ${rel}: ${services.length} x ${perContainerMb} MB ` +
+                `= ${services.length * perContainerMb} MB ceiling.`,
+        );
+        expect(services.length * perContainerMb).toBeLessThan(500);
+    });
+
+    it('the detector can see an uncapped service — positive control', () => {
+        // `a-probe-with-no-discriminating-power`: the assertions above pass
+        // identically when the parse silently returns nothing and when every
+        // service is genuinely capped.
+        const sample = yaml.load(`
+services:
+  capped:
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+  uncapped:
+    image: nginx
+`) as ComposeFile;
+        const uncapped = Object.entries(sample.services ?? {})
+            .filter(([, d]) => d?.logging?.driver !== 'json-file' || !d?.logging?.options?.['max-size'])
+            .map(([n]) => n);
+        expect(uncapped).toEqual(['uncapped']);
+    });
+
+    it('the anchor is actually an anchor — one place to change the numbers', () => {
+        // Asserted on the source text, because the parsed form cannot tell an
+        // alias from six copies of the same literal. Six copies would pass
+        // every test above and make the next change a six-line edit somebody
+        // does five times.
+        for (const rel of DEPLOYED) {
+            const src = readFileSync(path.join(REPO_ROOT, rel), 'utf8');
+            expect(src).toMatch(/^x-logging:\s*&logging\s*$/m);
+            const aliases = [...src.matchAll(/^\s+logging:\s*\*logging\s*$/gm)];
+            expect(aliases.length).toBe(Object.keys(load(rel).services ?? {}).length);
+        }
     });
 });
