@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { toApiErrorResponse, codedForbidden } from './types';
+import { localizeErrorPayload } from './localize';
 import { runWithRequestContext, getRequestContext } from '@/lib/observability/context';
 import { logger, extractErrorMeta } from '@/lib/observability/logger';
 import { getTracer } from '@/lib/observability/tracing';
@@ -452,6 +453,12 @@ export function withApiErrorHandling<Context = unknown>(
                     } catch (error) {
                         // Unhandled throw! Map it.
                         const { payload, status } = toApiErrorResponse(error, requestId);
+                        // #1677 — `message` in the reader's language, when the
+                        // code has a catalogue entry. A code without one keeps
+                        // its current message byte for byte, which is what lets
+                        // the remaining ~100 migrate a family at a time. Never
+                        // throws; see `localizeErrorPayload`.
+                        await localizeErrorPayload(payload);
                         const durationMs = Math.round(performance.now() - startTime);
 
                         // ── Span error ──

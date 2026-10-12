@@ -37,6 +37,23 @@ export interface JwtPayload {
      * Undefined on the legacy-cookie path, which predates MFA entirely — the
      * same value the middleware reads there, so the two agree.
      */
+    /**
+     * The person's interface language, as the session carries it (#1677).
+     *
+     * Carried through for the same reason `mfaPending` is: `getSession`
+     * narrows the Auth.js session and would otherwise drop it, and the
+     * narrowed shape is what every handler sees. The token already holds it
+     * (`auth.ts` sets `token.uiLanguage` from the `User` row), so this is
+     * plumbing rather than a new read — there is no extra query.
+     *
+     * RAW, not resolved. `auth.ts` writes `token.uiLanguage ?? DEFAULT_LOCALE`
+     * and `DEFAULT_LOCALE` is `'en'` — correct for an UNAUTHENTICATED surface
+     * and wrong for a known person, whose `User.uiLanguage` column defaults to
+     * `'bg'`. Handing English to a Bulgarian farmer whose claim merely failed
+     * to load is the #686 mistake, so resolution happens at the point of use
+     * (`resolveRequestLocale`), which falls back to `bg`.
+     */
+    uiLanguage?: string;
     mfaPending?: boolean;
     /**
      * Tenant IDs that owe a second factor this session has not presented.
@@ -79,6 +96,7 @@ export async function getSession(): Promise<JwtPayload | null> {
             tenantId: session.user.tenantId ?? '',
             email: session.user.email ?? '',
             role: session.user.role ?? 'READER',
+            uiLanguage: session.user.uiLanguage,
             mfaPending: session.user.mfaPending,
             mfaPendingTenantIds: session.user.mfaPendingTenantIds,
             membershipsTruncated: session.user.membershipsTruncated,

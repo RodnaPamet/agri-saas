@@ -82,14 +82,20 @@ describe('Billing routes — self-hosted mode', () => {
         // A real code since #1679, where this was the generic `FORBIDDEN`.
         expect(body.error?.code).toBe('BILLING_UNAVAILABLE');
         expect(body.error?.params).toEqual({ mode: 'SELFHOSTED' });
-        // The legacy prefix is RETAINED, deliberately and transitionally: it
-        // was this refusal's only identifier before #1679 and installed
-        // clients match on it. `startsWith`, not `toMatch`, because the
-        // guarantee is about the START of the string — the position a client
-        // checks — and a loose match would keep passing if the token slid into
-        // the middle of a sentence. See
-        // tests/guards/legacy-refusal-prefixes-are-retained.test.ts.
-        expect(body.error?.message?.startsWith('billing_unavailable:')).toBe(true);
+        // #1677 — the message is the CATALOGUE's sentence now, in the
+        // reader's language. There is no request-scoped `uiLanguage` here, so
+        // `resolveRequestLocale` falls back to `bg` — which is the behaviour
+        // worth pinning: the fallback must not be `DEFAULT_LOCALE` (`'en'`),
+        // or a Bulgarian farmer whose claim failed to load gets English.
+        //
+        // This asserts the WHOLE chain in one line: the code reached the
+        // envelope, the localiser found `errors.BILLING_UNAVAILABLE`, and the
+        // Bulgarian came back. The legacy `billing_unavailable:` prefix is
+        // gone — agrent-ios confirmed its only installed build knows the codes
+        // (PR 287#issuecomment-6129859923), which is what released it.
+        expect(body.error?.message).toBe(
+            'Тази инсталация не предлага планове и плащания в приложението.',
+        );
         expect(stripeSpy).not.toHaveBeenCalled();
     });
 
@@ -111,14 +117,20 @@ describe('Billing routes — self-hosted mode', () => {
         // A real code since #1679, where this was the generic `FORBIDDEN`.
         expect(body.error?.code).toBe('BILLING_UNAVAILABLE');
         expect(body.error?.params).toEqual({ mode: 'SELFHOSTED' });
-        // The legacy prefix is RETAINED, deliberately and transitionally: it
-        // was this refusal's only identifier before #1679 and installed
-        // clients match on it. `startsWith`, not `toMatch`, because the
-        // guarantee is about the START of the string — the position a client
-        // checks — and a loose match would keep passing if the token slid into
-        // the middle of a sentence. See
-        // tests/guards/legacy-refusal-prefixes-are-retained.test.ts.
-        expect(body.error?.message?.startsWith('billing_unavailable:')).toBe(true);
+        // #1677 — the message is the CATALOGUE's sentence now, in the
+        // reader's language. There is no request-scoped `uiLanguage` here, so
+        // `resolveRequestLocale` falls back to `bg` — which is the behaviour
+        // worth pinning: the fallback must not be `DEFAULT_LOCALE` (`'en'`),
+        // or a Bulgarian farmer whose claim failed to load gets English.
+        //
+        // This asserts the WHOLE chain in one line: the code reached the
+        // envelope, the localiser found `errors.BILLING_UNAVAILABLE`, and the
+        // Bulgarian came back. The legacy `billing_unavailable:` prefix is
+        // gone — agrent-ios confirmed its only installed build knows the codes
+        // (PR 287#issuecomment-6129859923), which is what released it.
+        expect(body.error?.message).toBe(
+            'Тази инсталация не предлага планове и плащания в приложението.',
+        );
         expect(stripeSpy).not.toHaveBeenCalled();
     });
 });

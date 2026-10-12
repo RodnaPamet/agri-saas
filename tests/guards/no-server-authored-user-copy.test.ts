@@ -190,7 +190,37 @@ export function collectServerAuthoredCopy(root: string, dirs: string[] = ROOTS):
 // carried server-authored refusal prose; retiring the /issues surface took
 // 22 strings with it. Lowered to the measured live count, not merely to
 // inside DRIFT_ALLOWANCE, so the slack does not bank for the next change.
-const CURRENT_BASELINE = 470;
+//
+// 470 -> 466 (#1677). Removing the five legacy `lower_snake:` prefixes took
+// their trailing "Upgrade to …" sentences with them. Lowered to the measured
+// live count for the same reason as above.
+//
+// ## This count now OVER-states the defect it describes, by five
+//
+// The message below says a thrown string "reaches a Bulgarian operator in
+// English". Since #1677 that is no longer true for a code with a catalogue
+// entry: the server translates `message` from `errors.<CODE>` in the reader's
+// language, and the English string the scan counts is only the fallback for a
+// code with no entry yet.
+//
+// TWO codes have entries today — `MODULE_DISABLED` and
+// `BILLING_UNAVAILABLE`. So 466 counts two strings that no longer reach anyone
+// in English.
+//
+// It was five until agrent-ios reviewed the Bulgarian and found wire
+// identifiers in three of them (`exchange_listing`, `deep`, `FREE`); those
+// three went back to English pending an ICU renderer, and this comment went
+// with them. A count whose stated reason drifts from the catalogue is the
+// thing it warns about one paragraph down.
+//
+// NOT corrected for, deliberately. The strings are still in the source, and a
+// scan that tried to exclude "but this one is localised at runtime" would have
+// to model the catalogue — a detector mirroring the runtime by name, which is
+// how a number stops moving without anybody noticing. The honest statement is
+// that this is an upper bound, and the next family migrated under #1677 will
+// drop it properly: moving a message into the catalogue and deleting the
+// English fallback removes it from this scan for real.
+const CURRENT_BASELINE = 466;
 
 /** Slack tolerated before the sentinel demands the baseline be lowered. */
 const DRIFT_ALLOWANCE = 15;

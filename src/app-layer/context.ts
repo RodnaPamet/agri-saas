@@ -85,7 +85,14 @@ export async function getTenantCtx(
 
     // Enrich the observability context with tenant and user info
     // so that logs/traces emitted downstream automatically include them.
-    mergeRequestContext({ tenantId: ctx.tenant.id, userId: session.userId });
+    mergeRequestContext({
+        tenantId: ctx.tenant.id,
+        userId: session.userId,
+        // #1677 — so the error envelope can answer in this person's language
+        // several frames above whatever threw. The claim is already on the
+        // session; this costs no query.
+        uiLanguage: session.uiLanguage,
+    });
 
     return {
         requestId,
@@ -271,7 +278,7 @@ export async function getUserCtx(
 
     // userId only — there is no tenant to merge, and writing one here would put
     // a tenant on the log lines of a request that has none.
-    mergeRequestContext({ userId: session.userId });
+    mergeRequestContext({ userId: session.userId, uiLanguage: session.uiLanguage });
 
     return { requestId, userId: session.userId, email: session.email };
 }
@@ -315,7 +322,14 @@ export async function getLegacyCtx(req?: NextRequest): Promise<RequestContext> {
     const ctx = await resolveTenantContext({ tenantId: session.tenantId }, session.userId);
 
     // Enrich the observability context with tenant and user info
-    mergeRequestContext({ tenantId: ctx.tenant.id, userId: session.userId });
+    mergeRequestContext({
+        tenantId: ctx.tenant.id,
+        userId: session.userId,
+        // #1677 — so the error envelope can answer in this person's language
+        // several frames above whatever threw. The claim is already on the
+        // session; this costs no query.
+        uiLanguage: session.uiLanguage,
+    });
 
     return {
         requestId,
@@ -432,7 +446,7 @@ export async function getOrgCtx(
         throw externalNotFound();
     }
 
-    mergeRequestContext({ userId: session.userId });
+    mergeRequestContext({ userId: session.userId, uiLanguage: session.uiLanguage });
 
     return {
         requestId,
@@ -502,6 +516,13 @@ async function tryApiKeyAuth(
     result.ctx.requestId = requestId;
 
     // Enrich observability context
+    //
+    // NO `uiLanguage` here, deliberately (#1677). An `iflk_` key belongs to a
+    // farm and "authorises nobody in particular" — the phrase this file uses
+    // one screen up — so there is no person whose interface language applies.
+    // `resolveRequestLocale` then falls back to `bg`, which is the right
+    // answer for a machine caller on a Bulgarian product, and the alternative
+    // would be attributing a language to whoever happened to mint the key.
     mergeRequestContext({
         tenantId: result.ctx.tenantId,
         userId: result.ctx.userId,
