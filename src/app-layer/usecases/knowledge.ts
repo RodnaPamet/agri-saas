@@ -4,7 +4,7 @@ import { KnowledgeRepository, KnowledgeFilters } from '../repositories/Knowledge
 import { KnowledgeVersionRepository } from '../repositories/KnowledgeVersionRepository';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
-import { notFound, badRequest, forbidden } from '@/lib/errors/types';
+import { badRequest, forbidden, codedNotFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { sanitizePlainText, sanitizeRichTextHtml } from '@/lib/security/sanitize';
 import { enqueue } from '../jobs/queue';
@@ -156,7 +156,7 @@ export async function getArticle(ctx: RequestContext, id: string) {
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
         const article = await KnowledgeRepository.getById(db, ctx, id);
-        if (!article) throw notFound('Article not found');
+        if (!article) throw codedNotFound('ARTICLE_NOT_FOUND', 'That article was not found.');
         const versions = await KnowledgeVersionRepository.listByArticle(db, ctx, id);
         let acknowledged = false;
         if (article.currentVersionId) {
@@ -276,7 +276,7 @@ export async function updateArticleMetadata(
     assertValidBbchRange(data.bbchStageMin, data.bbchStageMax);
     return runInTenantContext(ctx, async (db) => {
         const article = await KnowledgeRepository.getById(db, ctx, articleId);
-        if (!article) throw notFound('Article not found');
+        if (!article) throw codedNotFound('ARTICLE_NOT_FOUND', 'That article was not found.');
         assertTenantOwned(article);
 
         const title = data.title !== undefined ? sanitizePlainText(data.title) : undefined;
@@ -326,7 +326,7 @@ export async function createArticleVersion(ctx: RequestContext, articleId: strin
     assertCanWrite(ctx);
     return runInTenantContext(ctx, async (db) => {
         const article = await KnowledgeRepository.getById(db, ctx, articleId);
-        if (!article) throw notFound('Article not found');
+        if (!article) throw codedNotFound('ARTICLE_NOT_FOUND', 'That article was not found.');
         assertTenantOwned(article);
         if (article.status === 'ARCHIVED') throw badRequest('Cannot add a version to an archived article');
         if (!data.contentText?.trim()) throw badRequest('contentText is required');
@@ -371,7 +371,7 @@ export async function publishArticle(ctx: RequestContext, articleId: string, ver
     assertCanAdmin(ctx);
     const result = await runInTenantContext(ctx, async (db) => {
         const article = await KnowledgeRepository.getById(db, ctx, articleId);
-        if (!article) throw notFound('Article not found');
+        if (!article) throw codedNotFound('ARTICLE_NOT_FOUND', 'That article was not found.');
         assertTenantOwned(article);
         const version = await KnowledgeVersionRepository.getById(db, ctx, versionId);
         if (!version || version.article.id !== articleId) {
@@ -412,7 +412,7 @@ export async function archiveArticle(ctx: RequestContext, articleId: string) {
     assertCanAdmin(ctx);
     const result = await runInTenantContext(ctx, async (db) => {
         const article = await KnowledgeRepository.getById(db, ctx, articleId);
-        if (!article) throw notFound('Article not found');
+        if (!article) throw codedNotFound('ARTICLE_NOT_FOUND', 'That article was not found.');
         assertTenantOwned(article);
         await KnowledgeRepository.updateStatus(db, ctx, articleId, 'ARCHIVED');
         await logEvent(db, ctx, {
@@ -459,7 +459,7 @@ export async function unarchiveArticle(ctx: RequestContext, articleId: string) {
     let restoredToPublished = false;
     const result = await runInTenantContext(ctx, async (db) => {
         const article = await KnowledgeRepository.getById(db, ctx, articleId);
-        if (!article) throw notFound('Article not found');
+        if (!article) throw codedNotFound('ARTICLE_NOT_FOUND', 'That article was not found.');
         assertTenantOwned(article);
         if (article.status !== 'ARCHIVED') return article; // idempotent
 
@@ -520,7 +520,7 @@ export async function acknowledgeArticle(ctx: RequestContext, articleId: string)
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
         const article = await KnowledgeRepository.getById(db, ctx, articleId);
-        if (!article) throw notFound('Article not found');
+        if (!article) throw codedNotFound('ARTICLE_NOT_FOUND', 'That article was not found.');
         assertTenantOwned(article);
         if (article.status !== 'PUBLISHED') {
             throw badRequest(`Only PUBLISHED articles can be acknowledged. ${articleId} is ${article.status}.`);
@@ -578,7 +578,7 @@ export async function listAcknowledgements(ctx: RequestContext, articleId: strin
     assertCanAdmin(ctx);
     return runInTenantContext(ctx, async (db) => {
         const article = await KnowledgeRepository.getById(db, ctx, articleId);
-        if (!article) throw notFound('Article not found');
+        if (!article) throw codedNotFound('ARTICLE_NOT_FOUND', 'That article was not found.');
         if (!article.currentVersionId) return [];
         return db.knowledgeAcknowledgement.findMany({
             where: { tenantId: ctx.tenantId, articleVersionId: article.currentVersionId },

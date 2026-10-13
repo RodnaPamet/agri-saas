@@ -269,7 +269,13 @@ export function collectServerAuthoredCopy(root: string, dirs: string[] = ROOTS):
 // coding it would have added a code no client can receive. It stays uncoded
 // and counted here, which is the honest place for an unreachable English
 // string: still debt, just debt attached to dead code. Filed separately.
-const CURRENT_BASELINE = 427;
+//
+// ── 427 → 408 ────────────────────────────────────────────────────────────
+//
+// 19 more sites coded, across three surfaces that are entirely undocumented:
+// `asset` (7), `asset-maintenance` (4), `knowledge` (8). Four new codes.
+// Refs #1712 batch 3.
+const CURRENT_BASELINE = 408;
 
 /** Slack tolerated before the sentinel demands the baseline be lowered. */
 const DRIFT_ALLOWANCE = 15;

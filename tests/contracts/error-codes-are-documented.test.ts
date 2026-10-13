@@ -196,7 +196,29 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     // anywhere** — no route, no test, nothing. Coding an unreachable throw
     // would have put a code on this list that no client can ever receive, so
     // that site stays uncoded and the dead usecase is filed separately.
+    // `ASSET_NOT_FOUND`, `MAINTENANCE_RECORD_NOT_FOUND`,
+    // `ASSET_EVIDENCE_NOT_FOUND` and `ARTICLE_NOT_FOUND` are new as of #1712
+    // batch 3, for the `COMPANY_NAME_TAKEN` reason above and at a larger
+    // scale: their whole SURFACES are undocumented. Measured —
+    //
+    //     assets    0 paths in the spec, 11 on openapi-undocumented-baseline
+    //     evidence  0 in the spec, 18 on the baseline
+    //     knowledge 0 in the spec, 10 on the baseline
+    //     access-reviews  0 in the spec, 5 on the baseline
+    //
+    // — and there is no `assets.paths.ts`, `evidence.paths.ts` or
+    // `knowledge.paths.ts` to name them on. Documenting these four codes means
+    // writing 44 operations first, which is its own change.
+    //
+    // Baselining them is not deferring the point of #1712. The farmer-facing
+    // half lands here regardless: the phone shows the server's `message` for a
+    // code its own table lacks, so these 19 sites go from English to Bulgarian
+    // on the next request, documented or not.
     'ACCOUNT_HAS_NO_EMAIL',
+    'ARTICLE_NOT_FOUND',
+    'ASSET_EVIDENCE_NOT_FOUND',
+    'ASSET_NOT_FOUND',
+    'MAINTENANCE_RECORD_NOT_FOUND',
     'TASK_EVIDENCE_NOT_FOUND',
     'TASK_LINK_NOT_FOUND',
     // `AI_BUDGET_REQUIRES_VERIFIED_FARM` is new to this list as of #1645 and
