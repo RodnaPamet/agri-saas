@@ -6,7 +6,7 @@ import { canConvert, convert } from '@/lib/units/unit-conversion';
 import { tonnesPerHectare } from '@/lib/grain/moisture';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { badRequest, codedNotFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { traceAgUsecase } from '@/lib/observability';
 import { trace } from '@opentelemetry/api';
@@ -243,7 +243,7 @@ export async function getYieldRecord(ctx: RequestContext, id: string) {
             where: { id, tenantId: ctx.tenantId, deletedAt: null },
             include: YIELD_INCLUDE,
         });
-        if (!record) throw notFound('Yield record not found');
+        if (!record) throw codedNotFound('YIELD_RECORD_NOT_FOUND', 'That yield record was not found.');
         return record;
     });
     return toDto(row);
@@ -616,7 +616,7 @@ export async function updateYieldRecord(ctx: RequestContext, id: string, input: 
             where: { id, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true },
         });
-        if (!existing) throw notFound('Yield record not found');
+        if (!existing) throw codedNotFound('YIELD_RECORD_NOT_FOUND', 'That yield record was not found.');
         if (input.plantingId) {
             const planting = await db.planting.findFirst({
                 where: { id: input.plantingId, tenantId: ctx.tenantId, deletedAt: null },
@@ -696,7 +696,7 @@ export async function deleteYieldRecord(ctx: RequestContext, id: string) {
             where: { id, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true, commodity: true },
         });
-        if (!existing) throw notFound('Yield record not found');
+        if (!existing) throw codedNotFound('YIELD_RECORD_NOT_FOUND', 'That yield record was not found.');
 
         await db.yieldRecord.update({
             where: { id },

@@ -6403,6 +6403,10 @@
         "signOut": "Sign out"
     },
     "errors": {
+        "COST_ENTRY_NOT_FOUND": "That cost entry was not found.",
+        "GRAIN_BIN_NOT_FOUND": "That grain bin was not found.",
+        "LOT_NOT_FOUND": "That lot was not found.",
+        "YIELD_RECORD_NOT_FOUND": "That yield record was not found.",
         "EVIDENCE_DELETED": "That evidence has been deleted.",
         "EVIDENCE_FILE_DELETED": "That evidence file has been deleted.",
         "EVIDENCE_FILE_NOT_DOWNLOADABLE": "That evidence file is not available for download.",

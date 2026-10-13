@@ -3,7 +3,7 @@ import { RequestContext } from '../types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { badRequest, codedNotFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { assertWithinLimit } from '@/lib/billing/entitlements';
 import {
@@ -249,7 +249,7 @@ export async function getBin(ctx: RequestContext, id: string): Promise<BinDetail
             },
             select: { id: true, name: true, key: true, kind: true, status: true, description: true, capacityTonnes: true },
         });
-        if (!bin) throw notFound('Grain bin not found');
+        if (!bin) throw codedNotFound('GRAIN_BIN_NOT_FOUND', 'That grain bin was not found.');
 
         // Same grouped aggregate as the list path — no per-bin row cap, so a
         // bin holding more than LIST_TAKE lots no longer under-reports.
@@ -405,7 +405,7 @@ export async function updateBin(ctx: RequestContext, id: string, input: UpdateBi
             },
             select: { id: true },
         });
-        if (!existing) throw notFound('Grain bin not found');
+        if (!existing) throw codedNotFound('GRAIN_BIN_NOT_FOUND', 'That grain bin was not found.');
 
         const bin = await db.location.update({
             where: { id },
@@ -458,7 +458,7 @@ export async function deleteBin(ctx: RequestContext, id: string) {
             },
             select: { id: true, name: true, kind: true },
         });
-        if (!bin) throw notFound('Grain bin not found');
+        if (!bin) throw codedNotFound('GRAIN_BIN_NOT_FOUND', 'That grain bin was not found.');
 
         // Counting ALL lots regardless of item category: the refusal is about
         // orphaning stock, and seed in a barn orphans exactly like grain does.

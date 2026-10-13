@@ -5,7 +5,7 @@ import { isUniqueViolation } from '@/lib/errors/prisma';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
-import { notFound, badRequest, codedBadRequest } from '@/lib/errors/types';
+import { badRequest, codedBadRequest, codedNotFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { CostEntryRepository, type CostEntryFilters } from '../repositories/CostEntryRepository';
 import { FileRepository } from '../repositories/FileRepository';
@@ -405,7 +405,7 @@ export async function getCostEntry(ctx: RequestContext, id: string) {
     assertCanRead(ctx);
     const row = await runInTenantContext(ctx, async (db) => {
         const record = await CostEntryRepository.getById(db, ctx, id);
-        if (!record) throw notFound('Cost entry not found');
+        if (!record) throw codedNotFound('COST_ENTRY_NOT_FOUND', 'That cost entry was not found.');
         return record;
     });
     return toDto(row);
@@ -809,7 +809,7 @@ export async function updateCostEntry(
 
     const row = await runInTenantContext(ctx, async (db) => {
         const existing = await CostEntryRepository.getById(db, ctx, id);
-        if (!existing) throw notFound('Cost entry not found');
+        if (!existing) throw codedNotFound('COST_ENTRY_NOT_FOUND', 'That cost entry was not found.');
 
         // Validate the RESULTING row, not the patch: clearing one link
         // while setting another is legal, and checking the patch alone
@@ -890,7 +890,7 @@ export async function deleteCostEntry(ctx: RequestContext, id: string) {
 
     return runInTenantContext(ctx, async (db) => {
         const existing = await CostEntryRepository.getById(db, ctx, id);
-        if (!existing) throw notFound('Cost entry not found');
+        if (!existing) throw codedNotFound('COST_ENTRY_NOT_FOUND', 'That cost entry was not found.');
 
         await CostEntryRepository.softDelete(db, ctx, id);
 
@@ -1030,7 +1030,7 @@ export async function uploadCostInvoice(
 
     return runInTenantContext(ctx, async (db) => {
         const entry = await CostEntryRepository.getById(db, ctx, costEntryId);
-        if (!entry) throw notFound('Cost entry not found');
+        if (!entry) throw codedNotFound('COST_ENTRY_NOT_FOUND', 'That cost entry was not found.');
 
         const fileRecord = await FileRepository.createPending(db, ctx, {
             pathKey: ingested.pathKey,
@@ -1079,7 +1079,7 @@ export async function detachCostInvoice(ctx: RequestContext, costEntryId: string
 
     return runInTenantContext(ctx, async (db) => {
         const entry = await CostEntryRepository.getById(db, ctx, costEntryId);
-        if (!entry) throw notFound('Cost entry not found');
+        if (!entry) throw codedNotFound('COST_ENTRY_NOT_FOUND', 'That cost entry was not found.');
 
         const updated = await CostEntryRepository.update(db, ctx, costEntryId, {
             invoiceFileId: null,

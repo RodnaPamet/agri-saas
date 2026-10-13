@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "12.6.3",
+    "version": "12.7.4",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -22970,6 +22970,7 @@
       "get": {
         "operationId": "getCostEntry",
         "summary": "Get one cost entry",
+        "description": "Refusal code: `COST_ENTRY_NOT_FOUND` (404).",
         "tags": [
           "Grain"
         ],
@@ -23113,6 +23114,7 @@
       "patch": {
         "operationId": "updateCostEntry",
         "summary": "Update a cost entry",
+        "description": "Refusal code: `COST_ENTRY_NOT_FOUND` (404).",
         "tags": [
           "Grain"
         ],
@@ -23392,6 +23394,7 @@
       "delete": {
         "operationId": "deleteCostEntry",
         "summary": "Delete a cost entry",
+        "description": "Refusal code: `COST_ENTRY_NOT_FOUND` (404).",
         "tags": [
           "Grain"
         ],
@@ -23908,6 +23911,7 @@
       "get": {
         "operationId": "getYieldRecord",
         "summary": "Get one yield record",
+        "description": "Refusal code: `YIELD_RECORD_NOT_FOUND` (404).",
         "tags": [
           "Grain"
         ],
@@ -24051,6 +24055,7 @@
       "patch": {
         "operationId": "updateYieldRecord",
         "summary": "Update a yield record",
+        "description": "Refusal code: `YIELD_RECORD_NOT_FOUND` (404).",
         "tags": [
           "Grain"
         ],
@@ -24283,6 +24288,7 @@
       "delete": {
         "operationId": "deleteYieldRecord",
         "summary": "Delete a yield record",
+        "description": "Refusal code: `YIELD_RECORD_NOT_FOUND` (404).",
         "tags": [
           "Grain"
         ],
@@ -25180,7 +25186,7 @@
       "get": {
         "operationId": "getGrainBin",
         "summary": "Get one bin with its lots",
-        "description": "The list row PLUS `lots` and `lotsTruncated`. The lots are capped, and `lotsTruncated: true` says rows were dropped — unlike most of this API, this one tells you.",
+        "description": "The list row PLUS `lots` and `lotsTruncated`. The lots are capped, and `lotsTruncated: true` says rows were dropped — unlike most of this API, this one tells you.\n\nRefusal code: `GRAIN_BIN_NOT_FOUND` (404).",
         "tags": [
           "Grain"
         ],
@@ -25324,6 +25330,7 @@
       "patch": {
         "operationId": "updateGrainBin",
         "summary": "Update a bin",
+        "description": "Refusal code: `GRAIN_BIN_NOT_FOUND` (404).",
         "tags": [
           "Grain"
         ],
@@ -25546,6 +25553,7 @@
       "delete": {
         "operationId": "deleteGrainBin",
         "summary": "Delete a bin",
+        "description": "Refusal code: `GRAIN_BIN_NOT_FOUND` (404).",
         "tags": [
           "Grain"
         ],
@@ -43195,7 +43203,7 @@
       "get": {
         "operationId": "getInventoryLot",
         "summary": "Get one lot with its recent ledger",
-        "description": "NOT the list row: this carries an inline `ledger` (the recent page, newest first) and has no `lowStock`. For full history use the cursor-paginated `/ledger` route.",
+        "description": "NOT the list row: this carries an inline `ledger` (the recent page, newest first) and has no `lowStock`. For full history use the cursor-paginated `/ledger` route.\n\nRefusal code: `LOT_NOT_FOUND` (404).",
         "tags": [
           "Inventory"
         ],
@@ -43339,7 +43347,7 @@
       "patch": {
         "operationId": "updateInventoryLot",
         "summary": "Move a lot to another location",
-        "description": "ONE field is updatable: `locationId`. Quantity is never edited — it only ever moves through the ledger, via receive and adjust.",
+        "description": "ONE field is updatable: `locationId`. Quantity is never edited — it only ever moves through the ledger, via receive and adjust.\n\nRefusal code: `LOT_NOT_FOUND` (404).",
         "tags": [
           "Inventory"
         ],
@@ -43506,7 +43514,7 @@
       "post": {
         "operationId": "receiveInventoryStock",
         "summary": "Receive stock into a lot",
-        "description": "Appends a RECEIPT to the ledger. `quantity` must be POSITIVE — receiving a negative amount is an adjustment, and it has its own route so that the reason is required.",
+        "description": "Appends a RECEIPT to the ledger. `quantity` must be POSITIVE — receiving a negative amount is an adjustment, and it has its own route so that the reason is required.\n\nRefusal code: `LOT_NOT_FOUND` (404).",
         "tags": [
           "Inventory"
         ],
@@ -43670,7 +43678,7 @@
       "post": {
         "operationId": "adjustInventoryStock",
         "summary": "Correct a lot’s quantity",
-        "description": "Appends a signed ADJUSTMENT. `delta` may not be ZERO and `reason` is required — the ledger is append-only, so an adjustment of nothing would be a permanent record that someone touched the stock and changed nothing. \n\nCorrections are new entries, never edits: there is no route that rewrites history because the database blocks it.",
+        "description": "Appends a signed ADJUSTMENT. `delta` may not be ZERO and `reason` is required — the ledger is append-only, so an adjustment of nothing would be a permanent record that someone touched the stock and changed nothing. \n\nCorrections are new entries, never edits: there is no route that rewrites history because the database blocks it.\n\nRefusal code: `LOT_NOT_FOUND` (404).",
         "tags": [
           "Inventory"
         ],
@@ -43839,7 +43847,7 @@
       "get": {
         "operationId": "listInventoryLotLedger",
         "summary": "A lot’s full movement history",
-        "description": "Cursor-paginated deep history — the companion to the recent page embedded in `GET /lots/{lotId}`. Same entry shape. `{ items, pageInfo }`.",
+        "description": "Cursor-paginated deep history — the companion to the recent page embedded in `GET /lots/{lotId}`. Same entry shape. `{ items, pageInfo }`.\n\nRefusal code: `LOT_NOT_FOUND` (404).",
         "tags": [
           "Inventory"
         ],
@@ -44018,7 +44026,7 @@
       "get": {
         "operationId": "traceInventoryLot",
         "summary": "Trace a lot’s provenance both ways",
-        "description": "The FOOD-SAFETY RECALL query. Walks the genealogy graph up to the seed and input lots this one derives from, and down to the harvest lots derived from it, annotating every node with the fields it touched. \n\n\"Given this seed lot, which fields and which harvest lots are implicated?\" — and its inverse, \"given this harvest, what went into it?\". `edges` carries the parent/child links so a client can draw the graph rather than infer it from the arrays.",
+        "description": "The FOOD-SAFETY RECALL query. Walks the genealogy graph up to the seed and input lots this one derives from, and down to the harvest lots derived from it, annotating every node with the fields it touched. \n\n\"Given this seed lot, which fields and which harvest lots are implicated?\" — and its inverse, \"given this harvest, what went into it?\". `edges` carries the parent/child links so a client can draw the graph rather than infer it from the arrays.\n\nRefusal code: `LOT_NOT_FOUND` (404).",
         "tags": [
           "Inventory"
         ],

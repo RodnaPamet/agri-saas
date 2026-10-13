@@ -281,7 +281,15 @@ export function collectServerAuthoredCopy(root: string, dirs: string[] = ROOTS):
 // 16 more sites coded in the evidence family — `evidence` (9),
 // `evidence-retention` (4), the access-review evidence route (3). Eight new
 // codes. Refs #1712 batch 4.
-const CURRENT_BASELINE = 395;
+//
+// ── 395 → 377 ────────────────────────────────────────────────────────────
+//
+// 18 more sites coded across the grain and inventory surfaces a farmer
+// actually touches — `cost-entry` (5), `inventory` (7), `grain-bin` (3),
+// `yield-record` (3). Four new codes, and the FIRST batch whose codes are
+// DOCUMENTED rather than baselined: `grain` has 15 paths in the spec and
+// `inventory` 6, so there were operations to name them on. Refs #1712 batch 5.
+const CURRENT_BASELINE = 377;
 
 /** Slack tolerated before the sentinel demands the baseline be lowered. */
 const DRIFT_ALLOWANCE = 15;

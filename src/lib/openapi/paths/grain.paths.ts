@@ -354,6 +354,7 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         path: '/api/t/{tenantSlug}/grain/costs/{costEntryId}',
         operationId: 'getCostEntry',
         summary: 'Get one cost entry',
+        description: 'Refusal code: `COST_ENTRY_NOT_FOUND` (404).',
         tags: ['Grain'],
         params: CostEntryParams,
         success: {
@@ -370,6 +371,7 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         path: '/api/t/{tenantSlug}/grain/costs/{costEntryId}',
         operationId: 'updateCostEntry',
         summary: 'Update a cost entry',
+        description: 'Refusal code: `COST_ENTRY_NOT_FOUND` (404).',
         tags: ['Grain'],
         params: CostEntryParams,
         body: UpdateCostEntrySchema,
@@ -381,6 +383,7 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         path: '/api/t/{tenantSlug}/grain/costs/{costEntryId}',
         operationId: 'deleteCostEntry',
         summary: 'Delete a cost entry',
+        description: 'Refusal code: `COST_ENTRY_NOT_FOUND` (404).',
         tags: ['Grain'],
         params: CostEntryParams,
         success: {
@@ -426,6 +429,7 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         path: '/api/t/{tenantSlug}/grain/yield-records/{yieldRecordId}',
         operationId: 'getYieldRecord',
         summary: 'Get one yield record',
+        description: 'Refusal code: `YIELD_RECORD_NOT_FOUND` (404).',
         tags: ['Grain'],
         params: YieldRecordParams,
         success: {
@@ -443,6 +447,7 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         path: '/api/t/{tenantSlug}/grain/yield-records/{yieldRecordId}',
         operationId: 'updateYieldRecord',
         summary: 'Update a yield record',
+        description: 'Refusal code: `YIELD_RECORD_NOT_FOUND` (404).',
         tags: ['Grain'],
         params: YieldRecordParams,
         body: UpdateYieldRecordSchema,
@@ -469,6 +474,7 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         path: '/api/t/{tenantSlug}/grain/yield-records/{yieldRecordId}',
         operationId: 'deleteYieldRecord',
         summary: 'Delete a yield record',
+        description: 'Refusal code: `YIELD_RECORD_NOT_FOUND` (404).',
         tags: ['Grain'],
         params: YieldRecordParams,
         success: {
@@ -566,7 +572,8 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         operationId: 'getGrainBin',
         summary: 'Get one bin with its lots',
         description:
-            'The list row PLUS `lots` and `lotsTruncated`. The lots are capped, and `lotsTruncated: true` says rows were dropped — unlike most of this API, this one tells you.',
+            'The list row PLUS `lots` and `lotsTruncated`. The lots are capped, and `lotsTruncated: true` says rows were dropped — unlike most of this API, this one tells you.' +
+            '\n\nRefusal code: `GRAIN_BIN_NOT_FOUND` (404).',
         tags: ['Grain'],
         params: BinParams,
         success: {
@@ -599,6 +606,7 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         path: '/api/t/{tenantSlug}/grain/bins/{binId}',
         operationId: 'updateGrainBin',
         summary: 'Update a bin',
+        description: 'Refusal code: `GRAIN_BIN_NOT_FOUND` (404).',
         tags: ['Grain'],
         params: BinParams,
         body: UpdateBinSchema,
@@ -619,6 +627,7 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         path: '/api/t/{tenantSlug}/grain/bins/{binId}',
         operationId: 'deleteGrainBin',
         summary: 'Delete a bin',
+        description: 'Refusal code: `GRAIN_BIN_NOT_FOUND` (404).',
         tags: ['Grain'],
         params: BinParams,
         success: {

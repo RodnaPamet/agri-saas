@@ -1,7 +1,7 @@
 import { RequestContext } from '../types';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
-import { badRequest, notFound } from '@/lib/errors/types';
+import { badRequest, codedNotFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import type { PrismaTx } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
@@ -109,7 +109,7 @@ export async function getLot(ctx: RequestContext, id: string) {
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
         const lot = await InventoryRepository.getLot(db, ctx, id);
-        if (!lot) throw notFound('Lot not found');
+        if (!lot) throw codedNotFound('LOT_NOT_FOUND', 'That lot was not found.');
         const ledger = await InventoryRepository.lotLedger(db, ctx, id);
         return {
             id: lot.id,
@@ -159,7 +159,7 @@ export async function listLotLedger(
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
         const lot = await InventoryRepository.getLot(db, ctx, lotId);
-        if (!lot) throw notFound('Lot not found');
+        if (!lot) throw codedNotFound('LOT_NOT_FOUND', 'That lot was not found.');
         const page = await InventoryRepository.lotLedgerPage(db, ctx, lotId, params);
         return {
             items: (page.items as LedgerRowRaw[]).map((t) => ({
@@ -277,7 +277,7 @@ export async function updateLotLocation(
     assertCanWrite(ctx);
     return runInTenantContext(ctx, async (db) => {
         const lot = await InventoryRepository.getLot(db, ctx, lotId);
-        if (!lot) throw notFound('Lot not found.');
+        if (!lot) throw codedNotFound('LOT_NOT_FOUND', 'That lot was not found.');
 
         let target: { id: string; name: string; kind: string } | null = null;
         if (locationId) {
@@ -299,7 +299,7 @@ export async function updateLotLocation(
         }
 
         const updated = await InventoryRepository.updateLotLocation(db, ctx, lot.id, target?.id ?? null);
-        if (updated === 0) throw notFound('Lot not found.');
+        if (updated === 0) throw codedNotFound('LOT_NOT_FOUND', 'That lot was not found.');
 
         // `UPDATE` + changedFields, not a bespoke MOVED verb — because changing
         // `locationId` IS a field update, and `changedFields` says which one.
@@ -341,7 +341,7 @@ export async function receiveStock(ctx: RequestContext, lotId: string, quantity:
     if (!(quantity > 0)) throw badRequest('Receipt quantity must be positive.');
     return runInTenantContext(ctx, async (db) => {
         const lot = await InventoryRepository.getLot(db, ctx, lotId);
-        if (!lot) throw notFound('Lot not found');
+        if (!lot) throw codedNotFound('LOT_NOT_FOUND', 'That lot was not found.');
         const res = await appendStockTransaction(db, ctx, {
             lotId,
             type: 'RECEIPT',
@@ -370,7 +370,7 @@ export async function adjustStock(ctx: RequestContext, lotId: string, delta: num
     if (!cleanReason) throw badRequest('Adjustment reason is required.');
     return runInTenantContext(ctx, async (db) => {
         const lot = await InventoryRepository.getLot(db, ctx, lotId);
-        if (!lot) throw notFound('Lot not found');
+        if (!lot) throw codedNotFound('LOT_NOT_FOUND', 'That lot was not found.');
         const res = await appendStockTransaction(db, ctx, {
             lotId,
             type: 'ADJUSTMENT',
@@ -976,7 +976,7 @@ export async function traceLot(ctx: RequestContext, rootLotId: string): Promise<
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
         const [root] = await InventoryRepository.getLotsByIds(db, ctx, [rootLotId]);
-        if (!root) throw notFound('Lot not found');
+        if (!root) throw codedNotFound('LOT_NOT_FOUND', 'That lot was not found.');
 
         const edges: TraceLotEdge[] = [];
         const seen = new Set<string>([rootLotId]);

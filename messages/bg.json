@@ -6403,6 +6403,10 @@
         "signOut": "Изход"
     },
     "errors": {
+        "COST_ENTRY_NOT_FOUND": "Разходът не беше намерен.",
+        "GRAIN_BIN_NOT_FOUND": "Складът не беше намерен.",
+        "LOT_NOT_FOUND": "Партидата не беше намерена.",
+        "YIELD_RECORD_NOT_FOUND": "Записът за добив не беше намерен.",
         "EVIDENCE_DELETED": "Доказателството е изтрито.",
         "EVIDENCE_FILE_DELETED": "Файлът към доказателството е изтрит.",
         "EVIDENCE_FILE_NOT_DOWNLOADABLE": "Файлът към доказателството не е достъпен за изтегляне.",
