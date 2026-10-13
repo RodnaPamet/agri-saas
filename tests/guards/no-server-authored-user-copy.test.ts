@@ -337,7 +337,9 @@ export function collectServerAuthoredCopy(root: string, dirs: string[] = ROOTS):
 // Six of the sixteen share ONE code. The cross-tenant reference checks
 // (`planting`, `season`, `location`, `parcel`, `lease`, `item`) are the same
 // refusal with a different noun, so they are
-// `COST_ENTRY_REFERENCE_NOT_IN_TENANT` with the noun in `params.reference`.
+// `REFERENCE_NOT_IN_TENANT` with the noun in `params.reference` (renamed from
+// `COST_ENTRY_REFERENCE_NOT_IN_TENANT` in batch 9, when the owner ruled one
+// code for the whole class).
 // They answer 400 and not 404 deliberately — a 404 would confirm the row
 // exists in SOME tenant, which is what a cross-tenant probe is for — and the
 // reference TYPE is returned while the id is not.
@@ -375,7 +377,32 @@ export function collectServerAuthoredCopy(root: string, dirs: string[] = ROOTS):
 // a useful `params.allowed`) have different remedies. The code and params are
 // derived in `contract-status.ts` beside the transition TABLE, so they cannot
 // drift from it when a status is added. Refs #1712 batch 7.
-const CURRENT_BASELINE = 325;
+//
+// ── 325 → 314 ──────────────────────────────────────────────────────
+//
+// `yield-record.ts` coded: 11 sites, 3 new codes plus the shared reference
+// one. The drop is exactly 11; the renames below move it by zero because
+// those sites were already coded.
+//
+// **One code for the cross-tenant class, by owner ruling.** 33 sites across
+// 8 usecases raise the identical refusal — "X not found or belongs to a
+// different tenant" — over 10 entity types (Season ×6, Planting ×3, Parcel
+// ×3, Location ×3, Variety ×2, Task, Lease, Item, File, Asset). Batches 7 and
+// 8 had already shipped THREE names for it, which would have become ~10 by
+// the end and forced a client to know all of them to handle one refusal.
+//
+// So `COST_ENTRY_REFERENCE_NOT_IN_TENANT` (6 sites),
+// `COST_ENTRY_ALLOCATION_PARCELS_NOT_IN_TENANT` (1) and
+// `CONTRACT_SEASON_NOT_IN_TENANT` (2) all became `REFERENCE_NOT_IN_TENANT`
+// with the entity in `params.reference`. The parcel SET uses the plural
+// `parcels`, which distinguishes it without a second code.
+//
+// Renaming was cheap only because nothing consumes the code set yet —
+// agrent-ios confirmed the phone resolves display from the localised
+// `message` and acts on specific codes only. It gets more expensive every
+// batch, which is why it was worth stopping to ask rather than minting an
+// 11th name. Refs #1712 batch 9.
+const CURRENT_BASELINE = 314;
 
 /** Slack tolerated before the sentinel demands the baseline be lowered. */
 const DRIFT_ALLOWANCE = 15;

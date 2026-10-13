@@ -6374,11 +6374,9 @@
         "CONTRACT_INVALID_DATE": "{field} must be a valid date.",
         "CONTRACT_NOT_FOUND": "Contract not found.",
         "CONTRACT_PRICE_NEGATIVE": "Contract price per tonne must be zero or positive.",
-        "CONTRACT_SEASON_NOT_IN_TENANT": "The referenced season was not found in this farm.",
         "CONTRACT_STORED_STATUS_UNKNOWN": "The contract’s current status ({from}) is not recognised, so the change cannot be validated.",
         "CONTRACT_TARGET_STATUS_UNKNOWN": "The requested status ({to}) is not recognised.",
         "CONTRACT_VOLUME_NEGATIVE": "Contract volume must be zero or positive.",
-        "COST_ENTRY_ALLOCATION_PARCELS_NOT_IN_TENANT": "One or more of the chosen parcels were not found in this farm.",
         "COST_ENTRY_BASIS_CONFLICTS_WITH_SPATIAL_LINK": "A {basis} cost spreads across land of its own, so it cannot also link to a planting, parcel or location.",
         "COST_ENTRY_INVALID_DATE": "{field} must be a valid date.",
         "COST_ENTRY_INVOICE_FILE_DELETED": "The invoice file has been deleted.",
@@ -6389,7 +6387,6 @@
         "COST_ENTRY_NOT_FOUND": "That cost entry was not found.",
         "COST_ENTRY_PARCELS_REQUIRE_SUBSET_BASIS": "A list of parcels may only be set when the basis is parcel-subset.",
         "COST_ENTRY_PARCEL_SUBSET_NEEDS_TWO": "A parcel-subset cost must include at least two distinct parcels — one parcel is a plain parcel link.",
-        "COST_ENTRY_REFERENCE_NOT_IN_TENANT": "The referenced {reference} was not found in this farm.",
         "CROP_COST_HAS_SPATIAL_LINK": "A cost entry scoped to one crop belongs to that crop rather than to a place, so it cannot also link to a planting, parcel or location.",
         "CROP_COST_NEEDS_COMMODITY": "A cost entry scoped to one crop must name the crop it belongs to.",
         "CROP_PLAN_NOT_FOUND": "That crop plan was not found.",
@@ -6431,6 +6428,7 @@
         },
         "PRODUCT_DOSE_REQUIRED": "A product dose and unit are required.",
         "PROMOTION_LEAD_ALREADY_SENT": "You have already requested an offer for this promotion.",
+        "REFERENCE_NOT_IN_TENANT": "The referenced {reference} was not found in this farm.",
         "SEASON_NOT_FOUND": "That season was not found.",
         "SUSPEND_TARGET_REQUIRED": "Name the account to suspend.",
         "TASK_EVIDENCE_NOT_FOUND": "That task evidence was not found.",
@@ -6439,6 +6437,9 @@
         "THREAD_PERSON_BLOCKED": "You have blocked this person. Unblock them to continue the conversation.",
         "WEEDS_REQUIRED": "Record at least one weed.",
         "WEED_OBSERVATION_NOT_FOUND": "That observation was not found.",
-        "YIELD_RECORD_NOT_FOUND": "That yield record was not found."
+        "YIELD_RECORD_AREA_NEGATIVE": "Area must be zero or positive.",
+        "YIELD_RECORD_INVALID_DATE": "{field} must be a valid date.",
+        "YIELD_RECORD_NOT_FOUND": "That yield record was not found.",
+        "YIELD_RECORD_TONNES_NEGATIVE": "Gross tonnes must be zero or positive."
     }
 }

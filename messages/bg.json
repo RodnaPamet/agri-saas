@@ -6374,11 +6374,9 @@
         "CONTRACT_INVALID_DATE": "{field} трябва да е валидна дата.",
         "CONTRACT_NOT_FOUND": "Договорът не беше намерен.",
         "CONTRACT_PRICE_NEGATIVE": "Цената на тон трябва да е нула или положително число.",
-        "CONTRACT_SEASON_NOT_IN_TENANT": "Посоченият сезон не беше намерен в това стопанство.",
         "CONTRACT_STORED_STATUS_UNKNOWN": "Текущият статус на договора ({from}) не е разпознат, затова промяната не може да бъде проверена.",
         "CONTRACT_TARGET_STATUS_UNKNOWN": "Исканият статус ({to}) не е разпознат.",
         "CONTRACT_VOLUME_NEGATIVE": "Количеството по договора трябва да е нула или положително число.",
-        "COST_ENTRY_ALLOCATION_PARCELS_NOT_IN_TENANT": "Един или повече от избраните парцели не бяха намерени в това стопанство.",
         "COST_ENTRY_BASIS_CONFLICTS_WITH_SPATIAL_LINK": "Разход с база {basis} се разпределя върху собствена земя, затова не може да се свързва и с насаждение, парцел или обект.",
         "COST_ENTRY_INVALID_DATE": "{field} трябва да е валидна дата.",
         "COST_ENTRY_INVOICE_FILE_DELETED": "Файлът с фактурата е изтрит.",
@@ -6389,7 +6387,6 @@
         "COST_ENTRY_NOT_FOUND": "Разходът не беше намерен.",
         "COST_ENTRY_PARCELS_REQUIRE_SUBSET_BASIS": "Списък с парцели може да се посочи само при база „подмножество парцели“.",
         "COST_ENTRY_PARCEL_SUBSET_NEEDS_TWO": "Разход върху подмножество парцели трябва да включва поне два различни парцела — един парцел е обикновена връзка към парцел.",
-        "COST_ENTRY_REFERENCE_NOT_IN_TENANT": "Посоченият запис ({reference}) не беше намерен в това стопанство.",
         "CROP_COST_HAS_SPATIAL_LINK": "Разход за една култура принадлежи на културата, а не на място, затова не може да е свързан и с посев, имот или локация.",
         "CROP_COST_NEEDS_COMMODITY": "Разход за една култура трябва да посочва за коя култура е.",
         "CROP_PLAN_NOT_FOUND": "Планът за културата не беше намерен.",
@@ -6431,6 +6428,7 @@
         },
         "PRODUCT_DOSE_REQUIRED": "Въведете доза и мерна единица за продукта.",
         "PROMOTION_LEAD_ALREADY_SENT": "Вече сте поискали оферта за тази промоция.",
+        "REFERENCE_NOT_IN_TENANT": "Посоченият запис ({reference}) не беше намерен в това стопанство.",
         "SEASON_NOT_FOUND": "Сезонът не беше намерен.",
         "SUSPEND_TARGET_REQUIRED": "Изберете кого спирате.",
         "TASK_EVIDENCE_NOT_FOUND": "Доказателството към задачата не беше намерено.",
@@ -6439,6 +6437,9 @@
         "THREAD_PERSON_BLOCKED": "Блокирали сте този човек. Отблокирайте го, за да продължите разговора.",
         "WEEDS_REQUIRED": "Отбележете поне един плевел.",
         "WEED_OBSERVATION_NOT_FOUND": "Това наблюдение не беше намерено.",
-        "YIELD_RECORD_NOT_FOUND": "Записът за добив не беше намерен."
+        "YIELD_RECORD_AREA_NEGATIVE": "Площта трябва да е нула или положително число.",
+        "YIELD_RECORD_INVALID_DATE": "{field} трябва да е валидна дата.",
+        "YIELD_RECORD_NOT_FOUND": "Записът за добив не беше намерен.",
+        "YIELD_RECORD_TONNES_NEGATIVE": "Количеството в тонове трябва да е нула или положително число."
     }
 }

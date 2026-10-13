@@ -447,8 +447,9 @@ async function assertFksBelongToTenant(
         });
         if (found.length !== wanted.length) {
             throw codedBadRequest(
-                'COST_ENTRY_ALLOCATION_PARCELS_NOT_IN_TENANT',
+                'REFERENCE_NOT_IN_TENANT',
                 'One or more chosen parcels were not found or belong to a different tenant',
+                { reference: 'parcels' },
             );
         }
     }
@@ -459,7 +460,7 @@ async function assertFksBelongToTenant(
         });
         if (!row)
             throw codedBadRequest(
-                'COST_ENTRY_REFERENCE_NOT_IN_TENANT',
+                'REFERENCE_NOT_IN_TENANT',
                 'Planting not found or belongs to a different tenant',
                 { reference: 'planting' },
             );
@@ -471,7 +472,7 @@ async function assertFksBelongToTenant(
         });
         if (!row)
             throw codedBadRequest(
-                'COST_ENTRY_REFERENCE_NOT_IN_TENANT',
+                'REFERENCE_NOT_IN_TENANT',
                 'Season not found or belongs to a different tenant',
                 { reference: 'season' },
             );
@@ -483,7 +484,7 @@ async function assertFksBelongToTenant(
         });
         if (!row)
             throw codedBadRequest(
-                'COST_ENTRY_REFERENCE_NOT_IN_TENANT',
+                'REFERENCE_NOT_IN_TENANT',
                 'Location not found or belongs to a different tenant',
                 { reference: 'location' },
             );
@@ -495,7 +496,7 @@ async function assertFksBelongToTenant(
         });
         if (!row)
             throw codedBadRequest(
-                'COST_ENTRY_REFERENCE_NOT_IN_TENANT',
+                'REFERENCE_NOT_IN_TENANT',
                 'Parcel not found or belongs to a different tenant',
                 { reference: 'parcel' },
             );
@@ -507,7 +508,7 @@ async function assertFksBelongToTenant(
         });
         if (!row)
             throw codedBadRequest(
-                'COST_ENTRY_REFERENCE_NOT_IN_TENANT',
+                'REFERENCE_NOT_IN_TENANT',
                 'Lease not found or belongs to a different tenant',
                 { reference: 'lease' },
             );
@@ -519,7 +520,7 @@ async function assertFksBelongToTenant(
         });
         if (!row)
             throw codedBadRequest(
-                'COST_ENTRY_REFERENCE_NOT_IN_TENANT',
+                'REFERENCE_NOT_IN_TENANT',
                 'Item not found or belongs to a different tenant',
                 { reference: 'item' },
             );
