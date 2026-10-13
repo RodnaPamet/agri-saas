@@ -149,6 +149,34 @@ const JournalListQuery = z.object({
  * stranded. `replayed` says which of the two happened, because a saved screen
  * claiming "3 parcels recorded" must be true either way.
  */
+const TreatmentParams = TenantParams.extend({
+    treatmentGroupId: z
+        .string()
+        .openapi({ param: { name: 'treatmentGroupId', in: 'path' } }),
+});
+
+/**
+ * A treatment looked up by its handle.
+ *
+ * `complete` is a THIRD answer rather than a detail, and a client needs all
+ * three to act correctly after a save whose response was lost. See the
+ * operation description.
+ */
+const TreatmentSummary = z
+    .object({
+        treatmentGroupId: z.string(),
+        parcelCount: z.number().int(),
+        taskIds: z.array(z.string()),
+        occurredOn: z.string().nullable().openapi({
+            description: 'The calendar DAY the treatment happened, `YYYY-MM-DD`.',
+        }),
+        complete: z.boolean().openapi({
+            description:
+                'False when tasks exist but carry no lines \u2014 a half-landed write. Retry on the SAME handle; the write finishes it.',
+        }),
+    })
+    .openapi('TreatmentSummary');
+
 const RecordedTreatment = z
     .object({
         treatmentGroupId: z.string().openapi({
@@ -274,6 +302,39 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
             status: 201,
             description: 'The handle, the counts, and whether this was a replay.',
             schema: RecordedTreatment,
+        },
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/journal/treatments/{treatmentGroupId}',
+        operationId: 'getDiaryTreatment',
+        summary: 'Look a recorded treatment up by its handle',
+        description:
+            'Answers whether a treatment was recorded under this handle, and in what state.\n\n' +
+            '**This exists because the write replays a reused key without comparing the body.** A save ' +
+            'whose response is lost, followed by an edit, goes out under a NEW key and writes a SECOND ' +
+            'treatment if the first had landed. Asking whether the earlier handle exists is the only ' +
+            'way a client can tell, so read this before re-sending an edited treatment under a fresh ' +
+            'key.\n\n' +
+            'Three answers, and a client needs all three:\n\n' +
+            '| answer | meaning | what to do |\n' +
+            '| --- | --- | --- |\n' +
+            '| `404` `TREATMENT_NOT_FOUND` | nothing landed | write afresh |\n' +
+            '| `200` `complete: true` | it landed | do not write again |\n' +
+            '| `200` `complete: false` | it HALF landed \u2014 tasks exist with no lines | retry on the SAME handle; the write finishes it |\n\n' +
+            'The third is the partial-commit shape the operation write documents: the task committed ' +
+            'and its second transaction died. Treating it as a 404 writes a duplicate treatment; ' +
+            'treating it as an ordinary 200 reports a compliance record that has no lines and can ' +
+            'never reach the register.\n\n' +
+            'The handle is a PATH segment and not a query parameter on purpose: iOS writes the full ' +
+            'URL including the query string to the device log, unsuppressably.',
+        tags: ['Journal'],
+        params: TreatmentParams,
+        success: {
+            status: 200,
+            description: 'The treatment, including whether it is complete.',
+            schema: TreatmentSummary,
         },
     });
 

@@ -26,7 +26,7 @@ import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
-import { recordDiaryTreatment } from '@/app-layer/usecases/diary-treatment';
+import { recordDiaryTreatment, getDiaryTreatment } from '@/app-layer/usecases/diary-treatment';
 
 const globalPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -347,4 +347,113 @@ describeFn('the future guard uses the farm day, not the server day (DB-backed)',
             ),
         ).rejects.toMatchObject({ code: 'TREATMENT_DATE_INVALID' });
     });
+});
+
+/**
+ * The read-by-handle, and the three answers a client has to tell apart.
+ *
+ * It ships with the write because the write REPLAYS a reused key without
+ * comparing the body (#1765): a save whose response is lost, then an edit,
+ * goes out under a new key and writes a SECOND treatment if the first landed.
+ * Asking whether the earlier handle exists is the only way to tell.
+ *
+ * The case worth the fixture work is the third one — tasks with no lines.
+ * Collapsing it fails in both directions, so it is asserted as its own state
+ * rather than as "truthy".
+ */
+describeFn('getDiaryTreatment (DB-backed)', () => {
+    it('answers null for a handle nothing was recorded under', async () => {
+        await expect(getDiaryTreatment(ctx(), `${TAG}-never-used`)).resolves.toBeNull();
+        // Blank is not a lookup, and must not match the first row with a null
+        // or empty handle.
+        await expect(getDiaryTreatment(ctx(), '   ')).resolves.toBeNull();
+    });
+
+    it('reports a recorded treatment as complete, with its day and counts', async () => {
+        const key = `${TAG}-read-ok`;
+        const written = await recordDiaryTreatment(
+            ctx(),
+            { ...baseInput(), parcelIds: [parcelA1, parcelB1] },
+            key,
+        );
+
+        const found = await getDiaryTreatment(ctx(), key);
+        expect(found).toMatchObject({
+            treatmentGroupId: key,
+            parcelCount: 2,
+            complete: true,
+            // The DAY it was recorded for, read back exactly as written.
+            occurredOn: DAY,
+        });
+        expect(new Set(found!.taskIds)).toEqual(new Set(written.taskIds));
+    });
+
+    it('reports a half-landed write as INCOMPLETE rather than as absent', async () => {
+        // The partial-commit shape: a task carrying the handle whose second
+        // transaction never ran, so it has no lines. Built directly, because
+        // the write cannot be made to produce it on demand.
+        const key = `${TAG}-partial`;
+        await globalPrisma.task.create({
+            data: {
+                tenantId,
+                title: `Partial ${TAG}`,
+                type: 'FIELD_OPERATION',
+                createdByUserId: userId,
+                treatmentGroupId: key,
+            },
+        });
+
+        const found = await getDiaryTreatment(ctx(), key);
+        // Present — so a client does NOT write a duplicate...
+        expect(found).not.toBeNull();
+        expect(found!.taskIds).toHaveLength(1);
+        // ...but explicitly not complete, so it also does not report a
+        // compliance record that has no lines.
+        expect(found!.complete).toBe(false);
+        expect(found!.parcelCount).toBe(0);
+        // Nothing to date it by, and null is the honest answer rather than
+        // today.
+        expect(found!.occurredOn).toBeNull();
+    });
+
+    it('does not find another farm\'s treatment under the same handle', async () => {
+        const key = `${TAG}-xtenant`;
+        await globalPrisma.task.create({
+            data: {
+                tenantId: otherTenantId,
+                title: `Other ${TAG}`,
+                type: 'FIELD_OPERATION',
+                createdByUserId: userId,
+                treatmentGroupId: key,
+            },
+        });
+        // Same handle, different farm: a client holding a guessed or leaked
+        // handle learns nothing.
+        //
+        // WHAT THIS PROVES, AND WHAT IT DOES NOT. The property holds — and
+        // it is RLS that enforces it, not the `tenantId` in the `where`.
+        // Measured: deleting `tenantId: ctx.tenantId` from the read leaves
+        // all 17 cases green, because `runInTenantContext` binds the tenant
+        // and the policy hides the other farm's row at the database. So the
+        // application-layer filter is the documented second layer here
+        // rather than the thing under test, and this assertion cannot tell
+        // you it is present. Do not read a green run as having checked it.
+        await expect(getDiaryTreatment(ctx(), key)).resolves.toBeNull();
+    });
+
+    /**
+     * On `assertCanRead`, which this usecase calls and which no test here can
+     * falsify.
+     *
+     * `canRead` is `level >= 1` and the lowest of the six roles — READER and
+     * MECHANISATOR — are both level 1, so the call cannot refuse any real
+     * role. It can only throw for a synthesized context carrying an explicit
+     * `canRead: false`, which is a background job, not a request.
+     *
+     * So there is deliberately NO test asserting a role is refused a read.
+     * Writing one would mean inventing a context no HTTP request produces and
+     * would read as coverage of a gate that does not gate. Measured: removing
+     * the `assertCanRead` call leaves all 17 cases green. Filed separately,
+     * because it is true of all 126 of its call sites and not of this one.
+     */
 });

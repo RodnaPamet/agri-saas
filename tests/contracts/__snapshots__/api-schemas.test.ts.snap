@@ -14970,6 +14970,44 @@ exports[`API contract — per-schema snapshots schema: TraceLotResult 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: TreatmentSummary 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "treatmentGroupId": {
+      "type": "string"
+    },
+    "parcelCount": {
+      "type": "integer"
+    },
+    "taskIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "occurredOn": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The calendar DAY the treatment happened, \`YYYY-MM-DD\`."
+    },
+    "complete": {
+      "type": "boolean",
+      "description": "False when tasks exist but carry no lines — a half-landed write. Retry on the SAME handle; the write finishes it."
+    }
+  },
+  "required": [
+    "treatmentGroupId",
+    "parcelCount",
+    "taskIds",
+    "occurredOn",
+    "complete"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: TrendDataPoint 1`] = `
 "{
   "type": "object",

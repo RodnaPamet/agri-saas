@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { farmToday } from '@/lib/calendar-day-key';
 import { RequestContext } from '../types';
-import { assertCanWrite } from '../policies/common';
+import { assertCanRead, assertCanWrite } from '../policies/common';
 import { codedBadRequest } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { createFieldOperation, markOperationParcel } from './field-operation';
@@ -149,6 +149,92 @@ function parseTreatmentDay(value: string): { day: Date; key: string } {
     // reading a calendar day back out of it is the mistake this function
     // exists to prevent one level down.
     return { day, key: `${y}-${mo}-${d}` };
+}
+
+/** What a treatment looks like when asked for by its handle. */
+export interface DiaryTreatmentSummary {
+    treatmentGroupId: string;
+    /** Lines recorded across every block. */
+    parcelCount: number;
+    /** One per block, oldest first. */
+    taskIds: string[];
+    /** The calendar day the treatment happened, `YYYY-MM-DD`. */
+    occurredOn: string | null;
+    /**
+     * False when tasks exist but carry NO lines.
+     *
+     * This is the partial-commit shape `createFieldOperation` documents: the
+     * task committed and its second transaction died. It is a THIRD answer,
+     * not a detail, and the client needs all three to act correctly after a
+     * save whose response was lost:
+     *
+     *   404                  nothing landed      -> safe to write afresh
+     *   200 complete: true   it landed           -> do not write again
+     *   200 complete: false  it half-landed      -> retry on the SAME handle,
+     *                                               which the write finishes
+     *
+     * Collapsing the third into either of the others is a real defect in
+     * both directions: as a 404 it writes a duplicate treatment, and as a
+     * plain 200 it reports a compliance record that has no lines and can
+     * never reach the register.
+     */
+    complete: boolean;
+}
+
+/**
+ * Look a treatment up by its handle (#1740).
+ *
+ * Exists because the write REPLAYS a reused `Idempotency-Key` without
+ * comparing the body (owner ruling 2026-10-14, #1765). That makes this read
+ * load-bearing rather than convenient: a save whose response is lost, followed
+ * by an edit, goes out under a NEW key and writes a SECOND treatment if the
+ * first had landed. Asking whether the earlier handle exists is the only way a
+ * client can tell, so this ships with the write rather than after the PDF.
+ *
+ * Returns `null` rather than throwing, so the route owns the 404 and the
+ * per-entry PDF can reuse this without catching.
+ */
+export async function getDiaryTreatment(
+    ctx: RequestContext,
+    treatmentGroupId: string,
+): Promise<DiaryTreatmentSummary | null> {
+    assertCanRead(ctx);
+
+    const handle = treatmentGroupId.trim();
+    if (!handle) return null;
+
+    const tasks = await runInTenantContext(ctx, (db) =>
+        db.task.findMany({
+            where: { tenantId: ctx.tenantId, treatmentGroupId: handle, deletedAt: null },
+            select: {
+                id: true,
+                _count: { select: { operationParcels: true } },
+                // One line is enough to date the treatment: every line of a
+                // treatment is stamped with the same day by the write.
+                operationParcels: { select: { completedAt: true }, take: 1 },
+            },
+            orderBy: { createdAt: 'asc' },
+        }),
+    );
+
+    if (tasks.length === 0) return null;
+
+    const parcelCount = tasks.reduce((n, t) => n + t._count.operationParcels, 0);
+    const stamped = tasks.flatMap((t) => t.operationParcels).find((l) => l.completedAt != null);
+
+    return {
+        treatmentGroupId: handle,
+        parcelCount,
+        taskIds: tasks.map((t) => t.id),
+        // Read back from the UTC date parts, which is the exact inverse of how
+        // the write stored it (`Date.UTC(y, mo, d)` for the farm's calendar
+        // day). This is deliberately NOT `farmToday`'s zone: converting a
+        // stored UTC midnight into Sofia and taking ITS date would be a second
+        // conversion of a value already converted once, and near midnight it
+        // would hand back the wrong day.
+        occurredOn: stamped?.completedAt ? stamped.completedAt.toISOString().slice(0, 10) : null,
+        complete: parcelCount > 0,
+    };
 }
 
 export async function recordDiaryTreatment(

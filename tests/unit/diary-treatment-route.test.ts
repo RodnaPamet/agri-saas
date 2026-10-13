@@ -28,12 +28,15 @@ jest.mock('@/app-layer/usecases/modules', () => ({
 }));
 
 const mockRecord = jest.fn();
+const mockGet = jest.fn();
 jest.mock('@/app-layer/usecases/diary-treatment', () => ({
     recordDiaryTreatment: (...a: unknown[]) => mockRecord(...a),
+    getDiaryTreatment: (...a: unknown[]) => mockGet(...a),
 }));
 
 import { NextRequest } from 'next/server';
 import { POST } from '@/app/api/t/[tenantSlug]/journal/treatments/route';
+import { GET } from '@/app/api/t/[tenantSlug]/journal/treatments/[treatmentGroupId]/route';
 
 const BODY = {
     kind: 'SPRAY',
@@ -105,5 +108,57 @@ describe('POST /api/t/{tenantSlug}/journal/treatments', () => {
 
         expect(res.status).toBe(400);
         expect(mockRecord).not.toHaveBeenCalled();
+    });
+});
+
+/**
+ * The read's 404, which is the only thing the GET handler owns.
+ *
+ * `getDiaryTreatment` returns `null` rather than throwing so the PDF route can
+ * reuse it without catching — which means the mapping from `null` to a coded
+ * 404 lives in the handler and nowhere else. A handler that returned the bare
+ * `null` would answer 200 with a JSON `null` body, and a client checking
+ * "did I get a 200" would read a treatment that does not exist as one that
+ * does. That is the opposite of what this read is for.
+ */
+describe('GET /api/t/{tenantSlug}/journal/treatments/{treatmentGroupId}', () => {
+    const handleParams = Promise.resolve({ tenantSlug: 'acme', treatmentGroupId: 'h1' });
+    const get = () =>
+        GET(
+            new NextRequest('http://localhost/api/t/acme/journal/treatments/h1'),
+            { params: handleParams },
+        );
+
+    it('404s with a code when nothing was recorded under the handle', async () => {
+        mockGet.mockResolvedValue(null);
+        const res = await get();
+        expect(res.status).toBe(404);
+        await expect(res.json()).resolves.toMatchObject({
+            error: { code: 'TREATMENT_NOT_FOUND' },
+        });
+    });
+
+    it('returns the summary, including an INCOMPLETE one, rather than 404ing it', async () => {
+        // The half-landed state must come back as a 200 the client can read,
+        // not as absent — a 404 here makes it write a duplicate treatment.
+        mockGet.mockResolvedValue({
+            treatmentGroupId: 'h1',
+            parcelCount: 0,
+            taskIds: ['t1'],
+            occurredOn: null,
+            complete: false,
+        });
+        const res = await get();
+        expect(res.status).toBe(200);
+        await expect(res.json()).resolves.toMatchObject({ complete: false, taskIds: ['t1'] });
+    });
+
+    it('passes the handle from the path, not from a query string', async () => {
+        mockGet.mockResolvedValue({
+            treatmentGroupId: 'h1', parcelCount: 1, taskIds: ['t1'],
+            occurredOn: '2026-03-04', complete: true,
+        });
+        await get();
+        expect(mockGet.mock.calls[0][1]).toBe('h1');
     });
 });

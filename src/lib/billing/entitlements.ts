@@ -454,9 +454,16 @@ async function getCurrentCount(
  *
  * The thrown error is the same `ForbiddenError` shape used by the
  * rest of the codebase, so `withApiErrorHandling` surfaces it as a
- * 403 without any new error-type plumbing. The message body
- * embeds `plan_limit_exceeded` + plan + resource + limit + current
- * so the billing UI can parse it into an "Upgrade" CTA.
+ * 403 without any new error-type plumbing. It carries the CODE
+ * `PLAN_LIMIT_EXCEEDED` with plan + resource + limit + current in
+ * `params`, and the message no longer begins with a
+ * `plan_limit_exceeded:` prefix (#1677/#1679) — switch on the code.
+ *
+ * This docblock described the prefix as the identifier until
+ * 2026-10-14, two releases after it was removed, and that sentence
+ * is why a reader grepping for the code concluded the refusal was
+ * still prose-only. A client holding a string match on the old
+ * prefix can delete it.
  *
  * Pass `tx` — the transaction the create itself runs in — to close the
  * check-then-act race. Read/write skew is still possible under READ COMMITTED
