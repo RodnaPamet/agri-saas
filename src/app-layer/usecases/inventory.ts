@@ -409,6 +409,17 @@ export interface InputApplicationLine {
     productItemId: string;
     doseValue: unknown; // Prisma Decimal
     doseUnitId: string;
+    /**
+     * Mark the INPUT_APPLICATION entry as recorded by a person in the diary
+     * (#1740). Default-false, so the operator path — a line completed from a
+     * task in Задачи — is unchanged and stays hidden from the journal list by
+     * the 2026-10-10 ruling.
+     *
+     * Set HERE rather than UPDATEd afterwards: a second write would leave a
+     * window in which the entries exist and are invisible, and the flag
+     * belongs to the write that knows where the record came from.
+     */
+    recordedInDiary?: boolean;
 }
 
 export interface InputApplicationResult {
@@ -539,6 +550,7 @@ async function recordInputApplicationImpl(
         });
         const entry = await createLogEntryWithAudit(db, ctx, {
             type: 'INPUT_APPLICATION',
+            recordedInDiary: line.recordedInDiary ?? false,
             title: composed.title,
             titleKey: composed.titleKey,
             titleParams: composed.titleParams,
