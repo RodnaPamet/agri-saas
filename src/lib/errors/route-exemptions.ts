@@ -215,6 +215,16 @@ export const BARE_ROUTE_EXEMPTIONS: ReadonlyArray<BareRouteExemption> = [
             'AV scanner callback. HMAC-SHA256 X-AV-Signature with ' +
             'timing-safe comparison; raw body required before JSON parse.',
     },
+    {
+        file: 'webhooks/resend/route.ts',
+        category: 'external_webhook',
+        reason:
+            'Resend delivery events (#1753). Svix HMAC-SHA256 over the raw ' +
+            'body, so req.text() must precede any parse. Bare because the ' +
+            'wrapper applies the mutation rate limiter, and throttling a ' +
+            'provider delivery feed would drop the bounce notifications this ' +
+            'endpoint exists to receive.',
+    },
 
     // ─── SCIM 2.0 RFC 7644 ───
     //

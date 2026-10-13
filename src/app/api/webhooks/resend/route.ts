@@ -49,6 +49,7 @@ import { NextRequest } from 'next/server';
 
 import { logger } from '@/lib/observability/logger';
 import { jsonResponse } from '@/lib/api-response';
+import { env } from '@/env';
 import { verifyResendSignature, parseDeliveryEvent } from '@/lib/email/resend-webhook';
 
 export async function POST(req: NextRequest) {
@@ -59,7 +60,13 @@ export async function POST(req: NextRequest) {
         svixId: req.headers.get('svix-id'),
         svixTimestamp: req.headers.get('svix-timestamp'),
         svixSignature: req.headers.get('svix-signature'),
-        secret: process.env.RESEND_WEBHOOK_SECRET,
+        // `env`, not `process.env`. `tests/unit/no-fallbacks.test.ts` forbids a
+        // bare `process.env` read anywhere in `src/`, and the AV webhook's
+        // allowlisted reason for having one ("must run before env validation")
+        // does not apply here: nothing on this path runs before startup
+        // validation, and the schema already declares this key optional, so
+        // an absent secret reaches the `no-secret` branch rather than throwing.
+        secret: env.RESEND_WEBHOOK_SECRET,
     });
 
     if (!verdict.ok) {
