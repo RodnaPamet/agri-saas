@@ -223,7 +223,15 @@ const ROOT = path.resolve(__dirname, '../..');
 // SERVER-rendered test in the repo — the nine existing install-hint cases all
 // run where `navigator` exists, so none of them can see a conversion that
 // reads a browser global during render.
-const RENDERED_TEST_FLOOR = 250;
+// 250 → 251: `breadcrumbs-context-identity.test.tsx` (#1471). Every existing
+// breadcrumbs guard is a text-level source grep — `breadcrumbs={` appears in
+// the file, a page renders the provider — so nothing in the repo rendered
+// `BreadcrumbsProvider` and watched what it publishes. The provider's trail
+// fell back to a fresh `[]` whenever the stack was empty, which gave the
+// context a new value on every render and re-rendered every consumer; the
+// trail still DISPLAYED correctly, which is why a grep could never see it.
+// Raised to this branch's own live count, measured, not 250 plus a delta.
+const RENDERED_TEST_FLOOR = 251;
 // Raised 246 -> 247 for `field-operation-panel-if-match.test.tsx` (#1370):
 // the online map panel marked prescription lines with no `If-Match`, a
 // silent last-write-wins on a row that stamps a regulatory date. Raised to

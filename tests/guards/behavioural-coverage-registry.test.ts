@@ -81,6 +81,24 @@ interface RegistryEntry {
  */
 const REGISTRY: RegistryEntry[] = [
     {
+        primitive: 'Breadcrumbs context value identity',
+        structuralRatchets: [
+            'guards/detail-page-breadcrumbs.test.ts',
+            'guards/page-breadcrumbs-coverage.test.ts',
+        ],
+        renderedTest: 'rendered/breadcrumbs-context-identity.test.tsx',
+        guards:
+            'exactly the gap this registry describes — both structural ' +
+            'ratchets assert `breadcrumbs={` appears in a file, and both ' +
+            'were green while `BreadcrumbsProvider` published a NEW ' +
+            'context value on every render (its trail fell back to a ' +
+            'fresh `[]` whenever the stack was empty, which is what any ' +
+            'page that never pushes leaves behind). The trail still ' +
+            'DISPLAYED correctly, so no scan of the source could see it; ' +
+            'only rendering the provider twice and comparing the array ' +
+            'instance can.',
+    },
+    {
         primitive: 'NavItem active-band tone (sidebar)',
         structuralRatchets: ['guards/r13-active-band-secondary.test.ts'],
         renderedTest: 'rendered/nav-item-active-band-tone.test.tsx',
