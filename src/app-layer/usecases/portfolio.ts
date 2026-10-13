@@ -257,7 +257,11 @@ export async function getPortfolioTenantHealth(
 // privilege bypass; it just walks N legitimate per-tenant queries.
 //
 // Reasoning about why this is correct:
-//   - We do NOT call `runInGlobalContext` for per-row business data.
+//   - We do NOT bypass RLS for per-row business data. (This named
+//     `runInGlobalContext`, deleted by P1.7; the live bypass is
+//     `runWithoutRls({ reason })` and this code calls neither for
+//     business rows — P1.10, #1192. A safety argument that names a
+//     function nobody can call cannot be checked by its reader.)
 //   - We do NOT issue a single cross-tenant query against the
 //     business tables — every query targets exactly one tenantId.
 //   - If the CISO is removed as ORG_ADMIN, the deprovision usecase

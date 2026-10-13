@@ -100,6 +100,7 @@
         "passwordReset": "Your password has been reset — sign in with your new password.",
         "passwordChanged": "Your password has been changed — please sign in again.",
         "continueWithGoogle": "Continue with Google",
+        "continueWithApple": "Continue with Apple",
         "continueWithMicrosoft": "Continue with Microsoft",
         "orContinueWithEmail": "or continue with email",
         "forgotPassword": "Forgot your password?",

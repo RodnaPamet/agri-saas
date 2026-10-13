@@ -98,7 +98,16 @@ export class ExchangeRepository {
     /**
      * Tenant ids that have switched `key` OFF.
      *
-     * MUST be called with an RLS-BYPASSING client (`runInGlobalContext`):
+     * MUST be called with an RLS-BYPASSING client — `runWithoutRls({ reason:
+     * 'module-availability' })`, which is what `listActiveExchangeListings`
+     * passes (P1.10, #1192). This said `runInGlobalContext`, a function P1.7
+     * DELETED in favour of the typed form; P1.7's own note recorded the stale
+     * prose as residue and it outlived the symbol by three phases.
+     *
+     * A docblock naming a deleted function is worse than none: it is an
+     * instruction a reader cannot follow, and the obvious recovery — reaching
+     * for the global client directly — is the untyped bypass the typed reason
+     * exists to prevent.
      * `TenantModuleSettings` is tenant-scoped and RLS-forced, so under the
      * caller's own `app_user` context this would return at most the caller's
      * own row and the exclusion would silently do nothing.
