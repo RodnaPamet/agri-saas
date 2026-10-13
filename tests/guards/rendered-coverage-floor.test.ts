@@ -219,7 +219,11 @@ const ROOT = path.resolve(__dirname, '../..');
 // possible ЕГН in a URL that iOS CFNetwork logs), a valid-looking ЕГН blocks
 // the step rather than warning, and step 6 never implies the ЕИК was
 // ACCEPTED because `pending_review` is returned unconditionally.
-const RENDERED_TEST_FLOOR = 249;
+// 249 → 250: `install-hint-server-snapshot.test.tsx` (#1471). The first
+// SERVER-rendered test in the repo — the nine existing install-hint cases all
+// run where `navigator` exists, so none of them can see a conversion that
+// reads a browser global during render.
+const RENDERED_TEST_FLOOR = 250;
 // Raised 246 -> 247 for `field-operation-panel-if-match.test.tsx` (#1370):
 // the online map panel marked prescription lines with no `If-Match`, a
 // silent last-write-wins on a row that stamps a regulatory date. Raised to

@@ -29,9 +29,9 @@
  *    partial queue as if complete" failure. Only the operator's explicit
  *    acknowledgement removes it.
  */
-import { useEffect, useState } from 'react';
+
 import { useTranslations } from 'next-intl';
-import { installingWouldPersist } from '@/lib/pwa/display-mode';
+import { useInstallingWouldPersist } from '@/lib/pwa/use-installing-would-persist';
 import { useOfflineSync } from '@/lib/offline/use-offline-sync';
 import { Button } from '@/components/ui/button';
 import { TriangleWarning } from '@/components/ui/icons/nucleo/triangle-warning';
@@ -57,12 +57,9 @@ export function UnsyncedWorkBanner() {
     // leaves the loss detector nothing to read (see the read-set test in
     // tests/unit/offline/outbox-eviction.test.ts).
     //
-    // Post-mount: `navigator.userAgent` / `matchMedia` are client-only and
-    // reading either during render would mismatch the server's markup.
-    const [showInstallHint, setShowInstallHint] = useState(false);
-    useEffect(() => {
-        setShowInstallHint(installingWouldPersist());
-    }, []);
+    // Client-only, and read without an effect — see
+    // `useInstallingWouldPersist`.
+    const showInstallHint = useInstallingWouldPersist();
 
     const mutations = Math.max(0, pending - pendingPhotos);
 

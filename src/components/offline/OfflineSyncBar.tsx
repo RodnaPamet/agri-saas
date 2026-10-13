@@ -17,12 +17,12 @@
  * on the server" once it is not. The silent state is gone; there is always a
  * claim on screen, and it is always the claim the app can actually support.
  */
-import { useEffect, useState } from 'react';
+
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { cn } from '@/lib/cn';
-import { installingWouldPersist } from '@/lib/pwa/display-mode';
+import { useInstallingWouldPersist } from '@/lib/pwa/use-installing-would-persist';
 
 export interface OfflineSyncBarProps {
     online: boolean;
@@ -68,12 +68,10 @@ export function OfflineSyncBar({
     className,
 }: OfflineSyncBarProps) {
     const t = useTranslations('offline');
-    // Post-mount: `navigator.userAgent` and `matchMedia` are client-only, and
-    // reading either during render would mismatch the server's markup.
-    const [showInstallHint, setShowInstallHint] = useState(false);
-    useEffect(() => {
-        setShowInstallHint(installingWouldPersist());
-    }, []);
+    // Client-only, and read without an effect — see
+    // `useInstallingWouldPersist`, which carries the reasoning the comment
+    // that used to sit here was carrying.
+    const showInstallHint = useInstallingWouldPersist();
     // Photos and text mutations queue in the same outbox but read very
     // differently to a field operator ("2 photos will upload" vs "3 marks
     // will sync"), so show them as separate counts.
