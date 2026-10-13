@@ -57,14 +57,41 @@ beforeAll(async () => {
         data: { tenantId, userId, role: Role.OWNER, status: MembershipStatus.ACTIVE },
     });
     const location = await globalPrisma.location.create({ data: { tenantId, name: `Block ${TAG}` } });
+    // areaHa is REQUIRED for this fixture to be able to deduct at all.
+    // `recordInputApplication` computes `consumed` as dose x area, and reads a
+    // null area as 0 — so with no area the operator control deducted nothing
+    // and the "diary does not deduct" assertion passed for the wrong reason.
+    // Measured: the control failed with `consumed: 0` until this was set.
     const p1 = await globalPrisma.parcel.create({
-        data: { tenantId, locationId: location.id, name: `P1 ${TAG}`, cropType: 'Wheat' },
+        data: { tenantId, locationId: location.id, name: `P1 ${TAG}`, cropType: 'Wheat', areaHa: 10 },
     });
     const p2 = await globalPrisma.parcel.create({
-        data: { tenantId, locationId: location.id, name: `P2 ${TAG}`, cropType: 'Wheat' },
+        data: { tenantId, locationId: location.id, name: `P2 ${TAG}`, cropType: 'Wheat', areaHa: 10 },
     });
     const item = await globalPrisma.item.create({
         data: { tenantId, name: `Prod ${TAG}`, category: 'PESTICIDE', defaultUnitId: unitId },
+    });
+    // A lot on the product, so `getFefoLot` finds one and a deduction is
+    // POSSIBLE. Without it, "the diary did not deduct" would be
+    // indistinguishable from "there was nothing to deduct from".
+    //
+    // `quantityOnHand` is set here only to clear `getFefoLot`'s `> 0` filter.
+    // It is NOT a meaningful balance: the column is a denormalised ledger sum
+    // "refreshed only by the ledger writer" (InventoryRepository), so setting
+    // it without a matching RECEIPT transaction leaves it inconsistent with
+    // the ledger, and the first consumption recomputes it from a ledger this
+    // fixture never populated.
+    //
+    // Measured, after briefly mistaking it for a product bug: with an opening
+    // 500 and one 20-unit consumption the row read -20, not 480 — the
+    // recompute is correct and the fixture was wrong. Hence the assertions
+    // below are on the TRANSACTIONS, which are the direct evidence, rather
+    // than on a balance this fixture is not entitled to.
+    await globalPrisma.inventoryLot.create({
+        data: {
+            tenantId, itemId: item.id, quantityOnHand: 500, unitId,
+            lotCode: `LOT-${TAG}`, receivedAt: new Date('2026-01-01'),
+        },
     });
     const task = await globalPrisma.task.create({
         data: {
@@ -82,12 +109,29 @@ beforeAll(async () => {
         })).id;
     operatorLine = await mkLine(p1.id);
     diaryLine = await mkLine(p2.id);
+
+    // BOTH MARKS HAPPEN HERE, AND THE DIARY ONE GOES FIRST. Order is
+    // load-bearing, which it should not have to be and does.
+    //
+    // `quantityOnHand` is a denormalised ledger sum, so the operator's
+    // draw-down recomputes this lot to a NEGATIVE balance (the fixture never
+    // posted a receipt). `getFefoLot` requires `> 0`, so after that draw-down
+    // there is no lot to deduct from at all — and a diary mark running second
+    // would appear suppressed whether or not the suppression exists.
+    //
+    // Measured, not reasoned: with the operator first, REMOVING the
+    // suppression entirely left all four cases green. The diary mark has to
+    // run while stock is still available for its assertion to mean anything.
+    await markOperationParcel(ctx(), taskId, diaryLine, 'DONE', 'recorded in the diary', 0, {
+        recordedInDiary: true,
+    });
+    await markOperationParcel(ctx(), taskId, operatorLine, 'DONE', 'done in the field', 0);
 });
 
 afterAll(async () => {
     if (!DB_AVAILABLE) return;
     try {
-        for (const tbl of ['StockTransaction', 'LogQuantity', 'LogEntry', 'OperationParcel', 'TaskLink', 'Task', 'Item', 'Parcel', 'Location', 'AuditLog', 'AutomationExecution', 'TenantMembership']) {
+        for (const tbl of ['StockTransaction', 'InventoryLot', 'LogQuantity', 'LogEntry', 'OperationParcel', 'TaskLink', 'Task', 'Item', 'Parcel', 'Location', 'AuditLog', 'AutomationExecution', 'TenantMembership']) {
             await globalPrisma.$executeRawUnsafe(`DELETE FROM "${tbl}" WHERE "tenantId" = $1`, tenantId).catch(() => {});
         }
         await globalPrisma.$executeRawUnsafe(`DELETE FROM "Tenant" WHERE "id" = $1`, tenantId).catch(() => {});
@@ -105,8 +149,6 @@ const entryFor = async (lineId: string) =>
 
 describeFn('recordedInDiary reaches the journal entry a mark emits (DB-backed)', () => {
     it('the OPERATOR path leaves it false, so the entry stays hidden', async () => {
-        await markOperationParcel(ctx(), taskId, operatorLine, 'DONE', 'done in the field', 0);
-
         const entry = await entryFor(operatorLine);
         expect(entry).not.toBeNull();
         // The direction that matters most. A thread defaulting to true would
@@ -118,11 +160,20 @@ describeFn('recordedInDiary reaches the journal entry a mark emits (DB-backed)',
         expect(entry!.operationParcelId).toBe(operatorLine);
     });
 
-    it('the DIARY path sets it, so the entry is visible despite its line', async () => {
-        await markOperationParcel(ctx(), taskId, diaryLine, 'DONE', 'recorded in the diary', 0, {
-            recordedInDiary: true,
+    it('the OPERATOR path DOES deduct, which is the control for the next case', async () => {
+        // Asserted so that the diary case below proves a suppression rather
+        // than an absence. Without this, a farm where nothing ever deducts
+        // would satisfy both.
+        const tx = await globalPrisma.stockTransaction.findMany({
+            where: { tenantId, type: 'CONSUMPTION', logEntry: { operationParcelId: operatorLine } },
+            select: { id: true, quantityDelta: true },
         });
+        // Exactly one draw-down, for the operator's line. 2 L/ha over 10 ha.
+        expect(tx).toHaveLength(1);
+        expect(Number(tx[0].quantityDelta)).toBeLessThan(0);
+    });
 
+    it('the DIARY path sets it, so the entry is visible despite its line', async () => {
         const entry = await entryFor(diaryLine);
         expect(entry).not.toBeNull();
         expect(entry!.recordedInDiary).toBe(true);
@@ -130,5 +181,27 @@ describeFn('recordedInDiary reaches the journal entry a mark emits (DB-backed)',
         // An entry that was flagged but carried no line would prove nothing,
         // because it would be visible under the old rule too.
         expect(entry!.operationParcelId).toBe(diaryLine);
+    });
+
+    it('the DIARY path does NOT deduct stock — owner ruling 2026-10-13', async () => {
+        // The Дневник is a compliance record; stock stays managed through
+        // Задачи and adjustments. The product HAS a 500-unit lot, so this is
+        // a suppression and not an empty-shelf artefact — the operator case
+        // above deducted from the same lot.
+        const txForDiary = await globalPrisma.stockTransaction.findMany({
+            where: { tenantId, type: 'CONSUMPTION', logEntry: { operationParcelId: diaryLine } },
+            select: { id: true },
+        });
+        expect(txForDiary).toEqual([]);
+
+        // And the farm has exactly ONE consumption in total — the operator's.
+        // Asserted as a total rather than only as an absence on the diary
+        // line, so a second draw-down appearing anywhere else would fail here
+        // too.
+        const all = await globalPrisma.stockTransaction.findMany({
+            where: { tenantId, type: 'CONSUMPTION' },
+            select: { id: true },
+        });
+        expect(all).toHaveLength(1);
     });
 });
