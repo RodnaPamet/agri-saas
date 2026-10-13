@@ -326,7 +326,31 @@ export function collectServerAuthoredCopy(root: string, dirs: string[] = ROOTS):
 // refuses a decision change) is kept distinct from
 // `ACCESS_REVIEW_ALREADY_CLOSED` (you tried to close it twice) because the
 // remedies differ; the old `/closed/i` assertion could not tell them apart.
-const CURRENT_BASELINE = 356;
+//
+// ── 356 → 340 ──────────────────────────────────────────────────────
+//
+// `cost-entry.ts` coded: 16 sites, 11 codes, all `badRequest`. The drop is
+// exactly 16 here, unlike batch 6 where it was 20 of 21 — every message in
+// this file is a string or template literal, so `THROWERS` matched all of
+// them.
+//
+// Six of the sixteen share ONE code. The cross-tenant reference checks
+// (`planting`, `season`, `location`, `parcel`, `lease`, `item`) are the same
+// refusal with a different noun, so they are
+// `COST_ENTRY_REFERENCE_NOT_IN_TENANT` with the noun in `params.reference`.
+// They answer 400 and not 404 deliberately — a 404 would confirm the row
+// exists in SOME tenant, which is what a cross-tenant probe is for — and the
+// reference TYPE is returned while the id is not.
+//
+// Unlike batch 6, these codes are DOCUMENTED rather than baselined: all six
+// cost routes are already in the spec, so there were operations to name them
+// on. All three write operations reach the same eleven, because
+// `createCostEntry`, `createCostEntryBatch` (via `prepareCostEntry` per line)
+// and `updateCostEntry` all pass through `prepareCostEntry` and
+// `writeCostEntryOn`. Traced through the call graph rather than assumed, and
+// documented once as `COST_WRITE_REFUSALS` in `grain.paths.ts` so three
+// copies cannot drift. Refs #1712 batch 7.
+const CURRENT_BASELINE = 340;
 
 /** Slack tolerated before the sentinel demands the baseline be lowered. */
 const DRIFT_ALLOWANCE = 15;
