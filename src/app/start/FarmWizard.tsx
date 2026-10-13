@@ -46,7 +46,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations, useLocale } from 'next-intl';
-import { signIn } from 'next-auth/react';
+import { signIn, getCsrfToken } from 'next-auth/react';
 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -80,6 +80,48 @@ export interface FarmWizardProps {
      * person actually saw.
      */
     termsVersion: string;
+}
+
+/**
+ * Re-mint the session token so the Edge gate can see a membership gained
+ * since sign-in (#1738).
+ *
+ * ## Why this is not `useSession().update()`
+ *
+ * **This app deliberately mounts no `<SessionProvider>`**, and both
+ * `layout.tsx` and `providers.tsx` say so in terms: it "would add a
+ * client-side `/api/auth/session` fetch on every page load", which produced
+ * "Failed to fetch" console noise when a page unmounted mid-request. Calling
+ * `useSession` here would either throw or force that provider back for the
+ * benefit of one screen.
+ *
+ * So this does precisely what `update()` does, read out of the installed
+ * next-auth 4.24.15 rather than guessed:
+ *
+ *   - `SessionProvider`'s update → `getCsrfToken()` then
+ *     `fetchData("session", …, { req: { body: { csrfToken, data } } })`
+ *     (`react/index.js`);
+ *   - `fetchData` sets `Content-Type: application/json`, `JSON.stringify`s
+ *     the body and switches to `method: "POST"` whenever a body is present
+ *     (`client/_utils.ts:40-50`).
+ *
+ * A POST to `/api/auth/session` is what makes the `jwt` callback run with
+ * `trigger === 'update'`, which is the branch that calls
+ * `applyMembershipClaims`. `getCsrfToken` needs no provider — it is a plain
+ * GET of `/api/auth/csrf`.
+ *
+ * Pinned by `tests/rendered/farm-wizard-session-refresh.test.tsx`: if a
+ * next-auth upgrade changes that contract, the shape asserted there is what
+ * will catch it, because the symptom in production is silent.
+ */
+async function refreshSessionClaims(): Promise<void> {
+    const csrfToken = await getCsrfToken();
+    if (!csrfToken) return;
+    await fetch('/api/auth/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ csrfToken, data: {} }),
+    });
 }
 
 export function FarmWizard({ startAtFarmType, termsVersion }: FarmWizardProps) {
@@ -317,6 +359,39 @@ export function FarmWizard({ startAtFarmType, termsVersion }: FarmWizardProps) {
             // suffix, so a client-side guess would 404.
             setFarmSlug(data?.farm?.slug ?? '');
             setIdentity((data?.identityVerification as IdentityResult) ?? 'not_requested');
+
+            // #1738 — re-mint the session before offering the farm.
+            //
+            // `memberships` is a JWT CLAIM, and the Edge gate reads it rather
+            // than the database (there is none on the Edge). A token minted
+            // before this farm existed does not carry it, so
+            // `checkTenantAccess` returns `no_tenant_access` for a user whose
+            // first farm this is, or `cross_tenant` for one who already had
+            // others — and the OWNER who just created it lands on `/no-tenant`,
+            // which tells them to ask an administrator for an invite.
+            //
+            // The machinery already existed and nothing called it: the `jwt`
+            // callback's `trigger === 'update'` branch names this exact case,
+            // "a tenant the user gained after sign-in — e.g. one they just
+            // created (OWNER)".
+            //
+            // AWAITED, and before `setStep('done')`: the next thing the person
+            // does is press a button that navigates into the farm, so a
+            // fire-and-forget refresh would race the click it exists to make
+            // safe. Measured on production 2026-10-13 — the membership row was
+            // correct and the token was not.
+            //
+            // Failure is swallowed deliberately. The farm IS created by this
+            // point; a refresh that fails must not present as a creation
+            // failure, and the fallback is the one the user already has — sign
+            // out and in. The wizard reaching 'done' is the honest report of
+            // what happened.
+            try {
+                await refreshSessionClaims();
+            } catch {
+                // Intentionally ignored — see above.
+            }
+
             setStep('done');
         } catch {
             fail(t('failed'));

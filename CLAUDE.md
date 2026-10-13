@@ -964,6 +964,43 @@ NextAuth v4.24.15 (stable) is configured in `src/auth.ts`. Providers: Google OAu
 
 **GAP-04 — type augmentation pattern.** `src/auth.ts` declares two module augmentations: `next-auth` for `Session.user` (id/tenantId/role/mfaPending/memberships) and `next-auth/jwt` for the full JWT shape (every custom field the codebase stores). Middleware reads typed `token.role` / `token.memberships` directly via `getToken({ req, secret })`. There are zero `as any` casts in the auth-critical path; the structural guardrail at `tests/guardrails/auth-stack-pinning.test.ts` fails CI if any are reintroduced.
 
+**There is NO `<SessionProvider>`, so `useSession()` is not available — and
+re-minting a token is a POST you make yourself (#1738).** Both `layout.tsx` and
+`providers.tsx` say why: mounting it adds a client-side `/api/auth/session`
+fetch on EVERY page load, which produced "Failed to fetch" noise whenever a
+page unmounted mid-request. The session is resolved server-side by `auth()`,
+and `signIn`/`signOut` work without the provider.
+
+The consequence is easy to miss. `memberships` is a JWT CLAIM and the Edge gate
+reads it rather than the database — there is none on the Edge — so **a
+membership gained after sign-in is invisible until the token re-mints.**
+Creating a farm while signed in therefore locked the OWNER out of it and sent
+them to `/no-tenant`, which advises asking an administrator for an invite
+(#1738; the row was correct, the token was not). The `jwt` callback's
+`trigger === 'update'` branch exists for exactly this and nothing called it.
+
+Without the provider, replicate what next-auth 4.24.15's `update()` does —
+read out of the installed package, not guessed:
+
+```ts
+const csrfToken = await getCsrfToken();           // no provider needed
+await fetch('/api/auth/session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ csrfToken, data: {} }),
+});
+```
+
+`SessionProvider`'s update is `getCsrfToken()` then `fetchData("session", …,
+{ req: { body: { csrfToken, data } } })`, and `fetchData` sets
+`Content-Type: application/json`, `JSON.stringify`s the body and switches to
+POST whenever a body is present (`client/_utils.ts`). A form-encoded body is
+silently rejected and the re-mint does nothing.
+
+**Any write that grants a membership owes this call**, awaited, before the UI
+offers the new tenant. The sign-up walk is immune only by accident — it ends in
+`signIn`, which mints a token after the membership exists.
+
 **Compat shims.** `auth()` returns `Session | null` and `signOut({ redirectTo })` redirects to `/api/auth/signout?callbackUrl=…`. Both keep the 15+ server-component import sites stable across the v5→v4 migration.
 
 **`auth()` stopped being a bare alias for `getServerSession(authOptions)` in #601.** It tries the COOKIE first and returns that session unchanged when one resolves — the web path is bit-for-bit as before — and only with no cookie falls back to `resolveBearerSession()` from `@/lib/auth/native/bearer-principal`. That fallback exists because native clients hold a NON-COOKIE session: `getToken()` accepts an `Authorization: Bearer` header, so middleware authorises a bearer unchanged, but `getServerSession()` reads `sessionStore.value` — cookies ONLY — so without it a bearer clears the Edge and then 401s at `requirePermission → getTenantCtx → getSessionOrThrow → auth()`, the chain every `/api/t/**` route runs. `resolveBearerSession` reuses the same `getToken` locator and the same `authOptions.callbacks.session` shaper, so the two paths cannot disagree on claims; a bearer principal deliberately carries no `email`.
