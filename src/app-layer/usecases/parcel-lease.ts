@@ -11,7 +11,7 @@ import { assertCanRead, assertCanWrite } from '../policies/common';
 import { runInTenantContext } from '@/lib/db-context';
 import { logEvent } from '../events/audit';
 import { sanitizePlainText } from '@/lib/security/sanitize';
-import { badRequest, notFound, codedNotFound } from '@/lib/errors/types';
+import { badRequest, codedNotFound } from '@/lib/errors/types';
 import { canonicalRentUnit } from '@/lib/agro/rent-units';
 
 export type LeaseKindInput = 'ARENDA' | 'NAEM';
@@ -191,7 +191,7 @@ export async function updateParcelLease(ctx: RequestContext, leaseId: string, in
             where: { id: leaseId, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true },
         });
-        if (!existing) throw notFound('Lease not found');
+        if (!existing) throw codedNotFound('LEASE_NOT_FOUND', 'That lease was not found.');
         const lease = await db.parcelLease.update({
             where: { id: leaseId },
             data: mapLeaseData(input),
@@ -220,7 +220,7 @@ export async function deleteParcelLease(ctx: RequestContext, leaseId: string) {
             where: { id: leaseId, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true },
         });
-        if (!existing) throw notFound('Lease not found');
+        if (!existing) throw codedNotFound('LEASE_NOT_FOUND', 'That lease was not found.');
         await db.parcelLease.update({ where: { id: leaseId }, data: { deletedAt: new Date() } });
         await logEvent(db, ctx, {
             action: 'PARCEL_LEASE_DELETED',

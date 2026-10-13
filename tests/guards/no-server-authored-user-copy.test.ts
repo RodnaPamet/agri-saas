@@ -249,7 +249,27 @@ export function collectServerAuthoredCopy(root: string, dirs: string[] = ROOTS):
 // So the mechanism is the reverse of the prediction: a code ADDED, not prose
 // deleted. Worth leaving both statements visible, because the wrong one was
 // specific and plausible and stood here unchallenged.
-const CURRENT_BASELINE = 438;
+//
+// ── 438 → 426 ────────────────────────────────────────────────────────────
+//
+// 12 more sites coded, in the ДНЕВНИК path a farmer actually walks:
+// `crop-planning` (7), `task` (3), `parcel-lease` (2). Seven new codes, each
+// with catalogue copy. Refs #1712.
+//
+// The drift sentinel did NOT fire this time — 438 ≤ 426 + 15 — so the slack
+// would have sat here unnoticed inside the allowance. The number is lowered
+// because the allowance exists to let two concurrent PRs land, not to bank
+// headroom a sweep just created. Taken from the guard's own report (set the
+// baseline low, read "rose to N") rather than from a reimplementation of its
+// scan: a hand-rolled approximation of the same shape said 436, and the
+// balanced-argument exemption is the difference.
+//
+// 427, not 426: the twelfth site was reverted. `removeTaskWatcher` throws
+// `WATCHER_NOT_FOUND` and has NO caller anywhere — no route, no test — so
+// coding it would have added a code no client can receive. It stays uncoded
+// and counted here, which is the honest place for an unreachable English
+// string: still debt, just debt attached to dead code. Filed separately.
+const CURRENT_BASELINE = 427;
 
 /** Slack tolerated before the sentinel demands the baseline be lowered. */
 const DRIFT_ALLOWANCE = 15;

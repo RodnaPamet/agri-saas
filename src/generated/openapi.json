@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "12.5.0",
+    "version": "12.6.3",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -40074,6 +40074,7 @@
       "patch": {
         "operationId": "updateSeason",
         "summary": "Update a season",
+        "description": "Refusal code: `SEASON_NOT_FOUND` (404) — no season with that id in this farm. Distinct from `CROP_SEASON_NOT_FOUND`, which is a crop grown on a PARCEL in a season and lives on the parcel-history routes.",
         "tags": [
           "Planning"
         ],
@@ -41485,6 +41486,7 @@
       "get": {
         "operationId": "getCropPlan",
         "summary": "Get one crop plan",
+        "description": "Refusal code: `CROP_PLAN_NOT_FOUND` (404).",
         "tags": [
           "Planning"
         ],
@@ -41628,7 +41630,7 @@
       "patch": {
         "operationId": "updateCropPlan",
         "summary": "Update a crop plan",
-        "description": "`seasonId` and `cropTypeId` are NOT updatable — they are absent from the body schema, so a plan cannot be moved between seasons or crops by editing it.",
+        "description": "`seasonId` and `cropTypeId` are NOT updatable — they are absent from the body schema, so a plan cannot be moved between seasons or crops by editing it.\n\nRefusal code: `CROP_PLAN_NOT_FOUND` (404).",
         "tags": [
           "Planning"
         ],
@@ -41875,7 +41877,7 @@
       "delete": {
         "operationId": "deleteCropPlan",
         "summary": "Delete a crop plan",
-        "description": "Soft-deletes the plan. Answers with an acknowledgement, not the plan.",
+        "description": "Soft-deletes the plan. Answers with an acknowledgement, not the plan.\n\nRefusal code: `CROP_PLAN_NOT_FOUND` (404).",
         "tags": [
           "Planning"
         ],
@@ -42021,7 +42023,7 @@
       "post": {
         "operationId": "generatePlantings",
         "summary": "Generate the plan’s plantings",
-        "description": "Materialises the succession pattern into PLANTINGS — `successions` rows spaced `intervalDays` apart from `firstSowDate`. This is the only way plantings come into existence; there is no create-planting route. \n\nRead `_count.plantings` on the plan before calling if you need to know whether it has already been generated.",
+        "description": "Materialises the succession pattern into PLANTINGS — `successions` rows spaced `intervalDays` apart from `firstSowDate`. This is the only way plantings come into existence; there is no create-planting route. \n\nRead `_count.plantings` on the plan before calling if you need to know whether it has already been generated.\n\nRefusal code: `CROP_PLAN_NOT_FOUND` (404).",
         "tags": [
           "Planning"
         ],
@@ -42327,7 +42329,7 @@
       "patch": {
         "operationId": "updatePlanting",
         "summary": "Update a planting",
-        "description": "ONE field is updatable: `plannedYieldKgPerHa`. Everything else about a planting comes from the plan that generated it.",
+        "description": "ONE field is updatable: `plannedYieldKgPerHa`. Everything else about a planting comes from the plan that generated it.\n\nRefusal code: `PLANTING_NOT_FOUND` (404).",
         "tags": [
           "Planning"
         ],
@@ -46099,7 +46101,7 @@
       "patch": {
         "operationId": "updateParcelLease",
         "summary": "Update a lease",
-        "description": "The body is the same shape as a create MINUS the parcel: a lease cannot be moved to another parcel by editing it.",
+        "description": "The body is the same shape as a create MINUS the parcel: a lease cannot be moved to another parcel by editing it.\n\nRefusal code: `LEASE_NOT_FOUND` (404).",
         "tags": [
           "Leases"
         ],
@@ -46327,7 +46329,7 @@
       "delete": {
         "operationId": "deleteParcelLease",
         "summary": "Delete a lease",
-        "description": "Answers with the id only.",
+        "description": "Answers with the id only.\n\nRefusal code: `LEASE_NOT_FOUND` (404).",
         "tags": [
           "Leases"
         ],

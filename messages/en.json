@@ -6403,6 +6403,12 @@
         "signOut": "Sign out"
     },
     "errors": {
+        "CROP_PLAN_NOT_FOUND": "That crop plan was not found.",
+        "LEASE_NOT_FOUND": "That lease was not found.",
+        "PLANTING_NOT_FOUND": "That planting was not found.",
+        "SEASON_NOT_FOUND": "That season was not found.",
+        "TASK_EVIDENCE_NOT_FOUND": "That task evidence was not found.",
+        "TASK_LINK_NOT_FOUND": "That task link was not found.",
         "LISTING_NOT_FOUND": "That listing was not found.",
         "LOCATION_NOT_FOUND": "That location was not found.",
         "BLOCK_NOT_FOUND": "You have no block on that person.",
