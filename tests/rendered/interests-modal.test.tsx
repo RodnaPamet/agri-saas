@@ -99,6 +99,46 @@ describe('InterestsModal', () => {
     });
 });
 
+describe('InterestsModal — reseeding on reopen (#1471)', () => {
+    // The reseed is what `set-state-in-effect` flags at :43, and nothing
+    // pinned it. These two describe the behaviour BEFORE touching it, because
+    // the fix moves the reseed out of an effect and a reseed is the kind of
+    // thing that changes when you do that.
+
+    it('reseeds the draft from the newer saved set when it reopens', () => {
+        const { rerender } = render(
+            <InterestsModal open initial={['wheat']} onClose={jest.fn()} onSaved={jest.fn()} />,
+        );
+        expect(screen.getByText('wheat')).toBeInTheDocument();
+
+        // Closed, saved elsewhere, reopened with a different set.
+        rerender(<InterestsModal open={false} initial={['wheat']} onClose={jest.fn()} onSaved={jest.fn()} />);
+        rerender(<InterestsModal open initial={['barley']} onClose={jest.fn()} onSaved={jest.fn()} />);
+
+        expect(screen.getByText('barley')).toBeInTheDocument();
+        expect(screen.queryByText('wheat')).not.toBeInTheDocument();
+    });
+
+    it('keeps the operator’s unsaved edit when the parent re-renders while open', () => {
+        // `initial` is a `string[]` prop, so a parent that rebuilds it gets a
+        // NEW ARRAY with the same contents. With the reseed in an effect keyed
+        // on `[open, initial]`, that identity change re-runs it and wipes a
+        // half-typed edit — a parent re-render discarding the operator's work.
+        const { rerender } = render(
+            <InterestsModal open initial={['wheat']} onClose={jest.fn()} onSaved={jest.fn()} />,
+        );
+        const box = screen.getByRole('textbox');
+        fireEvent.change(box, { target: { value: 'barley' } });
+        fireEvent.keyDown(box, { key: 'Enter' });
+        expect(screen.getByText('barley')).toBeInTheDocument();
+
+        // Same contents, new array identity — a plain parent re-render.
+        rerender(<InterestsModal open initial={['wheat']} onClose={jest.fn()} onSaved={jest.fn()} />);
+
+        expect(screen.getByText('barley')).toBeInTheDocument();
+    });
+});
+
 describe('InterestsModal — a failed save must not look like a successful one', () => {
     it('keeps the modal OPEN and reports the failure on a non-ok response', async () => {
         // `onClose()` used to sit outside the `if (res.ok)` with no catch, so
