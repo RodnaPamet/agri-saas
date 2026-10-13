@@ -10,24 +10,47 @@
  * first client render, then resolves on mount and stays live via the
  * matchMedia change event.
  */
-import { useEffect, useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 
 const QUERY = '(prefers-reduced-motion: reduce)';
 
+/**
+ * Subscribe to the media query itself.
+ *
+ * This is the case `useSyncExternalStore` was added for, and the one place in
+ * this repo where the subscription is REAL rather than a formality: a reader
+ * can turn reduced-motion on while the page is open, and the charts must
+ * follow. The previous implementation did follow it — via
+ * `mq.addEventListener('change', …)` plus `setReduced` — and carried an
+ * `eslint-disable react-hooks/set-state-in-effect` for the post-mount sync,
+ * which is a suppression rather than a fix (#1471).
+ */
+function subscribe(onChange: () => void): () => void {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+        return () => {};
+    }
+    const mq = window.matchMedia(QUERY);
+    mq.addEventListener?.('change', onChange);
+    return () => mq.removeEventListener?.('change', onChange);
+}
+
+/** A boolean, so React's value comparison makes this snapshot stable. */
+function getSnapshot(): boolean {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+    return window.matchMedia(QUERY).matches;
+}
+
+/**
+ * The server has no media queries, so it cannot know — and `false` is the
+ * right answer there for the same reason the old `useState(false)` was: markup
+ * that assumes motion is allowed, corrected on the client if it is not.
+ */
+function getServerSnapshot(): boolean {
+    return false;
+}
+
 export function useReducedMotion(): boolean {
-    const [reduced, setReduced] = useState(false);
-
-    useEffect(() => {
-        if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
-        const mq = window.matchMedia(QUERY);
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- post-mount sync (SSR starts false)
-        setReduced(mq.matches);
-        const onChange = () => setReduced(mq.matches);
-        mq.addEventListener?.('change', onChange);
-        return () => mq.removeEventListener?.('change', onChange);
-    }, []);
-
-    return reduced;
+    return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }
 
 /** Imperative one-shot check (for non-React modules like haptics). */
