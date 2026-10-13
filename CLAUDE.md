@@ -804,6 +804,31 @@ others as backstops.
 test that crosses the middleware.** `token.error`, the `iflk_` API key and SCIM
 were all complete, unit-tested mechanisms severed at that seam.
 
+**And the EIGHTH instance was the Art 16 notice form, which 401'd for seven
+weeks (#1745).** `POST /api/public/notices` is anonymous by legal duty — DSA
+Art 16 requires a mechanism any person can use to notify illegal content — and
+it was never added to the Edge list, so every anonymous notice was refused
+before the handler ran. Measured on production, three times, and found only by
+trying to consume a rate limit as a positive control for something else. A
+closed door and an empty queue look identical from inside.
+
+What makes this one worth its own paragraph is that the repo had ALREADY argued
+the route was public, carefully, in the right place:
+`public-routes-self-authenticate.test.ts` carries "anonymous by design, and by
+LEGAL DUTY" against that exact path. **That guard asks whether the HANDLER
+needing no credential is deliberate. `isPublicPath` decides whether the EDGE
+admits the request. Nothing compared the two lists.** One half of the repo
+declared the duty; the other silently refused it; both halves were individually
+correct.
+
+`tests/guards/public-route-exemptions-are-edge-reachable.test.ts` joins them,
+and derives its strongest population from the FILESYSTEM — every route under
+`src/app/api/public/` must satisfy `isPublicPath`, so a new one is covered the
+moment it exists rather than when somebody remembers to list it. The exemption
+map is parsed as a second population for the anonymous routes that do NOT live
+under that segment (signed webhooks, health probes), with a floor so an
+extraction that stopped matching fails instead of passing over nothing.
+
 **See [`docs/epic-c-security.md`](docs/epic-c-security.md)** for the operator
 runbook and the reasoning — including three occasions when a working mechanism
 was Edge-severed and nobody noticed for months.
