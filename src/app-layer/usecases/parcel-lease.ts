@@ -11,7 +11,7 @@ import { assertCanRead, assertCanWrite } from '../policies/common';
 import { runInTenantContext } from '@/lib/db-context';
 import { logEvent } from '../events/audit';
 import { sanitizePlainText } from '@/lib/security/sanitize';
-import { badRequest, notFound } from '@/lib/errors/types';
+import { badRequest, notFound, codedNotFound } from '@/lib/errors/types';
 import { canonicalRentUnit } from '@/lib/agro/rent-units';
 
 export type LeaseKindInput = 'ARENDA' | 'NAEM';
@@ -163,7 +163,7 @@ export async function createParcelLease(ctx: RequestContext, parcelId: string, i
             where: { id: parcelId, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true, name: true },
         });
-        if (!parcel) throw notFound('Parcel not found');
+        if (!parcel) throw codedNotFound('PARCEL_NOT_FOUND', 'Parcel not found');
         const lease = await db.parcelLease.create({
             data: { tenantId: ctx.tenantId, parcelId, ...mapLeaseData(input) },
             select: LEASE_SELECT,

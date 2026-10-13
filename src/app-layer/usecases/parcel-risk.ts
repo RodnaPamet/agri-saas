@@ -27,7 +27,7 @@
 import type { RequestContext } from '../types';
 import { assertCanRead } from '../policies/common';
 import { runInTenantContext } from '@/lib/db-context';
-import { notFound } from '@/lib/errors/types';
+import { codedNotFound } from '@/lib/errors/types';
 import { getRedis } from '@/lib/redis';
 import { ParcelRepository } from '../repositories/ParcelRepository';
 import { isGeeConfigured, getIndexMeansForPolygon } from '@/lib/agro/earth-engine';
@@ -117,7 +117,7 @@ export async function analyzeParcelRisk(
             where: { id: parcelId, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true, name: true, areaHa: true, cropType: true },
         });
-        if (!p) throw notFound('Parcel not found');
+        if (!p) throw codedNotFound('PARCEL_NOT_FOUND', 'Parcel not found');
         const g = await ParcelRepository.geometryForParcel(db, ctx, parcelId);
         return { parcel: p, geometry: g };
     });

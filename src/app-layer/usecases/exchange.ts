@@ -9,7 +9,7 @@ import { logEvent } from '../events/audit';
 import { runInTenantContext, withTenantDb, PrismaTx } from '@/lib/db-context';
 import { runWithoutRls } from '@/lib/db/rls-middleware';
 import { EXCHANGE_CURRENCY } from '@/lib/exchange/currency';
-import { forbidden, notFound, badRequest, codedConflict } from '@/lib/errors/types';
+import { forbidden, notFound, badRequest, codedConflict, codedNotFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { regionByCode } from '@/lib/geo/bulgaria-regions';
 import { logger } from '@/lib/observability/logger';
@@ -130,7 +130,7 @@ export async function getListing(ctx: RequestContext, id: string) {
     assertCanRead(ctx);
     const listing = await runInTenantContext(ctx, async (db) => {
         const row = await ExchangeRepository.getListing(db, id);
-        if (!row) throw notFound('Listing not found');
+        if (!row) throw codedNotFound('LISTING_NOT_FOUND', 'Listing not found');
         return row;
     });
     // The deep-link path has to honour the same seller-module exclusion the
@@ -155,12 +155,12 @@ export async function getListing(ctx: RequestContext, id: string) {
         // hidden listing short-circuits the module-exclusion query. Merged
         // rather than added beside it because `no-server-authored-user-copy`
         // holds English prose in thrown errors on a downward ratchet — a second
-        // `notFound('Listing not found')` raises the count for a sentence that
+        // `codedNotFound('LISTING_NOT_FOUND', 'Listing not found')` raises the count for a sentence that
         // already exists one line below.
         const hidden = listing.suppressedForDeletionAt
             ? true
             : (await sellerTenantsWithExchangeOff()).includes(listing.sellerTenantId);
-        if (hidden) throw notFound('Listing not found');
+        if (hidden) throw codedNotFound('LISTING_NOT_FOUND', 'Listing not found');
     }
     return listing;
 }
@@ -256,7 +256,7 @@ export async function createListing(ctx: RequestContext, input: CreateListingInp
  */
 async function loadOwnedListing(db: PrismaTx, ctx: RequestContext, id: string) {
     const listing = await ExchangeRepository.getListing(db, id);
-    if (!listing) throw notFound('Listing not found');
+    if (!listing) throw codedNotFound('LISTING_NOT_FOUND', 'Listing not found');
     if (listing.sellerTenantId !== ctx.tenantId) {
         throw forbidden('You can only modify your own listings');
     }
@@ -401,7 +401,7 @@ export async function createInquiry(ctx: RequestContext, input: CreateInquiryInp
         // `listing_not_active` below — honest, because the seller withdrew it —
         // whereas naming the suppressed state would disclose that its seller
         // asked to delete their account.
-        if (!listing || listing.suppressedForDeletionAt) throw notFound('Listing not found');
+        if (!listing || listing.suppressedForDeletionAt) throw codedNotFound('LISTING_NOT_FOUND', 'Listing not found');
         if (listing.status !== ExchangeListingStatus.ACTIVE) {
             throw badRequest('listing_not_active', 'This listing is no longer active');
         }

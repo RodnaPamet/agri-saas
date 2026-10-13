@@ -3,7 +3,7 @@ import { LocationRepository, LocationFilters, LocationListParams } from '../repo
 import { ParcelRepository } from '../repositories/ParcelRepository';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { badRequest, codedNotFound } from '@/lib/errors/types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { assertWithinLimit } from '@/lib/billing/entitlements';
 import { sanitizePlainText } from '@/lib/security/sanitize';
@@ -36,7 +36,7 @@ export async function getLocation(ctx: RequestContext, id: string) {
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
         const location = await LocationRepository.getById(db, ctx, id);
-        if (!location) throw notFound('Location not found');
+        if (!location) throw codedNotFound('LOCATION_NOT_FOUND', 'Location not found');
         return location;
     });
 }
@@ -46,7 +46,7 @@ export async function getLocationWithParcels(ctx: RequestContext, id: string) {
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
         const location = await LocationRepository.getById(db, ctx, id);
-        if (!location) throw notFound('Location not found');
+        if (!location) throw codedNotFound('LOCATION_NOT_FOUND', 'Location not found');
         const parcels = await ParcelRepository.listForLocation(db, ctx, id);
         return { ...location, parcels };
     });
@@ -66,7 +66,7 @@ export async function listLocationParcels(
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
         const location = await LocationRepository.getById(db, ctx, id);
-        if (!location) throw notFound('Location not found');
+        if (!location) throw codedNotFound('LOCATION_NOT_FOUND', 'Location not found');
         const parcels = await ParcelRepository.listForLocation(db, ctx, id, opts);
         return { locationId: id, bounds: location.boundsJson ?? null, parcels };
     });
@@ -85,7 +85,7 @@ export async function getLocationBounds(
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
         const location = await LocationRepository.getById(db, ctx, id);
-        if (!location) throw notFound('Location not found');
+        if (!location) throw codedNotFound('LOCATION_NOT_FOUND', 'Location not found');
         const bounds = location.boundsJson;
         return Array.isArray(bounds) && bounds.length === 4
             ? (bounds as [number, number, number, number])
@@ -166,7 +166,7 @@ export async function updateLocation(ctx: RequestContext, id: string, data: Upda
             ownerUserId:
                 data.ownerUserId === undefined ? undefined : data.ownerUserId || null,
         });
-        if (!location) throw notFound('Location not found');
+        if (!location) throw codedNotFound('LOCATION_NOT_FOUND', 'Location not found');
 
         await logEvent(db, ctx, {
             action: 'UPDATE',
@@ -247,7 +247,7 @@ export async function deleteLocation(ctx: RequestContext, id: string) {
     return runInTenantContext(ctx, async (db) => {
         await assertNoDependentStock(db, ctx, [id]);
         const deleted = await LocationRepository.softDelete(db, ctx, id);
-        if (!deleted) throw notFound('Location not found');
+        if (!deleted) throw codedNotFound('LOCATION_NOT_FOUND', 'Location not found');
 
         await logEvent(db, ctx, {
             action: 'SOFT_DELETE',

@@ -76,7 +76,7 @@ export async function getTask(ctx: RequestContext, taskId: string) {
     assertCanReadTasks(ctx);
     return runInTenantContext(ctx, async (db) => {
         const task = await WorkItemRepository.getById(db, ctx, taskId);
-        if (!task) throw notFound('Task not found');
+        if (!task) throw codedNotFound('TASK_NOT_FOUND', 'Task not found');
         // Audit Coherence S8 (2026-05-24) — attach the derived SLA
         // status alongside the raw row. The service is pure (severity
         // + createdAt + currentStatus); no extra query, no schema
@@ -192,7 +192,7 @@ export async function updateTask(ctx: RequestContext, taskId: string, patch: {
             patch.description = sanitizePlainText(patch.description);
         }
         const task = await WorkItemRepository.update(db, ctx, taskId, patch);
-        if (!task) throw notFound('Task not found');
+        if (!task) throw codedNotFound('TASK_NOT_FOUND', 'Task not found');
         await logEvent(db, ctx, {
             action: 'TASK_UPDATED',
             entityType: 'Task',
@@ -220,7 +220,7 @@ export async function deleteTask(ctx: RequestContext, taskId: string) {
     assertCanWriteTasks(ctx);
     const result = await runInTenantContext(ctx, async (db) => {
         const existing = await WorkItemRepository.getById(db, ctx, taskId);
-        if (!existing) throw notFound('Task not found');
+        if (!existing) throw codedNotFound('TASK_NOT_FOUND', 'Task not found');
         await db.task.delete({ where: { id: taskId } });
         await logEvent(db, ctx, {
             action: 'TASK_DELETED',
@@ -375,7 +375,7 @@ export async function setTaskStatus(ctx: RequestContext, taskId: string, status:
         // Pre-fetch once so we can both validate + capture fromStatus
         // for the automation event.
         const existing = await WorkItemRepository.getById(db, ctx, taskId);
-        if (!existing) throw notFound('Task not found');
+        if (!existing) throw codedNotFound('TASK_NOT_FOUND', 'Task not found');
 
         // Authorization. Task-write permission is the general gate, BUT an
         // operator ASSIGNED to a task may change its status without general
@@ -426,7 +426,7 @@ export async function setTaskStatus(ctx: RequestContext, taskId: string, status:
         }
 
         const task = await WorkItemRepository.setStatus(db, ctx, taskId, status, resolution);
-        if (!task) throw notFound('Task not found');
+        if (!task) throw codedNotFound('TASK_NOT_FOUND', 'Task not found');
         await logEvent(db, ctx, {
             action: 'TASK_STATUS_CHANGED',
             entityType: 'Task',
@@ -468,7 +468,7 @@ export async function assignTask(ctx: RequestContext, taskId: string, assigneeUs
     assertCanWriteTasks(ctx);
     const result = await runInTenantContext(ctx, async (db) => {
         const task = await WorkItemRepository.assign(db, ctx, taskId, assigneeUserId);
-        if (!task) throw notFound('Task not found');
+        if (!task) throw codedNotFound('TASK_NOT_FOUND', 'Task not found');
         await logEvent(db, ctx, {
             action: 'TASK_ASSIGNED',
             entityType: 'Task',
@@ -808,7 +808,7 @@ export async function getTaskEvidenceTab(ctx: RequestContext, taskId: string) {
             where: { id: taskId, tenantId: ctx.tenantId },
             select: { id: true },
         });
-        if (!task) throw notFound('Task not found');
+        if (!task) throw codedNotFound('TASK_NOT_FOUND', 'Task not found');
         const evidence = await db.evidence.findMany({
             where: { taskId, tenantId: ctx.tenantId, deletedAt: null },
             orderBy: { createdAt: 'desc' },
@@ -836,7 +836,7 @@ export async function linkTaskEvidence(
             where: { id: taskId, tenantId: ctx.tenantId },
             select: { id: true },
         });
-        if (!task) throw notFound('Task not found');
+        if (!task) throw codedNotFound('TASK_NOT_FOUND', 'Task not found');
         const evidence = await db.evidence.create({
             data: {
                 tenantId: ctx.tenantId,
