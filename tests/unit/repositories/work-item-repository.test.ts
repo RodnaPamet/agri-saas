@@ -30,7 +30,6 @@ import {
     WorkItemRepository,
     TaskLinkRepository,
     TaskCommentRepository,
-    TaskWatcherRepository,
 } from '@/app-layer/repositories/WorkItemRepository';
 import { makeRequestContext } from '../../helpers/make-context';
 import { encodeCursor, MAX_LIMIT, DEFAULT_LIMIT, CURSOR_ORDER_BY } from '@/lib/pagination';
@@ -206,16 +205,19 @@ describe('WorkItemRepository — tenant isolation', () => {
         }
     });
 
-    it('scopes the link, comment and watcher listings to the tenant as well as the task', async () => {
+    it('scopes the link and comment listings to the tenant as well as the task', async () => {
         // Break: filtering by taskId alone. Task ids are opaque but not
         // secret; the tenant filter is what actually isolates.
+        //
+        // The watcher listing was a third subject here until #1717 deleted
+        // the repository as unreachable. The NAME moved with the body
+        // deliberately: a test called "link, comment and watcher" that checks
+        // two of the three is worse than one that checks two and says so.
         await TaskLinkRepository.listByTask(asTx(db), ctx, 't-1');
         await TaskCommentRepository.listByTask(asTx(db), ctx, 't-1');
-        await TaskWatcherRepository.listByTask(asTx(db), ctx, 't-1');
 
         expect(whereOf(db.taskLink.findMany)).toEqual({ taskId: 't-1', tenantId: 'tenant-1' });
         expect(whereOf(db.taskComment.findMany)).toEqual({ taskId: 't-1', tenantId: 'tenant-1' });
-        expect(whereOf(db.taskWatcher.findMany)).toEqual({ taskId: 't-1', tenantId: 'tenant-1' });
     });
 });
 
@@ -1103,44 +1105,5 @@ describe('TaskCommentRepository', () => {
         await TaskCommentRepository.listByTask(asTx(db), ctx, 't-1');
 
         expect(argOf(db.taskComment.findMany).orderBy).toEqual({ createdAt: 'asc' });
-    });
-});
-
-describe('TaskWatcherRepository', () => {
-    it('stamps the tenant on a new watcher row', async () => {
-        // Break: a tenant-less watcher row is invisible to RLS reads and
-        // silently stops the user's notifications.
-        await TaskWatcherRepository.add(asTx(db), ctx, 't-1', 'user-9');
-
-        expect(dataOf(db.taskWatcher.create)).toEqual({
-            tenantId: 'tenant-1',
-            taskId: 't-1',
-            userId: 'user-9',
-        });
-    });
-
-    it('refuses to remove a watcher outside the tenant', async () => {
-        // Break: the delete is keyed by the row id found above, so
-        // without the tenant-scoped lookup any watcher is removable.
-        db.taskWatcher.findFirst.mockResolvedValue(null);
-
-        const result = await TaskWatcherRepository.remove(asTx(db), ctx, 't-1', 'user-9');
-
-        expect(result).toBeNull();
-        expect(db.taskWatcher.delete).not.toHaveBeenCalled();
-        expect(db.taskWatcher.findFirst).toHaveBeenCalledWith({
-            where: { taskId: 't-1', userId: 'user-9', tenantId: 'tenant-1' },
-        });
-    });
-
-    it('removes the watcher row it actually found, by id', async () => {
-        // Break: deleting by `{ taskId, userId }` is not a unique key —
-        // Prisma rejects it, so unwatch would 500.
-        db.taskWatcher.findFirst.mockResolvedValue({ id: 'w-1' });
-
-        const result = await TaskWatcherRepository.remove(asTx(db), ctx, 't-1', 'user-9');
-
-        expect(result).toBe(true);
-        expect(db.taskWatcher.delete).toHaveBeenCalledWith({ where: { id: 'w-1' } });
     });
 });

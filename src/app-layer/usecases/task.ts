@@ -1,5 +1,5 @@
 import { RequestContext } from '../types';
-import { WorkItemRepository, TaskLinkRepository, TaskCommentRepository, TaskWatcherRepository, TaskFilters, TaskListParams } from '../repositories/WorkItemRepository';
+import { WorkItemRepository, TaskLinkRepository, TaskCommentRepository, TaskFilters, TaskListParams } from '../repositories/WorkItemRepository';
 import { ParcelRepository, type ParcelSummaryGeo } from '../repositories/ParcelRepository';
 import { assertCanReadTasks, assertCanWriteTasks, assertCanCommentOnTasks } from '../policies/task.policies';
 import { logEvent } from '../events/audit';
@@ -982,31 +982,6 @@ export async function addTaskComment(
     }
     await bumpEntityCacheVersion(ctx, 'task');
     return result;
-}
-
-// ─── Watchers ───
-
-export async function listTaskWatchers(ctx: RequestContext, taskId: string) {
-    assertCanReadTasks(ctx);
-    return runInTenantContext(ctx, (db) => TaskWatcherRepository.listByTask(db, ctx, taskId));
-}
-
-export async function addTaskWatcher(ctx: RequestContext, taskId: string, userId: string) {
-    assertCanWriteTasks(ctx);
-    const result = await runInTenantContext(ctx, (db) => TaskWatcherRepository.add(db, ctx, taskId, userId));
-    await bumpEntityCacheVersion(ctx, 'task');
-    return result;
-}
-
-export async function removeTaskWatcher(ctx: RequestContext, taskId: string, userId: string) {
-    assertCanWriteTasks(ctx);
-    const outcome = await runInTenantContext(ctx, async (db) => {
-        const result = await TaskWatcherRepository.remove(db, ctx, taskId, userId);
-        if (!result) throw notFound('Watcher not found');
-        return result;
-    });
-    await bumpEntityCacheVersion(ctx, 'task');
-    return outcome;
 }
 
 // ─── Metrics ───

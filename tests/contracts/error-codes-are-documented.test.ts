@@ -191,11 +191,15 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     // 247-248), so this is not a new gap — it is the same tracked one reached
     // from the code side instead of the route side.
     //
-    // A third sibling was NOT added, and the reason is worth recording:
-    // `removeTaskWatcher` throws `WATCHER_NOT_FOUND` and has **no caller
-    // anywhere** — no route, no test, nothing. Coding an unreachable throw
-    // would have put a code on this list that no client can ever receive, so
-    // that site stays uncoded and the dead usecase is filed separately.
+    // A third sibling was NOT added: `removeTaskWatcher` threw
+    // `WATCHER_NOT_FOUND` and had no caller anywhere — no route, no test.
+    // Coding an unreachable throw would have put a code on this list that no
+    // client can ever receive.
+    //
+    // RESOLVED by deletion (#1717, owner ruling): the usecase and its
+    // repository are gone, so there is no code to list and nothing to
+    // exempt. Kept because the rule generalises — an unreachable throw does
+    // not belong on a published error surface.
     // `ASSET_NOT_FOUND`, `MAINTENANCE_RECORD_NOT_FOUND`,
     // `ASSET_EVIDENCE_NOT_FOUND` and `ARTICLE_NOT_FOUND` are new as of #1712
     // batch 3, for the `COMPANY_NAME_TAKEN` reason above and at a larger

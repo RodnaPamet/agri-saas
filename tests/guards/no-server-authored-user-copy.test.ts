@@ -264,11 +264,14 @@ export function collectServerAuthoredCopy(root: string, dirs: string[] = ROOTS):
 // scan: a hand-rolled approximation of the same shape said 436, and the
 // balanced-argument exemption is the difference.
 //
-// 427, not 426: the twelfth site was reverted. `removeTaskWatcher` throws
-// `WATCHER_NOT_FOUND` and has NO caller anywhere — no route, no test — so
-// coding it would have added a code no client can receive. It stays uncoded
-// and counted here, which is the honest place for an unreachable English
-// string: still debt, just debt attached to dead code. Filed separately.
+// 427, not 426 at the time: the twelfth site was reverted, because
+// `removeTaskWatcher` threw `WATCHER_NOT_FOUND` and had NO caller anywhere.
+// Coding it would have added a code no client can receive.
+//
+// RESOLVED: the owner ruled to delete it (#1717), so the string is gone
+// rather than uncoded, and this baseline drops by one with it. The
+// paragraph stays because the REASONING outlived the code: an unreachable
+// English string belongs in this count, not in an exemption.
 //
 // ── 427 → 408 ────────────────────────────────────────────────────────────
 //
@@ -289,7 +292,13 @@ export function collectServerAuthoredCopy(root: string, dirs: string[] = ROOTS):
 // `yield-record` (3). Four new codes, and the FIRST batch whose codes are
 // DOCUMENTED rather than baselined: `grain` has 15 paths in the spec and
 // `inventory` 6, so there were operations to name them on. Refs #1712 batch 5.
-const CURRENT_BASELINE = 377;
+
+//
+// ── 377 → 376 ──────────────────────────────────────────────────────
+//
+// The dead watcher usecases deleted (#1717), taking
+// `notFound('Watcher not found')` with them.
+const CURRENT_BASELINE = 376;
 
 /** Slack tolerated before the sentinel demands the baseline be lowered. */
 const DRIFT_ALLOWANCE = 15;
