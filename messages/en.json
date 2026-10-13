@@ -6403,6 +6403,14 @@
         "signOut": "Sign out"
     },
     "errors": {
+        "EVIDENCE_DELETED": "That evidence has been deleted.",
+        "EVIDENCE_FILE_DELETED": "That evidence file has been deleted.",
+        "EVIDENCE_FILE_NOT_DOWNLOADABLE": "That evidence file is not available for download.",
+        "EVIDENCE_FILE_NOT_FOUND": "That evidence file was not found.",
+        "EVIDENCE_NOT_FOUND": "That evidence was not found.",
+        "FILE_DELETED": "That file has been deleted.",
+        "FILE_NOT_DOWNLOADABLE": "That file is not available for download.",
+        "FILE_NOT_FOUND": "That file was not found.",
         "ARTICLE_NOT_FOUND": "That article was not found.",
         "ASSET_EVIDENCE_NOT_FOUND": "That asset evidence was not found.",
         "ASSET_NOT_FOUND": "That asset was not found.",

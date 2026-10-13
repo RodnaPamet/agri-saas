@@ -214,7 +214,27 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     // half lands here regardless: the phone shows the server's `message` for a
     // code its own table lacks, so these 19 sites go from English to Bulgarian
     // on the next request, documented or not.
+    // The evidence family — #1712 batch 4 — joins the batch-3 block above for
+    // the same reason: `evidence` has 0 paths in the spec and 18 on
+    // `openapi-undocumented-baseline.json`, and there is no
+    // `evidence.paths.ts` to name a code on.
+    //
+    // Three of them are STATE, not absence: `*_DELETED` and
+    // `*_NOT_DOWNLOADABLE` answer 404 today because that is what the throw
+    // site chose. Giving them codes is what lets a client say "this was
+    // deleted" rather than "no such thing" — which is the distinction #1662's
+    // ledger exists to carry — WITHOUT changing a status code under a client
+    // that already handles 404. The status question is separate and not
+    // smuggled in here.
     'ACCOUNT_HAS_NO_EMAIL',
+    'EVIDENCE_DELETED',
+    'EVIDENCE_FILE_DELETED',
+    'EVIDENCE_FILE_NOT_DOWNLOADABLE',
+    'EVIDENCE_FILE_NOT_FOUND',
+    'EVIDENCE_NOT_FOUND',
+    'FILE_DELETED',
+    'FILE_NOT_DOWNLOADABLE',
+    'FILE_NOT_FOUND',
     'ARTICLE_NOT_FOUND',
     'ASSET_EVIDENCE_NOT_FOUND',
     'ASSET_NOT_FOUND',
