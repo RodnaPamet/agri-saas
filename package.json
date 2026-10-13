@@ -57,6 +57,7 @@
         "smoke:staging": "node scripts/smoke-staging.mjs",
         "smoke:prod": "node scripts/smoke-prod.mjs",
         "openapi:generate": "tsx scripts/generate-openapi.ts",
+        "errors:inventory": "tsx scripts/generate-error-codes.ts",
         "preflight:fanout": "tsx scripts/count-fanout-encrypted.ts",
         "routes:inventory": "tsx scripts/generate-route-inventory.ts",
         "tokens:generate": "node scripts/generate-tokens.mjs",

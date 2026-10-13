@@ -1,0 +1,5804 @@
+{
+  "_README": [
+    "Which error codes each path template can return. APPEND-ONLY.",
+    "",
+    "OVER-APPROXIMATION: a route is credited with every code reachable through",
+    "its transitive local imports, NOT with the codes its own control flow can",
+    "produce. Use this to answer \"which codes must I have copy for\" — a",
+    "superset is the safe answer to that. Do NOT use it to predict what a",
+    "given call will return.",
+    "",
+    "The generator ADDS and never retires. A code that stops being emitted",
+    "stays here and fails the guard until a human moves it to `retiredCodes`",
+    "with a reason. See scripts/generate-error-codes.ts.",
+    "",
+    "An EMPTY `codes` array means the route does not speak this error envelope",
+    "at all — NOT that it cannot fail. The 16 such paths are liveness probes",
+    "(/health, /livez, /readyz, /metrics), machine endpoints (stripe and AV",
+    "webhooks, csp-report), /auth/verify-email which REDIRECTS rather than",
+    "answering, and the SCIM surface, which returns RFC 7644 `scimError`",
+    "objects with their own `scimType` instead of `error.code`. A client must",
+    "not read [] as \"no error handling needed here\"."
+  ],
+  "routes": [
+    {
+      "path": "/api/account/avatar",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/account/avatar/{userId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FILE_EMPTY",
+        "FILE_TOO_LARGE",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/account/bottom-tabs",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "INVALID_TAB_ORDER",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/account/deletion",
+      "codes": [
+        "ACCOUNT_ALREADY_ERASED",
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/account/export",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/account/language",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/account/profile",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/admin/agri-events",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/admin/agri-events/{id}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/admin/diagnostics",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/admin/farm-claims",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "INVALID_LIMIT",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/admin/farm-claims/{claimId}/dispute",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/admin/farm-claims/{claimId}/verify",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/admin/feature-flags",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "NOT_FOUND",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/admin/feature-flags/cohorts",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/admin/key-rotation",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/admin/key-rotation/repair-v2",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/admin/lookup-rehash",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/admin/moderation/notices",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_TERMINATED",
+        "INVALID_LIMIT",
+        "SUSPEND_TARGET_REQUIRED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/admin/moderation/statements",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_TERMINATED",
+        "INVALID_LIMIT",
+        "SUSPEND_TARGET_REQUIRED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/admin/moderation/suspensions",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/admin/news-derived-events",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "NOT_FOUND",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/admin/news-derived-events/{id}/approve",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "NOT_FOUND",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/admin/news-derived-events/{id}/reject",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "NOT_FOUND",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/admin/support-schemes",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "NOT_FOUND",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/admin/support-schemes/{id}/review",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "NOT_FOUND",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/admin/tenants",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/admin/tenants/{slug}/transfer-ownership",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/agro/data-streams/{streamId}/ingest",
+      "codes": [
+        "FORBIDDEN",
+        "LOCATION_NOT_FOUND",
+        "NOT_FOUND",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/audit-log",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/auth/accept-terms",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/auth/change-password",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/auth/forgot-password",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/auth/logout",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/auth/me",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "NOT_FOUND",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/auth/native/adopt",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/auth/native/apple",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "MFA_ENROLLMENT_REQUIRED",
+        "MFA_REQUIRED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/auth/native/complete",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/auth/native/exchange",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/auth/native/mfa",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "MFA_CODE_INVALID",
+        "MFA_CODE_MALFORMED",
+        "MFA_TICKET_INVALID",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/auth/native/revoke",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/auth/native/start",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/auth/register/start",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/auth/register/verify",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/auth/reset-password",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/auth/sso/oidc/callback",
+      "codes": [
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/auth/sso/oidc/start",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "NOT_FOUND",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/auth/sso/saml/callback",
+      "codes": [
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/auth/sso/saml/start",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "NOT_FOUND",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/auth/terms",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/auth/token",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/auth/token/refresh",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/auth/ui-config",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "NOT_FOUND",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/auth/verify-email",
+      "codes": []
+    },
+    {
+      "path": "/api/auth/verify-email/resend",
+      "codes": []
+    },
+    {
+      "path": "/api/docs",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/docs/assets/{asset}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/evidence",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FILE_TOO_LARGE",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FILE_VALIDATION_ERROR",
+        "FORBIDDEN",
+        "INVALID_ASSET",
+        "INVALID_TASK",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/evidence/{id}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FILE_TOO_LARGE",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FILE_VALIDATION_ERROR",
+        "FORBIDDEN",
+        "INVALID_ASSET",
+        "INVALID_TASK",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/evidence/{id}/review",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FILE_TOO_LARGE",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FILE_VALIDATION_ERROR",
+        "FORBIDDEN",
+        "INVALID_ASSET",
+        "INVALID_TASK",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/health",
+      "codes": []
+    },
+    {
+      "path": "/api/integrations/sharepoint/callback",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FILE_TOO_LARGE",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FILE_VALIDATION_ERROR",
+        "FORBIDDEN",
+        "INVALID_ASSET",
+        "INVALID_TASK",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/integrations/webhooks/{provider}",
+      "codes": []
+    },
+    {
+      "path": "/api/invites/{token}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/invites/{token}/accept-redirect",
+      "codes": [
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/invites/{token}/start-signin",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/livez",
+      "codes": []
+    },
+    {
+      "path": "/api/me/farms",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_HAS_NO_EMAIL",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "EIK_INVALID",
+        "EIK_LOOKS_LIKE_EGN",
+        "FARM_NAME_NOT_SLUGGABLE",
+        "FARM_NAME_REQUIRED",
+        "FARM_NAME_TOO_LONG",
+        "FARM_SLUG_UNAVAILABLE",
+        "FORBIDDEN",
+        "INVALID_FARM_PAYLOAD",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/me/news-preferences",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "INVALID_NEWS_PREFERENCES",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/metrics",
+      "codes": []
+    },
+    {
+      "path": "/api/notifications",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/notifications/stream",
+      "codes": [
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/notifications/{id}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/offline/whoami",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/openapi",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/org",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "FORBIDDEN",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/org/invite/{token}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/org/invite/{token}/accept-redirect",
+      "codes": [
+        "ACCOUNT_SUSPENDED",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/org/invite/{token}/start-signin",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/org/{orgSlug}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/org/{orgSlug}/audit-log",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/org/{orgSlug}/dashboard/widgets",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/org/{orgSlug}/dashboard/widgets/{widgetId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/org/{orgSlug}/invites",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/org/{orgSlug}/invites/{inviteId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/org/{orgSlug}/members",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/org/{orgSlug}/portfolio",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/org/{orgSlug}/portfolio/export",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/org/{orgSlug}/tenants",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/org/{orgSlug}/tenants/{tenantId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/promotions/{id}/image",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "FILE_EMPTY",
+        "FILE_TOO_LARGE",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/public/eik-check",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/public/notices",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/readyz",
+      "codes": []
+    },
+    {
+      "path": "/api/scim/v2/Groups",
+      "codes": []
+    },
+    {
+      "path": "/api/scim/v2/Groups/{id}",
+      "codes": []
+    },
+    {
+      "path": "/api/scim/v2/ServiceProviderConfig",
+      "codes": []
+    },
+    {
+      "path": "/api/scim/v2/Users",
+      "codes": []
+    },
+    {
+      "path": "/api/scim/v2/Users/{id}",
+      "codes": []
+    },
+    {
+      "path": "/api/security/csp-report",
+      "codes": []
+    },
+    {
+      "path": "/api/social/blocks",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "BLOCK_NOT_FOUND",
+        "BLOCK_SELF",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/social/reports",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/sso",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/staging/seed",
+      "codes": []
+    },
+    {
+      "path": "/api/storage/av-webhook",
+      "codes": []
+    },
+    {
+      "path": "/api/stripe/webhook",
+      "codes": []
+    },
+    {
+      "path": "/api/t/{tenantSlug}/access-reviews",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/access-reviews/{reviewId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/access-reviews/{reviewId}/close",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/access-reviews/{reviewId}/decisions/{decisionId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/access-reviews/{reviewId}/evidence",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/api-keys",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_FAMILY_NOT_ENABLED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "API_KEY_WRONG_SURFACE",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/api-keys/bulk/delete",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_FAMILY_NOT_ENABLED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "API_KEY_WRONG_SURFACE",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/api-keys/{keyId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_FAMILY_NOT_ENABLED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "API_KEY_WRONG_SURFACE",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/companies",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "COMPANY_NAME_TAKEN",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PROMOTION_LEAD_ALREADY_SENT",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/companies/{id}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "COMPANY_NAME_TAKEN",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PROMOTION_LEAD_ALREADY_SENT",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/farm-profile",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FARM_PROFILE_EIK_NOT_EDITABLE",
+        "FORBIDDEN",
+        "IF_MATCH_EMPTY",
+        "IF_MATCH_MALFORMED",
+        "IF_MATCH_WEAK_TAG",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/integrations",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/integrations/diagnostics",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/integrations/sharepoint",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/integrations/sharepoint/connect",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FILE_TOO_LARGE",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FILE_VALIDATION_ERROR",
+        "FORBIDDEN",
+        "INVALID_ASSET",
+        "INVALID_TASK",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/integrations/sharepoint/sites",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/integrations/sharepoint/test",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FILE_TOO_LARGE",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FILE_VALIDATION_ERROR",
+        "FORBIDDEN",
+        "INVALID_ASSET",
+        "INVALID_TASK",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/invites",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/invites/bulk/delete",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/invites/{inviteId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/key-rotation",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/ledger-reconciliation",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/market-prices",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/market-prices/overrides",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/market-prices/overrides/{commodity}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "DUPLICATE_COMMODITY",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "OVERRIDE_DENOMINATION_CHANGED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/members",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/members/bulk/delete",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/members/bulk/remove",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/members/{membershipId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "NO_CHANGES_SPECIFIED",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/members/{membershipId}/certificates",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/members/{membershipId}/deactivate",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/members/{membershipId}/reactivate",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/modules",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/promotions",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "COMPANY_NAME_TAKEN",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PROMOTION_LEAD_ALREADY_SENT",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/promotions/{id}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/promotions/{id}/image",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/roles",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/roles/bulk/delete",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/roles/{roleId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/rotate-dek",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/scim",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/sessions",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/settings",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/tenant-dek-rotation",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/agro/data-streams",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "LOCATION_NOT_FOUND",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/agro/data-streams/{streamId}/readings",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "LOCATION_NOT_FOUND",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/agro/locations/{locationId}/evi-tiles",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "LOCATION_NOT_FOUND",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/agro/locations/{locationId}/gndvi-tiles",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "LOCATION_NOT_FOUND",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/agro/locations/{locationId}/ndmi-tiles",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "LOCATION_NOT_FOUND",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/agro/locations/{locationId}/ndre-tiles",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "LOCATION_NOT_FOUND",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/agro/locations/{locationId}/ndvi-tiles",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "LOCATION_NOT_FOUND",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/agro/parcels/{parcelId}/analysis",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCEL_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/agro/parcels/{parcelId}/crop-seasons",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "CROP_SEASON_NOT_FOUND",
+        "CROP_SEASON_YEAR_INVALID",
+        "CROP_TYPE_INVALID",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOTES_TOO_LONG",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCEL_NOT_FOUND",
+        "PARCEL_NOT_ON_TASK",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR",
+        "WEEDS_REQUIRED",
+        "WEED_ENTRIES_TOO_MANY",
+        "WEED_NAME_TOO_LONG",
+        "WEED_OBSERVATION_NOT_FOUND"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/agro/parcels/{parcelId}/crop-seasons/{seasonId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "CROP_SEASON_NOT_FOUND",
+        "CROP_SEASON_YEAR_INVALID",
+        "CROP_TYPE_INVALID",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOTES_TOO_LONG",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCEL_NOT_FOUND",
+        "PARCEL_NOT_ON_TASK",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR",
+        "WEEDS_REQUIRED",
+        "WEED_ENTRIES_TOO_MANY",
+        "WEED_NAME_TOO_LONG",
+        "WEED_OBSERVATION_NOT_FOUND"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/agro/parcels/{parcelId}/history",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "CROP_SEASON_NOT_FOUND",
+        "CROP_SEASON_YEAR_INVALID",
+        "CROP_TYPE_INVALID",
+        "FORBIDDEN",
+        "INVALID_LIMIT",
+        "MFA_REQUIRED",
+        "NOTES_TOO_LONG",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCEL_NOT_FOUND",
+        "PARCEL_NOT_ON_TASK",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR",
+        "WEEDS_REQUIRED",
+        "WEED_ENTRIES_TOO_MANY",
+        "WEED_NAME_TOO_LONG",
+        "WEED_OBSERVATION_NOT_FOUND"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/agro/parcels/{parcelId}/weed-observations",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "CROP_SEASON_NOT_FOUND",
+        "CROP_SEASON_YEAR_INVALID",
+        "CROP_TYPE_INVALID",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOTES_TOO_LONG",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCEL_NOT_FOUND",
+        "PARCEL_NOT_ON_TASK",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR",
+        "WEEDS_REQUIRED",
+        "WEED_ENTRIES_TOO_MANY",
+        "WEED_NAME_TOO_LONG",
+        "WEED_OBSERVATION_NOT_FOUND"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/agro/parcels/{parcelId}/weed-observations/{observationId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "CROP_SEASON_NOT_FOUND",
+        "CROP_SEASON_YEAR_INVALID",
+        "CROP_TYPE_INVALID",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOTES_TOO_LONG",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCEL_NOT_FOUND",
+        "PARCEL_NOT_ON_TASK",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR",
+        "WEEDS_REQUIRED",
+        "WEED_ENTRIES_TOO_MANY",
+        "WEED_NAME_TOO_LONG",
+        "WEED_OBSERVATION_NOT_FOUND"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/ai/automation-suggestions",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/ai/copilot",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_BUDGET_EXCEEDED",
+        "AI_BUDGET_REQUIRES_VERIFIED_FARM",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/assets",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "INVALID_LIMIT",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/assets/bulk/delete",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/assets/kpi",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "INVALID_LIMIT",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/assets/{id}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/assets/{id}/activity",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/assets/{id}/evidence/attached",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/assets/{id}/evidence/attached/{evidenceId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/assets/{id}/maintenance",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/assets/{id}/maintenance/{maintenanceId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/assets/{id}/purge",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/assets/{id}/restore",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/audit-log",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/audit-log/verify",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/automation/analytics",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/automation/executions/live",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/automation/executions/{id}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/automation/rules",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/automation/rules/{id}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/automation/rules/{id}/dry-run",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/automation/rules/{id}/executions",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/automation/rules/{id}/re-trigger",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/automation/templates",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/billing/checkout",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "BILLING_UNAVAILABLE",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/billing/events",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "INVALID_LIMIT",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/billing/portal",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "BILLING_UNAVAILABLE",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/cadastre/config",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/cadastre/parcels",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "INVALID_BBOX",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/cadastre/parcels/config",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/cadastre/wms/{z}/{x}/{y}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/calendar",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/calendar/upcoming-count",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/climate/meteobot",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/costs/machinery",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/dashboard/ag",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "CROP_PLAN_NOT_READY",
+        "FILE_TOO_LARGE",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FORBIDDEN",
+        "INVALID_CROP_TYPE",
+        "INVALID_EQUIPMENT",
+        "INVALID_FARM_TASK_TYPE",
+        "INVALID_FILE",
+        "INVALID_LINK",
+        "INVALID_LOCATION",
+        "INVALID_PARCEL",
+        "INVALID_PLANTING",
+        "INVALID_SEASON",
+        "INVALID_VARIETY",
+        "JOURNAL_ENTRY_NOT_DELETED",
+        "JOURNAL_ENTRY_NOT_FOUND",
+        "JOURNAL_ENTRY_NOT_SOFT_DELETED",
+        "JOURNAL_FILE_LINK_NOT_FOUND",
+        "JOURNAL_TITLE_REQUIRED",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCEL_LOCATION_MISMATCH",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/dashboard/task-trend",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "INVALID_FARM_TASK_TYPE",
+        "INVALID_LINK",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/dashboard/trends",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/equipment",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FILE_TOO_LARGE",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FILE_VALIDATION_ERROR",
+        "FORBIDDEN",
+        "INVALID_ASSET",
+        "INVALID_LIMIT",
+        "INVALID_TASK",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/bulk/delete",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FILE_TOO_LARGE",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FILE_VALIDATION_ERROR",
+        "FORBIDDEN",
+        "INVALID_ASSET",
+        "INVALID_TASK",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/files/{fileId}/download",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FILE_TOO_LARGE",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FILE_VALIDATION_ERROR",
+        "FORBIDDEN",
+        "INVALID_ASSET",
+        "INVALID_TASK",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/imports",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/imports/{jobId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/metrics",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FILE_TOO_LARGE",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FILE_VALIDATION_ERROR",
+        "FORBIDDEN",
+        "INVALID_ASSET",
+        "INVALID_TASK",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/retention/expired",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/retention/expiring",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/retention/metrics",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/retention/sweep",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/uploads",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FILE_TOO_LARGE",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FILE_VALIDATION_ERROR",
+        "FORBIDDEN",
+        "INVALID_ASSET",
+        "INVALID_TASK",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/{id}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FILE_TOO_LARGE",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FILE_VALIDATION_ERROR",
+        "FORBIDDEN",
+        "INVALID_ASSET",
+        "INVALID_TASK",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/{id}/archive",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/{id}/purge",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FILE_TOO_LARGE",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FILE_VALIDATION_ERROR",
+        "FORBIDDEN",
+        "INVALID_ASSET",
+        "INVALID_TASK",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/{id}/restore",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FILE_TOO_LARGE",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FILE_VALIDATION_ERROR",
+        "FORBIDDEN",
+        "INVALID_ASSET",
+        "INVALID_TASK",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/{id}/retention",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/{id}/review",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FILE_TOO_LARGE",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FILE_VALIDATION_ERROR",
+        "FORBIDDEN",
+        "INVALID_ASSET",
+        "INVALID_TASK",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/evidence/{id}/unarchive",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/exchange/inquiries",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/exchange/inquiries/{inquiryId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "LISTING_INTEREST_ALREADY_SENT",
+        "LISTING_NOT_FOUND",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/exchange/listings",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "INVALID_LIMIT",
+        "LISTING_INTEREST_ALREADY_SENT",
+        "LISTING_NOT_FOUND",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/exchange/listings/{listingId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "LISTING_INTEREST_ALREADY_SENT",
+        "LISTING_NOT_FOUND",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/exchange/listings/{listingId}/thread",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "BLOCK_SELLER_ONLY",
+        "FORBIDDEN",
+        "LISTING_NOT_FOUND",
+        "MESSAGE_EMPTY",
+        "MESSAGE_NOT_FOUND",
+        "MESSAGE_NOT_SENDER",
+        "MESSAGE_TOO_LONG",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "THREAD_BLOCKED",
+        "THREAD_NOT_A_PARTY",
+        "THREAD_NOT_FOUND",
+        "THREAD_OWN_LISTING",
+        "THREAD_PERSON_BLOCKED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/exchange/messages/{messageId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "BLOCK_SELLER_ONLY",
+        "FORBIDDEN",
+        "LISTING_NOT_FOUND",
+        "MESSAGE_EMPTY",
+        "MESSAGE_NOT_FOUND",
+        "MESSAGE_NOT_SENDER",
+        "MESSAGE_TOO_LONG",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "THREAD_BLOCKED",
+        "THREAD_NOT_A_PARTY",
+        "THREAD_NOT_FOUND",
+        "THREAD_OWN_LISTING",
+        "THREAD_PERSON_BLOCKED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/exchange/my-listings",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "LISTING_INTEREST_ALREADY_SENT",
+        "LISTING_NOT_FOUND",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/exchange/threads",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "BLOCK_SELLER_ONLY",
+        "FORBIDDEN",
+        "INVALID_LIMIT",
+        "LISTING_NOT_FOUND",
+        "MESSAGE_EMPTY",
+        "MESSAGE_NOT_FOUND",
+        "MESSAGE_NOT_SENDER",
+        "MESSAGE_TOO_LONG",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "THREAD_BLOCKED",
+        "THREAD_NOT_A_PARTY",
+        "THREAD_NOT_FOUND",
+        "THREAD_OWN_LISTING",
+        "THREAD_PERSON_BLOCKED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/exchange/threads/{threadId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "BLOCK_SELLER_ONLY",
+        "FORBIDDEN",
+        "INVALID_LIMIT",
+        "LISTING_NOT_FOUND",
+        "MESSAGE_EMPTY",
+        "MESSAGE_NOT_FOUND",
+        "MESSAGE_NOT_SENDER",
+        "MESSAGE_TOO_LONG",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "THREAD_BLOCKED",
+        "THREAD_NOT_A_PARTY",
+        "THREAD_NOT_FOUND",
+        "THREAD_OWN_LISTING",
+        "THREAD_PERSON_BLOCKED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/exchange/threads/{threadId}/block",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "BLOCK_SELLER_ONLY",
+        "FORBIDDEN",
+        "LISTING_NOT_FOUND",
+        "MESSAGE_EMPTY",
+        "MESSAGE_NOT_FOUND",
+        "MESSAGE_NOT_SENDER",
+        "MESSAGE_TOO_LONG",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "THREAD_BLOCKED",
+        "THREAD_NOT_A_PARTY",
+        "THREAD_NOT_FOUND",
+        "THREAD_OWN_LISTING",
+        "THREAD_PERSON_BLOCKED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/exchange/threads/{threadId}/close",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "BLOCK_SELLER_ONLY",
+        "FORBIDDEN",
+        "LISTING_NOT_FOUND",
+        "MESSAGE_EMPTY",
+        "MESSAGE_NOT_FOUND",
+        "MESSAGE_NOT_SENDER",
+        "MESSAGE_TOO_LONG",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "THREAD_BLOCKED",
+        "THREAD_NOT_A_PARTY",
+        "THREAD_NOT_FOUND",
+        "THREAD_OWN_LISTING",
+        "THREAD_PERSON_BLOCKED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/exchange/threads/{threadId}/messages",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "BLOCK_SELLER_ONLY",
+        "FORBIDDEN",
+        "LISTING_NOT_FOUND",
+        "MESSAGE_EMPTY",
+        "MESSAGE_NOT_FOUND",
+        "MESSAGE_NOT_SENDER",
+        "MESSAGE_TOO_LONG",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "THREAD_BLOCKED",
+        "THREAD_NOT_A_PARTY",
+        "THREAD_NOT_FOUND",
+        "THREAD_OWN_LISTING",
+        "THREAD_PERSON_BLOCKED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/exchange/threads/{threadId}/read",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "BLOCK_SELLER_ONLY",
+        "FORBIDDEN",
+        "LISTING_NOT_FOUND",
+        "MESSAGE_EMPTY",
+        "MESSAGE_NOT_FOUND",
+        "MESSAGE_NOT_SENDER",
+        "MESSAGE_TOO_LONG",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "THREAD_BLOCKED",
+        "THREAD_NOT_A_PARTY",
+        "THREAD_NOT_FOUND",
+        "THREAD_OWN_LISTING",
+        "THREAD_PERSON_BLOCKED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/farm-tasks",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "INVALID_FARM_TASK_TYPE",
+        "INVALID_LIMIT",
+        "INVALID_LINK",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/field-operations/{taskId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "DOSE_UNIT_HAS_NO_BASE",
+        "DOSE_UNIT_NOT_FOUND",
+        "FERTILIZER_DOSE_REQUIRED",
+        "FERTILIZER_EXPECTED",
+        "FIELD_OPERATION_NOT_FOUND",
+        "FORBIDDEN",
+        "INVALID_REVIEW_ACTION",
+        "ITEM_NAME_ALREADY_EXISTS",
+        "LOCATION_NOT_FOUND",
+        "MFA_REQUIRED",
+        "NOT_A_FIELD_OPERATION_TASK",
+        "NOT_FOUND",
+        "OPERATION_INPUT_AMBIGUOUS",
+        "OPERATION_NOT_ASSIGNED_TO_YOU",
+        "OPERATION_PARCEL_NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCELS_NOT_IN_LOCATION",
+        "PESTICIDE_REGULATORY_FIELDS_REQUIRED",
+        "PRODUCT_DOSE_REQUIRED",
+        "PRODUCT_IS_SAMPLE_ARCHETYPE",
+        "PRODUCT_NAME_REQUIRED",
+        "TASK_NOT_AWAITING_REVIEW",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR",
+        "WATER_RATE_UNIT_NOT_FOUND",
+        "WATER_RATE_UNIT_REQUIRED"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/field-operations/{taskId}/parcels/{lineId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "DOSE_UNIT_HAS_NO_BASE",
+        "DOSE_UNIT_NOT_FOUND",
+        "FERTILIZER_DOSE_REQUIRED",
+        "FERTILIZER_EXPECTED",
+        "FIELD_OPERATION_NOT_FOUND",
+        "FORBIDDEN",
+        "IF_MATCH_EMPTY",
+        "IF_MATCH_MALFORMED",
+        "IF_MATCH_WEAK_TAG",
+        "INVALID_REVIEW_ACTION",
+        "ITEM_NAME_ALREADY_EXISTS",
+        "LOCATION_NOT_FOUND",
+        "MFA_REQUIRED",
+        "NOT_A_FIELD_OPERATION_TASK",
+        "NOT_FOUND",
+        "OPERATION_INPUT_AMBIGUOUS",
+        "OPERATION_NOT_ASSIGNED_TO_YOU",
+        "OPERATION_PARCEL_NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCELS_NOT_IN_LOCATION",
+        "PESTICIDE_REGULATORY_FIELDS_REQUIRED",
+        "PRODUCT_DOSE_REQUIRED",
+        "PRODUCT_IS_SAMPLE_ARCHETYPE",
+        "PRODUCT_NAME_REQUIRED",
+        "TASK_NOT_AWAITING_REVIEW",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR",
+        "WATER_RATE_UNIT_NOT_FOUND",
+        "WATER_RATE_UNIT_REQUIRED"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/field-operations/{taskId}/review",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "DOSE_UNIT_HAS_NO_BASE",
+        "DOSE_UNIT_NOT_FOUND",
+        "FERTILIZER_DOSE_REQUIRED",
+        "FERTILIZER_EXPECTED",
+        "FIELD_OPERATION_NOT_FOUND",
+        "FORBIDDEN",
+        "INVALID_REVIEW_ACTION",
+        "ITEM_NAME_ALREADY_EXISTS",
+        "LOCATION_NOT_FOUND",
+        "MFA_REQUIRED",
+        "NOT_A_FIELD_OPERATION_TASK",
+        "NOT_FOUND",
+        "OPERATION_INPUT_AMBIGUOUS",
+        "OPERATION_NOT_ASSIGNED_TO_YOU",
+        "OPERATION_PARCEL_NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCELS_NOT_IN_LOCATION",
+        "PESTICIDE_REGULATORY_FIELDS_REQUIRED",
+        "PRODUCT_DOSE_REQUIRED",
+        "PRODUCT_IS_SAMPLE_ARCHETYPE",
+        "PRODUCT_NAME_REQUIRED",
+        "TASK_NOT_AWAITING_REVIEW",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR",
+        "WATER_RATE_UNIT_NOT_FOUND",
+        "WATER_RATE_UNIT_REQUIRED"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/files/{fileName}/verify",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/grain/bins",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/grain/bins/{binId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/grain/blend",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/grain/calculator",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "DUPLICATE_COMMODITY",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "OVERRIDE_DENOMINATION_CHANGED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/grain/contracts",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "DUPLICATE_COMMODITY",
+        "FORBIDDEN",
+        "INVALID_LIMIT",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "OVERRIDE_DENOMINATION_CHANGED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/grain/contracts/{contractId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "DUPLICATE_COMMODITY",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "OVERRIDE_DENOMINATION_CHANGED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/grain/contracts/{contractId}/deliveries",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/grain/costs",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "COMMODITY_NOT_APPLICABLE",
+        "CROP_COST_HAS_SPATIAL_LINK",
+        "CROP_COST_NEEDS_COMMODITY",
+        "FILE_EMPTY",
+        "FILE_TOO_LARGE",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PAYROLL_BREAKDOWN_INCOMPLETE",
+        "PAYROLL_BREAKDOWN_NOT_APPLICABLE",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/grain/costs/batch",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "COMMODITY_NOT_APPLICABLE",
+        "CROP_COST_HAS_SPATIAL_LINK",
+        "CROP_COST_NEEDS_COMMODITY",
+        "FILE_EMPTY",
+        "FILE_TOO_LARGE",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PAYROLL_BREAKDOWN_INCOMPLETE",
+        "PAYROLL_BREAKDOWN_NOT_APPLICABLE",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/grain/costs/defaults",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "UNKNOWN_COMMODITY",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/grain/costs/{costEntryId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/grain/costs/{costEntryId}/invoice",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "COMMODITY_NOT_APPLICABLE",
+        "CROP_COST_HAS_SPATIAL_LINK",
+        "CROP_COST_NEEDS_COMMODITY",
+        "FILE_EMPTY",
+        "FILE_TOO_LARGE",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PAYROLL_BREAKDOWN_INCOMPLETE",
+        "PAYROLL_BREAKDOWN_NOT_APPLICABLE",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/grain/deliveries/{deliveryId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/grain/yield-records",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "INVALID_LIMIT",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/grain/yield-records/{yieldRecordId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/insurance/leads",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "IDEMPOTENCY_KEY_INVALID",
+        "INSURANCE_PRODUCT_UNKNOWN",
+        "INSURANCE_QUOTE_INVALID",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/insurance/products",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "INSURANCE_PRODUCT_UNKNOWN",
+        "INSURANCE_QUOTE_INVALID",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/integrations/sharepoint/browse",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FILE_TOO_LARGE",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FILE_VALIDATION_ERROR",
+        "FORBIDDEN",
+        "INVALID_ASSET",
+        "INVALID_TASK",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/integrations/sharepoint/connections",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FILE_TOO_LARGE",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FILE_VALIDATION_ERROR",
+        "FORBIDDEN",
+        "INVALID_ASSET",
+        "INVALID_TASK",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/integrations/sharepoint/health",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FILE_TOO_LARGE",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FILE_VALIDATION_ERROR",
+        "FORBIDDEN",
+        "INVALID_ASSET",
+        "INVALID_TASK",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/integrations/sharepoint/import",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FILE_TOO_LARGE",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FILE_VALIDATION_ERROR",
+        "FORBIDDEN",
+        "INVALID_ASSET",
+        "INVALID_TASK",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/integrations/sharepoint/sites",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FILE_TOO_LARGE",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FILE_VALIDATION_ERROR",
+        "FORBIDDEN",
+        "INVALID_ASSET",
+        "INVALID_TASK",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/integrations/sharepoint/sync",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/inventory/lots",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/inventory/lots/{lotId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/inventory/lots/{lotId}/adjust",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/inventory/lots/{lotId}/ledger",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/inventory/lots/{lotId}/receive",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/inventory/lots/{lotId}/trace",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/items",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "ITEM_NAME_ALREADY_EXISTS",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PESTICIDE_REGULATORY_FIELDS_REQUIRED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/items/{itemId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "ITEM_NAME_ALREADY_EXISTS",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PESTICIDE_REGULATORY_FIELDS_REQUIRED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/journal",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "CROP_PLAN_NOT_READY",
+        "FILE_TOO_LARGE",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FORBIDDEN",
+        "INVALID_CROP_TYPE",
+        "INVALID_EQUIPMENT",
+        "INVALID_FILE",
+        "INVALID_LIMIT",
+        "INVALID_LOCATION",
+        "INVALID_PARCEL",
+        "INVALID_PLANTING",
+        "INVALID_SEASON",
+        "INVALID_VARIETY",
+        "JOURNAL_ENTRY_NOT_DELETED",
+        "JOURNAL_ENTRY_NOT_FOUND",
+        "JOURNAL_ENTRY_NOT_SOFT_DELETED",
+        "JOURNAL_FILE_LINK_NOT_FOUND",
+        "JOURNAL_TITLE_REQUIRED",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCEL_LOCATION_MISMATCH",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/journal/{id}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "CROP_PLAN_NOT_READY",
+        "FILE_TOO_LARGE",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FORBIDDEN",
+        "IF_MATCH_EMPTY",
+        "IF_MATCH_MALFORMED",
+        "IF_MATCH_WEAK_TAG",
+        "INVALID_CROP_TYPE",
+        "INVALID_EQUIPMENT",
+        "INVALID_FILE",
+        "INVALID_LOCATION",
+        "INVALID_PARCEL",
+        "INVALID_PLANTING",
+        "INVALID_SEASON",
+        "INVALID_VARIETY",
+        "JOURNAL_ENTRY_NOT_DELETED",
+        "JOURNAL_ENTRY_NOT_FOUND",
+        "JOURNAL_ENTRY_NOT_SOFT_DELETED",
+        "JOURNAL_FILE_LINK_NOT_FOUND",
+        "JOURNAL_TITLE_REQUIRED",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCEL_LOCATION_MISMATCH",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/journal/{id}/files",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/journal/{id}/purge",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "CROP_PLAN_NOT_READY",
+        "FILE_TOO_LARGE",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FORBIDDEN",
+        "INVALID_CROP_TYPE",
+        "INVALID_EQUIPMENT",
+        "INVALID_FILE",
+        "INVALID_LOCATION",
+        "INVALID_PARCEL",
+        "INVALID_PLANTING",
+        "INVALID_SEASON",
+        "INVALID_VARIETY",
+        "JOURNAL_ENTRY_NOT_DELETED",
+        "JOURNAL_ENTRY_NOT_FOUND",
+        "JOURNAL_ENTRY_NOT_SOFT_DELETED",
+        "JOURNAL_FILE_LINK_NOT_FOUND",
+        "JOURNAL_TITLE_REQUIRED",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCEL_LOCATION_MISMATCH",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/journal/{id}/restore",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "CROP_PLAN_NOT_READY",
+        "FILE_TOO_LARGE",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FORBIDDEN",
+        "INVALID_CROP_TYPE",
+        "INVALID_EQUIPMENT",
+        "INVALID_FILE",
+        "INVALID_LOCATION",
+        "INVALID_PARCEL",
+        "INVALID_PLANTING",
+        "INVALID_SEASON",
+        "INVALID_VARIETY",
+        "JOURNAL_ENTRY_NOT_DELETED",
+        "JOURNAL_ENTRY_NOT_FOUND",
+        "JOURNAL_ENTRY_NOT_SOFT_DELETED",
+        "JOURNAL_FILE_LINK_NOT_FOUND",
+        "JOURNAL_TITLE_REQUIRED",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCEL_LOCATION_MISMATCH",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/knowledge",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "INVALID_LIMIT",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/knowledge/ask",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_BUDGET_EXCEEDED",
+        "AI_BUDGET_REQUIRES_VERIFIED_FARM",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/knowledge/categories",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/knowledge/satellite-guide",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/knowledge/{id}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/knowledge/{id}/acknowledge",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/knowledge/{id}/archive",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/knowledge/{id}/publish",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/knowledge/{id}/unarchive",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/knowledge/{id}/versions",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/leases",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCEL_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/leases/parcel-options",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCEL_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/leases/{leaseId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCEL_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/leases/{leaseId}/payments",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/leases/{leaseId}/payments/{paymentId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "LOCATION_NOT_FOUND",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/bulk/delete",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "LOCATION_NOT_FOUND",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "LOCATION_NOT_FOUND",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/basemap/{z}/{x}/{y}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "LOCATION_NOT_FOUND",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/cadastre-import",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "IDENTIFIERS_REQUIRED",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/cadastre-import/{jobId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/farm-record",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/farm-records",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/operations",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "DOSE_UNIT_HAS_NO_BASE",
+        "DOSE_UNIT_NOT_FOUND",
+        "FERTILIZER_DOSE_REQUIRED",
+        "FERTILIZER_EXPECTED",
+        "FIELD_OPERATION_NOT_FOUND",
+        "FORBIDDEN",
+        "INVALID_REVIEW_ACTION",
+        "ITEM_NAME_ALREADY_EXISTS",
+        "LOCATION_NOT_FOUND",
+        "MFA_REQUIRED",
+        "NOT_A_FIELD_OPERATION_TASK",
+        "NOT_FOUND",
+        "OPERATION_INPUT_AMBIGUOUS",
+        "OPERATION_NOT_ASSIGNED_TO_YOU",
+        "OPERATION_PARCEL_NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCELS_NOT_IN_LOCATION",
+        "PESTICIDE_REGULATORY_FIELDS_REQUIRED",
+        "PRODUCT_DOSE_REQUIRED",
+        "PRODUCT_IS_SAMPLE_ARCHETYPE",
+        "PRODUCT_NAME_REQUIRED",
+        "TASK_NOT_AWAITING_REVIEW",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR",
+        "WATER_RATE_UNIT_NOT_FOUND",
+        "WATER_RATE_UNIT_REQUIRED"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/parcel-clusters",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/parcels",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "LOCATION_NOT_FOUND",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCEL_NOT_FOUND",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/parcels/merge",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "LOCATION_NOT_FOUND",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCEL_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/parcels/{parcelId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "LOCATION_NOT_FOUND",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCEL_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/parcels/{parcelId}/leases",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCEL_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/parcels/{parcelId}/leases/{leaseId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCEL_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/parcels/{parcelId}/split",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "LOCATION_NOT_FOUND",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCEL_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/smart-defaults",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/spatial-import",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FILE_EMPTY",
+        "FILE_REQUIRED",
+        "FORBIDDEN",
+        "LOCATION_NOT_FOUND",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "UNSUPPORTED_FILE_TYPE",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/spatial-import/{jobId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "IMPORT_JOB_NOT_FOUND",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/locations/{id}/tiles/{z}/{x}/{y}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "LOCATION_NOT_FOUND",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/me/interests",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/notification-settings",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/notification-settings/run-job",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/notifications",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/notifications/{id}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/offers/leads",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PROMOTION_LEAD_ALREADY_SENT",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/onboarding/finish",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/onboarding/metrics",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/onboarding/restart",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/onboarding/start",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/onboarding/state",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/onboarding/step",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/planning/crop-plans",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "CROP_PLAN_NOT_READY",
+        "FORBIDDEN",
+        "INVALID_CROP_TYPE",
+        "INVALID_LIMIT",
+        "INVALID_PARCEL",
+        "INVALID_SEASON",
+        "INVALID_VARIETY",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCEL_LOCATION_MISMATCH",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/planning/crop-plans/{cropPlanId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "CROP_PLAN_NOT_READY",
+        "FORBIDDEN",
+        "INVALID_CROP_TYPE",
+        "INVALID_PARCEL",
+        "INVALID_SEASON",
+        "INVALID_VARIETY",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCEL_LOCATION_MISMATCH",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/planning/crop-plans/{cropPlanId}/generate",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "CROP_PLAN_NOT_READY",
+        "FORBIDDEN",
+        "INVALID_CROP_TYPE",
+        "INVALID_PARCEL",
+        "INVALID_SEASON",
+        "INVALID_VARIETY",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCEL_LOCATION_MISMATCH",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/planning/crop-types",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "CROP_PLAN_NOT_READY",
+        "FORBIDDEN",
+        "INVALID_CROP_TYPE",
+        "INVALID_PARCEL",
+        "INVALID_SEASON",
+        "INVALID_VARIETY",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCEL_LOCATION_MISMATCH",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/planning/crop-varieties",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "CROP_PLAN_NOT_READY",
+        "FORBIDDEN",
+        "INVALID_CROP_TYPE",
+        "INVALID_PARCEL",
+        "INVALID_SEASON",
+        "INVALID_VARIETY",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCEL_LOCATION_MISMATCH",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/planning/plantings",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "CROP_PLAN_NOT_READY",
+        "FORBIDDEN",
+        "INVALID_CROP_TYPE",
+        "INVALID_PARCEL",
+        "INVALID_SEASON",
+        "INVALID_VARIETY",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCEL_LOCATION_MISMATCH",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/planning/plantings/{plantingId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "CROP_PLAN_NOT_READY",
+        "FORBIDDEN",
+        "INVALID_CROP_TYPE",
+        "INVALID_PARCEL",
+        "INVALID_SEASON",
+        "INVALID_VARIETY",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCEL_LOCATION_MISMATCH",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/planning/plantings/{plantingId}/gdd",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/planning/plantings/{plantingId}/soil",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/planning/seasons",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "CROP_PLAN_NOT_READY",
+        "FORBIDDEN",
+        "INVALID_CROP_TYPE",
+        "INVALID_PARCEL",
+        "INVALID_SEASON",
+        "INVALID_VARIETY",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCEL_LOCATION_MISMATCH",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/planning/seasons/{seasonId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "CROP_PLAN_NOT_READY",
+        "FORBIDDEN",
+        "INVALID_CROP_TYPE",
+        "INVALID_PARCEL",
+        "INVALID_SEASON",
+        "INVALID_VARIETY",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCEL_LOCATION_MISMATCH",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/processes",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "MODULE_DISABLED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/processes/governance-graph",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/processes/{id}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/processes/{id}/export-automation",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/processes/{id}/export-pdf",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/processes/{id}/snapshots",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/processes/{id}/snapshots/{version}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/processes/{id}/snapshots/{version}/restore",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/push-subscriptions",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/reports/field-briefing",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_BUDGET_EXCEEDED",
+        "AI_BUDGET_REQUIRES_VERIFIED_FARM",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "CROP_PLAN_NOT_READY",
+        "FILE_TOO_LARGE",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FORBIDDEN",
+        "INVALID_CROP_TYPE",
+        "INVALID_EQUIPMENT",
+        "INVALID_FARM_TASK_TYPE",
+        "INVALID_FILE",
+        "INVALID_LINK",
+        "INVALID_LOCATION",
+        "INVALID_PARCEL",
+        "INVALID_PLANTING",
+        "INVALID_SEASON",
+        "INVALID_VARIETY",
+        "JOURNAL_ENTRY_NOT_DELETED",
+        "JOURNAL_ENTRY_NOT_FOUND",
+        "JOURNAL_ENTRY_NOT_SOFT_DELETED",
+        "JOURNAL_FILE_LINK_NOT_FOUND",
+        "JOURNAL_TITLE_REQUIRED",
+        "LOCATION_NOT_FOUND",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCEL_LOCATION_MISMATCH",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/reports/rent-roll",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/reports/season-diary",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "DOSE_UNIT_HAS_NO_BASE",
+        "DOSE_UNIT_NOT_FOUND",
+        "FERTILIZER_DOSE_REQUIRED",
+        "FERTILIZER_EXPECTED",
+        "FIELD_OPERATION_NOT_FOUND",
+        "FORBIDDEN",
+        "INVALID_REVIEW_ACTION",
+        "ITEM_NAME_ALREADY_EXISTS",
+        "LOCATION_NOT_FOUND",
+        "MFA_REQUIRED",
+        "NOT_A_FIELD_OPERATION_TASK",
+        "NOT_FOUND",
+        "OPERATION_INPUT_AMBIGUOUS",
+        "OPERATION_NOT_ASSIGNED_TO_YOU",
+        "OPERATION_PARCEL_NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCELS_NOT_IN_LOCATION",
+        "PESTICIDE_REGULATORY_FIELDS_REQUIRED",
+        "PRODUCT_DOSE_REQUIRED",
+        "PRODUCT_IS_SAMPLE_ARCHETYPE",
+        "PRODUCT_NAME_REQUIRED",
+        "TASK_NOT_AWAITING_REVIEW",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR",
+        "WATER_RATE_UNIT_NOT_FOUND",
+        "WATER_RATE_UNIT_REQUIRED"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/reports/season-recap",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/reports/year-on-farm",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/sample-data",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/schemes",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/search",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/security/mfa/challenge/verify",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/security/mfa/enroll",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/security/mfa/enroll/start",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/security/mfa/enroll/verify",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/security/mfa/policy",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/security/sessions/revoke-all",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/security/sessions/revoke-current",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/security/sessions/revoke-user",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/soil/legend",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/soil/wms/{z}/{x}/{y}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/sso",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/sso/entra",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/sso/entra/group-mappings",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/sso/entra/group-mappings/{mappingId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks/bulk/assign",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks/bulk/delete",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks/bulk/due",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks/bulk/status",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks/metrics",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks/{taskId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks/{taskId}/activity",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks/{taskId}/assign",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks/{taskId}/comments",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks/{taskId}/evidence",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks/{taskId}/evidence/{evidenceId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks/{taskId}/links",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks/{taskId}/links/{linkId}",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks/{taskId}/parcels",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks/{taskId}/status",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/tasks/{taskId}/weed-observations",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "CROP_SEASON_NOT_FOUND",
+        "CROP_SEASON_YEAR_INVALID",
+        "CROP_TYPE_INVALID",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOTES_TOO_LONG",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PARCEL_NOT_FOUND",
+        "PARCEL_NOT_ON_TASK",
+        "TASK_NOT_FOUND",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR",
+        "WEEDS_REQUIRED",
+        "WEED_ENTRIES_TOO_MANY",
+        "WEED_NAME_TOO_LONG",
+        "WEED_OBSERVATION_NOT_FOUND"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/trends/news",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "DUPLICATE_COMMODITY",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "OVERRIDE_DENOMINATION_CHANGED",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/trends/news/tags",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/trends/prices",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "DUPLICATE_COMMODITY",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "OVERRIDE_DENOMINATION_CHANGED",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/units",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "ITEM_NAME_ALREADY_EXISTS",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PESTICIDE_REGULATORY_FIELDS_REQUIRED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    },
+    {
+      "path": "/api/t/{tenantSlug}/users/assignable",
+      "codes": [
+        "ACCOUNT_DELETION_PENDING",
+        "ACCOUNT_SUSPENDED",
+        "AI_TIER_NOT_ALLOWED",
+        "API_KEY_NOT_PERSON_SCOPED",
+        "FORBIDDEN",
+        "MFA_REQUIRED",
+        "NOT_FOUND",
+        "OPERATOR_SCOPE",
+        "PAST_DUE_RESTRICTED",
+        "PLAN_LIMIT_EXCEEDED",
+        "UNAUTHORIZED",
+        "VALIDATION_ERROR"
+      ]
+    }
+  ]
+}
