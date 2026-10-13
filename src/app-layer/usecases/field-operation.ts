@@ -689,7 +689,7 @@ export async function markOperationParcel(
      * completed from a task in Задачи stays hidden from the journal list,
      * exactly as the 2026-10-10 ruling intends.
      */
-    opts?: { recordedInDiary?: boolean },
+    opts?: { recordedInDiary?: boolean; occurredAt?: Date },
 ) {
     return traceAgUsecase('field-operation.markOperationParcel', ctx, () =>
         markOperationParcelImpl(ctx, taskId, lineId, status, note, expectedVersion, opts),
@@ -703,7 +703,7 @@ async function markOperationParcelImpl(
     status: ParcelStatus,
     note?: string | null,
     expectedVersion?: number,
-    opts?: { recordedInDiary?: boolean },
+    opts?: { recordedInDiary?: boolean; occurredAt?: Date },
 ) {
     const result = await runInTenantContext(ctx, async (db) => {
         const line = await db.operationParcel.findFirst({
@@ -809,7 +809,14 @@ async function markOperationParcelImpl(
             },
             data: {
                 status,
-                completedAt: status === 'PENDING' ? null : new Date(),
+                // `opts.occurredAt` is the treatment's own day for a backdated
+                // diary record (#1740); `new Date()` is right for an operator
+                // marking a line in the field today. A line stamped with the
+                // save time rather than the treatment's day disagrees with
+                // the journal entry it emits, and the БАБХ register joins the
+                // two.
+                completedAt:
+                    status === 'PENDING' ? null : (opts?.occurredAt ?? new Date()),
                 completedByUserId: status === 'PENDING' ? null : ctx.userId,
                 ...(note !== undefined ? { targetNote: note } : {}),
                 // Every mutation bumps the version so the NEXT reader/replayer
@@ -894,6 +901,7 @@ async function markOperationParcelImpl(
                 doseValue: line.doseValue,
                 doseUnitId: line.doseUnitId,
                 recordedInDiary: opts?.recordedInDiary ?? false,
+                ...(opts?.occurredAt ? { occurredAt: opts.occurredAt } : {}),
             });
 
             // БАБХ farm-record completion snapshot: freeze the applicator's
