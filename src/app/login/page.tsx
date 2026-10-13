@@ -57,6 +57,27 @@ function LoginForm() {
             ? verifyStatusParam
             : null;
     const t = useTranslations('login');
+    /**
+     * Is Sign in with Apple actually available? (#1673)
+     *
+     * Asked rather than assumed, which is what separates this button from its
+     * two neighbours. Google and Microsoft are hardcoded because their
+     * credentials have always been present; Apple's four `APPLE_*` variables
+     * are genuinely optional, and `src/auth.ts` registers the provider ONLY
+     * when `mintAppleClientSecret()` succeeds AND `APPLE_SERVICES_ID` is set.
+     *
+     * Resolved from the `getProviders()` call the effect below ALREADY makes —
+     * NextAuth's own list of what it registered, so it reflects exactly what
+     * will work rather than what the env hints at. Folded in rather than given
+     * its own fetch: this page's docblock records that an async provider
+     * lookup used to push the card upward on load, and a second request would
+     * reintroduce that for one button.
+     *
+     * Defaults to false, so a failed lookup HIDES it. A sign-in option that
+     * cannot complete is worse than one that is absent, and the other two
+     * remain either way.
+     */
+    const [appleAvailable, setAppleAvailable] = useState(false);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [name, setName] = useState('');
@@ -103,6 +124,13 @@ function LoginForm() {
             if (typeof uiConfig?.registrationOpen === 'boolean') {
                 setRegistrationOpen(uiConfig.registrationOpen);
             }
+            // BEFORE the early return below, for the reason the comment
+            // above gives about `registrationOpen`: the credentials-hidden
+            // branch exits, and production HAS it set — so reading this after
+            // the return would hide the Apple button on exactly the
+            // deployment where sign-in is OAuth-only (#1673).
+            setAppleAvailable(Boolean(providers?.apple));
+
             if (uiConfig?.credentialsFormHidden === true) {
                 setCredentialsEnabled(false);
                 return;
@@ -305,6 +333,41 @@ function LoginForm() {
                                     <rect x="11" y="11" width="9" height="9" fill="#FFB900" />
                                 </svg>
                             </Button>
+                            {/* Apple (#1673). Rendered only when the provider
+                                is registered — see `appleAvailable` above.
+
+                                This button did not exist, and that was the
+                                whole of the bug: `/api/auth/providers` listed
+                                `apple` once the four variables were set, the
+                                callback URL was accepted by Apple, and no user
+                                could reach any of it because the login page
+                                hardcodes its provider list.
+
+                                It matters more than one missing option. An iOS
+                                user who signed in with Hide My Email has a
+                                `@privaterelay.appleid.com` address that no
+                                other provider can match, so Apple on web is
+                                their ONLY route to their account from a
+                                browser.
+
+                                The mark is `currentColor`, not a brand colour:
+                                Apple's guidelines require the logo in black or
+                                white, so it follows the theme rather than
+                                fighting it. */}
+                            {appleAvailable ? (
+                                <Button
+                                    type="button"
+                                    variant="secondary"
+                                    onClick={() => handleOAuthSignIn('apple')}
+                                    disabled={loading}
+                                    className="w-full"
+                                >
+                                    {t('continueWithApple')}
+                                    <svg className="w-5 h-5" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+                                        <path d="M17.05 12.73c-.02-2.2 1.8-3.26 1.88-3.31-1.02-1.5-2.61-1.7-3.18-1.73-1.35-.14-2.64.79-3.33.79-.69 0-1.75-.77-2.87-.75-1.48.02-2.84.86-3.6 2.18-1.54 2.66-.39 6.6 1.1 8.76.73 1.06 1.6 2.25 2.74 2.21 1.1-.05 1.52-.71 2.85-.71 1.33 0 1.7.71 2.86.69 1.18-.02 1.93-1.08 2.65-2.14.84-1.23 1.18-2.42 1.2-2.48-.03-.01-2.3-.88-2.32-3.51zM14.88 5.9c.61-.74 1.02-1.77.91-2.8-.88.04-1.94.59-2.57 1.32-.56.65-1.05 1.7-.92 2.7.98.08 1.98-.5 2.58-1.22z" />
+                                    </svg>
+                                </Button>
+                            ) : null}
                         </div>
                     )}
 
