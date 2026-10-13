@@ -6403,6 +6403,10 @@
         "signOut": "Изход"
     },
     "errors": {
+        "ARTICLE_NOT_FOUND": "Статията не беше намерена.",
+        "ASSET_EVIDENCE_NOT_FOUND": "Доказателството към актива не беше намерено.",
+        "ASSET_NOT_FOUND": "Активът не беше намерен.",
+        "MAINTENANCE_RECORD_NOT_FOUND": "Записът за поддръжка не беше намерен.",
         "CROP_PLAN_NOT_FOUND": "Планът за културата не беше намерен.",
         "LEASE_NOT_FOUND": "Договорът за наем не беше намерен.",
         "PLANTING_NOT_FOUND": "Посевът не беше намерен.",

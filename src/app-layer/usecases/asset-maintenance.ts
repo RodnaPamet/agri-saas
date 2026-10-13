@@ -3,7 +3,7 @@ import { AssetMaintenanceRepository } from '../repositories/AssetMaintenanceRepo
 import { AssetRepository } from '../repositories/AssetRepository';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { badRequest, codedNotFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import type { AssetMaintenanceKind } from '@prisma/client';
@@ -55,7 +55,7 @@ export async function listAssetMaintenance(ctx: RequestContext, assetId: string)
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
         const asset = await AssetRepository.getById(db, ctx, assetId);
-        if (!asset) throw notFound('Asset not found');
+        if (!asset) throw codedNotFound('ASSET_NOT_FOUND', 'That asset was not found.');
         return AssetMaintenanceRepository.listForAsset(db, ctx, assetId);
     });
 }
@@ -68,7 +68,7 @@ export async function createAssetMaintenance(
     assertCanWrite(ctx);
     return runInTenantContext(ctx, async (db) => {
         const asset = await AssetRepository.getById(db, ctx, assetId);
-        if (!asset) throw notFound('Asset not found');
+        if (!asset) throw codedNotFound('ASSET_NOT_FOUND', 'That asset was not found.');
 
         const record = await AssetMaintenanceRepository.create(db, ctx, {
             assetId,
@@ -114,7 +114,7 @@ export async function closeAssetMaintenance(
     assertCanWrite(ctx);
     return runInTenantContext(ctx, async (db) => {
         const existing = await AssetMaintenanceRepository.getById(db, ctx, maintenanceId);
-        if (!existing || existing.assetId !== assetId) throw notFound('Maintenance record not found');
+        if (!existing || existing.assetId !== assetId) throw codedNotFound('MAINTENANCE_RECORD_NOT_FOUND', 'That maintenance record was not found.');
         if (existing.closedAt) throw badRequest('Maintenance record is already closed');
 
         const record = await AssetMaintenanceRepository.update(db, ctx, maintenanceId, {
@@ -155,7 +155,7 @@ export async function deleteAssetMaintenance(
     assertCanWrite(ctx);
     return runInTenantContext(ctx, async (db) => {
         const existing = await AssetMaintenanceRepository.getById(db, ctx, maintenanceId);
-        if (!existing || existing.assetId !== assetId) throw notFound('Maintenance record not found');
+        if (!existing || existing.assetId !== assetId) throw codedNotFound('MAINTENANCE_RECORD_NOT_FOUND', 'That maintenance record was not found.');
 
         await AssetMaintenanceRepository.delete(db, ctx, maintenanceId);
         await logEvent(db, ctx, {

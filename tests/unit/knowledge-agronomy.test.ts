@@ -292,11 +292,15 @@ describe('GLOBAL (tenantId null) articles reject every tenant-facing write', () 
         await expect(acknowledgeArticle(ctx, 'art-global')).rejects.toThrow(/platform-authored and read-only/);
     });
 
+    // On the CODE, not the message. These asserted the English text, which
+    // #1712 changed when it gave the throw a code — and the message is now
+    // localised copy the phone may never show, while the code is the
+    // contract both clients switch on.
     it('a bogus id still gets the plain notFound error, not the Forbidden one', async () => {
         mockGetById.mockResolvedValue(null);
-        await expect(updateArticleMetadata(ctx, 'does-not-exist', { title: 'x' })).rejects.toThrow(
-            'Article not found',
-        );
+        await expect(updateArticleMetadata(ctx, 'does-not-exist', { title: 'x' })).rejects.toMatchObject({
+            code: 'ARTICLE_NOT_FOUND',
+        });
     });
 });
 

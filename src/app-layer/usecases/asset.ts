@@ -4,7 +4,7 @@ import { WorkItemRepository } from '../repositories/WorkItemRepository';
 import type { TaskLinkEntityType } from '@prisma/client';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
-import { notFound } from '@/lib/errors/types';
+import { codedNotFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
@@ -63,7 +63,7 @@ export async function getAsset(ctx: RequestContext, id: string) {
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
         const asset = await AssetRepository.getById(db, ctx, id);
-        if (!asset) throw notFound('Asset not found');
+        if (!asset) throw codedNotFound('ASSET_NOT_FOUND', 'That asset was not found.');
         return asset;
     });
 }
@@ -150,7 +150,7 @@ export async function updateAsset(ctx: RequestContext, id: string, data: any) {
                 data.usefulLifeYears === undefined ? undefined : data.usefulLifeYears || null,
         });
 
-        if (!asset) throw notFound('Asset not found');
+        if (!asset) throw codedNotFound('ASSET_NOT_FOUND', 'That asset was not found.');
 
         await logEvent(db, ctx, {
             action: 'UPDATE',
@@ -204,7 +204,7 @@ export async function deleteAsset(ctx: RequestContext, id: string) {
 
     return runInTenantContext(ctx, async (db) => {
         const deleted = await AssetRepository.delete(db, ctx, id);
-        if (!deleted) throw notFound('Asset not found');
+        if (!deleted) throw codedNotFound('ASSET_NOT_FOUND', 'That asset was not found.');
 
         await logEvent(db, ctx, {
             action: 'SOFT_DELETE',
@@ -297,7 +297,7 @@ export async function getAssetActivity(ctx: RequestContext, assetId: string) {
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
         const asset = await AssetRepository.getById(db, ctx, assetId);
-        if (!asset) throw notFound('Asset not found');
+        if (!asset) throw codedNotFound('ASSET_NOT_FOUND', 'That asset was not found.');
         return db.auditLog.findMany({
             where: { tenantId: ctx.tenantId, entity: 'Asset', entityId: assetId },
             orderBy: { createdAt: 'desc' },
@@ -324,7 +324,7 @@ export async function getAssetEvidenceTab(ctx: RequestContext, assetId: string) 
             where: { id: assetId, tenantId: ctx.tenantId },
             select: { id: true },
         });
-        if (!asset) throw notFound('Asset not found');
+        if (!asset) throw codedNotFound('ASSET_NOT_FOUND', 'That asset was not found.');
         const evidence = await db.evidence.findMany({
             where: { assetId, tenantId: ctx.tenantId, deletedAt: null },
             orderBy: { createdAt: 'desc' },
@@ -347,7 +347,7 @@ export async function linkAssetEvidence(
             where: { id: assetId, tenantId: ctx.tenantId },
             select: { id: true },
         });
-        if (!asset) throw notFound('Asset not found');
+        if (!asset) throw codedNotFound('ASSET_NOT_FOUND', 'That asset was not found.');
         const evidence = await db.evidence.create({
             data: {
                 tenantId: ctx.tenantId,
@@ -384,7 +384,7 @@ export async function unlinkAssetEvidence(
             where: { id: evidenceId, assetId, tenantId: ctx.tenantId },
             select: { id: true },
         });
-        if (!evidence) throw notFound('Asset evidence not found');
+        if (!evidence) throw codedNotFound('ASSET_EVIDENCE_NOT_FOUND', 'That asset evidence was not found.');
         await db.evidence.update({
             where: { id: evidenceId },
             data: { assetId: null },

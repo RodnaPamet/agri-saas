@@ -124,9 +124,13 @@ describe('asset reads', () => {
         await expect(getAsset(readerCtx, 'a-1')).resolves.toEqual({ id: 'a-1' });
     });
 
+    // On the CODE, not the message. These asserted the English text, which
+    // #1712 changed when it gave the throw a code — and the message is now
+    // localised copy the phone may never show, while the code is the
+    // contract both clients switch on.
     it('getAsset throws notFound on miss', async () => {
         (AssetRepository.getById as jest.Mock).mockResolvedValue(null);
-        await expect(getAsset(readerCtx, 'missing')).rejects.toThrow(/Asset not found/i);
+        await expect(getAsset(readerCtx, 'missing')).rejects.toMatchObject({ code: 'ASSET_NOT_FOUND' });
     });
 });
 
@@ -200,7 +204,7 @@ describe('updateAsset — three-state ownerUserId', () => {
     it('throws notFound when the asset does not exist', async () => {
         (AssetRepository.getById as jest.Mock).mockResolvedValue(null);
         (AssetRepository.update as jest.Mock).mockResolvedValue(null);
-        await expect(updateAsset(editorCtx, 'missing', { name: 'X' })).rejects.toThrow(/Asset not found/i);
+        await expect(updateAsset(editorCtx, 'missing', { name: 'X' })).rejects.toMatchObject({ code: 'ASSET_NOT_FOUND' });
     });
 
     it('rejects READER', async () => {
@@ -261,7 +265,7 @@ describe('deleteAsset', () => {
 
     it('throws notFound when missing', async () => {
         (AssetRepository.delete as jest.Mock).mockResolvedValue(null);
-        await expect(deleteAsset(adminCtx, 'missing')).rejects.toThrow(/Asset not found/i);
+        await expect(deleteAsset(adminCtx, 'missing')).rejects.toMatchObject({ code: 'ASSET_NOT_FOUND' });
     });
 
     it('rejects EDITOR (admin gate)', async () => {
@@ -316,7 +320,7 @@ describe('getAssetEvidenceTab', () => {
 
     it('throws notFound when the asset is missing (no evidence query fires)', async () => {
         (mockDb.asset.findFirst as jest.Mock).mockResolvedValue(null);
-        await expect(getAssetEvidenceTab(readerCtx, 'missing')).rejects.toThrow(/Asset not found/i);
+        await expect(getAssetEvidenceTab(readerCtx, 'missing')).rejects.toMatchObject({ code: 'ASSET_NOT_FOUND' });
         expect(mockDb.evidence.findMany).not.toHaveBeenCalled();
     });
 });
@@ -349,7 +353,7 @@ describe('linkAssetEvidence', () => {
 
     it('throws notFound when the asset does not exist', async () => {
         (mockDb.asset.findFirst as jest.Mock).mockResolvedValue(null);
-        await expect(linkAssetEvidence(editorCtx, 'missing', { url: 'x' })).rejects.toThrow(/Asset not found/i);
+        await expect(linkAssetEvidence(editorCtx, 'missing', { url: 'x' })).rejects.toMatchObject({ code: 'ASSET_NOT_FOUND' });
     });
 
     it('rejects READER', async () => {
@@ -373,7 +377,7 @@ describe('unlinkAssetEvidence', () => {
 
     it('throws notFound when the asset-evidence join row is missing', async () => {
         (mockDb.evidence.findFirst as jest.Mock).mockResolvedValue(null);
-        await expect(unlinkAssetEvidence(editorCtx, 'a-1', 'missing')).rejects.toThrow(/Asset evidence not found/i);
+        await expect(unlinkAssetEvidence(editorCtx, 'a-1', 'missing')).rejects.toMatchObject({ code: 'ASSET_EVIDENCE_NOT_FOUND' });
         expect(mockDb.evidence.update).not.toHaveBeenCalled();
     });
 
