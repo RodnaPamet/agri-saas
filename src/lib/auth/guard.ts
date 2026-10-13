@@ -174,6 +174,24 @@ const PUBLIC_PATH_PREFIXES = [
     // would open every future neighbour under it by accident, and this is the
     // only route there that has been argued for.
     '/api/public/eik-check',
+    // P5.2 — the anonymous DSA Art 16 notice form (#1745). Spelled in full for
+    // the reason above: `/api/public/` as a prefix would open every future
+    // neighbour by accident.
+    //
+    // **This was missing and the route 401'd for seven weeks.** Art 16 requires
+    // a mechanism ANY person or entity can use to notify illegal content, so
+    // an account requirement is an account requirement on exercising a right —
+    // and the Edge calls `getToken()`, which understands only a NextAuth
+    // cookie, so every anonymous notice was refused before the handler ran.
+    // Measured on production: `POST /api/public/notices` → 401, three times.
+    //
+    // The eighth instance of the Epic C.1a/b/c class, and the one that shows
+    // why the rule is TWO halves: the handler side was argued for carefully in
+    // `public-routes-self-authenticate.test.ts` ("anonymous by design, and by
+    // LEGAL DUTY"), and that argument is about the handler. Nothing asked
+    // whether the Edge agreed. `public-route-exemptions-are-edge-reachable`
+    // now joins the two lists.
+    '/api/public/notices',
     '/privacy',          // Privacy notice — MUST be readable without an account:
                          // the promotions consent box links to it before a
                          // request is submitted, and a prospective user has to
