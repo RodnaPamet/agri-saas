@@ -6,10 +6,12 @@ import { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { codedNotFound, codedBadRequest } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import {
     checkContractTransition,
+    contractTransitionErrorCode,
+    contractTransitionErrorParams,
     formatContractTransitionError,
 } from '../domain/contract-status';
 import { aggregateDeliveredTonnes, deriveFulfilment } from './grain-delivery';
@@ -116,7 +118,7 @@ function buildSearchWhere(q: string): Prisma.ContractWhereInput {
 function parseDate(value: string | null | undefined, label: string): Date | null {
     if (value == null) return null;
     const d = new Date(value);
-    if (Number.isNaN(d.getTime())) throw badRequest(`${label} must be a valid date`);
+    if (Number.isNaN(d.getTime())) throw codedBadRequest('CONTRACT_INVALID_DATE', `${label} must be a valid date`, { field: label });
     return d;
 }
 
@@ -257,7 +259,7 @@ export async function getContract(ctx: RequestContext, id: string) {
             where: { id, tenantId: ctx.tenantId, deletedAt: null },
             include: { season: { select: { id: true, name: true, status: true } } },
         });
-        if (!contract) throw notFound('Contract not found');
+        if (!contract) throw codedNotFound('CONTRACT_NOT_FOUND', 'Contract not found');
         return contract;
     });
 }
@@ -269,7 +271,7 @@ export async function createContract(ctx: RequestContext, input: CreateContractI
     // all-whitespace counterparty would otherwise pass the required check
     // and persist as a blank row title.
     const counterparty = sanitizePlainText(input.counterparty ?? '').trim();
-    if (!counterparty) throw badRequest('Contract counterparty is required');
+    if (!counterparty) throw codedBadRequest('CONTRACT_COUNTERPARTY_REQUIRED', 'Contract counterparty is required');
 
     // `key` is on a [tenantId, key] unique index — an empty string is not
     // a key, so normalise it to null (multiple key-less contracts are
@@ -283,15 +285,15 @@ export async function createContract(ctx: RequestContext, input: CreateContractI
     const pricingNotes = input.pricingNotes != null ? sanitizePlainText(input.pricingNotes) : null;
 
     if (input.volumeTonnes != null && input.volumeTonnes < 0) {
-        throw badRequest('Contract volume must be zero or positive');
+        throw codedBadRequest('CONTRACT_VOLUME_NEGATIVE', 'Contract volume must be zero or positive');
     }
     if (input.pricePerTonne != null && input.pricePerTonne < 0) {
-        throw badRequest('Contract price per tonne must be zero or positive');
+        throw codedBadRequest('CONTRACT_PRICE_NEGATIVE', 'Contract price per tonne must be zero or positive');
     }
     const deliveryStart = parseDate(input.deliveryStart, 'Delivery start');
     const deliveryEnd = parseDate(input.deliveryEnd, 'Delivery end');
     if (deliveryStart && deliveryEnd && deliveryEnd < deliveryStart) {
-        throw badRequest('Delivery end must be on or after the delivery start');
+        throw codedBadRequest('CONTRACT_DELIVERY_WINDOW_INVERTED', 'Delivery end must be on or after the delivery start');
     }
 
     return runInTenantContext(ctx, async (db) => {
@@ -300,7 +302,7 @@ export async function createContract(ctx: RequestContext, input: CreateContractI
                 where: { id: input.seasonId, tenantId: ctx.tenantId, deletedAt: null },
                 select: { id: true },
             });
-            if (!season) throw badRequest('Season not found or belongs to a different tenant');
+            if (!season) throw codedBadRequest('CONTRACT_SEASON_NOT_IN_TENANT', 'Season not found or belongs to a different tenant');
         }
 
         const contract = await db.contract.create({
@@ -350,7 +352,7 @@ export async function updateContract(ctx: RequestContext, id: string, input: Upd
     const data: Prisma.ContractUncheckedUpdateInput = {};
     if (input.counterparty !== undefined) {
         const counterparty = sanitizePlainText(input.counterparty).trim();
-        if (!counterparty) throw badRequest('Contract counterparty is required');
+        if (!counterparty) throw codedBadRequest('CONTRACT_COUNTERPARTY_REQUIRED', 'Contract counterparty is required');
         data.counterparty = counterparty;
     }
     if (input.key !== undefined) data.key = cleanOptionalText(input.key);
@@ -373,13 +375,13 @@ export async function updateContract(ctx: RequestContext, id: string, input: Upd
     // transaction once the existing row has been read.
     if (input.volumeTonnes !== undefined) {
         if (input.volumeTonnes != null && input.volumeTonnes < 0) {
-            throw badRequest('Contract volume must be zero or positive');
+            throw codedBadRequest('CONTRACT_VOLUME_NEGATIVE', 'Contract volume must be zero or positive');
         }
         data.volumeTonnes = input.volumeTonnes;
     }
     if (input.pricePerTonne !== undefined) {
         if (input.pricePerTonne != null && input.pricePerTonne < 0) {
-            throw badRequest('Contract price per tonne must be zero or positive');
+            throw codedBadRequest('CONTRACT_PRICE_NEGATIVE', 'Contract price per tonne must be zero or positive');
         }
         data.pricePerTonne = input.pricePerTonne;
     }
@@ -400,7 +402,7 @@ export async function updateContract(ctx: RequestContext, id: string, input: Upd
             where: { id, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true, status: true, deliveryStart: true, deliveryEnd: true },
         });
-        if (!existing) throw notFound('Contract not found');
+        if (!existing) throw codedNotFound('CONTRACT_NOT_FOUND', 'Contract not found');
 
         // ── Lifecycle guard ──
         //
@@ -411,7 +413,12 @@ export async function updateContract(ctx: RequestContext, id: string, input: Upd
         // and simply writes nothing.
         if (input.status !== undefined && input.status !== existing.status) {
             const transitionErr = checkContractTransition(existing.status, input.status);
-            if (transitionErr) throw badRequest(formatContractTransitionError(transitionErr));
+            if (transitionErr)
+                throw codedBadRequest(
+                    contractTransitionErrorCode(transitionErr),
+                    formatContractTransitionError(transitionErr),
+                    contractTransitionErrorParams(transitionErr),
+                );
 
             // ── Movement gate (the fulfilment half of the lifecycle) ──
             //
@@ -430,7 +437,8 @@ export async function updateContract(ctx: RequestContext, id: string, input: Upd
                 const agg = await aggregateDeliveredTonnes(db, ctx.tenantId, [id]);
                 const deliveredTonnes = agg.get(id)?.tonnes;
                 if (!deliveredTonnes || deliveredTonnes.lessThanOrEqualTo(0)) {
-                    throw badRequest(
+                    throw codedBadRequest(
+                        'CONTRACT_DELIVERED_NEEDS_DELIVERIES',
                         'Cannot mark a contract DELIVERED with no recorded deliveries — ' +
                             'record the delivered tonnage first.',
                     );
@@ -452,7 +460,7 @@ export async function updateContract(ctx: RequestContext, id: string, input: Upd
         const effectiveEnd =
             nextDeliveryEnd !== undefined ? nextDeliveryEnd : existing.deliveryEnd;
         if (effectiveStart && effectiveEnd && effectiveEnd < effectiveStart) {
-            throw badRequest('Delivery end must be on or after the delivery start');
+            throw codedBadRequest('CONTRACT_DELIVERY_WINDOW_INVERTED', 'Delivery end must be on or after the delivery start');
         }
 
         if (input.seasonId) {
@@ -460,7 +468,7 @@ export async function updateContract(ctx: RequestContext, id: string, input: Upd
                 where: { id: input.seasonId, tenantId: ctx.tenantId, deletedAt: null },
                 select: { id: true },
             });
-            if (!season) throw badRequest('Season not found or belongs to a different tenant');
+            if (!season) throw codedBadRequest('CONTRACT_SEASON_NOT_IN_TENANT', 'Season not found or belongs to a different tenant');
         }
 
         const contract = await db.contract.update({ where: { id }, data });
@@ -491,7 +499,7 @@ export async function deleteContract(ctx: RequestContext, id: string) {
             where: { id, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true, counterparty: true },
         });
-        if (!existing) throw notFound('Contract not found');
+        if (!existing) throw codedNotFound('CONTRACT_NOT_FOUND', 'Contract not found');
 
         const contract = await db.contract.update({
             where: { id },
