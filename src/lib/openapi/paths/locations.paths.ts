@@ -269,6 +269,68 @@ const LocationParcels = z
         description: 'A location’s parcels as GeoJSON, with the location’s bounding box.',
     });
 
+// ─── Parcels by crop (#1740) ────────────────────────────────────────
+
+const ParcelDisplayGeometry = z
+    .object({
+        type: z.literal('MultiPolygon'),
+        coordinates: z.array(z.unknown()).openapi({
+            description:
+                'Nested coordinate arrays, as GeoJSON nests them. Left unconstrained here rather than modelled to four levels, which no generator handles usefully — the same choice `ParcelGeo` makes.',
+        }),
+    })
+    .passthrough();
+
+const ParcelCropTotal = z
+    .object({
+        cropType: z.string().openapi({
+            description:
+                'The crop VALUE as stored, verbatim and un-normalised. Usually one of the `crops` catalogue values (`Wheat`, `Barley`, `Canola`, `Maize`, `Sunflower`, `Peas`, `Grass`), but NOT guaranteed: `Parcel.cropType` is a free string and a spatial or cadastre import stamps whatever the source file carried. Label it the way the web does — `crops.<value>` when that key exists, the raw value otherwise, never hidden.',
+        }),
+        parcelCount: z.number().int().openapi({
+            description: 'How many non-deleted parcels carry this crop, farm-wide across every block.',
+        }),
+        areaHaTotal: z.number().nullable().openapi({
+            description:
+                'Total area in HECTARES, summed over those parcels. Null when none of them has a measured area — distinct from 0, which means measured and empty. Convert to дка for display; the server stores hectares.',
+        }),
+    })
+    .openapi('ParcelCropTotal', { description: 'One crop a farm grows, with its parcel count and area.' });
+
+const ParcelCropTotals = z
+    .object({ crops: z.array(ParcelCropTotal) })
+    .openapi('ParcelCropTotals', {
+        description:
+            'Every crop this farm grows. Parcels with NO crop are excluded — "no crop" is not an answer to "which crop did you treat", and such a parcel is still reachable through the per-block list.',
+    });
+
+const ParcelByCrop = z
+    .object({
+        id: z.string(),
+        name: z.string(),
+        cropType: z.string(),
+        areaHa: z.number().nullable().openapi({
+            description: 'Area in HECTARES as stored, or null when unmeasured.',
+        }),
+        locationId: z.string(),
+        locationName: z.string().openapi({
+            description:
+                'The block this parcel sits in. Not a convenience: two blocks can each hold a field named «1», so a flat farm-wide list is ambiguous without it.',
+        }),
+        geometry: ParcelDisplayGeometry.nullable().openapi({
+            description:
+                'GeoJSON in WGS84, always SIMPLIFIED for display. Null when the parcel has no outline, which is a normal state — keep the parcel and say it is not drawn, rather than dropping it, so the count still agrees with `parcelCount`.',
+        }),
+    })
+    .openapi('ParcelByCrop', { description: 'A parcel of one crop, with its block and a display outline.' });
+
+const ParcelsByCrop = z
+    .object({
+        cropType: z.string().openapi({ description: 'The crop asked for, trimmed — echoed back so a client can match a response to a request.' }),
+        parcels: z.array(ParcelByCrop),
+    })
+    .openapi('ParcelsByCrop', { description: 'The parcels of one crop, farm-wide.' });
+
 // ─── Parcels ────────────────────────────────────────────────────────
 
 const ParcelCreated = z
@@ -879,6 +941,40 @@ export function registerLocationPaths(registry: OpenAPIRegistry): void {
     });
 
     // ─── Parcels ────────────────────────────────────────────────────
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/parcels/by-crop',
+        operationId: 'listParcelsByCrop',
+        summary: 'Farm-wide parcels grouped by crop',
+        description:
+            'TWO answers behind one path, chosen by `crop`. **Without it** you get the farm\u2019s crops with parcel counts and total hectares, and no geometry \u2014 a crop picker draws nothing. **With it** you get that crop\u2019s parcels, each carrying the block it sits in and a simplified outline for a map beside the list.' +
+            '\n\nSplit on a parameter rather than returned together because the caller shows ONE crop at a time: a single response carrying every crop\u2019s geometry would be large for a client that discards all but one group.' +
+            '\n\n**This is the farm-wide read that `GET /locations/{id}/parcels` is not.** That one answers "what is in this block" and carries soil, ownership and lease state; this one answers "where on the farm is this crop" and carries the block name instead. Before it existed a client had to fan out one request per block and group them itself.' +
+            '\n\n**Matching on `crop` is case-insensitive and trimmed.** `Parcel.cropType` is a free string that an import stamps, so stored rows can disagree about case among themselves; a value round-tripped from the crop list resolves regardless.' +
+            '\n\n**An unknown crop is an empty list, not a 404.** A crop is not an entity here, so "no parcels carry this value" is an answer \u2014 and a 404 would leak whether a vocabulary value is in use.' +
+            '\n\nParcels with no crop appear in NEITHER answer. "No crop" does not answer "which crop did you treat", and such a parcel is still reachable through the per-block list.' +
+            '\n\nOrder is `name`, then `id`. The id tiebreak is contractual (#1391): parcel names are not unique, so without it a capped read could return a different subset between requests with nothing changed.',
+        tags: ['Parcels'],
+        params: TenantParams,
+        query: z.object({
+            crop: z.string().optional().openapi({
+                param: { name: 'crop', in: 'query' },
+                description:
+                    'A crop value as returned by this same operation without the parameter. Omit for the crop list. Case-insensitive, trimmed; blank is treated as omitted.',
+            }),
+            simplify: z.coerce.number().optional().openapi({
+                param: { name: 'simplify', in: 'query' },
+                description:
+                    'Geometry simplification tolerance in DEGREES. Geometry here is simplified either way \u2014 every caller draws a picker map \u2014 so this only chooses how much. A non-positive or unparseable value is IGNORED rather than refused: it is a display hint, and failing a parcel list over a tolerance that did not parse would turn a cosmetic mistake into an empty map. Ignored entirely without `crop`.',
+            }),
+        }),
+        success: {
+            status: 200,
+            description: 'The farm\u2019s crops, or one crop\u2019s parcels when `crop` is given.',
+            content: { 'application/json': z.union([ParcelCropTotals, ParcelsByCrop]) },
+        },
+    });
 
     op(registry, {
         method: 'get',

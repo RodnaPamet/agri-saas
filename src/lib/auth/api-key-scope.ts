@@ -80,6 +80,13 @@ export const API_KEY_SCOPE_FAMILIES: readonly string[] = [
     'notification-settings',
     'offers',
     'onboarding',
+    // Scopable rather than excluded, for consistency rather than appetite:
+    // `locations` is already a family and `locations:read` grants
+    // `locations/{id}/parcels`, which serves the same parcels this family
+    // serves farm-wide (#1740). Excluding `parcels` would make the same data
+    // reachable by API key down one path and refused down another, which is
+    // the kind of split a reader cannot predict from either side.
+    'parcels',
     'planning',
     'processes',
     'push-subscriptions',

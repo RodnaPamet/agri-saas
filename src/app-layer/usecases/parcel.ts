@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { RequestContext } from '../types';
-import { assertCanWrite } from '../policies/common';
+import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { badRequest, codedNotFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
@@ -336,4 +336,37 @@ export async function splitParcel(ctx: RequestContext, parcelId: string, line: L
         });
         return { pieces: created };
     });
+}
+
+/**
+ * The crops this farm grows, for the treatment record's crop picker (#1740).
+ *
+ * A READ on the whole farm rather than one block, which is the gap this
+ * closes: parcels were only listable per location, so a client wanting "every
+ * parcel of this crop" had to fan out one request per block and group them
+ * itself.
+ */
+export async function listTenantCropTotals(ctx: RequestContext) {
+    assertCanRead(ctx);
+    return runInTenantContext(ctx, (db) => ParcelRepository.listTenantCropTotals(db, ctx));
+}
+
+/**
+ * The parcels of one crop, farm-wide, with their block and a display outline
+ * (#1740).
+ *
+ * An unknown crop returns an EMPTY list rather than a 404. A crop is not an
+ * entity here — it is a free string on parcels — so "no parcels carry this
+ * value" is an answer and not a missing resource. A 404 would also leak
+ * whether a vocabulary value is in use by anyone.
+ */
+export async function listTenantParcelsByCrop(
+    ctx: RequestContext,
+    cropType: string,
+    opts: { simplifyTolerance?: number } = {},
+) {
+    assertCanRead(ctx);
+    return runInTenantContext(ctx, (db) =>
+        ParcelRepository.listTenantParcelsByCrop(db, ctx, cropType, opts),
+    );
 }

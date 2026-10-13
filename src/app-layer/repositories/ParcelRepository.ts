@@ -55,6 +55,51 @@ export const BULGARIA_WGS84_ENVELOPE = {
  * the task-map contract by accident. These two answer different questions and
  * are allowed to drift.
  */
+/**
+ * One crop a farm actually grows, with how much of it there is (#1740).
+ *
+ * `cropType` is returned VERBATIM and is not normalised. Two reasons, and the
+ * second is the one that matters:
+ *
+ *   - `Parcel.cropType` is a free string. The picker writes a `CROP_OPTIONS`
+ *     value, but a spatial or cadastre import stamps whatever the source file
+ *     carried (`ParcelRepository.importParcels` trims it and validates nothing
+ *     against `CROP_VALUES`). The dev seed alone carries `'Winter Wheat'`,
+ *     which is off-catalogue.
+ *   - `cropLabel` already defines what a client does with that: an
+ *     off-catalogue value "has no key, so it renders verbatim — never hidden".
+ *     That behaviour is deliberate and documented, and `Grass` is the recorded
+ *     case of it showing its seam. Canonicalising here would quietly decide a
+ *     vocabulary question that the catalogue owns.
+ *
+ * So a client groups and labels; this reports what is stored.
+ */
+export interface ParcelCropTotal {
+    cropType: string;
+    parcelCount: number;
+    /** Hectares, summed. Null when no parcel of this crop has a measured area. */
+    areaHaTotal: number | null;
+}
+
+/**
+ * A parcel of one crop, with the block it sits in (#1740).
+ *
+ * `locationName` is not a convenience: two blocks can each hold a field named
+ * «1», so without it a flat farm-wide list is ambiguous to the person ticking
+ * boxes. Area stays in HECTARES, as stored — дка is a presentation unit and
+ * the conversion belongs where the dot is placed, not here.
+ */
+export interface ParcelByCropGeo {
+    id: string;
+    name: string;
+    cropType: string;
+    areaHa: number | null;
+    locationId: string;
+    locationName: string;
+    /** GeoJSON in WGS84, SIMPLIFIED for display. Null when the parcel has no outline. */
+    geometry: Geometry | null;
+}
+
 export interface ParcelSummaryGeo {
     id: string;
     name: string;
@@ -544,6 +589,124 @@ export class ParcelRepository {
             take: 2000,
         });
         return rows.map((r) => r.parcelId);
+    }
+
+    /**
+     * The crops this farm grows, farm-wide, with parcel counts and total area
+     * (#1740 step 2).
+     *
+     * Parcels with no crop are EXCLUDED rather than grouped under a null key:
+     * the question this answers is "which crop did you treat", and "no crop" is
+     * not an answer to it. A parcel with no crop is still reachable through the
+     * per-block list, so nothing becomes invisible.
+     *
+     * `ORDER BY "cropType"` is total already — the GROUP BY makes it unique —
+     * so no tiebreak is needed here, unlike the parcel list below.
+     */
+    static async listTenantCropTotals(
+        db: PrismaTx,
+        ctx: RequestContext,
+    ): Promise<ParcelCropTotal[]> {
+        const rows = await db.$queryRaw<Array<{
+            cropType: string;
+            parcelCount: bigint;
+            areaHaTotal: string | null;
+        }>>(
+            Prisma.sql`SELECT "cropType",
+                    COUNT(*) AS "parcelCount",
+                    SUM("areaHa")::text AS "areaHaTotal"
+                FROM "Parcel"
+                WHERE "tenantId" = ${ctx.tenantId}
+                  AND "deletedAt" IS NULL
+                  AND "cropType" IS NOT NULL
+                  AND btrim("cropType") <> ''
+                GROUP BY "cropType"
+                ORDER BY "cropType" ASC`,
+        );
+
+        return rows.map((r) => ({
+            cropType: r.cropType,
+            // COUNT(*) arrives as a bigint; a farm's parcel count is nowhere
+            // near the safe-integer ceiling, and returning a bigint would not
+            // survive JSON.
+            parcelCount: Number(r.parcelCount),
+            areaHaTotal: r.areaHaTotal == null ? null : Number(r.areaHaTotal),
+        }));
+    }
+
+    /**
+     * The parcels of ONE crop, farm-wide, with their block and an outline
+     * (#1740 step 2).
+     *
+     * A third question, and so a third method rather than an option on either
+     * neighbour. `listForLocation` answers "what is in this location" and pays
+     * for soil hydration, an ownership join and a lease `EXISTS`;
+     * `listSummariesByIds` answers "draw these specific parcels" and
+     * deliberately carries none of that. This one is scoped by CROP across every
+     * block, and needs `areaHa` and the block name, which neither returns. An
+     * option on either would make its existing callers pay for columns they
+     * never read.
+     *
+     * Matching is case-insensitive, because `cropType` is a free string that an
+     * import can stamp (see `ParcelCropTotal`) and a client that round-trips a
+     * value from `listTenantCropTotals` should get the parcels back even if the
+     * stored rows disagree about case among themselves.
+     *
+     * Geometry is ALWAYS simplified: this list draws a picker's map. For an edit
+     * or area path use `listForLocation` with no tolerance, which is the exact
+     * read.
+     *
+     * `ORDER BY "name", "id"` is contractual, not cosmetic (#1391), for the same
+     * reason it is on `listSummariesByIds`: a client renders a list keyed on
+     * name, parcel names are NOT unique, and the id breaks ties so the order is
+     * total rather than merely mostly-stable. Here it also bounds WHICH rows a
+     * capped read returns, so without it a parcel could appear in one request
+     * and vanish from the next with nothing changed.
+     */
+    static async listTenantParcelsByCrop(
+        db: PrismaTx,
+        ctx: RequestContext,
+        cropType: string,
+        opts: { simplifyTolerance?: number; take?: number } = {},
+    ): Promise<ParcelByCropGeo[]> {
+        const needle = cropType.trim();
+        if (needle.length === 0) return [];
+
+        const geojsonSql = displayGeoJsonSql(Prisma.raw('"Parcel"."geometry"'), opts.simplifyTolerance);
+        const take = opts.take ?? 5000;
+
+        const rows = await db.$queryRaw<Array<{
+            id: string;
+            name: string;
+            cropType: string;
+            areaHa: string | null;
+            locationId: string;
+            locationName: string;
+            geojson: string | null;
+        }>>(
+            Prisma.sql`SELECT "Parcel"."id", "Parcel"."name", "Parcel"."cropType",
+                    "Parcel"."areaHa"::text AS "areaHa",
+                    "Location"."id" AS "locationId", "Location"."name" AS "locationName",
+                    ${geojsonSql} AS "geojson"
+                FROM "Parcel"
+                JOIN "Location" ON "Location"."id" = "Parcel"."locationId"
+                    AND "Location"."tenantId" = "Parcel"."tenantId"
+                WHERE "Parcel"."tenantId" = ${ctx.tenantId}
+                  AND "Parcel"."deletedAt" IS NULL
+                  AND lower(btrim("Parcel"."cropType")) = lower(${needle})
+                ORDER BY "Parcel"."name" ASC, "Parcel"."id" ASC
+                LIMIT ${take}`,
+        );
+
+        return rows.map((r) => ({
+            id: r.id,
+            name: r.name,
+            cropType: r.cropType,
+            areaHa: r.areaHa == null ? null : Number(r.areaHa),
+            locationId: r.locationId,
+            locationName: r.locationName,
+            geometry: parseGeometry(r.geojson),
+        }));
     }
 
     static async listSummariesByIds(
