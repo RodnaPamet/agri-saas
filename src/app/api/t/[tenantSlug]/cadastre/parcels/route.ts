@@ -71,9 +71,17 @@ export const GET = withApiErrorHandling(
         const bbox = parseBbox(req.nextUrl.searchParams.get('bbox'));
         if (!bbox) {
             // Coded, not a bare string: the spec declares this operation's 400
-            // as `ErrorResponse` and the string contradicted it (#1447). Prose
-            // preserved verbatim.
-            throw codedBadRequest('INVALID_BBOX', 'invalid bbox');
+            // as `ErrorResponse` and the string contradicted it (#1447).
+            //
+            // The prose was preserved verbatim then — «invalid bbox», which is
+            // a developer's note, not something to show a farmer. Now that
+            // `errors.INVALID_BBOX` exists the Bulgarian comes from the
+            // catalogue, so the English can be the sentence it should always
+            // have been.
+            throw codedBadRequest(
+                'INVALID_BBOX',
+                'The map bounds are not valid. Pan or zoom the map and try again.',
+            );
         }
 
         // Bounds abuse — outside Bulgaria OR too large ⇒ empty collection (200).

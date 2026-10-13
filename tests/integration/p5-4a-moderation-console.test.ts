@@ -230,7 +230,13 @@ describeFn('P5.4a — the moderation console (#1595)', () => {
             await expect(actOnNotice({
                 reportId: id, actionKind: 'ACCOUNT_SUSPENDED',
                 rationale: 'no target given', generation: 'current',
-            })).rejects.toThrow('SUSPEND_TARGET_REQUIRED');
+            // On the CODE, not the message. `toThrow(string)` matches the
+            // MESSAGE, and this passed only because the throw site passed its
+            // own code as the message — which is what showed a farmer
+            // «SUSPEND_TARGET_REQUIRED» until #1677 gave it a sentence. The
+            // code is the contract; the message is displayed copy and is now
+            // localised, so asserting on it couples this test to wording.
+            })).rejects.toMatchObject({ code: 'SUSPEND_TARGET_REQUIRED' });
 
             // And NOTHING was recorded — the refusal is inside the transaction,
             // so the action row and the status move roll back together.

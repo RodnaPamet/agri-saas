@@ -66,12 +66,18 @@ export const PUT = withApiErrorHandling(async (req: NextRequest) => {
     const body = await req.json().catch(() => null);
     const parsed = NewsPreferencesBodySchema.safeParse(body);
     if (!parsed.success) {
-        // A CODE plus the zod message, which names the offending tags. The code
-        // is what a client can translate; the message is what makes a client
-        // bug diagnosable without diffing against the catalogue.
+        // The zod text names the offending tags and is what makes a client bug
+        // diagnosable without diffing against the catalogue. It moves to
+        // `details`, because `message` is now localised: with
+        // `errors.INVALID_NEWS_PREFERENCES` in the catalogue,
+        // `localizeErrorPayload` REPLACES `message` — so leaving the zod text
+        // there would have destroyed exactly the diagnostic the original
+        // comment was protecting. `details` is untouched by the localiser.
         throw codedBadRequest(
             'INVALID_NEWS_PREFERENCES',
-            parsed.error.issues.map((i) => i.message).join('; '),
+            'Those news preferences are not valid. Check the selected topics and sources.',
+            undefined,
+            { issues: parsed.error.issues.map((i) => i.message) },
         );
     }
 
