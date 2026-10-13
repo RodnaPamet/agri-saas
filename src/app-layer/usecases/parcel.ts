@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import { RequestContext } from '../types';
 import { assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
-import { badRequest, notFound } from '@/lib/errors/types';
+import { badRequest, codedNotFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import type { PrismaTx } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
@@ -73,7 +73,7 @@ export async function createParcel(ctx: RequestContext, locationId: string, inpu
             where: { id: locationId, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true },
         });
-        if (!location) throw notFound('Location not found');
+        if (!location) throw codedNotFound('LOCATION_NOT_FOUND', 'Location not found');
 
         if (!(await ParcelRepository.isValidGeometry(db, input.geometry))) {
             throw badRequest('Parcel shape is invalid (edges cross). Redraw it without self-intersections.');
@@ -112,7 +112,7 @@ export async function updateParcel(ctx: RequestContext, parcelId: string, input:
     assertCanWrite(ctx);
     const result = await runInTenantContext(ctx, async (db) => {
         const parcel = await ParcelRepository.getOne(db, ctx, parcelId);
-        if (!parcel) throw notFound('Parcel not found');
+        if (!parcel) throw codedNotFound('PARCEL_NOT_FOUND', 'Parcel not found');
 
         if (input.geometry && !(await ParcelRepository.isValidGeometry(db, input.geometry))) {
             throw badRequest('Parcel shape is invalid (edges cross). Redraw it without self-intersections.');
@@ -203,7 +203,7 @@ export async function deleteParcel(ctx: RequestContext, parcelId: string) {
     assertCanWrite(ctx);
     return runInTenantContext(ctx, async (db) => {
         const parcel = await ParcelRepository.getOne(db, ctx, parcelId);
-        if (!parcel) throw notFound('Parcel not found');
+        if (!parcel) throw codedNotFound('PARCEL_NOT_FOUND', 'Parcel not found');
 
         await ParcelRepository.softDeleteOne(db, ctx, parcelId);
         await refreshLocationBounds(db, ctx, parcel.locationId);
@@ -250,7 +250,7 @@ export async function mergeParcels(
             where: { id: locationId, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true },
         });
-        if (!location) throw notFound('Location not found');
+        if (!location) throw codedNotFound('LOCATION_NOT_FOUND', 'Location not found');
 
         const valid = await ParcelRepository.validIdsForLocation(db, ctx, locationId, ids);
         if (valid.size !== ids.length) {
@@ -299,7 +299,7 @@ export async function splitParcel(ctx: RequestContext, parcelId: string, line: L
     assertCanWrite(ctx);
     return runInTenantContext(ctx, async (db) => {
         const parcel = await ParcelRepository.getOne(db, ctx, parcelId);
-        if (!parcel) throw notFound('Parcel not found');
+        if (!parcel) throw codedNotFound('PARCEL_NOT_FOUND', 'Parcel not found');
 
         const pieces = await ParcelRepository.splitOne(db, ctx, parcelId, line);
         if (pieces.length < 2) {

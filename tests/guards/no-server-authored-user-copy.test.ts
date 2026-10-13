@@ -226,10 +226,30 @@ export function collectServerAuthoredCopy(root: string, dirs: string[] = ROOTS):
 // scan that tried to exclude "but this one is localised at runtime" would have
 // to model the catalogue — a detector mirroring the runtime by name, which is
 // how a number stops moving without anybody noticing. The honest statement is
-// that this is an upper bound, and the next family migrated under #1677 will
-// drop it properly: moving a message into the catalogue and deleting the
-// English fallback removes it from this scan for real.
-const CURRENT_BASELINE = 466;
+// that this is an upper bound.
+//
+// ── 466 → 438, and the prediction above was wrong about HOW ──────────────
+//
+// The paragraph above expected the number to fall by "deleting the English
+// fallback". Measured, that would have moved it by ZERO: this scan matches
+// `\b(badRequest|notFound|forbidden|conflict|unprocessable)\(`, which cannot
+// match `codedForbidden(`, so the four API-only throws it names were never
+// counted here in the first place. Deleting their English would also have
+// removed the only text left if the catalogue fails to load, and the owner
+// confirmed they stay.
+//
+// What actually dropped it is the EXEMPTION this file has carried since #1564
+// and that nothing had yet exercised: 29 `notFound('<entity> not found')`
+// sites adopted codes that already existed elsewhere in the tree
+// (`LOCATION_NOT_FOUND`, `TASK_NOT_FOUND`, `LISTING_NOT_FOUND`,
+// `PARCEL_NOT_FOUND` — the same entity was coded in one function and uncoded
+// in another). 28 of the 29 were counted here, and gaining a code removed
+// them. Refs #1712.
+//
+// So the mechanism is the reverse of the prediction: a code ADDED, not prose
+// deleted. Worth leaving both statements visible, because the wrong one was
+// specific and plausible and stood here unchallenged.
+const CURRENT_BASELINE = 438;
 
 /** Slack tolerated before the sentinel demands the baseline be lowered. */
 const DRIFT_ALLOWANCE = 15;

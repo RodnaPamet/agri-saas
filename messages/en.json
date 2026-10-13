@@ -6403,6 +6403,8 @@
         "signOut": "Sign out"
     },
     "errors": {
+        "LISTING_NOT_FOUND": "That listing was not found.",
+        "LOCATION_NOT_FOUND": "That location was not found.",
         "BLOCK_NOT_FOUND": "You have no block on that person.",
         "BLOCK_SELF": "You cannot block yourself.",
         "COMMODITY_NOT_APPLICABLE": "A crop can only be named on a cost entry allocated by crop.",

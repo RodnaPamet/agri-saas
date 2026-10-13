@@ -1,6 +1,6 @@
 import { RequestContext } from '../types';
 import { assertCanWrite } from '../policies/common';
-import { badRequest, notFound } from '@/lib/errors/types';
+import { badRequest, codedNotFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { detectFormat } from '@/lib/spatial/parse';
 import { assertUploadWithinSize } from '@/lib/spatial/limits';
@@ -78,7 +78,7 @@ export async function stageLocationSpatialImport(
             where: { id: locationId, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true },
         });
-        if (!location) throw notFound('Location not found');
+        if (!location) throw codedNotFound('LOCATION_NOT_FOUND', 'Location not found');
     });
 
     // 3 — stage the original upload through the storage abstraction.

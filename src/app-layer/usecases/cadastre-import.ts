@@ -12,7 +12,7 @@
  */
 import { RequestContext } from '../types';
 import { assertCanWrite } from '../policies/common';
-import { badRequest, notFound } from '@/lib/errors/types';
+import { badRequest, codedNotFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { enqueue } from '@/app-layer/jobs/queue';
 import { logger } from '@/lib/observability/logger';
@@ -87,7 +87,7 @@ export async function stageLocationCadastreImport(
             where: { id: locationId, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true },
         });
-        if (!location) throw notFound('Location not found');
+        if (!location) throw codedNotFound('LOCATION_NOT_FOUND', 'Location not found');
     });
 
     const job = await enqueue('cadastre-import', {

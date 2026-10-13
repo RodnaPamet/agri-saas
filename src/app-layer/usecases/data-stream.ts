@@ -33,7 +33,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { runWithAuditContext } from '@/lib/audit-context';
 import { logEvent } from '../events/audit';
 import { sanitizePlainText } from '@/lib/security/sanitize';
-import { badRequest, notFound } from '@/lib/errors/types';
+import { badRequest, notFound, codedNotFound } from '@/lib/errors/types';
 import type { DataStreamKind } from '@prisma/client';
 import { logger } from '@/lib/observability/logger';
 
@@ -115,7 +115,7 @@ export async function createDataStream(
                 where: { id: input.locationId, tenantId: ctx.tenantId, deletedAt: null },
                 select: { id: true },
             });
-            if (!loc) throw notFound('Location not found');
+            if (!loc) throw codedNotFound('LOCATION_NOT_FOUND', 'Location not found');
         }
 
         const stream = await db.dataStream.create({
