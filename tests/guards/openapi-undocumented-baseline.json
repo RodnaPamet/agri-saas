@@ -246,6 +246,7 @@
         "/api/t/{tenantSlug}/tasks/{taskId}/evidence",
         "/api/t/{tenantSlug}/tasks/{taskId}/evidence/{evidenceId}",
         "/api/t/{tenantSlug}/tasks/{taskId}/links/{linkId}",
-        "/api/t/{tenantSlug}/users/assignable"
+        "/api/t/{tenantSlug}/users/assignable",
+        "/api/webhooks/resend"
     ]
 }

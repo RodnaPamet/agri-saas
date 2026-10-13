@@ -46,6 +46,11 @@ const WEBHOOKS = [
     ['/api/stripe/webhook', { 'stripe-signature': 't=1,v1=deadbeef' }],
     ['/api/storage/av-webhook', { 'x-av-signature': 'abc123' }],
     ['/api/integrations/webhooks/slack', { 'x-signature': 'abc123' }],
+    // Resend's delivery feed (#1753). Headers are Svix's, which is why the
+    // sibling guard's CREDENTIAL_HEADERS regex does not recognise it — a
+    // `svix-signature` is not an `x-signature`, and the handler is what
+    // declares this route self-authenticating.
+    ['/api/webhooks/resend', { 'svix-id': 'msg_1', 'svix-signature': 'v1,abc' }],
 ] as const;
 
 function post(pathname: string, headers: Record<string, string>) {
@@ -86,6 +91,13 @@ describe('a signed webhook passes the Edge', () => {
             '/api/stripe/customers',
             '/api/integrations/connections',
             '/api/storage/upload',
+            // The Resend entry is PUBLIC_PATH_EXACT, deliberately not an
+            // `/api/webhooks/` prefix — so a second webhook added next to it
+            // stays session-gated until someone opens it on purpose. This is
+            // the assertion that makes that a property rather than an
+            // accident of there being only one.
+            '/api/webhooks/other',
+            '/api/webhooks/resend/replay',
         ]) {
             const res = await middleware(post(pathname, {}));
             expect(res.status).toBe(401);
@@ -136,6 +148,7 @@ describe('the webhooks are rate limited', () => {
         '/api/stripe/webhook',
         '/api/storage/av-webhook',
         '/api/integrations/webhooks/slack',
+        '/api/webhooks/resend',
         '/api/admin/tenants',
     ])(
         '%s is in the tier',
@@ -150,5 +163,16 @@ describe('the webhooks are rate limited', () => {
     it('does not throttle the neighbours it must not claim', () => {
         expect(isScimRateLimited('/api/integrations/connections')).toBe(false);
         expect(isScimRateLimited('/api/t/acme/journal')).toBe(false);
+        // The Resend entry is matched EXACTLY, so it claims neither a sibling
+        // webhook nor a child path — the limiter's scope cannot be wider than
+        // the Edge carve-out it defends.
+        //
+        // The child case is the one that caught a real defect: as a
+        // `startsWith` entry this budgeted `/api/webhooks/resend/replay` and
+        // `/api/webhooks/resendfoo`, and the carve-out itself had the same
+        // widening. A sibling assertion alone passed in both worlds.
+        expect(isScimRateLimited('/api/webhooks/other')).toBe(false);
+        expect(isScimRateLimited('/api/webhooks/resend/replay')).toBe(false);
+        expect(isScimRateLimited('/api/webhooks/resendfoo')).toBe(false);
     });
 });

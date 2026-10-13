@@ -120,7 +120,22 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 // leaving it undescribed would have been the wrong trade in the other
 // direction. "Baseline or describe" is a question about the AUDIENCE, not a
 // uniform rule.
-const UNDOCUMENTED_CEILING = 218;
+// 218 → 219 (#1753): `/api/webhooks/resend`, the Resend delivery-event
+// receiver. Baselined rather than described, by this file's own rule two
+// paragraphs up — "baseline or describe is a question about the AUDIENCE" —
+// and the audience here is the narrowest on the list. Exactly one caller
+// posts to it (Resend), and it learns the contract from its own dashboard
+// configuration, not from our spec; no client calls it at all. All three
+// sibling webhooks (`/api/stripe/webhook`, `/api/storage/av-webhook`,
+// `/api/integrations/webhooks/{provider}`) are baselined for the same
+// reason, so describing only this one would make the spec's coverage of the
+// webhook surface harder to reason about rather than easier.
+//
+// The operator-facing contract — 200 on a verified event, 400 on unparseable,
+// 401 on a bad signature, 503 when RESEND_WEBHOOK_SECRET is unset — is written
+// where an operator will look: the route's docblock and both prod env
+// examples.
+const UNDOCUMENTED_CEILING = 219;
 // Lowered 246 -> 245 by #1376: `/api/auth/register` was retired, so its
 // baseline entry went with it. The ceiling tracks the baseline exactly —
 // leaving slack is how a shrink-only ratchet quietly becomes a denylist with

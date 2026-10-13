@@ -162,6 +162,9 @@ export const env = createEnv({
 
         // AV Scanning
         AV_WEBHOOK_SECRET: z.string().optional(),          // HMAC secret for webhook auth
+        // Resend delivery events (#1753). Svix-signed; absent means the
+        // endpoint refuses rather than trusting an unsigned body.
+        RESEND_WEBHOOK_SECRET: z.string().optional(),
         AV_SCAN_MODE: z.enum(["strict", "permissive", "disabled"]).default("strict"),
         CLAMAV_HOST: z.string().optional(),                  // ClamAV daemon host (e.g. clamav:3310)
 
@@ -748,6 +751,7 @@ export const env = createEnv({
         S3_SECRET_ACCESS_KEY: process.env.S3_SECRET_ACCESS_KEY,
 
         AV_WEBHOOK_SECRET: process.env.AV_WEBHOOK_SECRET,
+        RESEND_WEBHOOK_SECRET: process.env.RESEND_WEBHOOK_SECRET,
         AV_SCAN_MODE: process.env.AV_SCAN_MODE,
         CLAMAV_HOST: process.env.CLAMAV_HOST,
 

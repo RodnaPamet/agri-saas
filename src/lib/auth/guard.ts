@@ -276,6 +276,20 @@ const PUBLIC_PATH_EXACT = new Set([
     // same reachability argument: `x-platform-admin-key` carries no NextAuth
     // JWE, so without this entry the Edge 401s before the handler runs.
     '/api/admin/lookup-rehash',
+    // Resend delivery events (#1753). Machine-facing and signature-verified in
+    // the handler (Svix over the raw body), so the Edge cannot authenticate it
+    // — the same shape as `/api/stripe/webhook` and `/api/storage/av-webhook`.
+    //
+    // EXACT, and this entry started life in PUBLIC_PATH_PREFIXES by mistake
+    // with a comment claiming it was here. The two are not interchangeable:
+    // `matchesPublicPrefix` matches at a SEGMENT boundary, so the prefix form
+    // opened `/api/webhooks/resend/**` — every child path of a route that has
+    // no children. What hid it is worth recording, because the check looked
+    // thorough: I probed `/api/webhooks/other` and got `false`, and read that
+    // as proof the entry was exact. A SIBLING cannot distinguish the two
+    // forms; only a CHILD can. The probe had no power over the property it
+    // was run to establish.
+    '/api/webhooks/resend',
 ]);
 
 // `webmanifest` — the PWA manifest is fetched by the browser WITHOUT

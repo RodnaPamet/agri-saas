@@ -26,6 +26,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { BARE_ROUTE_EXEMPTIONS } from '@/lib/errors/route-exemptions';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const API_ROOT = path.join(REPO_ROOT, 'src/app/api');
@@ -52,8 +53,46 @@ function relPath(absPath: string): string {
     return path.relative(API_ROOT, absPath);
 }
 
+/**
+ * The token is looked for in CODE, with comments and strings blanked.
+ *
+ * ## Why this is not a loosening
+ *
+ * The last case in this file already knew the hazard — "a route that mentions
+ * `withApiErrorHandling` only in a comment / string would pass the
+ * wrapped-check but actually be bare" — and answered it by failing such a
+ * route for not importing the wrapper. That catches the route, and it leaves a
+ * hole one step earlier: a bare route whose docblock merely NAMES the wrapper
+ * reads as wrapped, so `every bare route is in BARE_ROUTE_EXEMPTIONS` skips it
+ * entirely and it never needs a written reason.
+ *
+ * Blanking first closes that hole. The route is then classified by its CODE,
+ * the exemption registry sees it, and the import check keeps its teeth for the
+ * case it was written for — a route that really does call the wrapper without
+ * importing it.
+ *
+ * Measured before changing: across 388 route files, exactly ONE is classified
+ * differently (`webhooks/resend/route.ts`, whose docblock explains why it is
+ * deliberately bare). So this is not a quiet re-grading of the surface.
+ *
+ * ## `blankNonCode`, not a local stripper
+ *
+ * My first version was `.replace(BLOCK_RE, '').replace(LINE_RE, '')` — blocks
+ * before lines, which is exactly the defect
+ * `tests/guards/comment-stripper-order.test.ts` exists to forbid, on a ratchet
+ * whose effective cap for a TypeScript stripper is 0. A line comment naming a
+ * glob such as `/api/auth/` + star opens a block as far as that regex is
+ * concerned and eats every real line to the next close marker; measured there
+ * at 511 lines lost across nine files. `blankNonCode` is state-aware, cannot
+ * be fooled by either nesting, and blanks character-for-character so
+ * positions hold.
+ *
+ * `{ strings: true }` because this guard's subject is a CALL, not message
+ * text — the helper's own docblock draws that line, and a token inside a
+ * string literal is no more a call than one inside a comment.
+ */
 function isWrapped(content: string): boolean {
-    return content.includes(WRAPPER_TOKEN);
+    return blankNonCode(content, { strings: true }).includes(WRAPPER_TOKEN);
 }
 
 describe('Epic E — API error-handler coverage guardrail', () => {
@@ -162,6 +201,38 @@ describe('Epic E — API error-handler coverage guardrail', () => {
 
         const broken = original.replace(/withApiErrorHandling/g, 'noopWrapper');
         expect(isWrapped(broken)).toBe(false);
+    });
+
+    it('a token in PROSE does not make a bare route read as wrapped', () => {
+        // The other direction, and the one that was wrong: a docblock
+        // explaining why a route is deliberately unwrapped must not classify
+        // it as wrapped — that skipped it past the exemption registry, where
+        // the written reason is supposed to live.
+        const proseOnly = [
+            '/**',
+            ' * A bare POST, outside withApiErrorHandling, because the wrapper',
+            ' * applies the mutation rate limiter.',
+            ' */',
+            "const NOTE = 'see withApiErrorHandling for the contract';",
+            'export async function POST() { return new Response(NOTE); }',
+        ].join('\n');
+
+        expect(isWrapped(proseOnly)).toBe(false);
+    });
+
+    it('the strip does not blind the detector to real code', () => {
+        // The control for the case above. A strip aggressive enough to remove
+        // the call itself would make every route read as bare, which this
+        // file's own coverage check would then report as 300+ violations —
+        // loud, but only after someone wondered why.
+        const realCode = [
+            "import { withApiErrorHandling } from '@/lib/errors/api';",
+            'export const GET = withApiErrorHandling(async () => new Response());',
+        ].join('\n');
+
+        expect(isWrapped(realCode)).toBe(true);
+        // And with the import line commented out, the CALL still counts.
+        expect(isWrapped('export const GET = withApiErrorHandling(async () => {});')).toBe(true);
     });
 
     it('every wrapped route imports the wrapper from @/lib/errors/api', () => {

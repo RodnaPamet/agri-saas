@@ -2054,6 +2054,11 @@
       "path": "/api/t/{tenantSlug}/users/assignable",
       "status": "live",
       "documented": false
+    },
+    {
+      "path": "/api/webhooks/resend",
+      "status": "live",
+      "documented": false
     }
   ]
 }
