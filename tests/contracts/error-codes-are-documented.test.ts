@@ -230,6 +230,33 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     // ledger exists to carry — WITHOUT changing a status code under a client
     // that already handles 404. The status question is separate and not
     // smuggled in here.
+    // The twelve `ACCESS_REVIEW_*` codes are new as of #1712 batch 6 and are
+    // here for the `COMPANY_NAME_TAKEN` reason at the top of this list,
+    // measured rather than assumed: all five
+    // `/api/t/{tenantSlug}/access-reviews*` paths sit on
+    // `openapi-undocumented-baseline.json`, so there is no operation in the
+    // spec to name a refusal on. Documenting them means registering that
+    // surface — five paths with their schemas — which is a much larger change
+    // than the one that introduced the codes.
+    //
+    // Two of them are 403s and so could in principle go in the shared 403
+    // description in `src/lib/openapi/paths/helpers.ts`, the way
+    // `PAST_DUE_RESTRICTED` did. They should not: that description is for
+    // refusals that span many unrelated routes, and these two are confined to
+    // one surface. A surface-specific code in a shared description tells every
+    // other route's reader about a refusal it cannot raise.
+    'ACCESS_REVIEW_ALREADY_CLOSED',
+    'ACCESS_REVIEW_DECISIONS_IMMUTABLE',
+    'ACCESS_REVIEW_DECISIONS_PENDING',
+    'ACCESS_REVIEW_DECISION_ALREADY_EXECUTED',
+    'ACCESS_REVIEW_DECISION_ALREADY_RECORDED',
+    'ACCESS_REVIEW_DECISION_NOT_FOUND',
+    'ACCESS_REVIEW_DECISION_NOT_RECORDED',
+    'ACCESS_REVIEW_INELIGIBLE_SUBJECTS',
+    'ACCESS_REVIEW_NOT_ASSIGNED_REVIEWER',
+    'ACCESS_REVIEW_NOT_FOUND',
+    'ACCESS_REVIEW_NO_ELIGIBLE_SUBJECTS',
+    'ACCESS_REVIEW_WOULD_ORPHAN_OWNERS',
     'ACCOUNT_HAS_NO_EMAIL',
     'EVIDENCE_DELETED',
     'EVIDENCE_FILE_DELETED',

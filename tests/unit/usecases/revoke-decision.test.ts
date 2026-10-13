@@ -131,7 +131,7 @@ describe('revokeDecision (Audit Coherence S7)', () => {
         const ctx = makeRequestContext('ADMIN', { userId: 'admin-7' });
         await expect(
             revokeDecision(ctx, 'dec-1', { reason: 'noop' }),
-        ).rejects.toThrow(/closed/i);
+        ).rejects.toMatchObject({ code: 'ACCESS_REVIEW_DECISIONS_IMMUTABLE' });
         expect(resetDecisionMock).not.toHaveBeenCalled();
         expect(logEventMock).not.toHaveBeenCalled();
     });
@@ -144,7 +144,7 @@ describe('revokeDecision (Audit Coherence S7)', () => {
         const ctx = makeRequestContext('ADMIN', { userId: 'admin-7' });
         await expect(
             revokeDecision(ctx, 'dec-1', { reason: 'noop' }),
-        ).rejects.toThrow(/Access review not found/);
+        ).rejects.toMatchObject({ code: 'ACCESS_REVIEW_NOT_FOUND' });
     });
 
     it('rejects when the decision was never submitted', async () => {
@@ -153,7 +153,7 @@ describe('revokeDecision (Audit Coherence S7)', () => {
         const ctx = makeRequestContext('ADMIN', { userId: 'admin-7' });
         await expect(
             revokeDecision(ctx, 'dec-1', { reason: 'noop' }),
-        ).rejects.toThrow(/nothing to revoke/);
+        ).rejects.toMatchObject({ code: 'ACCESS_REVIEW_DECISION_NOT_RECORDED' });
         expect(resetDecisionMock).not.toHaveBeenCalled();
     });
 
@@ -165,7 +165,7 @@ describe('revokeDecision (Audit Coherence S7)', () => {
         const ctx = makeRequestContext('ADMIN', { userId: 'admin-7' });
         await expect(
             revokeDecision(ctx, 'dec-1', { reason: 'too late' }),
-        ).rejects.toThrow(/executed and cannot be revoked/);
+        ).rejects.toMatchObject({ code: 'ACCESS_REVIEW_DECISION_ALREADY_EXECUTED' });
         expect(resetDecisionMock).not.toHaveBeenCalled();
     });
 
@@ -177,7 +177,7 @@ describe('revokeDecision (Audit Coherence S7)', () => {
         const ctx = makeRequestContext('EDITOR', { userId: 'user-1' });
         await expect(
             revokeDecision(ctx, 'dec-1', { reason: 'noop' }),
-        ).rejects.toThrow(/Only the assigned reviewer/);
+        ).rejects.toMatchObject({ code: 'ACCESS_REVIEW_NOT_ASSIGNED_REVIEWER' });
         expect(resetDecisionMock).not.toHaveBeenCalled();
     });
 
@@ -187,7 +187,7 @@ describe('revokeDecision (Audit Coherence S7)', () => {
         const ctx = makeRequestContext('ADMIN', { userId: 'admin-7' });
         await expect(
             revokeDecision(ctx, 'dec-1', { reason: 'noop' }),
-        ).rejects.toThrow(/Decision not found/);
+        ).rejects.toMatchObject({ code: 'ACCESS_REVIEW_DECISION_NOT_FOUND' });
     });
 
     it('surfaces a notFound when the row was concurrently executed', async () => {
@@ -198,7 +198,7 @@ describe('revokeDecision (Audit Coherence S7)', () => {
         const ctx = makeRequestContext('ADMIN', { userId: 'admin-7' });
         await expect(
             revokeDecision(ctx, 'dec-1', { reason: 'concurrent close' }),
-        ).rejects.toThrow(/Decision not found/);
+        ).rejects.toMatchObject({ code: 'ACCESS_REVIEW_DECISION_NOT_FOUND' });
         // No audit row written when the reset never landed.
         expect(logEventMock).not.toHaveBeenCalled();
     });
