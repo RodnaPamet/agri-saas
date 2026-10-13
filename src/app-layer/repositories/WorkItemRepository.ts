@@ -717,27 +717,3 @@ export class TaskCommentRepository {
     }
 }
 
-// ─── TaskWatcher Repository ───
-
-export class TaskWatcherRepository {
-    static async listByTask(db: PrismaTx, ctx: RequestContext, taskId: string) {
-        return db.taskWatcher.findMany({
-            where: { taskId, tenantId: ctx.tenantId },
-            include: { user: { select: { id: true, name: true, email: true } } },
-        });
-    }
-
-    static async add(db: PrismaTx, ctx: RequestContext, taskId: string, userId: string) {
-        return db.taskWatcher.create({
-            data: { tenantId: ctx.tenantId, taskId, userId },
-            include: { user: { select: { id: true, name: true, email: true } } },
-        });
-    }
-
-    static async remove(db: PrismaTx, ctx: RequestContext, taskId: string, userId: string) {
-        const watcher = await db.taskWatcher.findFirst({ where: { taskId, userId, tenantId: ctx.tenantId } });
-        if (!watcher) return null;
-        await db.taskWatcher.delete({ where: { id: watcher.id } });
-        return true;
-    }
-}
