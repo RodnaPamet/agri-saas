@@ -9,7 +9,7 @@
  * discards the draft. Keywords are normalized (trim + lowercase) client-side too
  * so the chips read as they'll be stored — the server normalizes again.
  */
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 
 import { Modal } from '@/components/ui/modal';
@@ -39,14 +39,29 @@ export function InterestsModal({
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // Reseed the draft from the latest saved set each time the modal opens.
-    useEffect(() => {
+    // Reseed the draft from the latest saved set each time the modal OPENS.
+    //
+    // Adjusted during render rather than in an effect — React's documented
+    // pattern for "reset state when a prop changes". `set-state-in-effect`
+    // flagged the effect form (#1471), and the effect was also wrong: its deps
+    // were `[open, initial]`, and `initial` is a `string[]` prop, so a parent
+    // that rebuilt the array handed over a NEW IDENTITY with the same contents
+    // and the reseed re-ran — discarding a half-typed keyword on a plain
+    // parent re-render. A test pins that now; it failed before this change.
+    //
+    // Keying on the false→true transition reseeds exactly when the modal
+    // opens, which is what the original comment said it was for. Setting state
+    // during render is the sanctioned form here: React re-runs the component
+    // immediately and never commits the intermediate output.
+    const [wasOpen, setWasOpen] = useState(open);
+    if (open !== wasOpen) {
+        setWasOpen(open);
         if (open) {
             setDraft(initial);
             setInput('');
             setError(null);
         }
-    }, [open, initial]);
+    }
 
     const addKeyword = () => {
         const k = input.trim().toLowerCase();
