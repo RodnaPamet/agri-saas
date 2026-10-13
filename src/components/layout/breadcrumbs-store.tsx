@@ -51,6 +51,24 @@ interface BreadcrumbsApi {
 const BreadcrumbsContext = createContext<BreadcrumbsApi | null>(null);
 
 /**
+ * The one empty trail. `?? []` would mint a new array on every render that
+ * saw an empty stack, and `items` is a dependency of the `api` memo below —
+ * so a fresh `[]` gave the context a new value on every provider render and
+ * re-rendered every consumer. An empty stack is the COMMON case: it is what
+ * any page that never calls `useBreadcrumbs` leaves behind.
+ *
+ * A non-empty stack was always stable, because `push` stores the caller's
+ * array by reference and `stack[stack.length - 1]` hands back that same
+ * reference. Only the fallback was unstable, which is why this never looked
+ * like a bug — the trail renders correctly either way.
+ *
+ * `useBreadcrumbs` below documents its effect deps as "ctx is stable
+ * per-provider-mount". That was not true while the stack was empty. It is
+ * true now, and this constant is what makes it true.
+ */
+const EMPTY_TRAIL: ReadonlyArray<BreadcrumbItem> = [];
+
+/**
  * Provider — mount once inside `<AppShell>`. Outside the shell
  * (auth/error/print surfaces) the context is absent and
  * `useBreadcrumbs` becomes a silent no-op so unauth pages can
@@ -75,7 +93,7 @@ export function BreadcrumbsProvider({ children }: { children: ReactNode }) {
         [],
     );
 
-    const items = stack[stack.length - 1] ?? [];
+    const items = stack[stack.length - 1] ?? EMPTY_TRAIL;
 
     const api = useMemo<BreadcrumbsApi>(
         () => ({ items, push }),
@@ -96,7 +114,7 @@ export function BreadcrumbsProvider({ children }: { children: ReactNode }) {
  */
 export function useCurrentBreadcrumbs(): ReadonlyArray<BreadcrumbItem> {
     const ctx = useContext(BreadcrumbsContext);
-    return ctx?.items ?? [];
+    return ctx?.items ?? EMPTY_TRAIL;
 }
 
 /**
