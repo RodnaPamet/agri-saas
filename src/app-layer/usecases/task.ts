@@ -91,6 +91,25 @@ export async function getTask(ctx: RequestContext, taskId: string) {
 
 // ─── Create ───
 
+/**
+ * `suppressAssignmentNotification` (#1740): skip the "you have been assigned"
+ * email and bell.
+ *
+ * For a task that records work ALREADY DONE by the person creating it — the
+ * two-step diary treatment — where an assignment notice would tell the farmer
+ * about work they had just finished typing in.
+ *
+ * Narrow on purpose. The general case is #1755: nothing here compares
+ * `assigneeUserId` against `ctx.userId`, so ANY self-assignment mails and
+ * bells the actor today. If that is fixed generally this flag becomes
+ * redundant and should go rather than remain as a second way to say it.
+ *
+ * Kept HERE rather than on the field because
+ * `tests/guards/notif-task-due-emit-coverage.test.ts` slices a fixed 1800
+ * characters from this signature and asserts `emitTaskDueNotification` is
+ * inside it — a long comment within the input type pushes the call out of
+ * that window and reddens a guard about behaviour this does not change.
+ */
 export async function createTask(ctx: RequestContext, input: {
     title: string;
     type?: string;
@@ -103,19 +122,7 @@ export async function createTask(ctx: RequestContext, input: {
     reviewerUserId?: string | null;
     clientMutationId?: string | null;
     metadataJson?: unknown;
-    /**
-     * Skip the "you have been assigned" email and bell (#1740).
-     *
-     * For a task that records work ALREADY DONE by the person creating it —
-     * the two-step diary treatment — where an assignment notice would tell
-     * the farmer about work they had just finished typing in.
-     *
-     * Narrow on purpose. The general case is #1755: nothing here compares
-     * `assigneeUserId` against `ctx.userId`, so ANY self-assignment mails and
-     * bells the actor today. If that is fixed generally this flag becomes
-     * redundant and should go, rather than remaining as a second way to say
-     * the same thing.
-     */
+    /** Skip the assignment email + bell — see the note above this function. */
     suppressAssignmentNotification?: boolean;
 }) {
     assertCanWriteTasks(ctx);

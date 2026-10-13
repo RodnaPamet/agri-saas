@@ -13020,6 +13020,138 @@ exports[`API contract — per-schema snapshots schema: RawErrorResponse 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: RecordDiaryTreatment 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "SPRAY",
+        "FERTILIZE"
+      ],
+      "description": "Spraying fills the ДНЕВНИК’s химични обработки table; fertilising fills торове. Each carries its own columns, which is why this is a kind rather than a free label."
+    },
+    "occurredOn": {
+      "type": "string",
+      "pattern": "^\\\\d{4}-\\\\d{2}-\\\\d{2}$",
+      "description": "The calendar DAY the treatment happened — a day, not an instant, because that is what the register records and what a farmer knows. It dates both the journal entries and the completed lines. **A future day is refused** (\`TREATMENT_DATE_IN_FUTURE\`), and a day that does not exist, such as 2026-02-31, is refused rather than rolled forward (\`TREATMENT_DATE_INVALID\`)."
+    },
+    "parcelIds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1,
+      "description": "The parcels treated, as one flat list that may span blocks. The server groups them and writes one field operation per block — the ДНЕВНИК resolves a treatment’s block through the task’s location link, so a single task spanning blocks would print a parcel under a block it was never on. Empty is refused with \`TREATMENT_NO_PARCELS\`; a parcel of another farm with \`REFERENCE_NOT_IN_TENANT\` and \`params.reference: parcels\`, as a 400 rather than a 404 so the refusal does not confirm the row exists somewhere."
+    },
+    "productItemId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "productName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "description": "A typed product name, resolved to the farm’s own product of that name or created. Send this OR \`productItemId\`."
+    },
+    "fertilizerItemId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "fertilizerName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "pppRegistrationNo": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "ЗЗР рег. № — consulted only when a typed product name has to CREATE a product the farm does not have."
+    },
+    "quarantinePeriodDays": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 365,
+      "description": "Карантинен срок in days, as it applied ON THE DAY. Stored per entry rather than re-derived from the product, so a reprinted document still shows the waiting period that applied — and the earliest-harvest date computed from it — even if the product’s registration changes later."
+    },
+    "newProductCategory": {
+      "type": "string",
+      "enum": [
+        "PESTICIDE",
+        "FERTILIZER"
+      ]
+    },
+    "targetNote": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "Вредител — the pest or disease treated."
+    },
+    "doseValue": {
+      "type": "number",
+      "description": "Доза на приложение. Per-decare for the register; the unit says which."
+    },
+    "doseUnitId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "applicationTechnique": {
+      "type": "string",
+      "maxLength": 120,
+      "description": "Техника за приложение — one rig per treatment, as the field reality is."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    }
+  },
+  "required": [
+    "kind",
+    "occurredOn",
+    "parcelIds",
+    "doseValue",
+    "doseUnitId"
+  ],
+  "description": "A treatment a farmer already carried out. Recorded as DONE — handing work to an operator stays in Задачи."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: RecordedTreatment 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "treatmentGroupId": {
+      "type": "string",
+      "description": "The treatment handle. Equals the \`Idempotency-Key\` you sent; a UUID minted by the server when you sent none."
+    },
+    "parcelCount": {
+      "type": "integer",
+      "description": "Lines written across every block — the number to show the farmer."
+    },
+    "taskIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "One per BLOCK, not per parcel. The register joins a block through the task’s location link, so a treatment spanning three blocks is three tasks."
+    },
+    "replayed": {
+      "type": "boolean",
+      "description": "True when this request resolved onto an existing treatment and wrote nothing."
+    }
+  },
+  "required": [
+    "treatmentGroupId",
+    "parcelCount",
+    "taskIds",
+    "replayed"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: RegisterStartResult 1`] = `
 "{
   "type": "object",

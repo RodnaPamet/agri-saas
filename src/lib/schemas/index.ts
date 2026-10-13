@@ -984,6 +984,67 @@ const HarvestLotPayloadSchema = z.object({
     recordYield: z.coerce.boolean().optional(),
 }).strip();
 
+/**
+ * Record a treatment already carried out, across parcels in any number of
+ * blocks (#1740).
+ *
+ * The body the two-step «Нов запис» sends. `parcelIds` is ONE flat list over
+ * the whole farm — the server groups it by block, because which block a parcel
+ * sits in is not something a client should have to know to describe what it
+ * sprayed.
+ */
+export const RecordDiaryTreatmentSchema = z
+    .object({
+        kind: z.enum(['SPRAY', 'FERTILIZE']).openapi({
+            description:
+                'Spraying fills the ДНЕВНИК\u2019s химични обработки table; fertilising fills торове. Each carries its own columns, which is why this is a kind rather than a free label.',
+        }),
+        occurredOn: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a calendar day, YYYY-MM-DD')
+            .openapi({
+                description:
+                    'The calendar DAY the treatment happened — a day, not an instant, because that is what the register records and what a farmer knows. It dates both the journal entries and the completed lines. **A future day is refused** (`TREATMENT_DATE_IN_FUTURE`), and a day that does not exist, such as 2026-02-31, is refused rather than rolled forward (`TREATMENT_DATE_INVALID`).',
+            }),
+        parcelIds: z.array(z.string().min(1)).min(1).openapi({
+            description:
+                'The parcels treated, as one flat list that may span blocks. The server groups them and writes one field operation per block — the ДНЕВНИК resolves a treatment\u2019s block through the task\u2019s location link, so a single task spanning blocks would print a parcel under a block it was never on. Empty is refused with `TREATMENT_NO_PARCELS`; a parcel of another farm with `REFERENCE_NOT_IN_TENANT` and `params.reference: parcels`, as a 400 rather than a 404 so the refusal does not confirm the row exists somewhere.',
+        }),
+        productItemId: z.string().min(1).optional(),
+        productName: z.string().min(1).max(255).optional().openapi({
+            description:
+                'A typed product name, resolved to the farm\u2019s own product of that name or created. Send this OR `productItemId`.',
+        }),
+        fertilizerItemId: z.string().min(1).optional(),
+        fertilizerName: z.string().min(1).max(255).optional(),
+        pppRegistrationNo: z.string().min(1).max(64).optional().openapi({
+            description:
+                'ЗЗР рег. № — consulted only when a typed product name has to CREATE a product the farm does not have.',
+        }),
+        quarantinePeriodDays: z.number().int().min(0).max(365).optional().openapi({
+            description:
+                'Карантинен срок in days, as it applied ON THE DAY. Stored per entry rather than re-derived from the product, so a reprinted document still shows the waiting period that applied — and the earliest-harvest date computed from it — even if the product\u2019s registration changes later.',
+        }),
+        newProductCategory: z.enum(['PESTICIDE', 'FERTILIZER']).optional(),
+        targetNote: z.string().max(500).optional().openapi({
+            description: 'Вредител — the pest or disease treated.',
+        }),
+        doseValue: z.number().openapi({
+            description: 'Доза на приложение. Per-decare for the register; the unit says which.',
+        }),
+        doseUnitId: z.string().min(1),
+        applicationTechnique: z.string().max(120).optional().openapi({
+            description: 'Техника за приложение — one rig per treatment, as the field reality is.',
+        }),
+        title: z.string().min(1).max(255).optional(),
+    })
+    .openapi('RecordDiaryTreatment', {
+        description:
+            'A treatment a farmer already carried out. Recorded as DONE — handing work to an operator stays in Задачи.',
+    });
+
+export type RecordDiaryTreatmentBody = z.infer<typeof RecordDiaryTreatmentSchema>;
+
 export const CreateLogEntrySchema = z.object({
     type: z.enum(LOG_ENTRY_TYPE_VALUES),
     status: z.enum(['PLANNED', 'DONE']).optional(),

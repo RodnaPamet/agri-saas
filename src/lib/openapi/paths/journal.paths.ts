@@ -10,7 +10,11 @@
  */
 import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
-import { CreateLogEntrySchema, UpdateLogEntrySchema } from '@/lib/schemas';
+import {
+    CreateLogEntrySchema,
+    UpdateLogEntrySchema,
+    RecordDiaryTreatmentSchema,
+} from '@/lib/schemas';
 import { ApiErrorResponseSchema } from '@/lib/dto/common';
 import { op } from './helpers';
 
@@ -136,6 +140,34 @@ const JournalListQuery = z.object({
     }),
 });
 
+/**
+ * What a recorded treatment answers with.
+ *
+ * `treatmentGroupId` is the HANDLE, and it is returned on both a fresh write
+ * and a replay — it is how a client addresses the treatment afterwards (the
+ * Дневник row, the per-entry PDF), so a client that lost the 200 is not
+ * stranded. `replayed` says which of the two happened, because a saved screen
+ * claiming "3 parcels recorded" must be true either way.
+ */
+const RecordedTreatment = z
+    .object({
+        treatmentGroupId: z.string().openapi({
+            description:
+                'The treatment handle. Equals the `Idempotency-Key` you sent; a UUID minted by the server when you sent none.',
+        }),
+        parcelCount: z.number().int().openapi({
+            description: 'Lines written across every block — the number to show the farmer.',
+        }),
+        taskIds: z.array(z.string()).openapi({
+            description:
+                'One per BLOCK, not per parcel. The register joins a block through the task\u2019s location link, so a treatment spanning three blocks is three tasks.',
+        }),
+        replayed: z.boolean().openapi({
+            description: 'True when this request resolved onto an existing treatment and wrote nothing.',
+        }),
+    })
+    .openapi('RecordedTreatment');
+
 export function registerJournalPaths(registry: OpenAPIRegistry): void {
     op(registry, {
         method: 'get',
@@ -181,6 +213,41 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
         params: TenantParams,
         body: CreateLogEntrySchema,
         success: { status: 201, description: 'The created entry, or the original one on a replay.', schema: LogEntryLike },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/journal/treatments',
+        operationId: 'recordDiaryTreatment',
+        summary: 'Record a treatment already carried out',
+        description:
+            'The two-step \u00abНов запис\u00bb: pick a crop, tick parcels, describe one treatment. ' +
+            'Recorded as DONE and dated by `occurredOn` \u2014 handing work to an operator stays in ' +
+            '\u0417\u0430\u0434\u0430\u0447\u0438.\n\n' +
+            'Send `Idempotency-Key` ALWAYS, minted BEFORE the first attempt and reused on every retry. ' +
+            'Here it is also the TREATMENT HANDLE, returned as `treatmentGroupId`: the per-block writes ' +
+            'derive their own keys from it, so a replay resolves on the handle rather than on any one of ' +
+            'them, and the handle is what later addresses this treatment.\n\n' +
+            '`parcelIds` is ONE flat list that may span blocks \u2014 the server groups it and writes one ' +
+            'field operation per block, because the register resolves a block through the task\u2019s ' +
+            'location link.\n\n' +
+            'No stock is deducted. A treatment is a RECORD of what was applied, and deducting from a lot ' +
+            'the farmer may never have tracked would make the inventory wrong in the name of making the ' +
+            'diary right (owner ruling 2026-10-13).\n\n' +
+            'Refusals, each a 400 carrying `error.code`: `TREATMENT_DATE_INVALID` (a day that does not ' +
+            'exist \u2014 2026-02-31 is refused, never rolled forward to 3 March), ' +
+            '`TREATMENT_DATE_IN_FUTURE` (you cannot have sprayed tomorrow), `TREATMENT_NO_PARCELS` (an ' +
+            'empty `parcelIds`), and `REFERENCE_NOT_IN_TENANT` with `params.reference` naming which list ' +
+            'held the stranger \u2014 a 400 rather than a 404 so the refusal does not confirm the row ' +
+            'exists on some other farm.',
+        tags: ['Journal'],
+        params: TenantParams,
+        body: RecordDiaryTreatmentSchema,
+        success: {
+            status: 201,
+            description: 'The handle, the counts, and whether this was a replay.',
+            schema: RecordedTreatment,
+        },
     });
 
     op(registry, {

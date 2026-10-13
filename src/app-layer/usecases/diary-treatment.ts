@@ -298,30 +298,40 @@ export async function recordDiaryTreatment(
         );
         taskIds.push(created.taskId);
         parcelCount += created.parcelCount;
+    }
 
-        // ── Complete every line, which is what writes the record ────────
-        //
-        // Marking a line DONE is what emits its INPUT_APPLICATION journal
-        // entry. `recordedInDiary` makes that entry visible in the
-        // manual-only list AND suppresses the stock deduction; `occurredAt`
-        // dates both the entry and the line by the treatment's own day.
-        const lines = await runInTenantContext(ctx, (db) =>
-            db.operationParcel.findMany({
-                where: { taskId: created.taskId, tenantId: ctx.tenantId },
-                select: { id: true, version: true },
-            }),
+    // ── Complete every line, which is what writes the record ────────────
+    //
+    // ONE read for every line across every task, deliberately outside the
+    // loop above. Reading them per block was an N+1 that
+    // `query-shape-guardrails` caught, and hoisting it is simply better:
+    // the number of queries no longer grows with the number of blocks a
+    // treatment touches.
+    //
+    // Marking a line DONE is what emits its INPUT_APPLICATION journal entry.
+    // `recordedInDiary` makes that entry visible in the manual-only list AND
+    // suppresses the stock deduction; `occurredAt` dates both the entry and
+    // the line by the treatment's own day.
+    //
+    // The marks themselves stay one-per-line, because each carries its own
+    // optimistic-lock version and emits its own journal entry — that is the
+    // operation's shape rather than a loop that could be collapsed.
+    const lines = await runInTenantContext(ctx, (db) =>
+        db.operationParcel.findMany({
+            where: { taskId: { in: taskIds }, tenantId: ctx.tenantId },
+            select: { id: true, taskId: true, version: true },
+        }),
+    );
+    for (const line of lines) {
+        await markOperationParcel(
+            ctx,
+            line.taskId,
+            line.id,
+            'DONE',
+            input.targetNote ?? null,
+            line.version,
+            { recordedInDiary: true, occurredAt: day },
         );
-        for (const line of lines) {
-            await markOperationParcel(
-                ctx,
-                created.taskId,
-                line.id,
-                'DONE',
-                input.targetNote ?? null,
-                line.version,
-                { recordedInDiary: true, occurredAt: day },
-            );
-        }
     }
 
     return { treatmentGroupId, parcelCount, taskIds, replayed: false };
