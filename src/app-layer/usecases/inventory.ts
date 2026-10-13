@@ -432,7 +432,18 @@ export interface InputApplicationResult {
      * consumed more than the tracked stock, so the ledger recorded the
      * true amount and the lot is now negative (flagged by reconciliation).
      */
-    note?: 'inventory_disabled' | 'no_lot_available' | 'zero_quantity' | 'already_applied' | 'over_consumption';
+    note?:
+        | 'inventory_disabled'
+        | 'no_lot_available'
+        | 'zero_quantity'
+        | 'already_applied'
+        | 'over_consumption'
+        // A diary-recorded treatment: the journal entry was written and the
+        // stock arm was deliberately skipped (owner ruling 2026-10-13, #1740).
+        // Distinct from `inventory_disabled`, which says the MODULE is off —
+        // a caller that conflated them could not tell a farm with no stock
+        // tracking from a farm whose diary does not touch it.
+        | 'diary_record_only';
 }
 
 /**
@@ -579,7 +590,23 @@ async function recordInputApplicationImpl(
     // 2 — stock effect (CONSUMPTION) against the FEFO lot.
     let deductedFromLotId: string | null = null;
     let note: InputApplicationResult['note'];
-    if (inventoryOn && consumed > 0) {
+    // Owner ruling 2026-10-13 (#1740): a treatment recorded in the diary does
+    // NOT deduct stock. The Дневник is a compliance record; stock stays
+    // managed through Задачи and adjustments.
+    //
+    // DERIVED from `recordedInDiary` rather than carried as its own flag, so
+    // the policy is structural: there is no way to record a diary treatment
+    // that deducts, and a caller cannot violate the ruling by forgetting a
+    // second field. The journal entry above is still written — that is the
+    // JOURNAL module and the whole point of the record — and only the stock
+    // arm is suppressed.
+    //
+    // The accepted cost, stated because it is real: a farm that uses the
+    // diary as its main entry point will see stock drift ABOVE reality, since
+    // the product was used and the ledger was not told.
+    const recordOnly = line.recordedInDiary === true;
+    if (recordOnly) note = 'diary_record_only';
+    if (inventoryOn && consumed > 0 && !recordOnly) {
         const lot = await InventoryRepository.getFefoLot(db, ctx, product.id);
         if (lot) {
             // ── Value the draw-down ────────────────────────────────────
