@@ -1,25 +1,46 @@
 # Runbook — the DSA contact point and moderation triage
 
-**Audience:** the operator of this deployment. **Status as of 2026-10-11: the
-contact point is PUBLISHED BUT UNRESOLVABLE**, and the action that fixes it is
-yours, not a code change.
+**Audience:** the operator of this deployment. **Status as of 2026-10-13: the
+contact point is PUBLISHED AND RESOLVABLE.** A notice filed on production
+reaches a human, demonstrated end to end. One residual gap remains and it is
+named below.
 
-## The one thing outstanding
-
-`DSA_CONTACT_EMAIL` is **ABSENT** on the `agrent` VM. Measured, not inferred:
+## Status, measured rather than asserted
 
 ```
 # PRESENT/ABSENT only — never echo a value out of /opt/agrent/.env
 gcloud compute ssh agrent --zone europe-west1-b --command \
   "sudo grep -q '^DSA_CONTACT_EMAIL=.' /opt/agrent/.env && echo PRESENT || echo ABSENT"
+# -> PRESENT  (2026-10-13)
 ```
 
-`https://app.agrent.bg/dsa-contact` returns 200 and renders its "no address"
-fallback. So the page a regulator or a recipient would reach exists and tells
-them there is no contact point — which is **DSA Art 11/12 unmet**, not a
-cosmetic gap.
+`https://app.agrent.bg/dsa-contact` renders a `mailto:` rather than its
+"no address" fallback, and notice `cr-16c17d7f` was delivered at 21:30:04 on
+2026-10-13 and confirmed received by the operator. That is both halves of
+#1599's exit criterion.
+
+### The residual gap: it is not a ROLE mailbox, and not on `agrent.bg`
+
+DECISION 1 below asks for a role address (`moderation@`, `dsa@`). The
+configured address is a person's mailbox on a different domain the operator
+controls, and that is a deliberate unblock rather than an oversight: **mail to
+any address at `agrent.bg` bounces.** See #1760 — the domain's MX points at a
+host that is not where the mailbox lives, and it answers `550` for every
+recipient. Until that is fixed, a role address at `agrent.bg` cannot receive
+anything, so insisting on one would have left Art 11/12 unmet rather than met
+imperfectly.
+
+So: the duty is discharged, the shape is not yet right, and #1760 is what
+closes the difference.
 
 ## What to do
+
+**Read this before following the steps: the obvious address does not work.**
+The steps below are written for a working `agrent.bg` mailbox, which is what
+#1760 is about. Creating `moderation@agrent.bg` and setting it here will
+produce a page that looks correct and mail that silently bounces — which is
+exactly what happened on 2026-10-13, three times, with the sends reporting
+success. Verify step 4 actually arrives before believing step 3.
 
 1. **Create a ROLE mailbox**, not a person's. `moderation@agrent.bg` or
    `dsa@agrent.bg`. It must be read by a human within the window below.
@@ -30,7 +51,11 @@ cosmetic gap.
    # This repository is PUBLIC: a personal mailbox must never reach a tracked
    # file. That is the same rule the Caddyfile divergence records, where the
    # live ACME contact is deliberately NOT the repo's.
-   DSA_CONTACT_EMAIL=moderation@agrent.bg
+   #
+   # `moderation@agrent.bg` is the RIGHT shape and, as of 2026-10-13, a
+   # mailbox that cannot receive — see #1760 and the warning above. Use a
+   # domain whose MX you have verified until that is resolved.
+   DSA_CONTACT_EMAIL=moderation@your-verified-domain
 
    sudo docker compose -f /opt/agrent/docker-compose.vm.yml up -d app worker
    ```
@@ -80,9 +105,18 @@ cosmetic gap.
 within a status, because P5's exit criterion is a MEDIAN HANDLING TIME and a
 newest-first queue optimises the wrong end of it.
 
-The lag that criterion measures runs from `ContentReport.createdAt` to the
-`ModerationAction` — **not** to `alertedAt`. That column says a human was told;
-it is not a triage clock, and it must not be used as one.
+The lag that criterion measures runs from `ContentReport.createdAt` — **not**
+from `alertedAt`. That column says a human was told; it is not a triage clock,
+and it must not be used as one.
+
+**Where it runs TO was stated two different ways in this repo**, and the
+difference is not cosmetic: this file and `CLAUDE.md` said the
+`ModerationAction`, while #1595's exit criterion and the statements route's
+docblock said `StatementOfReasons.deliveredAt`. They measure different duties —
+how fast we DECIDE, and how fast the notifier is ANSWERED (Art 17) — and an
+action taken but never explained leaves the notifier knowing nothing, so
+neither subsumes the other. Both are reported, separately and each with its own
+denominator; see #1595.
 
 ## The moderator credential
 
@@ -112,6 +146,7 @@ window to one side of the rotation.
 
 | | |
 |---|---|
-| `DSA_CONTACT_EMAIL` | **ABSENT** — Art 11/12 unmet, the page shows its fallback, the alert job does nothing |
+| `DSA_CONTACT_EMAIL` | **PRESENT** since 2026-10-13 — the page resolves and the alert job sends. NOT a role address and not on `agrent.bg`, because #1760 makes every `agrent.bg` recipient bounce |
+| a mailbox at `agrent.bg` | **unreachable** — #1760. The MX points away from where the mailbox lives and answers `550` for every recipient, invented ones included |
 | per-moderator credentials | not built; `moderatorRef` names a key generation |
 | alerting on a FAILED alert | the job logs `notice-triage-alert.send_failed` at ERROR; nothing pages. Production alerting here is one GCP uptime check on `/api/readyz`, so this is a log line somebody has to read |

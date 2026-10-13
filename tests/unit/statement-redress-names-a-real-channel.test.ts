@@ -11,9 +11,11 @@
  *
  * 2. **"…through our contact page: /dsa-contact."** My first fix, and the
  *    ruling's literal wording. `agrent-ios` then read production: the page
- *    renders `dsa.addressUnset` — *"A contact address has not been configured
- *    for this deployment"* — because `DSA_CONTACT_EMAIL` is unset, under a
- *    heading that says "Write to the address below". So the route became
+ *    rendered `dsa.addressUnset` — *"A contact address has not been configured
+ *    for this deployment"* — because `DSA_CONTACT_EMAIL` was unset at the
+ *    time, under a heading that says "Write to the address below". (It is
+ *    PRESENT as of 2026-10-13, so the page resolves now; the reasoning below
+ *    is why the code does not DEPEND on that.) So the route became
  *    **email → an empty page → the privacy notice**: a worse dead end than
  *    (1), about to be sent automatically on every suspension.
  *

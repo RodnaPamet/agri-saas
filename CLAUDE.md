@@ -2775,18 +2775,31 @@ rest, and a mailbox is outside that boundary; a moderator opens the console.
 `ContentReport` is readable by its reporter (the arm is ROW-level), and this one
 is acceptable on its own terms — it says somebody was notified, which Art 16
 entitles a notifier to know. But P5's median-handling criterion runs from
-`createdAt` to the `ModerationAction`, never to this column.
+`createdAt`, never from this column.
+
+Where it runs TO was stated two ways in this repo — the `ModerationAction`
+here and in the runbook, `StatementOfReasons.deliveredAt` in #1595's exit
+criterion and the statements route. They are different duties (how fast we
+DECIDE vs how fast the notifier is ANSWERED under Art 17) and neither subsumes
+the other, so both are reported with separate denominators. See #1595.
 
 **Nothing is marked until the send resolves, and nothing is marked at all while
 `DSA_CONTACT_EMAIL` is unset.** The second half matters more than it looks: if
 the unconfigured branch stamped rows, then configuring the address correctly
 would silently skip every notice filed beforehand.
 
-**`DSA_CONTACT_EMAIL` is ABSENT on the VM** as of 2026-10-11, so
-`/dsa-contact` renders its fallback and Art 11/12 is unmet. That is an operator
-action, not a code change — `docs/runbooks/dsa-moderation-contact.md` carries
-it, including that the address must be a ROLE mailbox because this repository is
-public.
+**`DSA_CONTACT_EMAIL` is PRESENT on the VM** as of 2026-10-13 (measured with
+the PRESENT/ABSENT probe in `docs/runbooks/dsa-moderation-contact.md`), so
+`/dsa-contact` renders a `mailto:` and a notice reaches a human — notice
+`cr-16c17d7f`, delivered 21:30:04, operator-confirmed. This block said ABSENT
+until then; the runbook carries the current status.
+
+It is **not** a role mailbox and not on `agrent.bg`, which is a deliberate
+unblock: #1760 — every `agrent.bg` recipient bounces, because the domain's MX
+points at a host that is not where the mailbox lives and answers `550` for
+every address, invented ones included. Three Art 16 alerts were stamped as
+alerted and bounced before that was found, which is also what #1753 exists to
+make visible.
 
 **Two i18n traps, both hit while writing this.**
 

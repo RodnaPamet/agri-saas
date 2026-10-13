@@ -17,7 +17,7 @@ and "never configured" are the same observation from outside, and on the
 
 ```
 PLATFORM_TENANT_SLUG:    ABSENT
-DSA_CONTACT_EMAIL:       ABSENT     (known — #1599)
+DSA_CONTACT_EMAIL:       PRESENT    (set 2026-10-13; ABSENT when this note was written)
 PLATFORM_ADMIN_API_KEY:  PRESENT
 ```
 
