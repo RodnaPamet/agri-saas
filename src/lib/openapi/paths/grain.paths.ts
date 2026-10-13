@@ -238,6 +238,30 @@ const CostDefaults = z
     })
     .openapi('CostDefaults');
 
+/**
+ * The eleven validation refusals every cost WRITE can answer (#1712 batch 7).
+ *
+ * Shared deliberately: `createCostEntry`, `createCostEntryBatch` and
+ * `updateCostEntry` all pass through the same two validators —
+ * `prepareCostEntry` (domain link, allocation basis, incurred-on date) and
+ * `writeCostEntryOn` (tenant references, invoice file) — so documenting them
+ * per-operation would be three copies that drift. Traced through the call
+ * graph rather than assumed: the batch reaches them via `prepareCostEntry`
+ * per line and `writeCostEntryOn` per row.
+ */
+const COST_WRITE_REFUSALS =
+    '\n\nEleven more refusals carry codes, and all of them are 400s.' +
+    '\n\n**The link** — `COST_ENTRY_MULTIPLE_DOMAIN_LINKS` (more than one of the domain links set, count in `params.chosen`); ' +
+    '`COST_ENTRY_LEASE_REQUIRES_RENT` (`leaseId` on a non-RENT category); ' +
+    '`COST_ENTRY_PARCELS_REQUIRE_SUBSET_BASIS` (`allocationParcelIds` on a basis other than `PARCEL_SUBSET`).' +
+    '\n\n**The basis** — `COST_ENTRY_BASIS_CONFLICTS_WITH_SPATIAL_LINK` (a basis that spreads across land of its own, also linking a place; the basis is in `params.basis`); ' +
+    '`COST_ENTRY_PARCEL_SUBSET_NEEDS_TWO` (a `PARCEL_SUBSET` naming fewer than two distinct parcels — one parcel is a `parcelId` link, not a subset).' +
+    '\n\n**The references** — `COST_ENTRY_REFERENCE_NOT_IN_TENANT` covers all six single references, with which one in `params.reference` (`planting`, `season`, `location`, `parcel`, `lease`, `item`); ' +
+    '`COST_ENTRY_ALLOCATION_PARCELS_NOT_IN_TENANT` is the `PARCEL_SUBSET` set. ' +
+    'Both answer **400 rather than 404 deliberately**: a 404 would confirm the row exists in SOME tenant, which is what a cross-tenant probe is for. The reference TYPE is returned; the id is not.' +
+    '\n\n**The invoice** — `COST_ENTRY_INVOICE_FILE_NOT_FOUND`, `COST_ENTRY_INVOICE_UPLOAD_INCOMPLETE` (the upload never finished) and `COST_ENTRY_INVOICE_FILE_DELETED`.' +
+    '\n\n**The date** — `COST_ENTRY_INVALID_DATE`, with the field named in `params.field`.';
+
 export function registerGrainPaths(registry: OpenAPIRegistry): void {
 
     op(registry, {
@@ -320,7 +344,8 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
             '\n\n**The salary breakdown is both-or-neither, and `PAYROLL` only.** `payrollHeadcount` and `payrollAnnualPerPerson` record how a salary figure was arrived at — «брой хора × годишна заплата» — so the form can show the breakdown and a defaults read can recall it. `amount` stays authoritative and is deliberately NOT cross-checked against the product: a farm whose third hire started in May will enter a total below `headcount × perPerson`, and refusing that would block a true figure to protect an identity nobody asked for. Sending one without the other is `PAYROLL_BREAKDOWN_INCOMPLETE`, with the absent field named in `params.missing`; sending either on a non-PAYROLL category is `PAYROLL_BREAKDOWN_NOT_APPLICABLE`.' +
             '\n\n**`allocationBasis: CROP` scopes the whole cost to ONE crop** (#1530) and is the farmer\u2019s own per-crop figure rather than a spread across land. It requires `commodityCanonical` \u2014 any spelling the crop vocabulary resolves, stored canonical, so `Canola` is persisted as `rapeseed`. A commodity the vocabulary does not cover is REFUSED rather than stored as null: such a row has no commodity to sum onto and would be accepted, listed, and absent from every figure. ' +
             '\n\nThree refusals carry codes. `CROP_COST_NEEDS_COMMODITY` \u2014 basis `CROP` with no crop named. `COMMODITY_NOT_APPLICABLE` \u2014 a crop named on any other basis, with the basis in `params.basis`; refused rather than ignored because a crop left on a row whose basis later returns to `CROP` would start carrying the cost with nobody having chosen it. `CROP_COST_HAS_SPATIAL_LINK` \u2014 a `CROP` entry also linking a planting, parcel or location, with the offending fields in `params.links`; such an entry answers \u201cwhich crop\u201d, not \u201cwhich land\u201d, so a place link would store an instruction the allocator ignores. ' +
-            '\n\nA `CROP` cost **supersedes** the consumption-derived cost for its (commodity, season) rather than adding to it \u2014 the farmer\u2019s figure wins, and the season is the one containing `incurredOn`, else its calendar year. So it is a fourth slice of `cashCostTotal` on the calculator, never a second count of the same crop-year.',
+            '\n\nA `CROP` cost **supersedes** the consumption-derived cost for its (commodity, season) rather than adding to it \u2014 the farmer\u2019s figure wins, and the season is the one containing `incurredOn`, else its calendar year. So it is a fourth slice of `cashCostTotal` on the calculator, never a second count of the same crop-year.' +
+            COST_WRITE_REFUSALS,
         tags: ['Grain'],
         params: TenantParams,
         body: CreateCostEntrySchema,
@@ -337,7 +362,8 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
             '\n\n**`lines` must contain at least one entry.** An empty batch is refused rather than absorbed as a no-op: a 201 for a write that did nothing is what makes an offline outbox believe it has synced and drop the sheet.' +
             '\n\n**A line that violates any rule refuses the WHOLE sheet, before anything is written.** Every line is validated up front, so the batch cannot book six rows and then discover line 7 carries a contradictory allocation basis.' +
             '\n\n**Honours `Idempotency-Key`, and it is the SHEET\u2019s key.** Send one minted before the first attempt and reused on every retry of the same sheet. Note the server derives a per-line key from it internally \u2014 `CostEntry` carries a unique index on `(tenantId, clientMutationId)`, so the lines cannot literally share your key \u2014 and a replay returns the ORIGINAL rows, in the order you sent them, rather than booking the sheet twice. Do not construct or depend on the derived form; it is an implementation detail and is deliberately not read back by prefix.' +
-            '\n\nThe 25-line bound is not politeness: the sheet is one interactive transaction, and an unbounded batch is a transaction whose size the client chooses.',
+            '\n\nThe 25-line bound is not politeness: the sheet is one interactive transaction, and an unbounded batch is a transaction whose size the client chooses.' +
+            COST_WRITE_REFUSALS,
         tags: ['Grain'],
         params: TenantParams,
         body: CreateCostEntryBatchSchema,
@@ -371,7 +397,8 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         path: '/api/t/{tenantSlug}/grain/costs/{costEntryId}',
         operationId: 'updateCostEntry',
         summary: 'Update a cost entry',
-        description: 'Refusal code: `COST_ENTRY_NOT_FOUND` (404).',
+        description: 'Refusal code: `COST_ENTRY_NOT_FOUND` (404).' +
+            COST_WRITE_REFUSALS,
         tags: ['Grain'],
         params: CostEntryParams,
         body: UpdateCostEntrySchema,

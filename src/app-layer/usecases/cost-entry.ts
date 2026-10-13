@@ -5,7 +5,7 @@ import { isUniqueViolation } from '@/lib/errors/prisma';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
-import { badRequest, codedBadRequest, codedNotFound } from '@/lib/errors/types';
+import { codedBadRequest, codedNotFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { CostEntryRepository, type CostEntryFilters } from '../repositories/CostEntryRepository';
 import { FileRepository } from '../repositories/FileRepository';
@@ -58,7 +58,7 @@ function dec(v: Prisma.Decimal | number | null | undefined): number | null {
 
 function parseRequiredDate(value: string, label: string): Date {
     const d = new Date(value);
-    if (Number.isNaN(d.getTime())) throw badRequest(`${label} must be a valid date`);
+    if (Number.isNaN(d.getTime())) throw codedBadRequest('COST_ENTRY_INVALID_DATE', `${label} must be a valid date`, { field: label });
     return d;
 }
 
@@ -98,8 +98,10 @@ function parseRequiredDate(value: string, label: string): Date {
  * rather than a partial answer worth keeping. And the pair is meaningless on a
  * FUEL or SEED cost — the same reasoning that makes `leaseId` RENT-only.
  *
- * Coded, unlike its neighbours: the uncoded `badRequest`s around it are the
- * #1391 gap, and adding more of them would widen it.
+ * This was the first coded refusal in the file, written when its neighbours
+ * were all uncoded. They are coded now too (#1712 batch 7), so the note it
+ * used to carry — "adding more uncoded ones would widen the #1391 gap" — no
+ * longer describes anything here.
  */
 function assertPayrollBreakdown(input: {
     category?: string | null;
@@ -137,12 +139,14 @@ export function assertSingleDomainLink(input: {
 }): void {
     const set = COST_DOMAIN_LINKS.filter((k) => input[k] != null);
     if (set.length > 1) {
-        throw badRequest(
+        throw codedBadRequest(
+            'COST_ENTRY_MULTIPLE_DOMAIN_LINKS',
             `A cost entry may link to at most one of ${COST_DOMAIN_LINKS.join(', ')} — got ${set.join(', ')}`,
+            { chosen: set.length },
         );
     }
     if (input.leaseId != null && input.category !== 'RENT') {
-        throw badRequest('leaseId may only be set on a RENT cost entry');
+        throw codedBadRequest('COST_ENTRY_LEASE_REQUIRES_RENT', 'leaseId may only be set on a RENT cost entry');
     }
     assertPayrollBreakdown(input);
 }
@@ -198,12 +202,13 @@ export function assertAllocationBasis(input: {
             // explain the refusal with something untrue, and the next reader
             // would go looking for the spread.
             //
-            // Coded for the reason `assertPayrollBreakdown` gives above: the
-            // uncoded `badRequest`s around it are the #1391 gap, and adding
-            // more of them would widen it. The existing non-CROP branch is
-            // left exactly as it was — converting it would be a behaviour
-            // change to an error shape clients already handle, which is not
-            // this change's business.
+            // The non-CROP branch below is now coded too (#1712 batch 7) as
+            // `COST_ENTRY_BASIS_CONFLICTS_WITH_SPATIAL_LINK`. The note here
+            // used to say it was deliberately left alone because converting
+            // it would change an error shape clients already handle; that
+            // reasoning held while the code was the only change available,
+            // and no longer applies now that the English sentence is kept
+            // verbatim as the fallback alongside the code.
             if (basis === 'CROP') {
                 throw codedBadRequest(
                     'CROP_COST_HAS_SPATIAL_LINK',
@@ -211,8 +216,10 @@ export function assertAllocationBasis(input: {
                     { links: spatial.join(',') },
                 );
             }
-            throw badRequest(
+            throw codedBadRequest(
+                'COST_ENTRY_BASIS_CONFLICTS_WITH_SPATIAL_LINK',
                 `A ${basis} cost entry spreads across land of its own, so it cannot also link to ${spatial.join(', ')}`,
+                { basis },
             );
         }
     }
@@ -246,12 +253,13 @@ export function assertAllocationBasis(input: {
     if (basis === 'PARCEL_SUBSET') {
         const distinct = new Set(chosen);
         if (distinct.size < 2) {
-            throw badRequest(
+            throw codedBadRequest(
+                'COST_ENTRY_PARCEL_SUBSET_NEEDS_TWO',
                 'A PARCEL_SUBSET cost entry must choose at least two distinct parcels — one parcel is a parcelId link',
             );
         }
     } else if (chosen.length > 0) {
-        throw badRequest(`allocationParcelIds may only be set on a PARCEL_SUBSET cost entry`);
+        throw codedBadRequest('COST_ENTRY_PARCELS_REQUIRE_SUBSET_BASIS', `allocationParcelIds may only be set on a PARCEL_SUBSET cost entry`);
     }
 }
 
@@ -281,11 +289,11 @@ export async function assertUsableInvoice(
         where: { id: invoiceFileId, tenantId: ctx.tenantId },
         select: { id: true, status: true, deletedAt: true },
     }));
-    if (!file) throw badRequest('Invoice file not found or belongs to a different tenant');
+    if (!file) throw codedBadRequest('COST_ENTRY_INVOICE_FILE_NOT_FOUND', 'Invoice file not found or belongs to a different tenant');
     if (file.status !== 'STORED') {
-        throw badRequest('Invoice file upload has not completed');
+        throw codedBadRequest('COST_ENTRY_INVOICE_UPLOAD_INCOMPLETE', 'Invoice file upload has not completed');
     }
-    if (file.deletedAt != null) throw badRequest('Invoice file has been deleted');
+    if (file.deletedAt != null) throw codedBadRequest('COST_ENTRY_INVOICE_FILE_DELETED', 'Invoice file has been deleted');
 }
 
 /**
@@ -438,7 +446,8 @@ async function assertFksBelongToTenant(
             take: wanted.length,
         });
         if (found.length !== wanted.length) {
-            throw badRequest(
+            throw codedBadRequest(
+                'COST_ENTRY_ALLOCATION_PARCELS_NOT_IN_TENANT',
                 'One or more chosen parcels were not found or belong to a different tenant',
             );
         }
@@ -448,42 +457,72 @@ async function assertFksBelongToTenant(
             where: { id: input.plantingId, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true },
         });
-        if (!row) throw badRequest('Planting not found or belongs to a different tenant');
+        if (!row)
+            throw codedBadRequest(
+                'COST_ENTRY_REFERENCE_NOT_IN_TENANT',
+                'Planting not found or belongs to a different tenant',
+                { reference: 'planting' },
+            );
     }
     if (input.seasonId) {
         const row = await db.season.findFirst({
             where: { id: input.seasonId, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true },
         });
-        if (!row) throw badRequest('Season not found or belongs to a different tenant');
+        if (!row)
+            throw codedBadRequest(
+                'COST_ENTRY_REFERENCE_NOT_IN_TENANT',
+                'Season not found or belongs to a different tenant',
+                { reference: 'season' },
+            );
     }
     if (input.locationId) {
         const row = await db.location.findFirst({
             where: { id: input.locationId, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true },
         });
-        if (!row) throw badRequest('Location not found or belongs to a different tenant');
+        if (!row)
+            throw codedBadRequest(
+                'COST_ENTRY_REFERENCE_NOT_IN_TENANT',
+                'Location not found or belongs to a different tenant',
+                { reference: 'location' },
+            );
     }
     if (input.parcelId) {
         const row = await db.parcel.findFirst({
             where: { id: input.parcelId, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true },
         });
-        if (!row) throw badRequest('Parcel not found or belongs to a different tenant');
+        if (!row)
+            throw codedBadRequest(
+                'COST_ENTRY_REFERENCE_NOT_IN_TENANT',
+                'Parcel not found or belongs to a different tenant',
+                { reference: 'parcel' },
+            );
     }
     if (input.leaseId) {
         const row = await db.parcelLease.findFirst({
             where: { id: input.leaseId, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true },
         });
-        if (!row) throw badRequest('Lease not found or belongs to a different tenant');
+        if (!row)
+            throw codedBadRequest(
+                'COST_ENTRY_REFERENCE_NOT_IN_TENANT',
+                'Lease not found or belongs to a different tenant',
+                { reference: 'lease' },
+            );
     }
     if (input.itemId) {
         const row = await db.item.findFirst({
             where: { id: input.itemId, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true },
         });
-        if (!row) throw badRequest('Item not found or belongs to a different tenant');
+        if (!row)
+            throw codedBadRequest(
+                'COST_ENTRY_REFERENCE_NOT_IN_TENANT',
+                'Item not found or belongs to a different tenant',
+                { reference: 'item' },
+            );
     }
 }
 
