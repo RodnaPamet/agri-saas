@@ -31,7 +31,7 @@ const CREDENTIAL_HEADERS =
 
 /** Calls that mean "this route verifies that credential". */
 const VERIFIES =
-    /constructWebhookEvent|verifySignature|timingSafeEqual|authenticateScimRequest|verifyPlatformApiKey|processIncomingWebhook|verifyApiKey|STAGING_SEED_TOKEN/;
+    /constructWebhookEvent|verifySignature|verifyResendSignature|timingSafeEqual|authenticateScimRequest|verifyPlatformApiKey|processIncomingWebhook|verifyApiKey|STAGING_SEED_TOKEN/;
 
 function routeFiles(dir: string, acc: string[] = []): string[] {
     if (!fs.existsSync(dir)) {
@@ -196,6 +196,7 @@ describe('credential-verifying routes are reachable, and public routes verify', 
             '/api/stripe/webhook',
             '/api/storage/av-webhook',
             '/api/integrations/webhooks/slack',
+            '/api/webhooks/resend',
         ]) {
             expect(isPublic(p)).toBe(true);
         }
@@ -207,6 +208,12 @@ describe('credential-verifying routes are reachable, and public routes verify', 
         expect(CREDENTIAL_HEADERS.test("req.headers.get('content-type')")).toBe(false);
         expect(VERIFIES.test('constructWebhookEvent(body, sig)')).toBe(true);
         expect(VERIFIES.test('processIncomingWebhook({provider, rawBody})')).toBe(true);
+        // Added with the Resend bounce feed (#1753). `verifyResendSignature`
+        // does NOT contain `verifySignature` as a substring, so the route read
+        // as anonymous under assertion B until the name was listed — the guard
+        // caught it, and widening the detector is the precedent this file sets
+        // for itself above (`/api/staging/seed`).
+        expect(VERIFIES.test('verifyResendSignature({ rawBody, secret })')).toBe(true);
         expect(VERIFIES.test('JSON.parse(body)')).toBe(false);
         expect(VERIFIES.test('await prisma.user.findMany()')).toBe(false);
     });

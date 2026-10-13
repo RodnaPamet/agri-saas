@@ -69,6 +69,22 @@ const WEBHOOK_PATH_PREFIXES = [
 ] as const;
 
 /**
+ * Paths in this tier by EXACT match, added with the Resend feed (#1753).
+ *
+ * The list above is applied with `startsWith`, which is right for a subtree
+ * but wrong for a single route: `startsWith('/api/webhooks/resend')` also
+ * claims `/api/webhooks/resendfoo` and `/api/webhooks/resend/replay`, neither
+ * of which exists and both of which the Edge refuses. That is the
+ * `/api/scim` vs `/api/scimulator` hazard this file names at the top, and the
+ * rule it states — the limiter's scope must not be wider than the carve-out's
+ * — is the reason for a second list rather than a looser entry in the first.
+ *
+ * It mirrors `guard.ts`, which keeps exactly this split for exactly this
+ * reason, so the two stay comparable entry by entry.
+ */
+const WEBHOOK_PATH_EXACT = new Set<string>(['/api/webhooks/resend']);
+
+/**
  * Does this request belong to the SCIM tier?
  *
  * The trailing slash is load-bearing and matches `PUBLIC_PATH_PREFIXES`
@@ -78,6 +94,7 @@ const WEBHOOK_PATH_PREFIXES = [
 export function isScimRateLimited(pathname: string): boolean {
     return (
         pathname.startsWith(SCIM_PATH_PREFIX) ||
+        WEBHOOK_PATH_EXACT.has(pathname) ||
         WEBHOOK_PATH_PREFIXES.some((p) => pathname.startsWith(p))
     );
 }
