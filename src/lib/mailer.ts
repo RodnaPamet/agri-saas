@@ -35,7 +35,21 @@ export interface EmailMessage {
 }
 
 export interface EmailProvider {
-    send(msg: EmailMessage): Promise<void>;
+    /**
+     * Put one message on the wire.
+     *
+     * Returns the provider's message id where it has one, so `sendEmail` can
+     * log something an operator can look up (#1753). `null` is a legitimate
+     * answer — the console sink and SMTP have no such id — and callers must
+     * not treat its absence as failure.
+     *
+     * **Resolving says the provider ACCEPTED the message, never that it was
+     * delivered.** Delivery is asynchronous and arrives as a bounce or a
+     * webhook minutes later, so no return value here can report it. That
+     * distinction is not pedantry: a DSA alert resolved here, was marked sent,
+     * and bounced (#1753).
+     */
+    send(msg: EmailMessage): Promise<string | null | void>;
 }
 
 // ─── Console (dev) ───
@@ -130,7 +144,7 @@ export class ResendProvider implements EmailProvider {
         private from: string,
     ) {}
 
-    async send(msg: EmailMessage): Promise<void> {
+    async send(msg: EmailMessage): Promise<string | null> {
         const res = await fetch('https://api.resend.com/emails', {
             method: 'POST',
             headers: {
@@ -158,6 +172,30 @@ export class ResendProvider implements EmailProvider {
             const detail = await res.text().catch(() => '');
             throw new Error(`Resend API error ${res.status}: ${detail.slice(0, 300)}`);
         }
+
+        // The message id, which the success body carries and this used to
+        // DISCARD (#1753).
+        //
+        // On 2026-10-13 a DSA Art 16 alert resolved successfully here, the job
+        // stamped `alertedAt`, and the message BOUNCED minutes later —
+        // `550 … dsa@agrent.bg … account or domain may not exist`. Diagnosing
+        // that needed a live API call from inside the running container,
+        // because nothing in the product had recorded which message to ask
+        // about. With the id it is one lookup.
+        //
+        // Returned rather than logged here so the provider stays a transport:
+        // `sendEmail` owns the logging, and a provider that logged would log
+        // twice for callers that already do.
+        // Defensive on BOTH the call and the shape. A transport double that
+        // predates this change supplies `{ ok, status, text }` and no `json`
+        // — measured: two existing suites in `mailer.test.ts` died with
+        // `res.json is not a function` the moment this read was added. A
+        // provider must not break because a response object is sparser than
+        // expected, and an absent id is already a legitimate answer.
+        const body = (await (typeof res.json === 'function'
+            ? res.json().catch(() => null)
+            : Promise.resolve(null))) as { id?: string } | null;
+        return typeof body?.id === 'string' ? body.id : null;
     }
 }
 
@@ -202,7 +240,67 @@ export async function sendEmail(msg: EmailMessage): Promise<void> {
         envInitAttempted = true;
         initMailerFromEnv();
     }
-    await provider.send(msg);
+    // ── Per-message logging (#1753) ──
+    //
+    // This function was `await provider.send(msg)` and nothing else: no log,
+    // no try/catch, no record of the message. The only mailer log in the whole
+    // system was "Mailer transport selected" at startup, so a failed send and
+    // a successful one were the same observable, and the provider's message id
+    // — the one thing that makes a delivery failure diagnosable — was thrown
+    // away.
+    //
+    // That is not hypothetical. On 2026-10-13 a DSA Art 16 alert resolved
+    // here, `notice-triage-alert` stamped `alertedAt`, and the message bounced
+    // minutes later. Finding out why needed a Resend API call from inside the
+    // running container, because the product had recorded nothing.
+    //
+    // **The recipient DOMAIN, never the address.** Epic C.4's rule is that an
+    // audit actor is an opaque id and never an email, and a log line naming
+    // who was invited, who reported what, or who asked to be deleted is the
+    // disclosure this product spends most of its design avoiding. The domain
+    // is enough to tell "the DSA mailbox" from "a farmer's inbox", which is
+    // the operational question.
+    const recipientDomain = msg.to.includes('@') ? msg.to.slice(msg.to.lastIndexOf('@') + 1) : 'unknown';
+    const started = Date.now();
+    try {
+        const id = (await provider.send(msg)) ?? null;
+        logger.info('mail.sent', {
+            component: 'mailer',
+            provider: providerName(provider),
+            recipientDomain,
+            // The provider's handle, so a bounce is a lookup rather than an
+            // investigation. `null` for transports that mint none.
+            messageId: typeof id === 'string' ? id : null,
+            durationMs: Date.now() - started,
+        });
+    } catch (err) {
+        // Logged AND rethrown. The callers' retry semantics depend on this
+        // throwing — `notice-triage-alert` stamps `alertedAt` only after
+        // `sendEmail` resolves, precisely so a failure retries — so swallowing
+        // here would convert a loud failure into the silent one this change
+        // exists to end.
+        logger.error('mail.send_failed', {
+            component: 'mailer',
+            provider: providerName(provider),
+            recipientDomain,
+            durationMs: Date.now() - started,
+            error: err instanceof Error ? err.message : String(err),
+        });
+        throw err;
+    }
+}
+
+/**
+ * The transport's name for a log line, derived from the instance rather than
+ * re-read from env — so the log says what is ACTUALLY sending, which is the
+ * question `/api/readyz`'s `capabilities.email` answers for the operator and
+ * this answers per message.
+ */
+function providerName(p: EmailProvider): string {
+    if (p instanceof ResendProvider) return 'resend';
+    if (p instanceof ConsoleEmailProvider) return 'console';
+    if (p instanceof StubEmailProvider) return 'stub';
+    return p.constructor?.name ?? 'unknown';
 }
 
 /**
