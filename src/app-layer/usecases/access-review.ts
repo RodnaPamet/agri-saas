@@ -39,7 +39,7 @@ import { assertCanAdmin, assertCanRead } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
-import { badRequest, forbidden, notFound } from '@/lib/errors/types';
+import { codedBadRequest, codedForbidden, codedNotFound } from '@/lib/errors/types';
 import {
     CreateAccessReviewSchema,
     SubmitDecisionSchema,
@@ -70,7 +70,7 @@ export async function getAccessReview(ctx: RequestContext, id: string) {
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
         const review = await AccessReviewRepository.getById(db, ctx, id);
-        if (!review) throw notFound('Access review not found');
+        if (!review) throw codedNotFound('ACCESS_REVIEW_NOT_FOUND', 'Access review not found');
         return review;
     });
 }
@@ -87,7 +87,7 @@ export async function getAccessReviewWithActivity(
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
         const review = await AccessReviewRepository.getById(db, ctx, id);
-        if (!review) throw notFound('Access review not found');
+        if (!review) throw codedNotFound('ACCESS_REVIEW_NOT_FOUND', 'Access review not found');
         const userIds = review.decisions.map((d) => d.subjectUserId);
         const lastActivityByUser = await AccessReviewRepository.getLastActivityByUser(
             db,
@@ -138,10 +138,12 @@ export async function createAccessReview(
         );
 
         if (memberships.length === 0) {
-            throw badRequest(
+            throw codedBadRequest(
+                'ACCESS_REVIEW_NO_ELIGIBLE_SUBJECTS',
                 parsed.scope === 'CUSTOM'
                     ? 'None of the supplied membership ids are eligible (active/invited within this tenant). Refresh the list and try again.'
                     : 'No memberships matched the requested scope — the campaign would have zero subjects.',
+                { scope: parsed.scope },
             );
         }
 
@@ -154,8 +156,10 @@ export async function createAccessReview(
             const found = new Set(memberships.map((m) => m.id));
             const missing = parsed.customMembershipIds.filter((id) => !found.has(id));
             if (missing.length > 0) {
-                throw badRequest(
+                throw codedBadRequest(
+                    'ACCESS_REVIEW_INELIGIBLE_SUBJECTS',
                     `Some membership ids are not eligible (deactivated, removed, or not in this tenant): ${missing.join(', ')}`,
+                    { count: missing.length },
                 );
             }
         }
@@ -245,14 +249,15 @@ export async function submitDecision(
 
     return runInTenantContext(ctx, async (db) => {
         const decision = await AccessReviewRepository.getDecision(db, ctx, decisionId);
-        if (!decision) throw notFound('Decision not found');
+        if (!decision) throw codedNotFound('ACCESS_REVIEW_DECISION_NOT_FOUND', 'Decision not found');
 
         const review = decision.accessReview;
         if (!review || review.deletedAt !== null) {
-            throw notFound('Access review not found');
+            throw codedNotFound('ACCESS_REVIEW_NOT_FOUND', 'Access review not found');
         }
         if (review.status === 'CLOSED') {
-            throw badRequest(
+            throw codedBadRequest(
+                'ACCESS_REVIEW_DECISIONS_IMMUTABLE',
                 'This campaign is closed; decisions are immutable.',
             );
         }
@@ -263,13 +268,16 @@ export async function submitDecision(
         const isAssignedReviewer = review.reviewerUserId === ctx.userId;
         const isAdmin = ctx.permissions.canAdmin;
         if (!isAssignedReviewer && !isAdmin) {
-            throw forbidden(
+            throw codedForbidden(
+                'ACCESS_REVIEW_NOT_ASSIGNED_REVIEWER',
                 'Only the assigned reviewer (or a tenant admin) may submit decisions for this campaign.',
+                { action: 'submit' },
             );
         }
 
         if (decision.decision !== null) {
-            throw badRequest(
+            throw codedBadRequest(
+                'ACCESS_REVIEW_DECISION_ALREADY_RECORDED',
                 'This decision has already been recorded. Re-recording is not supported in this phase.',
             );
         }
@@ -296,7 +304,7 @@ export async function submitDecision(
             // Concurrent delete or RLS reject. Surface the same
             // shape as the initial lookup so the caller can retry
             // cleanly.
-            throw notFound('Decision not found');
+            throw codedNotFound('ACCESS_REVIEW_DECISION_NOT_FOUND', 'Decision not found');
         }
 
         // Lifecycle transition. OPEN → IN_REVIEW the moment any
@@ -404,14 +412,15 @@ export async function revokeDecision(
             ctx,
             decisionId,
         );
-        if (!decision) throw notFound('Decision not found');
+        if (!decision) throw codedNotFound('ACCESS_REVIEW_DECISION_NOT_FOUND', 'Decision not found');
 
         const review = decision.accessReview;
         if (!review || review.deletedAt !== null) {
-            throw notFound('Access review not found');
+            throw codedNotFound('ACCESS_REVIEW_NOT_FOUND', 'Access review not found');
         }
         if (review.status === 'CLOSED') {
-            throw badRequest(
+            throw codedBadRequest(
+                'ACCESS_REVIEW_DECISIONS_IMMUTABLE',
                 'This campaign is closed; decisions are immutable.',
             );
         }
@@ -419,18 +428,22 @@ export async function revokeDecision(
         const isAssignedReviewer = review.reviewerUserId === ctx.userId;
         const isAdmin = ctx.permissions.canAdmin;
         if (!isAssignedReviewer && !isAdmin) {
-            throw forbidden(
+            throw codedForbidden(
+                'ACCESS_REVIEW_NOT_ASSIGNED_REVIEWER',
                 'Only the assigned reviewer (or a tenant admin) may revoke decisions for this campaign.',
+                { action: 'revoke' },
             );
         }
 
         if (decision.decision === null) {
-            throw badRequest(
+            throw codedBadRequest(
+                'ACCESS_REVIEW_DECISION_NOT_RECORDED',
                 'This decision has not been recorded; nothing to revoke.',
             );
         }
         if (decision.executedAt !== null) {
-            throw badRequest(
+            throw codedBadRequest(
+                'ACCESS_REVIEW_DECISION_ALREADY_EXECUTED',
                 'This decision has been executed and cannot be revoked.',
             );
         }
@@ -446,7 +459,7 @@ export async function revokeDecision(
             // flipped non-null between the gate above and the
             // update) or RLS pushed it out of view. Both surface as
             // notFound so the caller can retry cleanly.
-            throw notFound('Decision not found');
+            throw codedNotFound('ACCESS_REVIEW_DECISION_NOT_FOUND', 'Decision not found');
         }
 
         await logEvent(db, ctx, {
@@ -569,10 +582,10 @@ export async function closeAccessReview(
             },
         });
         if (!review || review.deletedAt !== null) {
-            throw notFound('Access review not found');
+            throw codedNotFound('ACCESS_REVIEW_NOT_FOUND', 'Access review not found');
         }
         if (review.status === 'CLOSED') {
-            throw badRequest('Campaign is already closed.');
+            throw codedBadRequest('ACCESS_REVIEW_ALREADY_CLOSED', 'Campaign is already closed.');
         }
 
         const decisions = await AccessReviewRepository.getDecisionsForExecution(
@@ -585,9 +598,11 @@ export async function closeAccessReview(
         // complete reviewer judgment.
         const pending = decisions.filter((d) => d.decision === null);
         if (pending.length > 0) {
-            throw badRequest(
+            throw codedBadRequest(
+                'ACCESS_REVIEW_DECISIONS_PENDING',
                 `Cannot close: ${pending.length} decision(s) are still pending. ` +
                     `Every subject must be CONFIRMed, REVOKEd, or MODIFYd before close.`,
+                { pending: pending.length },
             );
         }
 
@@ -627,10 +642,12 @@ export async function closeAccessReview(
         const projectedOwnerCount =
             liveOwners.length - projectedOwnerLoss + projectedOwnerGain;
         if (liveOwners.length > 0 && projectedOwnerCount <= 0) {
-            throw forbidden(
+            throw codedForbidden(
+                'ACCESS_REVIEW_WOULD_ORPHAN_OWNERS',
                 `Cannot close: executing the planned decisions would leave the tenant with ` +
                     `zero ACTIVE OWNERs (would go from ${liveOwners.length} to ${projectedOwnerCount}). ` +
                     `Promote another OWNER first or change the campaign's REVOKE/MODIFY decisions.`,
+                { from: liveOwners.length, to: projectedOwnerCount },
             );
         }
 

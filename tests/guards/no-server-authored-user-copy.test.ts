@@ -298,7 +298,35 @@ export function collectServerAuthoredCopy(root: string, dirs: string[] = ROOTS):
 //
 // The dead watcher usecases deleted (#1717), taking
 // `notFound('Watcher not found')` with them.
-const CURRENT_BASELINE = 376;
+//
+// ── 376 → 356 ──────────────────────────────────────────────────────
+//
+// The whole `access-review` usecase coded in one pass: 21 throw sites, 12
+// codes. The sites collapse hard — `ACCESS_REVIEW_NOT_FOUND` covers 5 and
+// `ACCESS_REVIEW_DECISION_NOT_FOUND` 4, so nine sites needed two codes.
+//
+// 20 rather than 21, and the one that did not move is worth naming: the
+// eligibility refusal at `access-review.ts:141` picks its sentence with a
+// ternary on `parsed.scope`, so the message is a conditional expression
+// rather than a string literal and THROWERS never matched it. It is coded
+// now regardless — this detector undercounts a refusal whose prose is
+// computed, which is a blind spot in the measurement and not in the fix.
+//
+// Unlike batch 5 these codes are NOT documented in the spec, and cannot be:
+// all five `/api/t/{tenantSlug}/access-reviews*` paths sit on
+// `tests/guards/openapi-undocumented-baseline.json`, so there is no
+// operation to hang a "Refusal code:" line on. Registering them is its own
+// piece of work. Refs #1712 batch 6.
+//
+// Two naming notes. `ACCESS_REVIEW_DECISION_ALREADY_EXECUTED` is deliberately
+// not `..._DECISION_EXECUTED`, which already exists in this file as an AUDIT
+// EVENT for the success case — one string meaning "a decision was executed"
+// in the log and "you cannot revoke it" on the phone is a trap for whoever
+// greps next. And `ACCESS_REVIEW_DECISIONS_IMMUTABLE` (a closed campaign
+// refuses a decision change) is kept distinct from
+// `ACCESS_REVIEW_ALREADY_CLOSED` (you tried to close it twice) because the
+// remedies differ; the old `/closed/i` assertion could not tell them apart.
+const CURRENT_BASELINE = 356;
 
 /** Slack tolerated before the sentinel demands the baseline be lowered. */
 const DRIFT_ALLOWANCE = 15;
