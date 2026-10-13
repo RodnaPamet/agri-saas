@@ -20,6 +20,16 @@ export interface LogQuantityInput {
 }
 
 export interface CreateLogEntryInput {
+    /**
+     * This entry was recorded by a person in the diary, even though it may
+     * carry an `operationParcelId` (#1740). Default-false.
+     *
+     * Only the two-step treatment record sets it. Everything else — including
+     * `recordInputApplication` writing an entry for a line an operator
+     * completed in Задачи — leaves it false and stays hidden from the journal
+     * list, which is the 2026-10-10 manual-only ruling.
+     */
+    recordedInDiary?: boolean;
     type:
         | 'ACTIVITY'
         | 'OBSERVATION'
@@ -534,6 +544,7 @@ export class JournalRepository {
                 notes: input.notes ?? null,
                 ...(input.conditionsJson !== undefined ? { conditionsJson: input.conditionsJson } : {}),
                 operationParcelId: input.operationParcelId ?? null,
+                recordedInDiary: input.recordedInDiary ?? false,
                 ...(input.costAmount != null ? { costAmount: input.costAmount } : {}),
                 costCurrency: input.costCurrency ?? null,
                 clientMutationId: input.clientMutationId ?? null,
