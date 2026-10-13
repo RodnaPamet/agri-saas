@@ -678,9 +678,21 @@ export async function markOperationParcel(
     status: ParcelStatus,
     note?: string | null,
     expectedVersion?: number,
+    /**
+     * An OPTIONS object rather than a seventh positional parameter. Six is
+     * already past the point where a call site reads clearly, and the next
+     * flag after this one would be indistinguishable from `expectedVersion`
+     * at a glance.
+     *
+     * `recordedInDiary` reaches the INPUT_APPLICATION entry this mark emits
+     * (#1740). Omitted means false, which is the operator path: a line
+     * completed from a task in Задачи stays hidden from the journal list,
+     * exactly as the 2026-10-10 ruling intends.
+     */
+    opts?: { recordedInDiary?: boolean },
 ) {
     return traceAgUsecase('field-operation.markOperationParcel', ctx, () =>
-        markOperationParcelImpl(ctx, taskId, lineId, status, note, expectedVersion),
+        markOperationParcelImpl(ctx, taskId, lineId, status, note, expectedVersion, opts),
     );
 }
 
@@ -691,6 +703,7 @@ async function markOperationParcelImpl(
     status: ParcelStatus,
     note?: string | null,
     expectedVersion?: number,
+    opts?: { recordedInDiary?: boolean },
 ) {
     const result = await runInTenantContext(ctx, async (db) => {
         const line = await db.operationParcel.findFirst({
@@ -880,6 +893,7 @@ async function markOperationParcelImpl(
                 productItemId: line.productItemId,
                 doseValue: line.doseValue,
                 doseUnitId: line.doseUnitId,
+                recordedInDiary: opts?.recordedInDiary ?? false,
             });
 
             // БАБХ farm-record completion snapshot: freeze the applicator's
