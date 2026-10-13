@@ -10181,6 +10181,72 @@ exports[`API contract — per-schema snapshots schema: Parcel 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: ParcelByCrop 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "cropType": {
+      "type": "string"
+    },
+    "areaHa": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Area in HECTARES as stored, or null when unmeasured."
+    },
+    "locationId": {
+      "type": "string"
+    },
+    "locationName": {
+      "type": "string",
+      "description": "The block this parcel sits in. Not a convenience: two blocks can each hold a field named «1», so a flat farm-wide list is ambiguous without it."
+    },
+    "geometry": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "MultiPolygon"
+          ]
+        },
+        "coordinates": {
+          "type": "array",
+          "items": {},
+          "description": "Nested coordinate arrays, as GeoJSON nests them. Left unconstrained here rather than modelled to four levels, which no generator handles usefully — the same choice \`ParcelGeo\` makes."
+        }
+      },
+      "required": [
+        "type",
+        "coordinates"
+      ],
+      "additionalProperties": {},
+      "description": "GeoJSON in WGS84, always SIMPLIFIED for display. Null when the parcel has no outline, which is a normal state — keep the parcel and say it is not drawn, rather than dropping it, so the count still agrees with \`parcelCount\`."
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "cropType",
+    "areaHa",
+    "locationId",
+    "locationName",
+    "geometry"
+  ],
+  "description": "A parcel of one crop, with its block and a display outline."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: ParcelClusterOverview 1`] = `
 "{
   "type": "object",
@@ -10472,6 +10538,53 @@ exports[`API contract — per-schema snapshots schema: ParcelCropSeason 1`] = `
     "notes"
   ],
   "description": "\`year\` is the HARVEST year. Do not derive it from \`sownAt\`: wheat sown in October 2025 is the 2026 harvest, so deriving would misfile most autumn cropping by one year. \`sownAt\` is optional — a back-filled season is often remembered without the drilling date."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ParcelCropTotal 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "cropType": {
+      "type": "string",
+      "description": "The crop VALUE as stored, verbatim and un-normalised. Usually one of the \`crops\` catalogue values (\`Wheat\`, \`Barley\`, \`Canola\`, \`Maize\`, \`Sunflower\`, \`Peas\`, \`Grass\`), but NOT guaranteed: \`Parcel.cropType\` is a free string and a spatial or cadastre import stamps whatever the source file carried. Label it the way the web does — \`crops.<value>\` when that key exists, the raw value otherwise, never hidden."
+    },
+    "parcelCount": {
+      "type": "integer",
+      "description": "How many non-deleted parcels carry this crop, farm-wide across every block."
+    },
+    "areaHaTotal": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Total area in HECTARES, summed over those parcels. Null when none of them has a measured area — distinct from 0, which means measured and empty. Convert to дка for display; the server stores hectares."
+    }
+  },
+  "required": [
+    "cropType",
+    "parcelCount",
+    "areaHaTotal"
+  ],
+  "description": "One crop a farm grows, with its parcel count and area."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ParcelCropTotals 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "crops": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/ParcelCropTotal"
+      }
+    }
+  },
+  "required": [
+    "crops"
+  ],
+  "description": "Every crop this farm grows. Parcels with NO crop are excluded — \\"no crop\\" is not an answer to \\"which crop did you treat\\", and such a parcel is still reachable through the per-block list."
 }"
 `;
 
@@ -11335,6 +11448,29 @@ exports[`API contract — per-schema snapshots schema: ParcelWeedObservation 1`]
     "notes"
   ],
   "description": "\`weedKeys\` are catalogue Latin binomials and are the reportable half — group and count on these. \`otherWeeds\` is free text for a species the catalogue does not carry. Render them together; never merge them in storage."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ParcelsByCrop 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "cropType": {
+      "type": "string",
+      "description": "The crop asked for, trimmed — echoed back so a client can match a response to a request."
+    },
+    "parcels": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/ParcelByCrop"
+      }
+    }
+  },
+  "required": [
+    "cropType",
+    "parcels"
+  ],
+  "description": "The parcels of one crop, farm-wide."
 }"
 `;
 
