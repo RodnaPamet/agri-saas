@@ -6,7 +6,7 @@ import { canConvert, convert } from '@/lib/units/unit-conversion';
 import { tonnesPerHectare } from '@/lib/grain/moisture';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
-import { badRequest, codedNotFound } from '@/lib/errors/types';
+import { codedBadRequest, codedNotFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { traceAgUsecase } from '@/lib/observability';
 import { trace } from '@opentelemetry/api';
@@ -45,7 +45,7 @@ function dec(v: Prisma.Decimal | null | undefined): number | null {
 function parseDate(value: string | null | undefined, label: string): Date | null {
     if (value == null) return null;
     const d = new Date(value);
-    if (Number.isNaN(d.getTime())) throw badRequest(`${label} must be a valid date`);
+    if (Number.isNaN(d.getTime())) throw codedBadRequest('YIELD_RECORD_INVALID_DATE', `${label} must be a valid date`, { field: label });
     return d;
 }
 
@@ -312,10 +312,10 @@ async function createYieldRecordImpl(
     const commodity = input.commodity != null ? sanitizePlainText(input.commodity) : null;
     const valuationNotes = input.valuationNotes != null ? sanitizePlainText(input.valuationNotes) : null;
     if (input.grossTonnes != null && input.grossTonnes < 0) {
-        throw badRequest('Gross tonnes must be zero or positive');
+        throw codedBadRequest('YIELD_RECORD_TONNES_NEGATIVE', 'Gross tonnes must be zero or positive');
     }
     if (input.areaHa != null && input.areaHa < 0) {
-        throw badRequest('Area must be zero or positive');
+        throw codedBadRequest('YIELD_RECORD_AREA_NEGATIVE', 'Area must be zero or positive');
     }
     const harvestedAt = parseDate(input.harvestedAt, 'Harvested-at date');
 
@@ -326,21 +326,33 @@ async function createYieldRecordImpl(
                 where: { id: input.plantingId, tenantId: ctx.tenantId, deletedAt: null },
                 select: { id: true },
             });
-            if (!planting) throw badRequest('Planting not found or belongs to a different tenant');
+            if (!planting) throw codedBadRequest(
+                    'REFERENCE_NOT_IN_TENANT',
+                    'Planting not found or belongs to a different tenant',
+                    { reference: 'planting' },
+                );
         }
         if (input.locationId) {
             const location = await db.location.findFirst({
                 where: { id: input.locationId, tenantId: ctx.tenantId, deletedAt: null },
                 select: { id: true },
             });
-            if (!location) throw badRequest('Location not found or belongs to a different tenant');
+            if (!location) throw codedBadRequest(
+                    'REFERENCE_NOT_IN_TENANT',
+                    'Location not found or belongs to a different tenant',
+                    { reference: 'location' },
+                );
         }
         if (input.seasonId) {
             const season = await db.season.findFirst({
                 where: { id: input.seasonId, tenantId: ctx.tenantId, deletedAt: null },
                 select: { id: true },
             });
-            if (!season) throw badRequest('Season not found or belongs to a different tenant');
+            if (!season) throw codedBadRequest(
+                    'REFERENCE_NOT_IN_TENANT',
+                    'Season not found or belongs to a different tenant',
+                    { reference: 'season' },
+                );
         }
 
         const record = await db.yieldRecord.create({
@@ -599,14 +611,14 @@ export async function updateYieldRecord(ctx: RequestContext, id: string, input: 
     if (input.harvestedAt !== undefined) data.harvestedAt = parseDate(input.harvestedAt, 'Harvested-at date');
     if (input.grossTonnes !== undefined) {
         if (input.grossTonnes != null && input.grossTonnes < 0) {
-            throw badRequest('Gross tonnes must be zero or positive');
+            throw codedBadRequest('YIELD_RECORD_TONNES_NEGATIVE', 'Gross tonnes must be zero or positive');
         }
         data.grossTonnes = input.grossTonnes;
     }
     if (input.moisturePct !== undefined) data.moisturePct = input.moisturePct;
     if (input.areaHa !== undefined) {
         if (input.areaHa != null && input.areaHa < 0) {
-            throw badRequest('Area must be zero or positive');
+            throw codedBadRequest('YIELD_RECORD_AREA_NEGATIVE', 'Area must be zero or positive');
         }
         data.areaHa = input.areaHa;
     }
@@ -622,21 +634,33 @@ export async function updateYieldRecord(ctx: RequestContext, id: string, input: 
                 where: { id: input.plantingId, tenantId: ctx.tenantId, deletedAt: null },
                 select: { id: true },
             });
-            if (!planting) throw badRequest('Planting not found or belongs to a different tenant');
+            if (!planting) throw codedBadRequest(
+                    'REFERENCE_NOT_IN_TENANT',
+                    'Planting not found or belongs to a different tenant',
+                    { reference: 'planting' },
+                );
         }
         if (input.locationId) {
             const location = await db.location.findFirst({
                 where: { id: input.locationId, tenantId: ctx.tenantId, deletedAt: null },
                 select: { id: true },
             });
-            if (!location) throw badRequest('Location not found or belongs to a different tenant');
+            if (!location) throw codedBadRequest(
+                    'REFERENCE_NOT_IN_TENANT',
+                    'Location not found or belongs to a different tenant',
+                    { reference: 'location' },
+                );
         }
         if (input.seasonId) {
             const season = await db.season.findFirst({
                 where: { id: input.seasonId, tenantId: ctx.tenantId, deletedAt: null },
                 select: { id: true },
             });
-            if (!season) throw badRequest('Season not found or belongs to a different tenant');
+            if (!season) throw codedBadRequest(
+                    'REFERENCE_NOT_IN_TENANT',
+                    'Season not found or belongs to a different tenant',
+                    { reference: 'season' },
+                );
         }
 
         const record = await db.yieldRecord.update({ where: { id }, data, include: YIELD_INCLUDE });

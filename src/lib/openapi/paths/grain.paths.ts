@@ -256,9 +256,9 @@ const COST_WRITE_REFUSALS =
     '`COST_ENTRY_PARCELS_REQUIRE_SUBSET_BASIS` (`allocationParcelIds` on a basis other than `PARCEL_SUBSET`).' +
     '\n\n**The basis** — `COST_ENTRY_BASIS_CONFLICTS_WITH_SPATIAL_LINK` (a basis that spreads across land of its own, also linking a place; the basis is in `params.basis`); ' +
     '`COST_ENTRY_PARCEL_SUBSET_NEEDS_TWO` (a `PARCEL_SUBSET` naming fewer than two distinct parcels — one parcel is a `parcelId` link, not a subset).' +
-    '\n\n**The references** — `COST_ENTRY_REFERENCE_NOT_IN_TENANT` covers all six single references, with which one in `params.reference` (`planting`, `season`, `location`, `parcel`, `lease`, `item`); ' +
-    '`COST_ENTRY_ALLOCATION_PARCELS_NOT_IN_TENANT` is the `PARCEL_SUBSET` set. ' +
-    'Both answer **400 rather than 404 deliberately**: a 404 would confirm the row exists in SOME tenant, which is what a cross-tenant probe is for. The reference TYPE is returned; the id is not.' +
+    '\n\n**The references** — `REFERENCE_NOT_IN_TENANT` covers every one of them, with which reference in `params.reference`: the six single links (`planting`, `season`, `location`, `parcel`, `lease`, `item`) and, as `parcels`, the `PARCEL_SUBSET` set. ' +
+    'It is ONE code across the whole API rather than one per surface, so a client handles this refusal once. ' +
+    'It answers **400 rather than 404 deliberately**: a 404 would confirm the row exists in SOME tenant, which is what a cross-tenant probe is for. The reference TYPE is returned; the id is not.' +
     '\n\n**The invoice** — `COST_ENTRY_INVOICE_FILE_NOT_FOUND`, `COST_ENTRY_INVOICE_UPLOAD_INCOMPLETE` (the upload never finished) and `COST_ENTRY_INVOICE_FILE_DELETED`.' +
     '\n\n**The date** — `COST_ENTRY_INVALID_DATE`, with the field named in `params.field`.';
 
@@ -280,7 +280,7 @@ const CONTRACT_WRITE_REFUSALS =
     '`CONTRACT_VOLUME_NEGATIVE` and `CONTRACT_PRICE_NEGATIVE` (both must be zero or positive); ' +
     '`CONTRACT_DELIVERY_WINDOW_INVERTED` (end before start); ' +
     '`CONTRACT_INVALID_DATE`, with the field named in `params.field`; and ' +
-    '`CONTRACT_SEASON_NOT_IN_TENANT` — a 400 rather than a 404 deliberately, because a 404 would confirm the season exists in SOME tenant.';
+    'and `REFERENCE_NOT_IN_TENANT` with `params.reference: season` — one code shared across the API, a 400 rather than a 404 deliberately because a 404 would confirm the season exists in SOME tenant.';
 
 /**
  * The status-machine refusals, `PATCH` only.
@@ -295,6 +295,18 @@ const CONTRACT_STATUS_REFUSALS =
     '`CONTRACT_STORED_STATUS_UNKNOWN` — the STORED status is not in the transition table, in `params.from`; the one variant a client cannot act on, since nothing it sends can succeed. ' +
     '`CONTRACT_DELIVERED_NEEDS_DELIVERIES` — DELIVERED must mean grain moved, so it requires at least one recorded delivery against the contract.' +
     '\n\nRe-sending the UNCHANGED status is legal and writes nothing, because the whole form is submitted on every edit.';
+
+/**
+ * The yield-record write refusals (#1712 batch 9).
+ *
+ * Both writes run the same checks, so this is shared for the reason the cost
+ * block is: two copies drift. Traced, not assumed — the create and update
+ * paths each validate tonnes, area and the same three references.
+ */
+const YIELD_WRITE_REFUSALS =
+    '\n\nValidation refusals, all 400s: `YIELD_RECORD_TONNES_NEGATIVE` and `YIELD_RECORD_AREA_NEGATIVE` (both must be zero or positive); ' +
+    '`YIELD_RECORD_INVALID_DATE`, with the field named in `params.field`; and ' +
+    '`REFERENCE_NOT_IN_TENANT` for a `planting`, `location` or `season` that is not in this farm, named in `params.reference` — the same code the cost and contract writes answer, so a client handles it once.';
 
 export function registerGrainPaths(registry: OpenAPIRegistry): void {
 
@@ -478,7 +490,8 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         operationId: 'createYieldRecord',
         summary: 'Record a yield',
         description:
-            '\n\n**Honours `Idempotency-Key`.** Send one, minted BEFORE the first attempt and reused on every retry of the same logical write. The server maps it to `clientMutationId` and a replay returns the ORIGINAL row rather than booking the figure twice. These are FINANCIAL records: an undeduped retry moves net worth with nothing erroring.',
+            '\n\n**Honours `Idempotency-Key`.** Send one, minted BEFORE the first attempt and reused on every retry of the same logical write. The server maps it to `clientMutationId` and a replay returns the ORIGINAL row rather than booking the figure twice. These are FINANCIAL records: an undeduped retry moves net worth with nothing erroring.' +
+            YIELD_WRITE_REFUSALS,
         tags: ['Grain'],
         params: TenantParams,
         body: CreateYieldRecordSchema,
@@ -508,7 +521,8 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         path: '/api/t/{tenantSlug}/grain/yield-records/{yieldRecordId}',
         operationId: 'updateYieldRecord',
         summary: 'Update a yield record',
-        description: 'Refusal code: `YIELD_RECORD_NOT_FOUND` (404).',
+        description: 'Refusal code: `YIELD_RECORD_NOT_FOUND` (404).' +
+            YIELD_WRITE_REFUSALS,
         tags: ['Grain'],
         params: YieldRecordParams,
         body: UpdateYieldRecordSchema,

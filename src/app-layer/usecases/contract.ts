@@ -302,7 +302,11 @@ export async function createContract(ctx: RequestContext, input: CreateContractI
                 where: { id: input.seasonId, tenantId: ctx.tenantId, deletedAt: null },
                 select: { id: true },
             });
-            if (!season) throw codedBadRequest('CONTRACT_SEASON_NOT_IN_TENANT', 'Season not found or belongs to a different tenant');
+            if (!season) throw codedBadRequest(
+                'REFERENCE_NOT_IN_TENANT',
+                'Season not found or belongs to a different tenant',
+                { reference: 'season' },
+            );
         }
 
         const contract = await db.contract.create({
@@ -468,7 +472,11 @@ export async function updateContract(ctx: RequestContext, id: string, input: Upd
                 where: { id: input.seasonId, tenantId: ctx.tenantId, deletedAt: null },
                 select: { id: true },
             });
-            if (!season) throw codedBadRequest('CONTRACT_SEASON_NOT_IN_TENANT', 'Season not found or belongs to a different tenant');
+            if (!season) throw codedBadRequest(
+                'REFERENCE_NOT_IN_TENANT',
+                'Season not found or belongs to a different tenant',
+                { reference: 'season' },
+            );
         }
 
         const contract = await db.contract.update({ where: { id }, data });
