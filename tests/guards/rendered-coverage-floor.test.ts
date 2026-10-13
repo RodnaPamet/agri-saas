@@ -240,7 +240,16 @@ const ROOT = path.resolve(__dirname, '../..');
 // could have seen this: the wizard's code was complete and correct, and the
 // missing thing was a request it never made. Raised to this branch's own live
 // count, measured.
-const RENDERED_TEST_FLOOR = 252;
+// 252 → 253: `no-tenant-stale-session.test.tsx` — #1738's SECOND defect, which
+// the entry above did not fix. `/no-tenant` serves BOTH tenant-gate refusals
+// (`no_tenant_access` and `cross_tenant` both redirect there) and told both the
+// same thing: ask an administrator for an invitation. For the person who had
+// just created the farm they OWN that is false, and the page had no test of any
+// kind — so the wrong sentence was not a regression, it was never checked.
+// It can tell them apart because it is a server component and can read
+// Postgres, which is the one thing the Edge could not do. Raised to this
+// branch's own live count, measured.
+const RENDERED_TEST_FLOOR = 253;
 // Raised 246 -> 247 for `field-operation-panel-if-match.test.tsx` (#1370):
 // the online map panel marked prescription lines with no `If-Match`, a
 // silent last-write-wins on a row that stamps a regulatory date. Raised to
