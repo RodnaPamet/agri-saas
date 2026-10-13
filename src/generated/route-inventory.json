@@ -1731,6 +1731,11 @@
       "documented": false
     },
     {
+      "path": "/api/t/{tenantSlug}/parcels/by-crop",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/planning/crop-plans",
       "status": "live",
       "documented": true

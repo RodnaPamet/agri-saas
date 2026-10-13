@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "12.7.14",
+    "version": "12.7.15",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -9683,6 +9683,69 @@
         "additionalProperties": {},
         "description": "One imported parcel polygon. geometry is GeoJSON MultiPolygon in WGS84; areaHa is the on-ellipsoid area in hectares."
       },
+      "ParcelByCrop": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "cropType": {
+            "type": "string"
+          },
+          "areaHa": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Area in HECTARES as stored, or null when unmeasured."
+          },
+          "locationId": {
+            "type": "string"
+          },
+          "locationName": {
+            "type": "string",
+            "description": "The block this parcel sits in. Not a convenience: two blocks can each hold a field named «1», so a flat farm-wide list is ambiguous without it."
+          },
+          "geometry": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "MultiPolygon"
+                ]
+              },
+              "coordinates": {
+                "type": "array",
+                "items": {},
+                "description": "Nested coordinate arrays, as GeoJSON nests them. Left unconstrained here rather than modelled to four levels, which no generator handles usefully — the same choice `ParcelGeo` makes."
+              }
+            },
+            "required": [
+              "type",
+              "coordinates"
+            ],
+            "additionalProperties": {},
+            "description": "GeoJSON in WGS84, always SIMPLIFIED for display. Null when the parcel has no outline, which is a normal state — keep the parcel and say it is not drawn, rather than dropping it, so the count still agrees with `parcelCount`."
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "cropType",
+          "areaHa",
+          "locationId",
+          "locationName",
+          "geometry"
+        ],
+        "description": "A parcel of one crop, with its block and a display outline."
+      },
       "ParcelClusterOverview": {
         "type": "object",
         "properties": {
@@ -9964,6 +10027,47 @@
           "notes"
         ],
         "description": "`year` is the HARVEST year. Do not derive it from `sownAt`: wheat sown in October 2025 is the 2026 harvest, so deriving would misfile most autumn cropping by one year. `sownAt` is optional — a back-filled season is often remembered without the drilling date."
+      },
+      "ParcelCropTotal": {
+        "type": "object",
+        "properties": {
+          "cropType": {
+            "type": "string",
+            "description": "The crop VALUE as stored, verbatim and un-normalised. Usually one of the `crops` catalogue values (`Wheat`, `Barley`, `Canola`, `Maize`, `Sunflower`, `Peas`, `Grass`), but NOT guaranteed: `Parcel.cropType` is a free string and a spatial or cadastre import stamps whatever the source file carried. Label it the way the web does — `crops.<value>` when that key exists, the raw value otherwise, never hidden."
+          },
+          "parcelCount": {
+            "type": "integer",
+            "description": "How many non-deleted parcels carry this crop, farm-wide across every block."
+          },
+          "areaHaTotal": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Total area in HECTARES, summed over those parcels. Null when none of them has a measured area — distinct from 0, which means measured and empty. Convert to дка for display; the server stores hectares."
+          }
+        },
+        "required": [
+          "cropType",
+          "parcelCount",
+          "areaHaTotal"
+        ],
+        "description": "One crop a farm grows, with its parcel count and area."
+      },
+      "ParcelCropTotals": {
+        "type": "object",
+        "properties": {
+          "crops": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ParcelCropTotal"
+            }
+          }
+        },
+        "required": [
+          "crops"
+        ],
+        "description": "Every crop this farm grows. Parcels with NO crop are excluded — \"no crop\" is not an answer to \"which crop did you treat\", and such a parcel is still reachable through the per-block list."
       },
       "ParcelGeo": {
         "type": "object",
@@ -10785,6 +10889,26 @@
           "notes"
         ],
         "description": "`weedKeys` are catalogue Latin binomials and are the reportable half — group and count on these. `otherWeeds` is free text for a species the catalogue does not carry. Render them together; never merge them in storage."
+      },
+      "ParcelsByCrop": {
+        "type": "object",
+        "properties": {
+          "cropType": {
+            "type": "string",
+            "description": "The crop asked for, trimmed — echoed back so a client can match a response to a request."
+          },
+          "parcels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ParcelByCrop"
+            }
+          }
+        },
+        "required": [
+          "cropType",
+          "parcels"
+        ],
+        "description": "The parcels of one crop, farm-wide."
       },
       "PendingInvite": {
         "type": "object",
@@ -18248,6 +18372,174 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LocationBulkDeleteResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries a `message`. Since #1677 the SERVER translates it, into the language on the signed-in person's profile (`User.uiLanguage`, default Bulgarian) — NOT negotiated from `Accept-Language`, which this API deliberately ignores. So `message` is safe to render to a user for any code that has a catalogue entry.\n\n  The migration is INCOMPLETE and visibly so: a code with no entry yet keeps its English developer-facing sentence, unchanged. There is no flag telling the two apart, which is why switching on `code` and holding your own copy remains the robust choice — the server's `message` is then a better fallback than it used to be rather than something you depend on. Route-level 403s carry their own codes and are described on the operation that returns them.\n\nOne route-level code is described HERE rather than per-operation. MOST operations cannot return it — it is confined to the five capability families named below — but it means the same thing on each of them, and one of the five (`upload`) is gated at a choke point that many unrelated routes reach, so an exhaustive per-operation list would be the kind that is wrong by omission:\n\n- `ACCOUNT_DELETION_PENDING` — this person asked to delete their account and is inside the 30-day grace period, so the account creates nothing new. It is NOT a moderator action and NOT a permission problem: do not offer an appeal. Reachable on any MUTATION outside `/api/auth/**` and `/api/account/**`, which stay open precisely so the way out stays open — `DELETE /api/account/deletion` cancels it, and the person recovers their account and their listings in full. Reads are unaffected, and `GET /api/account/export` keeps working, because a right of access does not lapse because a right of erasure was invoked.\n\n- `PAST_DUE_RESTRICTED` — a payment on this tenant failed and the 14-day grace period has elapsed. It is NOT a quota or a plan ceiling: the plan is untouched and nothing was exceeded. The withheld capabilities are exactly `exchange`, `trends`, `task.create`, `upload` and `journal.create`; every other surface, including reading everything already recorded, is unaffected. The tenant's own ACTIVE exchange listings stay visible to other farms and inbound threads keep arriving — this is the unpaid tenant's own view closing, not a withdrawal.\n\n  The restriction is COMPUTED per request, with no sweep and nothing to settle, so a cleared balance lifts it on the very next request — a client can honestly tell the user to resolve it and refresh. This description deliberately names no remedy beyond that: App Store guideline 3.1.1 keeps the native client from pointing anyone to pay outside the app, so a prescribed destination would be unreachable for one of the two clients (#1490). What both clients CAN do is distinguish this from `PLAN_LIMIT_EXCEEDED` and say which happened.\n\nFive billing and capability codes are described here for the same reason and with the same caveat: each is confined to the routes that reach one gate, those gates sit below many operations, and an exhaustive per-operation list would be wrong by omission. Each carries `params` so a client composes its own sentence rather than rendering ours (#1679):\n\n- `PLAN_LIMIT_EXCEEDED` — a per-plan ceiling on a COUNT was reached. Params: `plan`, `resource`, `limit`, `current`. Reachable wherever `assertWithinLimit` guards a create. It is NOT a payment problem and NOT a permission shortfall: nothing failed and no role lifts it. The remedy is a higher plan or deleting something, and this description names no destination for the same reason `PAST_DUE_RESTRICTED` does not.\n- `AI_BUDGET_EXCEEDED` — the tenant has spent its monthly AI token budget. Params: `plan`, `limit`, `used`. It resets at the start of the next **UTC** month with nothing to settle, so a client can honestly say \"next month\" — which is what distinguishes it from the one above, where waiting changes nothing. UTC is stated because it is not local: for a Bulgarian user the reset lands at 02:00 or 03:00 on the 1st (EET/EEST), so copy naming a DAY would be wrong for a few hours each month. Raised by agrent-ios, which got this right before the spec said it.\n- `AI_TIER_NOT_ALLOWED` — the requested model TIER is above this plan's ceiling. Params: `plan`, `tier`, `ceiling`. Distinct from the budget code on purpose: the refusal is on capability, not on spend, so retrying at `ceiling` succeeds immediately and retrying the same tier never will.\n- `MODULE_DISABLED` — a product module is off for this tenant. Params: `module` and `reason`. AVAILABLE is a conjunction (plan-allowed AND tenant-enabled) and `reason` says which half failed, because the remedies differ: `\"tenant\"` means an administrator of THIS farm can turn it on, `\"plan\"` means the plan does not include it and no administrator can. Do NOT name an administrator without reading `reason` — telling somebody to ask an admin who cannot help is the defect agrent-ios#241 is about, and an earlier draft of this paragraph said exactly that. A client that ignores `reason` should stay neutral; the code alone only means \"off\".\n- `BILLING_UNAVAILABLE` — this deployment runs self-hosted and exposes no in-app checkout at all. Params: `mode`. Nothing the client or the user can do lifts it; do not offer a retry or a plan picker.\n\n  TWO of the five are TRANSLATED by the server (#1677) — `MODULE_DISABLED` and `BILLING_UNAVAILABLE` — so their `message` is renderable to a user. The other three still carry an English developer-facing sentence: their Bulgarian needs ICU plural agreement, which the server-side renderer does not yet do, and shipping copy that interpolated a wire identifier (`exchange_listing`, `deep`, `FREE`) into a farmer's screen would have been worse than the English. They are tracked on #1677.\n\n  All five carried a legacy `lower_snake:` prefix at the start of `message` until #1677; that prefix is GONE for all of them. If you are reading a cached copy of this spec and your client matches on `plan_limit_exceeded:` or a sibling, switch to `code` — the prefix was removed once the only client depending on it had shipped the codes.\n\nTwo more are described here rather than per-operation, and their scope is NARROWER than the four above: they come from `getUserCtx`, so they are reachable on the PERSON-scoped routes only — `/api/account/**`, `/api/me/**` and `/api/social/**`. No tenant route can answer either. They are here because that one function is the choke point all of those routes reach and three of their paths are not in this document yet, so a per-operation list would be wrong by omission:\n\n- `API_KEY_NOT_PERSON_SCOPED` — an `iflk_` API key was presented on a route about a PERSON. A key belongs to a farm and authorises nobody in particular, so this is a category error rather than a permission shortfall: retrying with a wider-scoped key cannot work. Use a user session or a bearer token minted for one.\n- `OPERATOR_SCOPE` — the signed-in user is a MECHANISATOR and the route is a social surface. Deliberately narrower than the Edge lockdown of the same persona: an operator reaches their own account and security pages normally, because a lockdown that locks somebody out of their own credentials is a defect (owner ruling, 2026-10-02). Nothing the client can do lifts it; do not offer a retry.\n\nBoth carried their code in `error.message` with a generic `error.code` until #1645. If you are reading a cached copy of this spec, check that it carries this sentence before switching on either.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/parcels/by-crop": {
+      "get": {
+        "operationId": "listParcelsByCrop",
+        "summary": "Farm-wide parcels grouped by crop",
+        "description": "TWO answers behind one path, chosen by `crop`. **Without it** you get the farm’s crops with parcel counts and total hectares, and no geometry — a crop picker draws nothing. **With it** you get that crop’s parcels, each carrying the block it sits in and a simplified outline for a map beside the list.\n\nSplit on a parameter rather than returned together because the caller shows ONE crop at a time: a single response carrying every crop’s geometry would be large for a client that discards all but one group.\n\n**This is the farm-wide read that `GET /locations/{id}/parcels` is not.** That one answers \"what is in this block\" and carries soil, ownership and lease state; this one answers \"where on the farm is this crop\" and carries the block name instead. Before it existed a client had to fan out one request per block and group them itself.\n\n**Matching on `crop` is case-insensitive and trimmed.** `Parcel.cropType` is a free string that an import stamps, so stored rows can disagree about case among themselves; a value round-tripped from the crop list resolves regardless.\n\n**An unknown crop is an empty list, not a 404.** A crop is not an entity here, so \"no parcels carry this value\" is an answer — and a 404 would leak whether a vocabulary value is in use.\n\nParcels with no crop appear in NEITHER answer. \"No crop\" does not answer \"which crop did you treat\", and such a parcel is still reachable through the per-block list.\n\nOrder is `name`, then `id`. The id tiebreak is contractual (#1391): parcel names are not unique, so without it a capped read could return a different subset between requests with nothing changed.",
+        "tags": [
+          "Parcels"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "A crop value as returned by this same operation without the parameter. Omit for the crop list. Case-insensitive, trimmed; blank is treated as omitted."
+            },
+            "required": false,
+            "description": "A crop value as returned by this same operation without the parameter. Omit for the crop list. Case-insensitive, trimmed; blank is treated as omitted.",
+            "name": "crop",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "description": "Geometry simplification tolerance in DEGREES. Geometry here is simplified either way — every caller draws a picker map — so this only chooses how much. A non-positive or unparseable value is IGNORED rather than refused: it is a display hint, and failing a parcel list over a tolerance that did not parse would turn a cosmetic mistake into an empty map. Ignored entirely without `crop`."
+            },
+            "required": false,
+            "description": "Geometry simplification tolerance in DEGREES. Geometry here is simplified either way — every caller draws a picker map — so this only chooses how much. A non-positive or unparseable value is IGNORED rather than refused: it is a display hint, and failing a parcel list over a tolerance that did not parse would turn a cosmetic mistake into an empty map. Ignored entirely without `crop`.",
+            "name": "simplify",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The farm’s crops, or one crop’s parcels when `crop` is given.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ParcelCropTotals"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ParcelsByCrop"
+                    }
+                  ]
                 }
               }
             }
