@@ -263,3 +263,88 @@ describeFn('recordDiaryTreatment (DB-backed)', () => {
         ).rejects.toMatchObject({ code: 'TREATMENT_NO_PARCELS' });
     });
 });
+
+/**
+ * The future guard, in the hours where the farm's day and UTC's disagree.
+ *
+ * This is the defect the iOS client found by reading the code against the
+ * contract. The guard compared the submitted day against the end of the
+ * SERVER's UTC day, so between local midnight and 03:00 (02:00 in winter) a
+ * farmer recording what they had just sprayed TODAY was refused
+ * `TREATMENT_DATE_IN_FUTURE` — while the screen beside them, rendered in the
+ * same Europe/Sofia zone, showed that day as today.
+ *
+ * Only `Date` is faked. Prisma's pool and Jest's own scheduling need real
+ * timers, and faking them deadlocks the suite rather than failing it.
+ */
+describeFn('the future guard uses the farm day, not the server day (DB-backed)', () => {
+    // 21:30 UTC on 13 October IS 00:30 on 14 October in Sofia. So the farm's
+    // today is the 14th and UTC's is still the 13th — the exact window.
+    const SOFIA_MIDNIGHT_PLUS_30 = new Date('2026-10-13T21:30:00.000Z');
+
+    beforeEach(() => {
+        jest.useFakeTimers({
+            now: SOFIA_MIDNIGHT_PLUS_30,
+            doNotFake: [
+                'nextTick',
+                'setImmediate',
+                'setTimeout',
+                'setInterval',
+                'clearTimeout',
+                'clearInterval',
+                'queueMicrotask',
+                'performance',
+            ],
+        });
+    });
+
+    afterEach(() => {
+        jest.useRealTimers();
+    });
+
+    it("accepts the farm's today while UTC is still on yesterday", async () => {
+        // The load-bearing case. Under the old UTC comparison this threw
+        // TREATMENT_DATE_IN_FUTURE, which is the one day the guard most has
+        // to allow: it is what a farmer finishing late at night records.
+        const res = await recordDiaryTreatment(
+            ctx(),
+            { ...baseInput(), occurredOn: '2026-10-14', parcelIds: [parcelA1] },
+            `${TAG}-sofia-today`,
+        );
+
+        expect(res.replayed).toBe(false);
+        expect(res.parcelCount).toBe(1);
+
+        // And it is DATED the farm's day, not the server's — otherwise the
+        // entry would be accepted and then filed under the 13th.
+        const entries = await globalPrisma.logEntry.findMany({
+            where: { tenantId, recordedInDiary: true },
+            select: { occurredAt: true },
+        });
+        const stamped = entries.map((e) => e.occurredAt.toISOString());
+        expect(stamped).toContain('2026-10-14T00:00:00.000Z');
+    });
+
+    it("still refuses the farm's tomorrow in that same window", async () => {
+        // The control. A guard that accepted everything would satisfy the
+        // case above, so the boundary has to be shown to still exist — one
+        // day later, same clock.
+        await expect(
+            recordDiaryTreatment(
+                ctx(),
+                { ...baseInput(), occurredOn: '2026-10-15', parcelIds: [parcelA1] },
+                `${TAG}-sofia-tomorrow`,
+            ),
+        ).rejects.toMatchObject({ code: 'TREATMENT_DATE_IN_FUTURE' });
+    });
+
+    it('refuses a day that does not exist, with the clock wherever it is', async () => {
+        await expect(
+            recordDiaryTreatment(
+                ctx(),
+                { ...baseInput(), occurredOn: '2026-02-31', parcelIds: [parcelA1] },
+                `${TAG}-sofia-bad`,
+            ),
+        ).rejects.toMatchObject({ code: 'TREATMENT_DATE_INVALID' });
+    });
+});

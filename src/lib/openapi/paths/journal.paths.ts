@@ -228,6 +228,14 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
             'Here it is also the TREATMENT HANDLE, returned as `treatmentGroupId`: the per-block writes ' +
             'derive their own keys from it, so a replay resolves on the handle rather than on any one of ' +
             'them, and the handle is what later addresses this treatment.\n\n' +
+            '**A reused key is REPLAYED, not refused, and the body is not compared** (owner ruling ' +
+            '2026-10-14). Reusing a key whose body differs returns the ORIGINAL treatment with ' +
+            '`replayed: true` and writes nothing \u2014 the edit is silently not applied. So mint a NEW ' +
+            'key the moment a field or the parcel set changes; the server cannot detect that you did ' +
+            'not. This matches every other idempotent write in this API (journal entries, the cost ' +
+            'batch, exchange messages), none of which compares a body, and it is stated here because ' +
+            'the alternative \u2014 refusing the reuse \u2014 is what a client would reasonably assume.' +
+            '\n\n' +
             '`parcelIds` is ONE flat list that may span blocks \u2014 the server groups it and writes one ' +
             'field operation per block, because the register resolves a block through the task\u2019s ' +
             'location link.\n\n' +
@@ -239,7 +247,26 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
             '`TREATMENT_DATE_IN_FUTURE` (you cannot have sprayed tomorrow), `TREATMENT_NO_PARCELS` (an ' +
             'empty `parcelIds`), and `REFERENCE_NOT_IN_TENANT` with `params.reference` naming which list ' +
             'held the stranger \u2014 a 400 rather than a 404 so the refusal does not confirm the row ' +
-            'exists on some other farm.',
+            'exists on some other farm. `params.reference` is `parcels` and nothing else on this ' +
+            'route.\n\n' +
+            'A treatment day is the FARM\u2019s day (Europe/Sofia), not the server\u2019s UTC day, so ' +
+            'recording today keeps working after local midnight.\n\n' +
+            'Inherited from the operation write underneath, all 400: `OPERATION_INPUT_AMBIGUOUS` (not ' +
+            'exactly one input kind, or an id AND a name for the same kind), `PRODUCT_DOSE_REQUIRED` / ' +
+            '`FERTILIZER_DOSE_REQUIRED`, `PRODUCT_NOT_FOUND` / `FERTILIZER_NOT_FOUND`, ' +
+            '`PRODUCT_NAME_REQUIRED` (a name empty once trimmed), `FERTILIZER_EXPECTED` (the fertiliser ' +
+            'field was given an item that is not a `FERTILIZER`; **the converse is deliberately NOT ' +
+            'enforced** \u2014 a liquid fertiliser through a sprayer is a legitimate SPRAY, so the ' +
+            'product field accepts any category), `PESTICIDE_REGULATORY_FIELDS_REQUIRED` (a typed name ' +
+            'has to CREATE a plant protection product and the \u0417\u0417\u0420 registration number ' +
+            'or quarantine period is missing \u2014 `params.missing` names which), and ' +
+            '`DOSE_UNIT_HAS_NO_BASE` (a typed name has to create a product but the dose unit is not a ' +
+            '`<base>-per-<area>` rate, so no stock unit can be derived \u2014 create the product from ' +
+            'the catalogue instead).\n\n' +
+            'Recording a treatment needs WRITE. The restricted machine-operator persona ' +
+            '(`MECHANISATOR`) does not have it and is refused 403 \u2014 by design: completing work ' +
+            'handed to an operator stays in \u0417\u0430\u0434\u0430\u0447\u0438, and filling in ' +
+            'the register is not an operator action.',
         tags: ['Journal'],
         params: TenantParams,
         body: RecordDiaryTreatmentSchema,

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { farmToday } from '@/lib/calendar-day-key';
 import { RequestContext } from '../types';
 import { assertCanWrite } from '../policies/common';
 import { codedBadRequest } from '@/lib/errors/types';
@@ -119,7 +120,7 @@ export interface RecordDiaryTreatmentResult {
  * would move a treatment across a date boundary depending on where the server
  * runs.
  */
-function parseTreatmentDay(value: string): Date {
+function parseTreatmentDay(value: string): { day: Date; key: string } {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
     if (!m) {
         throw codedBadRequest(
@@ -143,7 +144,11 @@ function parseTreatmentDay(value: string): Date {
             { field: 'occurredOn' },
         );
     }
-    return day;
+    // The key is the day as the register writes it, rebuilt from the matched
+    // groups rather than re-derived from `day` — `day` is a UTC instant and
+    // reading a calendar day back out of it is the mistake this function
+    // exists to prevent one level down.
+    return { day, key: `${y}-${mo}-${d}` };
 }
 
 export async function recordDiaryTreatment(
@@ -153,12 +158,25 @@ export async function recordDiaryTreatment(
 ): Promise<RecordDiaryTreatmentResult> {
     assertCanWrite(ctx);
 
-    const day = parseTreatmentDay(input.occurredOn);
-    // Compared against the END of today in UTC, so "today" is never refused
-    // for a farm whose clock is ahead of the server's.
-    const endOfToday = new Date();
-    endOfToday.setUTCHours(23, 59, 59, 999);
-    if (day.getTime() > endOfToday.getTime()) {
+    const { day, key: dayKey } = parseTreatmentDay(input.occurredOn);
+    // Compared against today AS THE FARM SEES IT, not as the server's UTC
+    // clock sees it.
+    //
+    // This comment used to claim the UTC comparison meant "today" is never
+    // refused for a farm whose clock is ahead of the server's, and that was
+    // exactly backwards. `new Date()` with `setUTCHours(23,59,59,999)` is the
+    // end of the SERVER's day: at 00:30 on 14 October in Sofia it is 21:30
+    // UTC on the 13th, so `2026-10-14` parsed as UTC midnight sat PAST the
+    // end of UTC the 13th and a farmer recording what they had just sprayed
+    // got TREATMENT_DATE_IN_FUTURE. Every night from local midnight to 03:00
+    // (02:00 in winter), while the screen beside them — rendered through
+    // `format-date.ts`, in the same zone — showed that day as today. The
+    // guard refused the one day it most needed to allow.
+    //
+    // String comparison on `YYYY-MM-DD`: fixed-width and zero-padded, so
+    // lexicographic order is calendar order, and there is no Date arithmetic
+    // to get wrong at a DST boundary.
+    if (dayKey > farmToday()) {
         throw codedBadRequest(
             'TREATMENT_DATE_IN_FUTURE',
             'A treatment cannot be recorded for a future date.',

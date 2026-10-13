@@ -81,6 +81,7 @@
  */
 
 import { formatDistance } from 'date-fns';
+import { FARM_TIME_ZONE } from '@/lib/calendar-day-key';
 import type { Locale } from '@/lib/i18n/locales';
 
 const LOCALE = 'en-GB';
@@ -108,7 +109,7 @@ const LOCALE = 'en-GB';
  * fields do not shift a day. A real `timestamptz` near midnight does shift,
  * which is correct: 23:30Z IS 01:30 the next day in Sofia.
  */
-const DISPLAY_TIME_ZONE = 'Europe/Sofia';
+const DISPLAY_TIME_ZONE = FARM_TIME_ZONE;
 
 /**
  * The Intl tag to use for each of the app's locales.
