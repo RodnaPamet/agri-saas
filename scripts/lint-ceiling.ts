@@ -114,7 +114,27 @@ export const LIMITS: Limits = {
     // The ratchet still moved 13 points down and cannot move back up without a
     // visible line in a diff. Lower this toward 82 as warnings are fixed; the
     // sentinel will force the issue once the gap exceeds 25 again.
-    warningCeiling: 107,
+    //
+    // 107 -> 106, because the drift sentinel fired: actual fell to 81 and a
+    // gap of 26 exceeds `slack`. The three fixes were #1723/#1724/#1727's
+    // siblings landing together -- #1728 cleared the `error-boundaries`
+    // finding (85 -> 84) and #1729 cleared three unstable hook dependencies
+    // (84 -> 81).
+    //
+    // 106 and not the 81 the failure message suggests. That message is the
+    // generic instruction from the docblock above; the comment block above
+    // this line records a DELIBERATE departure from it, with the cost
+    // measured rather than assumed -- at gap 0 two concurrent PRs cannot
+    // both land, and three in flight on 2026-10-02 had to be merged one at
+    // a time with the union re-verified at each step. 81 + 25 is the most
+    // the sentinel permits, so this keeps that policy exactly: the ratchet
+    // moves DOWN a point and cannot move back up without a visible line in
+    // a diff, and the headroom stays at the sanctioned maximum rather than
+    // being spent.
+    //
+    // Lower toward 81 as warnings are fixed; the sentinel forces the issue
+    // again the moment the gap exceeds 25.
+    warningCeiling: 106,
     // Two changes landed on this line and both reasons stand.
     //
     // #1376 LOWERED it 1580 -> 1578: the retired `/api/auth/register` carried
