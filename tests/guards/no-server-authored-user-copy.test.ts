@@ -350,7 +350,32 @@ export function collectServerAuthoredCopy(root: string, dirs: string[] = ROOTS):
 // `writeCostEntryOn`. Traced through the call graph rather than assumed, and
 // documented once as `COST_WRITE_REFUSALS` in `grain.paths.ts` so three
 // copies cannot drift. Refs #1712 batch 7.
-const CURRENT_BASELINE = 340;
+//
+// ── 340 → 325 ──────────────────────────────────────────────────────
+//
+// `contract.ts` coded: 16 sites, 11 codes. The drop is 15, not 16, and the
+// site that did not move is the SECOND confirmed instance of this detector's
+// computed-prose blind spot — the first was batch 6's ternary at
+// `access-review.ts:141`.
+//
+// Here it is `throw badRequest(formatContractTransitionError(transitionErr))`:
+// the message is built by a function, so there is no string literal for
+// THROWERS to match and the site was never counted. Coding it therefore moves
+// this number by zero while genuinely removing server-authored English from a
+// refusal a client receives.
+//
+// Two instances is enough to say the shape rather than the case: a refusal
+// whose prose is COMPUTED is invisible here, so this baseline undercounts.
+// Filed separately rather than papered over.
+//
+// The three transition variants became three codes rather than one, because
+// `unknown_from` (the STORED status is not in the table — nothing the caller
+// sends can succeed), `unknown_to` (an unrecognised target) and `illegal`
+// (a legal target from an illegal place, which is the only one that can carry
+// a useful `params.allowed`) have different remedies. The code and params are
+// derived in `contract-status.ts` beside the transition TABLE, so they cannot
+// drift from it when a status is added. Refs #1712 batch 7.
+const CURRENT_BASELINE = 325;
 
 /** Slack tolerated before the sentinel demands the baseline be lowered. */
 const DRIFT_ALLOWANCE = 15;

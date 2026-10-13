@@ -24446,7 +24446,7 @@
       "post": {
         "operationId": "createGrainContract",
         "summary": "Create a grain contract",
-        "description": "A forward sale. The calculator prices a contracted tonnage against the contract rather than the market reference, so this is an INPUT to net worth, not a record kept beside it.",
+        "description": "A forward sale. The calculator prices a contracted tonnage against the contract rather than the market reference, so this is an INPUT to net worth, not a record kept beside it.\n\nValidation refusals, all 400s: `CONTRACT_COUNTERPARTY_REQUIRED`; `CONTRACT_VOLUME_NEGATIVE` and `CONTRACT_PRICE_NEGATIVE` (both must be zero or positive); `CONTRACT_DELIVERY_WINDOW_INVERTED` (end before start); `CONTRACT_INVALID_DATE`, with the field named in `params.field`; and `CONTRACT_SEASON_NOT_IN_TENANT` — a 400 rather than a 404 deliberately, because a 404 would confirm the season exists in SOME tenant.",
         "tags": [
           "Grain"
         ],
@@ -25914,7 +25914,7 @@
       "get": {
         "operationId": "getGrainContract",
         "summary": "Get one contract",
-        "description": "The RAW model plus its season — NOT the list row, which additionally carries computed fulfilment, value and benchmark.",
+        "description": "The RAW model plus its season — NOT the list row, which additionally carries computed fulfilment, value and benchmark.\n\nRefusal code: `CONTRACT_NOT_FOUND` (404).",
         "tags": [
           "Grain"
         ],
@@ -26058,6 +26058,7 @@
       "patch": {
         "operationId": "updateGrainContract",
         "summary": "Update a contract",
+        "description": "Partial update. The whole form is submitted on every edit, so re-sending the current status is a legal no-op that writes nothing.\n\nRefusal code: `CONTRACT_NOT_FOUND` (404).\n\nValidation refusals, all 400s: `CONTRACT_COUNTERPARTY_REQUIRED`; `CONTRACT_VOLUME_NEGATIVE` and `CONTRACT_PRICE_NEGATIVE` (both must be zero or positive); `CONTRACT_DELIVERY_WINDOW_INVERTED` (end before start); `CONTRACT_INVALID_DATE`, with the field named in `params.field`; and `CONTRACT_SEASON_NOT_IN_TENANT` — a 400 rather than a 404 deliberately, because a 404 would confirm the season exists in SOME tenant.\n\nStatus-change refusals, all 400s. `CONTRACT_ILLEGAL_STATUS_TRANSITION` — a legal status from an illegal place, with `params.from`, `params.to` and `params.allowed` so a client can say what WOULD work. `CONTRACT_TARGET_STATUS_UNKNOWN` — an unrecognised target, in `params.to`. `CONTRACT_STORED_STATUS_UNKNOWN` — the STORED status is not in the transition table, in `params.from`; the one variant a client cannot act on, since nothing it sends can succeed. `CONTRACT_DELIVERED_NEEDS_DELIVERIES` — DELIVERED must mean grain moved, so it requires at least one recorded delivery against the contract.\n\nRe-sending the UNCHANGED status is legal and writes nothing, because the whole form is submitted on every edit.",
         "tags": [
           "Grain"
         ],
@@ -26332,6 +26333,7 @@
       "delete": {
         "operationId": "deleteGrainContract",
         "summary": "Delete a contract",
+        "description": "Refusal code: `CONTRACT_NOT_FOUND` (404).",
         "tags": [
           "Grain"
         ],

@@ -262,6 +262,40 @@ const COST_WRITE_REFUSALS =
     '\n\n**The invoice** — `COST_ENTRY_INVOICE_FILE_NOT_FOUND`, `COST_ENTRY_INVOICE_UPLOAD_INCOMPLETE` (the upload never finished) and `COST_ENTRY_INVOICE_FILE_DELETED`.' +
     '\n\n**The date** — `COST_ENTRY_INVALID_DATE`, with the field named in `params.field`.';
 
+/**
+ * The validation refusals both contract WRITES answer (#1712 batch 7).
+ *
+ * Shared because `createContract` and `updateContract` run the same checks on
+ * the same fields. Traced, not assumed: both call `parseDate` for the delivery
+ * window and both validate counterparty, volume, price, window order and the
+ * season reference.
+ *
+ * The STATUS-transition refusals are NOT here. They are reachable only from
+ * `updateContract`, because a create has no previous status to move from, so
+ * putting them in the shared block would tell a POST caller about three
+ * refusals it cannot receive.
+ */
+const CONTRACT_WRITE_REFUSALS =
+    '\n\nValidation refusals, all 400s: `CONTRACT_COUNTERPARTY_REQUIRED`; ' +
+    '`CONTRACT_VOLUME_NEGATIVE` and `CONTRACT_PRICE_NEGATIVE` (both must be zero or positive); ' +
+    '`CONTRACT_DELIVERY_WINDOW_INVERTED` (end before start); ' +
+    '`CONTRACT_INVALID_DATE`, with the field named in `params.field`; and ' +
+    '`CONTRACT_SEASON_NOT_IN_TENANT` — a 400 rather than a 404 deliberately, because a 404 would confirm the season exists in SOME tenant.';
+
+/**
+ * The status-machine refusals, `PATCH` only.
+ *
+ * Three codes rather than one, because the variants have different remedies.
+ * `CONTRACT_ILLEGAL_STATUS_TRANSITION` is the only one a client can act on,
+ * and it is the one that carries `params.allowed`.
+ */
+const CONTRACT_STATUS_REFUSALS =
+    '\n\nStatus-change refusals, all 400s. `CONTRACT_ILLEGAL_STATUS_TRANSITION` — a legal status from an illegal place, with `params.from`, `params.to` and `params.allowed` so a client can say what WOULD work. ' +
+    '`CONTRACT_TARGET_STATUS_UNKNOWN` — an unrecognised target, in `params.to`. ' +
+    '`CONTRACT_STORED_STATUS_UNKNOWN` — the STORED status is not in the transition table, in `params.from`; the one variant a client cannot act on, since nothing it sends can succeed. ' +
+    '`CONTRACT_DELIVERED_NEEDS_DELIVERIES` — DELIVERED must mean grain moved, so it requires at least one recorded delivery against the contract.' +
+    '\n\nRe-sending the UNCHANGED status is legal and writes nothing, because the whole form is submitted on every edit.';
+
 export function registerGrainPaths(registry: OpenAPIRegistry): void {
 
     op(registry, {
@@ -489,7 +523,8 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         description:
             'A forward sale. The calculator prices a contracted tonnage against the contract ' +
             'rather than the market reference, so this is an INPUT to net worth, not a record ' +
-            'kept beside it.',
+            'kept beside it.' +
+            CONTRACT_WRITE_REFUSALS,
         tags: ['Grain'],
         params: TenantParams,
         body: CreateContractSchema,
@@ -702,7 +737,8 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         operationId: 'getGrainContract',
         summary: 'Get one contract',
         description:
-            'The RAW model plus its season — NOT the list row, which additionally carries computed fulfilment, value and benchmark.',
+            'The RAW model plus its season — NOT the list row, which additionally carries computed fulfilment, value and benchmark.' +
+            '\n\nRefusal code: `CONTRACT_NOT_FOUND` (404).',
         tags: ['Grain'],
         params: ContractParams,
         success: { status: 200, description: 'The contract.', schema: ContractDTOSchema },
@@ -713,6 +749,12 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         path: '/api/t/{tenantSlug}/grain/contracts/{contractId}',
         operationId: 'updateGrainContract',
         summary: 'Update a contract',
+        description:
+            'Partial update. The whole form is submitted on every edit, so re-sending the ' +
+            'current status is a legal no-op that writes nothing.' +
+            '\n\nRefusal code: `CONTRACT_NOT_FOUND` (404).' +
+            CONTRACT_WRITE_REFUSALS +
+            CONTRACT_STATUS_REFUSALS,
         tags: ['Grain'],
         params: ContractParams,
         body: UpdateContractSchema,
@@ -724,6 +766,7 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         path: '/api/t/{tenantSlug}/grain/contracts/{contractId}',
         operationId: 'deleteGrainContract',
         summary: 'Delete a contract',
+        description: 'Refusal code: `CONTRACT_NOT_FOUND` (404).',
         tags: ['Grain'],
         params: ContractParams,
         success: {

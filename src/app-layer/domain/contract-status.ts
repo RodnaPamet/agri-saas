@@ -164,6 +164,60 @@ export function checkContractTransition(
 }
 
 /** Render a transition error into a human-readable 400 message. */
+/**
+ * The refusal CODE for a transition error, and the structured facts behind it
+ * (#1712 batch 7).
+ *
+ * Three codes rather than one, because the three variants are different
+ * refusals with different remedies:
+ *
+ *   - `unknown_from` is a DATA problem. The stored status is not in the
+ *     transition table, so nothing the caller sends can succeed. Kept a 400
+ *     because that is the existing behaviour and changing the status is
+ *     outside this change, but it is the one variant a client cannot act on.
+ *   - `unknown_to` is a CLIENT problem: an unrecognised target.
+ *   - `illegal` is a legal target from an illegal place, and the only one
+ *     where a client can usefully be told what WOULD work — hence
+ *     `params.allowed`.
+ *
+ * Lives beside the formatter and the table on purpose. A code derived at the
+ * call site drifts from the table it describes the moment a status is added.
+ *
+ * Statuses are enum values, so none of these params carry anything
+ * identifying.
+ */
+export function contractTransitionErrorCode(err: ContractTransitionError): string {
+    switch (err.kind) {
+        case 'unknown_from':
+            return 'CONTRACT_STORED_STATUS_UNKNOWN';
+        case 'unknown_to':
+            return 'CONTRACT_TARGET_STATUS_UNKNOWN';
+        case 'illegal':
+            return 'CONTRACT_ILLEGAL_STATUS_TRANSITION';
+    }
+}
+
+/** The facts a client needs to compose its own sentence, per variant. */
+export function contractTransitionErrorParams(
+    err: ContractTransitionError,
+): Record<string, string> {
+    switch (err.kind) {
+        case 'unknown_from':
+            return { from: err.from };
+        case 'unknown_to':
+            return { to: err.to };
+        case 'illegal':
+            return {
+                from: err.from,
+                to: err.to,
+                allowed:
+                    [...(CONTRACT_TRANSITIONS[err.from as ContractStatusValue] ?? [])].join(
+                        ', ',
+                    ) || 'none',
+            };
+    }
+}
+
 export function formatContractTransitionError(
     err: ContractTransitionError,
 ): string {
