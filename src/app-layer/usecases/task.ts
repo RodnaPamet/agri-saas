@@ -103,6 +103,20 @@ export async function createTask(ctx: RequestContext, input: {
     reviewerUserId?: string | null;
     clientMutationId?: string | null;
     metadataJson?: unknown;
+    /**
+     * Skip the "you have been assigned" email and bell (#1740).
+     *
+     * For a task that records work ALREADY DONE by the person creating it —
+     * the two-step diary treatment — where an assignment notice would tell
+     * the farmer about work they had just finished typing in.
+     *
+     * Narrow on purpose. The general case is #1755: nothing here compares
+     * `assigneeUserId` against `ctx.userId`, so ANY self-assignment mails and
+     * bells the actor today. If that is fixed generally this flag becomes
+     * redundant and should go, rather than remaining as a second way to say
+     * the same thing.
+     */
+    suppressAssignmentNotification?: boolean;
 }) {
     assertCanWriteTasks(ctx);
     const result = await runInTenantContext(ctx, async (db) => {
@@ -148,7 +162,7 @@ export async function createTask(ctx: RequestContext, input: {
         });
 
         // Enqueue email to assignee if set
-        if (input.assigneeUserId) {
+        if (input.assigneeUserId && !input.suppressAssignmentNotification) {
             await enqueueTaskAssignedNotification(db, ctx, task.id, task.title, task.key, input.type || 'TASK', input.assigneeUserId);
         }
 
@@ -161,7 +175,7 @@ export async function createTask(ctx: RequestContext, input: {
     // PR-A 2026-05-27 — also fire the in-app TASK_ASSIGNED bell.
     // Pre-PR-A, only the email path ran on create-with-assignee, so
     // the bell stayed silent until the task entered a due-window.
-    if (result.assigneeUserId) {
+    if (result.assigneeUserId && !input.suppressAssignmentNotification) {
         await emitTaskAssignedNotification(ctx, result);
     }
     await bumpEntityCacheVersion(ctx, 'task');
