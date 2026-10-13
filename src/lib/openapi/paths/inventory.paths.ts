@@ -212,7 +212,8 @@ export function registerInventoryPaths(registry: OpenAPIRegistry): void {
         operationId: 'getInventoryLot',
         summary: 'Get one lot with its recent ledger',
         description:
-            'NOT the list row: this carries an inline `ledger` (the recent page, newest first) and has no `lowStock`. For full history use the cursor-paginated `/ledger` route.',
+            'NOT the list row: this carries an inline `ledger` (the recent page, newest first) and has no `lowStock`. For full history use the cursor-paginated `/ledger` route.' +
+            '\n\nRefusal code: `LOT_NOT_FOUND` (404).',
         tags: ['Inventory'],
         params: LotParams,
         success: { status: 200, description: 'The lot and its recent movements.', schema: LotDetailSchema },
@@ -224,7 +225,8 @@ export function registerInventoryPaths(registry: OpenAPIRegistry): void {
         operationId: 'updateInventoryLot',
         summary: 'Move a lot to another location',
         description:
-            'ONE field is updatable: `locationId`. Quantity is never edited — it only ever moves through the ledger, via receive and adjust.',
+            'ONE field is updatable: `locationId`. Quantity is never edited — it only ever moves through the ledger, via receive and adjust.' +
+            '\n\nRefusal code: `LOT_NOT_FOUND` (404).',
         tags: ['Inventory'],
         params: LotParams,
         body: UpdateLotSchema,
@@ -258,7 +260,8 @@ export function registerInventoryPaths(registry: OpenAPIRegistry): void {
         operationId: 'receiveInventoryStock',
         summary: 'Receive stock into a lot',
         description:
-            'Appends a RECEIPT to the ledger. `quantity` must be POSITIVE — receiving a negative amount is an adjustment, and it has its own route so that the reason is required.',
+            'Appends a RECEIPT to the ledger. `quantity` must be POSITIVE — receiving a negative amount is an adjustment, and it has its own route so that the reason is required.' +
+            '\n\nRefusal code: `LOT_NOT_FOUND` (404).',
         tags: ['Inventory'],
         params: LotParams,
         body: ReceiveSchema,
@@ -272,7 +275,8 @@ export function registerInventoryPaths(registry: OpenAPIRegistry): void {
         summary: 'Correct a lot’s quantity',
         description:
             'Appends a signed ADJUSTMENT. `delta` may not be ZERO and `reason` is required — the ledger is append-only, so an adjustment of nothing would be a permanent record that someone touched the stock and changed nothing. ' +
-            '\n\nCorrections are new entries, never edits: there is no route that rewrites history because the database blocks it.',
+            '\n\nCorrections are new entries, never edits: there is no route that rewrites history because the database blocks it.' +
+            '\n\nRefusal code: `LOT_NOT_FOUND` (404).',
         tags: ['Inventory'],
         params: LotParams,
         body: AdjustSchema,
@@ -285,7 +289,8 @@ export function registerInventoryPaths(registry: OpenAPIRegistry): void {
         operationId: 'listInventoryLotLedger',
         summary: 'A lot’s full movement history',
         description:
-            'Cursor-paginated deep history — the companion to the recent page embedded in `GET /lots/{lotId}`. Same entry shape. `{ items, pageInfo }`.',
+            'Cursor-paginated deep history — the companion to the recent page embedded in `GET /lots/{lotId}`. Same entry shape. `{ items, pageInfo }`.' +
+            '\n\nRefusal code: `LOT_NOT_FOUND` (404).',
         tags: ['Inventory'],
         params: LotParams,
         query: LedgerQuerySchema,
@@ -303,7 +308,8 @@ export function registerInventoryPaths(registry: OpenAPIRegistry): void {
         summary: 'Trace a lot’s provenance both ways',
         description:
             'The FOOD-SAFETY RECALL query. Walks the genealogy graph up to the seed and input lots this one derives from, and down to the harvest lots derived from it, annotating every node with the fields it touched. ' +
-            '\n\n"Given this seed lot, which fields and which harvest lots are implicated?" — and its inverse, "given this harvest, what went into it?". `edges` carries the parent/child links so a client can draw the graph rather than infer it from the arrays.',
+            '\n\n"Given this seed lot, which fields and which harvest lots are implicated?" — and its inverse, "given this harvest, what went into it?". `edges` carries the parent/child links so a client can draw the graph rather than infer it from the arrays.' +
+            '\n\nRefusal code: `LOT_NOT_FOUND` (404).',
         tags: ['Inventory'],
         params: LotParams,
         success: {
