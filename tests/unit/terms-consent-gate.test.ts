@@ -90,6 +90,11 @@ const GATED = {
     // row: it is the write a client is most likely to reach for, and "the
     // prefix covers it" is an argument, whereas this is a test.
     farmCreate: '/api/me/farms',
+    // P1.6 completion (#1192): `/api/account/**` joined `isPersonPath` by owner
+    // ruling, so the terms gate reaches it for the first time. Pinned on the
+    // ordinary account surface — the two ESCAPE HATCHES are the exemptions
+    // below, and the distinction is the whole point.
+    accountApi: '/api/account/profile',
 } as const;
 
 /** Paths that must stay reachable while a session is held. */
@@ -99,6 +104,23 @@ const ALLOWED_WHILE_PENDING = [
     '/api/auth/signout',
     '/terms',
     '/privacy',
+    // #1192 — the two ways OUT, and the reason they are here is that widening
+    // `isPersonPath` to `/api/account/**` would otherwise have made the terms
+    // gate REFUSE them for the first time.
+    //
+    // A person who reads the terms and DECLINES could then neither delete the
+    // account that was created for them nor take a copy of their data: Art 17
+    // erasure and Art 15 access conditioned on accepting the terms, which is
+    // backwards. And it would have been a NEW refusal, introduced by a change
+    // whose purpose was to ADD a control — the worst kind, because the diff
+    // reads as a security improvement.
+    //
+    // Measured: removing the `/api/account/deletion` exemption left this whole
+    // suite GREEN until these two entries existed. The protection had no test,
+    // which is how it would have been deleted later by someone tidying the
+    // exemption list.
+    '/api/account/deletion',
+    '/api/account/export',
 ] as const;
 
 function req(pathname: string, method = 'GET'): NextRequest {
@@ -184,8 +206,32 @@ describe('§3 and everything else is NOT held — the controls', () => {
         // must be readable by the person being asked to accept them.
         getToken.mockResolvedValue(token({ termsPending: true }));
         const res = await middleware(req(pathname) as any);
+
+        // THE STATUS, not only the redirect target (#1192).
+        //
+        // This asserted `location` alone — and the terms gate refuses an API
+        // path with a **403 JSON carrying no `location` header at all**, so
+        // `'' .not.toContain('/accept-terms')` passed for every API entry
+        // whether it was refused or served. Measured: removing
+        // `/api/account/deletion` from `isTermsAllowedPath` left this suite
+        // fully green.
+        //
+        // So the three API rows here — signout, accept-terms, and the two
+        // account escape hatches — were vacuous from the day they were
+        // written. `an-empty-window-passes-a-negated-assertion`: an extraction
+        // that empties satisfies a negated matcher.
         const location = res.headers.get('location') ?? '';
         expect(location).not.toContain('/accept-terms');
+    });
+
+    it.each(ALLOWED_WHILE_PENDING)('%s is not REFUSED while pending', async (pathname) => {
+        // The positive half, stated as its own case so the refusal shapes are
+        // named: 403 is how an API path is held, 302/307 how a page is.
+        getToken.mockResolvedValue(token({ termsPending: true }));
+        const res = await middleware(req(pathname) as any);
+
+        expect({ path: pathname, refused: [302, 307, 403].includes(res.status) })
+            .toEqual({ path: pathname, refused: false });
     });
 
     it('an ABSENT claim does not hold — old tokens degrade gracefully', async () => {

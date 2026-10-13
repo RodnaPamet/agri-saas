@@ -423,7 +423,21 @@ export function isPersonPath(pathname: string): boolean {
         pathname === '/api/me' ||
         pathname.startsWith('/api/me/') ||
         pathname === '/api/social' ||
-        pathname.startsWith('/api/social/')
+        pathname.startsWith('/api/social/') ||
+        // P1.6 (#1192) — `/api/account/**` joined the person population by
+        // owner ruling 2026-10-13. It had been in NEITHER population: not a
+        // tenant path, not a person path, so its seven routes (profile,
+        // language, bottom-tabs, avatar, avatar/[userId], export, deletion)
+        // took no Edge MFA gate and no read tier, relying entirely on
+        // `getUserCtx` refusing an MFA-pending session at the handler.
+        //
+        // Defensible while it lasted — there is no PAGE under `/api/account/`,
+        // and the Edge half's stated purpose was protecting pages — but it made
+        // this predicate mean less than its name, which is the shape that
+        // produced three gate-coverage findings in one day (#1652, #1665,
+        // #1745). The handler half stays; this adds the Edge half.
+        pathname === '/api/account' ||
+        pathname.startsWith('/api/account/')
     );
 }
 
@@ -537,6 +551,20 @@ export function isMfaAllowedPath(pathname: string): boolean {
 export function isTermsAllowedPath(pathname: string): boolean {
     if (pathname === '/accept-terms') return true;
     if (pathname === '/api/auth/accept-terms') return true;
+    // The two ways OUT, exempt for the same reason `/api/auth/accept-terms` is
+    // (#1192, P1.6). Widening `isPersonPath` to `/api/account/**` brought those
+    // routes under this gate for the first time, and without these two entries
+    // it would have introduced a regression rather than a control: a person who
+    // reads the terms and DECLINES could no longer delete the account that was
+    // created for them, nor take a copy of their data.
+    //
+    // That is conditioning Art 17 erasure and Art 15 access on accepting the
+    // terms, which is backwards — and it is a NEW refusal, because before the
+    // widening the terms gate never reached these paths at all. The slow-mode
+    // escape rule in reverse: the route out must never be behind the thing it
+    // lets you escape.
+    if (pathname === '/api/account/deletion') return true;
+    if (pathname === '/api/account/export') return true;
     if (pathname === '/terms' || pathname === '/privacy') return true;
     if (pathname === '/dsa-contact') return true;
     if (pathname.startsWith('/api/auth/')) return true;

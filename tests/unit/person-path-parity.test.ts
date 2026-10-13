@@ -93,6 +93,13 @@ const PERSON_PATHS = {
     onboarding: '/onboarding/farm',
     apiMe: '/api/me/profile',
     apiSocial: '/api/social/feed',
+    // P1.6 completion (#1192, owner ruling 2026-10-13). `/api/account/**` had
+    // been in NEITHER population — not a tenant path, not a person path — so
+    // its seven real routes took no Edge MFA gate and no read tier. Unlike the
+    // three prefixes above, this one is NOT gated before it exists: profile,
+    // language, bottom-tabs, avatar, avatar/[userId], export and deletion are
+    // all live today.
+    apiAccount: '/api/account/profile',
 } as const;
 
 function req(pathname: string, method = 'GET', ip = IP): NextRequest {
@@ -150,11 +157,13 @@ describe('§0 — nothing here can go vacuously green', () => {
 });
 
 describe('§1 — MFA parity on person paths', () => {
-    it('covers FOUR prefixes, three of which have no routes yet', () => {
+    it('covers FIVE prefixes, three of which have no routes yet', () => {
         // The denominator, printed as an assertion. Three of these prefixes are
         // gated before they exist, which is the intended order — and the reason
         // every case here uses a synthetic path instead of discovering one.
-        expect(Object.keys(PERSON_PATHS)).toHaveLength(4);
+        // `/api/account/` is the exception and arrived late: seven live routes
+        // that had been in neither population until #1192 closed it.
+        expect(Object.keys(PERSON_PATHS)).toHaveLength(5);
         for (const p of Object.values(PERSON_PATHS)) {
             expect(isPersonPath(p)).toBe(true);
         }
@@ -341,13 +350,17 @@ describe('§4 — the predicates have teeth at their boundaries', () => {
         // The `/api/scim` vs `/api/scimulator` hazard. A bare
         // `startsWith('/account')` would match `/accounts`, opening a gate over
         // a path nobody considered.
-        for (const p of ['/accounts', '/accounts/x', '/api/members', '/api/mex', '/onboardings']) {
+        for (const p of [
+            '/accounts', '/accounts/x', '/api/members', '/api/mex', '/onboardings',
+            // The same boundary for the prefix added in #1192.
+            '/api/accounts', '/api/accountsomething',
+        ]) {
             expect(isPersonPath(p)).toBe(false);
         }
     });
 
     it('the bare prefix IS a person path', () => {
-        for (const p of ['/account', '/onboarding', '/api/me', '/api/social']) {
+        for (const p of ['/account', '/onboarding', '/api/me', '/api/social', '/api/account']) {
             expect(isPersonPath(p)).toBe(true);
         }
     });
