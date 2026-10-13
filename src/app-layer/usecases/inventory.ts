@@ -420,6 +420,18 @@ export interface InputApplicationLine {
      * belongs to the write that knows where the record came from.
      */
     recordedInDiary?: boolean;
+    /**
+     * When the treatment HAPPENED, for the journal entry's `occurredAt`
+     * (#1740). Omitted means now, which is right for an operator completing a
+     * line today and wrong for a backdated diary record.
+     *
+     * `JournalRepository.create` defaults `occurredAt` to `new Date()`, so
+     * without this a treatment recorded for last Tuesday would sort as
+     * today's and fall OUTSIDE a period filter — which for a regulatory
+     * register means a treatment silently absent from the document for the
+     * period it happened in.
+     */
+    occurredAt?: Date;
 }
 
 export interface InputApplicationResult {
@@ -562,6 +574,7 @@ async function recordInputApplicationImpl(
         const entry = await createLogEntryWithAudit(db, ctx, {
             type: 'INPUT_APPLICATION',
             recordedInDiary: line.recordedInDiary ?? false,
+            ...(line.occurredAt ? { occurredAt: line.occurredAt } : {}),
             title: composed.title,
             titleKey: composed.titleKey,
             titleParams: composed.titleParams,

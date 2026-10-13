@@ -31,6 +31,12 @@ import { markOperationParcel } from '@/app-layer/usecases/field-operation';
 const globalPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 const TAG = `diaryflag-${randomUUID().slice(0, 8)}`;
+/**
+ * A day firmly in the past, for the backdating case. Fixed rather than
+ * computed from `now`, so the assertion cannot drift into passing because the
+ * difference happens to be small.
+ */
+const TREATMENT_DAY = new Date('2026-03-04T00:00:00.000Z');
 
 let userId = '';
 let unitId = '';
@@ -38,6 +44,7 @@ let tenantId = '';
 let taskId = '';
 let operatorLine = '';   // marked done WITHOUT the option -> entry stays hidden
 let diaryLine = '';      // marked done WITH it            -> entry is visible
+let backdatedLine = ''; // marked done for a PAST day      -> dates follow the treatment
 
 const ctx = () => makeRequestContext('OWNER', { userId, tenantId, tenantSlug: `${TAG}-t` });
 
@@ -67,6 +74,9 @@ beforeAll(async () => {
     });
     const p2 = await globalPrisma.parcel.create({
         data: { tenantId, locationId: location.id, name: `P2 ${TAG}`, cropType: 'Wheat', areaHa: 10 },
+    });
+    const p3 = await globalPrisma.parcel.create({
+        data: { tenantId, locationId: location.id, name: `P3 ${TAG}`, cropType: 'Wheat', areaHa: 10 },
     });
     const item = await globalPrisma.item.create({
         data: { tenantId, name: `Prod ${TAG}`, category: 'PESTICIDE', defaultUnitId: unitId },
@@ -109,6 +119,7 @@ beforeAll(async () => {
         })).id;
     operatorLine = await mkLine(p1.id);
     diaryLine = await mkLine(p2.id);
+    backdatedLine = await mkLine(p3.id);
 
     // BOTH MARKS HAPPEN HERE, AND THE DIARY ONE GOES FIRST. Order is
     // load-bearing, which it should not have to be and does.
@@ -126,6 +137,10 @@ beforeAll(async () => {
         recordedInDiary: true,
     });
     await markOperationParcel(ctx(), taskId, operatorLine, 'DONE', 'done in the field', 0);
+    await markOperationParcel(ctx(), taskId, backdatedLine, 'DONE', 'recorded later', 0, {
+        recordedInDiary: true,
+        occurredAt: TREATMENT_DAY,
+    });
 });
 
 afterAll(async () => {
@@ -181,6 +196,42 @@ describeFn('recordedInDiary reaches the journal entry a mark emits (DB-backed)',
         // An entry that was flagged but carried no line would prove nothing,
         // because it would be visible under the old rule too.
         expect(entry!.operationParcelId).toBe(diaryLine);
+    });
+
+    it('a backdated treatment dates BOTH the entry and the line by its own day', async () => {
+        // agrent-ios's flag, and the reason it matters: `JournalRepository`
+        // defaults `occurredAt` to now and `markOperationParcel` stamped
+        // `completedAt` with now, so a treatment recorded for a past day
+        // would sort as today's and fall OUTSIDE a period filter — silently
+        // absent from the register for the period it happened in.
+        const entry = await entryFor(backdatedLine);
+        expect(entry).not.toBeNull();
+
+        const full = await globalPrisma.logEntry.findUniqueOrThrow({
+            where: { id: entry!.id },
+            select: { occurredAt: true },
+        });
+        expect(full.occurredAt.toISOString()).toBe(TREATMENT_DAY.toISOString());
+
+        // And the LINE agrees with it. The register joins the two, so a line
+        // stamped today against an entry dated March would disagree inside
+        // one document.
+        const line = await globalPrisma.operationParcel.findUniqueOrThrow({
+            where: { id: backdatedLine },
+            select: { completedAt: true },
+        });
+        expect(line.completedAt?.toISOString()).toBe(TREATMENT_DAY.toISOString());
+    });
+
+    it('an operator mark still uses NOW, not a backdate', async () => {
+        // The control. Without it, defaulting everything to a fixed past date
+        // would satisfy the case above.
+        const line = await globalPrisma.operationParcel.findUniqueOrThrow({
+            where: { id: operatorLine },
+            select: { completedAt: true },
+        });
+        expect(line.completedAt).not.toBeNull();
+        expect(line.completedAt!.getTime()).toBeGreaterThan(TREATMENT_DAY.getTime());
     });
 
     it('the DIARY path does NOT deduct stock — owner ruling 2026-10-13', async () => {
