@@ -45,8 +45,16 @@ jest.mock('next-intl', () => ({
 }));
 
 const mockSignIn = jest.fn(async () => ({ error: undefined }));
+/**
+ * `getCsrfToken` is mocked alongside `signIn` because #1738 made the wizard
+ * re-mint the session after creating a farm. A mock carrying only `signIn`
+ * leaves the new import undefined and the create step dies with
+ * "getCsrfToken is not a function" — the partial-barrel hazard this file's
+ * `next-intl` comment already records, one module over.
+ */
 jest.mock('next-auth/react', () => ({
     signIn: (...a: unknown[]) => mockSignIn(...(a as [])),
+    getCsrfToken: jest.fn(async () => 'csrf-test-token'),
 }));
 
 /** The widget is covered by its own suite; here it must simply not render. */

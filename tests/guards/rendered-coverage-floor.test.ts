@@ -231,7 +231,16 @@ const ROOT = path.resolve(__dirname, '../..');
 // context a new value on every render and re-rendered every consumer; the
 // trail still DISPLAYED correctly, which is why a grep could never see it.
 // Raised to this branch's own live count, measured, not 250 plus a delta.
-const RENDERED_TEST_FLOOR = 251;
+// 251 → 252: `farm-wizard-session-refresh.test.tsx` (#1738). Creating a farm
+// while signed in left the OWNER locked out of it — `memberships` is a JWT
+// claim and the Edge gate reads it, not the database, so the token minted
+// before the farm existed sent them to `/no-tenant`, a page advising them to
+// ask an administrator for an invite. The `jwt` callback's `trigger ===
+// 'update'` branch names that exact case and nothing called it. No source grep
+// could have seen this: the wizard's code was complete and correct, and the
+// missing thing was a request it never made. Raised to this branch's own live
+// count, measured.
+const RENDERED_TEST_FLOOR = 252;
 // Raised 246 -> 247 for `field-operation-panel-if-match.test.tsx` (#1370):
 // the online map panel marked prescription lines with no `If-Match`, a
 // silent last-write-wins on a row that stamps a regulatory date. Raised to
