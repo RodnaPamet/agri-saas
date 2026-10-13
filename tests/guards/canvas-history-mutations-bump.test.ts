@@ -144,9 +144,8 @@ function analyseBody(body: ts.Node, name: string): PathFacts {
  * its body does. Nested callbacks are not separated out — a `bump()` inside
  * a `setNodes` updater still belongs to the path that mutated.
  */
-function readPaths(): PathFacts[] {
-    const text = readFileSync(join(ROOT, SRC), 'utf8');
-    const sf = ts.createSourceFile(SRC, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+function readPathsFrom(text: string, label = SRC): PathFacts[] {
+    const sf = ts.createSourceFile(label, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
     const out: PathFacts[] = [];
 
     const visit = (node: ts.Node): void => {
@@ -169,6 +168,10 @@ function readPaths(): PathFacts[] {
 
     ts.forEachChild(sf, visit);
     return out;
+}
+
+function readPaths(): PathFacts[] {
+    return readPathsFrom(readFileSync(join(ROOT, SRC), 'utf8'));
 }
 
 describe('canvas history — every mutation forces a render', () => {
@@ -243,6 +246,57 @@ describe('canvas history — every mutation forces a render', () => {
 
         ts.forEachChild(sf, (n) => walk(n, false));
         expect(outside).toBe(0);
+    });
+
+    describe('the ref matcher discriminates (selector-teeth control)', () => {
+        // WHY THIS EXISTS. `scripts/selector-teeth.mjs` stubbed
+        // `isStackRefCurrent()` to return `[]` and every assertion above
+        // still passed. `[]` is TRUTHY, so the stub does not break the
+        // predicate — it makes it accept EVERYTHING. That only ever ADDS
+        // mutation paths, and since every real path bumps, nothing failed.
+        //
+        // So the checks above prove the matcher FIRES. They cannot prove it
+        // DISCRIMINATES, and a matcher that accepts everything would count a
+        // mutation of any unrelated ref as a history mutation. These cases
+        // run the analyser over synthetic source where the right answer
+        // differs from the accept-everything answer.
+        const SYNTHETIC = `
+            const good = useCallback(() => {
+                pastRef.current.push(snap);
+                bump();
+            }, [bump]);
+            const unrelated = useCallback(() => {
+                scrollRef.current.push(snap);
+            }, []);
+            const readOnly = useCallback(() => {
+                return pastRef.current.slice(0, 2).concat(futureRef.current);
+            }, []);
+        `;
+
+        const paths = readPathsFrom(SYNTHETIC, 'synthetic.ts');
+        const byName = (n: string) => paths.find((p) => p.name === n)!;
+
+        it('reads all three synthetic callbacks', () => {
+            expect(paths.map((p) => p.name)).toEqual(['good', 'unrelated', 'readOnly']);
+        });
+
+        it('counts a history-stack mutation', () => {
+            expect(byName('good').mutates).toBe(true);
+            expect(byName('good').bumps).toBe(true);
+        });
+
+        it('does NOT count a mutation of an unrelated ref', () => {
+            // `scrollRef.current.push(...)` with no bump. An accept-everything
+            // matcher counts this and, because it does not bump, would also
+            // turn the main assertion into a false alarm on real code.
+            expect(byName('unrelated').mutates).toBe(false);
+        });
+
+        it('does NOT count non-mutating array methods on a history stack', () => {
+            // `slice`/`concat` return new arrays. Treating a read as a
+            // mutation would demand a bump where none is needed.
+            expect(byName('readOnly').mutates).toBe(false);
+        });
     });
 
     it('every mutating path calls bump()', () => {
