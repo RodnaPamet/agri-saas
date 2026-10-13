@@ -4,7 +4,8 @@
  * Three read-only methods that drive every portfolio aggregation
  * usecase. All three bypass RLS via `runWithoutRls` with the typed
  * reason `org-portfolio-read` (P1.7; previously the untyped
- * `runInGlobalContext`), i.e. the global Prisma client, postgres role — these queries cross tenant
+ * `runInGlobalContext`, since deleted), i.e. the global Prisma client and
+ * postgres role — these queries cross tenant
  * boundaries by design and the rows being read are aggregate
  * snapshots + tenant metadata, NOT per-tenant business data.
  *
