@@ -157,7 +157,8 @@ export function registerLeasePaths(registry: OpenAPIRegistry): void {
         operationId: 'updateParcelLease',
         summary: 'Update a lease',
         description:
-            'The body is the same shape as a create MINUS the parcel: a lease cannot be moved to another parcel by editing it.',
+            'The body is the same shape as a create MINUS the parcel: a lease cannot be moved to another parcel by editing it.' +
+            '\n\nRefusal code: `LEASE_NOT_FOUND` (404).',
         tags: ['Leases'],
         params: LeaseParams,
         body: ParcelLeaseSchema,
@@ -169,7 +170,8 @@ export function registerLeasePaths(registry: OpenAPIRegistry): void {
         path: '/api/t/{tenantSlug}/leases/{leaseId}',
         operationId: 'deleteParcelLease',
         summary: 'Delete a lease',
-        description: 'Answers with the id only.',
+        description: 'Answers with the id only.' +
+            '\n\nRefusal code: `LEASE_NOT_FOUND` (404).',
         tags: ['Leases'],
         params: LeaseParams,
         success: {

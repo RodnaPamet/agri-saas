@@ -174,7 +174,31 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     // `LISTING_INTEREST_ALREADY_SENT`, IS documented, because
     // `POST /exchange/inquiries` was already in the spec and only wanted the
     // 409 it could already answer.
+    // `TASK_LINK_NOT_FOUND` and `TASK_EVIDENCE_NOT_FOUND` are new as of #1712
+    // and here for the `COMPANY_NAME_TAKEN` reason directly above, measured
+    // rather than assumed: their routes exist in code and are absent from the
+    // spec —
+    //
+    //     DELETE /tasks/{taskId}/links/{linkId}        removeTaskLink
+    //     DELETE /tasks/{taskId}/evidence/{evidenceId}  unlinkTaskEvidence
+    //
+    // `tasks.paths.ts` documents `/tasks/{taskId}/links` (GET, POST) and no
+    // `links/{linkId}` or `evidence/{…}` path at all. So naming these codes
+    // means adding two operations, which is a bigger change than the one that
+    // coded the throws.
+    //
+    // Both paths are ALREADY on `openapi-undocumented-baseline.json` (lines
+    // 247-248), so this is not a new gap — it is the same tracked one reached
+    // from the code side instead of the route side.
+    //
+    // A third sibling was NOT added, and the reason is worth recording:
+    // `removeTaskWatcher` throws `WATCHER_NOT_FOUND` and has **no caller
+    // anywhere** — no route, no test, nothing. Coding an unreachable throw
+    // would have put a code on this list that no client can ever receive, so
+    // that site stays uncoded and the dead usecase is filed separately.
     'ACCOUNT_HAS_NO_EMAIL',
+    'TASK_EVIDENCE_NOT_FOUND',
+    'TASK_LINK_NOT_FOUND',
     // `AI_BUDGET_REQUIRES_VERIFIED_FARM` is new to this list as of #1645 and
     // for the `COMPANY_NAME_TAKEN` reason above, not because the code is
     // unclear: its only emission path is `assertAiBudget` → `completeWithRouting`,

@@ -774,7 +774,7 @@ export async function removeTaskLink(ctx: RequestContext, linkId: string) {
     assertCanWriteTasks(ctx);
     const outcome = await runInTenantContext(ctx, async (db) => {
         const result = await TaskLinkRepository.unlink(db, ctx, linkId);
-        if (!result) throw notFound('Task link not found');
+        if (!result) throw codedNotFound('TASK_LINK_NOT_FOUND', 'That task link was not found.');
         await logEvent(db, ctx, {
             action: 'TASK_UNLINKED',
             entityType: 'Task',
@@ -878,7 +878,7 @@ export async function unlinkTaskEvidence(
             where: { id: evidenceId, taskId, tenantId: ctx.tenantId },
             select: { id: true },
         });
-        if (!evidence) throw notFound('Task evidence not found');
+        if (!evidence) throw codedNotFound('TASK_EVIDENCE_NOT_FOUND', 'That task evidence was not found.');
         await db.evidence.update({
             where: { id: evidenceId },
             data: { taskId: null },

@@ -4,7 +4,7 @@ import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { createTask, addTaskLink } from './task';
-import { badRequest, codedBadRequest, notFound } from '@/lib/errors/types';
+import { badRequest, codedBadRequest, codedNotFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { cachedListRead, bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 import {
@@ -153,7 +153,7 @@ export async function updateSeason(ctx: RequestContext, id: string, input: Updat
             where: { id, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true },
         });
-        if (!existing) throw notFound('Season not found');
+        if (!existing) throw codedNotFound('SEASON_NOT_FOUND', 'That season was not found.');
 
         const season = await db.season.update({ where: { id }, data });
         await logEvent(db, ctx, {
@@ -452,7 +452,7 @@ export async function getCropPlan(ctx: RequestContext, id: string) {
             where: { id, tenantId: ctx.tenantId, deletedAt: null },
             include: CROP_PLAN_INCLUDE,
         });
-        if (!plan) throw notFound('Crop plan not found');
+        if (!plan) throw codedNotFound('CROP_PLAN_NOT_FOUND', 'That crop plan was not found.');
         return plan;
     });
 }
@@ -569,7 +569,7 @@ export async function updateCropPlan(ctx: RequestContext, id: string, input: Upd
             where: { id, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true },
         });
-        if (!existing) throw notFound('Crop plan not found');
+        if (!existing) throw codedNotFound('CROP_PLAN_NOT_FOUND', 'That crop plan was not found.');
         if (input.cropVarietyId) {
             const variety = await db.cropVariety.findFirst({
                 where: { id: input.cropVarietyId, tenantId: ctx.tenantId, deletedAt: null },
@@ -626,7 +626,7 @@ export async function deleteCropPlan(ctx: RequestContext, id: string) {
             where: { id, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true, name: true },
         });
-        if (!existing) throw notFound('Crop plan not found');
+        if (!existing) throw codedNotFound('CROP_PLAN_NOT_FOUND', 'That crop plan was not found.');
 
         await db.cropPlan.update({
             where: { id },
@@ -849,7 +849,7 @@ async function generatePlantingsImpl(ctx: RequestContext, cropPlanId: string) {
                 },
             },
         });
-        if (!plan) throw notFound('Crop plan not found');
+        if (!plan) throw codedNotFound('CROP_PLAN_NOT_FOUND', 'That crop plan was not found.');
 
         // A maturity figure is required for any meaningful schedule. It
         // lives on the variety; a plan with no variety (or a variety
@@ -1135,7 +1135,7 @@ export async function updatePlanting(ctx: RequestContext, id: string, input: Upd
             where: { id, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true },
         });
-        if (!existing) throw notFound('Planting not found');
+        if (!existing) throw codedNotFound('PLANTING_NOT_FOUND', 'That planting was not found.');
 
         const planting = await db.planting.update({ where: { id }, data });
         await logEvent(db, ctx, {
@@ -1207,7 +1207,7 @@ export async function getCropPlanProgress(ctx: RequestContext, cropPlanId: strin
             where: { id: cropPlanId, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true },
         });
-        if (!plan) throw notFound('Crop plan not found');
+        if (!plan) throw codedNotFound('CROP_PLAN_NOT_FOUND', 'That crop plan was not found.');
 
         const plantings = await db.planting.findMany({
             where: { tenantId: ctx.tenantId, cropPlanId, deletedAt: null },

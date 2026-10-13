@@ -344,6 +344,7 @@ export function registerPlanningPaths(registry: OpenAPIRegistry): void {
         path: '/api/t/{tenantSlug}/planning/seasons/{seasonId}',
         operationId: 'updateSeason',
         summary: 'Update a season',
+        description: 'Refusal code: `SEASON_NOT_FOUND` (404) — no season with that id in this farm. Distinct from `CROP_SEASON_NOT_FOUND`, which is a crop grown on a PARCEL in a season and lives on the parcel-history routes.',
         tags: ['Planning'],
         params: p('seasonId'),
         body: UpdateSeasonSchema,
@@ -436,6 +437,7 @@ export function registerPlanningPaths(registry: OpenAPIRegistry): void {
         path: '/api/t/{tenantSlug}/planning/crop-plans/{cropPlanId}',
         operationId: 'getCropPlan',
         summary: 'Get one crop plan',
+        description: 'Refusal code: `CROP_PLAN_NOT_FOUND` (404).',
         tags: ['Planning'],
         params: p('cropPlanId'),
         success: { status: 200, description: 'The plan.', schema: CropPlanSchema },
@@ -446,7 +448,8 @@ export function registerPlanningPaths(registry: OpenAPIRegistry): void {
         operationId: 'updateCropPlan',
         summary: 'Update a crop plan',
         description:
-            '`seasonId` and `cropTypeId` are NOT updatable — they are absent from the body schema, so a plan cannot be moved between seasons or crops by editing it.',
+            '`seasonId` and `cropTypeId` are NOT updatable — they are absent from the body schema, so a plan cannot be moved between seasons or crops by editing it.' +
+            '\n\nRefusal code: `CROP_PLAN_NOT_FOUND` (404).',
         tags: ['Planning'],
         params: p('cropPlanId'),
         body: UpdateCropPlanSchema,
@@ -457,7 +460,8 @@ export function registerPlanningPaths(registry: OpenAPIRegistry): void {
         path: '/api/t/{tenantSlug}/planning/crop-plans/{cropPlanId}',
         operationId: 'deleteCropPlan',
         summary: 'Delete a crop plan',
-        description: 'Soft-deletes the plan. Answers with an acknowledgement, not the plan.',
+        description: 'Soft-deletes the plan. Answers with an acknowledgement, not the plan.' +
+            '\n\nRefusal code: `CROP_PLAN_NOT_FOUND` (404).',
         tags: ['Planning'],
         params: p('cropPlanId'),
         success: { status: 200, description: 'Acknowledged.', schema: OkSchema },
@@ -469,7 +473,8 @@ export function registerPlanningPaths(registry: OpenAPIRegistry): void {
         summary: 'Generate the plan’s plantings',
         description:
             'Materialises the succession pattern into PLANTINGS — `successions` rows spaced `intervalDays` apart from `firstSowDate`. This is the only way plantings come into existence; there is no create-planting route. ' +
-            '\n\nRead `_count.plantings` on the plan before calling if you need to know whether it has already been generated.',
+            '\n\nRead `_count.plantings` on the plan before calling if you need to know whether it has already been generated.' +
+            '\n\nRefusal code: `CROP_PLAN_NOT_FOUND` (404).',
         tags: ['Planning'],
         params: p('cropPlanId'),
         success: { status: 200, description: 'The generated plantings.', schema: z.array(PlantingSchema) },
@@ -495,7 +500,8 @@ export function registerPlanningPaths(registry: OpenAPIRegistry): void {
         operationId: 'updatePlanting',
         summary: 'Update a planting',
         description:
-            'ONE field is updatable: `plannedYieldKgPerHa`. Everything else about a planting comes from the plan that generated it.',
+            'ONE field is updatable: `plannedYieldKgPerHa`. Everything else about a planting comes from the plan that generated it.' +
+            '\n\nRefusal code: `PLANTING_NOT_FOUND` (404).',
         tags: ['Planning'],
         params: p('plantingId'),
         body: UpdatePlantingSchema,
