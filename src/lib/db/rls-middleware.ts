@@ -5,8 +5,11 @@
  * with PostgreSQL row-level-security in effect. It does three things:
  *
  *   1. Re-exports the transaction-scoped tenant-context helpers from
- *      `src/lib/db-context.ts` (`runInTenantContext`, `withTenantDb`,
- *      `runInGlobalContext`). These set `SET LOCAL ROLE app_user` and
+ *      `src/lib/db-context.ts` (`runInTenantContext`, `withTenantDb`).
+ *      The list also named `runInGlobalContext`, which P1.7 DELETED in
+ *      favour of the typed `runWithoutRls({ reason })` below — so this
+ *      claimed to re-export a symbol that does not exist (P1.10, #1192).
+ *      These set `SET LOCAL ROLE app_user` and
  *      `set_config('app.tenant_id', …, true)` inside a Prisma
  *      `$transaction`, so every query inside the callback inherits
  *      the tenant context. `SET LOCAL` + `set_config(..., true)` are
