@@ -414,12 +414,38 @@ describe('JournalRepository — filter translation', () => {
     });
 
     it('excludes task-written entries by DEFAULT', async () => {
-        // Owner ruling 2026-10-10: «journal should be entered manually only».
-        // `operationParcelId` is the only thing separating an entry the spray
-        // flow wrote from one a person typed, so this is the whole rule.
+        // Owner ruling 2026-10-10 unchanged: «journal should be entered
+        // manually only». What changed (#1740) is the TEST, because
+        // `operationParcelId` stopped being sufficient: the two-step treatment
+        // record is typed by a person and ALSO writes operation lines, since
+        // those lines are what the BABH diary PDF reads.
+        //
+        // Stated as a negation of the thing being HIDDEN — a task-written row
+        // is exactly "has an operation line and was not recorded in the
+        // diary" — rather than enumerating the two ways a row is manual.
         await JournalRepository.list(asTx(db), ctx, {});
 
-        expect(whereOf(db.logEntry.findMany).operationParcelId).toBeNull();
+        expect(whereOf(db.logEntry.findMany).NOT).toEqual(
+            { operationParcelId: { not: null }, recordedInDiary: false },
+        );
+    });
+
+    it('reduces to the old behaviour for every pre-existing row', async () => {
+        // The deploy-safety argument, asserted rather than claimed.
+        // `recordedInDiary` is NOT NULL DEFAULT false, so for every row that
+        // existed before the migration the second term is false and the
+        // negated pair collapses to `operationParcelId IS NOT NULL` — the
+        // exact 2026-10-10 rule. Nothing changes visibility until a writer
+        // sets the flag.
+        //
+        // Asserted on the CLAUSE because that is what is checkable here: the
+        // pair names `recordedInDiary: false`, so a row with the default is
+        // inside the negation and a row with the flag is outside it.
+        await JournalRepository.list(asTx(db), ctx, {});
+
+        const not = whereOf(db.logEntry.findMany).NOT;
+        expect(not).toHaveProperty('recordedInDiary', false);
+        expect(not).toHaveProperty('operationParcelId', { not: null });
     });
 
     it('omits the rule entirely when a caller opts in', async () => {
@@ -429,7 +455,7 @@ describe('JournalRepository — filter translation', () => {
         // invert into task-written-only.
         await JournalRepository.list(asTx(db), ctx, { includeTaskWritten: true });
 
-        expect(whereOf(db.logEntry.findMany)).not.toHaveProperty('operationParcelId');
+        expect(whereOf(db.logEntry.findMany)).not.toHaveProperty('NOT');
     });
 
     it('a FALSE opt-in still excludes — only `true` widens', async () => {
@@ -438,14 +464,28 @@ describe('JournalRepository — filter translation', () => {
         // for any non-boolean a route might coerce.
         await JournalRepository.list(asTx(db), ctx, { includeTaskWritten: false });
 
-        expect(whereOf(db.logEntry.findMany).operationParcelId).toBeNull();
+        expect(whereOf(db.logEntry.findMany).NOT).toEqual(
+            { operationParcelId: { not: null }, recordedInDiary: false },
+        );
     });
 
     it('the rule coexists with the other filters rather than replacing them', async () => {
+        // THE COLLISION GUARD, and it earned its keep on #1740. The first
+        // version of that change wrote the rule as `where.OR = [...]`, which
+        // is assigned by the `q` free-text search a few lines further down —
+        // so a search would have silently discarded the rule and WIDENED the
+        // result, un-hiding every task-written entry in the farm. This case
+        // is what caught it.
+        //
+        // Three keys, three owners, asserted together on purpose: `NOT` is
+        // the manual-only rule, `AND` is the location clause, `OR` is the
+        // search. Any one of them stealing another's key fails here.
         await JournalRepository.list(asTx(db), ctx, { locationId: 'loc-1', q: 'пшеница' });
 
         const where = whereOf(db.logEntry.findMany);
-        expect(where.operationParcelId).toBeNull();
+        expect(where.NOT).toEqual(
+            { operationParcelId: { not: null }, recordedInDiary: false },
+        );
         expect(where.AND).toHaveLength(1);
         expect(where.OR).toHaveLength(2);
         expect(where.tenantId).toBe('tenant-1');
@@ -458,7 +498,9 @@ describe('JournalRepository — filter translation', () => {
         // not — two surfaces disagreeing about what the journal contains.
         await JournalRepository.listPaginated(asTx(db), ctx, { limit: 10 });
 
-        expect(whereOf(db.logEntry.findMany).operationParcelId).toBeNull();
+        expect(whereOf(db.logEntry.findMany).NOT).toEqual(
+            { operationParcelId: { not: null }, recordedInDiary: false },
+        );
     });
 
     it('adds no location clause at all when the filter is absent', async () => {

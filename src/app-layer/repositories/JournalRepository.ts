@@ -263,16 +263,56 @@ export class JournalRepository {
         const where: Prisma.LogEntryWhereInput = { tenantId: ctx.tenantId, deletedAt: null };
 
         // MANUAL ENTRIES ONLY, unless a caller explicitly asks otherwise.
+        // Owner ruling 2026-10-10, unchanged in intent.
         //
-        // `recordInputApplication` sets `operationParcelId` on the
+        // What changed (#1740) is the TEST. This used to read
+        // `operationParcelId IS NULL`, and the comment here said that column
+        // was "the only thing distinguishing a task-written entry from one a
+        // person typed". That was true when it was written and is not any
+        // more, so it is replaced rather than left to mislead.
+        //
+        // `recordInputApplication` still sets `operationParcelId` on the
         // INPUT_APPLICATION entry it writes for a completed spray line, and
-        // that column is the only thing distinguishing a task-written entry
-        // from one a person typed. Owner ruling 2026-10-10.
+        // such a row must still be hidden. But the two-step treatment record
+        // is typed by a person IN the diary and ALSO writes operation lines,
+        // because those lines are what the BABH diary PDF reads. So the FK
+        // answers "is this linked to an operation line" and `recordedInDiary`
+        // answers "did a person record it here" — one question until it
+        // became two.
         //
-        // `null`, not `{ not: null }` inverted later: a journal entry created
-        // by hand never carries an operation line, so this is the whole test.
+        // The disjunction, not a replacement: an entry with no operation line
+        // is still manual, which is the overwhelming majority of rows and
+        // needs no flag. `recordedInDiary` only rescues the rows the FK test
+        // would wrongly hide.
+        //
+        // Default-false on the column is what makes this safe to deploy: every
+        // existing row keeps the visibility the 2026-10-10 ruling gave it.
+        //
+        // Stated as a NEGATION of the thing being hidden, which is both the
+        // clearest reading and the least invasive shape.
+        //
+        // The rule is "hide what a task wrote", and a task-written row is
+        // exactly `operationParcelId IS NOT NULL AND NOT recordedInDiary`. So
+        // negating that pair says it directly, rather than enumerating the
+        // two ways a row qualifies as manual.
+        //
+        // `NOT`, not `OR` and not `AND`. Both of those are contested here:
+        // `where.OR` belongs to the `q` free-text search a few lines down and
+        // is ASSIGNED, so writing it here would be silently discarded the
+        // moment anyone typed a search term — and the failure would WIDEN the
+        // result, un-hiding every task-written entry in the farm. `where.AND`
+        // is shared by the crop, location and cursor clauses, so adding to it
+        // works but makes this rule a term in a list three other filters read
+        // and the pagination code appends to. `where.NOT` is used by nothing
+        // else in this builder, so the rule owns its own key and cannot be
+        // clobbered or clobber anything.
+        //
+        // Default-false on the column is what makes this safe to deploy: for
+        // every existing row `recordedInDiary` is false, so the negated pair
+        // reduces to `operationParcelId IS NOT NULL` — the exact 2026-10-10
+        // behaviour, unchanged until something sets the flag.
         if (filters?.includeTaskWritten !== true) {
-            where.operationParcelId = null;
+            where.NOT = { operationParcelId: { not: null }, recordedInDiary: false };
         }
 
         // Guarded on `.length`: a CLEARED facet must OMIT the filter —

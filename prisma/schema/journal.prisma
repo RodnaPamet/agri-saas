@@ -87,6 +87,25 @@ model LogEntry {
   /// "Try it with sample data" tag — see Location.isSampleData
   /// (agriculture.prisma). Default-false; reversible via clearSampleData.
   isSampleData      Boolean        @default(false)
+  /// This entry was recorded by a person IN the diary, even though it carries
+  /// an `operationParcelId` (#1740).
+  ///
+  /// Needed because `operationParcelId` stopped being a sufficient test. The
+  /// journal list shows manual entries only — owner ruling 2026-10-10, in
+  /// `JournalRepository._buildWhere` — and that rule read the FK as proof a
+  /// row came from a task. The two-step treatment record breaks the
+  /// equivalence: it is typed by a person in the diary and still writes
+  /// operation lines, because those lines are what the BABH diary PDF reads.
+  ///
+  /// So the FK now answers "is this linked to an operation line" and this
+  /// column answers "did a person record it here" — the same question until
+  /// it was not.
+  ///
+  /// Default-false is the safe direction: every existing row, and anything
+  /// `recordInputApplication` writes from a completed task line, keeps the
+  /// visibility the 2026-10-10 ruling gave it. Only a writer that sets this
+  /// deliberately becomes visible.
+  recordedInDiary   Boolean        @default(false)
   /// Offline exactly-once handle. When a journal entry is created from the
   /// queued outbox, the client's outbox-item id rides in as the
   /// `Idempotency-Key`; a replayed write (flaky rural LTE re-send) dedupes on

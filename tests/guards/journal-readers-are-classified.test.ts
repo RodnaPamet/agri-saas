@@ -139,6 +139,34 @@ describe('every journal reader is classified', () => {
         // which a route could pass.
         const repo = reads('src/app-layer/repositories/JournalRepository.ts');
         expect(repo).toMatch(/includeTaskWritten\s*!==\s*true/);
-        expect(repo).toMatch(/where\.operationParcelId\s*=\s*null/);
+    });
+
+    it('hides a task-written row by NEGATING it, not by testing the FK alone', () => {
+        // The mechanism changed in #1740 and this assertion changed with it,
+        // deliberately rather than by deletion.
+        //
+        // It used to pin `where.operationParcelId = null`, on the premise that
+        // the FK was the only thing separating a task-written entry from a
+        // typed one. The two-step treatment record broke that premise: it is
+        // typed by a person and ALSO writes operation lines, because those
+        // lines are what the BABH diary PDF reads. So the rule is now the
+        // negation of what is being hidden.
+        //
+        // Pinned on the SHAPE and not merely on the two column names, because
+        // the shape is the correctness argument. `NOT: { a, b }` is
+        // `NOT (a AND b)` — asserted against a real database in
+        // `tests/integration/journal-diary-recorded.test.ts`, because if
+        // Prisma had read it as `NOT a AND NOT b` the rule would additionally
+        // hide every entry with no operation line and blank the journal for
+        // every existing farm. A correct-looking clause, an outage.
+        //
+        // `NOT` also has to stay `NOT`. `where.OR` belongs to the free-text
+        // search and `where.AND` to the crop, location and cursor clauses; the
+        // first version of this change used `where.OR` and would have been
+        // silently discarded by any search, WIDENING the result.
+        const repo = reads('src/app-layer/repositories/JournalRepository.ts');
+        expect(repo).toMatch(
+            /where\.NOT\s*=\s*\{\s*operationParcelId:\s*\{\s*not:\s*null\s*\},\s*recordedInDiary:\s*false\s*\}/,
+        );
     });
 });
