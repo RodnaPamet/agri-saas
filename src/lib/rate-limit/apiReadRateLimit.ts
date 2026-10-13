@@ -28,6 +28,7 @@ import { Ratelimit } from '@upstash/ratelimit';
 import { Redis } from '@upstash/redis';
 import { env } from '@/env';
 import { API_READ_LIMIT } from '@/lib/security/rate-limit';
+import { isPersonPath } from '@/lib/auth/guard';
 import { edgeLogger } from '@/lib/observability/edge-logger';
 
 // ─── Exclusions ─────────────────────────────────────────────────────
@@ -46,6 +47,13 @@ const EXCLUDED_PATHS: readonly string[] = [
     // current route, but listing here means adding it later doesn't
     // require touching this module.
     '/api/docs',
+    // P5.6a gave this route its own inline `enforceRateLimit` with a tighter
+    // budget, because a GET cannot reach the mutation tier
+    // (`resolveRateLimitScope` returns null outside MUTATION_METHODS). Letting
+    // the read tier apply as well would mean two budgets on one route, the
+    // looser one invisible — and an Art 15 export is the wrong place to
+    // economise on requests.
+    '/api/account/export',
 ];
 
 /**
@@ -65,9 +73,32 @@ const EXCLUDED_PATHS: readonly string[] = [
  * The exclusion check uses prefix-match against `path` or `path + '/'`
  * so `/api/health` matches but `/api/healthcheck` does not.
  */
+/**
+ * A person-scoped API read — `/api/me/`, `/api/social/`, `/api/account/`.
+ *
+ * Derived from `isPersonPath` rather than restated, so the two cannot drift:
+ * that predicate also drives the Edge MFA and terms gates, and a read tier
+ * covering a different set from the gate beside it is the asymmetry P1.6
+ * exists to remove. Pages (`/account/`, `/onboarding/`) are excluded here —
+ * `isApiRoute` keeps this to API traffic, because a page load is not an API
+ * read and throttling navigation at 120/min would be a different decision.
+ */
+function isPersonApiPath(pathname: string): boolean {
+    return pathname.startsWith('/api/') && isPersonPath(pathname);
+}
+
 export function isApiReadRateLimited(method: string, pathname: string): boolean {
     if (method !== 'GET') return false;
-    if (!pathname.startsWith('/api/t/')) return false;
+    // P1.6 (#1192) — PERSON-scoped API reads are covered too. They were not,
+    // and the omission had the same shape as the MFA one P1.6 already fixed:
+    // this predicate required an `/api/t/` prefix, so `/api/me/`,
+    // `/api/social/` and (since the widening) `/api/account/` had NO read tier
+    // at all. The mutation tier lives in `withApiErrorHandling` and covers
+    // their writes; nothing covered their reads.
+    //
+    // Same preset as the tenant tier, which is what "parity" means here — one
+    // budget, two populations, rather than a second number to keep aligned.
+    if (!pathname.startsWith('/api/t/') && !isPersonApiPath(pathname)) return false;
     // Map vector tiles (`/locations/:id/tiles/:z/:x/:y.pbf`) are still
     // auth'd + tenant-scoped (the middleware's JWT + tenant-access gate runs
     // first) and are browser/edge-cacheable, but they fire in bursts during
@@ -146,7 +177,12 @@ function getClientIp(req: NextRequest): string {
  * making one user starve coworkers.
  */
 function buildKey(tenantSlug: string | null, ip: string, userId: string | null): string {
-    return `rl:api-read:t:${tenantSlug ?? 'unknown'}:ip:${ip}:u:${userId ?? 'anon'}`;
+    // `person` rather than `unknown` for a person-scoped read (#1192). The
+    // namespace is honest about what it is: `unknown` would conflate "this
+    // request has no tenant BY DESIGN" with "a tenant path whose slug would
+    // not parse", and those want different answers if either ever has to be
+    // read off a dashboard.
+    return `rl:api-read:t:${tenantSlug ?? 'person'}:ip:${ip}:u:${userId ?? 'anon'}`;
 }
 
 interface ReadCheck {
