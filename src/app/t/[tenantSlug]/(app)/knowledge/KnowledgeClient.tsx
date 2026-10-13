@@ -1,5 +1,5 @@
 'use client';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { TimestampTooltip } from '@/components/ui/timestamp-tooltip';
@@ -46,6 +46,15 @@ export interface ArticleRow {
     createdAt: string;
     owner: { id: string; name: string | null } | null;
 }
+
+/**
+ * The one empty article list. `articlesQuery.data ?? []` minted a new array
+ * on every render where SWR had no data yet, and `articles` is a dependency
+ * of the `liveFilters` memo — so that memo re-ran on every render while
+ * loading, and `filterCards` (memoised on `liveFilters`) re-ran with it.
+ * Both memos existed precisely to avoid that work.
+ */
+const NO_ARTICLES: ArticleRow[] = [];
 
 // Status badge tone keyed off the article status enum. The label
 // itself comes from KNOWLEDGE_STATUS_LABELS (single source of truth);
@@ -95,7 +104,13 @@ function KnowledgePageInner({
     const t = useTranslations('knowledge');
     const tFilters = useTranslations('knowledge.filters');
     const tStatus = useTranslations('knowledge.status');
-    const tenantHref = (path: string) => `/t/${tenantSlug}${path}`;
+    // Memoised because the `createColumns` memo below takes it as a
+    // dependency: declared inline it was a new function every render, so
+    // the column definitions were rebuilt every render.
+    const tenantHref = useCallback(
+        (path: string) => `/t/${tenantSlug}${path}`,
+        [tenantSlug],
+    );
     const router = useRouter();
 
     const filterCtx = useFilters();
@@ -140,7 +155,7 @@ function KnowledgePageInner({
         fallbackData: filtersMatchInitial ? initialArticles : undefined,
     });
 
-    const articles = articlesQuery.data ?? [];
+    const articles = articlesQuery.data ?? NO_ARTICLES;
     const loading = articlesQuery.isLoading && !articlesQuery.data;
 
     const liveFilters = useMemo(
