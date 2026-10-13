@@ -44,6 +44,28 @@ model Task {
   // minting a duplicate. Nullable + NULLS-DISTINCT: online creates without a
   // key are unconstrained (every NULL is unique to Postgres).
   clientMutationId String?
+  /// The treatment this task is one block's share of (#1740).
+  ///
+  /// The two-step diary record covers parcels across SEVERAL blocks and
+  /// becomes one FIELD_OPERATION per block, because the diary PDF joins
+  /// Location -> taskLink -> DONE operationParcel: a task linking three
+  /// blocks would print each of its parcels under all three.
+  ///
+  /// Clients need ONE handle per treatment: the write returns it, the
+  /// per-entry PDF takes it, the list folds on it, and edit/delete act on it.
+  /// None of the existing ids can be that handle, because a treatment over 12
+  /// parcels in 3 blocks is 3 tasks and 12 journal entries.
+  ///
+  /// NOT `clientMutationId`, which is already under
+  /// @@unique([tenantId, clientMutationId]): the N tasks of one treatment
+  /// need N DERIVED keys, so the treatment's own key cannot sit on all of
+  /// them. Its VALUE is the request's Idempotency-Key when one is sent and a
+  /// server-minted UUID otherwise, which keeps one identifier rather than two
+  /// and lets a client derive the handle before the response arrives.
+  ///
+  /// Nullable, and null for every task that is not part of a diary treatment,
+  /// which is every task that exists today.
+  treatmentGroupId String?
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   deletedAt        DateTime?
@@ -83,6 +105,11 @@ model Task {
   // prefix of `[tenantId, dueAt, status]` below, so the planner
   // never needs both.
   @@index([tenantId, dueAt, status])
+
+  /// Resolve a treatment handle to its per-block tasks (#1740). Partial, on
+  /// the non-null rows only: every task that is not part of a diary treatment
+  /// carries null here, and Task is among the busiest tables in the schema.
+  @@index([tenantId, treatmentGroupId])
 }
 
 /// Per-tenant monotonic counter for minting `TSK-N` work-item keys.
