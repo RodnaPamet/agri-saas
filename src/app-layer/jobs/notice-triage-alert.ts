@@ -45,10 +45,21 @@
  *
  * ## It is SILENT when unconfigured, and says so once
  *
- * `DSA_CONTACT_EMAIL` is absent on the VM as of 2026-10-11 — the `/dsa-contact`
- * page renders its "no address" fallback. Until an operator sets it there is
- * nowhere to send, so the job logs at WARN and does nothing. It starts working
- * the moment the address exists, with no deploy.
+ * `DSA_CONTACT_EMAIL` was absent on the VM when this was written (2026-10-11)
+ * and is **PRESENT as of 2026-10-13**, so this job now sends. While it is
+ * unset there is nowhere to send, so the job logs at WARN and does nothing —
+ * and it starts working the moment the address exists, with no deploy, which
+ * is how it began sending.
+ *
+ * The unconfigured branch marking nothing is what made that safe: the three
+ * notices filed before the address existed were alerted afterwards rather than
+ * silently skipped.
+ *
+ * A caution the first sends earned: a send that RESOLVES is not a message that
+ * ARRIVED. The first three alerts stamped `alertedAt` and all three bounced,
+ * because the configured domain's MX pointed away from its mailbox (#1760).
+ * `/api/webhooks/resend` (#1753) is what surfaces that now; this job still
+ * cannot tell on its own.
  */
 import { randomUUID } from 'node:crypto';
 

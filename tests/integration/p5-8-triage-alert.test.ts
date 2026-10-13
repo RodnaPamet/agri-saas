@@ -201,9 +201,16 @@ describeFn('P5.8 — the triage alert (#1599)', () => {
     });
 
     it('is SILENT and marks nothing when no contact address is configured', async () => {
-        // The production state as of 2026-10-11: `DSA_CONTACT_EMAIL` is absent
-        // on the VM and `/dsa-contact` renders its fallback. So this branch is
-        // the common case right now, not an edge case.
+        // This WAS the production state when the case was written (2026-10-11):
+        // `DSA_CONTACT_EMAIL` absent, `/dsa-contact` rendering its fallback, so
+        // the branch was the common case rather than an edge one.
+        //
+        // It is no longer: the address is PRESENT as of 2026-10-13 and the job
+        // sends. The case stays because the branch still has to be correct —
+        // this deployment spent two days in it, a fresh deployment starts in
+        // it, and the `alertedAt` assertion below is what makes leaving it
+        // safe. Left as a live claim, the comment would tell the next reader
+        // the alert path is dormant in production when it is running.
         const id = await fileNotice('ILLEGAL_CONTENT', 'nowhere to send');
         contactEmail = undefined;
 

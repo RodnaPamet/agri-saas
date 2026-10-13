@@ -89,10 +89,16 @@ export async function composeStatementBody(
  *
  * #1667 ruling 2 was "point at `/dsa-contact` instead" of "reply to this
  * message", and my first implementation did exactly that. `agrent-ios` then
- * read production: the page still renders `dsa.addressUnset` —
+ * read production: the page still rendered `dsa.addressUnset` —
  * *"A contact address has not been configured for this deployment"* — because
- * `DSA_CONTACT_EMAIL` is unset, while the page's own body says "Write to the
+ * `DSA_CONTACT_EMAIL` was unset, while the page's own body said "Write to the
  * address below" with nothing below it.
+ *
+ * `DSA_CONTACT_EMAIL` is PRESENT as of 2026-10-13 and the page now renders a
+ * `mailto:`, so the dead end described below no longer exists on this
+ * deployment. The fallback chain stays, because it is what makes the statement
+ * correct on a deployment that has not configured one — and because this
+ * instance spent two days in exactly that state.
  *
  * So the statement would have sent a suspended farmer **email → a page with no
  * address → a third page**. That is a worse dead end than the `noreply`
