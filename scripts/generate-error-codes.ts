@@ -223,9 +223,29 @@ function load(abs: string): Ledger {
     return { _README: README, routes: raw.routes ?? [] };
 }
 
+/**
+ * `--out <path>` writes elsewhere, leaving the committed ledger untouched.
+ *
+ * The guard needs to ask "would regenerating change anything" without BEING
+ * the change. Its first version called this script plainly and compared the
+ * file to itself afterwards — so running the test rewrote a tracked file, and
+ * its failure message told the reader to run the generator it had just run.
+ * A test that mutates the tree it is judging cannot be trusted about it.
+ */
+function outPath(): string {
+    const i = process.argv.indexOf('--out');
+    if (i !== -1 && process.argv[i + 1]) {
+        const given = process.argv[i + 1];
+        return path.isAbsolute(given) ? given : path.join(ROOT, given);
+    }
+    return path.join(ROOT, OUT_REL);
+}
+
 function main(): void {
-    const outAbs = path.join(ROOT, OUT_REL);
-    const previous = load(outAbs);
+    const outAbs = outPath();
+    // The PRIOR state is always the committed ledger — append-only is relative
+    // to what is in the repository, not to whatever `--out` happens to hold.
+    const previous = load(path.join(ROOT, OUT_REL));
     const prior = new Map(previous.routes.map((r) => [r.path, r]));
 
     const cache = new Map<string, Set<string>>();
@@ -269,7 +289,7 @@ function main(): void {
     fs.writeFileSync(outAbs, `${JSON.stringify(next, null, 2)}\n`);
 
     const total = routes.reduce((n, r) => n + r.codes.length, 0);
-    console.log(`[error-codes] ${OUT_REL}`);
+    console.log(`[error-codes] ${path.relative(ROOT, outAbs)}`);
     console.log(`[error-codes] paths ${routes.length}   code entries ${total}`);
     console.log(`[error-codes] added ${added}   resurrected ${resurrected}`);
     const distinct = new Set(routes.flatMap((r) => r.codes));

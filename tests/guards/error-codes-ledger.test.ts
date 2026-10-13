@@ -24,7 +24,8 @@
  * that the population is real.
  */
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const REPO = process.cwd();
@@ -55,12 +56,19 @@ describe('the per-route error-code ledger (#1662)', () => {
         // The generator is append-only, so a stale artifact shows up as a diff
         // only in the ADD direction. That is the direction that matters: a new
         // code the client has never been told about.
+        //
+        // Generated to a TEMP path, not over the committed file. The first
+        // version of this test ran the generator plainly and compared the
+        // ledger to itself afterwards — which rewrote a tracked file as a side
+        // effect of asking a question about it, and made the failure message
+        // tell the reader to run the generator it had already run.
         const before = readFileSync(LEDGER, 'utf8');
-        execFileSync('npx', ['tsx', 'scripts/generate-error-codes.ts'], {
+        const tmp = join(mkdtempSync(join(tmpdir(), 'error-codes-')), 'candidate.json');
+        execFileSync('npx', ['tsx', 'scripts/generate-error-codes.ts', '--out', tmp], {
             cwd: REPO,
             stdio: 'pipe',
         });
-        const after = readFileSync(LEDGER, 'utf8');
+        const after = readFileSync(tmp, 'utf8');
         if (before !== after) {
             throw new Error(
                 [
