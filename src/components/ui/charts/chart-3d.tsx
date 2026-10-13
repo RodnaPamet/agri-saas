@@ -55,25 +55,15 @@
  * r3f-driven scene replaces the inner branch in a follow-up.
  */
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 
-/**
- * Inline `prefers-reduced-motion: reduce` hook. Available beyond
- * 3D — any motion-sensitive component can use it. Promote to a
- * shared hook when a second consumer lands.
- */
-function useReducedMotion(): boolean {
-    const [reduced, setReduced] = useState(false);
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
-        const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-        setReduced(mq.matches);
-        const onChange = (e: MediaQueryListEvent) => setReduced(e.matches);
-        mq.addEventListener('change', onChange);
-        return () => mq.removeEventListener('change', onChange);
-    }, []);
-    return reduced;
-}
+// `prefers-reduced-motion` comes from the SHARED hook. This file carried its
+// own copy with the note "promote to a shared hook when a second consumer
+// lands" — three have (`popover`, `scroll-to-top`, and `chart-motion`'s own
+// third copy), and the shared one now subscribes to the media query through
+// `useSyncExternalStore` instead of syncing it in an effect (#1471).
+import { useReducedMotion } from '@/components/ui/hooks';
+
 
 export interface Chart3DProps {
     /**

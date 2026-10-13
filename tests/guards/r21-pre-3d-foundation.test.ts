@@ -132,11 +132,19 @@ describe('R21-PR-E — 3D foundation (stub scaffold)', () => {
             expect(CHART_3D).toMatch(/typeof window === 'undefined'/);
         });
 
-        it('exposes useReducedMotion() inline hook', () => {
-            // Inline scope; promote to a shared hook when a
-            // second consumer lands.
-            expect(CHART_3D).toMatch(/function\s+useReducedMotion/);
-            expect(CHART_3D).toMatch(/prefers-reduced-motion/);
+        it('consults the SHARED reduced-motion hook', () => {
+            // Re-aimed in #1471, at the condition this test's own comment set:
+            // "promote to a shared hook when a second consumer lands". Three
+            // landed — `popover`, `scroll-to-top`, and a third private copy in
+            // `chart-motion` — so the inline hook was promoted away.
+            //
+            // The assertion now names the PROPERTY (this chart respects
+            // reduced motion) rather than the MECHANISM (it defines an inline
+            // function). The old form would have failed the promotion it
+            // asked for, which is a guard aimed one level off its subject.
+            expect(CHART_3D).toMatch(/useReducedMotion\(\)/);
+            expect(CHART_3D).toMatch(/from '@\/components\/ui\/hooks'/);
+            expect(CHART_3D).not.toMatch(/function\s+useReducedMotion/);
         });
     });
 
