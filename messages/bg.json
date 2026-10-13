@@ -100,6 +100,7 @@
         "passwordReset": "Паролата ви беше нулирана — влезте с новата си парола.",
         "passwordChanged": "Паролата ви беше променена — моля, влезте отново.",
         "continueWithGoogle": "Продължи с Google",
+        "continueWithApple": "Продължи с Apple",
         "continueWithMicrosoft": "Продължи с Microsoft",
         "orContinueWithEmail": "или продължете с имейл",
         "forgotPassword": "Забравена парола?",
