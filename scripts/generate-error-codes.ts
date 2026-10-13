@@ -80,6 +80,41 @@ const UNCODED_HELPER_CODES: Readonly<Record<string, string>> = {
 
 /** `codedX('CODE'` — the explicit form. */
 const CODED_CALL = /\bcoded[A-Z][A-Za-z]*\(\s*['"]([A-Z][A-Z0-9_]{2,})['"]/g;
+
+/**
+ * Helpers that BAKE a code in rather than taking it as an argument.
+ *
+ * `lib/errors/types.ts` exports five:
+ *
+ *     staleData                 → STALE_DATA                  409
+ *     tenantIsolationViolation  → TENANT_ISOLATION_VIOLATION   403
+ *     deprecatedResource        → DEPRECATED_RESOURCE          410
+ *     configurationError        → CONFIGURATION_ERROR          500
+ *     externalServiceError      → EXTERNAL_SERVICE_ERROR       502
+ *
+ * The first version of this generator matched `coded*('CODE'` and the uncoded
+ * helper names, so all five were invisible — and `STALE_DATA` is the one 409
+ * the spec documents, on four routes, and the one a client most needs to tell
+ * from a duplicate. Found by asking why a code in the spec reached no route in
+ * the ledger (#1391).
+ *
+ * DERIVED from `types.ts`, not listed here: a curated list is a list somebody
+ * forgets (#805), and the sixth such helper should appear in the ledger
+ * without anybody remembering this comment exists.
+ */
+const CODE_BAKING_FACTORY =
+    /export const ([a-z][A-Za-z0-9]*)\s*=\s*\([^)]*\)\s*=>\s*\n?\s*new [A-Za-z]*Error\(\s*message\s*,\s*['"]([A-Z][A-Z0-9_]{2,})['"]/g;
+
+function bakedCodeHelpers(): Map<string, string> {
+    const abs = path.join(ROOT, 'src/lib/errors/types.ts');
+    const out = new Map<string, string>();
+    if (!fs.existsSync(abs)) return out;
+    const src = fs.readFileSync(abs, 'utf8');
+    for (const m of src.matchAll(CODE_BAKING_FACTORY)) out.set(m[1], m[2]);
+    return out;
+}
+
+const BAKED = bakedCodeHelpers();
 /** An uncoded helper actually CALLED, not merely imported. */
 const uncodedCall = (name: string) => new RegExp(`\\b${name}\\(`);
 
@@ -147,6 +182,9 @@ function codesIn(src: string): Set<string> {
     const out = new Set<string>();
     for (const m of src.matchAll(CODED_CALL)) out.add(m[1]);
     for (const [helper, code] of Object.entries(UNCODED_HELPER_CODES)) {
+        if (uncodedCall(helper).test(src)) out.add(code);
+    }
+    for (const [helper, code] of BAKED) {
         if (uncodedCall(helper).test(src)) out.add(code);
     }
     return out;

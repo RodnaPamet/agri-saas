@@ -51,6 +51,7 @@
         "OPERATOR_SCOPE",
         "PAST_DUE_RESTRICTED",
         "PLAN_LIMIT_EXCEEDED",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -447,6 +448,8 @@
       "path": "/api/auth/sso/oidc/start",
       "codes": [
         "ACCOUNT_DELETION_PENDING",
+        "CONFIGURATION_ERROR",
+        "EXTERNAL_SERVICE_ERROR",
         "NOT_FOUND",
         "VALIDATION_ERROR"
       ]
@@ -463,6 +466,8 @@
       "path": "/api/auth/sso/saml/start",
       "codes": [
         "ACCOUNT_DELETION_PENDING",
+        "CONFIGURATION_ERROR",
+        "EXTERNAL_SERVICE_ERROR",
         "NOT_FOUND",
         "VALIDATION_ERROR"
       ]
@@ -533,6 +538,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -552,6 +558,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -571,6 +578,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -594,6 +602,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -938,6 +947,7 @@
         "NOT_FOUND",
         "PAST_DUE_RESTRICTED",
         "PLAN_LIMIT_EXCEEDED",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -1065,6 +1075,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -1079,6 +1090,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -1093,6 +1105,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -1107,6 +1120,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -1205,6 +1219,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "STALE_DATA",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -1266,6 +1281,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -1299,6 +1315,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -2025,6 +2042,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -2039,6 +2057,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -2054,6 +2073,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -2068,6 +2088,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -2082,6 +2103,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -2096,6 +2118,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -2110,6 +2133,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -2152,6 +2176,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -2166,6 +2191,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -2522,6 +2548,7 @@
         "PARCEL_LOCATION_MISMATCH",
         "PAST_DUE_RESTRICTED",
         "PLAN_LIMIT_EXCEEDED",
+        "STALE_DATA",
         "TASK_NOT_FOUND",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
@@ -2594,6 +2621,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -2613,6 +2641,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -2632,6 +2661,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -2646,6 +2676,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -2679,6 +2710,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -2754,6 +2786,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -2773,6 +2806,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -2806,6 +2840,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -2825,6 +2860,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -2858,6 +2894,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -3221,6 +3258,7 @@
         "PRODUCT_DOSE_REQUIRED",
         "PRODUCT_IS_SAMPLE_ARCHETYPE",
         "PRODUCT_NAME_REQUIRED",
+        "STALE_DATA",
         "TASK_NOT_AWAITING_REVIEW",
         "TASK_NOT_FOUND",
         "UNAUTHORIZED",
@@ -3259,6 +3297,7 @@
         "PRODUCT_DOSE_REQUIRED",
         "PRODUCT_IS_SAMPLE_ARCHETYPE",
         "PRODUCT_NAME_REQUIRED",
+        "STALE_DATA",
         "TASK_NOT_AWAITING_REVIEW",
         "TASK_NOT_FOUND",
         "UNAUTHORIZED",
@@ -3294,6 +3333,7 @@
         "PRODUCT_DOSE_REQUIRED",
         "PRODUCT_IS_SAMPLE_ARCHETYPE",
         "PRODUCT_NAME_REQUIRED",
+        "STALE_DATA",
         "TASK_NOT_AWAITING_REVIEW",
         "TASK_NOT_FOUND",
         "UNAUTHORIZED",
@@ -3312,6 +3352,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -3456,6 +3497,7 @@
         "PAYROLL_BREAKDOWN_INCOMPLETE",
         "PAYROLL_BREAKDOWN_NOT_APPLICABLE",
         "PLAN_LIMIT_EXCEEDED",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -3482,6 +3524,7 @@
         "PAYROLL_BREAKDOWN_INCOMPLETE",
         "PAYROLL_BREAKDOWN_NOT_APPLICABLE",
         "PLAN_LIMIT_EXCEEDED",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -3539,6 +3582,7 @@
         "PAYROLL_BREAKDOWN_INCOMPLETE",
         "PAYROLL_BREAKDOWN_NOT_APPLICABLE",
         "PLAN_LIMIT_EXCEEDED",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -3637,6 +3681,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -3656,6 +3701,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -3675,6 +3721,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -3694,6 +3741,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -3713,6 +3761,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -3887,6 +3936,7 @@
         "PARCEL_LOCATION_MISMATCH",
         "PAST_DUE_RESTRICTED",
         "PLAN_LIMIT_EXCEEDED",
+        "STALE_DATA",
         "TASK_NOT_FOUND",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
@@ -3926,6 +3976,7 @@
         "PARCEL_LOCATION_MISMATCH",
         "PAST_DUE_RESTRICTED",
         "PLAN_LIMIT_EXCEEDED",
+        "STALE_DATA",
         "TASK_NOT_FOUND",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
@@ -3977,6 +4028,7 @@
         "PARCEL_LOCATION_MISMATCH",
         "PAST_DUE_RESTRICTED",
         "PLAN_LIMIT_EXCEEDED",
+        "STALE_DATA",
         "TASK_NOT_FOUND",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
@@ -4013,6 +4065,7 @@
         "PARCEL_LOCATION_MISMATCH",
         "PAST_DUE_RESTRICTED",
         "PLAN_LIMIT_EXCEEDED",
+        "STALE_DATA",
         "TASK_NOT_FOUND",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
@@ -4390,6 +4443,7 @@
         "PRODUCT_DOSE_REQUIRED",
         "PRODUCT_IS_SAMPLE_ARCHETYPE",
         "PRODUCT_NAME_REQUIRED",
+        "STALE_DATA",
         "TASK_NOT_AWAITING_REVIEW",
         "TASK_NOT_FOUND",
         "UNAUTHORIZED",
@@ -4536,6 +4590,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "UNSUPPORTED_FILE_TYPE",
         "VALIDATION_ERROR"
@@ -5039,6 +5094,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "STALE_DATA",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -5053,6 +5109,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "STALE_DATA",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -5067,6 +5124,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "STALE_DATA",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -5081,6 +5139,7 @@
         "MFA_REQUIRED",
         "NOT_FOUND",
         "OPERATOR_SCOPE",
+        "STALE_DATA",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
       ]
@@ -5134,6 +5193,7 @@
         "PARCEL_LOCATION_MISMATCH",
         "PAST_DUE_RESTRICTED",
         "PLAN_LIMIT_EXCEEDED",
+        "STALE_DATA",
         "TASK_NOT_FOUND",
         "UNAUTHORIZED",
         "VALIDATION_ERROR"
@@ -5180,8 +5240,10 @@
         "PRODUCT_DOSE_REQUIRED",
         "PRODUCT_IS_SAMPLE_ARCHETYPE",
         "PRODUCT_NAME_REQUIRED",
+        "STALE_DATA",
         "TASK_NOT_AWAITING_REVIEW",
         "TASK_NOT_FOUND",
+        "TENANT_ISOLATION_VIOLATION",
         "UNAUTHORIZED",
         "VALIDATION_ERROR",
         "WATER_RATE_UNIT_NOT_FOUND",
