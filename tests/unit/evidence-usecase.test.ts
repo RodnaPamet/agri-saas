@@ -101,6 +101,10 @@ const auditorCtx = makeRequestContext('AUDITOR', { userId: 'user-auditor' });
 // ─── listEvidence / listEvidencePaginated ──────────────────────────
 
 describe('listEvidence', () => {
+    // On the CODE, not the message. These asserted the English text, which
+    // #1712 changed when it gave the throw a code. The message is localised
+    // copy the phone may never show; the code is the contract both clients
+    // switch on.
     it('returns rows from the repository under the cache layer', async () => {
         (EvidenceRepository.list as jest.Mock).mockResolvedValue([{ id: 'ev-1' }]);
         const rows = await listEvidence(readerCtx);
@@ -152,7 +156,7 @@ describe('getEvidence', () => {
 
     it('throws notFound when the repository returns null', async () => {
         (EvidenceRepository.getById as jest.Mock).mockResolvedValue(null);
-        await expect(getEvidence(readerCtx, 'missing')).rejects.toThrow(/Evidence not found/i);
+        await expect(getEvidence(readerCtx, 'missing')).rejects.toMatchObject({ code: 'EVIDENCE_NOT_FOUND' });
     });
 });
 
@@ -189,7 +193,7 @@ describe('updateEvidence', () => {
 
     it('throws notFound when the repository returns null', async () => {
         (EvidenceRepository.update as jest.Mock).mockResolvedValue(null);
-        await expect(updateEvidence(editorCtx, 'ev-1', { title: 'X' } as any)).rejects.toThrow(/Evidence not found/i);
+        await expect(updateEvidence(editorCtx, 'ev-1', { title: 'X' } as any)).rejects.toMatchObject({ code: 'EVIDENCE_NOT_FOUND' });
     });
 
     it('bumps evidence cache version on success', async () => {
@@ -303,7 +307,7 @@ describe('reviewEvidence — illegal transitions', () => {
 
     it('throws notFound when the evidence row is missing', async () => {
         (EvidenceRepository.getById as jest.Mock).mockResolvedValue(null);
-        await expect(reviewEvidence(editorCtx, 'missing', { action: 'SUBMITTED' })).rejects.toThrow(/Evidence not found/i);
+        await expect(reviewEvidence(editorCtx, 'missing', { action: 'SUBMITTED' })).rejects.toMatchObject({ code: 'EVIDENCE_NOT_FOUND' });
     });
 
     it('emits STATUS_CHANGE audit on every successful transition', async () => {
@@ -339,7 +343,7 @@ describe('deleteEvidence', () => {
 
     it('throws notFound when the row is missing', async () => {
         (EvidenceRepository.getById as jest.Mock).mockResolvedValue(null);
-        await expect(deleteEvidence(adminCtx, 'missing')).rejects.toThrow(/Evidence not found/i);
+        await expect(deleteEvidence(adminCtx, 'missing')).rejects.toMatchObject({ code: 'EVIDENCE_NOT_FOUND' });
         expect(mockDb.evidence.delete).not.toHaveBeenCalled();
     });
 

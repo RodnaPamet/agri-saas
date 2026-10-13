@@ -275,7 +275,13 @@ export function collectServerAuthoredCopy(root: string, dirs: string[] = ROOTS):
 // 19 more sites coded, across three surfaces that are entirely undocumented:
 // `asset` (7), `asset-maintenance` (4), `knowledge` (8). Four new codes.
 // Refs #1712 batch 3.
-const CURRENT_BASELINE = 408;
+//
+// ── 408 → 395 ────────────────────────────────────────────────────────────
+//
+// 16 more sites coded in the evidence family — `evidence` (9),
+// `evidence-retention` (4), the access-review evidence route (3). Eight new
+// codes. Refs #1712 batch 4.
+const CURRENT_BASELINE = 395;
 
 /** Slack tolerated before the sentinel demands the baseline be lowered. */
 const DRIFT_ALLOWANCE = 15;

@@ -4,7 +4,7 @@ import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/commo
 import { logEvent } from '../events/audit';
 import { validateFile, uploadFile } from '@/lib/storage';
 import { scanUploadedBuffer } from '@/lib/storage/av-scan';
-import { badRequest, codedBadRequest, forbidden, notFound } from '@/lib/errors/types';
+import { badRequest, codedBadRequest, forbidden, codedNotFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { cachedListRead, bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 import type { EvidenceType, ReviewCadence } from '@prisma/client';
@@ -57,7 +57,7 @@ export async function getEvidence(ctx: RequestContext, id: string) {
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
         const evidence = await EvidenceRepository.getById(db, ctx, id);
-        if (!evidence) throw notFound('Evidence not found');
+        if (!evidence) throw codedNotFound('EVIDENCE_NOT_FOUND', 'That evidence was not found.');
         // SP-3/audit — surface a SharePoint source link + last-sync time when
         // this evidence was imported from SharePoint (one mapping per evidence).
         const spMapping = await db.integrationSyncMapping.findFirst({
@@ -192,7 +192,7 @@ export async function updateEvidence(ctx: RequestContext, id: string, data: z.in
             nextReviewDate: data.nextReviewDate ? new Date(data.nextReviewDate) : undefined,
         });
 
-        if (!evidence) throw notFound('Evidence not found');
+        if (!evidence) throw codedNotFound('EVIDENCE_NOT_FOUND', 'That evidence was not found.');
 
         await logEvent(db, ctx, {
             action: 'UPDATE',
@@ -253,7 +253,7 @@ export async function reviewEvidence(ctx: RequestContext, id: string, data: { ac
 
     const result = await runInTenantContext(ctx, async (db) => {
         const evidence = await EvidenceRepository.getById(db, ctx, id);
-        if (!evidence) throw notFound('Evidence not found');
+        if (!evidence) throw codedNotFound('EVIDENCE_NOT_FOUND', 'That evidence was not found.');
 
         // Audit S3 — enforce the state machine BEFORE any write.
         const allowed = EVIDENCE_TRANSITIONS[evidence.status as string];
@@ -335,7 +335,7 @@ export async function deleteEvidence(ctx: RequestContext, id: string) {
     assertCanAdmin(ctx);
     const result = await runInTenantContext(ctx, async (db) => {
         const evidence = await EvidenceRepository.getById(db, ctx, id);
-        if (!evidence) throw notFound('Evidence not found');
+        if (!evidence) throw codedNotFound('EVIDENCE_NOT_FOUND', 'That evidence was not found.');
 
         await db.evidence.delete({ where: { id } });
 
@@ -698,8 +698,8 @@ export async function getEvidenceFileRecord(ctx: RequestContext, fileId: string)
 
     return runInTenantContext(ctx, async (db) => {
         const fileRecord = await FileRepository.getById(db, ctx, fileId);
-        if (!fileRecord) throw notFound('File not found');
-        if (fileRecord.status === 'DELETED') throw notFound('File has been deleted');
+        if (!fileRecord) throw codedNotFound('FILE_NOT_FOUND', 'That file was not found.');
+        if (fileRecord.status === 'DELETED') throw codedNotFound('FILE_DELETED', 'That file has been deleted.');
         return fileRecord;
     });
 }
@@ -758,8 +758,8 @@ export async function downloadEvidenceFile(ctx: RequestContext, fileId: string) 
 
     return runInTenantContext(ctx, async (db) => {
         const fileRecord = await FileRepository.getById(db, ctx, fileId);
-        if (!fileRecord) throw notFound('File not found');
-        if (fileRecord.status !== 'STORED') throw notFound('File is not available for download');
+        if (!fileRecord) throw codedNotFound('FILE_NOT_FOUND', 'That file was not found.');
+        if (fileRecord.status !== 'STORED') throw codedNotFound('FILE_NOT_DOWNLOADABLE', 'That file is not available for download.');
 
         // Tenant isolation guard
         assertTenantKey(fileRecord.pathKey, ctx.tenantId);
@@ -794,7 +794,7 @@ export async function downloadEvidenceFile(ctx: RequestContext, fileId: string) 
         }));
 
         if (evidence?.deletedAt) {
-            throw notFound('Evidence has been deleted');
+            throw codedNotFound('EVIDENCE_DELETED', 'That evidence has been deleted.');
         }
 
         if (!ctx.permissions.canWrite) {

@@ -16,7 +16,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { getProviderByName, assertTenantKey } from '@/lib/storage';
 import { isDownloadAllowed, getBlockedReason } from '@/lib/storage/av-scan';
 import { withApiErrorHandling } from '@/lib/errors/api';
-import { notFound, forbidden } from '@/lib/errors/types';
+import { notFound, forbidden, codedNotFound } from '@/lib/errors/types';
 import { assertCanRead } from '@/app-layer/policies/common';
 import { withDeleted } from '@/lib/soft-delete';
 import type { StorageProviderType } from '@/lib/storage/types';
@@ -65,10 +65,10 @@ export const GET = withApiErrorHandling(
                     storageProvider: true,
                 },
             }));
-            if (!fr) throw notFound('Evidence file not found');
-            if (fr.deletedAt) throw notFound('Evidence file has been deleted');
+            if (!fr) throw codedNotFound('EVIDENCE_FILE_NOT_FOUND', 'That evidence file was not found.');
+            if (fr.deletedAt) throw codedNotFound('EVIDENCE_FILE_DELETED', 'That evidence file has been deleted.');
             if (fr.status !== 'STORED') {
-                throw notFound('Evidence file is not available for download');
+                throw codedNotFound('EVIDENCE_FILE_NOT_DOWNLOADABLE', 'That evidence file is not available for download.');
             }
             // The AV gate. Derived from `isDownloadAllowed` rather than
             // restated here — CLAUDE.md is explicit that a second copy of the

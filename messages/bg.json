@@ -6403,6 +6403,14 @@
         "signOut": "Изход"
     },
     "errors": {
+        "EVIDENCE_DELETED": "Доказателството е изтрито.",
+        "EVIDENCE_FILE_DELETED": "Файлът към доказателството е изтрит.",
+        "EVIDENCE_FILE_NOT_DOWNLOADABLE": "Файлът към доказателството не е достъпен за изтегляне.",
+        "EVIDENCE_FILE_NOT_FOUND": "Файлът към доказателството не беше намерен.",
+        "EVIDENCE_NOT_FOUND": "Доказателството не беше намерено.",
+        "FILE_DELETED": "Файлът е изтрит.",
+        "FILE_NOT_DOWNLOADABLE": "Файлът не е достъпен за изтегляне.",
+        "FILE_NOT_FOUND": "Файлът не беше намерен.",
         "ARTICLE_NOT_FOUND": "Статията не беше намерена.",
         "ASSET_EVIDENCE_NOT_FOUND": "Доказателството към актива не беше намерено.",
         "ASSET_NOT_FOUND": "Активът не беше намерен.",

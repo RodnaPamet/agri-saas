@@ -70,10 +70,14 @@ const auditorCtx = makeRequestContext('AUDITOR');
 // ─── updateEvidenceRetention ──────────────────────────────────────
 
 describe('updateEvidenceRetention', () => {
+    // On the CODE, not the message. These asserted the English text, which
+    // #1712 changed when it gave the throw a code. The message is localised
+    // copy the phone may never show; the code is the contract both clients
+    // switch on.
     it('throws notFound when the evidence row does not exist', async () => {
         (mockDb.evidence.findFirst as jest.Mock).mockResolvedValue(null);
         await expect(updateEvidenceRetention(editorCtx, 'missing', { retentionUntil: null }))
-            .rejects.toThrow(/Evidence not found/i);
+            .rejects.toMatchObject({ code: 'EVIDENCE_NOT_FOUND' });
     });
 
     it('rejects READER (write gate)', async () => {
@@ -245,7 +249,7 @@ describe('archiveEvidence', () => {
 
     it('throws notFound when the row does not exist', async () => {
         (mockDb.evidence.findFirst as jest.Mock).mockResolvedValue(null);
-        await expect(archiveEvidence(editorCtx, 'missing')).rejects.toThrow(/Evidence not found/i);
+        await expect(archiveEvidence(editorCtx, 'missing')).rejects.toMatchObject({ code: 'EVIDENCE_NOT_FOUND' });
     });
 
     it('rejects READER (write gate)', async () => {
@@ -280,7 +284,7 @@ describe('unarchiveEvidence', () => {
 
     it('throws notFound when the row does not exist', async () => {
         (mockDb.evidence.findFirst as jest.Mock).mockResolvedValue(null);
-        await expect(unarchiveEvidence(editorCtx, 'missing')).rejects.toThrow(/Evidence not found/i);
+        await expect(unarchiveEvidence(editorCtx, 'missing')).rejects.toMatchObject({ code: 'EVIDENCE_NOT_FOUND' });
     });
 
     it('rejects READER (write gate)', async () => {
@@ -362,7 +366,7 @@ describe('assertNotArchived', () => {
 
     it('throws notFound when the row does not exist', async () => {
         (mockDb.evidence.findFirst as jest.Mock).mockResolvedValue(null);
-        await expect(assertNotArchived(adminCtx, 'missing')).rejects.toThrow(/Evidence not found/i);
+        await expect(assertNotArchived(adminCtx, 'missing')).rejects.toMatchObject({ code: 'EVIDENCE_NOT_FOUND' });
     });
 
     it('throws badRequest when the row is archived', async () => {

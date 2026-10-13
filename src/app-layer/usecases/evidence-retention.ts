@@ -11,7 +11,7 @@ import { RequestContext } from '../types';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
-import { notFound } from '@/lib/errors/types';
+import { codedNotFound } from '@/lib/errors/types';
 import { runEvidenceRetentionSweep } from '../jobs/retention';
 
 /**
@@ -33,7 +33,7 @@ export async function updateEvidenceRetention(
         const evidence = await db.evidence.findFirst({
             where: { id: evidenceId, tenantId: ctx.tenantId },
         });
-        if (!evidence) throw notFound('Evidence not found');
+        if (!evidence) throw codedNotFound('EVIDENCE_NOT_FOUND', 'That evidence was not found.');
 
         const updateData: Prisma.EvidenceUpdateInput = {};
         if (data.retentionUntil !== undefined) {
@@ -132,7 +132,7 @@ export async function archiveEvidence(ctx: RequestContext, evidenceId: string) {
         const evidence = await db.evidence.findFirst({
             where: { id: evidenceId, tenantId: ctx.tenantId },
         });
-        if (!evidence) throw notFound('Evidence not found');
+        if (!evidence) throw codedNotFound('EVIDENCE_NOT_FOUND', 'That evidence was not found.');
         if (evidence.isArchived) return evidence; // idempotent
 
         const updated = await db.evidence.update({
@@ -167,7 +167,7 @@ export async function unarchiveEvidence(ctx: RequestContext, evidenceId: string)
         const evidence = await db.evidence.findFirst({
             where: { id: evidenceId, tenantId: ctx.tenantId },
         });
-        if (!evidence) throw notFound('Evidence not found');
+        if (!evidence) throw codedNotFound('EVIDENCE_NOT_FOUND', 'That evidence was not found.');
         if (!evidence.isArchived) return evidence; // idempotent
 
         const updated = await db.evidence.update({
@@ -261,7 +261,7 @@ export async function assertNotArchived(ctx: RequestContext, evidenceId: string)
         const evidence = await db.evidence.findFirst({
             where: { id: evidenceId, tenantId: ctx.tenantId },
         });
-        if (!evidence) throw notFound('Evidence not found');
+        if (!evidence) throw codedNotFound('EVIDENCE_NOT_FOUND', 'That evidence was not found.');
         if (evidence.isArchived) {
             const { badRequest } = await import('@/lib/errors/types');
             throw badRequest('Cannot link archived evidence. Unarchive first or use active evidence.');
