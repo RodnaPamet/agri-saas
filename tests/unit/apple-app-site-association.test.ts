@@ -22,10 +22,35 @@
  * So the emptiness is asserted rather than tolerated: a future change that
  * adds a path has to come here and say so.
  */
-import { GET, APP_ID, APPLINK_COMPONENTS } from '@/app/.well-known/apple-app-site-association/route';
+import { GET } from '@/app/.well-known/apple-app-site-association/route';
+import {
+    APP_ID,
+    APPLINK_COMPONENTS,
+    buildAppSiteAssociation,
+} from '@/lib/ios/app-site-association';
 import { isPublicPath } from '@/lib/auth/guard';
 
 const PATH = '/.well-known/apple-app-site-association';
+
+describe('the document lives in lib, not in the route module', () => {
+    it('the route module exports only a handler and segment config', () => {
+        // `tests/guards/app-router-module-exports.test.ts` enforces this and
+        // caught the first version of this route, which exported APP_ID and
+        // APPLINK_COMPONENTS. The violation is invisible to `tsc --noEmit` on
+        // a clean checkout — Next's type constraints live in `.next/types`,
+        // which only a build creates — which is why three such exports had
+        // accumulated on main before that guard existed.
+        //
+        // Asserted here as well so the reason travels with THIS route: the
+        // constants are importable from lib, so there is no reason to reach
+        // for the route module and no hint that doing so breaks a build.
+        expect(typeof buildAppSiteAssociation).toBe('function');
+        expect(buildAppSiteAssociation()).toEqual({
+            applinks: { details: [{ appIDs: [APP_ID], components: [] }] },
+            webcredentials: { apps: [APP_ID] },
+        });
+    });
+});
 
 describe('the Edge admits the path Apple fetches', () => {
     it('isPublicPath is true for it', () => {
