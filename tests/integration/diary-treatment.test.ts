@@ -479,6 +479,45 @@ describeFn('getDiaryTreatment (DB-backed)', () => {
         expect(after!.parcelCount).toBe(2);
     });
 
+    it('captures the stated quarantine period on every line, for a product the farm ALREADY has', async () => {
+        // The original defect: `quarantinePeriodDays` only reached
+        // `newProductRegistration`, which is consulted solely when a typed
+        // NAME has to create a product. Sent alongside a `productItemId` —
+        // which is what the phone sends for a known product — the farmer's
+        // number was silently dropped, and the register printed the
+        // product's current value instead (#1775).
+        const key = `${TAG}-quarantine`;
+        await recordDiaryTreatment(
+            ctx(),
+            { ...baseInput(), parcelIds: [parcelA1, parcelB1], quarantinePeriodDays: 7 },
+            key,
+        );
+
+        const lines = await globalPrisma.operationParcel.findMany({
+            where: { tenantId, task: { treatmentGroupId: key } },
+            select: { quarantinePeriodDays: true, status: true },
+        });
+        expect(lines).toHaveLength(2);
+        expect(lines.every((l) => l.status === 'DONE')).toBe(true);
+        // Every line, across both blocks — the register reads lines, not the
+        // request.
+        expect(lines.map((l) => l.quarantinePeriodDays)).toEqual([7, 7]);
+    });
+
+    it('leaves the period null when none is stated, rather than defaulting it', async () => {
+        // Null means "not captured" and makes the register fall back to the
+        // product. A zero here would print «0 дни» — a waiting period the
+        // farmer never gave, in a regulatory document.
+        const key = `${TAG}-no-quarantine`;
+        await recordDiaryTreatment(ctx(), { ...baseInput(), parcelIds: [parcelA2] }, key);
+        const lines = await globalPrisma.operationParcel.findMany({
+            where: { tenantId, task: { treatmentGroupId: key } },
+            select: { quarantinePeriodDays: true },
+        });
+        expect(lines).toHaveLength(1);
+        expect(lines[0].quarantinePeriodDays).toBeNull();
+    });
+
     it('replays only once every line is recorded', async () => {
         const key = `${TAG}-full-replay`;
         const first = await recordDiaryTreatment(

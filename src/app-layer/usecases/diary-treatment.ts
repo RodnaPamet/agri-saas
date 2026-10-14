@@ -568,7 +568,14 @@ export async function recordDiaryTreatment(
             'DONE',
             input.targetNote ?? null,
             line.version,
-            { recordedInDiary: true, occurredAt: day },
+            {
+                recordedInDiary: true,
+                occurredAt: day,
+                // The period the farmer stated, captured on the line (#1775).
+                // Before this it only reached `newProductRegistration`, so on
+                // a product the farm already had it was silently dropped.
+                quarantinePeriodDays: input.quarantinePeriodDays ?? null,
+            },
         );
     }
 

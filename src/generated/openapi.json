@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "12.14.3",
+    "version": "12.16.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -12462,7 +12462,7 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 365,
-            "description": "Карантинен срок in days. **Consulted only when a typed `productName` has to CREATE a product**, where it lands on that product’s registration. If the name or `productItemId` resolves to a product the farm ALREADY has, this value is IGNORED — an operation payload must not silently rewrite a stored ЗЗР registration, the same rule `newProductRegistration` follows on a name match. The ДНЕВНИК computes «най-ранна дата за прибиране» from the PRODUCT’s current period at generation time, not from a copy taken on the day, so changing a product’s period changes what a reprint says. Storing it per entry is #1775."
+            "description": "Карантинен срок in days, AS IT APPLIED ON THE DAY. Stored on each line this treatment records (#1775), so a reprinted ДНЕВНИК shows the waiting period that applied then — and the «най-ранна дата за прибиране» computed from it — even after the product’s own period is later edited. Applies whether the product is one the farm already has or one this call creates; previously it reached only a newly created product’s registration and was dropped for a known product. Omit it and the line stores NULL, which means “not captured” and makes the register fall back to the product — never zero, which would print a waiting period nobody gave. When a typed `productName` has to CREATE a product it ALSO lands on that product’s registration; on a name that MATCHES an existing product the product is not rewritten, because an operation payload must not silently change a stored ЗЗР registration."
           },
           "newProductCategory": {
             "type": "string",
