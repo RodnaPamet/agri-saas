@@ -3126,7 +3126,7 @@
             "kind_FERTILIZE": "Fertilising",
             "kind_SPRAY": "Spraying",
             "next": "Next",
-            "noParcels": "No parcels with that crop.",
+            "noParcels": "No parcels with that crop",
             "occurredOn": "Date carried out",
             "parcelsLoading": "Loading parcels…",
             "product": "Product",

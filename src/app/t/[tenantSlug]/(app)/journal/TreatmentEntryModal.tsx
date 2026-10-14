@@ -224,10 +224,22 @@ export function TreatmentEntryModal({ open, setOpen, onSaved }: Props) {
     /**
      * The idempotency key, DERIVED from the draft and the parcel set.
      *
-     * Re-minted by construction rather than by remembering to: any edit
-     * changes the input, so a retry of an UNCHANGED save reuses the key (which
-     * is what makes it idempotent) while an edited save gets a new one (which
-     * is what stops the server replaying the old treatment at it).
+     * Re-minted by construction rather than by anyone remembering to. Every
+     * edit changes the input, so a retry of an UNCHANGED save reuses the key
+     * (which is what makes it idempotent) while an edited save gets a new one
+     * (which is what stops the server replaying the old treatment at it).
+     *
+     * The wording is load-bearing in a silly way. The previous sentence used
+     * a colon where this one has a full stop, and `no-explicit-any-ratchet`
+     * greps src/** for a colon followed by the escape-hatch keyword — so one
+     * comma splice in prose raised the cap by one and reddened CI.
+     *
+     * That is the guard working as designed, not a bug in it:
+     * `scripts/lib/any-patterns.ts` records counting comment mentions as a
+     * deliberate decision, on the grounds that a comment naming the pattern
+     * is usually evidence of the thing. 11 of the 131 counted occurrences are
+     * prose today. So the fix is this rewording, and the pattern is
+     * deliberately not quoted anywhere in this file.
      */
     const idempotencyKey = useMemo(
         () => `web:${JSON.stringify(draft)}:${[...selected].sort().join(',')}`,
@@ -496,7 +508,7 @@ export function TreatmentEntryModal({ open, setOpen, onSaved }: Props) {
                     </div>
                 )}
 
-                {error ? <p className="text-content-danger">{error}</p> : null}
+                {error ? <p className="text-content-error">{error}</p> : null}
 
                 <Modal.Footer>
                     {step === 2 ? (
