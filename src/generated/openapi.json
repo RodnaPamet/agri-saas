@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "12.7.15",
+    "version": "12.15.1",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -4343,6 +4343,36 @@
                   "null"
                 ]
               },
+              "permissions": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "canRead": {
+                    "type": "boolean"
+                  },
+                  "canWrite": {
+                    "type": "boolean"
+                  },
+                  "canAdmin": {
+                    "type": "boolean"
+                  },
+                  "canAudit": {
+                    "type": "boolean"
+                  },
+                  "canExport": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "canRead",
+                  "canWrite",
+                  "canAdmin",
+                  "canAudit",
+                  "canExport"
+                ]
+              },
               "bottomTabOrder": {
                 "$ref": "#/components/schemas/BottomTabOrder"
               },
@@ -4382,6 +4412,7 @@
               "email",
               "name",
               "role",
+              "permissions",
               "bottomTabOrder",
               "deletion"
             ]
@@ -29863,7 +29894,7 @@
       "get": {
         "operationId": "getCurrentUser",
         "summary": "The signed-in user, their primary tenant, and their preferences",
-        "description": "The launch request. Returns the caller plus their OLDEST ACTIVE membership as `tenant` — one membership, not the list, so a user who belongs to several tenants cannot pick between them here. `role` and `tenant` are BOTH `null` when there is no active membership, and they always agree: `role` is never a fallback value, so it is also not proof of access on its own. Carries `bottomTabOrder`, which is why a client needs no second round-trip before drawing its tab bar, and `avatarUrl`, which is why it needs no probe to find out whether the caller has a photo. Answers a BEARER token as well as a cookie.",
+        "description": "The launch request. Returns the caller plus their OLDEST ACTIVE membership as `tenant` — one membership, not the list, so a user who belongs to several Since #1768 it also carries `permissions` — the coarse tier (`canRead`/`canWrite`/`canAdmin`/`canAudit`/`canExport`) that the server's own usecases gate on. It is ADVISORY and exists so a client stops reimplementing the role ladder: that second copy drifts the moment a role's level changes, and a permissive drift shows a farmer a control whose request is then refused. It decides whether to RENDER a control, never whether a write is permitted — the server gate is the authority, and a stale `canWrite: true` is answered by `WRITE_FORBIDDEN_FOR_ROLE`. It is `null` exactly when `role` is, and discloses nothing new: every field is a pure function of `role`.\n\ntenants cannot pick between them here. `role` and `tenant` are BOTH `null` when there is no active membership, and they always agree: `role` is never a fallback value, so it is also not proof of access on its own. Carries `bottomTabOrder`, which is why a client needs no second round-trip before drawing its tab bar, and `avatarUrl`, which is why it needs no probe to find out whether the caller has a photo. Answers a BEARER token as well as a cookie.",
         "tags": [
           "Account"
         ],

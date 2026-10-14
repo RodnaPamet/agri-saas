@@ -4521,6 +4521,36 @@ exports[`API contract — per-schema snapshots schema: CurrentUser 1`] = `
             "null"
           ]
         },
+        "permissions": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "canRead": {
+              "type": "boolean"
+            },
+            "canWrite": {
+              "type": "boolean"
+            },
+            "canAdmin": {
+              "type": "boolean"
+            },
+            "canAudit": {
+              "type": "boolean"
+            },
+            "canExport": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "canRead",
+            "canWrite",
+            "canAdmin",
+            "canAudit",
+            "canExport"
+          ]
+        },
         "bottomTabOrder": {
           "$ref": "#/components/schemas/BottomTabOrder"
         },
@@ -4560,6 +4590,7 @@ exports[`API contract — per-schema snapshots schema: CurrentUser 1`] = `
         "email",
         "name",
         "role",
+        "permissions",
         "bottomTabOrder",
         "deletion"
       ]
