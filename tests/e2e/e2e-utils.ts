@@ -631,43 +631,6 @@ export async function signInAs(
 }
 
 /**
- * Open the journal create-entry modal and wait until its LAZY CHUNK has
- * actually landed, so a caller may safely cut the network next.
- *
- * ## Why this is a helper and not two lines in each spec (#730)
- *
- * Both offline journal specs open this modal online "so its lazy chunk lands",
- * then go offline. Both waited on `#journal-entry-title` — the plain title
- * `<input>` — which is the WRONG element. The modal's lazy chunk is
- * `RichTextEditor`:
- *
- * ```ts
- * const RichTextEditor = dynamic(
- *     () => import('@/components/ui/RichTextEditor').then((m) => m.RichTextEditor),
- *     { ssr: false, loading: () => <SkeletonCard lines={4} /> },
- * );
- * ```
- *
- * It renders a skeleton while loading, so the title input is visible LONG
- * BEFORE the ~200KB Tiptap/ProseMirror chunk arrives. Cutting the network in
- * that window fails the fetch, and `ChunkLoadError` breaks the render pass the
- * assertions later depend on.
- *
- * Measured on main, twice, before this existed:
- *
- * ```
- * 95ccd2eb  mobile-android  ChunkLoadError: Loading chunk 78301 failed
- * 09cfd8a5  mobile-iphone   ChunkLoadError: Loading chunk 78301 failed
- * ```
- *
- * Same chunk both times, on different projects — a race, not a loaded runner.
- *
- * `data-testid="rich-text-editor"` sits on the Card the REAL component renders
- * (`RichTextEditor.tsx:227`); `SkeletonCard` carries no such attribute. So its
- * visibility is exactly the signal "the chunk resolved and mounted", which the
- * title input never was.
- */
-/**
  * Wait until the field page's lazily-imported map has actually mounted.
  *
  * `OfflineFieldPanel` renders `MapCanvas` through `dynamic(… ssr: false)`, and
@@ -686,19 +649,82 @@ export async function waitForFieldMapWarm(page: Page): Promise<void> {
     ).toBeVisible({ timeout: 30_000 });
 }
 
-export async function openJournalEntryModalWarm(page: Page): Promise<void> {
+/**
+ * Open «Нов запис» and drive BOTH steps of the treatment form while ONLINE,
+ * stopping at the parcel list with the map chunk landed — the state an offline
+ * spec may safely cut the network in. Returns the first parcel's checkbox.
+ *
+ * ## Why a helper and not two lines per spec (#730, carried forward)
+ *
+ * This replaces `openJournalEntryModalWarm`, which opened the free-form note
+ * «Нов запис» used to show. That helper existed because both offline journal
+ * specs waited on `#journal-entry-title` — visible LONG before the ~200KB
+ * Tiptap chunk behind it arrived — and cutting the network in that window
+ * produced a `ChunkLoadError` that broke the render the later assertions
+ * depend on. Measured on main twice before it existed:
+ *
+ * ```
+ * 95ccd2eb  mobile-android  ChunkLoadError: Loading chunk 78301 failed
+ * 09cfd8a5  mobile-iphone   ChunkLoadError: Loading chunk 78301 failed
+ * ```
+ *
+ * The form changed; the trap did not. Here the heavy chunk is MapLibre
+ * (`MapCanvas` through `dynamic(… ssr: false)`), and the parcel CHECKBOXES
+ * render from data that has already arrived while it is still downloading. So
+ * the checkbox is this form's `#journal-entry-title`, and the load-bearing
+ * wait is the map's own `role="group"` root — the same signal
+ * `waitForFieldMapWarm` uses for the field page.
+ *
+ * It cannot simply call that helper: this map lives inside a Modal, which
+ * renders through `Dialog.Portal` / `Drawer.Portal`, so it is mounted OUTSIDE
+ * `<main>` and the `getByRole('main')` scoping there would never resolve it
+ * (#1516).
+ *
+ * ## Why every READ happens here, online
+ *
+ * Step two's crop and parcel lists come from `/parcels/by-crop`, which the
+ * persistent SWR cache does not write — `PERSISTABLE_PATHS` allowlists
+ * `/journal`, `/farm-tasks`, `/locations` and `/exchange/listings`, and none of
+ * this form's reads is among them (#1845). So this warm-up matches what a real
+ * device must also do, rather than compensating for an empty test fixture.
+ */
+export async function openTreatmentFormWarm(
+    page: Page,
+    opts: { product: string; crop?: string },
+): Promise<Locator> {
+    const crop = opts.crop ?? 'Wheat';
     await page.getByRole('button', { name: 'Add entry' }).click();
-    // BARE on purpose. This id belongs to a MODAL, and the Modal
-    // primitive renders through `Dialog.Portal` / `Drawer.Portal`
-    // (src/components/ui/modal.tsx:234,306) — so its content is
-    // mounted OUTSIDE `<main>` and `getByRole('main')` would never
-    // resolve it. Scoping this would convert a passing assertion into
-    // a permanent failure (#1516).
-    await expect(page.locator('#journal-entry-title')).toBeVisible();
-    // THE LOAD-BEARING WAIT. Do not replace this with the title input, and do
-    // not delete it as redundant — it is the only assertion here that proves
-    // the lazy chunk is no longer in flight.
-    await expect(page.getByTestId('rich-text-editor')).toBeVisible();
+
+    // ── Step one ───────────────────────────────────────────────────────
+    // BARE locators on purpose. These ids belong to a MODAL, and the Modal
+    // primitive renders through `Dialog.Portal` / `Drawer.Portal`, so its
+    // content is mounted OUTSIDE `<main>` and `getByRole('main')` would never
+    // resolve it (#1516).
+    await expect(page.locator('#treatment-product')).toBeVisible();
+    await page.locator('#treatment-product').click();
+    await page.getByRole('option', { name: new RegExp(opts.product) }).click();
+    await page.locator('#treatment-dose').fill('2');
+    await page.locator('#treatment-unit').click();
+    // By position: the dose units are global seed data, and no spec should
+    // assert which symbol that seed happens to use.
+    await page.getByRole('option').first().click();
+    await page.getByRole('button', { name: 'Next' }).click();
+
+    // ── Step two ───────────────────────────────────────────────────────
+    await page.locator('#treatment-crop').click();
+    await page.getByRole('option', { name: new RegExp(crop) }).click();
+    const parcel = page.locator('#treatment-parcel-list').getByRole('checkbox').first();
+    await expect(parcel).toBeVisible();
+
+    // THE LOAD-BEARING WAIT. Do not replace it with the parcel checkbox above,
+    // and do not delete it as redundant — it is the only assertion here that
+    // proves MapLibre's lazily-imported chunk is no longer in flight. The
+    // checkboxes render from data that has already arrived, while the ~200KB
+    // map chunk is still downloading, so waiting on them is the same mistake
+    // `#journal-entry-title` was for the form this replaced (#730).
+    await expect(page.getByRole('group', { name: /^Parcel map/ })).toBeVisible();
+
+    return parcel;
 }
 
 /**

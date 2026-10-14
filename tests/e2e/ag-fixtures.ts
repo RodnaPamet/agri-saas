@@ -94,6 +94,31 @@ export async function createProduct(
     return item.id;
 }
 
+/**
+ * The minimum farm a TREATMENT can be recorded against (#1740): one field,
+ * one parcel carrying a crop, and one product priced in a dose unit.
+ *
+ * The crop is set through Prisma because `addParcel` does not take one, and
+ * step two of the treatment form groups parcels BY crop — a parcel with no
+ * crop appears in no crop's list, so a spec that forgets this finds an empty
+ * picker and no way to continue.
+ */
+export async function seedTreatmentBasics(
+    api: APIRequestContext,
+    prisma: PrismaClient,
+    tenantId: string,
+    slug: string,
+    opts: { product: string; crop?: string } = { product: 'Aphid spray' },
+): Promise<{ product: string; crop: string; parcelId: string; locationId: string }> {
+    const crop = opts.crop ?? 'Wheat';
+    const locationId = await createField(api, slug, `Block ${crop}`);
+    const parcelId = await addParcel(api, slug, locationId, '1', 0, 0);
+    await prisma.parcel.update({ where: { id: parcelId }, data: { cropType: crop } });
+    const units = await resolveUnits(prisma);
+    await createProduct(prisma, tenantId, opts.product, units.lPerHa);
+    return { product: opts.product, crop, parcelId, locationId };
+}
+
 /** Create an inventory lot with opening stock (RECEIPT). */
 export async function createLot(
     api: APIRequestContext,

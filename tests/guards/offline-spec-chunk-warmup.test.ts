@@ -61,7 +61,7 @@ function offlineJournalSpecs(): string[] {
                 // identifier would also match the import line, which is how
                 // the first version of this guard let a hand-rolled warm-up
                 // through: the mutation removed the call and left the import.
-                else if (src.includes('openJournalEntryModalWarm(')) {
+                else if (src.includes('openTreatmentFormWarm(')) {
                     out.push(path.relative(ROOT, full));
                 }
             }
@@ -139,7 +139,7 @@ describe('offline journal specs warm the lazy chunk', () => {
         // `(` is load-bearing: the bare identifier also appears in the import,
         // so a spec that imported it and then hand-rolled the wait anyway
         // satisfied the first version of this assertion. Found by mutation.
-        expect(src).toContain('openJournalEntryModalWarm(');
+        expect(src).toContain('openTreatmentFormWarm(');
     });
 
     it.each(offlineJournalSpecs())(
@@ -151,22 +151,50 @@ describe('offline journal specs warm the lazy chunk', () => {
             // pairing is allowed to appear.
             const handRolled =
                 /getByRole\('button',\s*\{\s*name:\s*'Add entry'\s*\}\)/.test(src) &&
-                !src.includes('openJournalEntryModalWarm(');
+                !src.includes('openTreatmentFormWarm(');
             expect(`${rel}: ${handRolled}`).toBe(`${rel}: false`);
         },
     );
 
-    it('the helper waits on the RichTextEditor testid, not the title input', () => {
+    it('the helper waits on the MAP region, not on the parcel checkboxes', () => {
+        // «Нов запис» opens the two-step treatment form now (#1740), so the
+        // heavy chunk is MapLibre rather than the rich-text editor. The shape
+        // of the mistake is identical: the parcel checkboxes render from data
+        // that has already arrived, while the ~200KB map chunk is still in
+        // flight — so waiting on them is what `#journal-entry-title` was.
         const src = fs.readFileSync(path.join(ROOT, 'tests/e2e/e2e-utils.ts'), 'utf8');
-        const helper = src.slice(src.indexOf('export async function openJournalEntryModalWarm'));
-        expect(helper).toContain("getByTestId('rich-text-editor')");
+        const helper = src.slice(src.indexOf('export async function openTreatmentFormWarm'));
+        expect(helper).toMatch(/getByRole\('group',\s*\{\s*name:\s*\/\^Parcel map\//);
     });
 
-    it('and that testid is on the REAL component, not its loading skeleton', () => {
-        // The wait is only meaningful because `SkeletonCard` carries no such
-        // attribute — otherwise it would be satisfied during the very window
-        // it exists to close. If someone adds a testid to the skeleton, this
-        // fails rather than the guard quietly becoming a no-op.
+    it('and that label belongs to the REAL map, not to a loading placeholder', () => {
+        // The wait is only meaningful if nothing renders that accessible name
+        // while the chunk is still loading. `dynamic()` is declared with no
+        // `loading` option, so the slot is EMPTY until the real module
+        // arrives — assert that, because adding a placeholder carrying the
+        // same role and label would satisfy the wait during the very window
+        // it exists to close.
+        const canvas = fs.readFileSync(
+            path.join(ROOT, 'src/components/ui/map/MapCanvas.tsx'),
+            'utf8',
+        );
+        expect(canvas).toContain("role=\"group\"");
+        expect(canvas).toContain('parcelMap');
+        const modal = fs.readFileSync(
+            path.join(ROOT, 'src/app/t/[tenantSlug]/(app)/journal/TreatmentEntryModal.tsx'),
+            'utf8',
+        );
+        expect(modal).not.toMatch(/import\('@\/components\/ui\/map\/MapCanvas'\)[\s\S]{0,200}loading:/);
+    });
+
+    it('the OLD guard subject is gone, so this is not enforcing a dead wait', () => {
+        // The free-form editor warm-up it replaced: if `openJournalEntryModalWarm`
+        // comes back, two warm-ups exist and a spec can satisfy the wrong one.
+        const utils = fs.readFileSync(path.join(ROOT, 'tests/e2e/e2e-utils.ts'), 'utf8');
+        expect(utils).not.toContain('export async function openJournalEntryModalWarm');
+    });
+
+    it('the skeleton does not claim the editor testid either (kept from #730)', () => {
         const editor = fs.readFileSync(
             path.join(ROOT, 'src/components/ui/RichTextEditor.tsx'),
             'utf8',
@@ -183,11 +211,24 @@ describe('offline journal specs warm the lazy chunk', () => {
         expect(fs.readFileSync(skeleton, 'utf8')).not.toContain('rich-text-editor');
     });
 
-    it('the modal really does load the editor lazily — otherwise none of this matters', () => {
-        // If `RichTextEditor` ever becomes a static import, the race is gone
-        // and this whole guard is obsolete. Better to fail here and have that
-        // conversation than to keep enforcing a wait for a chunk that no
-        // longer exists.
+    it('the form really does load the map lazily — otherwise none of this matters', () => {
+        // If `MapCanvas` ever becomes a static import the race is gone and this
+        // guard is obsolete — better to fail here and have that conversation
+        // than to keep enforcing a wait for a chunk that no longer exists.
+        //
+        // It WAS static when the treatment form first landed, which put the
+        // whole MapLibre bundle in the journal LIST page's chunk for every
+        // farmer; the other three map sites all use `dynamic` with
+        // `ssr: false`.
+        const modal = fs.readFileSync(
+            path.join(ROOT, 'src/app/t/[tenantSlug]/(app)/journal/TreatmentEntryModal.tsx'),
+            'utf8',
+        );
+        expect(modal).toMatch(/const MapCanvas = dynamic\(/);
+        expect(modal).toContain('ssr: false');
+    });
+
+    it('the editor is still lazy in the EDIT form, which kept it (#730)', () => {
         const modal = fs.readFileSync(
             path.join(ROOT, 'src/app/t/[tenantSlug]/(app)/journal/JournalEntryModal.tsx'),
             'utf8',
