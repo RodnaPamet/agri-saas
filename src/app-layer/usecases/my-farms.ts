@@ -45,12 +45,39 @@
 import prisma from '@/lib/prisma';
 import type { Role } from '@prisma/client';
 import { isPlatformTenant } from '@/lib/auth/platform-support';
+import { computePermissions, type Permissions } from '@/lib/tenant-context';
 
 export interface MyFarm {
     id: string;
     slug: string;
     name: string;
     role: Role;
+    /**
+     * The coarse permission tier FOR THIS FARM (#1768).
+     *
+     * Here for the same reason `isPlatform` is, and the reasoning below about
+     * that flag applies unchanged: `/api/auth/me` has no tenant in its path,
+     * so the membership it describes is the user's OLDEST active one. It
+     * carries a `permissions` object too, and for anyone holding two farms
+     * with different roles that object is the wrong farm's — an EDITOR of the
+     * farm they have open, who was a READER of the farm they joined first,
+     * is told they cannot write.
+     *
+     * The web is unaffected because the slug is in the URL. The phone takes
+     * the open farm's role from THIS list, so without this field it has to
+     * reimplement the role ladder to decide whether to show a write control —
+     * a second copy of an authorisation rule, which drifts, and which when it
+     * drifts permissive shows a farmer a button whose request is refused
+     * after they have typed into it.
+     *
+     * ADVISORY. It decides whether to render a control, never whether a write
+     * is allowed: the server gate stays the authority, and a client acting on
+     * a stale value is told why by `WRITE_FORBIDDEN_FOR_ROLE`.
+     *
+     * No extra query — `role` is already selected per row, and
+     * `computePermissions` is a pure function of it.
+     */
+    permissions: Permissions;
     /**
      * Is this the designated platform farm? (#1587 contract v1.1 (e))
      *
@@ -111,6 +138,7 @@ export async function listMyFarms(userId: string): Promise<MyFarm[]> {
         slug: m.tenant.slug,
         name: m.tenant.name,
         role: m.role,
+        permissions: computePermissions(m.role),
         // Computed per row from the env var rather than stored on the tenant:
         // which farm is the platform one is DEPLOYMENT configuration, not a
         // property of the farm, and a stored flag would survive a var change

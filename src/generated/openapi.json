@@ -8838,6 +8838,34 @@
                   "type": "string",
                   "example": "ЗК ПОБЕДА"
                 },
+                "permissions": {
+                  "type": "object",
+                  "properties": {
+                    "canRead": {
+                      "type": "boolean"
+                    },
+                    "canWrite": {
+                      "type": "boolean"
+                    },
+                    "canAdmin": {
+                      "type": "boolean"
+                    },
+                    "canAudit": {
+                      "type": "boolean"
+                    },
+                    "canExport": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "canRead",
+                    "canWrite",
+                    "canAdmin",
+                    "canAudit",
+                    "canExport"
+                  ],
+                  "description": "The coarse permission tier FOR THIS FARM (#1768). Use it to decide whether to render a write control, and nothing else — it is ADVISORY: the server gate is the authority, and a client acting on a stale value is told why by `WRITE_FORBIDDEN_FOR_ROLE`. It is here rather than only on `GET /api/auth/me` for the same reason `isPlatform` is: that endpoint has no tenant in its path and resolves “the” tenant as the caller’s OLDEST membership, so its `permissions` describe the wrong farm for anyone holding two with different roles — an EDITOR of the farm they have open who was a READER of the farm they joined first is told they cannot write. Derived from this row’s `role`, so it costs no extra query and cannot disagree with it. Read it as optional: an older server omits it."
+                },
                 "isPlatform": {
                   "type": "boolean",
                   "description": "Is this the designated platform farm? (#1587) Offer an admin price console when the OPEN farm’s row has `isPlatform: true` AND its `role` is `OWNER` or `ADMIN`. False for every farm when the deployment names no platform farm, matching the server gate’s fail-closed behaviour. It decides what a client OFFERS and never what is allowed — every platform route still enforces its own gate and 404s outside that farm, so a client that ignored this gets the same refusal it would have got anyway. Read it as optional: an older server omits it, and absent means false. It is deliberately NOT on `GET /api/auth/me` — that endpoint has no tenant in its path and resolves \"the\" tenant as the caller’s OLDEST membership, so a boolean there would have been false for the owner exactly while they had the platform farm open."
@@ -8852,6 +8880,7 @@
                 "id",
                 "slug",
                 "name",
+                "permissions",
                 "isPlatform",
                 "role"
               ]
