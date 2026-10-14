@@ -201,24 +201,6 @@ const PUBLIC_PATH_PREFIXES = [
 ];
 
 const PUBLIC_PATH_EXACT = new Set([
-    // Apple's Universal Links association document (#1763).
-    //
-    // Fetched by Apple's CDN with NO credential, and it must answer 200 with
-    // `application/json` — a redirect is a hard failure. Without this entry
-    // the Edge sends it to `/login` and **no link to this domain can open the
-    // iOS app at all**: every shared link, every link in an email, falls back
-    // to Safari. Measured on production before the fix:
-    //
-    //     307 -> /login?next=%2F.well-known%2Fapple-app-site-association
-    //
-    // EXACT, not a `/.well-known/` prefix — opening that segment would also
-    // open whatever lands under it next, and this is the only thing there.
-    //
-    // It is a static file under `public/`, so there is no handler to
-    // self-authenticate; its content is a public document by design. The
-    // `STATIC_EXTENSIONS` branch of `isPublicPath` does NOT cover it, because
-    // Apple requires the path to have no extension.
-    '/.well-known/apple-app-site-association',
 
     // The landing page (P3.8). EXACT, so ONLY the root opens — no prefix, and
     // nothing under `/` inherits it.
