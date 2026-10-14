@@ -4,7 +4,7 @@ import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { createTask, addTaskLink } from './task';
-import { badRequest, codedBadRequest, codedNotFound } from '@/lib/errors/types';
+import { codedBadRequest, codedNotFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { cachedListRead, bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 import {
@@ -95,15 +95,33 @@ export async function listSeasons(ctx: RequestContext, opts: { take?: number } =
 export async function createSeason(ctx: RequestContext, input: CreateSeasonInput) {
     assertCanWrite(ctx);
     const name = sanitizePlainText(input.name);
-    if (!name) throw badRequest('Season name is required');
+    if (!name) throw codedBadRequest('SEASON_NAME_REQUIRED', 'A season name is required.');
     const notes = input.notes != null ? sanitizePlainText(input.notes) : null;
 
     const start = new Date(input.startDate);
     const end = new Date(input.endDate);
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-        throw badRequest('Season start and end must be valid dates');
+        // `params.field` names WHICH date failed, because this one check covers
+        // two inputs and "a date is invalid" leaves the client guessing which
+        // of the two to fix. Both are reported when both are bad.
+        const bad = [
+            ...(Number.isNaN(start.getTime()) ? ['startDate'] : []),
+            ...(Number.isNaN(end.getTime()) ? ['endDate'] : []),
+        ];
+        throw codedBadRequest('SEASON_INVALID_DATE', 'Season start and end must be valid dates.', {
+            field: bad.join(','),
+        });
     }
-    if (end < start) throw badRequest('Season end date must be on or after the start date');
+    // A DIFFERENT refusal from the one above, not a variant of it: both dates
+    // parsed, and the window they describe runs backwards. A client that
+    // conflated them would re-prompt for a malformed date the operator typed
+    // correctly.
+    if (end < start) {
+        throw codedBadRequest(
+            'SEASON_WINDOW_INVERTED',
+            'The season end date must be on or after the start date.',
+        );
+    }
 
     return runInTenantContext(ctx, async (db) => {
         const season = await db.season.create({
@@ -139,10 +157,16 @@ export async function updateSeason(ctx: RequestContext, id: string, input: Updat
     const data: Prisma.SeasonUncheckedUpdateInput = {};
     if (input.name !== undefined) {
         const name = sanitizePlainText(input.name);
-        if (!name) throw badRequest('Season name is required');
+        if (!name) throw codedBadRequest('SEASON_NAME_REQUIRED', 'A season name is required.');
         data.name = name;
     }
     if (input.year !== undefined) data.year = input.year;
+    // #1826 — these two are NOT validated, where `createSeason` validates
+    // both: an unparseable date reaches Prisma as `Invalid Date`, and an
+    // update that leaves the window running backwards is accepted. Left as
+    // found because tightening it changes which requests are refused and
+    // there may be rows already in that state. `SEASON_INVALID_DATE` and
+    // `SEASON_WINDOW_INVERTED` already exist for it when someone does.
     if (input.startDate !== undefined) data.startDate = new Date(input.startDate);
     if (input.endDate !== undefined) data.endDate = new Date(input.endDate);
     if (input.status !== undefined) data.status = input.status;
@@ -213,7 +237,7 @@ export interface CreateCropTypeInput {
 export async function createCropType(ctx: RequestContext, input: CreateCropTypeInput) {
     assertCanWrite(ctx);
     const name = sanitizePlainText(input.name);
-    if (!name) throw badRequest('Crop type name is required');
+    if (!name) throw codedBadRequest('CROP_TYPE_NAME_REQUIRED', 'A crop name is required.');
 
     const created = await runInTenantContext(ctx, async (db) => {
         const cropType = await db.cropType.create({
@@ -302,7 +326,7 @@ export interface CreateCropVarietyInput {
 export async function createCropVariety(ctx: RequestContext, input: CreateCropVarietyInput) {
     assertCanWrite(ctx);
     const name = sanitizePlainText(input.name);
-    if (!name) throw badRequest('Variety name is required');
+    if (!name) throw codedBadRequest('VARIETY_NAME_REQUIRED', 'A variety name is required.');
 
     const created = await runInTenantContext(ctx, async (db) => {
         // Tenant-scope the parent crop type via the RLS-bound session.
@@ -460,9 +484,13 @@ export async function getCropPlan(ctx: RequestContext, id: string) {
 export async function createCropPlan(ctx: RequestContext, input: CreateCropPlanInput) {
     assertCanWrite(ctx);
     const name = sanitizePlainText(input.name);
-    if (!name) throw badRequest('Crop plan name is required');
+    if (!name) throw codedBadRequest('CROP_PLAN_NAME_REQUIRED', 'A crop plan name is required.');
     const firstSow = new Date(input.firstSowDate);
-    if (Number.isNaN(firstSow.getTime())) throw badRequest('First sow date must be a valid date');
+    if (Number.isNaN(firstSow.getTime())) {
+        throw codedBadRequest('CROP_PLAN_INVALID_DATE', 'The first sow date must be a valid date.', {
+            field: 'firstSowDate',
+        });
+    }
     const notes = input.notes != null ? sanitizePlainText(input.notes) : null;
 
     return runInTenantContext(ctx, async (db) => {
@@ -543,7 +571,7 @@ export async function updateCropPlan(ctx: RequestContext, id: string, input: Upd
     const data: Prisma.CropPlanUncheckedUpdateInput = {};
     if (input.name !== undefined) {
         const name = sanitizePlainText(input.name);
-        if (!name) throw badRequest('Crop plan name is required');
+        if (!name) throw codedBadRequest('CROP_PLAN_NAME_REQUIRED', 'A crop plan name is required.');
         data.name = name;
     }
     if (input.cropVarietyId !== undefined) data.cropVarietyId = input.cropVarietyId;
@@ -552,7 +580,13 @@ export async function updateCropPlan(ctx: RequestContext, id: string, input: Upd
     if (input.method !== undefined) data.method = input.method;
     if (input.firstSowDate !== undefined) {
         const d = new Date(input.firstSowDate);
-        if (Number.isNaN(d.getTime())) throw badRequest('First sow date must be a valid date');
+        if (Number.isNaN(d.getTime())) {
+            throw codedBadRequest(
+                'CROP_PLAN_INVALID_DATE',
+                'The first sow date must be a valid date.',
+                { field: 'firstSowDate' },
+            );
+        }
         data.firstSowDate = d;
     }
     if (input.successions !== undefined) data.successions = input.successions;

@@ -503,7 +503,30 @@ export function collectServerAuthoredCopy(root: string, dirs: string[] = ROOTS):
 // both come back null. A code per sentence would have advertised a
 // distinction the server cannot make. `params.requiredStatus` carries the
 // detail instead.
-const CURRENT_BASELINE = 304;
+//
+// 304 → 294 (#1712, crop-planning batch): ten uncoded `badRequest` calls in
+// `usecases/crop-planning.ts` gained SEVEN codes, and the file now has zero
+// uncoded refusals of any helper.
+//
+// Seven and not three, which was the harder call. Six of the ten were "X name
+// is required" and three were "that date is invalid", so a generic
+// `NAME_REQUIRED` + `INVALID_DATE` would have been two codes covering nine
+// sites and two iOS translations instead of six. I went the other way because
+// the existing vocabulary is already domain-prefixed — `CONTRACT_INVALID_DATE`
+// and `COST_ENTRY_INVALID_DATE` coexist deliberately rather than sharing one
+// code, and `FARM_NAME_REQUIRED` is the precedent for a per-entity name code.
+// Introducing generics beside 64 domain-prefixed codes would make the existing
+// ones read as mistakes, and that is a vocabulary decision for the whole repo
+// rather than one a batch should take on the side.
+//
+// One pair IS collapsed, and for the #1800 reason: `CROP_PLAN_INVALID_DATE`
+// covers create and update, because both are the same field failing the same
+// parse. `SEASON_INVALID_DATE` carries `params.field` because its single check
+// covers two inputs, so "a date is invalid" would leave the client guessing
+// which one — and `SEASON_WINDOW_INVERTED` is deliberately separate from it:
+// both dates parsed and the window runs backwards, which is a different
+// refusal, not a variant.
+const CURRENT_BASELINE = 294;
 
 /** Slack tolerated before the sentinel demands the baseline be lowered. */
 const DRIFT_ALLOWANCE = 15;
