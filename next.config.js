@@ -69,6 +69,24 @@ const defaultOptions = {
     async headers() {
         return [
             {
+                // Apple's Universal Links document (#1763).
+                //
+                // The file has NO EXTENSION, which is Apple's requirement, so
+                // static serving cannot infer a type for it — and Apple needs
+                // `application/json` and will not follow a redirect. Without
+                // this entry the bytes are right and the association still
+                // fails, which is the quiet half of this bug.
+                //
+                // `max-age` is short on purpose: Apple's CDN caches the
+                // document, and a wrong app id cached for a day is a day of
+                // links not opening the app.
+                source: '/.well-known/apple-app-site-association',
+                headers: [
+                    { key: 'Content-Type', value: 'application/json' },
+                    { key: 'Cache-Control', value: 'public, max-age=3600' },
+                ],
+            },
+            {
                 // Self-hosted web fonts (#779). Content-hashed by the vendor
                 // script's lock rather than by filename, so `immutable` is a
                 // claim about the FILE not the URL — a font swap changes the
