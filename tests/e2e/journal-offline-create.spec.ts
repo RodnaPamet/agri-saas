@@ -18,13 +18,20 @@
  *
  * ## Why every read happens while ONLINE
  *
- * Step two's crop list and parcel list come from `/parcels/by-crop`. Queuing
- * covers a farmer who loses signal MID-FORM, not one who opens the form with
- * no signal at all — there would be nothing to tick. So the flow here warms
- * both steps online and cuts the network immediately before Save, which is
- * the scenario the outbox actually protects. The same reasoning as the old
- * spec's modal warm-up (#730), for a different reason: there it was a lazy
- * chunk, here it is the data the form is about.
+ * Step two's crop list and parcel list come from `/parcels/by-crop`, which the
+ * web's persistent SWR cache does NOT write: `PERSISTABLE_PATHS` is an
+ * allowlist of `/journal`, `/farm-tasks`, `/locations` and
+ * `/exchange/listings`, and this form's four reads are on none of them
+ * (#1845). So the reads must happen online here, and that is not a quirk of
+ * the fixture — it is what a real device does too.
+ *
+ * Which makes the scenario this spec covers precise: a farmer who loses signal
+ * MID-FORM keeps the work, because the WRITE is queued. A farmer who opens the
+ * form with no signal has nothing to tick, cache or no cache.
+ *
+ * The network is cut immediately before Save, which is the moment the outbox
+ * exists for. Same shape as the old spec's warm-up (#730) for a different
+ * reason: there it was a lazy chunk, here it is data that is never persisted.
  *
  * Mutating spec → isolated empty tenant, so the farm data is created here.
  */

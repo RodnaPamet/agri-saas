@@ -382,11 +382,23 @@ export function TreatmentEntryModal({ open, setOpen, offlineSubmit, onSaved }: P
              * route the key IS the treatment handle, so the handle is now
              * the outbox id.
              *
-             * What it does NOT make offline-proof is step TWO's reads. The
-             * crop list and the parcels come from `/parcels/by-crop`, so a
-             * farmer who opens this form with no signal at all has nothing
-             * to tick. Queuing covers losing signal mid-form, not starting
-             * without it.
+             * What it does NOT make offline-proof is step TWO's reads,
+             * and the reason is specific rather than general. This form
+             * reads `/catalog/items`, `/catalog/units` and
+             * `/parcels/by-crop`; the web's persistent SWR cache
+             * (`src/lib/swr/persistent-cache.ts`) writes only an
+             * ALLOWLIST — `PERSISTABLE_PATHS` is `/journal`,
+             * `/farm-tasks`, `/locations`, `/exchange/listings` — so none
+             * of this form's four reads is on disk at all.
+             *
+             * So queuing covers losing signal MID-FORM, not opening the
+             * form without signal: step two would have no crops to pick
+             * and no parcels to tick (#1845).
+             *
+             * Recorded with its mechanism because I got this wrong twice:
+             * first asserting the limit without checking, then "correcting"
+             * it on finding that a persistence layer exists — without
+             * checking whether it covers these keys. It does not.
              */
             const delivery = await offlineSubmit({
                 url: apiUrl('/journal/treatments'),
