@@ -31,6 +31,22 @@ export interface EmailMessage {
     html?: string;
     from?: string;   // Override default sender
     bcc?: string;    // Compliance mailbox BCC
+    /**
+     * Where a reply should go, when that is not the sender (#1667).
+     *
+     * Added for the DSA Art 17 statement of reasons, which names an address a
+     * person may write to for redress. The sender is the deployment's
+     * `RESEND_FROM`/`SMTP_FROM`, and a person who hits Reply rather than
+     * copying the address out of the body lands there — which on this
+     * deployment BOUNCES, because every `agrent.bg` recipient does (#1760).
+     * So the redress route the notice names worked and the one a person
+     * actually uses did not.
+     *
+     * Optional, and unset everywhere else on purpose: for ordinary mail the
+     * sender IS the right reply target, and a blanket `replyTo` would reroute
+     * conversations nobody asked to move.
+     */
+    replyTo?: string;
     attachments?: EmailAttachment[];  // RQ-10 — e.g. a generated report artefact
 }
 
@@ -131,6 +147,8 @@ export class NodemailerProvider implements EmailProvider {
             text: msg.text,
             ...(msg.html ? { html: msg.html } : {}),
             ...(msg.bcc ? { bcc: msg.bcc } : {}),
+            // nodemailer's own field name, not `reply_to`.
+            ...(msg.replyTo ? { replyTo: msg.replyTo } : {}),
             ...(msg.attachments ? { attachments: msg.attachments } : {}),
         });
     }
@@ -158,6 +176,10 @@ export class ResendProvider implements EmailProvider {
                 text: msg.text,
                 ...(msg.html ? { html: msg.html } : {}),
                 ...(msg.bcc ? { bcc: msg.bcc } : {}),
+                // Resend's API spells it `reply_to`, NOT `replyTo` — an
+                // unknown key is accepted and ignored, so getting this wrong
+                // fails silently and looks exactly like success.
+                ...(msg.replyTo ? { reply_to: msg.replyTo } : {}),
                 ...(msg.attachments
                     ? {
                           attachments: msg.attachments.map((a) => ({

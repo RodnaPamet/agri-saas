@@ -54,7 +54,7 @@ import prisma from '@/lib/prisma';
 import { sendEmail } from '@/lib/mailer';
 import { env } from '@/env';
 import { logger } from '@/lib/observability/logger';
-import { composeStatementBody } from '@/app-layer/usecases/statement-body';
+import { composeStatementBody, resolveRedressAddress } from '@/app-layer/usecases/statement-body';
 import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
 import type { JobRunResult } from './types';
 
@@ -153,7 +153,30 @@ export async function runStatementDispatch(
                 action.rationale,
             );
 
-            await sendEmail({ to: recipient.email, subject, text: body });
+            // `replyTo` is the SAME address the body names for redress, from
+            // the SAME resolver (#1667).
+            //
+            // Art 17(3)(f) requires information on redress, and the statement
+            // names an address to write to. A person who hits Reply instead of
+            // copying it out lands on the deployment's sender — which on this
+            // deployment bounces, because every `agrent.bg` recipient does
+            // (#1760). So the route the notice named worked and the route a
+            // person actually takes did not.
+            //
+            // Resolved rather than configured separately on purpose: two
+            // sources for one address is how the body and the header come to
+            // disagree, and a reply going somewhere the notice never mentioned
+            // is worse than no `replyTo` at all. `null` when nothing is
+            // configured, and the field is then omitted — the body's own
+            // "name an address, or name none" branch already handles that
+            // case, so there is nothing to point at.
+            const redressAddress = resolveRedressAddress();
+            await sendEmail({
+                to: recipient.email,
+                subject,
+                text: body,
+                ...(redressAddress ? { replyTo: redressAddress } : {}),
+            });
 
             // Stamped only AFTER the send resolved, and the body/locale written
             // back so the stored row is what was actually delivered.
