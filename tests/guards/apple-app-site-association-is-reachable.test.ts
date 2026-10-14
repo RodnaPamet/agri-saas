@@ -39,6 +39,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { isPublicPath } from '@/lib/auth/guard';
+import { collectSourceFiles } from '../helpers/collect-files';
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const AASA_PATH = '/.well-known/apple-app-site-association';
@@ -111,16 +112,32 @@ describe('the Apple app-site-association document is reachable and typed', () =>
         // app parses that URL and then record it here. A claim the app does
         // not handle is a page nobody can open; a page the app handles and
         // does not claim is merely a missed deep link.
-        const appDir = path.join(REPO_ROOT, 'src', 'app');
-        const topLevel = fs
-            .readdirSync(appDir, { withFileTypes: true })
-            .filter((e) => e.isDirectory())
-            .map((e) => e.name)
-            // Route groups `(app)` and dynamic `[slug]` are not literal URL
-            // segments; `api` is server-only and never a page.
-            .filter((n) => !n.startsWith('(') && !n.startsWith('[') && n !== 'api');
+        // Derived from the PAGE FILES, via the shared collector, which
+        // refuses an empty result. A hand-rolled `readdirSync` here was the
+        // first version and `file-collection-is-not-silently-empty` rejected
+        // it — correctly: a collector that can be gutted to return `[]`
+        // leaves every assertion built on it green. Reading the pages is
+        // also more accurate than reading directory names, since a directory
+        // without a `page.tsx` is not a URL.
+        const pages = collectSourceFiles({ roots: ['src/app'], extensions: ['.tsx'] })
+            .map((f) => f.replace(/\\/g, '/'))
+            .filter((f) => f.endsWith('/page.tsx'));
 
-        expect(topLevel.length).toBeGreaterThan(3); // the walk still finds routes
+        const topLevel = [
+            ...new Set(
+                pages
+                    .map((f) => f.split('src/app/')[1]?.split('/')[0])
+                    .filter((seg): seg is string => Boolean(seg))
+                    // Route groups `(app)` and dynamic `[slug]` are not
+                    // literal URL segments; `api` serves no pages.
+                    .filter((seg) => !seg.startsWith('(') && !seg.startsWith('[') && seg !== 'api'),
+            ),
+        ];
+
+        // The collector refuses an empty result, but it cannot know this
+        // DERIVATION kept anything — a changed layout would leave the filter
+        // matching nothing and the collision check would pass over zero.
+        expect(topLevel.length).toBeGreaterThan(3);
 
         const doc = JSON.parse(fs.readFileSync(FILE, 'utf8'));
         const claims: string[] = doc.applinks.details.flatMap(
