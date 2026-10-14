@@ -1481,6 +1481,16 @@
       "documented": true
     },
     {
+      "path": "/api/t/{tenantSlug}/journal/treatments",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/journal/treatments/{treatmentGroupId}",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/journal/{id}",
       "status": "live",
       "documented": true

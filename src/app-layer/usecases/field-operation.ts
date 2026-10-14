@@ -364,6 +364,21 @@ export async function createFieldOperation(
     locationId: string,
     input: CreateFieldOperationInput,
     idempotencyKey?: string | null,
+    /**
+     * For a caller that is recording work already DONE rather than handing it
+     * to an operator (#1740's diary treatment).
+     *
+     * `suppressAssignmentNotification` exists because this function requires
+     * an assignee, so a diary record's only honest assignee is the person
+     * typing it — and they would otherwise be emailed and belled about work
+     * they had just finished recording. See #1755 for the general case:
+     * nothing compares the assignee against the actor, so ANY self-assignment
+     * notifies today.
+     *
+     * `treatmentGroupId` stamps the task as one block's share of a treatment,
+     * so the N tasks of one record share a handle.
+     */
+    opts?: { suppressAssignmentNotification?: boolean; treatmentGroupId?: string },
 ) {
     assertCanWrite(ctx);
 
@@ -494,6 +509,9 @@ export async function createFieldOperation(
                 dueAt: input.dueAt ?? null,
                 description: input.targetNote ?? null,
                 clientMutationId: idempotencyKey ?? null,
+                ...(opts?.suppressAssignmentNotification
+                    ? { suppressAssignmentNotification: true }
+                    : {}),
             });
         } catch (err) {
             // Race backstop — two replays of the same queued job hit the unique
@@ -551,6 +569,16 @@ export async function createFieldOperation(
                 operationType: opType,
                 ...(input.applicationTechnique !== undefined
                     ? { applicationTechnique: input.applicationTechnique }
+                    : {}),
+                // The treatment handle, when this task is one block's share
+                // of a diary record (#1740). Written HERE rather than by the
+                // caller afterwards so it commits in the same transaction as
+                // the location link and the prescription lines: a task that
+                // survived with lines but no handle would be invisible to the
+                // PDF and the list, which is the partial-commit shape this
+                // function already documents at length for the link itself.
+                ...(opts?.treatmentGroupId
+                    ? { treatmentGroupId: opts.treatmentGroupId }
                     : {}),
             },
         });
