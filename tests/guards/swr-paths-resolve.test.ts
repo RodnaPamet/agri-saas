@@ -27,8 +27,9 @@
  * `src/app/api/t/[tenantSlug]/`, matching a literal segment exactly or a
  * dynamic one (`[id]`) for any single segment.
  *
- * The test PRINTS how many paths it resolved and how many it skipped, because
- * a scanner that silently finds nothing passes. Skipped means a non-literal
+ * Both populations come from `tests/helpers/collect-files.ts`, which refuses
+ * an empty result, and the test PRINTS how many paths it resolved and how many
+ * it skipped — because a scanner that silently finds nothing passes. Skipped means a non-literal
  * key — `` `/journal/${id}` `` or a variable — which this cannot resolve
  * without evaluating the expression; those are reported, not hidden, so a
  * refactor that turns every call into a template literal shows up as the
@@ -37,27 +38,35 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { blankNonCode } from '../helpers/blank-non-code';
+import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
 
-const ROOT = path.resolve(__dirname, '../..');
-const API_ROOT = path.join(ROOT, 'src/app/api/t/[tenantSlug]');
+const ROOT = REPO_ROOT;
+const API_ROOT = 'src/app/api/t/[tenantSlug]';
 
-/** Every route directory under the tenant API, as segment arrays. */
+/**
+ * Both populations come from `collectSourceFiles`, which refuses an empty
+ * result — required by `file-collection-is-not-silently-empty`, and for the
+ * reason it gives: a collector written by hand here can be gutted to return
+ * nothing with every assertion below still green, measured across 81% of the
+ * guards an automated sweep could audit. This guard's first version walked
+ * the tree itself and that meta-guard failed it on CI, which is the system
+ * working.
+ *
+ * The route scan passes `extensions: ['route.ts']` — the helper matches by
+ * SUFFIX, so a filename works where an extension is expected.
+ */
 function routeSegments(): string[][] {
-    const out: string[][] = [];
-    const walk = (dir: string, segs: string[]) => {
-        if (!fs.existsSync(dir)) {
-            throw new Error(
-                `API root does not exist: ${dir} — a renamed root would resolve ZERO ` +
-                    `routes and fail everything, or (worse) be "fixed" by deleting this guard.`,
-            );
-        }
-        for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-            if (e.name === 'route.ts' && e.isFile()) out.push(segs);
-            else if (e.isDirectory()) walk(path.join(dir, e.name), [...segs, e.name]);
-        }
-    };
-    walk(API_ROOT, []);
-    return out;
+    return collectSourceFiles({
+        roots: [API_ROOT],
+        extensions: ['route.ts'],
+        floor: 100,
+        what: 'tenant API routes',
+    }).map((abs) =>
+        path
+            .relative(path.join(ROOT, API_ROOT), abs)
+            .split(path.sep)
+            .slice(0, -1), // drop the `route.ts` filename
+    );
 }
 
 /** Does a client path match a route, treating `[x]` as one wildcard segment? */
@@ -75,41 +84,34 @@ interface Found {
     raw: string;
 }
 
-/** Literal `useTenantSWR('…')` / `usePrefetchTenant()('…')` first arguments. */
+/** Literal `useTenantSWR('…')` first arguments, comments blanked. */
 function scanClientPaths(): { literal: Found[]; skipped: Found[] } {
     const literal: Found[] = [];
     const skipped: Found[] = [];
-    const walk = (dir: string) => {
-        for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-            const full = path.join(dir, e.name);
-            if (e.isDirectory()) {
-                if (e.name === 'node_modules') continue;
-                walk(full);
-            } else if (e.name.endsWith('.ts') || e.name.endsWith('.tsx')) {
-                // COMMENTS BLANKED FIRST, via the shared helper. `useTenantSWR`'s
-                // own docblock shows `useTenantSWR<…>('/practices')` as its
-                // usage example, and the first version of this guard reported
-                // that prose as an unresolved path — a scar read as a wound.
-                const src = blankNonCode(fs.readFileSync(full, 'utf8'));
-                if (!src.includes('useTenantSWR')) continue;
-                const rel = path.relative(ROOT, full);
-                // The first argument, however it is written. A single-quoted
-                // literal is resolvable; anything else is reported as skipped.
-                for (const m of src.matchAll(/useTenantSWR\s*(?:<[^>]*>)?\s*\(\s*([^,)]*)/g)) {
-                    const arg = m[1].trim();
-                    // `open ? '/items' : null` — take the literal inside a
-                    // ternary, which is how every conditional read is written
-                    // here. Without this the commonest shape in the codebase
-                    // would be skipped and the guard would cover almost
-                    // nothing while passing.
-                    const lit = /'(\/[^']*)'/.exec(arg);
-                    if (lit && !arg.includes('${')) literal.push({ file: rel, raw: lit[1] });
-                    else skipped.push({ file: rel, raw: arg.slice(0, 60) });
-                }
-            }
+    for (const full of collectSourceFiles({
+        roots: ['src'],
+        extensions: ['.ts', '.tsx'],
+        floor: 500,
+        what: 'client source files',
+    })) {
+        // COMMENTS BLANKED FIRST, via the shared helper. `useTenantSWR`'s own
+        // docblock shows `useTenantSWR<…>('/practices')` as its usage example,
+        // and this guard's first run reported that prose as an unresolved
+        // path — a scar read as a wound.
+        const src = blankNonCode(fs.readFileSync(full, 'utf8'));
+        if (!src.includes('useTenantSWR')) continue;
+        const rel = path.relative(ROOT, full);
+        for (const m of src.matchAll(/useTenantSWR\s*(?:<[^>]*>)?\s*\(\s*([^,)]*)/g)) {
+            const arg = m[1].trim();
+            // `open ? '/items' : null` — take the literal inside a ternary,
+            // which is how every conditional read here is written. Without
+            // this the commonest shape in the codebase would be skipped and
+            // the guard would cover almost nothing while passing.
+            const lit = /'(\/[^']*)'/.exec(arg);
+            if (lit && !arg.includes('${')) literal.push({ file: rel, raw: lit[1] });
+            else skipped.push({ file: rel, raw: arg.slice(0, 60) });
         }
-    };
-    walk(path.join(ROOT, 'src'));
+    }
     return { literal, skipped };
 }
 
