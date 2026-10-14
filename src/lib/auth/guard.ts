@@ -10,10 +10,6 @@ import { sanitizeRedirectPath } from './safe-redirect';
 // ─── Public path allowlist ───
 
 export const PUBLIC_PATH_PREFIXES = [
-    '/login',
-    '/register',
-    '/forgot-password',  // Password-reset request page — unauthenticated users must reach it
-    '/reset-password',   // Password-reset confirm page — reached from an emailed token link
     // P6.5 (#1814) — a farm's PUBLIC page, `/f/[handle]`. The whole point is
     // that a stranger with a shared link or a printed QR code reaches it with
     // no session.
@@ -34,40 +30,10 @@ export const PUBLIC_PATH_PREFIXES = [
     // cost of a prefix and it is the right trade here, because every path
     // under `/f/` is by definition a published profile.
     '/f',
-    '/no-tenant',        // Landing page for uninvited users — must not gate-loop
-    '/tenants',          // R-1: tenant picker — must be reachable before active-tenant is set
     '/invite/',          // Invite preview page (tenant + org) — public so unauthenticated users can see invite details
     '/api/auth',         // Auth.js callbacks, session, csrf, providers
     '/api/invites/',     // Tenant invite redemption API (public) + start-signin cookie setter
     '/api/org/invite/',  // Org invite API (public) — start-signin cookie setter + accept-redirect, mirrors /api/invites/
-    '/api/health',       // Health check (no auth) — deprecated alias
-    '/api/livez',        // Liveness probe (no auth)
-    '/api/readyz',       // Readiness probe (no auth)
-    '/api/metrics',      // web-vitals telemetry sink (no auth — anonymous RUM beacons)
-    CSP_REPORT_PATH,     // CSP violation sink. Same class as /api/metrics: a browser
-                         // posts violation reports with NO credentials, so `getToken()`
-                         // returned null and the Edge 401'd every one of them — from the
-                         // day the feature shipped (2026-03-21) until #704. The ring
-                         // buffer was permanently empty, the admin summary permanently
-                         // zero, and `csp.ts:16` told operators to "monitor" something
-                         // that could not happen; five months of CSP tightening shipped
-                         // with its safety net disconnected.
-                         //
-                         // Spelled as the CONSTANT, not a literal, and that is
-                         // load-bearing. The same value goes into three response headers
-                         // — `report-uri` (csp.ts:184), `Report-To` and
-                         // `Reporting-Endpoints` (middleware.ts:515-522) — so a literal
-                         // here could drift from what browsers are actually told. The
-                         // duplicated-literal shape is exactly what produced this bug;
-                         // `/api/metrics` still has it (three literals, no constant).
-                         //
-                         // Direction B of `public-routes-self-authenticate` applies: the
-                         // POST is designed anonymous (per-IP rate limit, 16 KB cap,
-                         // always 204, never leaks state), and the GET summary
-                         // authenticates itself with `verifyPlatformApiKey` — it used to
-                         // rely on this very gate, so opening the prefix without that
-                         // would have published every reporter's IP and User-Agent.
-    '/api/staging/seed', // Staging seed endpoint (token-gated internally)
     '/api/scim/',        // SCIM 2.0 provisioning (RFC 7644). Every request carries a
                          // tenant-scoped OPAQUE bearer token, not a NextAuth JWE, so
                          // `getToken()` below cannot validate one and returns null —
@@ -186,37 +152,7 @@ export const PUBLIC_PATH_PREFIXES = [
     // Stripe throws, AV 500s in production, integrations 401. That is
     // enforced, not remembered, by
     // `tests/guards/public-routes-self-authenticate.test.ts`.
-    '/api/stripe/webhook',
-    '/api/storage/av-webhook',
     '/api/integrations/webhooks/',
-    // P3.7 — runs while someone types their ЕИК into the registration form,
-    // before any account exists. EXACT, not a `/api/public/` prefix: a prefix
-    // would open every future neighbour under it by accident, and this is the
-    // only route there that has been argued for.
-    '/api/public/eik-check',
-    // P5.2 — the anonymous DSA Art 16 notice form (#1745). Spelled in full for
-    // the reason above: `/api/public/` as a prefix would open every future
-    // neighbour by accident.
-    //
-    // **This was missing and the route 401'd for seven weeks.** Art 16 requires
-    // a mechanism ANY person or entity can use to notify illegal content, so
-    // an account requirement is an account requirement on exercising a right —
-    // and the Edge calls `getToken()`, which understands only a NextAuth
-    // cookie, so every anonymous notice was refused before the handler ran.
-    // Measured on production: `POST /api/public/notices` → 401, three times.
-    //
-    // The eighth instance of the Epic C.1a/b/c class, and the one that shows
-    // why the rule is TWO halves: the handler side was argued for carefully in
-    // `public-routes-self-authenticate.test.ts` ("anonymous by design, and by
-    // LEGAL DUTY"), and that argument is about the handler. Nothing asked
-    // whether the Edge agreed. `public-route-exemptions-are-edge-reachable`
-    // now joins the two lists.
-    '/api/public/notices',
-    '/privacy',          // Privacy notice — MUST be readable without an account:
-                         // the promotions consent box links to it before a
-                         // request is submitted, and a prospective user has to
-                         // be able to read it before signing up. It renders no
-                         // tenant data, so there is nothing to gate.
     '/_next',            // Next.js internals
 ];
 
@@ -343,6 +279,131 @@ export const PUBLIC_PATH_EXACT = new Set([
     // not apply: it is not an API route, and the document is published by
     // design rather than protected.
     '/.well-known/apple-app-site-association',
+
+    // ══ Narrowed from PUBLIC_PATH_PREFIXES (#1838) ══
+    //
+    // Every entry below serves exactly ONE path, with no route beneath it.
+    // They sat in the prefix list, which is fail-open: a prefix claims a
+    // SUBTREE, so the next route added under any of them would have been
+    // public by inheritance with nobody deciding. Nothing existed under them,
+    // so there was no hole to exploit — which is precisely why it would have
+    // gone unnoticed. An unauthenticated route looks exactly like a working
+    // one.
+    //
+    // The adjacency was part of the mechanism: a dozen single-path entries
+    // sitting in the prefix list made the prefix list look like where a
+    // single path goes. `public-prefix-claims-its-subtree` now derives the
+    // question from the route tree — does a route sit AT the entry path, or
+    // BENEATH it? — so the list cannot drift back.
+    //
+    // Narrowing a claim could not be done at all until `isPublicPath`
+    // stripped the query once: `matchesPublicPrefix` treated `?` as a
+    // boundary and a `Set` lookup cannot, so moving `/login` would have
+    // gated `/login?next=…`, the exact URL an unauthenticated visitor is
+    // redirected to.
+
+    // ── auth pages, reachable without a session by definition ──
+    '/login',
+    // No `src/app/register` exists. The only `register` directory is
+    // `src/app/api/auth/register`, already covered by `/api/auth`, so this
+    // entry serves nothing today — kept as an EXACT claim rather than
+    // deleted, because narrowing is behaviour-preserving for the one path
+    // `guard.test.ts` pins while deleting would change it.
+    '/register',
+    '/forgot-password', // Password-reset request — unauthenticated users must reach it
+    '/reset-password', // Password-reset confirm — reached from an emailed token link
+    '/no-tenant', // Landing page for uninvited users — must not gate-loop
+    '/tenants', // R-1: tenant picker — reachable before active-tenant is set
+
+    // Privacy notice — MUST be readable without an account: the promotions
+    // consent box links to it before a request is submitted, and a
+    // prospective user has to be able to read it before signing up. It
+    // renders no tenant data, so there is nothing to gate.
+    '/privacy',
+
+    // ── probes and sinks, anonymous by design ──
+    '/api/health', // Health check (no auth) — deprecated alias
+    '/api/livez', // Liveness probe (no auth)
+    '/api/readyz', // Readiness probe (no auth)
+    '/api/metrics', // web-vitals telemetry sink — anonymous RUM beacons
+    '/api/staging/seed', // Staging seed endpoint (token-gated internally)
+
+    // CSP violation sink. Same class as `/api/metrics`: a browser posts
+    // violation reports with NO credentials, so `getToken()` returned null
+    // and the Edge 401'd every one of them — from the day the feature
+    // shipped (2026-03-21) until #704. The ring buffer was permanently
+    // empty, the admin summary permanently zero, and `csp.ts:16` told
+    // operators to "monitor" something that could not happen; five months of
+    // CSP tightening shipped with its safety net disconnected.
+    //
+    // Spelled as the CONSTANT, not a literal, and that is load-bearing. The
+    // same value goes into three response headers — `report-uri`, `Report-To`
+    // and `Reporting-Endpoints` — so a literal here could drift from what
+    // browsers are actually told. The duplicated-literal shape is exactly
+    // what produced that bug; `/api/metrics` still has it.
+    //
+    // Being a constant also hid it from the guard that was supposed to cover
+    // it: `public-prefix-segment-boundary` harvested entries with a
+    // quoted-literal regex and swept 32 of 33 (#1848). The lists are read as
+    // VALUES now.
+    //
+    // Direction B of `public-routes-self-authenticate` applies: the POST is
+    // designed anonymous (per-IP rate limit, 16 KB cap, always 204, never
+    // leaks state), and the GET summary authenticates itself with
+    // `verifyPlatformApiKey`.
+    CSP_REPORT_PATH,
+
+    // ── signed webhooks ──
+    //
+    // Each verifies its OWN credential — a Stripe signature, an HMAC-SHA256
+    // over the raw body — and neither can carry a NextAuth session cookie,
+    // because the sender is Stripe or the AV scanner. So `getToken()`
+    // returned null and both were refused at the Edge before their handler
+    // ran. They had NEVER been delivered.
+    //
+    // Verified by driving the real middleware: both answered
+    // `401 {"error":"Unauthorized"}` — `unauthorizedJson()`, not the
+    // handler's own refusal. Latent rather than live on the current
+    // deployment (Stripe is unconfigured, AV scanning disabled), which is
+    // exactly what let it survive: it fails SILENTLY on the day someone
+    // turns either on.
+    //
+    // Opening the Edge here is safe only because every handler
+    // self-authenticates and fails CLOSED with no secret configured —
+    // Stripe throws, AV 500s in production. That is enforced, not
+    // remembered, by `tests/guards/public-routes-self-authenticate.test.ts`.
+    //
+    // `/api/integrations/webhooks/` stays a PREFIX and keeps the third share
+    // of that argument, because its route is `[provider]` — a subtree claim
+    // is what it means.
+    '/api/stripe/webhook',
+    '/api/storage/av-webhook',
+
+    // ── public API, anonymous by design or by legal duty ──
+    //
+    // P3.7 — runs while someone types their ЕИК into the registration form,
+    // before any account exists. EXACT, not a `/api/public/` prefix: a prefix
+    // would open every future neighbour under it by accident, and this is the
+    // only route there that has been argued for.
+    '/api/public/eik-check',
+
+    // P5.2 — the anonymous DSA Art 16 notice form (#1745).
+    //
+    // **This was missing and the route 401'd for seven weeks.** Art 16
+    // requires a mechanism ANY person or entity can use to notify illegal
+    // content, so an account requirement is an account requirement on
+    // exercising a right — and the Edge calls `getToken()`, which understands
+    // only a NextAuth cookie, so every anonymous notice was refused before
+    // the handler ran. Measured on production: `POST /api/public/notices` →
+    // 401, three times.
+    //
+    // The eighth instance of the Epic C.1a/b/c class, and the one that shows
+    // why the rule is TWO halves: the handler side was argued for carefully
+    // in `public-routes-self-authenticate.test.ts` ("anonymous by design, and
+    // by LEGAL DUTY"), and that argument is about the handler. Nothing asked
+    // whether the Edge agreed. `public-route-exemptions-are-edge-reachable`
+    // now joins the two lists.
+    '/api/public/notices',
 ]);
 
 // `webmanifest` — the PWA manifest is fetched by the browser WITHOUT
