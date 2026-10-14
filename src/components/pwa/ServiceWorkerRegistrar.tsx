@@ -27,6 +27,10 @@ export function ServiceWorkerRegistrar() {
     // the new worker's own `activated` statechange, and the fallback timer)
     // so whichever fires first wins and the others are no-ops.
     const reloadedRef = useRef(false);
+    // Set when the operator TAPS "Update ready — refresh". `controllerchange`
+    // cannot distinguish a consented takeover from a first install on its own
+    // (see the listener below), and this is the half it cannot observe.
+    const consentedRef = useRef(false);
     const reloadOnce = useCallback(() => {
         if (reloadedRef.current) return;
         reloadedRef.current = true;
@@ -65,13 +69,49 @@ export function ServiceWorkerRegistrar() {
         if (document.readyState === 'complete') register();
         else window.addEventListener('load', register, { once: true });
 
-        // The waiting worker took practice (after SKIP_WAITING) → reload once so
-        // the page runs the new assets. Guarded against a reload loop. This is
-        // the fast path; `applyUpdate` adds belt-and-braces triggers because
-        // `controllerchange` is documented as unreliable on some browsers
-        // (notably iOS Safari), which would otherwise strand the operator on a
-        // banner whose button "does nothing".
-        const onControllerChange = () => reloadOnce();
+        // A new worker took over → reload once so the page runs the new assets.
+        // Guarded against a reload loop. This is the fast path; `applyUpdate`
+        // adds belt-and-braces triggers because `controllerchange` is
+        // documented as unreliable on some browsers (notably iOS Safari), which
+        // would otherwise strand the operator on a banner whose button "does
+        // nothing".
+        //
+        // This comment used to read "the waiting worker took over (after
+        // SKIP_WAITING)", and that premise is what made the listener
+        // unconditional — it describes only ONE of the two ways the event
+        // arrives. The sibling branches above both guard on
+        // `navigator.serviceWorker.controller` for exactly this distinction
+        // ("it's an update, not the first install"); this listener was the one
+        // place that omitted it.
+        //
+        // Captured AT MOUNT, and that is the whole point: by the time the event
+        // fires, `navigator.serviceWorker.controller` is non-null in BOTH
+        // worlds, so reading it inside the handler cannot tell them apart.
+        const hadControllerAtMount = navigator.serviceWorker.controller !== null;
+        const onControllerChange = () => {
+            // A controller change is worth a reload in exactly two cases, and a
+            // FIRST INSTALL is neither:
+            //
+            //   (a) the page was already controlled — a new worker has taken
+            //       over, so this document is running against assets the new
+            //       worker has superseded;
+            //   (b) the operator consented, which is what the banner drives.
+            //
+            // A first claim replaces nothing: the document was served by the
+            // network and the code it is running is current. `sw.js`'s activate
+            // handler calls `self.clients.claim()` unconditionally, and on a
+            // first visit there is no incumbent to wait for — install skips
+            // `skipWaiting`, but with nothing to wait on the worker activates
+            // and claims straight away. So an unguarded reload here fires on
+            // EVERY first visit, discarding whatever the operator had typed.
+            //
+            // Confirmed mechanism, not a hypothesis: it is the cause recorded
+            // for #1329 in `tests/e2e/known-flakes.json`, found 2026-10-11 by
+            // the theme-first-paint investigation after it had produced three
+            // different symptoms in that one spec.
+            if (!hadControllerAtMount && !consentedRef.current) return;
+            reloadOnce();
+        };
         navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
 
         // Fallback flush trigger for browsers without Background Sync (iOS
@@ -165,6 +205,9 @@ export function ServiceWorkerRegistrar() {
     // as `controllerchange` (fast path), and keep a bounded fallback reload as
     // the last resort. `reloadOnce` collapses whichever fires first.
     const applyUpdate = useCallback(() => {
+        // Record the consent BEFORE anything async: `controllerchange` is the
+        // fast path and can land before `getRegistration()` resolves.
+        consentedRef.current = true;
         const target = (worker: ServiceWorker | null | undefined) => {
             if (!worker) {
                 // No waiting worker to activate (superseded / already gone) —
