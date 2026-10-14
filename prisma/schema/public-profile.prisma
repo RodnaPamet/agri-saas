@@ -66,9 +66,18 @@ model FarmBrand {
   ///
   /// Reserved words, length and character rules are enforced in the
   /// application layer, not here: a CHECK constraint cannot be changed
-  /// without a migration, and the reserved list will grow as routes are
-  /// added (`f`, `go`, `api`, `admin`, `t`, `org`, `_next`,
-  /// `.well-known`).
+  /// without a migration, and the rules are normalisation-dependent —
+  /// `src/lib/public-profile/handle.ts` checks them against the
+  /// TRANSLITERATED slug, which is how the Cyrillic spelling of a
+  /// reserved word is caught.
+  ///
+  /// Note what is NOT reserved. A handle is the SECOND path segment, so
+  /// it cannot collide with a top-level route: `/f/api` is not `/api`.
+  /// An earlier revision of this comment listed `api`, `t`, `org`,
+  /// `_next` and `.well-known`; reserving those would refuse real farms
+  /// their own names for no routing reason. What CAN collide is a future
+  /// static sibling of `[handle]` under `src/app/f/`, and a guard
+  /// derives those from the route tree rather than trusting a list here.
   handle String? @unique
 
   /// Curated public name — deliberately NOT `FarmProfile.producerName`,
