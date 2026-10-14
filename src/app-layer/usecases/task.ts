@@ -530,6 +530,29 @@ async function enqueueTaskAssignedNotification(
     taskType: string,
     assigneeUserId: string,
 ): Promise<void> {
+    // Assigning work to YOURSELF notifies nobody (#1755).
+    //
+    // A farm is mostly one or two people, so the owner creating their own work
+    // is the normal case rather than an edge one — which made this the default
+    // experience for a single-operator farm, and most of them are. The mail
+    // named the recipient as both assignee and assigner.
+    //
+    // The worse cost is to the channel: `TASK_ASSIGNED` exists so an operator
+    // learns about work they did NOT know about. A copy for work they just
+    // typed trains people to ignore the ones that matter.
+    //
+    // Nothing is lost from the record. `assignTask` writes a `TASK_ASSIGNED`
+    // audit entry through `logEvent` INSIDE the transaction, with
+    // `metadata.assigneeUserId`, unconditionally — so who assigned what to
+    // whom survives this guard. What the guard drops is the separate record
+    // that a NOTIFICATION was sent, and for a self-assignment "was the
+    // assignee told?" has an answer nobody needs a row for: they did it.
+    //
+    // Guarded HERE rather than at the two call sites, so a third one inherits
+    // it. #1740's diary-treatment path carries its own narrow suppression for
+    // the same reason and can drop it now.
+    if (assigneeUserId === ctx.userId) return;
+
     try {
         const assignee = await db.user.findUnique({
             where: { id: assigneeUserId },
@@ -661,6 +684,12 @@ async function emitTaskAssignedNotification(
     },
 ): Promise<void> {
     if (!task.assigneeUserId || !ctx.tenantSlug) return;
+    // Self-assignment rings nobody's bell either (#1755). Same reasoning as
+    // the email sibling, and the bell is the sharper case: it appears on the
+    // screen the person is already looking at, one action after they caused
+    // it. The dedupe key below would not have helped — a self-assignment is
+    // not a duplicate of anything, it is a notification nobody needed.
+    if (task.assigneeUserId === ctx.userId) return;
     const tenantSlug = ctx.tenantSlug;
     const assigneeUserId = task.assigneeUserId;
     try {
