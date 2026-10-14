@@ -12,6 +12,7 @@ import { expect, type APIRequestContext, type Page, type Locator } from '@playwr
 import prisma from '@/lib/prisma';
 import { createTenantWithOwner } from '@/app-layer/usecases/tenant-lifecycle';
 import { hashPassword } from '@/lib/auth/passwords';
+import { formatDetailPaintState } from './detail-paint-state';
 import { TERMS_VERSION } from '@/lib/legal/terms';
 
 /**
@@ -800,7 +801,101 @@ export async function expectRouteTransition(
                 (await describeListState(page)),
         );
     }
-    await expect(opts.content).toBeVisible({ timeout: opts.paintTimeout ?? 30_000 });
+    // The paint wait, and the half that actually fails now (#1076).
+    //
+    // Measured 2026-10-14 on two independent PRs: three attempts each, all at
+    // this line, `element(s) not found` after `waitForURL` had SUCCEEDED. The
+    // docblock above predicted exactly that split, and the diagnostics it
+    // describes are attached only to the `waitForURL` catch — so the failing
+    // half produced no evidence at all, while the stated reason for having a
+    // message channel is that the job log survives a flake whose artifact may
+    // not. Wired to the other half now too.
+    //
+    // `describeListState` is deliberately NOT reused: by here the URL wait has
+    // passed, so the page is the DETAIL page and a list's rows and selection
+    // describe a page that is gone.
+    try {
+        await expect(opts.content).toBeVisible({ timeout: opts.paintTimeout ?? 30_000 });
+    } catch (err) {
+        throw new Error(
+            `${(err as Error).message}\n` +
+                `--- #1076 PAINT-wait diagnostics (the URL wait above SUCCEEDED) ---\n` +
+                (await describeDetailPaintState(page, opts.content)),
+        );
+    }
+}
+
+/**
+ * Collect `DetailPaintState` from a page whose detail shell never appeared.
+ *
+ * Tolerant throughout, for the reason `describeListState` records: this runs on
+ * a page that has just failed, and a diagnostic that throws replaces the real
+ * error with its own. Every read is inside the one `try`, and a partial result
+ * is reported rather than discarded.
+ *
+ * The per-field reasoning lives in `./detail-paint-state`, next to the type.
+ */
+async function describeDetailPaintState(page: Page, content: Locator): Promise<string> {
+    let contentCount: number | undefined;
+    try {
+        contentCount = await content.count();
+    } catch {
+        /* a detached frame cannot be counted; leave it unknown */
+    }
+
+    try {
+        const inPage = await page.evaluate(() => {
+            const nav = performance.getEntriesByType('navigation')[0] as
+                | PerformanceNavigationTiming
+                | undefined;
+
+            const counts = new Map<string, number>();
+            for (const el of Array.from(document.querySelectorAll('[data-testid]'))) {
+                const id = el.getAttribute('data-testid');
+                if (id) counts.set(id, (counts.get(id) ?? 0) + 1);
+            }
+            const testids = Array.from(counts.entries())
+                .slice(0, 25)
+                .map(([id, n]) => (n > 1 ? `${id}×${n}` : id));
+
+            // Resource timings whose name contains this page's own path — i.e.
+            // did the route this URL names get fetched at all.
+            const path = location.pathname;
+            const detailRequests = performance
+                .getEntriesByType('resource')
+                .filter((e) => e.name.includes(path))
+                .map((e) => ({ name: e.name.slice(-90), ms: e.duration }));
+
+            return {
+                url: location.href,
+                readyState: document.readyState,
+                navigationType: nav?.type ?? 'unknown',
+                swControlled:
+                    typeof navigator !== 'undefined' && 'serviceWorker' in navigator
+                        ? navigator.serviceWorker.controller !== null
+                        : null,
+                h1: Array.from(document.querySelectorAll('h1'))
+                    .map((h) => (h.textContent ?? '').trim().slice(0, 60))
+                    .filter((t) => t.length > 0),
+                testids,
+                testidTotal: Array.from(counts.values()).reduce((a, b) => a + b, 0),
+                bodyTextLength: document.body?.innerText?.length ?? 0,
+                // Next renders its error overlay into this custom element, so
+                // its presence means a thrown component rather than a timing
+                // problem — a different bug wearing the same symptom.
+                nextErrorOverlay: document.querySelector('nextjs-portal') !== null,
+                detailRequests,
+            };
+        });
+        return formatDetailPaintState({ ...inPage, contentCount });
+    } catch (e) {
+        // Still print what was gathered outside the page — the locator count
+        // alone distinguishes absent from hidden, which is the first question.
+        return (
+            formatDetailPaintState({ contentCount })
+            + `\n  (in-page diagnostics unavailable: ${(e as Error).message.slice(0, 80)})`
+        );
+    }
 }
 
 /**
