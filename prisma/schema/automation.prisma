@@ -47,13 +47,43 @@ model Notification {
 // per (user, endpoint) — a user with two devices has two rows. Tenant-scoped
 // → carries the canonical RLS trio (see the migration). Dead endpoints
 // (410/404 on send) are pruned by the push sender.
+/// Which push transport addresses a device (#1764).
+///
+/// Web Push speaks the W3C protocol to a browser-supplied endpoint; APNs is
+/// HTTP/2 to Apple with a JWT-signed header. They share a recipient lookup and
+/// nothing else, which is why the row carries the discriminator and the
+/// deliverer dispatches on it rather than every sender learning both.
+enum PushPlatform {
+  WEB
+  IOS
+}
+
 model PushSubscription {
   id        String   @id @default(cuid())
   tenantId  String
   userId    String
-  endpoint  String
-  p256dh    String
-  auth      String
+
+  /// Which transport reaches this row (#1764). Defaulted to WEB so every row
+  /// that existed before the column is valid, and so an older image — which
+  /// does not know the column exists — keeps writing rows that satisfy the
+  /// `PushSubscription_web_shape` CHECK.
+  platform  PushPlatform @default(WEB)
+
+  /// Web Push only. Nullable because an APNs row has no endpoint — NOT
+  /// because a Web Push row may omit it: `PushSubscription_web_shape` still
+  /// requires all three of these whenever `platform = WEB`, so the constraint
+  /// the original NOT NULL expressed is intact. Per-platform nullability is
+  /// what let this stay ONE table without weakening either shape.
+  endpoint  String?
+  p256dh    String?
+  auth      String?
+
+  /// APNs only — a 64-hex-character opaque device token, not a URL.
+  /// `PushSubscription_ios_shape` requires it whenever `platform = IOS` and
+  /// forbids it otherwise, so a row cannot carry both transports' fields and
+  /// leave the deliverer's dispatch ambiguous.
+  deviceToken String?
+
   userAgent String?
   createdAt DateTime @default(now())
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -62,7 +92,19 @@ model PushSubscription {
   // tenant-leading so a browser subscribed under two tenants keeps a row per
   // tenant (and the index serves the per-recipient [tenantId, userId] lookup
   // the push sender does).
+  //
+  // UNCHANGED by #1764, and that is deliberate rather than an oversight.
+  // Postgres treats NULLs as DISTINCT in a unique index, so this keeps
+  // constraining Web Push rows exactly as before and simply ignores iOS rows,
+  // whose `endpoint` is NULL. Not dropping it is what makes that migration
+  // strictly additive.
+  //
+  // iOS identity is `[tenantId, userId, deviceToken]` and lives in raw SQL as
+  // a PARTIAL unique index (`PushSubscription_ios_identity`), because Prisma
+  // cannot express one. The client is unaware of it; the database enforces it.
+  // A `prisma migrate diff` will read that as missing — it is not.
   @@unique([tenantId, userId, endpoint])
+  @@index([tenantId, userId, platform])
 }
 
 model ReminderHistory {
