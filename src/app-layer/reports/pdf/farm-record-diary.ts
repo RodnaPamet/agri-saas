@@ -1084,7 +1084,15 @@ export async function gatherFarmRecordData(
         // ── Per-field header data ───────────────────────────────────
         // Every field of the location gets a sheet, blank when nothing was
         // applied to it — on this form that blank sheet IS the record that
-        // nothing was. Ordered by name so a regenerated register is stable.
+        // nothing was.
+        //
+        // Ordered by `name, id` so a regenerated register is stable (#1742).
+        // The comment here used to say "ordered by name so a regenerated
+        // register is stable", which was a property the code did not deliver:
+        // parcel names are not unique and Postgres does not order ties, so two
+        // fields sharing a name could swap SHEETS between generations of the
+        // same ДНЕВНИК. That is a register a farmer submits to БАБХ, so
+        // stability is worth more here than in a picker.
         const parcels = await db.parcel.findMany({
             where: { tenantId: ctx.tenantId, locationId, deletedAt: null },
             select: {
@@ -1097,7 +1105,7 @@ export async function gatherFarmRecordData(
                 locality: true,
                 produceStore: true,
             },
-            orderBy: { name: 'asc' },
+            orderBy: [{ name: 'asc' }, { id: 'asc' }],
             take: MAX_FIELD_SHEETS,
         });
 
