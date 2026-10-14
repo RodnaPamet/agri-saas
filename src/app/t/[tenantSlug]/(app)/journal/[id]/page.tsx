@@ -15,6 +15,7 @@ import { FormField } from '@/components/ui/form-field';
 import { DatePicker, type DateValue } from '@/components/ui/date-picker';
 import { toYMD } from '@/components/ui/date-picker/date-utils';
 import { useToast, useToastWithUndo } from '@/components/ui/hooks';
+import { parseContentDispositionFilename } from '@/lib/http/content-disposition';
 import { Eyebrow, Heading } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
@@ -214,9 +215,14 @@ export default function JournalDetailPage() {
             });
             if (!res.ok) throw new Error('generation failed');
             const blob = await res.blob();
-            const disposition = res.headers.get('Content-Disposition');
-            const m = disposition?.match(/filename="?([^"]+)"?/);
-            const fileName = m?.[1] || `dnevnik-${toYMD(dnevnikFrom)}_${toYMD(dnevnikTo)}.pdf`;
+            // The shared parser (#1833). The regex here was
+            // `/filename="?([^"]+)"?/` — no `=`, so it matched the literal
+            // `filename` inside `filename*=` too, and it never read the
+            // extended form, so every Cyrillic ДНЕВНИК downloaded under its
+            // transliteration.
+            const fileName =
+                parseContentDispositionFilename(res.headers.get('Content-Disposition')) ??
+                `dnevnik-${toYMD(dnevnikFrom)}_${toYMD(dnevnikTo)}.pdf`;
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;

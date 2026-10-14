@@ -133,3 +133,64 @@ describe('§4 the detector can tell the two apart', () => {
         expect(HAND_BUILT.test(codeOnly(`const label = 'attachment';`))).toBe(false);
     });
 });
+
+/**
+ * §5 — the READING direction, added with #1833.
+ *
+ * The same invariant from the other side. Three client sites consumed one of
+ * these headers and two threw the name away: `journal/[id]/page.tsx` matched
+ * `/filename="?([^"]+)"?/` — no `=`, so it also matches the literal
+ * `filename` inside `filename*=` and would capture `*=UTF-8''%D0%94…` as the
+ * name if the parameters were ever emitted in the other order — and
+ * `planning/seasons` ignored the header and built its own name, making the
+ * route's filename dead code at that call site.
+ *
+ * So the server paid to carry «Фактура-2026.pdf» (#1343: eleven header lines,
+ * one of which answered 500 on every Bulgarian-named file) and the browser
+ * saved `faktura-2026.pdf` anyway.
+ *
+ * `parseContentDispositionFilename` lives in the same module as the builder
+ * because the two must agree about `filename*`, and this section stops the
+ * fourth site from rolling its own reader.
+ */
+describe('§5 only the helper READS the header', () => {
+    /** A regex literal mentioning `filename` — i.e. parsing it by hand. */
+    const HAND_ROLLED_READER = /\/[^\n/]*filename[^\n/]*\//;
+
+    it('no site parses a filename out of the header by hand', () => {
+        const offenders = ALL.filter((f) => f !== HELPER).filter((f) =>
+            HAND_ROLLED_READER.test(codeOnly(readFileSync(join(ROOT, f), 'utf8'))),
+        );
+        expect(offenders.join('\n')).toBe('');
+    });
+
+    it('and the three known consumers reach the helper', () => {
+        // Named, so deleting a call site's download affordance shows up here
+        // rather than as a quietly shorter list. These are the three that
+        // handle a `Content-Disposition` from one of the ten building routes.
+        const consumers = [
+            'src/app/t/[tenantSlug]/(app)/journal/JournalClient.tsx',
+            'src/app/t/[tenantSlug]/(app)/journal/[id]/page.tsx',
+            'src/app/t/[tenantSlug]/(app)/planning/seasons/SeasonsClient.tsx',
+        ];
+        for (const f of consumers) {
+            expect(ALL).toContain(f);
+            expect(readFileSync(join(ROOT, f), 'utf8')).toContain(
+                'parseContentDispositionFilename',
+            );
+        }
+    });
+
+    it('the detector can tell the two apart', () => {
+        // Positive control, in both directions. Without the first assertion a
+        // regex that matched nothing would make §5 vacuous; without the
+        // second, one that matched everything would too.
+        expect(HAND_ROLLED_READER.test(`const m = d.match(/filename="?([^"]+)"?/);`)).toBe(true);
+        expect(HAND_ROLLED_READER.test(`const n = parseContentDispositionFilename(h);`)).toBe(false);
+        // Prose about the header is not an implementation of it — `codeOnly`
+        // is what makes that true, and this is the line that proves it.
+        expect(
+            HAND_ROLLED_READER.test(codeOnly(`// the old /filename="?([^"]+)"?/ regex\nconst x = 1;`)),
+        ).toBe(false);
+    });
+});

@@ -19,6 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { DatePicker } from '@/components/ui/date-picker';
 import { useDateFormat } from '@/lib/i18n/use-date-format';
+import { parseContentDispositionFilename } from '@/lib/http/content-disposition';
 
 interface SeasonRow {
     id: string;
@@ -59,7 +60,14 @@ export function SeasonsClient({ initialSeasons, tenantSlug, permissions }: Seaso
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `dnevnik-season-${season.name.replace(/\s+/g, '_')}.pdf`;
+                // The server's own name first (#1833). This site built its
+                // own and ignored the header, so the route's filename was
+                // dead code here — and a season named «Пролет 2026» became
+                // `dnevnik-season-Пролет_2026.pdf` rather than whatever the
+                // register calls it.
+                a.download =
+                    parseContentDispositionFilename(res.headers.get('Content-Disposition')) ??
+                    `dnevnik-season-${season.name.replace(/\s+/g, '_')}.pdf`;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
