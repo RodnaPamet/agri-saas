@@ -46,8 +46,15 @@ describe('the document lives in lib, not in the route module', () => {
         // constants are importable from lib, so there is no reason to reach
         // for the route module and no hint that doing so breaks a build.
         expect(typeof buildAppSiteAssociation).toBe('function');
+        // Composed FROM the exported constants, not a second copy of them.
+        //
+        // This assertion used to hardcode `components: []`, so it failed the
+        // moment the claim changed — a test whose NAME is about module
+        // exports, failing on document content. A reader trusting the name
+        // would not look here, and the content is asserted on its own below,
+        // against the response Apple actually fetches.
         expect(buildAppSiteAssociation()).toEqual({
-            applinks: { details: [{ appIDs: [APP_ID], components: [] }] },
+            applinks: { details: [{ appIDs: [APP_ID], components: [...APPLINK_COMPONENTS] }] },
             webcredentials: { apps: [APP_ID] },
         });
     });
@@ -104,16 +111,30 @@ describe('the document Apple receives', () => {
         expect(APP_ID).toBe('9423GKWL67.bg.agrent.app');
     });
 
-    it('claims NO applink paths, deliberately', async () => {
+    it('claims exactly the two prefixes the rulings leave, and nothing else', async () => {
         const body = await (await GET()).json();
 
-        // #1623: a published path that opens nothing is worse than no claim at
-        // all, and Apple caches the document. `/c` and `/l` are undefined and
-        // the `/f` and `/m` screens are unbuilt, so there is nothing honest to
-        // list. A change that adds one must edit this assertion, which is the
-        // point of asserting emptiness instead of ignoring the field.
-        expect(body.applinks.details[0].components).toEqual([]);
-        expect(APPLINK_COMPONENTS).toEqual([]);
+        // Was `toEqual([])`, and the change of answer is the whole history of
+        // this field. #1623 held it empty because `/c` and `/l` had no defined
+        // meaning and because agrent-ios asked that the decision come from the
+        // owner DIRECTLY — it was then filled in twice on a relay, reached
+        // production once, and was reverted by #1791. The owner answered
+        // directly on 2026-10-14: claim all five.
+        //
+        // An EXACT list, so adding a sixth is a visible diff rather than a
+        // side effect — which is what kept the two relayed attempts
+        // reviewable.
+        // TWO, not five. #1623's rulings of 2026-10-12 dropped `/c`, `/l`
+        // and `/go`: a path with no defined meaning cannot open anything, and
+        // an absent path falls back to the browser, which is the better of
+        // the two outcomes. #1794 claimed five from this issue's BODY without
+        // reading its COMMENTS.
+        const expected = [{ '/': '/f/*' }, { '/': '/m/*' }];
+        expect(APPLINK_COMPONENTS).toEqual(expected);
+        // And the same list actually reaches the wire — the module and the
+        // response are separate facts, and only the second is what Apple
+        // fetches.
+        expect(body.applinks.details[0].components).toEqual(expected);
     });
 
     it('DOES claim webcredentials, which is true today', async () => {
@@ -195,11 +216,18 @@ describe('what may be claimed, once anything is', () => {
         expect(collisions([{ '/': '/invite/*' }])).toEqual(['invite']);
     });
 
-    it('a claim that opens nothing is the thing being avoided, not an oversight', () => {
-        // The empty list is a DECISION (#1623): a path that opens nothing
-        // drops someone who tapped a link into a dead end inside the app,
-        // which is worse than the browser fallback that at least renders.
-        // Asserted here so a future "fill this in" change has to confront it.
-        expect(APPLINK_COMPONENTS).toEqual([]);
+    it('claims only prefixes that serve no page yet, which is what makes it payable', () => {
+        // The cost of publishing ahead of the handlers: none of the five
+        // serves a web page, so a tapped link today opens the app at its home
+        // screen instead of rendering a 404 in Safari. The owner accepted that
+        // so the client can build against a published list.
+        //
+        // It becomes a REGRESSION the day one of them ships as a web route
+        // while the app still cannot open it — a working page starts being
+        // hijacked. That is what the collision check above catches, derived
+        // from the filesystem, and this case states the condition the
+        // acceptance rests on so the two cannot drift apart silently.
+        expect(collisions(APPLINK_COMPONENTS)).toEqual([]);
+        expect(APPLINK_COMPONENTS.length).toBe(2);
     });
 });

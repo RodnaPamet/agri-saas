@@ -186,6 +186,13 @@ export function registerLeasePaths(registry: OpenAPIRegistry): void {
         path: '/api/t/{tenantSlug}/leases/{leaseId}/payments',
         operationId: 'listLeasePayments',
         summary: 'Payments against a lease',
+        description:
+            'Newest settlement first.\n\n'
+            + 'Raises NO lease-specific refusal, and that is worth knowing rather than '
+            + 'discovering: an unknown `leaseId` returns an EMPTY ARRAY, not a 404. So a '
+            + 'client cannot tell "this lease has no payments" from "there is no such '
+            + 'lease" on this operation, and must not render the empty case as proof the '
+            + 'lease exists. The write operations below do distinguish them.',
         tags: ['Leases'],
         params: LeaseParams,
         success: {
@@ -201,7 +208,8 @@ export function registerLeasePaths(registry: OpenAPIRegistry): void {
         operationId: 'recordLeasePayment',
         summary: 'Record a rent payment',
         description:
-            'OMIT `unit` to book against the lease’s own canonical rent unit, which is the safe default: rent settled in grain must never be recorded against a money obligation, and the two cannot be summed.',
+            'OMIT `unit` to book against the lease’s own canonical rent unit, which is the safe default: rent settled in grain must never be recorded against a money obligation, and the two cannot be summed.\n\n'
+            + '**Refusal code.** `LEASE_NOT_FOUND` — no such lease in this farm, or one not visible to it. Coded in #1712: it carried an English sentence and no code, and the iOS client resolves display from `error.message` with no `NOT_FOUND` entry, so a Bulgarian farmer read "Lease not found" in English. It is reachable from THIS operation and not from the `GET` above, which answers an unknown lease with an empty list.',
         tags: ['Leases'],
         params: LeaseParams,
         body: LeasePaymentSchema,
@@ -213,6 +221,13 @@ export function registerLeasePaths(registry: OpenAPIRegistry): void {
         path: '/api/t/{tenantSlug}/leases/{leaseId}/payments/{paymentId}',
         operationId: 'deleteLeasePayment',
         summary: 'Delete a rent payment',
+        description:
+            '**Refusal code.** `LEASE_PAYMENT_NOT_FOUND` — no such payment on this lease in '
+            + 'this farm. Distinct from `LEASE_NOT_FOUND` on the `POST` on purpose: a '
+            + 'client that collapsed them would tell someone their lease was missing when '
+            + 'it is the payment row that has already gone — and a delete is exactly the '
+            + 'operation a user retries, so the difference decides whether retrying can '
+            + 'help. Coded in #1712.',
         tags: ['Leases'],
         params: PaymentParams,
         success: {

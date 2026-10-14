@@ -8,7 +8,7 @@
  *   - Permissions are computed from the tenant membership role
  */
 import prisma from './prisma';
-import { notFound, forbidden } from '@/lib/errors/types';
+import { notFound, forbidden, codedNotFound } from '@/lib/errors/types';
 import type { Role, Tenant, TenantMembership, TenantCustomRole } from '@prisma/client';
 import { getPermissionsForRole, parsePermissionsJson, type PermissionSet } from '@/lib/permissions';
 
@@ -73,11 +73,22 @@ export async function resolveTenantContext(
             where: { id: params.tenantId },
         });
     } else {
-        throw notFound('Tenant identifier required');
+        // Reachable, measured: `getUserCtx`-style callers pass
+        // `{ tenantId: session.tenantId }`, and a session with no tenant makes
+        // both branches above falsy. A 404 is an odd shape for it and the
+        // status is deliberately NOT changed here — the #1712 migration is
+        // about the LANGUAGE a farmer reads, and smuggling a status change
+        // into it would break a client that already handles 404.
+        throw codedNotFound('TENANT_IDENTIFIER_REQUIRED', 'Tenant identifier required');
     }
 
     if (!tenant) {
-        throw notFound('Tenant not found');
+        // ONE code shared with the soft-deleted branch below, deliberately.
+        // That branch's own comment calls the sameness "the same
+        // anti-enumeration shape as not found" — so distinct codes would undo
+        // the property the identical message exists to provide, letting a
+        // caller tell "no such farm" from "a farm you may not see".
+        throw codedNotFound('TENANT_NOT_FOUND', 'Tenant not found');
     }
 
     // Soft-deleted (removed from the org admin panel) tenants are
@@ -87,7 +98,7 @@ export async function resolveTenantContext(
     // claims or cached listings. Same anti-enumeration shape as
     // "not found".
     if (tenant.deletedAt) {
-        throw notFound('Tenant not found');
+        throw codedNotFound('TENANT_NOT_FOUND', 'Tenant not found');
     }
 
     const membership = await prisma.tenantMembership.findUnique({

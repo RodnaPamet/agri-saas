@@ -37,6 +37,7 @@ import { registerFarmProfilePaths } from './farm-profile.paths';
 import { registerMeFarmsPaths } from './me-farms.paths';
 import { registerMeNewsPreferencesPaths } from './me-news-preferences.paths';
 import { registerTrustSafetyPaths } from './trust-safety.paths';
+import { registerAccessReviewPaths } from './access-review.paths';
 import { registerModerationPaths } from './moderation.paths';
 import { registerAdminMembersPaths } from './admin-members.paths';
 
@@ -52,6 +53,7 @@ export function registerAllPaths(registry: OpenAPIRegistry): void {
     registerTaskPaths(registry);
     // Not tenant-scoped: the per-user preferences a client reads at launch.
     registerAccountPaths(registry);
+    registerAccessReviewPaths(registry);
     // The Farm Risk screen the native client is porting.
     registerFarmRiskPaths(registry);
     registerParcelHistoryPaths(registry);

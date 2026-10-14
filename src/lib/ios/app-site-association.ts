@@ -27,28 +27,60 @@
 export const APP_ID = '9423GKWL67.bg.agrent.app';
 
 /**
- * The paths that open the app. DELIBERATELY EMPTY.
+ * The paths that open the app: `/f/*` and `/m/*`.
  *
- * An AASA file is a PUBLISHED CLAIM that the listed paths open the app, and
- * Apple caches it. A path that opens nothing sends someone who taps a link
- * into the app and into a dead end — worse than the browser fallback, which at
- * least renders something. That is #1623's argument and it is the deciding
- * one.
+ * ## The scheme is TWO paths, by two recorded owner rulings
  *
- * None of the five candidates can be claimed yet:
+ * #1623, both asked directly rather than relayed because that issue asked for
+ * it:
  *
- *   - `/f/[handle]` — a farm's public page, P6.5, unbuilt.
- *   - `/m`          — direct messages, P8, unbuilt.
- *   - `/go`         — named by P6.7 with no defined meaning.
- *   - `/c`, `/l`    — undefined anywhere in this repo. #1623 records that as an
- *                     owner decision, and that `agrent-ios` asked it come from
- *                     the owner directly rather than relayed.
+ *   2026-10-12 13:42 — `/c` and `/l` DROPPED. "The AASA will list only paths
+ *                      with a screen behind them… a path absent from it
+ *                      simply falls back to the browser, which is the BETTER
+ *                      outcome of the two."
+ *   2026-10-12 14:35 — `/go` DROPPED on the same reasoning: a path with no
+ *                      defined meaning cannot open anything.
  *
- * Exported so a client can READ the claim rather than restate it — what #1623
- * asks for. An empty array is a readable answer: the association exists, and
- * no path opens the app yet.
+ * `/f/[handle]` is a farm's public page, keyed by a SEPARATE public handle and
+ * not the tenant slug — the two diverging later would be a breaking change to
+ * a published link format. `/m` is direct messages. Both have a defined
+ * meaning; neither has a screen yet (P6.9 and P8).
+ *
+ * ## This field has changed four times and only the record is useful
+ *
+ *   empty            #1786, declining to claim anything before the meanings
+ *                    were settled.
+ *   all but /api/*   #1780, mine. A catch-all over the whole origin, which
+ *                    would have hijacked every emailed invite, password reset
+ *                    and /t/<slug>/… link on a phone with the app installed.
+ *                    Reverted by #1791.
+ *   five prefixes    #1794, mine. Claimed on an owner answer to a question I
+ *                    framed from this issue's BODY and #1786's docblock, both
+ *                    of which predate the rulings above. The body's table
+ *                    lists five; the comments drop three.
+ *   two prefixes     here, on the rulings themselves.
+ *
+ * An issue's BODY is the question and its COMMENTS are the answers. Acting on
+ * the first produced a published claim contradicting two direct owner
+ * decisions from two days earlier — and because the question was framed from
+ * the wrong list, the answer to it was not wrong, it was answering the wrong
+ * question. A relayed report is what surfaced it.
+ *
+ * ## What the claim costs while the screens are unbuilt
+ *
+ * Neither path serves a web page and the app has no `onOpenURL` handler, so a
+ * tapped link opens the app at its home screen rather than rendering a 404 in
+ * Safari. That is accepted so the client can build against a published list.
+ * It becomes a REGRESSION the day one ships as a web route while the app still
+ * cannot open it — a working page starts being hijacked — and the collision
+ * check in the test, derived from the filesystem, fails on exactly that.
+ *
+ * Exported so a client READS the claim rather than restating it (#1623).
  */
-export const APPLINK_COMPONENTS: ReadonlyArray<Record<string, unknown>> = [];
+export const APPLINK_COMPONENTS: ReadonlyArray<Record<string, unknown>> = [
+    { '/': '/f/*' },
+    { '/': '/m/*' },
+];
 
 export interface AppSiteAssociation {
     applinks: { details: Array<{ appIDs: string[]; components: Array<Record<string, unknown>> }> };
@@ -58,10 +90,20 @@ export interface AppSiteAssociation {
 /**
  * The document Apple fetches.
  *
- * `webcredentials` IS claimed, unlike the applink paths, because it is true
- * today and says nothing about screens: it lets iOS offer Password AutoFill
- * and associate saved credentials for this origin with the app, and the app
- * already signs people in here.
+ * `webcredentials` is claimed and currently does NOTHING. The justification
+ * here used to read "it is true today… the app already signs people in here",
+ * and agrent-ios checked `Agrent/Agrent.entitlements` rather than recalling
+ * it: the app holds `aps-environment`, `com.apple.developer.applesignin` and
+ * `associated-domains: [applinks:app.agrent.bg]` — no `webcredentials:` entry.
+ * iOS needs BOTH halves for Password AutoFill, so this one is inert. There is
+ * also nothing to fill: the app has no password field, and sign-in is Google
+ * and Microsoft through the system web sheet plus Sign in with Apple.
+ *
+ * Kept rather than dropped, because it costs nothing and adding the
+ * entitlement is an owner decision needing a signing-profile refresh. The
+ * comment is corrected because a false justification outlives the person who
+ * wrote it, and the next reader would have taken "it is true today" as a
+ * measurement.
  */
 export function buildAppSiteAssociation(): AppSiteAssociation {
     return {
