@@ -573,27 +573,27 @@
     {
       "path": "/api/t/{tenantSlug}/access-reviews",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/access-reviews/{reviewId}",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/access-reviews/{reviewId}/close",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/access-reviews/{reviewId}/decisions/{decisionId}",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/access-reviews/{reviewId}/evidence",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/admin/api-keys",

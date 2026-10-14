@@ -67,6 +67,471 @@ exports[`API contract — per-schema snapshots schema: AcceptTermsResult 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: AccessReviewClosed 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "accessReviewId": {
+      "type": "string"
+    },
+    "executions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/AccessReviewExecution"
+      },
+      "description": "What each decision did when the campaign closed — a REVOKE is applied here, not when it is submitted."
+    },
+    "evidenceFileRecordId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "\`null\` when the PDF could not be generated or stored. The campaign still closes: the artifact is evidence OF the close rather than a precondition for it, and an operator-triggered regenerate is the follow-up. A client must not read \`null\` as \\"the close failed\\"."
+    },
+    "counts": {
+      "type": "object",
+      "properties": {
+        "total": {
+          "type": "integer"
+        },
+        "executed": {
+          "type": "integer"
+        },
+        "confirmed": {
+          "type": "integer"
+        },
+        "skipped": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "total",
+        "executed",
+        "confirmed",
+        "skipped"
+      ],
+      "description": "Derived from \`executions\`, for callers that do not want to walk the array. \`executed + confirmed + skipped\` accounts for \`total\`."
+    }
+  },
+  "required": [
+    "accessReviewId",
+    "executions",
+    "evidenceFileRecordId",
+    "counts"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AccessReviewCreated 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "accessReviewId": {
+      "type": "string"
+    },
+    "snapshotCount": {
+      "type": "integer",
+      "description": "How many subjects were captured. The roster is frozen at creation, so this is the denominator every later count is against — a member who joins or leaves afterwards does not change it."
+    }
+  },
+  "required": [
+    "accessReviewId",
+    "snapshotCount"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AccessReviewDecisionRow 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "subjectUserId": {
+      "type": "string"
+    },
+    "subjectUser": {
+      "$ref": "#/components/schemas/AccessReviewPerson"
+    },
+    "membershipId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "\`null\` once the membership is gone — the FK is \`onDelete: SetNull\`, deliberately. A campaign must stay readable after a member leaves, and losing the row would destroy the record of what was reviewed."
+    },
+    "snapshotRole": {
+      "type": "string",
+      "description": "The role held when the campaign opened, NOT the role now. This is the whole point of a snapshot: the reviewer judges what access existed during the period, and a later change must not rewrite the question."
+    },
+    "snapshotCustomRoleId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "snapshotMembershipStatus": {
+      "type": "string"
+    },
+    "snapshotAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "decision": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "CONFIRM",
+        "REVOKE",
+        "MODIFY",
+        null
+      ],
+      "description": "\`null\` until a verdict is submitted. The count of nulls is what \`ACCESS_REVIEW_DECISIONS_PENDING\` refuses a close on."
+    },
+    "decidedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "decidedBy": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/AccessReviewPerson"
+        },
+        {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      ]
+    },
+    "notes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "modifiedToRole": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Set only for a \`MODIFY\` verdict — the role the subject should hold instead."
+    },
+    "modifiedToCustomRoleId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "executedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "\`null\` until the campaign closes. A REVOKE is RECORDED when submitted and APPLIED at close, so a non-null value here is the only proof the access actually changed."
+    }
+  },
+  "required": [
+    "id",
+    "subjectUserId",
+    "subjectUser",
+    "membershipId",
+    "snapshotRole",
+    "snapshotCustomRoleId",
+    "snapshotMembershipStatus",
+    "snapshotAt",
+    "decision",
+    "decidedAt",
+    "decidedBy",
+    "notes",
+    "modifiedToRole",
+    "modifiedToCustomRoleId",
+    "executedAt"
+  ],
+  "description": "One snapshotted subject and the verdict on it, if any."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AccessReviewDecisionSubmitted 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "decisionId": {
+      "type": "string"
+    },
+    "accessReviewId": {
+      "type": "string"
+    },
+    "decision": {
+      "type": "string",
+      "enum": [
+        "CONFIRM",
+        "REVOKE",
+        "MODIFY"
+      ]
+    },
+    "transitionedToInReview": {
+      "type": "boolean",
+      "description": "True only when this submission was the FIRST on the campaign and moved it \`OPEN\` → \`IN_REVIEW\`. A client can use it to refresh a status badge without re-reading the campaign."
+    }
+  },
+  "required": [
+    "decisionId",
+    "accessReviewId",
+    "decision",
+    "transitionedToInReview"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AccessReviewDetail 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "OPEN",
+        "IN_REVIEW",
+        "CLOSED"
+      ]
+    },
+    "name": {
+      "type": "string"
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/AccessReviewDecisionRow"
+      },
+      "description": "One row per snapshotted subject, ordered by \`subjectUserId\`. This was a \`record\` of unknowns with a paragraph explaining why that was acceptable; \`openapi-schema-documents-something\` refused it, correctly — a schema that accepts anything while describing nothing looks complete to a generated client and is worse than an undocumented route, because the gap is invisible."
+    },
+    "lastActivityByUser": {
+      "type": "object",
+      "additionalProperties": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "format": "date-time"
+      },
+      "description": "Subject user id → most recent session activity, or \`null\` where there is none. Returned with the campaign because it is what a reviewer judges on, and \`null\` is the answer that matters most: a subject with no activity in the period is the one a revoke is for."
+    }
+  },
+  "required": [
+    "id",
+    "status",
+    "name",
+    "decisions",
+    "lastActivityByUser"
+  ],
+  "description": "One campaign with the activity a reviewer needs. Shaped for the reviewer page rather than as a normalised record."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AccessReviewExecution 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "decisionId": {
+      "type": "string"
+    },
+    "subjectUserId": {
+      "type": "string"
+    },
+    "decision": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "CONFIRM",
+        "REVOKE",
+        "MODIFY",
+        null
+      ]
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "EXECUTED",
+        "NO_CHANGE",
+        "SKIPPED_PENDING",
+        "SKIPPED_STALE",
+        "SKIPPED_LAST_OWNER"
+      ],
+      "description": "What actually happened at close. \`EXECUTED\` changed access; \`NO_CHANGE\` is a CONFIRM, which is a decision rather than an action. The three \`SKIPPED_*\` values are the ones worth reading: \`SKIPPED_PENDING\` means no verdict was recorded, \`SKIPPED_STALE\` that the membership changed since the snapshot so the recorded verdict no longer applies to what is there, and \`SKIPPED_LAST_OWNER\` that applying it would have left the farm with no OWNER. A skip is not a failure — it is the campaign declining to act on a decision it can no longer honour."
+    }
+  },
+  "required": [
+    "decisionId",
+    "subjectUserId",
+    "decision",
+    "outcome"
+  ],
+  "description": "What one decision did when the campaign closed."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AccessReviewList 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "rows": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/AccessReviewListRow"
+      }
+    },
+    "truncated": {
+      "type": "boolean",
+      "description": "True when the list hit the shared backfill cap and is a PREFIX rather than the whole set. Newest first, so a truncated page is the most recent campaigns — a client showing a total must not derive it from \`rows.length\` when this is true."
+    }
+  },
+  "required": [
+    "rows",
+    "truncated"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AccessReviewListRow 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "tenantId": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "scope": {
+      "type": "string",
+      "description": "What the campaign covers. A string rather than an enum in the RESPONSE so a campaign created before a scope was renamed stays readable — the accepted request values are a closed set."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "OPEN",
+        "IN_REVIEW",
+        "CLOSED"
+      ],
+      "description": "\`OPEN\` until the first decision is submitted, which transitions it to \`IN_REVIEW\`; \`CLOSED\` once closed. A client cannot set this — the first \`PUT\` of a decision moves it, and \`POST /close\` ends it."
+    },
+    "periodStartAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "periodEndAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "dueAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "closedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "\`null\` until the campaign is closed. Set together with \`status: CLOSED\`; the two always agree."
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "reviewerUserId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Who must decide. \`null\` means unassigned — and that is not cosmetic: \`ACCESS_REVIEW_NOT_ASSIGNED_REVIEWER\` refuses a decision from anyone who is not this person."
+    },
+    "createdByUserId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "_count": {
+      "type": "object",
+      "properties": {
+        "decisions": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "decisions"
+      ],
+      "description": "How many subjects the campaign snapshotted. Returned so a list can show progress without fetching each campaign’s decision graph."
+    }
+  },
+  "required": [
+    "id",
+    "tenantId",
+    "name",
+    "scope",
+    "status",
+    "periodStartAt",
+    "periodEndAt",
+    "dueAt",
+    "closedAt",
+    "createdAt",
+    "reviewerUserId",
+    "createdByUserId",
+    "_count"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AccessReviewPerson 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "email": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "email",
+    "name"
+  ],
+  "description": "The three fields every person reference on this surface selects. \`email\` and \`name\` are nullable because a snapshotted subject may have neither recorded — a reviewer still has to be able to tell them apart, which is why \`id\` is always present."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: AccountDeletionCancelled 1`] = `
 "{
   "type": "object",
