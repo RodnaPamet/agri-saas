@@ -143,7 +143,16 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 // reading the spec. Its three sibling moderation paths are baselined too, so
 // describing only this one would make the spec's coverage of that surface
 // harder to reason about rather than easier.
-const UNDOCUMENTED_CEILING = 220;
+// 220 → 215 (#1739): the five `access-reviews` paths are DESCRIBED now
+// (`access-review.paths.ts`), so they leave the baseline in the same diff that
+// documents them — the direction this guard's sibling assertion demands, and
+// the first reduction here since `/api/account/avatar/{userId}`.
+//
+// Worth noting why these were worth describing when 54 `/api/admin/*` paths
+// are not: the audience test. These are TENANT routes a web client already
+// calls, and their twelve refusal codes decide what a reviewer is told — not
+// an operator surface reachable only with a platform key.
+const UNDOCUMENTED_CEILING = 215;
 // Lowered 246 -> 245 by #1376: `/api/auth/register` was retired, so its
 // baseline entry went with it. The ceiling tracks the baseline exactly —
 // leaving slack is how a shrink-only ratchet quietly becomes a denylist with

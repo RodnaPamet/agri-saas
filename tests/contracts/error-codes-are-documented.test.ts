@@ -230,38 +230,45 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     // ledger exists to carry — WITHOUT changing a status code under a client
     // that already handles 404. The status question is separate and not
     // smuggled in here.
-    // The twelve `ACCESS_REVIEW_*` codes are new as of #1712 batch 6 and are
-    // here for the `COMPANY_NAME_TAKEN` reason at the top of this list,
-    // measured rather than assumed: all five
-    // `/api/t/{tenantSlug}/access-reviews*` paths sit on
-    // `openapi-undocumented-baseline.json`, so there is no operation in the
-    // spec to name a refusal on. Documenting them means registering that
-    // surface — five paths with their schemas — which is a much larger change
-    // than the one that introduced the codes.
+    // ── TEN `ACCESS_REVIEW_*` codes left this list in #1739 ──
     //
-    // Two of them are 403s and so could in principle go in the shared 403
-    // description in `src/lib/openapi/paths/helpers.ts`, the way
-    // `PAST_DUE_RESTRICTED` did. They should not: that description is for
-    // refusals that span many unrelated routes, and these two are confined to
-    // one surface. A surface-specific code in a shared description tells every
-    // other route's reader about a refusal it cannot raise.
-    'ACCESS_REVIEW_ALREADY_CLOSED',
-    'ACCESS_REVIEW_DECISIONS_IMMUTABLE',
-    'ACCESS_REVIEW_DECISIONS_PENDING',
+    // The five `/api/t/{tenantSlug}/access-reviews*` paths are registered now
+    // (`src/lib/openapi/paths/access-review.paths.ts`), so each code is named
+    // on the operation that can actually return it. The note that used to sit
+    // here — "there is no operation in the spec to name a refusal on" — is
+    // answered rather than deleted: that WAS the blocker, and registering the
+    // surface was the work.
+    //
+    // The earlier note also argued that the two 403s should not go in the
+    // shared 403 description because they are confined to one surface. That
+    // reasoning held and is why they are per-operation now rather than in
+    // `helpers.ts`.
+    //
+    // ## TWO remain, and not because the work was left half-done
+    //
+    // Both are raised ONLY by `revokeDecision`, and `revokeDecision` has no
+    // route — measured: zero callers outside its own module, and the decisions
+    // path exports `PUT` alone, calling `submitDecision`. So there is no
+    // operation that can return either one.
+    //
+    // Documenting them anyway would be worse than leaving them: it would tell
+    // a caller about a refusal it cannot receive, with no operation to attach
+    // it to. Deleting them from this list would claim documentation that does
+    // not exist. They therefore stay, which is the honest reading of what this
+    // list is for — codes a client cannot learn from the contract. These are
+    // codes a client cannot RECEIVE either, and the unmounted usecase is filed
+    // as #1793; whichever way that is resolved (mount a route, or remove the
+    // capability) removes these two entries with it.
+    // The three `EVIDENCE_FILE_*` codes also left in #1739, and the stale-entry
+    // assertion below is what found them: they are raised ONLY by the
+    // access-review evidence route (measured — one file each), so registering
+    // that path documented them too. I had not set out to drain them, and the
+    // guard refusing a baseline entry for an already-documented code is the
+    // reason they did not quietly stay.
     'ACCESS_REVIEW_DECISION_ALREADY_EXECUTED',
-    'ACCESS_REVIEW_DECISION_ALREADY_RECORDED',
-    'ACCESS_REVIEW_DECISION_NOT_FOUND',
     'ACCESS_REVIEW_DECISION_NOT_RECORDED',
-    'ACCESS_REVIEW_INELIGIBLE_SUBJECTS',
-    'ACCESS_REVIEW_NOT_ASSIGNED_REVIEWER',
-    'ACCESS_REVIEW_NOT_FOUND',
-    'ACCESS_REVIEW_NO_ELIGIBLE_SUBJECTS',
-    'ACCESS_REVIEW_WOULD_ORPHAN_OWNERS',
     'ACCOUNT_HAS_NO_EMAIL',
     'EVIDENCE_DELETED',
-    'EVIDENCE_FILE_DELETED',
-    'EVIDENCE_FILE_NOT_DOWNLOADABLE',
-    'EVIDENCE_FILE_NOT_FOUND',
     'EVIDENCE_NOT_FOUND',
     'FILE_DELETED',
     'FILE_NOT_DOWNLOADABLE',
