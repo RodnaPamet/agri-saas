@@ -222,7 +222,16 @@ export function TreatmentEntryModal({ open, setOpen, onSaved }: Props) {
         draft.doseUnitId !== null;
 
     /**
-     * The idempotency key, DERIVED from the draft and the parcel set.
+     * The request body, and the idempotency key DERIVED FROM IT.
+     *
+     * From the body and not from the draft, which is the whole point. The
+     * draft holds what was typed; the body holds what is sent, trimmed and
+     * with empty fields omitted. Keying on the draft meant two saves with an
+     * IDENTICAL body could carry different keys — type a trailing space in
+     * the pest field, lose the answer, delete the space, retry, and the
+     * server mints a SECOND treatment because the key moved while the request
+     * did not. Same for `2` versus `2.0` in the dose, which both send the
+     * number 2.
      *
      * Re-minted by construction rather than by anyone remembering to. Every
      * edit changes the input, so a retry of an UNCHANGED save reuses the key
@@ -241,10 +250,30 @@ export function TreatmentEntryModal({ open, setOpen, onSaved }: Props) {
      * prose today. So the fix is this rewording, and the pattern is
      * deliberately not quoted anywhere in this file.
      */
-    const idempotencyKey = useMemo(
-        () => `web:${JSON.stringify(draft)}:${[...selected].sort().join(',')}`,
+    const payload = useMemo(
+        () => ({
+            kind: draft.kind,
+            occurredOn: draft.occurredOn,
+            // SORTED here rather than at the request, so the key is
+            // order-independent by construction: ticking two parcels in the
+            // other order is the same treatment and must not mint a second
+            // one. The server groups by block regardless of order.
+            parcelIds: [...selected].sort(),
+            ...(draft.productItemId ? { productItemId: draft.productItemId } : {}),
+            doseValue: Number(draft.doseValue),
+            doseUnitId: draft.doseUnitId,
+            ...(draft.targetNote.trim() ? { targetNote: draft.targetNote.trim() } : {}),
+            ...(draft.applicationTechnique.trim()
+                ? { applicationTechnique: draft.applicationTechnique.trim() }
+                : {}),
+            ...(draft.quarantinePeriodDays.trim()
+                ? { quarantinePeriodDays: Number(draft.quarantinePeriodDays) }
+                : {}),
+        }),
         [draft, selected],
     );
+
+    const idempotencyKey = useMemo(() => `web:${JSON.stringify(payload)}`, [payload]);
 
     const submit = useCallback(async () => {
         if (submitting || selected.length === 0) return;
@@ -253,21 +282,7 @@ export function TreatmentEntryModal({ open, setOpen, onSaved }: Props) {
         try {
             const saved = await apiPost<TreatmentSaved>(
                 apiUrl('/journal/treatments'),
-                {
-                    kind: draft.kind,
-                    occurredOn: draft.occurredOn,
-                    parcelIds: selected,
-                    ...(draft.productItemId ? { productItemId: draft.productItemId } : {}),
-                    doseValue: Number(draft.doseValue),
-                    doseUnitId: draft.doseUnitId,
-                    ...(draft.targetNote.trim() ? { targetNote: draft.targetNote.trim() } : {}),
-                    ...(draft.applicationTechnique.trim()
-                        ? { applicationTechnique: draft.applicationTechnique.trim() }
-                        : {}),
-                    ...(draft.quarantinePeriodDays.trim()
-                        ? { quarantinePeriodDays: Number(draft.quarantinePeriodDays) }
-                        : {}),
-                },
+                payload,
                 // `apiPost(url, body, schema?, init?)` — the header rides in
                 // the FOURTH argument. The third is a Zod schema, and this
                 // file passed the init THERE, so the header was never sent:

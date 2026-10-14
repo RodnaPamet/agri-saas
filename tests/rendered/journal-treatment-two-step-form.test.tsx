@@ -344,6 +344,41 @@ describe('the two-step treatment form', () => {
         expect(onSaved.mock.calls[0][0]).toMatchObject({ treatmentGroupId: 'handle-xyz' });
     });
 
+    it('keys on what is SENT, so untrimmed typing cannot mint a second treatment', async () => {
+        const fetchMock = postDouble();
+        global.fetch = fetchMock as unknown as typeof fetch;
+
+        mount();
+        await fillStepOne();
+        // A trailing space in the pest field. The body trims it, so the
+        // request is byte-identical to one typed without it — and the key
+        // must be too. Keyed on the DRAFT, it was not: lose the answer,
+        // delete the space, retry, and the server mints a SECOND treatment
+        // in a regulated register because the key moved while the request
+        // did not.
+        fireEvent.change(screen.getByLabelText(/Pest/), {
+            target: { value: 'листни въшки   ' },
+        });
+        await user().click(screen.getByRole('button', { name: 'Next' }));
+        await pickFrom('Crop', /Пшеница/);
+        const boxes = await screen.findAllByRole('checkbox');
+        await user().click(boxes[0]);
+        await user().click(await screen.findByRole('button', { name: 'Save' }));
+
+        await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+        const call = fetchMock.mock.calls.find((c) =>
+            String(c[0]).includes('/journal/treatments'),
+        );
+        const headers = (call?.[1] as RequestInit | undefined)?.headers as Record<string, string>;
+        const body = String((call?.[1] as RequestInit | undefined)?.body);
+        expect(JSON.parse(body).targetNote).toBe('листни въшки');
+        // The key contains the trimmed value and NOT the typed whitespace.
+        expect(headers['Idempotency-Key']).toContain('листни въшки"');
+        expect(headers['Idempotency-Key']).not.toContain('листни въшки   ');
+        // The strongest form: the key IS the body.
+        expect(headers['Idempotency-Key']).toBe(`web:${body}`);
+    });
+
     it('keys the same treatment identically, so a double-click cannot write twice', async () => {
         const fetchMock = postDouble();
         global.fetch = fetchMock as unknown as typeof fetch;
@@ -368,7 +403,16 @@ describe('the two-step treatment form', () => {
         const call = fetchMock.mock.calls.find((c) => String(c[0]).includes('/journal/treatments'));
         const headers = (call?.[1] as RequestInit | undefined)?.headers as Record<string, string>;
         const key = headers['Idempotency-Key'];
-        expect(key).toContain('p-1,p-2');
-        expect(key).not.toContain('p-2,p-1');
+        // The key is the serialised REQUEST BODY, so the parcel ids appear in
+        // it as a JSON array — sorted, which is what makes ticking them in
+        // either order the same treatment.
+        expect(key).toContain('["p-1","p-2"]');
+        expect(key).not.toContain('["p-2","p-1"]');
+        // And the body itself carries them sorted, since the key is derived
+        // FROM the body rather than alongside it. If these two could
+        // disagree, the key would stop describing what was sent.
+        const body = JSON.parse(String((call?.[1] as RequestInit | undefined)?.body));
+        expect(body.parcelIds).toEqual(['p-1', 'p-2']);
+        expect(key).toContain(JSON.stringify(body.parcelIds));
     });
 });
