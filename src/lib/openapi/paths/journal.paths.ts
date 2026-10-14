@@ -10,7 +10,11 @@
  */
 import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
-import { CreateLogEntrySchema, UpdateLogEntrySchema } from '@/lib/schemas';
+import {
+    CreateLogEntrySchema,
+    UpdateLogEntrySchema,
+    RecordDiaryTreatmentSchema,
+} from '@/lib/schemas';
 import { ApiErrorResponseSchema } from '@/lib/dto/common';
 import { op } from './helpers';
 
@@ -136,6 +140,69 @@ const JournalListQuery = z.object({
     }),
 });
 
+/**
+ * What a recorded treatment answers with.
+ *
+ * `treatmentGroupId` is the HANDLE, and it is returned on both a fresh write
+ * and a replay — it is how a client addresses the treatment afterwards (the
+ * Дневник row, the per-entry PDF), so a client that lost the 200 is not
+ * stranded. `replayed` says which of the two happened, because a saved screen
+ * claiming "3 parcels recorded" must be true either way.
+ */
+const TreatmentParams = TenantParams.extend({
+    treatmentGroupId: z
+        .string()
+        .openapi({ param: { name: 'treatmentGroupId', in: 'path' } }),
+});
+
+/**
+ * A treatment looked up by its handle.
+ *
+ * `complete` is a THIRD answer rather than a detail, and a client needs all
+ * three to act correctly after a save whose response was lost. See the
+ * operation description.
+ */
+const TreatmentSummary = z
+    .object({
+        treatmentGroupId: z.string(),
+        parcelCount: z.number().int().openapi({
+            description: 'Lines across every block \u2014 planned, not necessarily recorded.',
+        }),
+        completedCount: z.number().int().openapi({
+            description:
+                'Of those, how many are DONE. A line gets its \u0414\u041d\u0415\u0412\u041d\u0418\u041a entry when it is marked DONE, so this is how much of the treatment the register actually has.',
+        }),
+        taskIds: z.array(z.string()),
+        occurredOn: z.string().nullable().openapi({
+            description:
+                'The calendar DAY the treatment happened, `YYYY-MM-DD`. Null when nothing has been marked yet \u2014 an unmarked line has no date.',
+        }),
+        complete: z.boolean().openapi({
+            description:
+                'True only when `completedCount === parcelCount` and at least one line exists. False means partly recorded: retry on the SAME handle and the write finishes the rest.',
+        }),
+    })
+    .openapi('TreatmentSummary');
+
+const RecordedTreatment = z
+    .object({
+        treatmentGroupId: z.string().openapi({
+            description:
+                'The treatment handle. Equals the `Idempotency-Key` you sent; a UUID minted by the server when you sent none.',
+        }),
+        parcelCount: z.number().int().openapi({
+            description: 'Lines written across every block — the number to show the farmer.',
+        }),
+        taskIds: z.array(z.string()).openapi({
+            description:
+                'One per BLOCK, not per parcel. The register joins a block through the task\u2019s location link, so a treatment spanning three blocks is three tasks.',
+        }),
+        replayed: z.boolean().openapi({
+            description: 'True when this request resolved onto an existing treatment and wrote nothing.',
+        }),
+    })
+    .openapi('RecordedTreatment');
+
 export function registerJournalPaths(registry: OpenAPIRegistry): void {
     op(registry, {
         method: 'get',
@@ -181,6 +248,116 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
         params: TenantParams,
         body: CreateLogEntrySchema,
         success: { status: 201, description: 'The created entry, or the original one on a replay.', schema: LogEntryLike },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/journal/treatments',
+        operationId: 'recordDiaryTreatment',
+        summary: 'Record a treatment already carried out',
+        description:
+            'The two-step \u00abНов запис\u00bb: pick a crop, tick parcels, describe one treatment. ' +
+            'Recorded as DONE and dated by `occurredOn` \u2014 handing work to an operator stays in ' +
+            '\u0417\u0430\u0434\u0430\u0447\u0438.\n\n' +
+            'Send `Idempotency-Key` ALWAYS, minted BEFORE the first attempt and reused on every retry. ' +
+            'Here it is also the TREATMENT HANDLE, returned as `treatmentGroupId`: the per-block writes ' +
+            'derive their own keys from it, so a replay resolves on the handle rather than on any one of ' +
+            'them, and the handle is what later addresses this treatment.\n\n' +
+            '**A reused key RESUMES an unfinished treatment and REPLAYS a finished one.** A replay ' +
+            '(`replayed: true`) happens only when every line is already DONE. If the treatment is ' +
+            'partly recorded \u2014 any failure during marking leaves it so \u2014 this request finishes the ' +
+            'remaining blocks and lines and answers `replayed: false`. It is safe to re-send: each ' +
+            'block carries a derived idempotency key, so an existing block is replayed rather than ' +
+            'duplicated, and only lines still pending are marked.\n\n' +
+            '**A reused key is never REFUSED, and the body is not compared** (owner ruling ' +
+            '2026-10-14). Reusing a key whose body differs returns the ORIGINAL treatment with ' +
+            '`replayed: true` and writes nothing \u2014 the edit is silently not applied. So mint a NEW ' +
+            'key the moment a field or the parcel set changes; the server cannot detect that you did ' +
+            'not. This matches every other idempotent write in this API (journal entries, the cost ' +
+            'batch, exchange messages), none of which compares a body, and it is stated here because ' +
+            'the alternative \u2014 refusing the reuse \u2014 is what a client would reasonably assume.' +
+            '\n\n' +
+            '`parcelIds` is ONE flat list that may span blocks \u2014 the server groups it and writes one ' +
+            'field operation per block, because the register resolves a block through the task\u2019s ' +
+            'location link.\n\n' +
+            'No stock is deducted. A treatment is a RECORD of what was applied, and deducting from a lot ' +
+            'the farmer may never have tracked would make the inventory wrong in the name of making the ' +
+            'diary right (owner ruling 2026-10-13).\n\n' +
+            'Refusals, each a 400 carrying `error.code`: `TREATMENT_DATE_INVALID` (a day that does not ' +
+            'exist \u2014 2026-02-31 is refused, never rolled forward to 3 March), ' +
+            '`TREATMENT_DATE_IN_FUTURE` (you cannot have sprayed tomorrow), `TREATMENT_NO_PARCELS` (an ' +
+            'empty `parcelIds`), and `REFERENCE_NOT_IN_TENANT` with `params.reference` naming which list ' +
+            'held the stranger \u2014 a 400 rather than a 404 so the refusal does not confirm the row ' +
+            'exists on some other farm. `params.reference` is `parcels` and nothing else on this ' +
+            'route.\n\n' +
+            'A treatment day is the FARM\u2019s day (Europe/Sofia), not the server\u2019s UTC day, so ' +
+            'recording today keeps working after local midnight.\n\n' +
+            '`PRODUCT_IS_SAMPLE_ARCHETYPE` \u2014 the chosen `productItemId` or `fertilizerItemId` is a ' +
+            'SAMPLE product, not a registered one, and the farm record needs a trade name. Refused ' +
+            'BEFORE anything is written, so nothing is left behind: the underlying operation write ' +
+            'refuses a sample only on the way to DONE, which would leave a partial treatment whose ' +
+            'cause repeats on every retry \u2014 unfinishable and, with no delete-by-handle yet, ' +
+            'unabandonable. Reachable only by id; a typed product NAME never resolves to a sample.\n\n' +
+            'Inherited from the operation write underneath, all 400: `OPERATION_INPUT_AMBIGUOUS` (not ' +
+            'exactly one input kind, or an id AND a name for the same kind), `PRODUCT_DOSE_REQUIRED` / ' +
+            '`FERTILIZER_DOSE_REQUIRED`, `PRODUCT_NOT_FOUND` / `FERTILIZER_NOT_FOUND`, ' +
+            '`PRODUCT_NAME_REQUIRED` (a name empty once trimmed), `FERTILIZER_EXPECTED` (the fertiliser ' +
+            'field was given an item that is not a `FERTILIZER`; **the converse is deliberately NOT ' +
+            'enforced** \u2014 a liquid fertiliser through a sprayer is a legitimate SPRAY, so the ' +
+            'product field accepts any category), `PESTICIDE_REGULATORY_FIELDS_REQUIRED` (a typed name ' +
+            'has to CREATE a plant protection product and the \u0417\u0417\u0420 registration number ' +
+            'or quarantine period is missing \u2014 `params.missing` names which), and ' +
+            '`DOSE_UNIT_HAS_NO_BASE` (a typed name has to create a product but the dose unit is not a ' +
+            '`<base>-per-<area>` rate, so no stock unit can be derived \u2014 create the product from ' +
+            'the catalogue instead).\n\n' +
+            'Recording a treatment needs WRITE. The restricted machine-operator persona ' +
+            '(`MECHANISATOR`) does not have it and is refused 403 \u2014 by design: completing work ' +
+            'handed to an operator stays in \u0417\u0430\u0434\u0430\u0447\u0438, and filling in ' +
+            'the register is not an operator action.',
+        tags: ['Journal'],
+        params: TenantParams,
+        body: RecordDiaryTreatmentSchema,
+        success: {
+            status: 201,
+            description: 'The handle, the counts, and whether this was a replay.',
+            schema: RecordedTreatment,
+        },
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/journal/treatments/{treatmentGroupId}',
+        operationId: 'getDiaryTreatment',
+        summary: 'Look a recorded treatment up by its handle',
+        description:
+            'Answers whether a treatment was recorded under this handle, and in what state.\n\n' +
+            '**This exists because the write replays a reused key without comparing the body.** A save ' +
+            'whose response is lost, followed by an edit, goes out under a NEW key and writes a SECOND ' +
+            'treatment if the first had landed. Asking whether the earlier handle exists is the only ' +
+            'way a client can tell, so read this before re-sending an edited treatment under a fresh ' +
+            'key.\n\n' +
+            'Three answers, and a client needs all three:\n\n' +
+            '| answer | meaning | what to do |\n' +
+            '| --- | --- | --- |\n' +
+            '| `404` `TREATMENT_NOT_FOUND` | nothing landed | write afresh |\n' +
+            '| `200` `complete: true` | fully recorded | do not write again |\n' +
+            '| `200` `complete: false` | PARTLY recorded \u2014 see `completedCount` | retry on the SAME handle; the write finishes the rest |\n\n' +
+            '**`complete` counts DONE lines, not lines.** A line is created pending and marked DONE ' +
+            'afterwards, and the mark is what writes the \u0414\u041d\u0415\u0412\u041d\u0418\u041a entry \u2014 so a treatment ' +
+            'whose lines all exist but are unmarked is in the register nowhere. Any failure during ' +
+            'marking leaves earlier blocks recorded and later ones not, which is the partial state ' +
+            'this answer exists for.\n\n' +
+            'Treating it as a 404 writes a duplicate treatment; treating it as an ordinary 200 ' +
+            'reports a compliance record the register does not have.\n\n' +
+            'The handle is a PATH segment and not a query parameter on purpose: iOS writes the full ' +
+            'URL including the query string to the device log, unsuppressably.',
+        tags: ['Journal'],
+        params: TreatmentParams,
+        success: {
+            status: 200,
+            description: 'The treatment, including whether it is complete.',
+            schema: TreatmentSummary,
+        },
     });
 
     op(registry, {
