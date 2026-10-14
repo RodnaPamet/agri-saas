@@ -1312,7 +1312,34 @@ export async function generateFarmRecordDiaryPdf(
     ctx: RequestContext,
     opts: { locationId: string; from: string; to: string },
 ): Promise<PDFKit.PDFDocument> {
-    const data = await gatherFarmRecordData(ctx, opts.locationId, opts.from, opts.to);
+    const doc = await generateFarmRecordDiaryPdfScoped(ctx, { kind: 'location', ...opts });
+    // A block register is never null: the emptiness check applies to a
+    // treatment handle only, because a block with no work in the period still
+    // prints — blank, like the paper form. Asserted rather than cast away, so
+    // if that ever stops holding it says so instead of returning undefined.
+    if (!doc) throw new Error('a location-scoped ДНЕВНИК is never empty');
+    return doc;
+}
+
+/**
+ * The same document, for either scope (#1740 item 3).
+ *
+ * ONE renderer. A per-entry document produced by a second renderer would stop
+ * being "the same layout, so it can be certified" the first time one of them
+ * changed — which is the whole requirement.
+ *
+ * Returns `null` when a treatment handle resolves to no DONE lines, so the
+ * route can answer 404 rather than render an empty register that looks like a
+ * real document with nothing in it.
+ */
+export async function generateFarmRecordDiaryPdfScoped(
+    ctx: RequestContext,
+    scope: FarmRecordScope,
+): Promise<PDFKit.PDFDocument | null> {
+    const data = await gatherFarmRecord(ctx, scope);
+    if (scope.kind === 'treatment' && data.sprayLines.length === 0 && data.fertilizeLines.length === 0) {
+        return null;
+    }
 
     const meta: ReportMeta = {
         tenantName: data.locationName || 'Farm',

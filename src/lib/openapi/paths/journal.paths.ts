@@ -162,6 +162,12 @@ const TreatmentParams = TenantParams.extend({
  * three to act correctly after a save whose response was lost. See the
  * operation description.
  */
+/** The ДНЕВНИК as a PDF document. Mirrors `locations.paths.ts`'s own. */
+const TreatmentPdfBody = z.string().openapi({
+    format: 'binary',
+    description: 'The \u0414\u041d\u0415\u0412\u041d\u0418\u041a pages for this treatment, as a PDF document.',
+});
+
 const TreatmentSummary = z
     .object({
         treatmentGroupId: z.string(),
@@ -381,6 +387,41 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
             status: 200,
             description: 'The treatment, including whether it is complete.',
             schema: TreatmentSummary,
+        },
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/journal/treatments/{treatmentGroupId}/farm-record',
+        operationId: 'getTreatmentFarmRecord',
+        summary: 'The \u0414\u041d\u0415\u0412\u041d\u0418\u041a pages for one treatment',
+        description:
+            'The \u041f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435 1 document limited to ONE treatment, across every block it ' +
+            'touched: the farm header, a field header strip for each TREATED parcel, and only ' +
+            'this treatment\u2019s rows. Produced by the same gatherer and the same renderer as the ' +
+            'per-block register, so the layout is identical and the document can be certified.\n\n' +
+            '**Bytes inline.** 200 `application/pdf` with a `Content-Disposition` filename \u2014 no ' +
+            'job, no URL to poll, nothing persisted. Check for `%PDF` and open it.\n\n' +
+            'A GET where its per-block sibling is a POST, because the handle is this document\u2019s ' +
+            'only input and there is nothing to send. The handle is a PATH segment rather than a ' +
+            'query parameter: iOS writes the full URL including the query string to the device ' +
+            'log, unsuppressably.\n\n' +
+            'The farm header\u2019s block line is EMPTY, deliberately. A treatment spans blocks, so ' +
+            'there is no one block to head the document with, and each field strip names its own ' +
+            '\u2014 which is where the paper form puts it. Printing the first of several would be ' +
+            'wrong and would look right.\n\n' +
+            'The observations section prints BLANK: the issue asks for only this entry\u2019s rows, ' +
+            'and an observation is a different entry.\n\n' +
+            '`404` `TREATMENT_NOT_FOUND` when the handle has no recorded lines \u2014 not an empty ' +
+            'register, which is indistinguishable from a real document whose treatment recorded ' +
+            'nothing, and a farmer cannot tell which they are holding.\n\n' +
+            'Node runtime, 60s budget.',
+        tags: ['Journal', 'Farm records'],
+        params: TreatmentParams,
+        success: {
+            status: 200,
+            description: 'The treatment\u2019s \u0414\u041d\u0415\u0412\u041d\u0418\u041a pages as PDF bytes.',
+            content: { 'application/pdf': TreatmentPdfBody },
         },
     });
 

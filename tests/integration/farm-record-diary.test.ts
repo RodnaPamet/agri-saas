@@ -15,7 +15,8 @@ import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
-import { gatherFarmRecordData } from '@/app-layer/reports/pdf/farm-record-diary';
+import { gatherFarmRecordData, gatherFarmRecord } from '@/app-layer/reports/pdf/farm-record-diary';
+import { recordDiaryTreatment } from '@/app-layer/usecases/diary-treatment';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -236,5 +237,118 @@ describeFn('ДНЕВНИК quarantine period: the line first, the product as fal
         // NULL on the line means "not captured", never zero — so the whole
         // existing corpus keeps the behaviour it was written under.
         expect(row!.quarantineDays).toBe(PRODUCT_PERIOD);
+    });
+});
+
+/**
+ * The per-entry ДНЕВНИК: the same document limited to ONE treatment (#1740).
+ *
+ * The register is per BLOCK over a period. This is the same gatherer and the
+ * same renderer scoped to a treatment instead — which is the requirement:
+ * "same layout as the full ДНЕВНИК, so it can be certified".
+ *
+ * The fixture is built so each assertion can FAIL: a second treatment on the
+ * same day in the same block (so "only this entry's rows" means something),
+ * a second block (so spanning blocks is exercised), and an untreated parcel
+ * (so "a strip per TREATED parcel" is not satisfied by listing them all).
+ */
+describeFn('ДНЕВНИК scoped to one treatment', () => {
+    const T = `tscope-${randomUUID().slice(0, 8)}`;
+    const DAY = '2026-05-12';
+    const MINE = `${T}-mine`;
+    const OTHER = `${T}-other`;
+    let blockOne = '';
+    let blockTwo = '';
+    let treatedA = '';
+    let treatedB = '';
+    let untreated = '';
+    let unitId2 = '';
+    let itemId2 = '';
+
+    beforeAll(async () => {
+        if (!DB_AVAILABLE) return;
+        unitId2 = (await prisma.unit.create({
+            data: { key: `l-ha-${T}`, name: 'L/ha', symbol: 'L/ha', measure: 'RATE' },
+        })).id;
+        itemId2 = (await prisma.item.create({
+            data: {
+                tenantId: TENANT_ID, name: `ПРЗ ${T}`, category: 'PESTICIDE',
+                defaultUnitId: unitId2, quarantinePeriodDays: 21,
+            },
+        })).id;
+        blockOne = (await prisma.location.create({ data: { tenantId: TENANT_ID, name: `Блок I ${T}` } })).id;
+        blockTwo = (await prisma.location.create({ data: { tenantId: TENANT_ID, name: `Блок II ${T}` } })).id;
+        const mk = async (loc: string, name: string, area: number) =>
+            (await prisma.parcel.create({
+                data: { tenantId: TENANT_ID, locationId: loc, name: `${name} ${T}`, cropType: 'Wheat', areaHa: area },
+            })).id;
+        treatedA = await mk(blockOne, 'I-1', 5);
+        treatedB = await mk(blockTwo, 'II-1', 7);
+        // In the SAME block as treatedA and never treated — so a document
+        // that sheets every parcel of a block would include it.
+        untreated = await mk(blockOne, 'I-2', 9);
+
+        const spray = (parcelIds: string[], note: string) => ({
+            kind: 'SPRAY' as const, occurredOn: DAY, parcelIds,
+            productItemId: itemId2, doseValue: 3, doseUnitId: unitId2, targetNote: note,
+        });
+        // Mine: two parcels across two blocks.
+        await recordDiaryTreatment(ctx(), spray([treatedA, treatedB], `цел-${T}-mine`), MINE);
+        // Another treatment, SAME day, SAME block — the one that must not leak.
+        await recordDiaryTreatment(ctx(), spray([treatedA], `цел-${T}-other`), OTHER);
+    });
+
+    it('carries only THIS treatment\'s rows, not another on the same day', async () => {
+        const data = await gatherFarmRecord(ctx(), { kind: 'treatment', treatmentGroupId: MINE });
+
+        expect(data.sprayLines).toHaveLength(2);
+        const notes = data.sprayLines.map((l) => l.targetNote);
+        expect(notes.every((n) => n === `цел-${T}-mine`)).toBe(true);
+        // The other treatment is the same product, same day, same block — so
+        // only the handle separates them.
+        expect(notes).not.toContain(`цел-${T}-other`);
+    });
+
+    it('spans the blocks it touched, with a strip per TREATED parcel', async () => {
+        const data = await gatherFarmRecord(ctx(), { kind: 'treatment', treatmentGroupId: MINE });
+
+        const names = data.fields.map((f) => f.fieldNo).sort();
+        expect(names).toEqual([`I-1 ${T}`, `II-1 ${T}`]);
+        // Not every parcel of the block: the untreated neighbour of I-1 has
+        // no strip, which a block-scoped document would have given it.
+        expect(names).not.toContain(`I-2 ${T}`);
+    });
+
+    it('leaves the farm header\'s block line empty, because there is no one block', async () => {
+        const data = await gatherFarmRecord(ctx(), { kind: 'treatment', treatmentGroupId: MINE });
+        // Naming one of two would be wrong and would look right. Each field
+        // strip carries its own block instead, which is where the paper form
+        // puts it.
+        expect(data.locationName).toBe('');
+    });
+
+    it('reports the treatment\'s own day as the period, both ends', async () => {
+        const data = await gatherFarmRecord(ctx(), { kind: 'treatment', treatmentGroupId: MINE });
+        expect(data.from).toBe(DAY);
+        expect(data.to).toBe(DAY);
+    });
+
+    it('prints no observations — an observation is a different entry', async () => {
+        const data = await gatherFarmRecord(ctx(), { kind: 'treatment', treatmentGroupId: MINE });
+        // The fixture's tenant HAS observations in other tests; a
+        // treatment-scoped document must carry none of them.
+        expect(data.observations).toEqual([]);
+    });
+
+    it('still produces the per-block register unchanged', async () => {
+        // The scope refactor must not have moved the original behaviour: a
+        // block document sheets every parcel of the block, treated or not.
+        const data = await gatherFarmRecordData(ctx(), blockOne, DAY, DAY);
+        const names = data.fields.map((f) => f.fieldNo).sort();
+        expect(names).toEqual([`I-1 ${T}`, `I-2 ${T}`]);
+        expect(data.locationName).toBe(`Блок I ${T}`);
+        // And both treatments' rows, because the block register is the
+        // period's whole record.
+        expect(data.sprayLines.length).toBeGreaterThanOrEqual(2);
     });
 });
