@@ -333,7 +333,11 @@ export function registerPlanningPaths(registry: OpenAPIRegistry): void {
         operationId: 'createSeason',
         summary: 'Create a season',
         description:
-            '`startDate` and `endDate` are calendar days (`yyyy-mm-dd`) on the way in and come back as full instants.',
+            '`startDate` and `endDate` are calendar days (`yyyy-mm-dd`) on the way in and come back as full instants.\n\n'
+            + '**Refusal codes.**\n'
+            + '- `SEASON_NAME_REQUIRED` — the name was blank, or sanitised to nothing. A name of only markup or whitespace reaches this rather than being stored empty.\n'
+            + '- `SEASON_INVALID_DATE` — a date could not be parsed. `params.field` names which (`startDate`, `endDate`, or both comma-separated), because one check covers two inputs and the client would otherwise re-prompt for the one the operator typed correctly.\n'
+            + '- `SEASON_WINDOW_INVERTED` — both dates parsed and the window runs backwards. Deliberately NOT the same code as the one above: the dates are fine and the ORDER is wrong, so the remedy is different.',
         tags: ['Planning'],
         params: TenantParams,
         body: CreateSeasonSchema,
@@ -344,7 +348,10 @@ export function registerPlanningPaths(registry: OpenAPIRegistry): void {
         path: '/api/t/{tenantSlug}/planning/seasons/{seasonId}',
         operationId: 'updateSeason',
         summary: 'Update a season',
-        description: 'Refusal code: `SEASON_NOT_FOUND` (404) — no season with that id in this farm. Distinct from `CROP_SEASON_NOT_FOUND`, which is a crop grown on a PARCEL in a season and lives on the parcel-history routes.',
+        description: '**Refusal codes.**\n'
+            + '- `SEASON_NOT_FOUND` (404) — no season with that id in this farm. Distinct from `CROP_SEASON_NOT_FOUND`, which is a crop grown on a PARCEL in a season and lives on the parcel-history routes.\n'
+            + '- `SEASON_NAME_REQUIRED` — sending `name` explicitly blank. Omitting the field leaves the name unchanged; sending it empty is a request to clear a required field, which is refused.\n\n'
+            + 'Note this operation does NOT validate dates: unlike create, an unparseable `startDate` or `endDate` is not refused here, and neither is an inverted window. That asymmetry is a known defect rather than a contract (#1826) — do not build on it.',
         tags: ['Planning'],
         params: p('seasonId'),
         body: UpdateSeasonSchema,
@@ -369,6 +376,9 @@ export function registerPlanningPaths(registry: OpenAPIRegistry): void {
         path: '/api/t/{tenantSlug}/planning/crop-types',
         operationId: 'createCropType',
         summary: 'Create a crop type',
+        description:
+            '**Refusal code.** `CROP_TYPE_NAME_REQUIRED` — the name was blank or sanitised to nothing.\n\n'
+            + 'Distinct from `INVALID_CROP_TYPE`, which means a crop type id you REFERENCED does not resolve in this farm. This one is about the name you are creating.',
         tags: ['Planning'],
         params: TenantParams,
         body: CreateCropTypeSchema,
@@ -395,7 +405,10 @@ export function registerPlanningPaths(registry: OpenAPIRegistry): void {
         operationId: 'createCropVariety',
         summary: 'Create a crop variety',
         description:
-            'Note the direction of the Decimal fields: spacings, `seedsPerGram`, `germinationRate` and `gddBaseC` are sent as NUMBERS and read back as decimal STRINGS.',
+            'Note the direction of the Decimal fields: spacings, `seedsPerGram`, `germinationRate` and `gddBaseC` are sent as NUMBERS and read back as decimal STRINGS.\n\n'
+            + '**Refusal codes.**\n'
+            + '- `VARIETY_NAME_REQUIRED` — the name was blank or sanitised to nothing.\n'
+            + '- `INVALID_CROP_TYPE` — the parent `cropTypeId` does not resolve in this farm. Resolved through the tenant-bound session, so a crop type belonging to another farm is indistinguishable from one that does not exist — which is the point.',
         tags: ['Planning'],
         params: TenantParams,
         body: CreateCropVarietySchema,
@@ -426,7 +439,12 @@ export function registerPlanningPaths(registry: OpenAPIRegistry): void {
         operationId: 'createCropPlan',
         summary: 'Create a crop plan',
         description:
-            'Creates the PLAN only. No plantings exist until `POST /crop-plans/{id}/generate` is called — `_count.plantings` of 0 is the tell.',
+            'Creates the PLAN only. No plantings exist until `POST /crop-plans/{id}/generate` is called — `_count.plantings` of 0 is the tell.\n\n'
+            + '**Refusal codes.**\n'
+            + '- `CROP_PLAN_NAME_REQUIRED` — the name was blank or sanitised to nothing.\n'
+            + '- `CROP_PLAN_INVALID_DATE` — `firstSowDate` could not be parsed. `params.field` carries `firstSowDate`; the param is present even though this operation has only one date, so a client can read it the same way on create and update.\n'
+            + '- `INVALID_SEASON`, `INVALID_CROP_TYPE`, `INVALID_VARIETY`, `INVALID_PARCEL` — the referenced id does not resolve in this farm. All four are resolved through the tenant-bound session, so another farm\u2019s id and a non-existent one are deliberately indistinguishable.\n'
+            + '- `PARCEL_LOCATION_MISMATCH` — the parcel resolves, but it does not belong to the location also given. Separate from `INVALID_PARCEL` because both ids are individually valid and it is the PAIR that is wrong.',
         tags: ['Planning'],
         params: TenantParams,
         body: CreateCropPlanSchema,
@@ -448,8 +466,12 @@ export function registerPlanningPaths(registry: OpenAPIRegistry): void {
         operationId: 'updateCropPlan',
         summary: 'Update a crop plan',
         description:
-            '`seasonId` and `cropTypeId` are NOT updatable — they are absent from the body schema, so a plan cannot be moved between seasons or crops by editing it.' +
-            '\n\nRefusal code: `CROP_PLAN_NOT_FOUND` (404).',
+            '`seasonId` and `cropTypeId` are NOT updatable — they are absent from the body schema, so a plan cannot be moved between seasons or crops by editing it.'
+            + '\n\n**Refusal codes.**\n'
+            + '- `CROP_PLAN_NOT_FOUND` (404).\n'
+            + '- `CROP_PLAN_NAME_REQUIRED` — sending `name` explicitly blank. Omitting it leaves the name unchanged.\n'
+            + '- `CROP_PLAN_INVALID_DATE` — `firstSowDate` could not be parsed, with `params.field`. The SAME code as on create, because it is the same field failing the same parse — a separate update code would advertise a distinction no client acts on.\n'
+            + '- `INVALID_VARIETY`, `INVALID_PARCEL`, `PARCEL_LOCATION_MISMATCH` — as on create.',
         tags: ['Planning'],
         params: p('cropPlanId'),
         body: UpdateCropPlanSchema,
@@ -473,8 +495,10 @@ export function registerPlanningPaths(registry: OpenAPIRegistry): void {
         summary: 'Generate the plan’s plantings',
         description:
             'Materialises the succession pattern into PLANTINGS — `successions` rows spaced `intervalDays` apart from `firstSowDate`. This is the only way plantings come into existence; there is no create-planting route. ' +
-            '\n\nRead `_count.plantings` on the plan before calling if you need to know whether it has already been generated.' +
-            '\n\nRefusal code: `CROP_PLAN_NOT_FOUND` (404).',
+            '\n\nRead `_count.plantings` on the plan before calling if you need to know whether it has already been generated.'
+            + '\n\n**Refusal codes.**\n'
+            + '- `CROP_PLAN_NOT_FOUND` (404).\n'
+            + '- `CROP_PLAN_NOT_READY` — the plan has no variety, or its variety has no `daysToMaturity`, so a harvest date cannot be computed and there is nothing to materialise. Retrying cannot work: the fix is to set `daysToMaturity` on the variety or point the plan at one that has it, which is why this is a 400 and not a conflict.',
         tags: ['Planning'],
         params: p('cropPlanId'),
         success: { status: 200, description: 'The generated plantings.', schema: z.array(PlantingSchema) },
