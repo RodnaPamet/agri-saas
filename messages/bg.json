@@ -3113,6 +3113,8 @@
         "loadingLabel": "Зареждане на казуси"
     },
     "journal": {
+        "treatmentSummary": "{area} дка · {count, plural, one {# парцел} other {# парцела}}",
+        "treatmentBlocks": "Блокове: {blocks}",
         "dashboard": "Табло",
         "breadcrumb": "Дневник",
         "title": "Земеделски дневник",

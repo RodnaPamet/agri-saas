@@ -47,6 +47,18 @@ interface JournalRow {
     conditionsJson?: { operatorCertNo?: string; agronomistName?: string; agronomistCertNo?: string } | null;
     locations?: Array<{ location?: { id: string; name: string } | null }>;
     _count?: { quantities?: number; files?: number };
+    /**
+     * The folded treatment this row stands for (#1740), when it stands for
+     * one. `parcelCount > 0` means the row represents a TREATMENT over that
+     * many parcels; 0 means a free-hand entry that folds to itself.
+     */
+    treatment?: {
+        treatmentGroupId: string;
+        productName?: string | null;
+        parcelCount: number;
+        totalAreaHa: number;
+        blockNames: string[];
+    } | null;
     /** The linked spray/operation line — the dnevnik agronomic columns (#10). */
     operationParcel?: {
         doseValue?: string | number | null;
@@ -267,15 +279,57 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
                 {
                     id: 'entryTitle',
                     header: t('colTitle'),
-                    accessorFn: (e) => e.title,
-                    cell: ({ row, getValue }) => (
-                        <TableTitleCell
-                            href={tenantHref(`/journal/${row.original.id}`)}
-                            id={`journal-link-${row.original.id}`}
-                        >
-                            <span>{getValue() as string}</span>
-                        </TableTitleCell>
-                    ),
+                    // A FOLDED treatment row must not be titled by one of
+                    // its parcels (#1740).
+                    //
+                    // The row IS the group's representative entry, and an
+                    // INPUT_APPLICATION title is `{product} — {parcel}`,
+                    // written per line. So a treatment over 30 parcels read as
+                    // «Тестов препарат — Парцел 7» — one parcel's record, with
+                    // nothing saying it covered 29 more. Found by agrent-ios,
+                    // which titles its own rows by the product and shows the
+                    // counts beneath, so only the web was exposed.
+                    //
+                    // Fixed HERE rather than by overriding `title` in the
+                    // fold, for two reasons. The row is documented as an
+                    // honest copy of a real entry, and an overridden title
+                    // would differ from the one the entry-detail page shows
+                    // when you tap it. And composing "30 парцела · 120 дка"
+                    // server-side would be server-authored Bulgarian copy,
+                    // which `no-server-authored-user-copy` ratchets down and
+                    // which the message catalogues exist to hold.
+                    accessorFn: (e) =>
+                        (e.treatment && e.treatment.parcelCount > 0
+                            ? e.treatment.productName
+                            : null) ?? e.title,
+                    cell: ({ row, getValue }) => {
+                        const tr = row.original.treatment;
+                        const folded = tr && tr.parcelCount > 0 ? tr : null;
+                        return (
+                            <TableTitleCell
+                                href={tenantHref(`/journal/${row.original.id}`)}
+                                id={`journal-link-${row.original.id}`}
+                            >
+                                <span>{getValue() as string}</span>
+                                {folded ? (
+                                    <span className="block text-[0.72rem] text-content-muted">
+                                        {t('treatmentSummary', {
+                                            // Hectares on the wire, дка on the
+                                            // screen — the conversion belongs
+                                            // where the number is displayed.
+                                            area: Math.round(folded.totalAreaHa * 10 * 10) / 10,
+                                            count: folded.parcelCount,
+                                        })}
+                                        {folded.blockNames.length > 0
+                                            ? ` · ${t('treatmentBlocks', {
+                                                  blocks: folded.blockNames.join(', '),
+                                              })}`
+                                            : ''}
+                                    </span>
+                                ) : null}
+                            </TableTitleCell>
+                        );
+                    },
                     meta: { mobileCard: { slot: 'title' } },
                 },
                 // Type — the journal's OWN vocabulary (Наблюдение, Третиране).

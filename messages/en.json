@@ -3113,6 +3113,8 @@
         "loadingLabel": "Loading issues"
     },
     "journal": {
+        "treatmentSummary": "{area} daa · {count, plural, one {# parcel} other {# parcels}}",
+        "treatmentBlocks": "Blocks: {blocks}",
         "dashboard": "Dashboard",
         "breadcrumb": "Journal",
         "title": "Field Journal",
