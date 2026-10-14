@@ -1,5 +1,6 @@
 /**
- * Access-review campaigns — the five `access-reviews` paths (#1739, #1712 batch 6).
+ * Access-review campaigns — the six `access-reviews` paths (#1739, #1712 batch 6;
+ * `revoke` added by #1793).
  *
  * ## Why this module exists
  *
@@ -11,27 +12,28 @@
  * it takes from the spec. Registering the paths is therefore the fix rather
  * than shipping a parallel code list (#1718, closed in favour of this).
  *
- * ## Ten codes, not twelve, and the two that stay are a finding
+ * ## Twelve codes now, and how the last two got here
  *
- * #1739 expected all twelve `ACCESS_REVIEW_*` codes to leave the baseline.
- * Traced rather than assumed, each code to the usecase that raises it and each
- * usecase to the route that calls it:
+ * #1739 expected all twelve `ACCESS_REVIEW_*` codes to leave the baseline, and
+ * ten did. Traced rather than assumed, each code to the usecase that raises it
+ * and each usecase to the route that calls it,
+ * `ACCESS_REVIEW_DECISION_ALREADY_EXECUTED` and
+ * `ACCESS_REVIEW_DECISION_NOT_RECORDED` turned out to be raised **only** by
+ * `revokeDecision` — which had no route at all. Documenting them then would
+ * have been the batch-8 mistake one level worse: telling a caller about a
+ * refusal it cannot receive, with no operation to attach it to. So they stayed
+ * on `UNDOCUMENTED_BASELINE` with a written reason and the unmounted usecase
+ * was filed as #1793.
  *
- *   - `ACCESS_REVIEW_DECISION_ALREADY_EXECUTED` and
- *     `ACCESS_REVIEW_DECISION_NOT_RECORDED` are raised **only** by
- *     `revokeDecision`, and `revokeDecision` has NO route. The decisions path
- *     exports `PUT` alone and calls `submitDecision`; there is no `DELETE`.
- *
- * So no operation can return those two, and documenting them here would be
- * the batch-8 mistake one level worse — telling a caller about a refusal it
- * cannot receive, when there is no operation to attach it to. They stay on
- * `UNDOCUMENTED_BASELINE` with a written reason, and the unmounted usecase is
- * filed as #1793.
+ * Owner ruling 2026-10-14 on that issue: revocation is a real reviewer need,
+ * so the route is mounted. Both codes are now reachable and documented on it,
+ * and both have left the baseline. The honest order mattered — the fix for an
+ * undocumented code is sometimes an operation, not a paragraph.
  *
  * ## Schemas are IMPORTED, not redeclared
  *
- * `CreateAccessReviewSchema` and `SubmitDecisionSchema` come from
- * `@/app-layer/schemas/access-review.schemas`. A route and a spec module each
+ * `CreateAccessReviewSchema`, `SubmitDecisionSchema` and `RevokeDecisionSchema`
+ * come from `@/app-layer/schemas/access-review.schemas`. A route and a spec module each
  * declaring their own Zod for one body are two schemas nothing compares, so a
  * change to either is invisible to the other —
  * `tests/guards/request-body-declared-once.test.ts` caps that at zero.
@@ -39,14 +41,16 @@
  * ## Every method, because partial registration fails
  *
  * `openapi-paths-complete.test.ts` requires a registered path to document
- * every method its file exports, with no grandfathering. The five files export
- * GET+POST, GET, POST, PUT and GET respectively — six operations, all below.
+ * every method its file exports, with no grandfathering. The six files export
+ * GET+POST, GET, PUT, POST, POST and GET respectively — seven operations, all
+ * below.
  */
 import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 
 import {
     CreateAccessReviewSchema,
+    RevokeDecisionSchema,
     SubmitDecisionSchema,
 } from '@/app-layer/schemas/access-review.schemas';
 import { op } from './helpers';
@@ -232,6 +236,21 @@ const DecisionSubmittedSchema = z
     })
     .openapi('AccessReviewDecisionSubmitted');
 
+/**
+ * Deliberately NOT reusing `AccessReviewDecisionSubmitted`.
+ *
+ * It carries `decision` and `transitionedToInReview`, and neither has a value
+ * after a revocation: the verdict is now null, and a revoke cannot be the
+ * submission that moved a campaign into `IN_REVIEW`. Reusing it would have
+ * forced either a lie or two nullable fields on the submit response as well.
+ */
+const DecisionRevokedSchema = z
+    .object({
+        decisionId: z.string(),
+        accessReviewId: z.string(),
+    })
+    .openapi('AccessReviewDecisionRevoked');
+
 export function registerAccessReviewPaths(registry: OpenAPIRegistry): void {
     op(registry, {
         method: 'get',
@@ -289,12 +308,34 @@ export function registerAccessReviewPaths(registry: OpenAPIRegistry): void {
             + '- `ACCESS_REVIEW_NOT_FOUND` — no such campaign in this farm.\n'
             + '- `ACCESS_REVIEW_DECISION_NOT_FOUND` — the campaign exists but holds no such decision row. Usually a stale client: the roster is snapshotted, so a decision id from a different campaign will not resolve here.\n'
             + '- `ACCESS_REVIEW_NOT_ASSIGNED_REVIEWER` — the caller is not the campaign’s assigned reviewer. A permission shortfall that no role lifts, because the constraint is identity rather than tier: an OWNER who is not the reviewer is refused too, which is the point of assigning one.\n'
-            + '- `ACCESS_REVIEW_DECISION_ALREADY_RECORDED` — a verdict is already on this row. Decisions are recorded once; the way to change one is `revokeDecision`, which has no route today (#1793).\n'
+            + '- `ACCESS_REVIEW_DECISION_ALREADY_RECORDED` — a verdict is already on this row. Decisions are recorded once, so changing one is two steps: `POST .../revoke` to clear it, then submit again.\n'
             + '- `ACCESS_REVIEW_DECISIONS_IMMUTABLE` — the campaign is closed, so its decisions are frozen. Retrying cannot work and no role lifts it.',
         tags: ['Access reviews'],
         params: DecisionParams,
         body: SubmitDecisionSchema,
         success: { status: 200, description: 'The verdict was recorded.', schema: DecisionSubmittedSchema },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/access-reviews/{reviewId}/decisions/{decisionId}/revoke',
+        operationId: 'revokeAccessReviewDecision',
+        summary: 'Clear a recorded verdict so it can be decided again',
+        description:
+            'Returns the decision row to undecided. **Nothing is deleted** — the row stays on the campaign and still needs a verdict, which is why this is a `POST` to a sub-resource rather than a `DELETE` on the decision: a client treating it as a deletion would stop showing a subject who is still awaiting review.\n\n'
+            + '`reason` is REQUIRED (3–2000 chars) and is written into the `ACCESS_REVIEW_DECISION_REVOKED` audit entry alongside the verdict being cleared. Reversing a decision on an audited control is itself an auditable act, so there is no way to do it without saying why.\n\n'
+            + 'After this, `PUT .../decisions/{decisionId}` accepts a new verdict — the pair is how a verdict gets changed, since submission is once-only.\n\n'
+            + '**Refusal codes.**\n'
+            + '- `ACCESS_REVIEW_DECISION_NOT_FOUND` — no such decision row on this campaign. Also returned when the row is concurrently executed between the gate and the write, so a client should re-read rather than retry blindly.\n'
+            + '- `ACCESS_REVIEW_NOT_FOUND` — no such campaign in this farm.\n'
+            + '- `ACCESS_REVIEW_NOT_ASSIGNED_REVIEWER` — identity, not tier: an OWNER who is not the assigned reviewer is refused, exactly as on submit.\n'
+            + '- `ACCESS_REVIEW_DECISIONS_IMMUTABLE` — the campaign is closed. Nothing lifts this; a closed campaign is the audit record.\n'
+            + '- `ACCESS_REVIEW_DECISION_NOT_RECORDED` — the row holds no verdict, so there is nothing to clear. Distinguished from a missing row so a client can tell "already undecided" from "wrong id".\n'
+            + '- `ACCESS_REVIEW_DECISION_ALREADY_EXECUTED` — the verdict has been applied against the live membership and cannot be taken back here. Undoing an executed revocation means re-granting access, which is a membership operation and not a review one.',
+        tags: ['Access reviews'],
+        params: DecisionParams,
+        body: RevokeDecisionSchema,
+        success: { status: 200, description: 'The verdict was cleared; the row awaits a new one.', schema: DecisionRevokedSchema },
     });
 
     op(registry, {

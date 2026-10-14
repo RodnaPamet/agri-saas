@@ -591,6 +591,11 @@
       "documented": true
     },
     {
+      "path": "/api/t/{tenantSlug}/access-reviews/{reviewId}/decisions/{decisionId}/revoke",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/access-reviews/{reviewId}/evidence",
       "status": "live",
       "documented": true
