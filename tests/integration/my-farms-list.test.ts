@@ -36,6 +36,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { randomUUID } from 'crypto';
 
 import { listMyFarms } from '@/app-layer/usecases/my-farms';
+import { computePermissions } from '@/lib/tenant-context';
 import { hashForLookup } from '@/lib/security/encryption';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 
@@ -54,6 +55,9 @@ const NEWEST = `t-farms-3-${randomUUID()}`;
 const REMOVED = `t-farms-del-${randomUUID()}`;
 const DEACTIVATED = `t-farms-off-${randomUUID()}`;
 const NOT_MINE = `t-farms-other-${randomUUID()}`;
+const TWO_TIER = `u-farms-tiers-${randomUUID()}`;
+const TIER_OWNED = `t-farms-owned-${randomUUID()}`;
+const TIER_READONLY = `t-farms-ro-${randomUUID()}`;
 
 async function makeUser(id: string): Promise<void> {
     const email = `${id}@example.test`;
@@ -101,6 +105,14 @@ describeFn('listMyFarms — the farm switcher list', () => {
         await join(ME, REMOVED, { at: new Date('2025-12-01T00:00:00Z') });
         await join(ME, DEACTIVATED, { at: new Date('2025-11-01T00:00:00Z'), status: 'DEACTIVATED' });
         await join(SOMEONE_ELSE, NOT_MINE, { at: new Date('2025-01-01T00:00:00Z') });
+
+        // #1768: a person whose tiers DIFFER between farms. Their own user and
+        // tenants, so the exact-list assertions above stay untouched.
+        await makeUser(TWO_TIER);
+        await makeTenant(TIER_OWNED);
+        await makeTenant(TIER_READONLY);
+        await join(TWO_TIER, TIER_OWNED, { at: new Date('2026-01-01T00:00:00Z') });
+        await join(TWO_TIER, TIER_READONLY, { at: new Date('2026-06-01T00:00:00Z'), role: 'READER' });
     });
 
     afterAll(async () => {
@@ -159,6 +171,44 @@ describeFn('listMyFarms — the farm switcher list', () => {
         const byId = Object.fromEntries(farms.map((f) => [f.id, f.role]));
         expect(byId[OLDEST]).toBe('OWNER');
         expect(byId[NEWEST]).toBe('ADMIN');
+    });
+
+    it('carries the permission tier IN THAT FARM, which is what /me cannot do', async () => {
+        // #1768, and the reason this field is here rather than only on
+        // `/api/auth/me`: that endpoint resolves "the" tenant as the caller's
+        // OLDEST membership, so its `permissions` describe the first farm
+        // they ever joined. For this person that is the one they OWN, and
+        // they are a READER of the other — so a client trusting /me would
+        // offer them a write control in a farm that will refuse it.
+        //
+        // OWNER and ADMIN were not usable for this: both are level >= 4, so
+        // their coarse tiers are IDENTICAL and the assertion could not fail.
+        // READER is the lowest tier and the one that actually discriminates.
+        const farms = await listMyFarms(TWO_TIER);
+        const byId = Object.fromEntries(farms.map((f) => [f.id, f]));
+
+        expect(farms).toHaveLength(2);
+        // What /me would report for this person — the oldest farm's tier.
+        expect(farms[0].id).toBe(TIER_OWNED);
+        expect(byId[TIER_OWNED].permissions.canWrite).toBe(true);
+        expect(byId[TIER_OWNED].permissions.canAdmin).toBe(true);
+
+        // And the farm they actually have open, where it is false. This is
+        // the pair that differs; a single-row assertion would pass on a
+        // field copied from /me.
+        expect(byId[TIER_READONLY].permissions.canWrite).toBe(false);
+        expect(byId[TIER_READONLY].permissions.canAdmin).toBe(false);
+        expect(byId[TIER_READONLY].permissions.canRead).toBe(true);
+    });
+
+    it('the tier agrees with the row\'s own role, for every row', async () => {
+        // Derived rather than spelled, so a future role whose ladder position
+        // changes cannot leave this file asserting a stale pairing.
+        const farms = await listMyFarms(TWO_TIER);
+        expect(farms.length).toBeGreaterThan(0);
+        for (const f of farms) {
+            expect(f.permissions).toEqual(computePermissions(f.role));
+        }
     });
 
     it('a person with no farms gets an empty array, not an error', async () => {
