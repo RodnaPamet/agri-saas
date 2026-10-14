@@ -100,9 +100,35 @@ describeFn('native OAuth handoff', () => {
         expect(location.startsWith(REDIRECT)).toBe(true);
 
         // ONLY the code travels — never a token.
-        const code = new URL(location).searchParams.get('code');
+        //
+        // ## This assertion used to fail about once in seven thousand runs
+        //
+        // It was `expect(location).not.toMatch(/accessToken|refreshToken|eyJ/)`.
+        // The `eyJ` arm is a heuristic for "a JWT appears here", and the
+        // authorization code is random base64url — so it contains those three
+        // characters by chance. Caught in CI on 2026-10-14 with
+        // `code=W6W_uwFcok` + `eyJ` + `yXhpAcTeenO5DfTfjVJlQNc8mv84vQ`, which
+        // leaked nothing at all. Three characters from a 64-symbol alphabet
+        // across ~38 positions is ~1.4e-4 per run, which over a repository's
+        // worth of CI is a certainty rather than bad luck.
+        //
+        // The property is real and worth keeping; what was wrong was aiming a
+        // substring scan at a string containing random data. Each assertion
+        // below is exact, and none can fire on a random code.
+        const url = new URL(location);
+        const code = url.searchParams.get('code');
         expect(code).toBeTruthy();
-        expect(location).not.toMatch(/accessToken|refreshToken|eyJ/);
+
+        // 1. The parameter SET, so a token cannot ride along under any name.
+        //    An exact set rather than two absences: adding a parameter to an
+        //    auth redirect should be a deliberate decision that fails here.
+        expect([...url.searchParams.keys()]).toEqual(['code']);
+
+        // 2. The code is not itself a JWT. A JWT is three dot-separated
+        //    segments and base64url contains no dot, so this discriminates a
+        //    token from a code with NO probability attached — unlike the
+        //    `eyJ` prefix, which is 1-in-262144 on a random string.
+        expect(code).not.toContain('.');
 
         const ex = await exchange(exchangeReq({ code, code_verifier: verifier }), ROUTE_CTX);
         expect(ex.status).toBe(200);
@@ -110,6 +136,14 @@ describeFn('native OAuth handoff', () => {
         expect(tokens.tokenType).toBe('Bearer');
         expect(typeof tokens.accessToken).toBe('string');
         expect(typeof tokens.refreshToken).toBe('string');
+
+        // 3. The strongest form of "only the code travelled", and the one the
+        //    heuristic was standing in for: the value in the URL is neither
+        //    token the exchange hands back. Exact comparison, no pattern, and
+        //    it can only be made available AFTER the exchange — which is why
+        //    the original assertion reached for a shape test instead.
+        expect(code).not.toBe(tokens.accessToken);
+        expect(code).not.toBe(tokens.refreshToken);
 
         // The tokens hang off the SAME session the browser sign-in created,
         // which is what makes them revocable.
