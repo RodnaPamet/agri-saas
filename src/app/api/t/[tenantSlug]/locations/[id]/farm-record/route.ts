@@ -19,20 +19,10 @@ import {
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { contentDisposition } from '@/lib/http/content-disposition';
+import { collectPdfBuffer } from '@/app-layer/reports/pdf/collect-buffer';
 import { FarmRecordGenerateSchema } from '@/lib/schemas';
 
 
-
-/** Collect a PDFKit document into a Buffer (listeners first, then end()). */
-function collectPdfBuffer(pdfDoc: PDFKit.PDFDocument): Promise<Buffer> {
-    return new Promise((resolve, reject) => {
-        const chunks: Buffer[] = [];
-        pdfDoc.on('data', (chunk: Buffer) => chunks.push(chunk));
-        pdfDoc.on('end', () => resolve(Buffer.concat(chunks)));
-        pdfDoc.on('error', reject);
-        pdfDoc.end();
-    });
-}
 
 // Force Node.js runtime — PDFKit needs stream, zlib, Buffer.
 export const runtime = 'nodejs';
