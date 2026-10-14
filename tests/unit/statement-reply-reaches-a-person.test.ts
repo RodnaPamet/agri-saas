@@ -77,10 +77,14 @@ describe('the providers put a reply address on the wire', () => {
 
     it('nodemailer uses its own `replyTo` spelling', async () => {
         const sendMail = jest.fn().mockResolvedValue({});
-        const p = new NodemailerProvider(
-            { host: 'h', port: 587, auth: { user: 'u', pass: 'p' } } as never,
-            'from@example.test',
-        );
+        // ONE config object, not (config, from) — the constructor takes a
+        // single argument and carries `from` inside it. My first version
+        // passed two and `tsc` accepted it locally because that run PREDATED
+        // this file: I typechecked after wiring the dispatch and before
+        // writing the test, then never re-ran it. CI caught it.
+        const p = new NodemailerProvider({
+            host: 'h', port: 587, user: 'u', pass: 'p', from: 'from@example.test',
+        });
         (p as unknown as { transporter: { sendMail: unknown } }).transporter = { sendMail };
 
         await p.send({
