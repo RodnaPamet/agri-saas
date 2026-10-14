@@ -32,7 +32,24 @@ const TENANT_API_DIR = path.join(REPO_ROOT, 'src/app/api/t/[tenantSlug]');
  * control that nobody has needed yet. Listing one is how to refuse a surface
  * to machine clients outright — `sso` or `security` would be the candidates.
  */
-const DELIBERATELY_EXCLUDED: readonly string[] = [];
+const DELIBERATELY_EXCLUDED: readonly string[] = [
+    // P6.1 (#1810). `PUT /farm-brand/publication` is the only route here, and
+    // it is the act of making a real farm's identity public — a page that can
+    // be shared, printed onto A6 paper and into a QR code (P6.7), and later
+    // indexed. It is gated on `assertCanAdmin` for that reason.
+    //
+    // Excluded rather than scoped because the question an API key answers is
+    // "may this machine client do routine work on my behalf", and publishing
+    // is not routine: it is a one-off decision with a consent record attached,
+    // and the consent is the OWNER's. A key that could flip it would let an
+    // integration publish a farm whose owner never saw the sheet.
+    //
+    // The current behaviour is already refusal (fail-closed), so this entry
+    // changes nothing at runtime — it records that the refusal is a decision.
+    // Revisit if an integration ever has a real reason to publish, which would
+    // also need an answer for whose consent it is acting under.
+    'farm-brand',
+];
 
 /**
  * The families that actually carry routes.
