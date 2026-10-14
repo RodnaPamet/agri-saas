@@ -284,7 +284,30 @@ export function commonErrorResponses(): RouteConfig['responses'] {
                 'carries this sentence before switching on either.',
             content: json,
         },
-        404: { description: 'Not found, or not visible to this tenant.', content: json },
+        404: {
+            description:
+                'Not found, or not visible to this tenant.\n\n'
+                + 'Two codes here come from the TENANT RESOLVER rather than from any '
+                + 'handler, so they are reachable on every `/api/t/**` route and are the '
+                + 'ones worth switching on (#1712):\n\n'
+                + '- `TENANT_NOT_FOUND` — no such farm, OR a farm this caller may not see, '
+                + 'OR one removed from the organisation. The three are DELIBERATELY '
+                + 'indistinguishable and share one code: a response that told them apart '
+                + 'would let a caller enumerate farms by slug. So do not offer "check the '
+                + 'address" as though the farm were certainly absent — the honest message '
+                + 'is that it is not available to this account.\n'
+                + '- `TENANT_IDENTIFIER_REQUIRED` — the request reached the resolver with '
+                + 'neither a slug nor an id. In practice this means a session carrying no '
+                + 'tenant, so re-authenticating or picking a farm is the way out rather '
+                + 'than retrying. The 404 status is historical and kept on purpose: '
+                + 'changing it would break a client that already handles 404 here, and the '
+                + '#1712 migration is about the LANGUAGE a farmer reads.\n\n'
+                + 'Both carried an English sentence and no code until #1712. The iOS '
+                + 'client resolves display from `error.message` and has no `NOT_FOUND` '
+                + 'entry, so an uncoded 404 reached a Bulgarian farmer as English — which '
+                + 'is the whole reason these are coded rather than merely translated.',
+            content: json,
+        },
         426: {
             description:
                 'Client too old — the declared `x-agrent-client-version` is below the ' +

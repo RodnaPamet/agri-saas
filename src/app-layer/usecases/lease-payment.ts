@@ -16,7 +16,7 @@ import { assertCanRead, assertCanWrite } from '../policies/common';
 import { runInTenantContext } from '@/lib/db-context';
 import { logEvent } from '../events/audit';
 import { sanitizePlainText } from '@/lib/security/sanitize';
-import { notFound } from '@/lib/errors/types';
+import { codedNotFound } from '@/lib/errors/types';
 import { canonicalRentUnit } from '@/lib/agro/rent-units';
 
 export interface LeasePaymentInput {
@@ -79,7 +79,7 @@ export async function recordLeasePayment(
             where: { id: leaseId, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true, lessorName: true, rentUnit: true },
         });
-        if (!lease) throw notFound('Lease not found');
+        if (!lease) throw codedNotFound('LEASE_NOT_FOUND', 'Lease not found');
 
         // Default to the lease's own unit so a payment can't drift dimensionally.
         const unit = input.unit
@@ -123,7 +123,7 @@ export async function deleteLeasePayment(ctx: RequestContext, paymentId: string)
             where: { id: paymentId, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true, seasonYear: true },
         });
-        if (!existing) throw notFound('Payment not found');
+        if (!existing) throw codedNotFound('LEASE_PAYMENT_NOT_FOUND', 'Payment not found');
         await db.leasePayment.update({
             where: { id: paymentId },
             data: { deletedAt: new Date() },
