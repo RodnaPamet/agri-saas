@@ -5236,7 +5236,9 @@
         "signedInAs": "You are signed in as <b>{email}</b>.",
         "body": "You do not have access to any workspace yet. Ask your admin to invite you, then sign in again with the same email address — the invitation email is optional.",
         "signOut": "Sign out",
-        "accountLink": "Account settings"
+        "accountLink": "Account settings",
+        "staleTitle": "Your session is out of date",
+        "staleBody": "You do belong to a farm — it was added after you signed in, so this sign-in does not know about it yet. Sign out and sign in again with the same email address and it will appear. You do not need an invitation."
     },
     "notFound": {
         "title": "Page not found",
