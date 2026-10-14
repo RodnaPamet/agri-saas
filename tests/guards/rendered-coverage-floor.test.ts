@@ -260,7 +260,17 @@ const ROOT = path.resolve(__dirname, '../..');
 //
 // 257 is this branch's own measured live count, not 255 + 2: a shared floor
 // raised by arithmetic lands wrong whenever another branch merged first.
-const RENDERED_TEST_FLOOR = 257;
+//
+// Raised 257 -> 258 for `modal-single-dialog-title` (#1836): `<Modal>` rendered
+// its visually-hidden fallback `Dialog.Title` unconditionally while
+// `Modal.Header` rendered another, so 33 of 52 call sites shipped two elements
+// carrying the id `aria-labelledby` names — and the 18 that title only the
+// header had a hidden «Диалог» sharing that id with the real heading.
+//
+// 258 is this branch's own measured live count AFTER rebasing onto the main
+// that carries #1740's 255 -> 257. Choosing a number before that rebase would
+// have been arithmetic against a base that was about to move.
+const RENDERED_TEST_FLOOR = 258;
 // Raised 246 -> 247 for `field-operation-panel-if-match.test.tsx` (#1370):
 // the online map panel marked prescription lines with no `If-Match`, a
 // silent last-write-wins on a row that stamps a regulatory date. Raised to
