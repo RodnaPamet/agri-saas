@@ -37,6 +37,7 @@ import {
     isTermsAllowedPath,
 } from '@/lib/auth/guard';
 import { generateNonce, buildCspHeader, CSP_NONCE_HEADER, CSP_REPORT_PATH, CSP_REPORT_GROUP, getCspHeaderName, isCspReportOnly } from '@/lib/security/csp';
+import { isPublicSurface, PUBLIC_SURFACE_HEADER } from '@/lib/i18n/public-surface';
 import { applySecurityHeaders } from '@/lib/security/headers';
 import { resolveCorsConfig, isOriginAllowed, applyCorsHeaders, CORS_PREFLIGHT_HEADERS } from '@/lib/security/cors';
 import { shouldBlockAdminRequest } from '@/lib/security/admin-session-guard';
@@ -613,6 +614,25 @@ export default async function middleware(
     const requestHeaders = new Headers(req.headers);
     requestHeaders.set(CSP_NONCE_HEADER, nonce);
     requestHeaders.set('x-request-id', requestId);
+    // ── P6.4 (#1813): tell the root layout this render is for a stranger ──
+    //
+    // A layout cannot see the pathname — it receives only `children` — so the
+    // middleware, which already knows, says so on the request. Exactly the
+    // bridge the CSP nonce above uses, and the layout already awaits
+    // `headers()`, so reading one more costs nothing.
+    //
+    // What it buys: the layout serialises `getMessages()` into the RSC
+    // payload, and measured 2026-10-14 that is 404,981 bytes of Bulgarian for
+    // a page that needs 475. On P6.5's LCP <= 2.5s over rural mobile data,
+    // that payload is the difference between the target being reachable and
+    // not.
+    //
+    // Set only when PRESENT, and an absent header means the operator app —
+    // the safe default. A missing header ships the full catalogue, which costs
+    // bytes; a wrongly-set one would strip copy from a real screen.
+    if (isPublicSurface(pathname)) {
+        requestHeaders.set(PUBLIC_SURFACE_HEADER, '1');
+    }
     // 2026-05-14 — Next.js 15 reads the FULL CSP policy from the
     // request headers (NOT just our `x-csp-nonce` request header)
     // to drive its internal auto-nonce-application. Specifically,
