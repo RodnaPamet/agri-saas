@@ -243,7 +243,25 @@ export function commonErrorResponses(): RouteConfig['responses'] {
                 'reading a cached copy of this spec and your client matches on ' +
                 '`plan_limit_exceeded:` or a sibling, switch to `code` — the prefix was ' +
                 'removed once the only client depending on it had shipped the codes.\n\n' +
-                'Two more are described here rather than per-operation, and their scope is ' +
+                'One PERMISSION code is described here, and it is the most diffuse of all '
+                + 'of them — 106 call sites, under most mutating operations in this '
+                + 'document:\n\n'
+                + '- `WRITE_FORBIDDEN_FOR_ROLE` — the caller\'s role in THIS farm may not '
+                + 'modify records. Params: `role`. It refuses exactly three of the six roles '
+                + '— READER, MECHANISATOR and AUDITOR — and no other condition produces it: '
+                + 'it is NOT a plan ceiling, NOT a payment problem, and NOT a moderator '
+                + 'action, so retrying, paying or waiting all change nothing. The remedy is '
+                + 'a different role, which only an administrator of that farm can grant, and '
+                + '`params.role` is there so a client can name the role the person actually '
+                + 'holds rather than guessing.\n\n'
+                + '  Distinguish it from `ADMIN_REQUIRED` above, which comes from the Edge '
+                + 'and means the ROUTE is admin-only. This one comes from a usecase and '
+                + 'means the OPERATION needs write. A role can pass the Edge and still meet '
+                + 'this.\n\n'
+                + '  Uncoded until #1767, which is why a client reading a cached copy of '
+                + 'this spec should treat its absence as "this server predates the code" '
+                + 'rather than "this server cannot refuse a write".\n\n'
+                + 'Two more are described here rather than per-operation, and their scope is ' +
                 'NARROWER than the four above: they come from `getUserCtx`, so they are ' +
                 'reachable on the PERSON-scoped routes only — `/api/account/**`, ' +
                 '`/api/me/**` and `/api/social/**`. No tenant route can answer either. ' +
