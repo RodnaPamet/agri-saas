@@ -9,7 +9,7 @@ import { sanitizeRedirectPath } from './safe-redirect';
 
 // ─── Public path allowlist ───
 
-const PUBLIC_PATH_PREFIXES = [
+export const PUBLIC_PATH_PREFIXES = [
     '/login',
     '/register',
     '/forgot-password',  // Password-reset request page — unauthenticated users must reach it
@@ -220,7 +220,7 @@ const PUBLIC_PATH_PREFIXES = [
     '/_next',            // Next.js internals
 ];
 
-const PUBLIC_PATH_EXACT = new Set([
+export const PUBLIC_PATH_EXACT = new Set([
     // P6.8 (#1817) — the public farm directory. EXACT and not a prefix: it is
     // one path, so the narrower claim is the right one, and a prefix would
     // open anything added beneath it later. It carries no credential to
@@ -354,6 +354,17 @@ const PUBLIC_PATH_EXACT = new Set([
 const STATIC_EXTENSIONS = /\.(ico|png|jpg|jpeg|gif|svg|webp|css|js|woff|woff2|ttf|eot|map|json|webmanifest|geojson)$/;
 
 /**
+ * Everything before the first `?` or `#`.
+ *
+ * Exported so the two guards that assert on this module's boundary rules can
+ * state it, rather than reimplementing the split and drifting from it.
+ */
+export function stripQueryAndFragment(pathname: string): string {
+    const cut = pathname.search(/[?#]/);
+    return cut === -1 ? pathname : pathname.slice(0, cut);
+}
+
+/**
  * Does `pathname` fall under a public `prefix`, at a SEGMENT boundary?
  *
  * ## Why a bare `startsWith` is the wrong predicate here
@@ -397,7 +408,13 @@ const STATIC_EXTENSIONS = /\.(ico|png|jpg|jpeg|gif|svg|webp|css|js|woff|woff2|tt
  * `tests/guards/public-prefix-segment-boundary.test.ts`, which drives this
  * function and derives the real-route half from the filesystem.
  */
-const PREFIX_BOUNDARY = new Set(['/', '?', '#']);
+/**
+ * A prefix match must end at a path separator. Query and fragment are NOT in
+ * this set: `isPublicPath` strips them once, before either list is consulted,
+ * so by the time a pathname reaches here it has neither. Handling them in two
+ * places is what made `/login` unsafe to narrow — see `isPublicPath`.
+ */
+const PREFIX_BOUNDARY = new Set(['/']);
 
 export function matchesPublicPrefix(pathname: string, prefix: string): boolean {
     if (!pathname.startsWith(prefix)) return false;
@@ -409,14 +426,15 @@ export function matchesPublicPrefix(pathname: string, prefix: string): boolean {
     // or at a query/fragment delimiter. Anything else is a sibling that merely
     // shares a spelling.
     //
-    // `?` and `#` are in that set because `tests/unit/guard.test.ts` pins
-    // `/login?next=/dashboard` as public, and it is right to: that is the real
-    // login-redirect shape. Production reaches here with
-    // `request.nextUrl.pathname`, which carries no query — but the other two
-    // call sites in this file take a caller-supplied pathname, and a predicate
-    // that fails CLOSED on a query string would gate the login page itself for
-    // whoever passes one. Neither delimiter weakens the rule: the sibling names
-    // this exists to refuse (`/api/metrics-internal`) contain neither.
+    // Query and fragment used to be boundaries here, to keep
+    // `/login?next=/dashboard` public — the real login-redirect shape, pinned
+    // in `tests/unit/guard.test.ts`. They are not any more, because
+    // `isPublicPath` now strips them before consulting either list. That is
+    // not a simplification for its own sake: a `Set` lookup cannot treat `?`
+    // as a boundary, so while this predicate handled queries and
+    // `PUBLIC_PATH_EXACT` did not, the two lists DISAGREED about them and no
+    // entry could be narrowed from one to the other without silently changing
+    // what it covers.
     return PREFIX_BOUNDARY.has(pathname[prefix.length]);
 }
 
@@ -424,14 +442,33 @@ export function matchesPublicPrefix(pathname: string, prefix: string): boolean {
  * Check if a pathname is public (should bypass auth).
  */
 export function isPublicPath(pathname: string): boolean {
+    // Strip query and fragment ONCE, here, so the three checks below cannot
+    // disagree about them.
+    //
+    // They used to disagree. `matchesPublicPrefix` treated `?` as a segment
+    // boundary and `PUBLIC_PATH_EXACT` is a `Set` lookup that cannot, so
+    // `/login` was public WITH a query as a prefix entry and would have
+    // become non-public the moment it was narrowed to an exact one —
+    // redirecting an unauthenticated visitor to `/login?next=…` and then
+    // gating the page they were sent to. `/reset-password?token=…` has the
+    // same shape. Narrowing a claim should not depend on which list it sits
+    // in, so the query comes off before either is consulted.
+    //
+    // This also makes a versioned asset public: `STATIC_EXTENSIONS` is
+    // `$`-anchored, so `/logo.png?v=2` did not match it before and does now.
+    // That is a widening, and a deliberate one — the un-queried form is
+    // already public and Next serves the same file either way, so no new
+    // resource becomes reachable.
+    const path = stripQueryAndFragment(pathname);
+
     // Exact matches
-    if (PUBLIC_PATH_EXACT.has(pathname)) return true;
+    if (PUBLIC_PATH_EXACT.has(path)) return true;
 
     // Prefix matches, at a SEGMENT BOUNDARY — see `matchesPublicPrefix`.
-    if (PUBLIC_PATH_PREFIXES.some((prefix) => matchesPublicPrefix(pathname, prefix))) return true;
+    if (PUBLIC_PATH_PREFIXES.some((prefix) => matchesPublicPrefix(path, prefix))) return true;
 
     // Static file extensions
-    if (STATIC_EXTENSIONS.test(pathname)) return true;
+    if (STATIC_EXTENSIONS.test(path)) return true;
 
     return false;
 }

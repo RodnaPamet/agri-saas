@@ -33,43 +33,34 @@
  * at `/` or at the end of the string. An entry already ending in `/` keeps its
  * meaning byte-for-byte, which is why the SCIM behaviour is unchanged.
  */
-import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
-import { blankNonCode } from '../helpers/blank-non-code';
 
-import { isPublicPath, matchesPublicPrefix } from '@/lib/auth/guard';
-
-const GUARD_SRC = path.join(REPO_ROOT, 'src/lib/auth/guard.ts');
+import { CSP_REPORT_PATH } from '@/lib/security/csp';
+import { PUBLIC_PATH_PREFIXES, isPublicPath, matchesPublicPrefix } from '@/lib/auth/guard';
 
 /**
- * The live entry list, read from the source array.
+ * The live entry list — the array itself, not a parse of its source.
  *
- * Parsed rather than imported because exporting a fail-open list invites a
- * second consumer. The extraction is floored below — a regex that silently
- * stops matching would otherwise make every assertion here vacuous, which is
- * the exact failure mode this file exists to prevent one level down.
+ * It used to be parsed, for a stated reason: exporting a fail-open list
+ * invites a second consumer, and anything matching this list skips the auth
+ * gate, so a module importing it to decide something unrelated would inherit
+ * auth semantics nobody reviewed. That concern is real and is now ENFORCED
+ * instead of avoided — `public-path-lists-have-one-consumer` fails the build
+ * if any module under `src/` other than the guard itself imports either list.
  *
- * COMMENTS ARE BLANKED FIRST, and that is not tidiness. `/'([^']+)'/` cannot
- * tell a quoted entry from an apostrophe in prose, so one comment reading
- * "a farm's public page" inside the array makes the regex capture the text
- * BETWEEN two apostrophes as though it were an entry — measured while adding
- * `/f` (#1814), where it produced a multi-line "entry" and the floor below
- * caught it. The floor working is the only reason that was a red build rather
- * than a silently wrong population.
- *
- * `blankNonCode` is the sanctioned stripper (`comment-stripper-order` caps
- * hand-rolled ones at zero for TypeScript) and it preserves line LENGTH, so
- * the line indices this function computes still line up.
+ * The parse had a blind spot that no floor could catch (#1848). It matched
+ * quoted literals only, and one of the 33 entries is spelled as a constant
+ * (`CSP_REPORT_PATH`, because the same value goes into three response
+ * headers). So this guard swept 32 of 33 entries while its name and docblock
+ * claimed otherwise, and `>= 20` passed at 32 exactly as it would at 33 — a
+ * population one SHORT is invisible to a floor. The control below names the
+ * entry that was missing, which is the only assertion that fails before and
+ * passes after.
  */
 function publicPrefixEntries(): string[] {
-    const src = blankNonCode(fs.readFileSync(GUARD_SRC, 'utf8')).split('\n');
-    const start = src.findIndex((l) => l.startsWith('const PUBLIC_PATH_PREFIXES'));
-    expect(start).toBeGreaterThanOrEqual(0);
-    const end = src.findIndex((l, i) => i > start && l.startsWith(']'));
-    expect(end).toBeGreaterThan(start);
-    return [...src.slice(start, end + 1).join('\n').matchAll(/'([^']+)'/g)].map((m) => m[1]);
+    return [...PUBLIC_PATH_PREFIXES];
 }
 
 /** Every URL path the app actually serves, derived from the route tree. */
@@ -107,6 +98,9 @@ describe('a public prefix stops at a segment boundary', () => {
         // slash. If someone "tidies" it away, the docblock above stops being
         // true and this fails rather than the suite quietly agreeing.
         expect(ENTRIES).toContain('/api/scim/');
+        // #1848 regression: the one entry spelled as a constant rather than a
+        // literal. The old source-parsing population could not see it.
+        expect(ENTRIES).toContain(CSP_REPORT_PATH);
     });
 
     it('control: real public routes ARE still public', () => {

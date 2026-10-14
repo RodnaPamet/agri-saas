@@ -3,6 +3,7 @@
  */
 import {
     isPublicPath,
+    stripQueryAndFragment,
     isApiRoute,
     isAdminPath,
     isTenantPath,
@@ -62,6 +63,47 @@ describe('isPublicPath', () => {
         ['/api/org/acme/invites/inv_123', false],
     ])('"%s" → %s (protected)', (path, expected) => {
         expect(isPublicPath(path)).toBe(expected);
+    });
+});
+
+// ─── query and fragment, stripped once ───
+
+describe('query and fragment are stripped before either list is consulted', () => {
+    it('strips at the first delimiter, and leaves a bare path alone', () => {
+        expect(stripQueryAndFragment('/login?next=/dashboard')).toBe('/login');
+        expect(stripQueryAndFragment('/f/pobeda#about')).toBe('/f/pobeda');
+        expect(stripQueryAndFragment('/login?a=1#b')).toBe('/login');
+        expect(stripQueryAndFragment('/login')).toBe('/login');
+        expect(stripQueryAndFragment('/')).toBe('/');
+    });
+
+    it('makes an EXACT entry public with a query, which a Set lookup cannot', () => {
+        // This is the property that lets a claim be narrowed from
+        // PUBLIC_PATH_PREFIXES to PUBLIC_PATH_EXACT without changing what it
+        // covers. `/terms` is an exact entry; before the strip,
+        // `PUBLIC_PATH_EXACT.has('/terms?x=1')` was false and the path was
+        // gated, so moving any page reached with a query — `/login?next=…`,
+        // `/reset-password?token=…` — would have gated the page itself.
+        expect(isPublicPath('/terms')).toBe(true);
+        expect(isPublicPath('/terms?x=1')).toBe(true);
+        expect(isPublicPath('/terms#section')).toBe(true);
+    });
+
+    it('makes a versioned static asset public', () => {
+        // STATIC_EXTENSIONS is `$`-anchored, so this did not match before.
+        // A deliberate widening: the un-queried form is already public and
+        // Next serves the same file either way.
+        expect(isPublicPath('/logo.png')).toBe(true);
+        expect(isPublicPath('/logo.png?v=2')).toBe(true);
+    });
+
+    it('does not let a query smuggle a protected path past the boundary rule', () => {
+        // The sibling hazard `matchesPublicPrefix` exists to refuse must stay
+        // refused once the query is gone, and a query must not create a
+        // boundary where the path has none.
+        expect(isPublicPath('/api/metrics-internal?x=1')).toBe(false);
+        expect(isPublicPath('/dashboard?next=/login')).toBe(false);
+        expect(isPublicPath('/api/clauses#/login')).toBe(false);
     });
 });
 
