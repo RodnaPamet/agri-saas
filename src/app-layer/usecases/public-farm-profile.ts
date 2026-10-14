@@ -288,3 +288,48 @@ export async function readPublicFarmProfile(
         projectedAt: row.projectedAt,
     };
 }
+
+/**
+ * Every handle a search engine may index, for the sitemap (P6.5).
+ *
+ * ## Why this lives beside the single read rather than in the sitemap
+ *
+ * Both are public projection reads, and keeping them in one module keeps the
+ * `'public-projection-read'` bypass to ONE file. `no-untyped-rls-bypass`
+ * ratchets the number of files that call `runWithoutRls`, so a sitemap reading
+ * the database directly would have raised that count for a read the existing
+ * reason already covers — spending a ratchet on duplication.
+ *
+ * ## `indexable`, not `published`
+ *
+ * A row exists only while the farm is published, so every row here is public.
+ * The filter is the narrower question: has this farm agreed to be FOUND? A
+ * sitemap is an invitation to crawl, and publishing a page is not the same
+ * decision as asking for it to be indexed — indexing is the one that outlives
+ * a withdrawal, because a cached snapshot is not ours to recall.
+ *
+ * Nothing is indexable today (P6.6 ships the control), so this returns an
+ * empty list and the sitemap is correctly empty rather than opting farms in.
+ *
+ * ## Bounded, because a sitemap is not a list endpoint
+ *
+ * 50,000 is the per-file limit in the sitemap protocol. Returning more would
+ * produce a document crawlers reject wholesale rather than truncate, so the
+ * cap is the protocol's and not a guess. Ordered by handle for a stable
+ * document: a sitemap whose order changes every request looks like churn to a
+ * crawler.
+ */
+export const SITEMAP_MAX_ENTRIES = 50_000;
+
+export async function listIndexableFarmHandles(): Promise<
+    Array<{ handle: string; projectedAt: Date }>
+> {
+    return runWithoutRls({ reason: 'public-projection-read' }, (db) =>
+        db.publicFarmProfile.findMany({
+            where: { indexable: true },
+            select: { handle: true, projectedAt: true },
+            orderBy: { handle: 'asc' },
+            take: SITEMAP_MAX_ENTRIES,
+        }),
+    );
+}
