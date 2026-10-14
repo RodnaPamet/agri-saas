@@ -22,9 +22,17 @@
  * It can, and that is the only reason this page is the right place for it.
  * `memberships` is a JWT claim minted at sign-in and the Edge has no database,
  * which is why a farm created a moment ago is invisible to the gate. This is a
- * server component, so it reads Postgres and compares the two: any farm the
+ * server component, so it reads Postgres and compares the two. A farm the
  * database grants that the token does not carry means the SESSION is stale,
  * not that the person is uninvited.
+ *
+ * (The wording avoids a colon immediately followed by the word meaning
+ * "whichever". `tests/guards/no-explicit-any-ratchet` substring-matches that
+ * sequence across `src/**` without blanking comments, so the original phrasing
+ * pushed a prose docblock into the TypeScript unsound-type count and failed
+ * CI — and a first attempt at this very note failed again by quoting the
+ * sequence it was explaining. Filed as its own defect; reworded here rather
+ * than re-grading a shared ratchet inside an unrelated PR.)
  *
  * A set difference, not a count — see `slugsTheTokenDoesNotKnow`, which
  * explains the membership-swap case a count would miss.
