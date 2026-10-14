@@ -2,6 +2,7 @@ import { Prisma, LogEntryType, LogEntryStatus } from '@prisma/client';
 import { PrismaTx } from '@/lib/db-context';
 import { RequestContext } from '../types';
 import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '@/lib/pagination';
+import { dayKeyInTz, FARM_TIME_ZONE } from '@/lib/calendar-day-key';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
 import { AssetRepository } from './AssetRepository';
 
@@ -251,6 +252,83 @@ function diaryCursorWhere(c: DiaryCursor): Prisma.LogEntryWhereInput {
     };
 }
 
+/**
+ * The `treatment` object on a folded ДНЕВНИК row.
+ *
+ * Scalars come from the REPRESENTATIVE entry the page already fetched — the
+ * product, dose, technique, pest and quarantine period are properties of the
+ * treatment, so any one of its lines carries them and none costs a query.
+ * Only the aggregates need the group.
+ *
+ * Always an object, never null: a free-hand entry folds to itself and reports
+ * `parcelCount: 0`, which is a documented answer. Returning null for it would
+ * make "no treatment" and "could not summarise" the same value.
+ */
+function buildTreatmentSummary(
+    entry: {
+        occurredAt: Date;
+        treatmentGroupId: string;
+        recordedInDiary: boolean;
+        operationParcel: {
+            doseValue: Prisma.Decimal | null;
+            targetNote: string | null;
+            quarantinePeriodDays: number | null;
+            product: { name: string; quarantinePeriodDays: number | null } | null;
+            doseUnit: { symbol: string } | null;
+            task: { operationType: string | null; applicationTechnique: string | null } | null;
+        } | null;
+    },
+    agg: { parcelCount: number; totalAreaHa: number; blockNames: string[] } | undefined,
+): Record<string, unknown> {
+    const line = entry.operationParcel;
+    // The DAY as the FARM sees it, for every row.
+    //
+    // This was `occurredAt.toISOString().slice(0, 10)`, justified as "reading
+    // back the stored UTC midnight" — true of a TREATMENT entry, whose day is
+    // written as `Date.UTC(y, mo, d)`, and false of a free-hand entry, whose
+    // `occurredAt` is a real instant. For one typed between 00:00 and 03:00
+    // in Sofia that slice returns the PREVIOUS day. Found in review by
+    // agrent-ios; the same UTC-slice-of-an-instant mistake as the date guard
+    // they caught earlier on this issue.
+    //
+    // `dayKeyInTz` is correct for BOTH: a stored UTC midnight renders as the
+    // same calendar day in Sofia (02:00 or 03:00), including across both DST
+    // transitions, so one rule covers the two kinds rather than branching on
+    // whether a row happens to have lines.
+    const occurredOn = dayKeyInTz(entry.occurredAt, FARM_TIME_ZONE);
+    const quarantinePeriodDays =
+        line?.quarantinePeriodDays ?? line?.product?.quarantinePeriodDays ?? null;
+
+    return {
+        treatmentGroupId: entry.treatmentGroupId,
+        occurredOn,
+        kind: line?.task?.operationType ?? null,
+        productName: line?.product?.name ?? null,
+        parcelCount: agg?.parcelCount ?? 0,
+        totalAreaHa: agg?.totalAreaHa ?? 0,
+        blockNames: agg?.blockNames ?? [],
+        doseValue: line?.doseValue != null ? Number(line.doseValue) : null,
+        doseUnit: line?.doseUnit?.symbol ?? null,
+        targetNote: line?.targetNote ?? null,
+        applicationTechnique: line?.task?.applicationTechnique ?? null,
+        quarantinePeriodDays,
+        // Computed server-side from the period that applied ON THE DAY, so
+        // every client shows the same date and it matches the PDF. Null when
+        // no period was captured — never the treatment day itself, which
+        // would read as "harvest today".
+        earliestHarvestOn:
+            quarantinePeriodDays != null
+                ? new Date(
+                      Date.parse(`${occurredOn}T00:00:00.000Z`) +
+                          quarantinePeriodDays * 86_400_000,
+                  )
+                      .toISOString()
+                      .slice(0, 10)
+                : null,
+        recordedInDiary: entry.recordedInDiary,
+    };
+}
+
 export interface LogEntryListParams {
     limit?: number;
     cursor?: string;
@@ -285,6 +363,7 @@ const ENTRY_LIST_INCLUDE = {
     operationParcel: {
         select: {
             doseValue: true,
+            targetNote: true,
             parcel: { select: { name: true, cropType: true, areaHa: true } },
             // The LINE's own period first (#1775); the product is the
             // fallback for lines written before that column existed. Selected
@@ -378,7 +457,7 @@ export class JournalRepository {
                   })
                 : undefined;
 
-        const treatments = await JournalRepository._treatmentSummaries(
+        const aggregates = await JournalRepository._treatmentAggregates(
             db,
             ctx,
             page.map((e) => e.treatmentGroupId),
@@ -387,7 +466,7 @@ export class JournalRepository {
         return {
             items: page.map((e) => ({
                 ...e,
-                treatment: treatments.get(e.treatmentGroupId) ?? null,
+                treatment: buildTreatmentSummary(e, aggregates.get(e.treatmentGroupId)),
             })),
             pageInfo: { nextCursor, hasNextPage },
         };
@@ -396,147 +475,81 @@ export class JournalRepository {
     /**
      * Per-treatment aggregates for ONE page of folded rows.
      *
-     * One query for the whole page rather than one per row — the N+1 the
-     * `query-shape-guardrails` D1 layer exists to catch, and which it caught
-     * in `diary-treatment.ts` earlier on this issue.
+     * ## Why this is raw SQL, having rejected raw SQL for the fold
      *
-     * Aggregated in memory rather than by `groupBy` because the figures a
-     * farmer reads — total area and the block names — live on the PARCEL
-     * behind the line, and `groupBy` cannot reach through a relation.
+     * The fold itself stays in Prisma because its `where` is the journal's
+     * manual-only rule, and a second hand-written copy of that rule is how
+     * the journal's semantics drift — it took a DB-backed test to pin down
+     * because Prisma's `NOT: { a, b }` is not obvious.
      *
-     * Returns an empty map for an empty page, which matters: a treatment whose
-     * entries are all filtered out by the caller's facets has no summary, and
-     * the row carries `treatment: null` rather than a half-built object.
+     * This query has no such clause. The page has already decided WHICH
+     * treatments to summarise, so the predicate is `tenantId` + `handle IN
+     * (…)` and nothing else. There is nothing here to drift from.
+     *
+     * ## It replaced a bounded `findMany`, which was silently wrong
+     *
+     * The first version read the page's lines with `take: 2000` and
+     * aggregated in memory. The bound applied to the page's ENTRIES across
+     * all its groups, with no ordering — so once a page held more than 2000
+     * lines (50 rows of 40 parcels is enough), arbitrary groups came back
+     * PARTIAL: `parcelCount`, `totalAreaHa` and `blockNames` all too small,
+     * with nothing saying so, and a group cut out entirely got
+     * `treatment: null` — contradicting this list's own documented promise
+     * that an entry with no treatment reports `parcelCount: 0`.
+     *
+     * "12 parcels" on a treatment that covered 30 is the wrong number to be
+     * quiet about in a compliance register. Found in review by agrent-ios
+     * before it merged.
+     *
+     * `GROUP BY` has no such bound: it returns one row per handle, so the
+     * result is bounded by the PAGE SIZE rather than by the parcels behind
+     * it, and every figure is exact. The scalars a treatment shows — product,
+     * dose, technique, pest, quarantine period — are taken from the
+     * REPRESENTATIVE row the page already fetched, so they cost no query at
+     * all.
      */
-    private static async _treatmentSummaries(
+    private static async _treatmentAggregates(
         db: PrismaTx,
         ctx: RequestContext,
         handles: string[],
-    ): Promise<Map<string, unknown>> {
-        const out = new Map<string, unknown>();
+    ): Promise<Map<string, { parcelCount: number; totalAreaHa: number; blockNames: string[] }>> {
+        const out = new Map<string, { parcelCount: number; totalAreaHa: number; blockNames: string[] }>();
         if (handles.length === 0) return out;
 
-        const rows = await db.logEntry.findMany({
-            where: {
-                tenantId: ctx.tenantId,
-                deletedAt: null,
-                treatmentGroupId: { in: handles },
-            },
-            select: {
-                treatmentGroupId: true,
-                occurredAt: true,
-                recordedInDiary: true,
-                operationParcel: {
-                    select: {
-                        quarantinePeriodDays: true,
-                        doseValue: true,
-                        targetNote: true,
-                        product: { select: { name: true, quarantinePeriodDays: true } },
-                        doseUnit: { select: { symbol: true } },
-                        task: { select: { operationType: true, applicationTechnique: true } },
-                        parcel: {
-                            select: {
-                                name: true,
-                                areaHa: true,
-                                location: { select: { name: true } },
-                            },
-                        },
-                    },
-                },
-            },
-            // Bounded: the page's groups times their lines. A treatment over
-            // every parcel of a large farm is the worst case, and this keeps
-            // one page's read from becoming unbounded in the number of
-            // PARCELS rather than the number of rows displayed.
-            take: 2000,
-        });
-
-        type Acc = {
-            parcelCount: number;
-            totalAreaHa: number;
-            blocks: Set<string>;
-            occurredOn: string | null;
-            kind: string | null;
-            productName: string | null;
-            doseValue: number | null;
-            doseUnit: string | null;
-            quarantinePeriodDays: number | null;
-            targetNote: string | null;
-            applicationTechnique: string | null;
-            recordedInDiary: boolean;
-        };
-        const acc = new Map<string, Acc>();
+        const rows = await db.$queryRaw<
+            Array<{
+                handle: string;
+                parcelCount: number;
+                totalAreaHa: number | null;
+                blockNames: string[] | null;
+            }>
+        >(Prisma.sql`
+            SELECT le."treatmentGroupId"                        AS "handle",
+                   COUNT(op."id")::int                          AS "parcelCount",
+                   COALESCE(SUM(p."areaHa"), 0)::float8          AS "totalAreaHa",
+                   COALESCE(
+                       ARRAY_AGG(DISTINCT loc."name")
+                           FILTER (WHERE loc."name" IS NOT NULL),
+                       ARRAY[]::text[]
+                   )                                            AS "blockNames"
+              FROM "LogEntry" le
+              LEFT JOIN "OperationParcel" op ON op."id" = le."operationParcelId"
+              LEFT JOIN "Parcel"          p  ON p."id"  = op."parcelId"
+              LEFT JOIN "Location"        loc ON loc."id" = p."locationId"
+             WHERE le."tenantId" = ${ctx.tenantId}
+               AND le."deletedAt" IS NULL
+               AND le."treatmentGroupId" IN (${Prisma.join(handles)})
+             GROUP BY le."treatmentGroupId"
+        `);
 
         for (const r of rows) {
-            const a: Acc =
-                acc.get(r.treatmentGroupId) ??
-                {
-                    parcelCount: 0,
-                    totalAreaHa: 0,
-                    blocks: new Set<string>(),
-                    occurredOn: null,
-                    kind: null,
-                    productName: null,
-                    doseValue: null,
-                    doseUnit: null,
-                    quarantinePeriodDays: null,
-                    targetNote: null,
-                    applicationTechnique: null,
-                    recordedInDiary: false,
-                };
-            const line = r.operationParcel;
-            if (line) {
-                a.parcelCount += 1;
-                if (line.parcel?.areaHa != null) a.totalAreaHa += Number(line.parcel.areaHa);
-                if (line.parcel?.location?.name) a.blocks.add(line.parcel.location.name);
-                a.kind ??= line.task?.operationType ?? null;
-                a.productName ??= line.product?.name ?? null;
-                a.doseValue ??= line.doseValue != null ? Number(line.doseValue) : null;
-                a.doseUnit ??= line.doseUnit?.symbol ?? null;
-                a.targetNote ??= line.targetNote ?? null;
-                a.applicationTechnique ??= line.task?.applicationTechnique ?? null;
-                // The LINE's period first, product as fallback (#1775) — the
-                // same resolution the PDF uses, so the two agree.
-                a.quarantinePeriodDays ??=
-                    line.quarantinePeriodDays ?? line.product?.quarantinePeriodDays ?? null;
-            }
-            // The DAY, read back from the stored UTC midnight, which is the
-            // exact inverse of how the write stored it. Deliberately not a
-            // zone conversion: that would be a second conversion of an
-            // already-converted value and near midnight returns the wrong day.
-            a.occurredOn ??= r.occurredAt.toISOString().slice(0, 10);
-            a.recordedInDiary = a.recordedInDiary || r.recordedInDiary;
-            acc.set(r.treatmentGroupId, a);
-        }
-
-        for (const [handle, a] of acc) {
-            out.set(handle, {
-                treatmentGroupId: handle,
-                occurredOn: a.occurredOn,
-                kind: a.kind,
-                productName: a.productName,
-                parcelCount: a.parcelCount,
-                totalAreaHa: Math.round(a.totalAreaHa * 1e4) / 1e4,
-                blockNames: [...a.blocks].sort(),
-                doseValue: a.doseValue,
-                doseUnit: a.doseUnit,
-                targetNote: a.targetNote,
-                applicationTechnique: a.applicationTechnique,
-                quarantinePeriodDays: a.quarantinePeriodDays,
-                // Computed server-side so every client shows the same date,
-                // from the period that applied ON THE DAY. Null when no
-                // period was captured — never the treatment day itself, which
-                // would read as "harvest today".
-                earliestHarvestOn:
-                    a.occurredOn != null && a.quarantinePeriodDays != null
-                        ? new Date(
-                              Date.parse(`${a.occurredOn}T00:00:00.000Z`) +
-                                  a.quarantinePeriodDays * 86_400_000,
-                          )
-                              .toISOString()
-                              .slice(0, 10)
-                        : null,
-                recordedInDiary: a.recordedInDiary,
+            out.set(r.handle, {
+                // LEFT JOIN + COUNT of the JOINED column, so an entry with no
+                // operation line counts 0 rather than 1 — which is what makes
+                // a free-hand entry report `parcelCount: 0` as documented.
+                parcelCount: r.parcelCount,
+                totalAreaHa: Math.round((r.totalAreaHa ?? 0) * 1e4) / 1e4,
+                blockNames: [...(r.blockNames ?? [])].sort(),
             });
         }
         return out;
