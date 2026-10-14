@@ -56,11 +56,15 @@ const API_ROOT = 'src/app/api/t/[tenantSlug]';
  * SUFFIX, so a filename works where an extension is expected.
  */
 function routeSegments(): string[][] {
+    // No label option: `CollectOptions` is roots / extensions / skipDirs /
+    // exclude / floor / expectEmptyBecause, and the helper builds its own
+    // failure label from the roots. I passed `what:` and it is an excess
+    // property — TS2353, caught by CI's Typecheck and NOT by this file's own
+    // jest run, because the node project's ts-jest does not reject it.
     return collectSourceFiles({
         roots: [API_ROOT],
         extensions: ['route.ts'],
         floor: 100,
-        what: 'tenant API routes',
     }).map((abs) =>
         path
             .relative(path.join(ROOT, API_ROOT), abs)
@@ -92,7 +96,6 @@ function scanClientPaths(): { literal: Found[]; skipped: Found[] } {
         roots: ['src'],
         extensions: ['.ts', '.tsx'],
         floor: 500,
-        what: 'client source files',
     })) {
         // COMMENTS BLANKED FIRST, via the shared helper. `useTenantSWR`'s own
         // docblock shows `useTenantSWR<…>('/practices')` as its usage example,
