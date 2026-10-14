@@ -249,7 +249,7 @@ const ROOT = path.resolve(__dirname, '../..');
 // It can tell them apart because it is a server component and can read
 // Postgres, which is the one thing the Edge could not do. Raised to this
 // branch's own live count, measured.
-const RENDERED_TEST_FLOOR = 253;
+const RENDERED_TEST_FLOOR = 254;
 // Raised 246 -> 247 for `field-operation-panel-if-match.test.tsx` (#1370):
 // the online map panel marked prescription lines with no `If-Match`, a
 // silent last-write-wins on a row that stamps a regulatory date. Raised to
