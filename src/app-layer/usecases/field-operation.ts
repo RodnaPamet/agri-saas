@@ -717,7 +717,7 @@ export async function markOperationParcel(
      * completed from a task in Задачи stays hidden from the journal list,
      * exactly as the 2026-10-10 ruling intends.
      */
-    opts?: { recordedInDiary?: boolean; occurredAt?: Date },
+    opts?: { recordedInDiary?: boolean; occurredAt?: Date; quarantinePeriodDays?: number | null },
 ) {
     return traceAgUsecase('field-operation.markOperationParcel', ctx, () =>
         markOperationParcelImpl(ctx, taskId, lineId, status, note, expectedVersion, opts),
@@ -731,7 +731,7 @@ async function markOperationParcelImpl(
     status: ParcelStatus,
     note?: string | null,
     expectedVersion?: number,
-    opts?: { recordedInDiary?: boolean; occurredAt?: Date },
+    opts?: { recordedInDiary?: boolean; occurredAt?: Date; quarantinePeriodDays?: number | null },
 ) {
     const result = await runInTenantContext(ctx, async (db) => {
         const line = await db.operationParcel.findFirst({
@@ -846,6 +846,19 @@ async function markOperationParcelImpl(
                 completedAt:
                     status === 'PENDING' ? null : (opts?.occurredAt ?? new Date()),
                 completedByUserId: status === 'PENDING' ? null : ctx.userId,
+                // Карантинен срок as it applied ON THE DAY (#1775). Captured
+                // here because this is the moment the line becomes a register
+                // entry; `Item.quarantinePeriodDays` is editable, so reading
+                // the product at generation time lets a reprint change.
+                //
+                // Only written when the caller supplies one, and cleared on a
+                // revert to PENDING so a line put back into play does not
+                // carry a period from a completion that was undone.
+                ...(status === 'PENDING'
+                    ? { quarantinePeriodDays: null }
+                    : opts?.quarantinePeriodDays !== undefined
+                      ? { quarantinePeriodDays: opts.quarantinePeriodDays }
+                      : {}),
                 ...(note !== undefined ? { targetNote: note } : {}),
                 // Every mutation bumps the version so the NEXT reader/replayer
                 // sees a fresh number.

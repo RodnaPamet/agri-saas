@@ -1033,7 +1033,13 @@ export async function gatherFarmRecordData(
                     areaHa,
                     applicationTechnique:
                         cond?.applicationTechnique ?? l.task.applicationTechnique ?? null,
-                    quarantineDays: l.product?.quarantinePeriodDays ?? null,
+                    // The line's OWN period first (#1775) — what applied on
+                    // the day. The product is the fallback for every line
+                    // written before that column existed, which is the
+                    // behaviour those lines were created under. A null on the
+                    // line means "not captured", never zero.
+                    quarantineDays:
+                        l.quarantinePeriodDays ?? l.product?.quarantinePeriodDays ?? null,
                     operatorCertNo: cond?.operatorCertNo ?? fb?.applicatorCertNo ?? null,
                     agronomistName: cond?.agronomistName ?? fb?.agronomistName ?? null,
                     agronomistCertNo: cond?.agronomistCertNo ?? fb?.agronomistCertNo ?? null,

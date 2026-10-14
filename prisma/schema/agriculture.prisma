@@ -774,6 +774,21 @@ model OperationParcel {
   status            ParcelOperationStatus @default(PENDING)
   completedAt       DateTime?
   completedByUserId String?
+  /// Карантинен срок in days AS IT APPLIED ON THE DAY this line was marked
+  /// done, captured per line rather than re-read from the product (#1775).
+  ///
+  /// The register's «най-ранна дата за прибиране» is computed from this, and
+  /// it has to be the period that applied then: `Item.quarantinePeriodDays`
+  /// is editable, so reading the product at generation time means a reprint
+  /// of a document can silently change. It also meant a farmer typing a
+  /// period for a product the farm already has had it dropped.
+  ///
+  /// NULL means "not captured", NOT zero — every line written before this
+  /// column existed is null and must keep falling back to the product. There
+  /// is deliberately NO backfill: nothing records what the period WAS when an
+  /// old line was completed, and copying today's product value would make the
+  /// document look authoritative about a number nobody captured.
+  quarantinePeriodDays Int?
   // Optimistic-lock counter — bumped on every mutation. A queued offline mark
   // captures the version it saw and sends it back as `If-Match` on replay; the
   // server rejects the write with 409 STALE_DATA if the row moved on
