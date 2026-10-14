@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "12.23.1",
+    "version": "12.23.2",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -53398,7 +53398,7 @@
       "patch": {
         "operationId": "updateAdminMember",
         "summary": "Change a member's role",
-        "description": "Both fields are optional and they are applied INDEPENDENTLY — `role` sets the enum role, `customRoleId` assigns or (when `null`) unassigns a custom role.\n\n**Sending both in one request is accepted, and the RESPONSE then describes the custom-role assignment rather than the role change.** The handler applies them in sequence and returns the result of whichever ran last. Send one field per request if you need the response to describe the change you made.\n\n**Sending neither is a 400**, coded `NO_CHANGES_SPECIFIED`.\n\nThat sentence previously read \"the error body is not the standard `ErrorResponse` envelope\" — which documented a defect instead of fixing it, on an operation whose 400 this same document declares AS `ErrorResponse`. Two adjacent fields of one spec contradicting each other is worse than either alone, so the route was corrected rather than the sentence softened (#1447).\n\nRefusals that live in the usecase rather than the route: promoting or demoting yourself, and removing the role from the last active OWNER/ADMIN. A farm must never become unadministrable.",
+        "description": "Both fields are optional and they are applied INDEPENDENTLY — `role` sets the enum role, `customRoleId` assigns or (when `null`) unassigns a custom role.\n\n**Sending both in one request is accepted, and the RESPONSE then describes the custom-role assignment rather than the role change.** The handler applies them in sequence and returns the result of whichever ran last. Send one field per request if you need the response to describe the change you made.\n\n**Sending neither is a 400**, coded `NO_CHANGES_SPECIFIED`.\n\nThat sentence previously read \"the error body is not the standard `ErrorResponse` envelope\" — which documented a defect instead of fixing it, on an operation whose 400 this same document declares AS `ErrorResponse`. Two adjacent fields of one spec contradicting each other is worse than either alone, so the route was corrected rather than the sentence softened (#1447).\n\nRefusals that live in the usecase rather than the route: promoting or demoting yourself, and removing the role from the last active OWNER/ADMIN. A farm must never become unadministrable.\n\n**Refusal code.** `MEMBERSHIP_NOT_FOUND` — one code for every membership lookup on this surface, with `params.requiredStatus` naming the state the operation needed. Four codes would advertise a distinction the SERVER CANNOT MAKE: each of these is a single query with a status predicate, so an absent membership and one in the wrong state both come back empty. The English message says which wording applies; the param says which state was required. Here `requiredStatus` is `ACTIVE`: a deactivated member’s role is not editable, and a client should refresh rather than retry.",
         "tags": [
           "Admin"
         ],
@@ -53551,7 +53551,7 @@
       "delete": {
         "operationId": "removeAdminMember",
         "summary": "Remove a membership from the farm",
-        "description": "**The hard one.** Sets `REMOVED`, which makes the row leave `GET /admin/members` entirely — there is no state to display afterwards and no documented route back. For a reversible action use `POST …/{membershipId}/deactivate`, which keeps the row listed as `DEACTIVATED` and has a `reactivate` counterpart.\n\nSelf-removal and removing the last active OWNER/ADMIN are refused in the usecase, so a farm cannot be left unadministrable.\n\nNote the asymmetry with the bulk paths: `bulk/remove` is the bulk form of THIS operation, while `bulk/delete` is the bulk form of `deactivate`.",
+        "description": "**The hard one.** Sets `REMOVED`, which makes the row leave `GET /admin/members` entirely — there is no state to display afterwards and no documented route back. For a reversible action use `POST …/{membershipId}/deactivate`, which keeps the row listed as `DEACTIVATED` and has a `reactivate` counterpart.\n\nSelf-removal and removing the last active OWNER/ADMIN are refused in the usecase, so a farm cannot be left unadministrable.\n\nNote the asymmetry with the bulk paths: `bulk/remove` is the bulk form of THIS operation, while `bulk/delete` is the bulk form of `deactivate`.\n\n**Refusal code.** `MEMBERSHIP_NOT_FOUND` — one code for every membership lookup on this surface, with `params.requiredStatus` naming the state the operation needed. Four codes would advertise a distinction the SERVER CANNOT MAKE: each is a single query with a status predicate, so an absent membership and one in the wrong state both come back empty. Here `requiredStatus` is `ACTIVE,DEACTIVATED,INVITED` — anything but already-removed. So this refusal usually means somebody else removed them first, and a client should refresh rather than retry: the outcome it wanted has already happened.",
         "tags": [
           "Admin"
         ],
@@ -53697,7 +53697,7 @@
       "post": {
         "operationId": "deactivateAdminMember",
         "summary": "Suspend a member without removing them",
-        "description": "Sets `DEACTIVATED`. The row STAYS in `GET /admin/members` with that status, which is the point — the reversible counterpart to `DELETE`, and what an admin wants for seasonal staff.\n\n**No request body.** Reverse it with `POST …/reactivate`.",
+        "description": "Sets `DEACTIVATED`. The row STAYS in `GET /admin/members` with that status, which is the point — the reversible counterpart to `DELETE`, and what an admin wants for seasonal staff.\n\n**No request body.** Reverse it with `POST …/reactivate`.\n\n**Refusal code.** `MEMBERSHIP_NOT_FOUND` — one code for every membership lookup on this surface, with `params.requiredStatus` naming the state the operation needed. Four codes would advertise a distinction the SERVER CANNOT MAKE: each is a single query with a status predicate, so an absent membership and one in the wrong state both come back empty. Here `requiredStatus` is `ACTIVE` — an already-deactivated member cannot be deactivated again, and that is the common cause rather than a missing row.",
         "tags": [
           "Admin"
         ],
@@ -53843,7 +53843,7 @@
       "post": {
         "operationId": "reactivateAdminMember",
         "summary": "Restore a deactivated member",
-        "description": "Sets `ACTIVE`. **No request body.** The counterpart to `deactivate`; there is no equivalent for a `REMOVED` membership, which is why the two actions are not interchangeable.",
+        "description": "Sets `ACTIVE`. **No request body.** The counterpart to `deactivate`; there is no equivalent for a `REMOVED` membership, which is why the two actions are not interchangeable.\n\n**Refusal code.** `MEMBERSHIP_NOT_FOUND` — one code for every membership lookup on this surface, with `params.requiredStatus` naming the state the operation needed. Four codes would advertise a distinction the SERVER CANNOT MAKE: each is a single query with a status predicate, so an absent membership and one in the wrong state both come back empty. Here `requiredStatus` is `DEACTIVATED,REMOVED` — an ACTIVE member has nothing to reactivate, so this refusal most often means the work was already done.",
         "tags": [
           "Admin"
         ],
@@ -53989,7 +53989,7 @@
       "put": {
         "operationId": "updateAdminMemberCertificates",
         "summary": "A member's БАБХ plant-protection certificates",
-        "description": "The one operation here that is not about membership lifecycle. These numbers appear on the ДНЕВНИК farm record, so they are regulatory data attached to a person rather than an access setting — which is why it lives under `/admin/members` only because that is who may edit it.\n\n**Three-state per field, and the states are distinct**: a value SETS it, `null` CLEARS it, and omitting the field LEAVES IT UNCHANGED. A client sending the whole form every time will clear what it does not know about, so send only the fields the admin edited — or send every field explicitly, including the nulls.\n\nA `PUT` rather than a `PATCH` despite the merge semantics; the method is what it is.",
+        "description": "The one operation here that is not about membership lifecycle. These numbers appear on the ДНЕВНИК farm record, so they are regulatory data attached to a person rather than an access setting — which is why it lives under `/admin/members` only because that is who may edit it.\n\n**Three-state per field, and the states are distinct**: a value SETS it, `null` CLEARS it, and omitting the field LEAVES IT UNCHANGED. A client sending the whole form every time will clear what it does not know about, so send only the fields the admin edited — or send every field explicitly, including the nulls.\n\nA `PUT` rather than a `PATCH` despite the merge semantics; the method is what it is.\n\n**Refusal code.** `MEMBERSHIP_NOT_FOUND` — one code for every membership lookup on this surface, with `params.requiredStatus` naming the state the operation needed. Four codes would advertise a distinction the SERVER CANNOT MAKE: each is a single query with a status predicate, so an absent membership and one in the wrong state both come back empty. This is the ONE membership lookup on the surface with no status predicate, so it carries NO `requiredStatus` — and that absence is itself information: any state would have been accepted, so the membership really is gone.",
         "tags": [
           "Admin"
         ],
