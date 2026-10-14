@@ -358,7 +358,17 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
         description:
             'The launch request. Returns the caller plus their OLDEST ACTIVE membership as ' +
             '`tenant` — one membership, not the list, so a user who belongs to several ' +
-            'tenants cannot pick between them here. `role` and `tenant` are BOTH `null` ' +
+            'Since #1768 it also carries `permissions` — the coarse tier '
+            + '(`canRead`/`canWrite`/`canAdmin`/`canAudit`/`canExport`) that the server\'s '
+            + 'own usecases gate on. It is ADVISORY and exists so a client stops '
+            + 'reimplementing the role ladder: that second copy drifts the moment a '
+            + 'role\'s level changes, and a permissive drift shows a farmer a control '
+            + 'whose request is then refused. It decides whether to RENDER a control, '
+            + 'never whether a write is permitted — the server gate is the authority, and '
+            + 'a stale `canWrite: true` is answered by `WRITE_FORBIDDEN_FOR_ROLE`. It is '
+            + '`null` exactly when `role` is, and discloses nothing new: every field is a '
+            + 'pure function of `role`.\n\n'
+            + 'tenants cannot pick between them here. `role` and `tenant` are BOTH `null` ' +
             'when there is no active membership, and they always agree: `role` is never ' +
             'a fallback value, so it is also not proof of access on its own. ' +
             'Carries `bottomTabOrder`, which is why a client needs no second round-trip ' +
@@ -385,6 +395,40 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
                         // none. A generated client must therefore decode a
                         // missing role rather than assume a string is present.
                         role: z.string().nullable(),
+                        // The coarse tier the usecases actually gate on
+                        // (#1768), so a client stops reimplementing the role
+                        // ladder to decide whether to draw a write control —
+                        // a second copy of an authorisation rule that drifts
+                        // the moment a role's level changes, and whose
+                        // permissive drift shows a farmer a button whose
+                        // request is refused after they have typed into it.
+                        //
+                        // ADVISORY. It decides whether to RENDER a control,
+                        // never whether a write is allowed: the server gate
+                        // stays the authority, and a client acting on a cached
+                        // `canWrite: true` after a role change is told why by
+                        // `WRITE_FORBIDDEN_FOR_ROLE` (#1767).
+                        //
+                        // `.nullable()` for the same reason as `role` above
+                        // and agreeing with it: a role with no tenant has no
+                        // referent, so neither does its tier. An all-false
+                        // object would read as "permitted nothing" where the
+                        // truth is "no farm", which the sibling `tenant: null`
+                        // already says.
+                        //
+                        // Discloses nothing new — every field is a pure
+                        // function of `role`, one line up. This is NOT the
+                        // fine-grained `PermissionSet`, which `/api/auth/me`
+                        // still deliberately does not expose.
+                        permissions: z
+                            .object({
+                                canRead: z.boolean(),
+                                canWrite: z.boolean(),
+                                canAdmin: z.boolean(),
+                                canAudit: z.boolean(),
+                                canExport: z.boolean(),
+                            })
+                            .nullable(),
                         bottomTabOrder: BottomTabOrder,
                         avatarUrl: AvatarUrl,
                         deletion: z

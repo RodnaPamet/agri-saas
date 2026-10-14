@@ -1,5 +1,5 @@
 import { RequestContext } from '../types';
-import { forbidden } from '@/lib/errors/types';
+import { forbidden, codedForbidden } from '@/lib/errors/types';
 
 /**
  * Asserts the user has READ permission in their current context.
@@ -12,10 +12,53 @@ export function assertCanRead(ctx: RequestContext) {
 
 /**
  * Asserts the user has WRITE permission in their current context.
+ *
+ * ## Why this one carries a code and its siblings here do not yet (#1767)
+ *
+ * `canWrite` is `level >= 3`, so it genuinely refuses three of the six roles —
+ * READER, MECHANISATOR and AUDITOR — across 106 call sites. Measured, and the
+ * contrast is the point: `assertCanRead` above is `level >= 1` and can refuse
+ * NOBODY (#1766), so coding it would advertise a distinction no request can
+ * reach.
+ *
+ * Until now the refusal was uncoded, which left a client nothing to switch on.
+ * `agrent-ios` asked for this directly: with no code the phone shows its
+ * generic «Нямате права за това действие.» — correct and useless, because the
+ * operator cannot tell "this farm's role does not allow it, ask an
+ * administrator" from "this action is not available here". Only one of those
+ * is actionable by the person holding the phone.
+ *
+ * ## ONE code with `params.role`, not three per-role codes
+ *
+ * #1767's recommended option, and the reason is that the three refused roles
+ * differ only in which screens they otherwise see — the refusal is the same
+ * condition. A client that wants to name the role reads `params.role`; three
+ * codes for one condition would be a distinction the server asserts and no
+ * client needs.
+ *
+ * ## The English sentence STAYS
+ *
+ * A bare code with no `message` regresses a Bulgarian farmer to an
+ * untranslated string on any client that has no entry for it — the
+ * `coded-message-is-displayed-copy` rule. The sentence is unchanged, so this
+ * adds a switchable code without taking anything away from a client that
+ * renders `message`. It also makes this one of #1712's server-authored-copy
+ * sites fixable in ONE place behind 106 call sites.
+ *
+ * `assertCanAdmin` below is the same gap at 51 sites and is deliberately NOT
+ * changed here: the Edge already raises `ADMIN_REQUIRED` for admin-only
+ * ROUTES, so a usecase-level admin refusal is a DIFFERENT condition (the route
+ * is not admin-only, but this operation needs admin) and giving it the same
+ * code would conflate two things a client may want to tell apart. That needs a
+ * decision rather than a guess, and it is filed.
  */
 export function assertCanWrite(ctx: RequestContext) {
     if (!ctx.permissions.canWrite) {
-        throw forbidden('You do not have permission to modify records in this context.');
+        throw codedForbidden(
+            'WRITE_FORBIDDEN_FOR_ROLE',
+            'You do not have permission to modify records in this context.',
+            { role: ctx.role },
+        );
     }
 }
 
