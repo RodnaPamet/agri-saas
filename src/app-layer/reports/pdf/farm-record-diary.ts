@@ -879,25 +879,65 @@ const EMPTY_PROFILE: FarmProfileData = {
     odbhCity: null,
 };
 
+/**
+ * What a ДНЕВНИК document covers.
+ *
+ * Two scopes, ONE gatherer and one renderer. The alternative — a second
+ * gatherer for the per-entry document — would be two spellings of a register
+ * a farmer submits to БАБХ, and "same layout so it can be certified" (#1740)
+ * stops being true the first time one of them changes.
+ */
+export type FarmRecordScope =
+    | { kind: 'location'; locationId: string; from: string; to: string }
+    /** One treatment, across every block it touched (#1740 item 3). */
+    | { kind: 'treatment'; treatmentGroupId: string };
+
+/**
+ * The per-block register over a period — the original entry point, kept so
+ * its callers and tests are untouched by the scope refactor.
+ */
 export async function gatherFarmRecordData(
     ctx: RequestContext,
     locationId: string,
     from: string,
     to: string,
 ): Promise<FarmRecordData> {
+    return gatherFarmRecord(ctx, { kind: 'location', locationId, from, to });
+}
+
+export async function gatherFarmRecord(
+    ctx: RequestContext,
+    scope: FarmRecordScope,
+): Promise<FarmRecordData> {
+    const locationId = scope.kind === 'location' ? scope.locationId : null;
+    const from = scope.kind === 'location' ? scope.from : null;
+    const to = scope.kind === 'location' ? scope.to : null;
     // Report read-gate (same privilege model as year-on-farm). Read the
     // FarmProfile directly (NOT via getFarmProfile, which requires
     // admin-settings permission) — the Epic B extension still decrypts
     // egn/eik transparently on this read.
     assertCanRead(ctx);
-    const fromD = new Date(from);
-    const toD = new Date(to);
+    // A treatment-scoped document's period is the treatment's own DAY, which
+    // is only known once its lines are read — so these are assigned below for
+    // that scope. `toD` is load-bearing beyond the line filter: it also picks
+    // which planting each field sheet is about ("current by the end of the
+    // reported period"), and for one treatment that is its own day.
+    let fromD = from != null ? new Date(from) : new Date(0);
+    let toD = to != null ? new Date(to) : new Date(0);
 
     return runInTenantContext(ctx, async (db) => {
-        const location = await db.location.findFirst({
-            where: { id: locationId, tenantId: ctx.tenantId },
-            select: { name: true },
-        });
+        // A treatment spans blocks, so there is no ONE block to head the
+        // document with. The per-field header strips each name their own
+        // block, which is where the paper form puts it anyway, so the farm
+        // header's block line is left empty rather than naming one of
+        // several — printing the first would be wrong, and silently.
+        const location =
+            locationId != null
+                ? await db.location.findFirst({
+                      where: { id: locationId, tenantId: ctx.tenantId },
+                      select: { name: true },
+                  })
+                : null;
 
         const profileRow = await db.farmProfile.findUnique({
             where: { tenantId: ctx.tenantId },
@@ -917,11 +957,35 @@ export async function gatherFarmRecordData(
               }
             : { ...EMPTY_PROFILE };
 
-        const links = await db.taskLink.findMany({
-            where: { tenantId: ctx.tenantId, entityType: 'LOCATION', entityId: locationId },
-            select: { taskId: true },
-        });
-        const taskIds = links.map((l) => l.taskId);
+        // Which tasks the document covers.
+        //
+        // By BLOCK: every task linked to that location, then its DONE lines
+        // within the period. By TREATMENT: the tasks carrying the handle —
+        // one per block, which is why a treatment-scoped document spans
+        // blocks without needing a location at all.
+        const taskIds =
+            locationId != null
+                ? (
+                      await db.taskLink.findMany({
+                          where: {
+                              tenantId: ctx.tenantId,
+                              entityType: 'LOCATION',
+                              entityId: locationId,
+                          },
+                          select: { taskId: true },
+                      })
+                  ).map((l) => l.taskId)
+                : (
+                      await db.task.findMany({
+                          where: {
+                              tenantId: ctx.tenantId,
+                              treatmentGroupId:
+                                  scope.kind === 'treatment' ? scope.treatmentGroupId : undefined,
+                              deletedAt: null,
+                          },
+                          select: { id: true },
+                      })
+                  ).map((t) => t.id);
 
         const lines = taskIds.length
             ? await db.operationParcel.findMany({
@@ -929,7 +993,12 @@ export async function gatherFarmRecordData(
                       tenantId: ctx.tenantId,
                       taskId: { in: taskIds },
                       status: 'DONE',
-                      completedAt: { gte: fromD, lte: toD },
+                      // The period narrows a BLOCK register. A treatment is
+                      // already one day's work by construction, so filtering
+                      // it by a range it defines would be circular.
+                      ...(locationId != null
+                          ? { completedAt: { gte: fromD, lte: toD } }
+                          : {}),
                   },
                   include: {
                       task: {
@@ -955,6 +1024,19 @@ export async function gatherFarmRecordData(
                   orderBy: { completedAt: 'asc' },
               })
             : [];
+
+        // A treatment-scoped document's period IS the treatment's day, known
+        // only now. Every line of one treatment shares a `completedAt` — the
+        // write stamps them all with the same day — so the first is the day.
+        // Falls back to the epoch-wide bounds when a handle resolves to
+        // nothing, which the route turns into a 404 before rendering.
+        if (locationId == null) {
+            const stamped = lines.find((l) => l.completedAt != null)?.completedAt ?? null;
+            if (stamped) {
+                fromD = stamped;
+                toD = stamped;
+            }
+        }
 
         // Cert snapshots (frozen at completion) keyed by operationParcelId.
         // diary-allow: soft-deleted — deliberate. The spray line itself prints
@@ -1064,7 +1146,13 @@ export async function gatherFarmRecordData(
                 occurredAt: { gte: fromD, lte: toD },
                 OR: [
                     { locations: { none: {} } },
-                    { locations: { some: { locationId } } },
+                    // A treatment-scoped document carries no observations —
+                    // the issue asks for "only this entry's rows", and an
+                    // observation is a different entry. The section still
+                    // prints, blank, like the paper form. `''` matches no
+                    // location rather than every one, which is what dropping
+                    // the clause would do.
+                    { locations: { some: { locationId: locationId ?? '' } } },
                 ],
             },
             select: { occurredAt: true, title: true, notes: true },
@@ -1093,8 +1181,23 @@ export async function gatherFarmRecordData(
         // fields sharing a name could swap SHEETS between generations of the
         // same ДНЕВНИК. That is a register a farmer submits to БАБХ, so
         // stability is worth more here than in a picker.
+        // Which fields get a header strip.
+        //
+        // A BLOCK register sheets every parcel in the block, treated or not —
+        // that is the paper form. A TREATMENT document sheets only the
+        // parcels it touched, which is what "a field header strip for each
+        // treated parcel" (#1740) asks for, and is why the strips can carry
+        // the block when the farm header cannot.
+        const treatedParcelIds =
+            locationId == null ? [...new Set(lines.map((l) => l.parcelId))] : null;
         const parcels = await db.parcel.findMany({
-            where: { tenantId: ctx.tenantId, locationId, deletedAt: null },
+            where: {
+                tenantId: ctx.tenantId,
+                deletedAt: null,
+                ...(locationId != null
+                    ? { locationId }
+                    : { id: { in: treatedParcelIds ?? [] } }),
+            },
             select: {
                 id: true,
                 name: true,
@@ -1191,8 +1294,11 @@ export async function gatherFarmRecordData(
 
         return {
             locationName: location?.name ?? '',
-            from,
-            to,
+            // Days, not the raw inputs: a treatment-scoped document's period is
+            // derived above rather than passed in, and the header must print what
+            // the document actually covers.
+            from: fromD.toISOString().slice(0, 10),
+            to: toD.toISOString().slice(0, 10),
             profile,
             sprayLines,
             fertilizeLines,
@@ -1206,7 +1312,34 @@ export async function generateFarmRecordDiaryPdf(
     ctx: RequestContext,
     opts: { locationId: string; from: string; to: string },
 ): Promise<PDFKit.PDFDocument> {
-    const data = await gatherFarmRecordData(ctx, opts.locationId, opts.from, opts.to);
+    const doc = await generateFarmRecordDiaryPdfScoped(ctx, { kind: 'location', ...opts });
+    // A block register is never null: the emptiness check applies to a
+    // treatment handle only, because a block with no work in the period still
+    // prints — blank, like the paper form. Asserted rather than cast away, so
+    // if that ever stops holding it says so instead of returning undefined.
+    if (!doc) throw new Error('a location-scoped ДНЕВНИК is never empty');
+    return doc;
+}
+
+/**
+ * The same document, for either scope (#1740 item 3).
+ *
+ * ONE renderer. A per-entry document produced by a second renderer would stop
+ * being "the same layout, so it can be certified" the first time one of them
+ * changed — which is the whole requirement.
+ *
+ * Returns `null` when a treatment handle resolves to no DONE lines, so the
+ * route can answer 404 rather than render an empty register that looks like a
+ * real document with nothing in it.
+ */
+export async function generateFarmRecordDiaryPdfScoped(
+    ctx: RequestContext,
+    scope: FarmRecordScope,
+): Promise<PDFKit.PDFDocument | null> {
+    const data = await gatherFarmRecord(ctx, scope);
+    if (scope.kind === 'treatment' && data.sprayLines.length === 0 && data.fertilizeLines.length === 0) {
+        return null;
+    }
 
     const meta: ReportMeta = {
         tenantName: data.locationName || 'Farm',
