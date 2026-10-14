@@ -27,7 +27,7 @@
 export const APP_ID = '9423GKWL67.bg.agrent.app';
 
 /**
- * The paths that open the app: `/f/*` and `/m/*`.
+ * The path that opens the app: `/m/*`.
  *
  * ## The scheme is TWO paths, by two recorded owner rulings
  *
@@ -68,17 +68,33 @@ export const APP_ID = '9423GKWL67.bg.agrent.app';
  *
  * ## What the claim costs while the screens are unbuilt
  *
- * Neither path serves a web page and the app has no `onOpenURL` handler, so a
- * tapped link opens the app at its home screen rather than rendering a 404 in
- * Safari. That is accepted so the client can build against a published list.
- * It becomes a REGRESSION the day one ships as a web route while the app still
- * cannot open it — a working page starts being hijacked — and the collision
- * check in the test, derived from the filesystem, fails on exactly that.
+ * `/m` serves no web page and the app has no `onOpenURL` handler, so a tapped
+ * link opens the app at its home screen rather than rendering a 404 in Safari.
+ * That is accepted so the client can build against a published list.
+ *
+ * ## `/f/*` HAS BEEN WITHDRAWN, and the prediction above is why
+ *
+ * This docblock warned that the claim "becomes a REGRESSION the day one ships
+ * as a web route while the app still cannot open it — a working page starts
+ * being hijacked". That day is 2026-10-14: P6.5 (#1814) ships `/f/[handle]` as
+ * a real, server-rendered public page, and P6.9's iOS screen does not exist.
+ *
+ * So the claim now costs exactly what it was predicted to. An iOS user tapping
+ * a shared farm link — or scanning a printed QR code (P6.7) — would open the
+ * app at its home screen INSTEAD of seeing the farm, while the same link in
+ * any other browser works. Withdrawing the claim is strictly better: the
+ * owner's own ruling says a path absent from the AASA "simply falls back to
+ * the browser, which is the BETTER outcome of the two", and now there is
+ * something in the browser worth falling back to.
+ *
+ * It returns when P6.9 ships a screen that can open it. The collision check in
+ * the test is derived from the filesystem, so it will keep refusing the claim
+ * for as long as the page exists and nothing re-argues it — which is the right
+ * default, because the iOS half landing is the thing that changes the answer.
  *
  * Exported so a client READS the claim rather than restating it (#1623).
  */
 export const APPLINK_COMPONENTS: ReadonlyArray<Record<string, unknown>> = [
-    { '/': '/f/*' },
     { '/': '/m/*' },
 ];
 

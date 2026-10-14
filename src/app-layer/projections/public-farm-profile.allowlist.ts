@@ -147,7 +147,27 @@ export function projectionPayload(brand: {
     if (!brand.displayName) throw new Error('projectionPayload called without a displayName');
 
     const out = {
-        handle: brand.handle,
+        // NORMALISED here, and here only.
+        //
+        // `readPublicFarmProfile` lower-cases the handle it is given, because
+        // a handle arrives from a URL that a person may have typed or read off
+        // printed A6 paper (P6.7). If the projection stored `Pobeda` verbatim
+        // the page would 404 for `/f/pobeda`, and that 404 is deliberately
+        // indistinguishable from "no such farm" — so the bug would present as
+        // a farm that published successfully and cannot be found.
+        //
+        // One place, because `projectedHandle` is set from this payload's
+        // handle: normalising here makes the stored row, the bookkeeping and
+        // the reader agree by construction rather than by three call sites
+        // remembering.
+        //
+        // The canonical fix belongs further up: `FarmBrand.handle` should be
+        // normalised where it is CHOSEN (P6.6, #1815), so its `@unique`
+        // constraint is case-insensitive too. As it stands two farms could
+        // reserve `Pobeda` and `pobeda` — distinct to the index, confusable to
+        // a person, and the second to publish would overwrite the first's
+        // public row. Recorded on that issue.
+        handle: brand.handle.trim().toLowerCase(),
         displayName: brand.displayName,
         tagline: brand.tagline,
         about: brand.about,

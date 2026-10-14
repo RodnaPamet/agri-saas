@@ -6446,5 +6446,10 @@
         "YIELD_RECORD_INVALID_DATE": "{field} must be a valid date.",
         "YIELD_RECORD_NOT_FOUND": "That yield record was not found.",
         "YIELD_RECORD_TONNES_NEGATIVE": "Gross tonnes must be zero or positive."
+    },
+    "publicFarm": {
+        "oblast": "{oblast} oblast",
+        "cropsTitle": "Crops",
+        "aboutTitle": "About the farm"
     }
 }

@@ -146,6 +146,28 @@ describe('Structural Guard: Tenant Isolation Conventions', () => {
             // It reads a session only to decide whether to offer sign-out, and
             // renders no tenant data at all — the sentence and a button.
             'suspended',
+
+            // P6.5 (#1814) — `/f/[handle]`, a farm's PUBLIC page.
+            //
+            // Outside `/t/{slug}` by necessity rather than preference, and the
+            // reasoning is the inverse of every other entry here: this page is
+            // not protected at all. It is in `PUBLIC_PATH_PREFIXES`, reads no
+            // session, and is reached by strangers holding a shared link or a
+            // printed QR code (P6.7) who have no account.
+            //
+            // It also cannot be scoped to a slug even in principle. The owner
+            // ruled on 2026-10-14 that a handle is a SEPARATE public
+            // identifier, precisely so a published link does not carry the
+            // internal routing key — so `/t/{slug}/f/...` would reintroduce
+            // the coupling the ruling exists to prevent.
+            //
+            // It renders no tenant data: it reads ONLY `PublicFarmProfile`,
+            // which has no `tenantId` to join through and no PII columns at
+            // all, through `runWithoutRls({ reason: 'public-projection-read' })`.
+            // So the invariant this guard protects — a page outside `/t/` must
+            // not reach tenant data — holds structurally rather than by
+            // review.
+            'f',
         ]);
 
         // Get immediate children of app/ that are page directories

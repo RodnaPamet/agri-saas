@@ -48,6 +48,7 @@
  */
 import type { RequestContext } from '@/app-layer/types';
 import { runInTenantContext } from '@/lib/db-context';
+import { runWithoutRls } from '@/lib/db/rls-middleware';
 import { assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { codedBadRequest, codedNotFound } from '@/lib/errors/types';
@@ -211,4 +212,79 @@ export async function projectFarmBrand(ctx: RequestContext): Promise<ProjectionR
 
         return { handle: payload.handle, withdrawn: false, removedHandle: stale };
     });
+}
+
+/**
+ * What a public page may show. Exactly the projection's columns, because the
+ * projection is already the allowlisted shape — nothing is filtered again
+ * here, and there is nothing left to filter.
+ */
+export interface PublicFarmProfileView {
+    readonly handle: string;
+    readonly displayName: string;
+    readonly tagline: string | null;
+    readonly about: string | null;
+    readonly oblast: string | null;
+    readonly crops: readonly string[];
+    readonly indexable: boolean;
+    readonly projectedAt: Date;
+}
+
+/**
+ * Read one public profile by its handle, for an anonymous visitor (P6.5).
+ *
+ * ## There is no principal, which is why the bypass is load-bearing
+ *
+ * An anonymous visitor has no session, no tenant and no membership, so
+ * `runInTenantContext` has nothing to enter with — the alternative to the
+ * bypass is not a narrower context, it is no query. That is the argument
+ * recorded on `'public-projection-read'` itself, and this is its only caller.
+ *
+ * ## Private and missing return the same thing, structurally
+ *
+ * The phase requires that a private profile and a missing one be
+ * indistinguishable, so a stranger cannot enumerate which farms exist by
+ * probing handles.
+ *
+ * This gets that for free rather than by matching two error paths: a
+ * `PublicFarmProfile` row EXISTS only while the farm is published — the writer
+ * deletes it on withdrawal rather than flagging it — so "not published" and
+ * "never existed" are the same absence, and there is no second branch that
+ * could drift. A `published` column on the projection would have required the
+ * two paths to be kept in step by hand for ever.
+ *
+ * It returns `null` rather than throwing, so the caller decides the status. A
+ * coded 404 here would put a machine-readable reason on the one response that
+ * must carry none.
+ *
+ * ## It never reads a tenant table
+ *
+ * The phase's rule, and the projection makes it checkable: the row holds no
+ * `tenantId`, so there is nothing to join through even by accident.
+ */
+export async function readPublicFarmProfile(
+    handle: string,
+): Promise<PublicFarmProfileView | null> {
+    // Trimmed and lower-cased before the lookup, because a handle arrives from
+    // a URL that a person may have typed, pasted with a trailing space, or
+    // read off printed A6 paper (P6.7). An empty result for `'pobeda '` would
+    // be indistinguishable from a farm that does not exist.
+    const normalised = handle.trim().toLowerCase();
+    if (!normalised) return null;
+
+    const row = await runWithoutRls({ reason: 'public-projection-read' }, (db) =>
+        db.publicFarmProfile.findUnique({ where: { handle: normalised } }),
+    );
+    if (!row) return null;
+
+    return {
+        handle: row.handle,
+        displayName: row.displayName,
+        tagline: row.tagline,
+        about: row.about,
+        oblast: row.oblast,
+        crops: row.crops,
+        indexable: row.indexable,
+        projectedAt: row.projectedAt,
+    };
 }
