@@ -67,6 +67,58 @@ const ROOTS = ['src/app-layer', 'src/lib'];
  */
 const THROWERS =
     /\b(badRequest|notFound|forbidden|conflict|unprocessable)\(\s*(['"`])((?:\\.|(?!\2)[^\\])*)\2/g;
+/**
+ * The same helpers called with something that is NOT a string literal (#1737).
+ *
+ * `THROWERS` above requires the first argument to BE a quote, so a refusal
+ * whose prose is computed has no literal there and was never counted. Two
+ * confirmed instances, both found because coding a batch moved the number by
+ * less than the number of sites fixed:
+ *
+ *   - `badRequest(cond ? 'A…' : 'B…')`               — 21 coded, moved 20
+ *   - `badRequest(formatContractTransitionError(err))` — 16 coded, moved 15
+ *
+ * Neither was a mistake in the fix; the detector could not see them. One is a
+ * conditional expression and one is a call, and the common factor is that
+ * neither argument IS a string.
+ *
+ * ## It counts rather than reads, deliberately
+ *
+ * This marks a computed message as ONE unreadable site. It does not try to
+ * follow a ternary's branches or resolve a formatter, because that always has
+ * a tail it cannot follow — and a guard that GUESSES whether computed prose is
+ * English would be worse than one that honestly counts it. `looksLikeUserCopy`
+ * is therefore not applied here: there is nothing to apply it to.
+ *
+ * The regression hole is the reason this matters more than the undercount.
+ * Someone adding `throw badRequest(formatSomething(err))` today introduces
+ * server-authored English and the ratchet does not move — which is the one
+ * thing this guard exists to prevent.
+ *
+ * The negative lookaheads exclude the two shapes that are not this defect: a
+ * literal first argument (already counted above) and a call with no arguments
+ * at all, which carries no prose.
+ *
+ * ## The whitespace lives INSIDE the lookahead, and that is load-bearing
+ *
+ * My first version was `\(\s*(?!['"`]|\))` — consuming the whitespace, then
+ * looking ahead. Regex backtracking defeats it: the engine tries the longest
+ * `\s*`, the lookahead sees the quote and fails, so it BACKTRACKS to a shorter
+ * `\s*` — zero characters — where the next character is a newline rather than
+ * a quote, and the negative lookahead then succeeds.
+ *
+ * So every multi-line call whose literal sits on the following line matched as
+ * "computed". Measured: it reported 38 sites where there are 3, and would have
+ * raised this baseline by ~35 phantom entries — making a shrink-only ratchet
+ * permanently slack by exactly the amount nobody could account for.
+ *
+ * With `\((?!\s*['"`])` there is nothing consumed to backtrack over: the
+ * lookahead itself spans the whitespace, so if a quote follows it at any
+ * alignment the whole match is rejected.
+ */
+const THROWERS_COMPUTED =
+    /\b(badRequest|notFound|forbidden|conflict|unprocessable)\((?!\s*['"`])(?!\s*\))/g;
+
 /** An ALL-CAPS string literal among the call's OWN arguments = a code. */
 const CARRIES_CODE = /(['"`])[A-Z][A-Z0-9_]{3,}\1/;
 /** Hard stop, so a malformed file cannot make this scan run away. */
@@ -155,6 +207,15 @@ export function collectServerAuthoredCopy(root: string, dirs: string[] = ROOTS):
             const afterMessage = (call.index ?? 0) + call[0].length;
             if (CARRIES_CODE.test(argsAfter(src, afterMessage))) continue; // coded — exempt
             hits.push({ file: path.relative(root, full), message });
+        }
+        // Computed prose (#1737). Same helpers, same code exemption, no
+        // attempt to read the message — the two patterns are mutually
+        // exclusive by construction, because this one requires the first
+        // argument NOT to be a literal.
+        for (const call of src.matchAll(THROWERS_COMPUTED)) {
+            const afterOpen = (call.index ?? 0) + call[0].length;
+            if (CARRIES_CODE.test(argsAfter(src, afterOpen))) continue; // coded — exempt
+            hits.push({ file: path.relative(root, full), message: '<computed message>' });
         }
     }
     return hits;
@@ -402,6 +463,26 @@ export function collectServerAuthoredCopy(root: string, dirs: string[] = ROOTS):
 // `message` and acts on specific codes only. It gets more expensive every
 // batch, which is why it was worth stopping to ask rather than minting an
 // 11th name. Refs #1712 batch 9.
+// 314 → 314 (#1737), and the flat number is the interesting part.
+//
+// The detector now also counts a refusal whose prose is COMPUTED — a ternary,
+// a formatter call, a bare variable — which it previously could not see at
+// all. #1737 predicted this would have to RAISE the baseline "by however many
+// computed sites exist today", and warned that needed saying so it did not
+// look like a regression.
+//
+// It does not, because the arithmetic came out exactly even: there was ONE
+// unit of pre-existing slack (313 live against a baseline of 314) and there is
+// exactly ONE uncoded computed site in the tree —
+// `src/lib/promotions/promotion-image.ts:116`, `throw badRequest(blocked)`,
+// where `scanVerdictBlocks` returns "This image was rejected by the malware
+// scanner." So the live count rose from 313 to 314 and the ratchet went from
+// one unit slack to exactly tight, which is what the drift sentinel wants.
+//
+// Worth stating because the next person to drain a batch should know the
+// composition changed even though the figure did not: 313 literal + 1
+// computed, not 314 literal. And the site above is now VISIBLE to #1712
+// rather than invisible to it, which was the point.
 const CURRENT_BASELINE = 314;
 
 /** Slack tolerated before the sentinel demands the baseline be lowered. */
@@ -501,6 +582,59 @@ describe('the counting rule itself', () => {
                 'See https://agrent.bg/help for guidance.',
                 'This farm is not yours to edit.',
             ]);
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('a COMPUTED message is counted, and a multi-line literal is not (#1737)', () => {
+        // The gap this closes, and the bug my own first pattern had, as one
+        // fixture — because they are the same question asked from two sides.
+        //
+        // #1737's two confirmed instances were a ternary and a formatter
+        // call. `THROWERS` requires the first argument to BE a quote, so
+        // neither was ever counted: coding 21 sites moved the number by 20,
+        // and coding 16 moved it by 15.
+        //
+        // The multi-line case is the trap in the other direction. My first
+        // pattern consumed the whitespace before looking ahead, and
+        // backtracking defeated it — the engine shortened `\s*` to zero,
+        // found a newline rather than a quote, and matched. It reported 38
+        // computed sites where there is 1, which would have padded a
+        // shrink-only ratchet with ~35 phantom entries.
+        const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'i18n-comp-'));
+        try {
+            fs.mkdirSync(path.join(dir, 'src/lib'), { recursive: true });
+            fs.writeFileSync(
+                path.join(dir, 'src/lib/sample.ts'),
+                [
+                    // COUNTED — a ternary of literals (#1737 instance 1).
+                    `throw badRequest(late ? 'The window has closed.' : 'Too early to file.');`,
+                    // COUNTED — a formatter call (#1737 instance 2).
+                    `throw badRequest(formatTransitionError(err));`,
+                    // COUNTED — a bare variable, which is the one real site
+                    // in the tree today (`scanVerdictBlocks` returns prose).
+                    `throw badRequest(blocked);`,
+                    // NOT counted — a literal that merely sits on the next
+                    // line. This is the backtracking case.
+                    `throw forbidden(`,
+                    `    'This farm is not yours to edit.',`,
+                    `);`,
+                    // NOT counted — computed but CODED, same exemption as a
+                    // literal message carrying a code.
+                    `throw badRequest(formatIt(err), { code: 'TRANSITION_INVALID' });`,
+                    // NOT counted — no argument at all, so no prose.
+                    `throw forbidden();`,
+                ].join('\n'),
+                'utf8',
+            );
+            const found = collectServerAuthoredCopy(dir, ['src/lib']);
+
+            // Three computed hits, and the multi-line literal counted ONCE as
+            // a literal rather than twice or not at all.
+            expect(found.filter((h) => h.message === '<computed message>')).toHaveLength(3);
+            expect(found.map((h) => h.message)).toContain('This farm is not yours to edit.');
+            expect(found).toHaveLength(4);
         } finally {
             fs.rmSync(dir, { recursive: true, force: true });
         }
