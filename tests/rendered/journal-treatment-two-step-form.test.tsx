@@ -90,10 +90,17 @@ jest.mock('next/dynamic', () => () => {
  * combobox too, so a step-2 assertion could pass with step 2 never reached.
  */
 const swrData: Record<string, unknown> = {
-    '/catalog/items?category=PESTICIDE,FERTILIZER': {
-        items: [{ id: 'item-1', name: 'Тест Препарат' }],
-    },
-    '/catalog/units?measure=RATE': {
+    // The paths the API actually serves. These were `/catalog/items` and
+    // `/catalog/units`, which exist nowhere in the repository — and this
+    // double happily answered them, so ten green tests ran against a form
+    // that would have shown a farmer two empty pickers. CI's E2E caught it.
+    // `/items` carries every category and the component narrows to the two
+    // it treats with, because the route takes a SINGLE category.
+    '/items': [
+        { id: 'item-1', name: 'Тест Препарат', category: 'PESTICIDE' },
+        { id: 'item-9', name: 'Тест Семена', category: 'SEED' },
+    ],
+    '/units?measure=RATE': {
         units: [{ id: 'unit-1', symbol: 'л/ха' }],
     },
     // TWO crops, because "the crop changes" is a change — and because
@@ -120,13 +127,30 @@ const swrData: Record<string, unknown> = {
     },
 };
 
+/**
+ * The double THROWS on a key it does not know, which is the point.
+ *
+ * Returning `undefined` for an unknown key is what let this suite pass while
+ * the component read `/catalog/items` — a path no route serves. A double that
+ * cannot express "nobody serves that" is green forever, so every key here is
+ * a claim that the API serves it, and an unrecognised one fails loudly.
+ */
 jest.mock('@/lib/hooks/use-tenant-swr', () => ({
-    useTenantSWR: (key: string | null) => ({
-        data: key == null ? undefined : (swrData as Record<string, unknown>)[key],
-        isLoading: false,
-        error: undefined,
-        mutate: jest.fn(),
-    }),
+    useTenantSWR: (key: string | null) => {
+        if (key != null && !(key in swrData)) {
+            throw new Error(
+                `useTenantSWR('${key}') is not a path this double serves. ` +
+                    `Either the component invented an endpoint, or this fixture ` +
+                    `needs the real one adding: ${Object.keys(swrData).join(', ')}`,
+            );
+        }
+        return {
+            data: key == null ? undefined : (swrData as Record<string, unknown>)[key],
+            isLoading: false,
+            error: undefined,
+            mutate: jest.fn(),
+        };
+    },
     usePrefetchTenant: () => () => undefined,
 }));
 
@@ -240,6 +264,17 @@ describe('the two-step treatment form', () => {
         // And the crop picker belongs to step TWO — it must not be reachable
         // before the treatment is described.
         expect(document.querySelector('#treatment-crop')).toBeNull();
+    });
+
+    it('offers only products a treatment can apply, not the whole catalogue', async () => {
+        mount();
+        await user().click(screen.getByRole('combobox', { name: 'Product' }));
+        const options = await screen.findAllByRole('option');
+        const labels = options.map((o) => o.textContent ?? '');
+        expect(labels.some((l) => l.includes('Тест Препарат'))).toBe(true);
+        // `/items` serves every category because the route takes only ONE,
+        // so the narrowing happens here — a seed is not something you spray.
+        expect(labels.some((l) => l.includes('Тест Семена'))).toBe(false);
     });
 
     it('dates a fresh treatment TODAY, so the common case needs no tap', async () => {

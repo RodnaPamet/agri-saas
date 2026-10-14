@@ -91,6 +91,8 @@ interface ByCropParcel {
 interface ItemOption {
     id: string;
     name: string;
+    /** Filtered on client-side; see the reads below for why. */
+    category?: string;
 }
 
 interface UnitOption {
@@ -197,17 +199,45 @@ export function TreatmentEntryModal({ open, setOpen, offlineSubmit, onSaved }: P
         setDraft((d) => ({ ...d, [key]: value }));
 
     // ── Step 1 reference data ───────────────────────────────────────────
+    /**
+     * `/items` and `/units` — the routes that exist.
+     *
+     * This read was `/catalog/items?category=PESTICIDE,FERTILIZER` and
+     * `/catalog/units?measure=RATE`, and there is no `/catalog` API at all:
+     * those two lines were the only references to it in the repository. A
+     * farmer would have opened the form to an empty product picker and an
+     * empty unit picker, with step one impossible to complete, because both
+     * are required. The rendered tests could not see it — they mock
+     * `useTenantSWR` BY KEY, so they answered a key the server never serves.
+     * CI's E2E is what caught it; `tests/guards/swr-paths-resolve.test.ts`
+     * now catches the class.
+     *
+     * NO `category` parameter, deliberately. `/items` takes a SINGLE
+     * category (`where.category = filters.category as ItemCategory`), so a
+     * comma-separated pair matches nothing — the second half of the same
+     * defect. Fetching every item and narrowing here costs one request on a
+     * list that is a few dozen rows per farm, and it shares a cache entry
+     * with every other screen that reads `/items`.
+     */
     const { data: items } = useTenantSWR<{ items?: ItemOption[] } | ItemOption[]>(
-        open ? '/catalog/items?category=PESTICIDE,FERTILIZER' : null,
+        open ? '/items' : null,
     );
     const { data: units } = useTenantSWR<{ units?: UnitOption[] } | UnitOption[]>(
-        open ? '/catalog/units?measure=RATE' : null,
+        open ? '/units?measure=RATE' : null,
     );
 
-    const itemOptions: ComboboxOption[] = useMemo(() => {
+    /** PESTICIDE and FERTILIZER only — a treatment is applied, not sown. */
+    const treatmentItems = useMemo(() => {
         const list = Array.isArray(items) ? items : (items?.items ?? []);
-        return list.map((i) => ({ value: i.id, label: i.name }));
+        return list.filter(
+            (i) => i.category === 'PESTICIDE' || i.category === 'FERTILIZER',
+        );
     }, [items]);
+
+    const itemOptions: ComboboxOption[] = useMemo(
+        () => treatmentItems.map((i) => ({ value: i.id, label: i.name })),
+        [treatmentItems],
+    );
     const unitOptions: ComboboxOption[] = useMemo(() => {
         const list = Array.isArray(units) ? units : (units?.units ?? []);
         return list.map((u) => ({ value: u.id, label: u.symbol }));
@@ -353,10 +383,10 @@ export function TreatmentEntryModal({ open, setOpen, offlineSubmit, onSaved }: P
      * cannot be handed to anything wanting a string. `ItemOption.name` is the
      * data behind the option and is typed `string`.
      */
-    const productName = useMemo(() => {
-        const list = Array.isArray(items) ? items : (items?.items ?? []);
-        return list.find((i) => i.id === draft.productItemId)?.name ?? null;
-    }, [items, draft.productItemId]);
+    const productName = useMemo(
+        () => treatmentItems.find((i) => i.id === draft.productItemId)?.name ?? null,
+        [treatmentItems, draft.productItemId],
+    );
 
     const submit = useCallback(async () => {
         if (submitting || selected.length === 0) return;
