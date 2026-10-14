@@ -122,11 +122,29 @@ describeFn('projectFarmBrand', () => {
         expect(row?.crops).toEqual(['пшеница', 'слънчоглед']);
 
         // The columns the row HAS, asserted as a set. A new projection column
-        // that nothing populates would show up here rather than being
-        // discovered when a page renders `undefined`.
+        // that nothing populates shows up here rather than being discovered
+        // when a page renders `undefined` — which is exactly what happened
+        // when P6.8's `displayNameLatin` landed (#1817), and is why the list
+        // is enumerated rather than spot-checked.
         expect(Object.keys(row as object).sort()).toEqual(
-            ['about', 'crops', 'displayName', 'handle', 'indexable', 'oblast', 'projectedAt', 'tagline'].sort(),
+            [
+                'about',
+                'crops',
+                'displayName',
+                // P6.8 (#1817). Present and NULL here: the column ships a
+                // release before the writer populates it, so this asserts the
+                // honest intermediate state rather than the end state.
+                'displayNameLatin',
+                'handle',
+                'indexable',
+                'oblast',
+                'projectedAt',
+                'tagline',
+            ].sort(),
         );
+        // …and null, which is the point of the phase's ordering rule: the
+        // column exists and nothing writes it yet.
+        expect((row as { displayNameLatin: string | null }).displayNameLatin).toBeNull();
     });
 
     it('indexable stays FALSE on publish — nothing is opted into search by default', async () => {

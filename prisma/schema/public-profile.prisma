@@ -184,10 +184,41 @@ model PublicFarmProfile {
   /// be readable from the projection without consulting the owner's row.
   indexable Boolean @default(false)
 
+  /// The Latin form of `displayName`, for P6.8's directory search.
+  ///
+  /// STORED rather than computed, and that is the decision this column
+  /// exists to record. `transliterate()` implements the Закон за
+  /// транслитерацията (2009) Streamlined System — the spelling on
+  /// Bulgarian passports and road signs, so «Победа» yields `Pobeda`,
+  /// which is what a farmer expects to type.
+  ///
+  /// The mapping is NOT injective: `a` comes from both `а` and `ъ`, and
+  /// `y` from both `й` and `ь` (measured 2026-10-14). So reversing a
+  /// Latin query to Cyrillic has more than one answer and a search built
+  /// that way would silently miss farms. Transliterating the STORED name
+  /// forward has exactly one answer per input, so the Latin form lives
+  /// here and the query is never reversed.
+  ///
+  /// A column and not a functional index, because a trigram index over an
+  /// application function would make the index depend on code the
+  /// database cannot see — and the function's output would then have to
+  /// stay byte-stable across deploys for the index to remain valid.
+  ///
+  /// Nullable: the projection writer populates it in the PR after this
+  /// one, per the phase rule that tables ship a release ahead of the code
+  /// that writes them. A null means a row projected before that shipped,
+  /// and the only consequence is that its Latin form does not match —
+  /// its Cyrillic name still does.
+  displayNameLatin String?
+
   /// When the projection was last rewritten. The freshness handle for
   /// P6.10's "unpublish → 404 within 60s".
   projectedAt DateTime @default(now())
 
   @@index([oblast])
   @@index([indexable])
+  /// P6.8 trigram search. `gin_trgm_ops` is the operator class pg_trgm
+  /// installs; without it a GIN index on text is useless for similarity.
+  @@index([displayName(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@index([displayNameLatin(ops: raw("gin_trgm_ops"))], type: Gin)
 }
