@@ -135,7 +135,15 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 // 401 on a bad signature, 503 when RESEND_WEBHOOK_SECRET is unset — is written
 // where an operator will look: the route's docblock and both prod env
 // examples.
-const UNDOCUMENTED_CEILING = 219;
+// 219 → 220 (#1595): `/api/admin/moderation/metrics`. Baselined, consistent
+// with all 54 other non-tenant `/api/admin/*` paths here and for the audience
+// reason this file states: `src/generated/openapi.json` is the CLIENT-facing
+// contract, and the consumer of this one is an operator holding
+// PLATFORM_ADMIN_API_KEY — or a regulator being shown a figure — not a client
+// reading the spec. Its three sibling moderation paths are baselined too, so
+// describing only this one would make the spec's coverage of that surface
+// harder to reason about rather than easier.
+const UNDOCUMENTED_CEILING = 220;
 // Lowered 246 -> 245 by #1376: `/api/auth/register` was retired, so its
 // baseline entry went with it. The ceiling tracks the baseline exactly —
 // leaving slack is how a shrink-only ratchet quietly becomes a denylist with
