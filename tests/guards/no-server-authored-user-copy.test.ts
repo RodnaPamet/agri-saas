@@ -483,7 +483,17 @@ export function collectServerAuthoredCopy(root: string, dirs: string[] = ROOTS):
 // composition changed even though the figure did not: 313 literal + 1
 // computed, not 314 literal. And the site above is now VISIBLE to #1712
 // rather than invisible to it, which was the point.
-const CURRENT_BASELINE = 314;
+// 314 → 309 (#1712, this batch): five uncoded `notFound()` sites gained codes,
+// and a coded throw is exempt — the exemption has existed since #1564 and this
+// is the kind of thing it was built to reward.
+//
+// Three are the TENANT RESOLVER (`src/lib/tenant-context.ts`), which is the
+// hottest path in the product: every `/api/t/**` request resolves through it,
+// so "Tenant not found" in English was reachable from more screens than any
+// other single site on this list. Two are the lease payment write and delete.
+//
+// Lowered in the same diff that drained it, as the note above requires.
+const CURRENT_BASELINE = 309;
 
 /** Slack tolerated before the sentinel demands the baseline be lowered. */
 const DRIFT_ALLOWANCE = 15;
