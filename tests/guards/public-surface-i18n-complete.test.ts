@@ -1,0 +1,126 @@
+/**
+ * Every namespace a PUBLIC surface reads is one it is actually sent (#1813).
+ *
+ * ## The failure this exists for
+ *
+ * The root layout now sends an anonymous visitor only
+ * `PUBLIC_SURFACE_NAMESPACES` — 475 bytes of Bulgarian instead of 404,981.
+ * That list is a CLAIM about what the public pages use, and nothing else
+ * enforces it.
+ *
+ * A public page that reads an unlisted namespace renders **raw keys**:
+ * `publicFarm.cropsTitle` on the page where «Култури» should be. next-intl
+ * does not throw for a missing namespace in a server component, the HTML is
+ * valid, the status is 200, and a reviewer reading the diff sees a correct
+ * `getTranslations('somethingElse')` call. The only observer is a visitor.
+ *
+ * So the list needs a mechanical check, derived from the files rather than
+ * maintained beside them.
+ *
+ * ## Scope, and its honest limit
+ *
+ * The population is the public surface's own render tree: everything under
+ * `src/app/f/**`, plus the root-level `not-found`/`error` pages, which a
+ * withdrawn or missing handle reaches — the likeliest path a stranger hits.
+ *
+ * What it does NOT follow is imports. A shared component three levels down
+ * that calls `useTranslations('someNamespace')` would not be seen here. That
+ * is a real gap and the reason the list errs wide rather than tight: adding a
+ * namespace costs bytes, and omitting one costs a visitor the page's words.
+ * A full import-graph walk is the stronger check and a bigger piece of work;
+ * recorded here rather than implied.
+ */
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
+import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
+import { blankNonCode } from '../helpers/blank-non-code';
+
+import { PUBLIC_SURFACE_NAMESPACES } from '@/lib/i18n/public-surface';
+
+/** The public surface's own render tree. */
+const EXTRA_FILES = ['src/app/not-found.tsx', 'src/app/error.tsx'];
+
+function publicSurfaceFiles(): string[] {
+    const underF = collectSourceFiles({
+        roots: ['src/app/f'],
+        extensions: ['.ts', '.tsx'],
+    });
+    const extras = EXTRA_FILES.map((r) => path.join(REPO_ROOT, r)).filter((p) =>
+        fs.existsSync(p),
+    );
+    return [...underF, ...extras];
+}
+
+/** Namespaces a file reads, comments blanked so prose cannot add one. */
+function namespacesIn(src: string): string[] {
+    const code = blankNonCode(src);
+    return [
+        ...new Set(
+            [...code.matchAll(/(?:get|use)Translations\(\s*['"]([^'"]+)['"]/g)].map((m) => m[1]),
+        ),
+    ];
+}
+
+const FILES = publicSurfaceFiles();
+
+describe('the public i18n payload covers what the public surface reads', () => {
+    it('control: the population is not empty', () => {
+        // `collectSourceFiles` throws on an empty result, but not on an empty
+        // DERIVATION — a glob that stopped matching would make every
+        // assertion below vacuous, which is the failure mode this file exists
+        // to prevent one level down.
+        expect(FILES.length).toBeGreaterThanOrEqual(2);
+        expect(PUBLIC_SURFACE_NAMESPACES.length).toBeGreaterThan(0);
+    });
+
+    it('control: the extractor finds the namespaces it is looking for', () => {
+        // POSITIVE CONTROL. Without it, a regex that stopped matching would
+        // report "no unlisted namespaces" for every file.
+        expect(namespacesIn("const t = await getTranslations('publicFarm');")).toEqual([
+            'publicFarm',
+        ]);
+        expect(namespacesIn("const t = useTranslations('notFound');")).toEqual(['notFound']);
+        // …and it ignores a namespace named only in prose.
+        expect(namespacesIn("// uses getTranslations('ghost')\nconst x = 1;")).toEqual([]);
+    });
+
+    it('every namespace a public-surface file reads is SENT to it', () => {
+        const listed = new Set<string>(PUBLIC_SURFACE_NAMESPACES);
+        const unlisted: string[] = [];
+
+        for (const abs of FILES) {
+            for (const ns of namespacesIn(fs.readFileSync(abs, 'utf8'))) {
+                if (!listed.has(ns)) {
+                    unlisted.push(`${path.relative(REPO_ROOT, abs)} reads '${ns}'`);
+                }
+            }
+        }
+
+        if (unlisted.length > 0) {
+            throw new Error(
+                `${unlisted.length} namespace(s) are read by a public surface but not sent `
+                    + `to it:\n  ${unlisted.join('\n  ')}\n\n`
+                    + `An anonymous visitor receives only PUBLIC_SURFACE_NAMESPACES, so these `
+                    + `render as RAW KEYS — next-intl does not throw, the HTML is valid and `
+                    + `the status is 200, so the only observer is the visitor.\n`
+                    + `Add the namespace to PUBLIC_SURFACE_NAMESPACES in `
+                    + `src/lib/i18n/public-surface.ts, or stop reading it on a public page.`,
+            );
+        }
+        expect(unlisted).toEqual([]);
+    });
+
+    it('every SENT namespace exists in both catalogues', () => {
+        // The other direction: a listed namespace that no catalogue has is a
+        // typo that `publicSurfaceMessages` skips silently, so the page it was
+        // added for still renders raw keys.
+        for (const locale of ['bg', 'en']) {
+            const cat = JSON.parse(
+                fs.readFileSync(path.join(REPO_ROOT, `messages/${locale}.json`), 'utf8'),
+            ) as Record<string, unknown>;
+            const missing = PUBLIC_SURFACE_NAMESPACES.filter((ns) => !(ns in cat));
+            expect(missing).toEqual([]);
+        }
+    });
+});
