@@ -4,6 +4,7 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { codedForbidden } from '@/lib/errors/types';
 import { parseBottomTabOrder } from '@/lib/account/bottom-tabs';
+import { computePermissions } from '@/lib/tenant-context';
 import { resolveFlags } from '@/lib/feature-flags';
 import {
     DELETION_GRACE_DAYS,
@@ -214,6 +215,50 @@ export const GET = withApiErrorHandling(async () => {
             // `requirePermission` and the middleware tenant check — none read this
             // field — so this is contract honesty, not the authorization boundary.
             role: membership?.role ?? null,
+            /**
+             * The coarse permission tier for the membership above (#1768).
+             *
+             * ## What this replaces, and why it is not new authority
+             *
+             * `agrent-ios` was mirroring this server's role ladder on the
+             * client to decide whether to render a write control — it knew
+             * MECHANISATOR was out and asked whether READER was too (it is).
+             * A second copy of an authorisation rule drifts the moment a
+             * role's level changes, and a drift in the PERMISSIVE direction
+             * shows a farmer a button whose request is refused after they have
+             * typed a treatment into it.
+             *
+             * This discloses nothing the caller did not already have: every
+             * value is a pure function of `role`, which this payload returns
+             * one line up. What it removes is the client's need to reimplement
+             * the mapping.
+             *
+             * ## ADVISORY, never the authority
+             *
+             * It decides whether to draw a control. It does not decide whether
+             * a write is allowed — `assertCanWrite` does, and a client acting
+             * on a cached `canWrite: true` after a role change is told why by
+             * `WRITE_FORBIDDEN_FOR_ROLE` (#1767). The two shipped together for
+             * that reason: an advisory hint is only safe when the refusal it
+             * mispredicts is legible.
+             *
+             * ## The WHOLE object, not a curated subset
+             *
+             * `computePermissions`' output verbatim. #1768 named four fields;
+             * this returns all five, because a hand-picked subset is a second
+             * list to maintain and drifting lists are the defect being fixed.
+             * A tier added server-side appears here automatically.
+             *
+             * ## `null`, not a set of falses
+             *
+             * Same rule as `role` above and for the same reason. A role with
+             * no tenant has no referent, so neither does its permission tier;
+             * an all-false object would read as "you are permitted nothing"
+             * where the truth is "you have no farm" — and the adjacent
+             * `tenant: null` already says which. Costs no query: the values are
+             * computed from the `role` the membership select already returned.
+             */
+            permissions: membership ? computePermissions(membership.role) : null,
             // Bottom-row arrangement, returned here so a client can draw its
             // tab bar from the launch request it already makes rather than a
             // second round-trip. `null` means "never chosen, use the default";
