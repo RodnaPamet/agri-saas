@@ -106,6 +106,31 @@ model LogEntry {
   /// visibility the 2026-10-10 ruling gave it. Only a writer that sets this
   /// deliberately becomes visible.
   recordedInDiary   Boolean        @default(false)
+  /// The key the ДНЕВНИК list folds on (#1740).
+  ///
+  /// A treatment writes one entry per operation line — twelve parcels in
+  /// three blocks is twelve entries — and the register shows ONE row per
+  /// treatment. This carries that treatment's handle, the same value as
+  /// `Task.treatmentGroupId`, so the fold needs no join: the handle is
+  /// otherwise reachable only as
+  /// `LogEntry.operationParcelId -> OperationParcel.taskId -> Task`, and
+  /// folding across a join would mean reimplementing the journal's
+  /// manual-only WHERE clause in raw SQL. One spelling of that rule is worth
+  /// a denormalised column; it took a DB-backed test to pin down, because
+  /// Prisma's `NOT: { a, b }` is not obvious.
+  ///
+  /// NOT NULL, and an entry that belongs to no treatment gets its OWN unique
+  /// value, so it folds to itself and needs no second code path. That is not
+  /// tidiness: `DISTINCT ON` treats all NULLs as ONE value, so a nullable key
+  /// would collapse every manual entry a farm has ever written into a single
+  /// ghost row — measured, 4 null rows returning 1. The Дневник is the
+  /// launch screen, so that is the whole list for a farm with no treatments
+  /// yet, which today is every farm.
+  ///
+  /// Denormalised, so it can in principle go stale. It cannot here: the only
+  /// writer is `recordDiaryTreatment`, which sets it in the same transaction
+  /// as the lines. Worth naming rather than discovering.
+  treatmentGroupId  String         @default(uuid())
   /// Offline exactly-once handle. When a journal entry is created from the
   /// queued outbox, the client's outbox-item id rides in as the
   /// `Idempotency-Key`; a replayed write (flaky rural LTE re-send) dedupes on
@@ -163,6 +188,7 @@ model LogEntry {
   @@index([tenantId, type, occurredAt])
   @@index([tenantId, status, occurredAt])
   @@index([tenantId, operationParcelId])
+  @@index([tenantId, treatmentGroupId])
 }
 
 /// farmOS Quantity: measure + value + unit + label. A spray record
