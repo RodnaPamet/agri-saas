@@ -298,7 +298,8 @@ export function registerAdminMembersPaths(registry: OpenAPIRegistry): void {
             'each other is worse than either alone, so the route was corrected rather than the sentence ' +
             'softened (#1447).' +
             '\n\nRefusals that live in the usecase rather than the route: promoting or demoting yourself, and removing ' +
-            'the role from the last active OWNER/ADMIN. A farm must never become unadministrable.',
+            'the role from the last active OWNER/ADMIN. A farm must never become unadministrable.' +
+            '\n\n**Refusal code.** `MEMBERSHIP_NOT_FOUND` — one code for every membership lookup on this surface, with `params.requiredStatus` naming the state the operation needed. Four codes would advertise a distinction the SERVER CANNOT MAKE: each of these is a single query with a status predicate, so an absent membership and one in the wrong state both come back empty. The English message says which wording applies; the param says which state was required. Here `requiredStatus` is `ACTIVE`: a deactivated member’s role is not editable, and a client should refresh rather than retry.',
         tags: ['Admin'],
         params: MembershipParams,
         body: UpdateAdminMemberSchema,
@@ -318,7 +319,8 @@ export function registerAdminMembersPaths(registry: OpenAPIRegistry): void {
             '\n\nSelf-removal and removing the last active OWNER/ADMIN are refused in the usecase, so a farm cannot be ' +
             'left unadministrable.' +
             '\n\nNote the asymmetry with the bulk paths: `bulk/remove` is the bulk form of THIS operation, while ' +
-            '`bulk/delete` is the bulk form of `deactivate`.',
+            '`bulk/delete` is the bulk form of `deactivate`.' +
+            '\n\n**Refusal code.** `MEMBERSHIP_NOT_FOUND` — one code for every membership lookup on this surface, with `params.requiredStatus` naming the state the operation needed. Four codes would advertise a distinction the SERVER CANNOT MAKE: each is a single query with a status predicate, so an absent membership and one in the wrong state both come back empty. Here `requiredStatus` is `ACTIVE,DEACTIVATED,INVITED` — anything but already-removed. So this refusal usually means somebody else removed them first, and a client should refresh rather than retry: the outcome it wanted has already happened.',
         tags: ['Admin'],
         params: MembershipParams,
         success: { status: 200, description: 'The removed membership.', schema: AdminMemberSchema },
@@ -332,7 +334,8 @@ export function registerAdminMembersPaths(registry: OpenAPIRegistry): void {
         description:
             'Sets `DEACTIVATED`. The row STAYS in `GET /admin/members` with that status, which is the point — the ' +
             'reversible counterpart to `DELETE`, and what an admin wants for seasonal staff.' +
-            '\n\n**No request body.** Reverse it with `POST …/reactivate`.',
+            '\n\n**No request body.** Reverse it with `POST …/reactivate`.' +
+            '\n\n**Refusal code.** `MEMBERSHIP_NOT_FOUND` — one code for every membership lookup on this surface, with `params.requiredStatus` naming the state the operation needed. Four codes would advertise a distinction the SERVER CANNOT MAKE: each is a single query with a status predicate, so an absent membership and one in the wrong state both come back empty. Here `requiredStatus` is `ACTIVE` — an already-deactivated member cannot be deactivated again, and that is the common cause rather than a missing row.',
         tags: ['Admin'],
         params: MembershipParams,
         success: { status: 200, description: 'The deactivated membership.', schema: AdminMemberSchema },
@@ -345,7 +348,8 @@ export function registerAdminMembersPaths(registry: OpenAPIRegistry): void {
         summary: 'Restore a deactivated member',
         description:
             'Sets `ACTIVE`. **No request body.** The counterpart to `deactivate`; there is no equivalent for a ' +
-            '`REMOVED` membership, which is why the two actions are not interchangeable.',
+            '`REMOVED` membership, which is why the two actions are not interchangeable.' +
+            '\n\n**Refusal code.** `MEMBERSHIP_NOT_FOUND` — one code for every membership lookup on this surface, with `params.requiredStatus` naming the state the operation needed. Four codes would advertise a distinction the SERVER CANNOT MAKE: each is a single query with a status predicate, so an absent membership and one in the wrong state both come back empty. Here `requiredStatus` is `DEACTIVATED,REMOVED` — an ACTIVE member has nothing to reactivate, so this refusal most often means the work was already done.',
         tags: ['Admin'],
         params: MembershipParams,
         success: { status: 200, description: 'The reactivated membership.', schema: AdminMemberSchema },
@@ -363,7 +367,8 @@ export function registerAdminMembersPaths(registry: OpenAPIRegistry): void {
             '\n\n**Three-state per field, and the states are distinct**: a value SETS it, `null` CLEARS it, and omitting ' +
             'the field LEAVES IT UNCHANGED. A client sending the whole form every time will clear what it does not know ' +
             'about, so send only the fields the admin edited — or send every field explicitly, including the nulls.' +
-            '\n\nA `PUT` rather than a `PATCH` despite the merge semantics; the method is what it is.',
+            '\n\nA `PUT` rather than a `PATCH` despite the merge semantics; the method is what it is.' +
+            '\n\n**Refusal code.** `MEMBERSHIP_NOT_FOUND` — one code for every membership lookup on this surface, with `params.requiredStatus` naming the state the operation needed. Four codes would advertise a distinction the SERVER CANNOT MAKE: each is a single query with a status predicate, so an absent membership and one in the wrong state both come back empty. This is the ONE membership lookup on the surface with no status predicate, so it carries NO `requiredStatus` — and that absence is itself information — the lookup would have accepted a membership in ANY state, so the membership really is gone.',
         tags: ['Admin'],
         params: MembershipParams,
         body: UpdateMemberCertificatesSchema,

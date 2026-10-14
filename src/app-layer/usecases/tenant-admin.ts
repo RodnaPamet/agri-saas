@@ -22,7 +22,7 @@ import {
 import { assertCanRead } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
-import { notFound, badRequest, forbidden } from '@/lib/errors/types';
+import { notFound, badRequest, forbidden, codedNotFound } from '@/lib/errors/types';
 import { assertWithinLimit } from '@/lib/billing/entitlements';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { Prisma, type Role } from '@prisma/client';
@@ -172,7 +172,25 @@ export async function updateTenantMemberRole(
         });
 
         if (!membership) {
-            throw notFound('Membership not found or not active.');
+            // ONE code for all five membership lookups in this file, with the
+            // required state in `params` (#1712).
+            //
+            // Four codes would advertise a distinction the SERVER CANNOT MAKE:
+            // each of these is a single query with a status predicate, so an
+            // absent membership and one in the wrong state both come back
+            // null. "Not found or not active" is honest about that, and a code
+            // per message would imply the server knew which — the shape that
+            // makes a client's error handling confidently wrong.
+            //
+            // `requiredStatus` carries what the operation needed, so a client
+            // can say "that member is no longer active" rather than a
+            // category. Same pattern as WRITE_FORBIDDEN_FOR_ROLE's
+            // `params.role`.
+            throw codedNotFound(
+                'MEMBERSHIP_NOT_FOUND',
+                'Membership not found or not active.',
+                { requiredStatus: 'ACTIVE' },
+            );
         }
 
         // Safety: prevent self-demotion
@@ -272,7 +290,10 @@ export async function updateMemberCertificates(
             where: { id: input.membershipId, tenantId: ctx.tenantId },
             include: { user: { select: { id: true, email: true } } },
         });
-        if (!membership) throw notFound('Membership not found.');
+        // No status predicate on this query, so this one really is "absent"
+        // and carries no `requiredStatus`. The absence of the param is itself
+        // information — the lookup would have accepted a membership in ANY state.
+        if (!membership) throw codedNotFound('MEMBERSHIP_NOT_FOUND', 'Membership not found.');
 
         const data: Prisma.TenantMembershipUpdateInput = {};
         const applicator = clean(input.applicatorCertNo);
@@ -329,7 +350,13 @@ export async function deactivateTenantMember(
         });
 
         if (!membership) {
-            throw notFound('Membership not found or not active.');
+            // Same one code and the same reasoning as `updateTenantMemberRole`
+            // above — identical query predicate, identical message (#1712).
+            throw codedNotFound(
+                'MEMBERSHIP_NOT_FOUND',
+                'Membership not found or not active.',
+                { requiredStatus: 'ACTIVE' },
+            );
         }
 
         // Safety: prevent self-deactivation
@@ -568,7 +595,11 @@ export async function reactivateTenantMember(
         });
 
         if (!membership) {
-            throw notFound('Membership not found or already active.');
+            throw codedNotFound(
+                'MEMBERSHIP_NOT_FOUND',
+                'Membership not found or already active.',
+                { requiredStatus: 'DEACTIVATED,REMOVED' },
+            );
         }
 
         const reactivated = await db.tenantMembership.update({
@@ -620,7 +651,11 @@ export async function removeTenantMember(
         });
 
         if (!membership) {
-            throw notFound('Membership not found or already removed.');
+            throw codedNotFound(
+                'MEMBERSHIP_NOT_FOUND',
+                'Membership not found or already removed.',
+                { requiredStatus: 'ACTIVE,DEACTIVATED,INVITED' },
+            );
         }
 
         assertNotSelfDeactivation(ctx, membership.userId);

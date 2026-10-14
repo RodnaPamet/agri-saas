@@ -493,7 +493,17 @@ export function collectServerAuthoredCopy(root: string, dirs: string[] = ROOTS):
 // other single site on this list. Two are the lease payment write and delete.
 //
 // Lowered in the same diff that drained it, as the note above requires.
-const CURRENT_BASELINE = 309;
+// 309 → 304 (#1712, tenant-admin batch): the five membership lookups in
+// `tenant-admin.ts` gained ONE code between them, not five.
+//
+// Worth recording the shape rather than just the number, because the obvious
+// move was four codes: each site carries a different English sentence ("not
+// active", "already active", "already removed"), but each is a single query
+// with a status predicate, so an absent membership and one in the wrong state
+// both come back null. A code per sentence would have advertised a
+// distinction the server cannot make. `params.requiredStatus` carries the
+// detail instead.
+const CURRENT_BASELINE = 304;
 
 /** Slack tolerated before the sentinel demands the baseline be lowered. */
 const DRIFT_ALLOWANCE = 15;
