@@ -13,6 +13,10 @@ import { getLocale, getMessages } from 'next-intl/server';
 import { preloadFaces } from '@/lib/fonts/preload';
 import { Providers } from './providers';
 import { ServiceWorkerRegistrar } from '@/components/pwa/ServiceWorkerRegistrar';
+import {
+    PUBLIC_SURFACE_HEADER,
+    publicSurfaceMessages,
+} from '@/lib/i18n/public-surface';
 import { WebVitalsReporter } from '@/components/pwa/WebVitalsReporter';
 import { CSP_NONCE_HEADER } from '@/lib/security/csp';
 import './globals.css';
@@ -60,8 +64,36 @@ export const viewport: Viewport = {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
     const locale = await getLocale();
-    const messages = await getMessages();
-    const nonce = (await headers()).get(CSP_NONCE_HEADER) ?? undefined;
+    const allMessages = await getMessages();
+    const requestHeaders = await headers();
+    const nonce = requestHeaders.get(CSP_NONCE_HEADER) ?? undefined;
+
+    /**
+     * P6.4 (#1813) — what an ANONYMOUS visitor is sent.
+     *
+     * `NextIntlClientProvider` serialises whatever `messages` it is given into
+     * the RSC payload. Measured 2026-10-14, the full Bulgarian catalogue is
+     * 404,981 bytes across 93 namespaces, and `/f/[handle]` needs 475 of them
+     * — 0.12%. A stranger opening a farm page was downloading every string of
+     * a product they have no account for, to render three.
+     *
+     * On P6.5's budget of LCP <= 2.5s over rural mobile data, that payload is
+     * the difference between the target being reachable and not.
+     *
+     * The flag comes from the middleware, because a layout cannot see the
+     * pathname — the same request-header bridge the CSP nonce uses. An ABSENT
+     * header means the operator app and the full catalogue, which is the safe
+     * default: a missing header costs bytes, where a wrongly-set one would
+     * strip copy from a real screen.
+     *
+     * NOT a file split. The phase's checklist says to split the catalogues and
+     * this is deliberately not that — passing a subset buys the same bytes
+     * without touching either file, so the pre-commit parity check that
+     * compares them key-for-key keeps working. See
+     * `src/lib/i18n/public-surface.ts`.
+     */
+    const isPublic = requestHeaders.get(PUBLIC_SURFACE_HEADER) === '1';
+    const messages = isPublic ? publicSurfaceMessages(allMessages) : allMessages;
 
     /**
      * P2.4 — seed the theme attributes from a cookie so the FIRST paint is
