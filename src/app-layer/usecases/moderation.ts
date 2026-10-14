@@ -500,3 +500,231 @@ export async function listUndeliveredStatements(limit?: number): Promise<
         },
     });
 }
+
+/**
+ * How long a notice actually takes — to DECIDE, and to ANSWER (P5.4, #1595).
+ *
+ * ## "Measurable" was not the same as "measured"
+ *
+ * The statements route's docblock said P5's exit criterion "is measurable from
+ * `createdAt` to `deliveredAt` rather than asserted". True, and not enough:
+ * nothing computed it, so the number a regulator would ask for did not exist
+ * and P5's exit ("median notice handling under 24h") could only have been
+ * estimated. This is the computation.
+ *
+ * ## TWO clocks, because the repo defined the criterion two ways
+ *
+ * `docs/runbooks/dsa-moderation-contact.md` and `CLAUDE.md` said the lag runs
+ * from `ContentReport.createdAt` to the `ModerationAction`. #1595's exit
+ * criterion and the statements route said to `StatementOfReasons.deliveredAt`.
+ * Both were written here, neither noticed the other.
+ *
+ * They are different duties and neither subsumes the other:
+ *
+ *   - **`decision`** — how fast somebody looked and decided.
+ *   - **`answer`** — how fast the notifier was told, which is the Art 17 duty.
+ *     An action taken and never explained leaves the notifier knowing nothing,
+ *     so a fast `decision` with no `answer` is not a service being delivered.
+ *
+ * Reporting both is cheaper than choosing, and choosing silently would have
+ * made the published figure unfalsifiable — a reader could not tell which
+ * question the number answered. `answer.n` can never exceed `decision.n`,
+ * because an answer requires a decision; the gap between them IS the
+ * unexplained set.
+ *
+ * ## `n` travels WITH every figure, and an empty set is null
+ *
+ * `percentile_cont` over no rows returns NULL and is left NULL. Coalescing to
+ * 0 would publish "median 0 seconds" for a deployment that has answered
+ * nothing — the most flattering possible reading of no data. On this VM today
+ * the honest answer IS n=0 for both clocks, and that is what it says.
+ *
+ * `windowDays` bounds it: a lifetime median hides a regression, because a
+ * service that answered quickly for a year can be failing this month and the
+ * all-time figure will not move for a long while.
+ *
+ * The window is `[now - windowDays, now)` — closed below, OPEN above. The
+ * upper bound is what makes `now` meaningful as a parameter rather than
+ * decoration: a caller asking about last month must get last month, not last
+ * month plus everything since.
+ */
+export interface HandlingClock {
+    /** Notices in the window that reached this stage. 0 means the figures say nothing. */
+    n: number;
+    /** Null when `n` is 0. NEVER 0 — see the docblock. */
+    medianSeconds: number | null;
+    p90Seconds: number | null;
+    /** How many of the `n` made it inside P5's 24h target. */
+    withinTarget: number;
+}
+
+export interface ModerationHandlingStats {
+    windowDays: number;
+    /** Notices RECEIVED in the window, by status — the denominator's context. */
+    noticesByStatus: Record<string, number>;
+    /** `createdAt` → the first `ModerationAction`. How fast we decide. */
+    decision: HandlingClock;
+    /** `createdAt` → the first delivered statement. The Art 17 duty. */
+    answer: HandlingClock;
+    targetSeconds: number;
+    /** A statement queued and never sent is a breach, not a backlog. */
+    undelivered: {
+        count: number;
+        oldestQueuedAt: Date | null;
+        oldestAgeSeconds: number | null;
+    };
+    /** A notice no human has been told about yet (#1599's alert queue). */
+    unalerted: {
+        count: number;
+        oldestCreatedAt: Date | null;
+    };
+}
+
+/** P5's target: a notice handled inside 24 hours. */
+export const HANDLING_TARGET_SECONDS = 24 * 60 * 60;
+
+interface ClockRow {
+    decided_n: number;
+    decided_median: number | null;
+    decided_p90: number | null;
+    decided_within: number;
+    answered_n: number;
+    answered_median: number | null;
+    answered_p90: number | null;
+    answered_within: number;
+}
+
+/**
+ * Guarded on `n` rather than on the value.
+ *
+ * `percentile_cont` returns NULL for an empty set today; a future change that
+ * made it return 0 would publish a flattering lie, and this reads the
+ * denominator instead of trusting the figure.
+ */
+function clock(n: number, median: number | null, p90: number | null, within: number): HandlingClock {
+    return {
+        n,
+        medianSeconds: n > 0 && median != null ? median : null,
+        p90Seconds: n > 0 && p90 != null ? p90 : null,
+        withinTarget: within,
+    };
+}
+
+export async function moderationHandlingStats(
+    windowDays = 30,
+    now: Date = new Date(),
+): Promise<ModerationHandlingStats> {
+    const since = new Date(now.getTime() - windowDays * 24 * 60 * 60 * 1000);
+
+    const [byStatus, rows, oldestUndelivered, oldestUnalerted, undeliveredCount, unalertedCount] =
+        await Promise.all([
+            prisma.contentReport.groupBy({
+                by: ['status'],
+                // Bounded at BOTH ends. `now` is a parameter so a caller can
+                // ask about a past period, and without the upper bound such a
+                // call answered for that period PLUS everything since — which
+                // is not a window. Found by a mutation that SURVIVED: swapping
+                // MIN for MAX on the delivery timestamp moved one notice's lag
+                // and no window could be made narrow enough to show it.
+                where: { createdAt: { gte: since, lt: now } },
+                _count: { _all: true },
+            }),
+            // Raw SQL because the join is string columns, not foreign keys —
+            // deliberately, per `prisma/schema/social.prisma`'s header: an FK
+            // would have forced an `onDelete`, and `Cascade` would destroy the
+            // moderation record of a resolved case. Prisma cannot traverse a
+            // relation the schema does not declare.
+            //
+            // Casts in SQL rather than conversion in TS: `percentile_cont` over
+            // numeric returns a Prisma `Decimal` and `COUNT` a `BigInt`,
+            // neither of which is a JSON number.
+            prisma.$queryRaw<ClockRow[]>`
+                WITH per_notice AS (
+                    SELECT r."id",
+                           r."createdAt"          AS received_at,
+                           MIN(a."createdAt")     AS decided_at,
+                           MIN(s."deliveredAt")   AS answered_at
+                      FROM "ContentReport" r
+                      JOIN "ModerationAction" a
+                        ON a."reportId" = r."id"
+                      -- LEFT, and the IS NOT NULL belongs in the ON clause: a
+                      -- decided-but-unanswered notice must survive into the
+                      -- decision figures instead of vanishing from both.
+                      LEFT JOIN "StatementOfReasons" s
+                        ON s."actionId" = a."id"
+                       AND s."deliveredAt" IS NOT NULL
+                     WHERE r."createdAt" >= ${since}
+                       AND r."createdAt" < ${now}
+                     GROUP BY r."id", r."createdAt"
+                )
+                SELECT
+                    COUNT(decided_at)::int AS decided_n,
+                    percentile_cont(0.5) WITHIN GROUP (
+                        ORDER BY EXTRACT(EPOCH FROM (decided_at - received_at))
+                    )::double precision AS decided_median,
+                    percentile_cont(0.9) WITHIN GROUP (
+                        ORDER BY EXTRACT(EPOCH FROM (decided_at - received_at))
+                    )::double precision AS decided_p90,
+                    COUNT(*) FILTER (
+                        WHERE decided_at - received_at <= interval '24 hours'
+                    )::int AS decided_within,
+                    COUNT(answered_at)::int AS answered_n,
+                    percentile_cont(0.5) WITHIN GROUP (
+                        ORDER BY EXTRACT(EPOCH FROM (answered_at - received_at))
+                    )::double precision AS answered_median,
+                    percentile_cont(0.9) WITHIN GROUP (
+                        ORDER BY EXTRACT(EPOCH FROM (answered_at - received_at))
+                    )::double precision AS answered_p90,
+                    COUNT(*) FILTER (
+                        WHERE answered_at - received_at <= interval '24 hours'
+                    )::int AS answered_within
+                  FROM per_notice
+            `,
+            prisma.statementOfReasons.findMany({
+                where: { deliveredAt: null },
+                orderBy: { createdAt: 'asc' },
+                take: 1,
+                select: { createdAt: true },
+            }),
+            prisma.contentReport.findMany({
+                where: { alertedAt: null },
+                orderBy: { createdAt: 'asc' },
+                take: 1,
+                select: { createdAt: true },
+            }),
+            prisma.statementOfReasons.count({ where: { deliveredAt: null } }),
+            prisma.contentReport.count({ where: { alertedAt: null } }),
+        ]);
+
+    const r = rows[0];
+    const queuedAt = oldestUndelivered[0]?.createdAt ?? null;
+
+    return {
+        windowDays,
+        noticesByStatus: Object.fromEntries(byStatus.map((g) => [g.status, g._count._all])),
+        decision: clock(
+            r?.decided_n ?? 0,
+            r?.decided_median ?? null,
+            r?.decided_p90 ?? null,
+            r?.decided_within ?? 0,
+        ),
+        answer: clock(
+            r?.answered_n ?? 0,
+            r?.answered_median ?? null,
+            r?.answered_p90 ?? null,
+            r?.answered_within ?? 0,
+        ),
+        targetSeconds: HANDLING_TARGET_SECONDS,
+        undelivered: {
+            count: undeliveredCount,
+            oldestQueuedAt: queuedAt,
+            oldestAgeSeconds: queuedAt
+                ? Math.floor((now.getTime() - queuedAt.getTime()) / 1000)
+                : null,
+        },
+        unalerted: {
+            count: unalertedCount,
+            oldestCreatedAt: oldestUnalerted[0]?.createdAt ?? null,
+        },
+    };
+}
