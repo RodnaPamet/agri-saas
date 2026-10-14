@@ -1,0 +1,17 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "9423GKWL67.bg.agrent.app",
+        "paths": [
+          "/f/*",
+          "/l/*",
+          "/go/*",
+          "/c/*",
+          "/m/*"
+        ]
+      }
+    ]
+  }
+}
