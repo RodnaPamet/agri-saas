@@ -144,7 +144,19 @@ export async function listTenantParcelOptions(ctx: RequestContext) {
         const rows = await db.parcel.findMany({
             where: { tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true, name: true, location: { select: { id: true, name: true } } },
-            orderBy: [{ name: 'asc' }],
+            // `name, id` — total, not merely mostly-stable (#1742).
+            //
+            // `ParcelRepository.listSummariesByIds` documents this rule and
+            // calls it contractual; this sibling read did not follow it.
+            // Parcel names are NOT unique, and Postgres gives no stability
+            // guarantee for rows that tie, so two reads could return
+            // duplicate-named parcels in either order.
+            //
+            // The `take: 5000` below is what makes it more than cosmetic: with
+            // a non-total order, WHICH 5000 rows come back is unstable too, so
+            // a parcel near the cap can be present in one read and absent in
+            // the next with nothing having changed.
+            orderBy: [{ name: 'asc' }, { id: 'asc' }],
             take: 5000,
         });
         return rows.map((p) => ({

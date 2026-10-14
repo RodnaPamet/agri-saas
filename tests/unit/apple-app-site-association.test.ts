@@ -29,6 +29,7 @@ import {
     buildAppSiteAssociation,
 } from '@/lib/ios/app-site-association';
 import { isPublicPath } from '@/lib/auth/guard';
+import { collectSourceFiles } from '../helpers/collect-files';
 
 const PATH = '/.well-known/apple-app-site-association';
 
@@ -131,5 +132,74 @@ describe('the document Apple receives', () => {
         // fatal but a MISSING `applinks` is. Asserted as an exact key set so a
         // future addition is deliberate.
         expect(Object.keys(body).sort()).toEqual(['applinks', 'webcredentials']);
+    });
+});
+
+/**
+ * Two rules about WHAT may be claimed, carried over from #1780's guard when
+ * the two implementations of this path were reconciled into one.
+ *
+ * Both hold trivially while `APPLINK_COMPONENTS` is empty, which is why each
+ * carries a POSITIVE CONTROL: the same expression is applied to a synthetic
+ * claim that SHOULD be caught. Without that, these would be two assertions
+ * that pass over nothing and start passing over something later without ever
+ * having been shown to work.
+ *
+ * They matter when the list stops being empty — which is a decision for the
+ * owner (#1623), not for this file.
+ */
+describe('what may be claimed, once anything is', () => {
+    /** `*`, or a `NOT …` carve-out, which only makes sense out of a catch-all. */
+    const catchAlls = (claims: ReadonlyArray<Record<string, unknown>>): unknown[] =>
+        claims.flatMap((c) =>
+            Object.values(c).filter(
+                (v) => v === '*' || (typeof v === 'string' && v.startsWith('NOT ')),
+            ),
+        );
+
+    it('claims no catch-all', () => {
+        expect(catchAlls(APPLINK_COMPONENTS)).toEqual([]);
+        // POSITIVE CONTROL. #1780's first version of this document claimed
+        // `["NOT /api/*", "*"]` — every page on the origin — and the app has
+        // no URL handler, so a claimed link would have launched it at its
+        // home screen and the page would never open: every emailed invite,
+        // every password reset, every `/t/<slug>/…` link one farmer sends
+        // another. Worse than no Universal Links, shipping as a fix.
+        expect(catchAlls([{ '/': '*' }, { '/': 'NOT /api/*' }])).toHaveLength(2);
+    });
+
+    /** A claimed prefix that already serves a web page the app cannot open. */
+    const collisions = (claims: ReadonlyArray<Record<string, unknown>>): string[] => {
+        const pages = collectSourceFiles({ roots: ['src/app'], extensions: ['.tsx'] })
+            .map((f) => f.replace(/\\/g, '/'))
+            .filter((f) => f.endsWith('/page.tsx'));
+        const segments = [
+            ...new Set(
+                pages
+                    .map((f) => f.split('src/app/')[1]?.split('/')[0])
+                    .filter((seg): seg is string => Boolean(seg))
+                    .filter((seg) => !seg.startsWith('(') && !seg.startsWith('[') && seg !== 'api'),
+            ),
+        ];
+        // The collector refuses an empty result, but not an empty DERIVATION.
+        expect(segments.length).toBeGreaterThan(3);
+        const values = claims.flatMap((c) => Object.values(c)).filter((v): v is string => typeof v === 'string');
+        return segments.filter((seg) => values.some((v) => v === `/${seg}` || v.startsWith(`/${seg}/`)));
+    };
+
+    it('claims no prefix that already serves a page', () => {
+        expect(collisions(APPLINK_COMPONENTS)).toEqual([]);
+        // POSITIVE CONTROL, and the live example: `/invite/<token>` is a real
+        // return value of both invite usecases. Claiming it would send every
+        // emailed invitation into an app that cannot open it.
+        expect(collisions([{ '/': '/invite/*' }])).toEqual(['invite']);
+    });
+
+    it('a claim that opens nothing is the thing being avoided, not an oversight', () => {
+        // The empty list is a DECISION (#1623): a path that opens nothing
+        // drops someone who tapped a link into a dead end inside the app,
+        // which is worse than the browser fallback that at least renders.
+        // Asserted here so a future "fill this in" change has to confront it.
+        expect(APPLINK_COMPONENTS).toEqual([]);
     });
 });

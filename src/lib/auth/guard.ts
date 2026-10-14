@@ -201,6 +201,7 @@ const PUBLIC_PATH_PREFIXES = [
 ];
 
 const PUBLIC_PATH_EXACT = new Set([
+
     // The landing page (P3.8). EXACT, so ONLY the root opens — no prefix, and
     // nothing under `/` inherits it.
     //
