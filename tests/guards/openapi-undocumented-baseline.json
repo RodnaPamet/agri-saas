@@ -43,6 +43,7 @@
         "/api/admin/key-rotation",
         "/api/admin/key-rotation/repair-v2",
         "/api/admin/lookup-rehash",
+        "/api/admin/moderation/metrics",
         "/api/admin/news-derived-events",
         "/api/admin/news-derived-events/{id}/approve",
         "/api/admin/news-derived-events/{id}/reject",
