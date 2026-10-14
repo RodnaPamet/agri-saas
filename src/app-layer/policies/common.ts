@@ -3,6 +3,39 @@ import { forbidden, codedForbidden } from '@/lib/errors/types';
 
 /**
  * Asserts the user has READ permission in their current context.
+ *
+ * ## No CURRENT role is refused by this, and that is deliberate (#1766)
+ *
+ * `canRead` is `level >= 1` and the lowest of the six roles — READER and
+ * MECHANISATOR — are both level 1, so every real role passes. Measured over
+ * `ROLE_ORDER` in `src/lib/tenant-context.ts`; the set of roles this can
+ * refuse is EMPTY. It has 126 call sites.
+ *
+ * It is a RESERVATION of level 0, not a live gate. The ladder leaves that
+ * level unused, so a future read-restricted role placed below READER makes
+ * every one of those call sites bite at once, without touching them.
+ *
+ * **What this means for anyone reading a usecase and asking whether its read
+ * is permission-gated: this line is not the answer.** The gates that actually
+ * refuse a reader are membership resolution (`getTenantCtx` gives no context
+ * to a non-member), `requirePermission(...)` on privileged routes, and RLS,
+ * which returns zero rows outside the bound tenant. Nothing is exposed by the
+ * reservation — it is the reviewer's expectation that is at risk.
+ *
+ * It also means a test asserting "role X cannot read" has to invent a context
+ * no HTTP request produces, and would then read as coverage of a gate that
+ * does not gate. Do not write one. Deleting this call from a usecase changes
+ * no test, in either direction, which is the tell.
+ *
+ * Contrast `assertCanWrite` below, which is `level >= 3` and genuinely
+ * refuses READER, MECHANISATOR and AUDITOR.
+ *
+ * Giving MECHANISATOR level 0 — which would make all 126 sites meaningful and
+ * arguably corrects a real inconsistency, since `getPermissionsForRole`
+ * already sets every fine-grained domain false for that persona — was
+ * considered and deliberately NOT done here (owner ruling 2026-10-14). It is a
+ * live permission change needing the operator's own two screens re-verified
+ * first, because their task data must still load.
  */
 export function assertCanRead(ctx: RequestContext) {
     if (!ctx.permissions.canRead) {
