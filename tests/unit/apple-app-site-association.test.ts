@@ -111,7 +111,7 @@ describe('the document Apple receives', () => {
         expect(APP_ID).toBe('9423GKWL67.bg.agrent.app');
     });
 
-    it('claims exactly the five prefixes the owner named, and nothing else', async () => {
+    it('claims exactly the two prefixes the rulings leave, and nothing else', async () => {
         const body = await (await GET()).json();
 
         // Was `toEqual([])`, and the change of answer is the whole history of
@@ -124,13 +124,12 @@ describe('the document Apple receives', () => {
         // An EXACT list, so adding a sixth is a visible diff rather than a
         // side effect — which is what kept the two relayed attempts
         // reviewable.
-        const expected = [
-            { '/': '/f/*' },
-            { '/': '/l/*' },
-            { '/': '/c/*' },
-            { '/': '/go/*' },
-            { '/': '/m/*' },
-        ];
+        // TWO, not five. #1623's rulings of 2026-10-12 dropped `/c`, `/l`
+        // and `/go`: a path with no defined meaning cannot open anything, and
+        // an absent path falls back to the browser, which is the better of
+        // the two outcomes. #1794 claimed five from this issue's BODY without
+        // reading its COMMENTS.
+        const expected = [{ '/': '/f/*' }, { '/': '/m/*' }];
         expect(APPLINK_COMPONENTS).toEqual(expected);
         // And the same list actually reaches the wire — the module and the
         // response are separate facts, and only the second is what Apple
@@ -229,6 +228,6 @@ describe('what may be claimed, once anything is', () => {
         // from the filesystem, and this case states the condition the
         // acceptance rests on so the two cannot drift apart silently.
         expect(collisions(APPLINK_COMPONENTS)).toEqual([]);
-        expect(APPLINK_COMPONENTS.length).toBe(5);
+        expect(APPLINK_COMPONENTS.length).toBe(2);
     });
 });

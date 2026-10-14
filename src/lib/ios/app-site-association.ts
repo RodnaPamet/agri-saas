@@ -27,55 +27,58 @@
 export const APP_ID = '9423GKWL67.bg.agrent.app';
 
 /**
- * The paths that open the app.
+ * The paths that open the app: `/f/*` and `/m/*`.
  *
- * ## These are claimed on the OWNER'S DIRECT authority, which is the point
+ * ## The scheme is TWO paths, by two recorded owner rulings
  *
- * This array was deliberately EMPTY, because #1623 recorded that `/c` and `/l`
- * had no defined meaning anywhere in this repo and that **agrent-ios asked the
- * decision come from the owner DIRECTLY rather than relayed through them** —
- * three relayed decisions on this project had already differed from his direct
- * answer.
+ * #1623, both asked directly rather than relayed because that issue asked for
+ * it:
  *
- * It was then filled in twice on a relay and both times that was wrong. #1780
- * first claimed `["NOT /api/*", "*"]` — the whole origin — and then narrowed to
- * these five on a peer's message; the narrow version reached production and
- * was reverted by #1791. The owner has since answered directly: claim all
- * five. That answer, not the list, is what changed.
+ *   2026-10-12 13:42 — `/c` and `/l` DROPPED. "The AASA will list only paths
+ *                      with a screen behind them… a path absent from it
+ *                      simply falls back to the browser, which is the BETTER
+ *                      outcome of the two."
+ *   2026-10-12 14:35 — `/go` DROPPED on the same reasoning: a path with no
+ *                      defined meaning cannot open anything.
  *
- * The meanings (agrent-ios#206, owner 2026-10-11):
+ * `/f/[handle]` is a farm's public page, keyed by a SEPARATE public handle and
+ * not the tenant slug — the two diverging later would be a breaking change to
+ * a published link format. `/m` is direct messages. Both have a defined
+ * meaning; neither has a screen yet (P6.9 and P8).
  *
- *   /f/*   a farm's public page, keyed by a SEPARATE public handle — not the
- *          tenant slug. The two diverging later would be a breaking change to
- *          a published link format, which is why it was worth asking.
- *   /l/*   a listing its farm has made public (Борса).
- *   /c/*   a channel (P9).
- *   /go/*  short codes behind QR codes and A6 prints.
- *   /m/*   direct messages (P8.8).
+ * ## This field has changed four times and only the record is useful
  *
- * ## What this claim costs, stated plainly
+ *   empty            #1786, declining to claim anything before the meanings
+ *                    were settled.
+ *   all but /api/*   #1780, mine. A catch-all over the whole origin, which
+ *                    would have hijacked every emailed invite, password reset
+ *                    and /t/<slug>/… link on a phone with the app installed.
+ *                    Reverted by #1791.
+ *   five prefixes    #1794, mine. Claimed on an owner answer to a question I
+ *                    framed from this issue's BODY and #1786's docblock, both
+ *                    of which predate the rulings above. The body's table
+ *                    lists five; the comments drop three.
+ *   two prefixes     here, on the rulings themselves.
  *
- * An AASA file is a PUBLISHED claim, and Apple caches it. None of these five
- * serves a web page yet and the app has no `onOpenURL` handler yet, so a
- * tapped link today opens the app at its home screen rather than rendering a
- * 404 in Safari. That is the known cost of publishing ahead of the handlers,
- * and it is the owner's call to pay it so the client can build against a
- * published list.
+ * An issue's BODY is the question and its COMMENTS are the answers. Acting on
+ * the first produced a published claim contradicting two direct owner
+ * decisions from two days earlier — and because the question was framed from
+ * the wrong list, the answer to it was not wrong, it was answering the wrong
+ * question. A relayed report is what surfaced it.
  *
- * It becomes a REGRESSION the day one of these ships as a web route while the
- * app still cannot open it — at that point a working page starts being
- * hijacked. `tests/unit/apple-app-site-association.test.ts` fails on exactly
- * that, derived from the filesystem rather than listed.
+ * ## What the claim costs while the screens are unbuilt
  *
- * Exported so a client READS the claim rather than restating it (#1623), which
- * is the same reasoning that put `entryUnit` on the #1587 form read instead of
- * in two clients.
+ * Neither path serves a web page and the app has no `onOpenURL` handler, so a
+ * tapped link opens the app at its home screen rather than rendering a 404 in
+ * Safari. That is accepted so the client can build against a published list.
+ * It becomes a REGRESSION the day one ships as a web route while the app still
+ * cannot open it — a working page starts being hijacked — and the collision
+ * check in the test, derived from the filesystem, fails on exactly that.
+ *
+ * Exported so a client READS the claim rather than restating it (#1623).
  */
 export const APPLINK_COMPONENTS: ReadonlyArray<Record<string, unknown>> = [
     { '/': '/f/*' },
-    { '/': '/l/*' },
-    { '/': '/c/*' },
-    { '/': '/go/*' },
     { '/': '/m/*' },
 ];
 
