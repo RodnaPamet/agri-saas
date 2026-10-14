@@ -388,32 +388,94 @@ describeFn('getDiaryTreatment (DB-backed)', () => {
         expect(new Set(found!.taskIds)).toEqual(new Set(written.taskIds));
     });
 
-    it('reports a half-landed write as INCOMPLETE rather than as absent', async () => {
-        // The partial-commit shape: a task carrying the handle whose second
-        // transaction never ran, so it has no lines. Built directly, because
-        // the write cannot be made to produce it on demand.
-        const key = `${TAG}-partial`;
-        await globalPrisma.task.create({
+    it('a failed mark leaves the treatment INCOMPLETE, though its lines exist', async () => {
+        // THE REPRO, with no fault injection. A sample-archetype product is
+        // allowed into a field operation and refused on the way to DONE
+        // (`PRODUCT_IS_SAMPLE_ARCHETYPE`). So every line is created and none
+        // is marked — and the mark is what writes the register entry.
+        //
+        // The predicate this guards was `parcelCount > 0`, which called this
+        // complete. The client would have been told it synced, dropped the
+        // body from its outbox, and the ДНЕВНИК would hold nothing.
+        const archetype = await globalPrisma.item.create({
             data: {
-                tenantId,
-                title: `Partial ${TAG}`,
-                type: 'FIELD_OPERATION',
-                createdByUserId: userId,
-                treatmentGroupId: key,
+                tenantId, name: `Sample ${TAG}`, category: 'PESTICIDE',
+                defaultUnitId: unitId, isArchetype: true,
             },
         });
+        const key = `${TAG}-archetype`;
+
+        await expect(
+            recordDiaryTreatment(
+                ctx(),
+                { ...baseInput(), productItemId: archetype.id, parcelIds: [parcelA1, parcelB1] },
+                key,
+            ),
+        ).rejects.toMatchObject({ code: 'PRODUCT_IS_SAMPLE_ARCHETYPE' });
 
         const found = await getDiaryTreatment(ctx(), key);
-        // Present — so a client does NOT write a duplicate...
         expect(found).not.toBeNull();
-        expect(found!.taskIds).toHaveLength(1);
-        // ...but explicitly not complete, so it also does not report a
-        // compliance record that has no lines.
+        // Lines exist — so a 404 would make the client write a duplicate...
+        expect(found!.parcelCount).toBeGreaterThan(0);
+        // ...and NONE is recorded, so this is not a treatment the register has.
+        expect(found!.completedCount).toBe(0);
         expect(found!.complete).toBe(false);
-        expect(found!.parcelCount).toBe(0);
-        // Nothing to date it by, and null is the honest answer rather than
-        // today.
+        // Undatable, because nothing was ever marked. `complete: true` beside
+        // `occurredOn: null` was the contradiction that gave the old bug away.
         expect(found!.occurredOn).toBeNull();
+    });
+
+    it('a same-key retry FINISHES a partial treatment instead of replaying a no-op', async () => {
+        // The other half, and the one that matters operationally: the retry
+        // has to do the work. Under the old predicate it returned
+        // `replayed: true` having done nothing, so the treatment could never
+        // be completed by any number of retries.
+        const archetype = await globalPrisma.item.create({
+            data: {
+                tenantId, name: `Sample2 ${TAG}`, category: 'PESTICIDE',
+                defaultUnitId: unitId, isArchetype: true,
+            },
+        });
+        const key = `${TAG}-resume`;
+        const input = { ...baseInput(), productItemId: archetype.id, parcelIds: [parcelA1, parcelA2] };
+
+        await expect(recordDiaryTreatment(ctx(), input, key)).rejects.toMatchObject({
+            code: 'PRODUCT_IS_SAMPLE_ARCHETYPE',
+        });
+        expect((await getDiaryTreatment(ctx(), key))!.complete).toBe(false);
+
+        // Fix the cause the farmer would fix — register the product properly.
+        await globalPrisma.item.update({
+            where: { id: archetype.id },
+            data: { isArchetype: false },
+        });
+
+        const retry = await recordDiaryTreatment(ctx(), input, key);
+        // NOT a replay: this request finished the job.
+        expect(retry.replayed).toBe(false);
+        expect(retry.treatmentGroupId).toBe(key);
+
+        const after = await getDiaryTreatment(ctx(), key);
+        expect(after!.complete).toBe(true);
+        expect(after!.completedCount).toBe(after!.parcelCount);
+        expect(after!.occurredOn).toBe(DAY);
+
+        // And it did not duplicate the blocks: the derived per-block key is
+        // what makes the retry safe to run.
+        expect(after!.parcelCount).toBe(2);
+    });
+
+    it('replays only once every line is recorded', async () => {
+        const key = `${TAG}-full-replay`;
+        const first = await recordDiaryTreatment(
+            ctx(), { ...baseInput(), parcelIds: [parcelA1] }, key,
+        );
+        expect(first.replayed).toBe(false);
+        const again = await recordDiaryTreatment(
+            ctx(), { ...baseInput(), parcelIds: [parcelA1] }, key,
+        );
+        expect(again.replayed).toBe(true);
+        expect(again.parcelCount).toBe(1);
     });
 
     it('does not find another farm\'s treatment under the same handle', async () => {

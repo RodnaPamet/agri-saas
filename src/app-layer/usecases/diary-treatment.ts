@@ -151,32 +151,98 @@ function parseTreatmentDay(value: string): { day: Date; key: string } {
     return { day, key: `${y}-${mo}-${d}` };
 }
 
+/**
+ * How much of a treatment is actually RECORDED, counted the only way that
+ * means anything.
+ *
+ * A line is created `PENDING` by `createFieldOperation` and marked `DONE`
+ * afterwards, and **the mark is what writes the ДНЕВНИК entry**. So the
+ * existence of a line says the work was planned, not that it was recorded.
+ *
+ * This replaced `parcelCount > 0`, which counted lines and therefore reported
+ * a treatment as complete the moment the FIRST block's lines committed — even
+ * with nothing marked and no register entry anywhere. Deterministic repro,
+ * no killed transaction needed: send a sample-archetype product. Creation is
+ * allowed, the first mark throws `PRODUCT_IS_SAMPLE_ARCHETYPE`, and the old
+ * code then answered `complete: true` with `occurredOn: null` and replayed a
+ * retry that finished nothing. The contradiction in that pair — complete, yet
+ * undatable, because nothing was ever marked — is the tell.
+ *
+ * One function, because the write's replay arm and the read's `complete` are
+ * the same question. Two spellings would let a retry short-circuit on a
+ * treatment the read calls incomplete.
+ *
+ * Two counts rather than fetching the lines: bounded regardless of how many
+ * parcels a treatment touches.
+ */
+async function summariseTreatmentLines(
+    ctx: RequestContext,
+    taskIds: string[],
+): Promise<{ parcelCount: number; completedCount: number; complete: boolean }> {
+    if (taskIds.length === 0) return { parcelCount: 0, completedCount: 0, complete: false };
+    return runInTenantContext(ctx, async (db) => {
+        const [parcelCount, completedCount] = await Promise.all([
+            db.operationParcel.count({
+                where: { tenantId: ctx.tenantId, taskId: { in: taskIds } },
+            }),
+            db.operationParcel.count({
+                where: { tenantId: ctx.tenantId, taskId: { in: taskIds }, status: 'DONE' },
+            }),
+        ]);
+        return {
+            parcelCount,
+            completedCount,
+            complete: parcelCount > 0 && completedCount === parcelCount,
+        };
+    });
+}
+
 /** What a treatment looks like when asked for by its handle. */
 export interface DiaryTreatmentSummary {
     treatmentGroupId: string;
-    /** Lines recorded across every block. */
+    /** Lines across every block — planned, not necessarily recorded. */
     parcelCount: number;
+    /** Of those, how many are DONE and so have a register entry. */
+    completedCount: number;
     /** One per block, oldest first. */
     taskIds: string[];
     /** The calendar day the treatment happened, `YYYY-MM-DD`. */
     occurredOn: string | null;
     /**
-     * False when tasks exist but carry NO lines.
+     * True only when EVERY line is DONE.
      *
-     * This is the partial-commit shape `createFieldOperation` documents: the
-     * task committed and its second transaction died. It is a THIRD answer,
-     * not a detail, and the client needs all three to act correctly after a
-     * save whose response was lost:
+     * A line is created PENDING and marked DONE afterwards, and the mark is
+     * what writes the ДНЕВНИК entry. So `complete` asks whether the register
+     * actually has the treatment, not whether rows exist.
+     *
+     * It is a THIRD answer, not a detail, and a client needs all three after
+     * a save whose response was lost:
      *
      *   404                  nothing landed      -> safe to write afresh
-     *   200 complete: true   it landed           -> do not write again
-     *   200 complete: false  it half-landed      -> retry on the SAME handle,
-     *                                               which the write finishes
+     *   200 complete: true   fully recorded      -> do not write again
+     *   200 complete: false  partly recorded     -> retry on the SAME handle,
+     *                                               which finishes the rest
      *
-     * Collapsing the third into either of the others is a real defect in
-     * both directions: as a 404 it writes a duplicate treatment, and as a
-     * plain 200 it reports a compliance record that has no lines and can
-     * never reach the register.
+     * ## The partial state is NOT "a task with no lines"
+     *
+     * That was this field's first definition and it was wrong — the handle is
+     * stamped in the same transaction as the lines, so a task with no lines
+     * has no handle and the read answers 404. It is unreachable from the
+     * write, and the test for it had to build the row by hand. **Needing to
+     * fabricate a state is the warning that it may not be the state that
+     * happens.**
+     *
+     * The reachable partial state is lines that exist and are not all marked:
+     * every block's lines are created first, then marked, so any failure in
+     * the mark loop leaves earlier blocks recorded and later ones not. A
+     * sample-archetype product reproduces it with no fault injection —
+     * creation is allowed and the first mark throws
+     * `PRODUCT_IS_SAMPLE_ARCHETYPE`.
+     *
+     * Collapsing it into either neighbour is a real defect in both
+     * directions: as a 404 the client writes a duplicate treatment; as a
+     * plain 200 it reports a compliance record whose lines never reached the
+     * register.
      */
     complete: boolean;
 }
@@ -208,10 +274,14 @@ export async function getDiaryTreatment(
             where: { tenantId: ctx.tenantId, treatmentGroupId: handle, deletedAt: null },
             select: {
                 id: true,
-                _count: { select: { operationParcels: true } },
-                // One line is enough to date the treatment: every line of a
-                // treatment is stamped with the same day by the write.
-                operationParcels: { select: { completedAt: true }, take: 1 },
+                // One MARKED line is enough to date the treatment — every line
+                // is stamped with the same day. An unmarked line has no date
+                // at all, which is why the filter is here and not in code.
+                operationParcels: {
+                    where: { completedAt: { not: null } },
+                    select: { completedAt: true },
+                    take: 1,
+                },
             },
             orderBy: { createdAt: 'asc' },
         }),
@@ -219,13 +289,15 @@ export async function getDiaryTreatment(
 
     if (tasks.length === 0) return null;
 
-    const parcelCount = tasks.reduce((n, t) => n + t._count.operationParcels, 0);
-    const stamped = tasks.flatMap((t) => t.operationParcels).find((l) => l.completedAt != null);
+    const taskIds = tasks.map((t) => t.id);
+    const { parcelCount, completedCount, complete } = await summariseTreatmentLines(ctx, taskIds);
+    const stamped = tasks.flatMap((t) => t.operationParcels)[0];
 
     return {
         treatmentGroupId: handle,
         parcelCount,
-        taskIds: tasks.map((t) => t.id),
+        completedCount,
+        taskIds,
         // Read back from the UTC date parts, which is the exact inverse of how
         // the write stored it (`Date.UTC(y, mo, d)` for the farm's calendar
         // day). This is deliberately NOT `farmToday`'s zone: converting a
@@ -233,7 +305,7 @@ export async function getDiaryTreatment(
         // conversion of a value already converted once, and near midnight it
         // would hand back the wrong day.
         occurredOn: stamped?.completedAt ? stamped.completedAt.toISOString().slice(0, 10) : null,
-        complete: parcelCount > 0,
+        complete,
     };
 }
 
@@ -289,21 +361,28 @@ export async function recordDiaryTreatment(
     const existing = await runInTenantContext(ctx, (db) =>
         db.task.findMany({
             where: { tenantId: ctx.tenantId, treatmentGroupId, deletedAt: null },
-            select: { id: true, _count: { select: { operationParcels: true } } },
+            select: { id: true },
             orderBy: { createdAt: 'asc' },
         }),
     );
     if (existing.length > 0) {
-        const parcelCount = existing.reduce((n, t) => n + t._count.operationParcels, 0);
-        // A group whose tasks carry NO lines is the partial-commit shape
-        // `createFieldOperation` documents: the task committed and its
-        // second transaction died. Answering 200 with `parcelCount: 0` would
-        // tell the client it synced and let its outbox drop the body, so fall
-        // through and finish the job from this request instead.
-        if (parcelCount > 0) {
+        const prior = await summariseTreatmentLines(ctx, existing.map((t) => t.id));
+        // Replay ONLY a treatment that is fully recorded.
+        //
+        // Anything less falls through and this request finishes the job. That
+        // is safe to re-run: each block's operation carries the derived
+        // idempotency key `<handle>:<locationId>` under a unique index, so a
+        // block that already exists is replayed rather than duplicated, and
+        // the mark loop below only touches lines still PENDING.
+        //
+        // The old test was `parcelCount > 0`, which short-circuited on a
+        // half-finished treatment and returned `replayed: true` having
+        // finished nothing — the retry became a no-op exactly when it was
+        // needed, and the client was told it had synced.
+        if (prior.complete) {
             return {
                 treatmentGroupId,
-                parcelCount,
+                parcelCount: prior.parcelCount,
                 taskIds: existing.map((t) => t.id),
                 replayed: true,
             };
@@ -422,7 +501,21 @@ export async function recordDiaryTreatment(
     // operation's shape rather than a loop that could be collapsed.
     const lines = await runInTenantContext(ctx, (db) =>
         db.operationParcel.findMany({
-            where: { taskId: { in: taskIds }, tenantId: ctx.tenantId },
+            // PENDING only. On a first run that is every line; on a retry
+            // finishing a half-written treatment it is exactly the remainder.
+            //
+            // The positive state, not `not: 'DONE'`, so a line a person
+            // CANCELLED is never silently marked done by a replay. That is
+            // the case this filter actually protects.
+            //
+            // It is NOT what stops a retry duplicating register entries —
+            // measured: dropping the filter leaves all 19 cases green,
+            // because `recordInputApplication` is already idempotent on
+            // `operationParcelId` ("a spray line is applied at most once")
+            // with a `spray:<lineId>` dedup key behind it. Defence in depth,
+            // and worth knowing which layer is load-bearing before someone
+            // removes the wrong one.
+            where: { taskId: { in: taskIds }, tenantId: ctx.tenantId, status: 'PENDING' },
             select: { id: true, taskId: true, version: true },
         }),
     );
@@ -438,5 +531,9 @@ export async function recordDiaryTreatment(
         );
     }
 
-    return { treatmentGroupId, parcelCount, taskIds, replayed: false };
+    // Re-counted rather than summed from what THIS request created: a run
+    // that finished a half-written treatment created fewer lines than the
+    // treatment has, and the saved screen must show the treatment.
+    const finalCount = await summariseTreatmentLines(ctx, taskIds);
+    return { treatmentGroupId, parcelCount: finalCount.parcelCount, taskIds, replayed: false };
 }

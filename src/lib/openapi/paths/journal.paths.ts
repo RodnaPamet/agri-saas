@@ -165,14 +165,21 @@ const TreatmentParams = TenantParams.extend({
 const TreatmentSummary = z
     .object({
         treatmentGroupId: z.string(),
-        parcelCount: z.number().int(),
+        parcelCount: z.number().int().openapi({
+            description: 'Lines across every block \u2014 planned, not necessarily recorded.',
+        }),
+        completedCount: z.number().int().openapi({
+            description:
+                'Of those, how many are DONE. A line gets its \u0414\u041d\u0415\u0412\u041d\u0418\u041a entry when it is marked DONE, so this is how much of the treatment the register actually has.',
+        }),
         taskIds: z.array(z.string()),
         occurredOn: z.string().nullable().openapi({
-            description: 'The calendar DAY the treatment happened, `YYYY-MM-DD`.',
+            description:
+                'The calendar DAY the treatment happened, `YYYY-MM-DD`. Null when nothing has been marked yet \u2014 an unmarked line has no date.',
         }),
         complete: z.boolean().openapi({
             description:
-                'False when tasks exist but carry no lines \u2014 a half-landed write. Retry on the SAME handle; the write finishes it.',
+                'True only when `completedCount === parcelCount` and at least one line exists. False means partly recorded: retry on the SAME handle and the write finishes the rest.',
         }),
     })
     .openapi('TreatmentSummary');
@@ -256,7 +263,13 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
             'Here it is also the TREATMENT HANDLE, returned as `treatmentGroupId`: the per-block writes ' +
             'derive their own keys from it, so a replay resolves on the handle rather than on any one of ' +
             'them, and the handle is what later addresses this treatment.\n\n' +
-            '**A reused key is REPLAYED, not refused, and the body is not compared** (owner ruling ' +
+            '**A reused key RESUMES an unfinished treatment and REPLAYS a finished one.** A replay ' +
+            '(`replayed: true`) happens only when every line is already DONE. If the treatment is ' +
+            'partly recorded \u2014 any failure during marking leaves it so \u2014 this request finishes the ' +
+            'remaining blocks and lines and answers `replayed: false`. It is safe to re-send: each ' +
+            'block carries a derived idempotency key, so an existing block is replayed rather than ' +
+            'duplicated, and only lines still pending are marked.\n\n' +
+            '**A reused key is never REFUSED, and the body is not compared** (owner ruling ' +
             '2026-10-14). Reusing a key whose body differs returns the ORIGINAL treatment with ' +
             '`replayed: true` and writes nothing \u2014 the edit is silently not applied. So mint a NEW ' +
             'key the moment a field or the parcel set changes; the server cannot detect that you did ' +
@@ -321,12 +334,15 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
             '| answer | meaning | what to do |\n' +
             '| --- | --- | --- |\n' +
             '| `404` `TREATMENT_NOT_FOUND` | nothing landed | write afresh |\n' +
-            '| `200` `complete: true` | it landed | do not write again |\n' +
-            '| `200` `complete: false` | it HALF landed \u2014 tasks exist with no lines | retry on the SAME handle; the write finishes it |\n\n' +
-            'The third is the partial-commit shape the operation write documents: the task committed ' +
-            'and its second transaction died. Treating it as a 404 writes a duplicate treatment; ' +
-            'treating it as an ordinary 200 reports a compliance record that has no lines and can ' +
-            'never reach the register.\n\n' +
+            '| `200` `complete: true` | fully recorded | do not write again |\n' +
+            '| `200` `complete: false` | PARTLY recorded \u2014 see `completedCount` | retry on the SAME handle; the write finishes the rest |\n\n' +
+            '**`complete` counts DONE lines, not lines.** A line is created pending and marked DONE ' +
+            'afterwards, and the mark is what writes the \u0414\u041d\u0415\u0412\u041d\u0418\u041a entry \u2014 so a treatment ' +
+            'whose lines all exist but are unmarked is in the register nowhere. Any failure during ' +
+            'marking leaves earlier blocks recorded and later ones not, which is the partial state ' +
+            'this answer exists for.\n\n' +
+            'Treating it as a 404 writes a duplicate treatment; treating it as an ordinary 200 ' +
+            'reports a compliance record the register does not have.\n\n' +
             'The handle is a PATH segment and not a query parameter on purpose: iOS writes the full ' +
             'URL including the query string to the device log, unsuppressably.',
         tags: ['Journal'],

@@ -143,19 +143,22 @@ describe('GET /api/t/{tenantSlug}/journal/treatments/{treatmentGroupId}', () => 
         // not as absent — a 404 here makes it write a duplicate treatment.
         mockGet.mockResolvedValue({
             treatmentGroupId: 'h1',
-            parcelCount: 0,
+            parcelCount: 2,
+            completedCount: 0,
             taskIds: ['t1'],
             occurredOn: null,
             complete: false,
         });
         const res = await get();
         expect(res.status).toBe(200);
-        await expect(res.json()).resolves.toMatchObject({ complete: false, taskIds: ['t1'] });
+        await expect(res.json()).resolves.toMatchObject({
+            complete: false, completedCount: 0, parcelCount: 2, taskIds: ['t1'],
+        });
     });
 
     it('passes the handle from the path, not from a query string', async () => {
         mockGet.mockResolvedValue({
-            treatmentGroupId: 'h1', parcelCount: 1, taskIds: ['t1'],
+            treatmentGroupId: 'h1', parcelCount: 1, completedCount: 1, taskIds: ['t1'],
             occurredOn: '2026-03-04', complete: true,
         });
         await get();

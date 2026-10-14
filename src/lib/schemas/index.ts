@@ -1023,7 +1023,7 @@ export const RecordDiaryTreatmentSchema = z
         }),
         quarantinePeriodDays: z.number().int().min(0).max(365).optional().openapi({
             description:
-                'Карантинен срок in days, as it applied ON THE DAY. Stored per entry rather than re-derived from the product, so a reprinted document still shows the waiting period that applied — and the earliest-harvest date computed from it — even if the product\u2019s registration changes later.',
+                'Карантинен срок in days. **Consulted only when a typed `productName` has to CREATE a product**, where it lands on that product\u2019s registration. If the name or `productItemId` resolves to a product the farm ALREADY has, this value is IGNORED — an operation payload must not silently rewrite a stored ЗЗР registration, the same rule `newProductRegistration` follows on a name match. The ДНЕВНИК computes «най-ранна дата за прибиране» from the PRODUCT\u2019s current period at generation time, not from a copy taken on the day, so changing a product\u2019s period changes what a reprint says. Storing it per entry is #1775.',
         }),
         newProductCategory: z.enum(['PESTICIDE', 'FERTILIZER']).optional(),
         targetNote: z.string().max(500).optional().openapi({
