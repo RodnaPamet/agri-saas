@@ -424,6 +424,47 @@ export async function recordDiaryTreatment(
     const taskIds: string[] = [];
     let parcelCount = 0;
 
+    // ── Refuse a sample product BEFORE anything is written ──────────────
+    //
+    // `markOperationParcel` refuses a sample-archetype product on the way into
+    // DONE (`PRODUCT_IS_SAMPLE_ARCHETYPE`), and that check is correct where it
+    // is. But by then this write has already created the blocks and their
+    // lines, so the refusal leaves a PARTIAL treatment — and because the cause
+    // repeats, every retry fails identically at the same point. The treatment
+    // can then be neither finished nor abandoned by a client: there is no
+    // delete-by-handle yet.
+    //
+    // That is the one reachable way to strand a treatment, and it is reachable
+    // only by ID — a typed NAME never resolves to a sample, and a created
+    // product is never one. So checking the id here costs one bounded read and
+    // removes the whole class: the request refuses with nothing written, which
+    // is what a 4xx should mean.
+    //
+    // Deliberately only the ids. This is not a second copy of the archetype
+    // rule — `markOperationParcel` remains the authority and still refuses
+    // anything that reaches it by another path. This is a pre-flight so the
+    // common path fails cleanly.
+    const inputItemIds = [input.productItemId, input.fertilizerItemId].filter(
+        (id): id is string => typeof id === 'string' && id.length > 0,
+    );
+    if (inputItemIds.length > 0) {
+        const archetypes = await runInTenantContext(ctx, (db) =>
+            db.item.findMany({
+                where: { id: { in: inputItemIds }, tenantId: ctx.tenantId, isArchetype: true },
+                select: { name: true },
+            }),
+        );
+        if (archetypes.length > 0) {
+            throw codedBadRequest(
+                'PRODUCT_IS_SAMPLE_ARCHETYPE',
+                `"${archetypes[0].name}" is a sample product, not a registered one. ` +
+                    `The farm record requires a product's trade name, so add your ` +
+                    `own product and select it before recording this treatment.`,
+                { product: archetypes[0].name },
+            );
+        }
+    }
+
     for (const [locationId, blockParcelIds] of byBlock) {
         // NO `as CreateFieldOperationInput` here, deliberately. The first
         // version of this object carried one, and it hid two real errors that

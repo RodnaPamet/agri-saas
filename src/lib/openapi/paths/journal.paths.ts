@@ -292,6 +292,12 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
             'route.\n\n' +
             'A treatment day is the FARM\u2019s day (Europe/Sofia), not the server\u2019s UTC day, so ' +
             'recording today keeps working after local midnight.\n\n' +
+            '`PRODUCT_IS_SAMPLE_ARCHETYPE` \u2014 the chosen `productItemId` or `fertilizerItemId` is a ' +
+            'SAMPLE product, not a registered one, and the farm record needs a trade name. Refused ' +
+            'BEFORE anything is written, so nothing is left behind: the underlying operation write ' +
+            'refuses a sample only on the way to DONE, which would leave a partial treatment whose ' +
+            'cause repeats on every retry \u2014 unfinishable and, with no delete-by-handle yet, ' +
+            'unabandonable. Reachable only by id; a typed product NAME never resolves to a sample.\n\n' +
             'Inherited from the operation write underneath, all 400: `OPERATION_INPUT_AMBIGUOUS` (not ' +
             'exactly one input kind, or an id AND a name for the same kind), `PRODUCT_DOSE_REQUIRED` / ' +
             '`FERTILIZER_DOSE_REQUIRED`, `PRODUCT_NOT_FOUND` / `FERTILIZER_NOT_FOUND`, ' +

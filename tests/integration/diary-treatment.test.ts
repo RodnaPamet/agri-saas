@@ -388,15 +388,14 @@ describeFn('getDiaryTreatment (DB-backed)', () => {
         expect(new Set(found!.taskIds)).toEqual(new Set(written.taskIds));
     });
 
-    it('a failed mark leaves the treatment INCOMPLETE, though its lines exist', async () => {
-        // THE REPRO, with no fault injection. A sample-archetype product is
-        // allowed into a field operation and refused on the way to DONE
-        // (`PRODUCT_IS_SAMPLE_ARCHETYPE`). So every line is created and none
-        // is marked — and the mark is what writes the register entry.
+    it('refuses a sample product BEFORE writing anything, leaving no partial', async () => {
+        // A sample-archetype product is refused on the way into DONE, which
+        // used to mean the blocks and lines were already written and the
+        // refusal repeated on every retry — a treatment that could be neither
+        // finished nor abandoned, with no delete-by-handle to clear it.
         //
-        // The predicate this guards was `parcelCount > 0`, which called this
-        // complete. The client would have been told it synced, dropped the
-        // body from its outbox, and the ДНЕВНИК would hold nothing.
+        // The pre-flight makes the refusal mean what a 4xx should: nothing
+        // happened. The assertion that matters is the SECOND one.
         const archetype = await globalPrisma.item.create({
             data: {
                 tenantId, name: `Sample ${TAG}`, category: 'PESTICIDE',
@@ -413,54 +412,69 @@ describeFn('getDiaryTreatment (DB-backed)', () => {
             ),
         ).rejects.toMatchObject({ code: 'PRODUCT_IS_SAMPLE_ARCHETYPE' });
 
+        // Nothing written. Without the pre-flight this is a treatment with
+        // two blocks of unmarked lines and no way out.
+        await expect(getDiaryTreatment(ctx(), key)).resolves.toBeNull();
+    });
+
+    it('reports an interrupted run as INCOMPLETE, not complete', async () => {
+        // The partial state is reachable from any failure DURING marking —
+        // a dropped connection, a killed process, a line whose task moved.
+        // Since the one input-driven cause is now refused up front, it is
+        // built here by reverting a marked line, which is exactly the state
+        // an interrupted run leaves: some lines recorded, some not.
+        const key = `${TAG}-interrupted`;
+        await recordDiaryTreatment(
+            ctx(), { ...baseInput(), parcelIds: [parcelA1, parcelA2] }, key,
+        );
+        const lines = await globalPrisma.operationParcel.findMany({
+            where: { tenantId, task: { treatmentGroupId: key } },
+            select: { id: true },
+            orderBy: { id: 'asc' },
+        });
+        expect(lines).toHaveLength(2);
+        await globalPrisma.operationParcel.update({
+            where: { id: lines[0].id },
+            data: { status: 'PENDING', completedAt: null },
+        });
+
         const found = await getDiaryTreatment(ctx(), key);
-        expect(found).not.toBeNull();
-        // Lines exist — so a 404 would make the client write a duplicate...
-        expect(found!.parcelCount).toBeGreaterThan(0);
-        // ...and NONE is recorded, so this is not a treatment the register has.
-        expect(found!.completedCount).toBe(0);
+        // Lines exist — a 404 would make the client write a duplicate...
+        expect(found!.parcelCount).toBe(2);
+        // ...but only one is recorded, so the register does not have this
+        // treatment. The old predicate (`parcelCount > 0`) called it complete.
+        expect(found!.completedCount).toBe(1);
         expect(found!.complete).toBe(false);
-        // Undatable, because nothing was ever marked. `complete: true` beside
-        // `occurredOn: null` was the contradiction that gave the old bug away.
-        expect(found!.occurredOn).toBeNull();
     });
 
     it('a same-key retry FINISHES a partial treatment instead of replaying a no-op', async () => {
-        // The other half, and the one that matters operationally: the retry
-        // has to do the work. Under the old predicate it returned
-        // `replayed: true` having done nothing, so the treatment could never
-        // be completed by any number of retries.
-        const archetype = await globalPrisma.item.create({
-            data: {
-                tenantId, name: `Sample2 ${TAG}`, category: 'PESTICIDE',
-                defaultUnitId: unitId, isArchetype: true,
-            },
-        });
+        // The half that matters operationally. Under the old replay arm this
+        // returned `replayed: true` having done nothing, so the treatment
+        // could never be completed by any number of retries.
         const key = `${TAG}-resume`;
-        const input = { ...baseInput(), productItemId: archetype.id, parcelIds: [parcelA1, parcelA2] };
+        const input = { ...baseInput(), parcelIds: [parcelA1, parcelA2] };
+        await recordDiaryTreatment(ctx(), input, key);
 
-        await expect(recordDiaryTreatment(ctx(), input, key)).rejects.toMatchObject({
-            code: 'PRODUCT_IS_SAMPLE_ARCHETYPE',
+        const lines = await globalPrisma.operationParcel.findMany({
+            where: { tenantId, task: { treatmentGroupId: key } },
+            select: { id: true },
+            orderBy: { id: 'asc' },
+        });
+        await globalPrisma.operationParcel.update({
+            where: { id: lines[0].id },
+            data: { status: 'PENDING', completedAt: null },
         });
         expect((await getDiaryTreatment(ctx(), key))!.complete).toBe(false);
-
-        // Fix the cause the farmer would fix — register the product properly.
-        await globalPrisma.item.update({
-            where: { id: archetype.id },
-            data: { isArchetype: false },
-        });
 
         const retry = await recordDiaryTreatment(ctx(), input, key);
         // NOT a replay: this request finished the job.
         expect(retry.replayed).toBe(false);
-        expect(retry.treatmentGroupId).toBe(key);
 
         const after = await getDiaryTreatment(ctx(), key);
         expect(after!.complete).toBe(true);
         expect(after!.completedCount).toBe(after!.parcelCount);
         expect(after!.occurredOn).toBe(DAY);
-
-        // And it did not duplicate the blocks: the derived per-block key is
+        // And it did not duplicate the blocks — the derived per-block key is
         // what makes the retry safe to run.
         expect(after!.parcelCount).toBe(2);
     });
