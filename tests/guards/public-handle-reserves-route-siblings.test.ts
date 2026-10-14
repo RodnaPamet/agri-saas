@@ -23,9 +23,11 @@
  * (`page.tsx` and `opengraph-image.tsx`), kept closer to reality than a bare
  * `1` so a selector that ate most of the tree still fails.
  *
- * Two tests below exist only to prove this guard can fail: one feeds the
- * comparison a synthetic sibling, and one asserts `[handle]` is in the
- * derived children at all.
+ * The check is one composition of three selectors, and each has its own
+ * control, because a guard whose real population is empty can only be proven
+ * live piece by piece: `routeChildren` is proven by asserting `[handle]` is
+ * among its results, `staticAmong` by handing it a population containing a
+ * sibling, and `unreservedAmong` by handing it an unreserved name.
  */
 import path from 'node:path';
 
@@ -52,9 +54,16 @@ function routeChildren(): string[] {
  * The children occupying a literal URL segment. `[handle]` is the dynamic one
  * and `(group)` segments are invisible in the URL, so neither can be shadowed
  * by a handle.
+ *
+ * Takes the children rather than calling `routeChildren()` itself, and that
+ * is not a style choice. A zero-argument `staticSiblings()` can be gutted to
+ * `return []` with every assertion here still green — `selector-teeth` caught
+ * exactly that on the first revision of this file — and no control over the
+ * real tree can disprove it, because the real tree HAS no static siblings. A
+ * selector that takes its population can be given one.
  */
-function staticSiblings(): string[] {
-    return routeChildren().filter((name) => !name.startsWith('[') && !name.startsWith('('));
+function staticAmong(children: readonly string[]): string[] {
+    return children.filter((name) => !name.startsWith('[') && !name.startsWith('('));
 }
 
 function unreservedAmong(names: readonly string[]): string[] {
@@ -63,21 +72,29 @@ function unreservedAmong(names: readonly string[]): string[] {
 
 describe('a handle cannot shadow a route under /f/', () => {
     it('reserves every static sibling of [handle]', () => {
-        expect(unreservedAmong(staticSiblings())).toEqual([]);
+        expect(unreservedAmong(staticAmong(routeChildren()))).toEqual([]);
+    });
+
+    it('selects a static sibling out of a population that has one', () => {
+        // Control for `staticAmong`. The real siblings set is empty, so this
+        // is the only way to show the filter can select at all — and that it
+        // drops the two segment kinds a handle cannot collide with.
+        expect(staticAmong(['[handle]', 'directory', '(marketing)'])).toEqual(['directory']);
+        expect(staticAmong(['[handle]'])).toEqual([]);
     });
 
     it('would fail if a static sibling were added unreserved', () => {
-        // The positive control. The real population of SIBLINGS is empty
-        // today, so without this the assertion above is green whatever the
-        // reserved list contains — including empty.
+        // Control for `unreservedAmong`. Without it the first assertion is
+        // green whatever the reserved list contains — including empty.
         expect(unreservedAmong(['directory'])).toEqual(['directory']);
         expect(unreservedAmong(['search', 'admin'])).toEqual(['search']);
     });
 
     it('derives the route children it filters, and [handle] is among them', () => {
-        // Guards the other way this goes quietly wrong: a renamed or
-        // restructured `/f/` would leave `staticSiblings()` empty for a
-        // reason that has nothing to do with the property under test.
+        // Control for `routeChildren`, and it guards the other way this goes
+        // quietly wrong: a renamed or restructured `/f/` would empty the
+        // composition for a reason that has nothing to do with the property
+        // under test.
         expect(routeChildren()).toContain('[handle]');
     });
 });
