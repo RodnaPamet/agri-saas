@@ -177,6 +177,74 @@ export interface LogEntryFilters {
     cropPlanId?: string;
 }
 
+/**
+ * The ДНЕВНИК list's own cursor: `(occurredAt, treatmentGroupId)`.
+ *
+ * ## Why not the shared `{ createdAt, id }` one
+ *
+ * The list folds a treatment's N entries into ONE row with
+ * `distinct: ['treatmentGroupId']`, and `DISTINCT ON` picks the FIRST member
+ * of each group in the ORDER BY. A cursor naming a ROW excludes only that
+ * row, so the group's remaining members are still eligible and represent it
+ * AGAIN on the next page.
+ *
+ * Measured, 3 treatments of 3 entries paged 2 at a time with a
+ * `(createdAt, id)` cursor: six rows came back, one treatment three times.
+ * For a compliance register a farmer would reasonably read a repeated
+ * treatment as a repeated application.
+ *
+ * `treatmentGroupId` is one-per-group by construction, so ordering on it
+ * makes each treatment appear exactly once and a cursor can skip the whole
+ * group. `occurredAt` leads because that is the day the work happened, which
+ * is how a register is read (owner ruling 2026-10-14, and #1771's question
+ * answered in the same move) — not the day the row was typed.
+ *
+ * Deliberately LOCAL rather than an extension of `src/lib/pagination.ts`:
+ * that helper is shared by every other cursor-paginated list here, and none
+ * of them folds. Widening it would put a field on the shared payload that
+ * only this list can populate.
+ */
+interface DiaryCursor {
+    occurredAt: string;
+    treatmentGroupId: string;
+}
+
+function encodeDiaryCursor(c: DiaryCursor): string {
+    return Buffer.from(JSON.stringify(c), 'utf8').toString('base64');
+}
+
+function decodeDiaryCursor(raw: string | null | undefined): DiaryCursor | null {
+    if (!raw) return null;
+    try {
+        const parsed: unknown = JSON.parse(Buffer.from(raw, 'base64').toString('utf8'));
+        if (
+            typeof parsed === 'object' &&
+            parsed !== null &&
+            typeof (parsed as DiaryCursor).occurredAt === 'string' &&
+            typeof (parsed as DiaryCursor).treatmentGroupId === 'string' &&
+            !Number.isNaN(Date.parse((parsed as DiaryCursor).occurredAt))
+        ) {
+            return parsed as DiaryCursor;
+        }
+    } catch {
+        // A malformed cursor is treated as no cursor — the first page — rather
+        // than as an error. A client that lost its place gets the top of the
+        // list, which is recoverable; a 400 on a stale bookmark is not.
+    }
+    return null;
+}
+
+/** `(occurredAt, treatmentGroupId)` strictly after the cursor, descending. */
+function diaryCursorWhere(c: DiaryCursor): Prisma.LogEntryWhereInput {
+    const at = new Date(c.occurredAt);
+    return {
+        OR: [
+            { occurredAt: { lt: at } },
+            { occurredAt: at, treatmentGroupId: { lt: c.treatmentGroupId } },
+        ],
+    };
+}
+
 export interface LogEntryListParams {
     limit?: number;
     cursor?: string;
