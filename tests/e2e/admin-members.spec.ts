@@ -8,7 +8,7 @@
  * 4. Non-admin cannot access Members & Roles page
  */
 import { test, expect } from '@playwright/test';
-import { loginAndGetTenant, safeGoto } from './e2e-utils';
+import { expectSettledSingle, loginAndGetTenant, safeGoto } from './e2e-utils';
 
 const ADMIN_USER = { email: 'admin@acme.com', password: 'password123' };
 const READER_USER = { email: 'viewer@acme.com', password: 'password123' };
@@ -57,13 +57,17 @@ test.describe('Admin Member Management', () => {
         // <a id="members-pill-btn">, with the snapshot taken moments later
         // showing only one.
         //
-        // So wait for the count to SETTLE rather than reaching for `.first()`,
-        // which would pass just as happily on a page that really did render
-        // two. Same barrier the header assertion in admin-regression.spec.ts
-        // already uses, for the same reason.
-        const pill = page.getByRole('main').locator('#members-pill-btn');
-        await expect(pill).toHaveCount(1, { timeout: 15000 });
-        await expect(pill).toBeVisible();
+        // So assert the count rather than reaching for `.first()`, which would
+        // pass just as happily on a page that really did render two. Same
+        // barrier the header assertion in admin-regression.spec.ts uses.
+        //
+        // Via `expectSettledSingle`, because the two-statement form this used
+        // to be is #1567: the count assertion returns on its first sight of
+        // one, so the following line could re-query into the double it was
+        // supposed to have waited out.
+        await expectSettledSingle(page.getByRole('main').locator('#members-pill-btn'), {
+            timeout: 15000,
+        });
     });
 
     test('non-admin cannot access /admin/members', async ({ page }) => {

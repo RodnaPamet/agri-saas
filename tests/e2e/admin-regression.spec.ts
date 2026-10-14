@@ -8,7 +8,7 @@
  * - Non-admin user cannot access SCIM admin page
  */
 import { test, expect } from '@playwright/test';
-import { loginAndGetTenant, safeGoto } from './e2e-utils';
+import { expectSettledSingle, loginAndGetTenant, safeGoto } from './e2e-utils';
 
 const ADMIN_USER = { email: 'admin@acme.com', password: 'password123' };
 const READER_USER = { email: 'viewer@acme.com', password: 'password123' };
@@ -26,22 +26,23 @@ test.describe('Admin Area Regression', () => {
         // `locator('h1')` is a strict-mode violation, not a wait. The
         // `networkidle` that used to sit above hid that by running this late.
         //
-        // Waiting for the count to SETTLE is the same barrier without blocking
-        // on requests this test does not care about, and it asserts the
-        // one-header invariant rather than stepping around it with `.first()`,
-        // which would pass just as happily on a page that really did render
-        // two.
-        await expect(page.getByTestId('page-header-title')).toHaveCount(1, { timeout: 30000 });
-        await expect(page.getByTestId('page-header-title')).toBeVisible();
+        // `expectSettledSingle` asserts the one-header invariant rather than
+        // stepping around it with `.first()`, which would pass just as happily
+        // on a page that really did render two — and it holds the count and the
+        // visibility in the SAME observation.
+        //
+        // This used to be two statements, and that is #1567: `toHaveCount(1)`
+        // returns the instant it sees one, which is not the same as the
+        // transition being over, so the next line re-queried and saw two. The
+        // helper's docblock carries the measurement.
+        await expectSettledSingle(page.getByTestId('page-header-title'), { timeout: 30000 });
 
-        // The same settle-then-assert barrier the header above uses. These
-        // pills sit in the same hydration window, and a transient double on
-        // one of them is what reddened admin-members.spec.ts in CI — the
-        // reasoning written above was applied to the header and not to these.
+        // The same barrier the header above uses. These pills sit in the same
+        // hydration window, and a transient double on one of them is what
+        // reddened admin-members.spec.ts in CI — the reasoning written above
+        // was applied to the header and not to these.
         for (const id of ['members-pill-btn', 'sso-pill-btn', 'scim-pill-btn', 'security-pill-btn']) {
-            const pill = page.locator(`#${id}`);
-            await expect(pill).toHaveCount(1, { timeout: 15000 });
-            await expect(pill).toBeVisible();
+            await expectSettledSingle(page.locator(`#${id}`), { timeout: 15000 });
         }
     });
 
