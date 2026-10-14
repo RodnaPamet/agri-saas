@@ -66,3 +66,56 @@ export const PushSubscriptionSchema = z.object({
 export const RemovePushSubscriptionSchema = z.object({
     endpoint: httpsUrl(),
 });
+
+/**
+ * An APNs device token (#1764).
+ *
+ * ## Why this is a separate member rather than widened fields
+ *
+ * `PushSubscriptionSchema` above is UNCHANGED, deliberately. The web client
+ * posts `{endpoint, keys}` with no `platform`, and that body must keep parsing
+ * byte-for-byte — `tests/unit/small-schemas.test.ts` exercises it and is now
+ * doing double duty as the back-compat control.
+ *
+ * ## 64 hex characters, pinned
+ *
+ * An APNs token is 32 bytes hex-encoded. The pin is not cosmetic: the token
+ * goes into an HTTP/2 request path to Apple, so an unvalidated value is a
+ * request-splitting shape at the one field a client controls — the same
+ * reasoning that pinned `endpoint` above, one transport over. Length and
+ * alphabet together leave nothing to interpret.
+ *
+ * Case-insensitive because Apple's own documentation and the iOS
+ * `Data.description` path differ on it, and a token rejected for being
+ * uppercase would be a silent registration failure on the client's side.
+ */
+export const ApnsRegistrationSchema = z.object({
+    platform: z.literal('IOS'),
+    deviceToken: z
+        .string()
+        .regex(/^[0-9a-f]{64}$/i, 'Device token must be 64 hexadecimal characters'),
+});
+
+/**
+ * What `POST /api/t/{tenantSlug}/push-subscriptions` accepts.
+ *
+ * A plain `z.union`, NOT `z.discriminatedUnion`, and the reason is back
+ * compatibility rather than taste: the discriminated form reads the
+ * discriminator out of the INPUT, and the web client sends no `platform` at
+ * all. The web member is first so an existing body matches it directly.
+ */
+export const PushRegistrationSchema = z.union([
+    PushSubscriptionSchema,
+    ApnsRegistrationSchema,
+]);
+
+/** The unsubscribe counterpart. Looser than registration, for the reason above. */
+export const RemoveApnsRegistrationSchema = z.object({
+    platform: z.literal('IOS'),
+    deviceToken: z.string().regex(/^[0-9a-f]{64}$/i),
+});
+
+export const RemovePushRegistrationSchema = z.union([
+    RemovePushSubscriptionSchema,
+    RemoveApnsRegistrationSchema,
+]);
